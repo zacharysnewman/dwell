@@ -3,9 +3,11 @@
 > Part of the architecture documentation (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §9).
 > Keep this file current under the same rule as `ARCHITECTURE.md` (see `CLAUDE.md`).
 >
-> Status: **[in progress]** — the controller, voxel queries, terrain collision, and the ported test
-> suite are built (`server/core/include/dwell/player`, `server/core/src/player`,
-> `server/tests/player`); networking (§8) and presentation (§9) are in progress.
+> Status: **[built]** (Phase 2) — the controller, voxel queries, terrain collision, networking with
+> prediction and reconciliation, and presentation (`server/core/include/dwell/player`,
+> `server/core/src/player`, `server/tests/player`, `client/src/game`). Not yet: animation (no
+> character models), and the Tier 1 interactions of §6.6 (push cap, crush, riding clusters —
+> Phase 4).
 
 This spec ports the **Physics Player Controller (PPC)** —
 [`zacharysnewman/physics-player-controller`](https://github.com/zacharysnewman/physics-player-controller),
@@ -62,6 +64,7 @@ classic dynamic-controller problems (hovering, slope launches, stair hops, doubl
 | `PPCForces.AddVelocity` / `AddExplosion` | `player::addVelocity()`, and the server explosion system (ARCHITECTURE §7.2) calling it for players |
 | Quantum events (`PPCJumped`, `PPCLanded`, …) | `PlayerEvents` bitset + payload per tick; drives fall damage (server) and audio/animation (client) |
 | Quantum rollback (full-world determinism) | Server authority + local-player prediction and reconciliation (§8) |
+| Unity's left-handed axes | Right-handed, Y up (Jolt, Three.js): camera-right at yaw 0 is −X (§9) |
 | `PPCCameraView`, `PPCAnimatorView`, `PPCDebugView` | Client `render/` camera rig, animation driver, debug overlay (§9) |
 
 **One implementation.** The controller lives only in C++ (`server/core/player`). The client runs
@@ -358,58 +361,108 @@ comparison testing.
 
 ---
 
-## 8. Networking: prediction & reconciliation
+## 8. Networking: prediction & reconciliation **[built]**
 
 The PPC relies on Quantum's rollback of the whole world. Dwell predicts **only the local player**
-against a small client physics world, and the server is authoritative.
+against a small client physics world, and the server is authoritative. The prediction logic is
+C++ (`player::Predictor`, `predictor.h`): natively it backs the latency/loss tests, and in the
+browser it runs in the client's own WASM instance of the sim core on the main thread
+(`dwell_client_*` exports, `client/src/sim/clientCore.ts`).
 
 ### 8.1 Client prediction world
-Built by the client-side WASM core (same Jolt settings as the server):
-- static terrain collision from the client's chunks (same meshes, same `VoxelQuery` grid);
-- **kinematic** proxies for Tier 1 bodies (present-time extrapolated within `PREDICT_PROXY_RADIUS`,
-  ARCHITECTURE §9.4) and remote players (interpolated);
+Owned by the `Predictor` (same Jolt settings as the server):
+- static terrain collision from the client's chunks (same `TerrainCollision` and `VoxelQuery`;
+  Phase 2 clients generate the chunks themselves from the generator version in `Welcome`);
+- **kinematic** capsules for remote players at their **latest snapshot position, dead-reckoned by
+  their velocity** until the next snapshot (at most 0.5 s). Measured against the alternative of
+  extrapolating to the predicted present: head-on bumps corrected with 0.17–0.23 m per-tick
+  rendered steps and no snaps, versus snaps of 1–2 m (an extrapolated kinematic proxy shoves the
+  local player, while on the server two equal-mass bodies stop each other). Tier 1 proxies
+  (present-time within `PREDICT_PROXY_RADIUS`, ARCHITECTURE §9.4) arrive in Phase 4;
 - the local player as the only dynamic body, with the server's body settings.
 
 ### 8.2 Loop
-- Every tick: sample `Input`, run the §4 pipeline for the local player, step the prediction world,
-  store `{inputSeq, Input, PlayerController, position, velocity}` in a ring buffer, send input.
-- On snapshot (`ackInputSeq`, authoritative body state + controller state, §8.4): compare with
-  the stored entry for `ackInputSeq`. Within tolerance → drop older history, done (the common
-  case; no replay). Otherwise → restore the server state, re-run the pipeline + prediction-world
-  step for every unacked input, and smooth the visual difference (snap above
-  `RECONCILE_SNAP_DISTANCE`).
+- **Input:** each client tick samples input, quantizes it once (TypeScript `quantizeInput`,
+  mirroring C++ `QuantizeInput`: move clamped to the unit circle, `i8` axes, button bits, yaw as a
+  wrapped `i16` fraction of a turn, pitch `i16` for ±90°), predicts with the *dequantized* value
+  (the server dequantizes the same integers, so both simulate identical input), stores
+  `{inputSeq, input, PlayerController, position, velocity}` in a 256-tick ring, and sends a
+  `PlayerInput` datagram carrying the newest 4 inputs.
+- **Server:** inputs queue per session ordered by `inputSeq` (§11 validation; see ARCHITECTURE
+  §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it runs dry the
+  last input repeats and the buffer re-primes; beyond 6 queued inputs the oldest are skipped. The
+  snapshot reports the queue length (`inputBuffer`); the client nudges its tick rate ±2 % to keep
+  it between 1 and 4 (clock drift between client and server otherwise starves or floods it).
+- **Snapshot (20 Hz):** compared with the stored entry for `ackInputSeq`: position within 1 cm,
+  velocity within 5 cm/s, controller flags equal, external velocity within 5 cm/s → nothing to do
+  (the common case). Otherwise the server state is restored (resumable controller state from §8.4
+  over the stored entry, which supplies the input) and every unacknowledged input is replayed
+  (pipeline + prediction-world step).
+- **Smoothing:** the visible position is `predicted + offset`; a replay adds `before − after` to
+  the offset so the view doesn't jump, and the offset decays with a 0.1 s time constant. A
+  correction above `RECONCILE_SNAP_DISTANCE` snaps (offset cleared) — except knockback
+  corrections, smoothed up to 4× that distance.
+- **Knockback:** the server applies server-originated velocity changes after the controller pass,
+  before the physics step, and sends `PlayerEvent(Knockback)` with the `inputSeq` processed that
+  tick. The client records it, restores its own predicted state at `inputSeq − 1`, and replays
+  with the kick inserted after that input's pipeline. When the snapshot overtakes the event (they
+  travel on different channels), the snapshot's `lastKnockbackSeq` tells the client the
+  correction is a knockback.
 - Replays are cheap: one dynamic body in a near-empty world, ~6–12 ticks at typical RTTs.
-- Server impulses (explosions, knockback) arrive as `PlayerEvent(Knockback, tick)` and are inserted
-  at that tick before replaying (ARCHITECTURE §9.3).
 
-### 8.3 Divergence budget
-Native and WASM Jolt are not assumed bit-identical. Build Jolt with
-`JPH_CROSS_PLATFORM_DETERMINISTIC` and compile without FMA contraction (`-ffp-contract=off`) to
-keep them as close as possible, then **measure** it: a CI test runs the PPC scenario suite natively
-and under WASM (Node) and records the maximum per-tick position divergence. `externalAbsorbThreshold`
-must stay above that noise so solver differences are not absorbed as external forces.
+**Measured** (`netcode: prediction`, in-process network simulator, two clients):
+- 150 ms RTT, 20 ms jitter, 5 % loss: ~1 % of snapshots replay, position error at the
+  acknowledged input p95 < 1 mm, no snaps. The residual corrections are one tick of motion
+  (≤ 13 cm at run speed) when jitter starves the server's input buffer.
+- Launch-pad knockback: no snaps, largest rendered step 0.6 m per tick.
+- Head-on bump: no snaps, largest rendered step ≤ 0.23 m.
+- Input takes effect on the next predicted tick.
 
-### 8.4 Wire additions
-- `PlayerInput` gains an analog move vector (`i8 moveX, moveY`) for gamepads and touch sticks;
-  `jump`, `run`, `crouch` stay in the button bitfield.
-- The local player's snapshot block carries the controller state needed to resume simulation
-  exactly: horizontal `current` + `external`, vertical `accumulatedY` + `targetY`, jump timers
-  and flags, crouch, climb (cell and flags), swim, and `platform.ground`. Quantized, about 48 bytes.
-  Remote players receive only the transform, velocity, `State`, and flags.
+### 8.3 Divergence budget **[built]**
+Native and WASM Jolt are not assumed bit-identical. Jolt is built with
+`JPH_CROSS_PLATFORM_DETERMINISTIC` and everything without FMA contraction (`-ffp-contract=off`),
+and the result is **measured** in CI: `dwell_scenario_trace` runs the four-player scenario natively
+and under Node (WASM), and `server/tools/divergence.mjs` compares them. Measured: positions
+bit-identical over all 600 ticks; velocities within 1.2 × 10⁻⁷ m/s (float rounding in the trig
+functions), far below `externalAbsorbThreshold` (0.01 m/s), which the check enforces for the
+divergence added per tick. The whole ported player and netcode suite also passes under WASM
+(`dwell_player_tests.js`).
+
+### 8.4 Wire format
+- `PlayerInput`: analog move vector (`i8 moveX, moveY`) for gamepads and touch sticks; `jump`,
+  `run`, `crouch` in the `u16` button bitfield; quantized yaw and pitch (ARCHITECTURE §8.3).
+- The local player's snapshot block carries the body state (capsule centre and velocity, `f32`),
+  flags, health, `State`, `inputBuffer`, `lastKnockbackSeq`, and the controller state needed to
+  resume simulation exactly (47 bytes, +12 while climbing, +8 after letting go of a ladder):
+  flags (grounded, jumping, crouching, climbing, hasReleased, swimming); horizontal `current`,
+  `external`, and `contribution` (x, z); vertical `accumulatedY`, `platformY`, `targetY`; the
+  ground's vertical velocity; the ground reference (kind + player id); jump buffer and coyote ticks;
+  step grace; ladder and released cells. Per-tick scratch (inputs, events, probe results, climb
+  and swim velocities) is recomputed.
+- Remote players receive only feet position (`f32`), velocity (`f16`), view angles, `State`, and
+  flags.
 
 ---
 
-## 9. Client presentation (from the PPC view layer)
+## 9. Client presentation (from the PPC view layer) **[built, except animation]**
 
-- **Camera:** first-person rig using `lookYaw/lookPitch` from local input; eye height follows crouch
-  with smoothing (the sim's crouch is instant); **step smoothing** (PPC `SmoothSteps`,
-  `StepSmoothSpeed`, `MaxStepLag`) hides the one-tick lift or snap on slabs and small steps;
-  `platform.yawDelta` turns the camera with rotating clusters.
-- **Animation:** parameters from `State`, velocity, and flags (`Speed`, `DirectionX/Y`,
-  `IsGrounded`, `IsFalling`, `IsCrouching`, `IsRunning`, `IsClimbing`, `IsSwimming`, `Jump` trigger).
-  Local player: from predicted events. Remote players: from state transitions in snapshots.
-- **Debug overlay:** state label, probe rays and hits (ground ring, ceiling, walls), layer
-  velocities (current, external, target), ground ref, prediction error.
+- **Camera** (`client/src/game/game.ts`): first-person at the smoothed render position
+  (interpolated between the last two ticks plus the correction offset); eye height follows crouch
+  with exponential smoothing (the sim's crouch is instant); **step smoothing** (PPC `SmoothSteps`:
+  the eye rises at most 4 m/s after a grounded lift up to `maxStepHeight`, never lags more than
+  that) hides the one-tick lift onto slabs; `platform.yawDelta` turns the camera with rotating
+  ground. Dwell's world is **right-handed, Y up**: yaw 0 looks along +Z, and right of +Z is −X (the
+  PPC's Unity convention is left-handed); the controller's camera-right vector follows this.
+- **Players:** remote players are capsules with a visor, interpolated 100 ms in the past; dead
+  players are drawn lying down (a cosmetic pose; the physics ragdoll moves to Phase 5 with the
+  client debris world). While dead, the camera orbits the body until respawn.
+- **Animation:** not yet — there are no character models. The parameters listed by the PPC
+  (`Speed`, `IsGrounded`, … from `State`, velocity, and flags) are all available client-side.
+- **Debug overlay** (F3): state, ground ref and gap, wall/ceiling/submersion, position, velocity,
+  layer velocities (current, external, target), prediction stats (snapshots, replays, snaps,
+  knockback replays, error at ack, last correction, smoothing offset), server input buffer, tick
+  rate, RTT; probe rays (ground ring, walls) and the velocity vector drawn in 3D.
+- **Network condition simulator:** `?netsim=<rtt ms>,<jitter ms>,<loss %>` wraps the transport.
 
 ---
 
@@ -430,8 +483,8 @@ event counters. Expectations use Dwell's default config (recommended feel, voxel
 | Phase5Platform | Riding translating, rotating, and falling Tier 1 bodies; jump-off keeps momentum; explosion |
 | Phase6Climb | Ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | Same scenarios on voxel geometry |
-| GoldenTrace | Four-player scenario: identical across repeated runs; within 1 mm of `server/tests/player/golden/scenario-trace.txt` (regenerate with `DWELL_UPDATE_GOLDEN=1`); native↔WASM with tolerance (§8.3) |
-| — (Dwell) | Built: swim enter/float/dive/exit, shallow water, auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams, collision-mesh unit tests. Later phases: placement rejection (3), crush and push-force cap (4); reconciliation under latency and loss (§8) |
+| GoldenTrace | Four-player scenario: identical across repeated runs; within 1 mm of `server/tests/player/golden/scenario-trace.txt` (regenerate with `DWELL_UPDATE_GOLDEN=1`); native↔WASM compared by `divergence.mjs` (§8.3) |
+| — (Dwell) | Built: swim enter/float/dive/exit, shallow water, auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams, collision-mesh unit tests; networked players (`netcode_test.cpp`, `netsim.h`: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps. Later phases: placement rejection (3), crush and push-force cap (4) |
 
 Performance gate: 64 players' controller passes (excluding the Jolt step) under 1 ms/tick —
 measured at ~0.36 ms in the Release build; checked by `player: performance` (strict under

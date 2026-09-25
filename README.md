@@ -26,6 +26,11 @@ npm run build        # outputs dist/
 npm run e2e          # Playwright against a native server (build the server first)
 ```
 
+**Playing:** click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)
+crouch, F3 debug overlay. `?netsim=150,20,5` simulates 150 ms RTT, 20 ms jitter and 5 % loss.
+The default world is a movement playground: slab stairs, a block step, a doorway, a crawlspace, a
+ladder, a pool, and an orange launch pad just behind the spawn.
+
 ### Server (`server/`)
 
 Requires CMake ≥ 3.24, Ninja, a C++20 compiler, and rustup (the pinned toolchain in
@@ -37,6 +42,7 @@ cd server
 cmake --preset dev
 cmake --build --preset dev
 ctest --preset dev
+DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="player: scenario"  # after intended controller changes
 ./build/dev/app/dwell_server --help
 ./build/dev/app/dwell_server   # prints an invite link to open in the client
 ```

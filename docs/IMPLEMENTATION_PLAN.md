@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | 🔍 In review (Safari check outstanding) | #3 |
-| 2 — Physics player controller | 🚧 In progress (2a–2g done) | — |
+| 2 — Physics player controller | ✅ Complete (PR not yet opened; manual feel playtest recommended) | — |
 | 3 — Terrain generation & streaming | ⏳ Not started | — |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
@@ -131,8 +131,19 @@ Exit criteria
 
 ## Phase 2 — Physics Player Controller (Prediction + Reconciliation)
 
-**Status:** in progress — 2a–2g (controller, voxel collision and queries, ported test suite) are
-done; 2h (networking), 2i (divergence measurement), and presentation are outstanding.
+**Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
+natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
+ragdoll and animation from `State` (Phase 5, see below). A human playtest of the movement feel
+(Open Decision #9) is still worthwhile; the numbers below are measured, not felt.
+
+| Exit criterion | Result |
+|---|---|
+| Ported PPC scenarios pass natively and in WASM; golden trace stable | ✅ `dwell_tests` (Debug and Release) and `dwell_player_tests.js` under Node, in CI |
+| Doorways, crawlspaces, blocks need a jump, slabs step up | ✅ `player: voxel geometry`, `crouch`, `steps and air`, `step smoothness` |
+| Two clients see each other; 150 ms / 20 ms / 5 % | ✅ `netcode: prediction` (~1 % of snapshots replay, p95 error at ack < 1 mm, no snaps; input applies on the next tick) and e2e `two clients on a native server see each other move` |
+| Knockback smooth at 150 ms; bumps without jitter | ✅ launch pad: no snaps, largest rendered step 0.6 m/tick; head-on bump: no snaps, ≤ 0.23 m/tick |
+| Out-of-range inputs rejected; fall damage and respawn on all clients | ✅ `netcode: server` |
+| 64 players < 1 ms/tick | ✅ ~0.36 ms (native Release), ~0.42 ms (WASM) |
 
 Deviations from the deliverables below:
 - `maxStepHeight` is 0.55 m (PPC 0.45) so half-block slabs step up, as the exit criteria require.
@@ -146,7 +157,18 @@ Deviations from the deliverables below:
 - `PlayerControllerConfig` lives in the C++ core rather than `shared/protocol`: the client runs the
   same C++ in WASM, so no TypeScript copy is needed.
 - Added beyond plan: a playground world generator (generator version 1) with every test feature
-  near the spawn.
+  near the spawn; `inputBuffer`-driven client tick-rate nudging and a 2-input server jitter buffer;
+  `lastKnockbackSeq` in snapshots; the F3 debug overlay's in-world probe rays.
+- Remote-player proxies in the prediction world sit at the latest snapshot position,
+  dead-reckoned, rather than being interpolated or extrapolated: measured to correct bumps far more
+  gently (PLAYER_CONTROLLER.md §8.1).
+- Dwell uses right-handed axes: the controller's camera-right vector is the mirror of the PPC's
+  (Unity, left-handed) so that strafing matches the screen.
+- The snapshot's `groundEntityId` fields are deferred to Phase 4, when Tier 1 bodies can be stood
+  on (ARCHITECTURE §8.3).
+- Deferred to Phase 5: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
+  down until the client debris world exists — and animating players from `State` (players are
+  capsules; there are no character models yet).
 
 **Goal:** Spec Phase 2. Port the Physics Player Controller to C++/Jolt on voxel terrain, then
 network it with client prediction and server reconciliation (§9, `PLAYER_CONTROLLER.md`).
@@ -172,39 +194,41 @@ Deliverables
   water and the exclusive swim layer (Dwell addition); optional auto-jump and edge guard.
 - [x] **2g — Test port.** The PPC headless suites ported to C++ on voxel geometry
   (`PLAYER_CONTROLLER.md` §10), including the multi-player golden trace.
-- [ ] **2h — Networking.**
-  - [ ] 20 Hz snapshot tick in the server loop (moved from Phase 1).
-  - [ ] Server: input queue ordered by `inputSeq`, validation and rate limiting (§11); snapshots with
-    `ackInputSeq`, body state, and local controller state (~48 B).
-  - [ ] Client: sim-core WASM build hosts the prediction world (terrain + kinematic proxies + local
+- [x] **2h — Networking.**
+  - [x] 20 Hz snapshot tick in the server loop (moved from Phase 1).
+  - [x] Server: input queue ordered by `inputSeq`, validation and rate limiting (§11); snapshots with
+    `ackInputSeq`, body state, and local controller state (47 B + conditional ladder fields).
+  - [x] Client: sim-core WASM build hosts the prediction world (terrain + kinematic proxies + local
     dynamic body); input ring buffer; redundant input datagrams (last 4); analog move vector.
-  - [ ] Reconciliation: compare prediction at `ackInputSeq`; replay only on mismatch; smooth small
+  - [x] Reconciliation: compare prediction at `ackInputSeq`; replay only on mismatch; smooth small
     corrections, snap large ones.
-  - [ ] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
+  - [x] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
     Tested with a debug launch-pad block.
-  - [ ] Player-vs-player collision (block/push; standing on heads not carried); remote players as
-    interpolated kinematic capsules, animated from `State`.
-  - [ ] Health, fall damage from `Landed` impact speed, death → cosmetic ragdoll → respawn.
-- [ ] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
+  - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
+    interpolated kinematic capsules. (Animation from `State` moved to Phase 5.)
+  - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
+    to Phase 5; dead players are drawn lying down.)
+- [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
-  divergence, checked against `externalAbsorbThreshold`.
-- [ ] **Presentation & tools.** First-person camera with crouch eye smoothing and step smoothing;
+  divergence, checked against `externalAbsorbThreshold`. (Measured: positions bit-identical,
+  velocities within 1.2 × 10⁻⁷ m/s.)
+- [x] **Presentation & tools.** First-person camera with crouch eye smoothing and step smoothing;
   debug overlay (state, probe rays, layer velocities, prediction error); network condition
   simulator (latency, jitter, loss).
 
 Exit criteria
-- [ ] All ported PPC scenarios pass on voxel geometry (natively and in WASM); the golden trace is
+- [x] All ported PPC scenarios pass on voxel geometry (natively and in WASM); the golden trace is
   stable across repeated native runs.
 - [x] The player fits through 1×2 doorways and, crouched, through 1-tall crawlspaces; full blocks need
   a jump; slabs are stepped up without leaving the ground.
   Automated: `player: voxel geometry`, `player: crouch`, `player: steps and air`, `player: step
   smoothness`.
-- [ ] Two clients see each other move smoothly. With 150 ms RTT, 20 ms jitter and 5 % loss simulated,
+- [x] Two clients see each other move smoothly. With 150 ms RTT, 20 ms jitter and 5 % loss simulated,
   local movement feels immediate, steady-state correction error stays under ~5 cm, and most
   snapshots need no replay.
-- [ ] Debug knockback plays smoothly (no snap) at 150 ms RTT; players bump into each other without
+- [x] Debug knockback plays smoothly (no snap) at 150 ms RTT; players bump into each other without
   jitter.
-- [ ] Server rejects out-of-range inputs; fall damage and respawn work on all clients.
+- [x] Server rejects out-of-range inputs; fall damage and respawn work on all clients.
 - [x] 64 players' controller passes cost < 1 ms/tick on the reference server (excluding the Jolt step).
   ~0.36 ms/tick in the Release build (`player: performance`, run strict in CI's Release step).
 
@@ -318,6 +342,8 @@ Deliverables
 - [ ] **Threading checkpoint (ADR 0007):** profile a browser-hosted friend world at its host
   profile's caps; if simulation-bound, plan a hosting-only threaded web build behind
   `coi-serviceworker`.
+- [ ] Cosmetic death ragdoll (Jolt `Ragdoll`, Tier 2 rules) in the client debris world; player
+  models animated from `State` (both moved from Phase 2).
 - [ ] Performance instrumentation: server tick time, active body count, bytes/sec per client;
   client frame time and debris count, shown in a debug overlay.
 
