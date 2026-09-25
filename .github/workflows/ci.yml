@@ -10,6 +10,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  protocol:
+    name: Protocol (generated files up to date)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Regenerate constants and golden vectors
+        run: |
+          node shared/protocol/gen.mjs
+          python3 shared/protocol/make_vectors.py
+          git diff --exit-code
+
   client:
     name: Client (lint, typecheck, test, build)
     runs-on: ubuntu-24.04
@@ -43,7 +57,7 @@ jobs:
         with:
           workspaces: server/net/wt
       - name: C++ format
-        run: find server/core server/app server/tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+        run: find server/core server/app server/tests \( -name '*.cpp' -o -name '*.h' \) ! -name '*.gen.h' | xargs clang-format --dry-run --Werror
       - name: Rust format, clippy, tests
         working-directory: server/net/wt
         run: |
