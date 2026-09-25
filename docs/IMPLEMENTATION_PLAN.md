@@ -14,6 +14,10 @@ when its exit criteria pass and `ARCHITECTURE.md` reflects what was built.
 
 ## Phase 0 — Repository, Tooling & GitHub Pages Pipeline
 
+**Status:** code complete. Exit criteria verified locally (client lint/typecheck/test/build and a
+headless render check; server build, tests, and smoke run). Remaining: the first GitHub CI run and
+Pages deployment (requires Pages source = "GitHub Actions" in repository settings).
+
 **Goal:** A working monorepo skeleton that deploys a blank client to GitHub Pages on every
 push to the default branch.
 

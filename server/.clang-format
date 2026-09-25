@@ -1,0 +1,6 @@
+BasedOnStyle: Google
+ColumnLimit: 100
+IndentWidth: 2
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Preserve  # keep <Jolt/Jolt.h> in its own block ahead of other Jolt headers

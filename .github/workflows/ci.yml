@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client:
+    name: Client (lint, typecheck, test, build)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  server:
+    name: Server (C++ + Rust)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-format
+      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
+        run: rustup toolchain install 1.94.1 --profile minimal --component clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server/net/wt
+      - name: C++ format
+        run: find server/core server/app server/tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+      - name: Rust format, clippy, tests
+        working-directory: server/net/wt
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+      - name: C header is up to date (cbindgen)
+        run: |
+          cargo install cbindgen --version 0.29.4 --locked
+          server/net/wt/gen-header.sh
+          git diff --exit-code -- server/net/wt/include
+      - name: Configure
+        working-directory: server
+        run: cmake --preset dev
+      - name: Build
+        working-directory: server
+        run: cmake --build --preset dev
+      - name: Test
+        working-directory: server
+        run: ctest --preset dev
+      - name: Smoke-run server
+        run: server/build/dev/app/dwell_server
