@@ -20,7 +20,8 @@ push to the default branch.
 Deliverables
 - Monorepo layout per §3: `client/`, `server/`, `shared/protocol/`, `platforms/`, `docs/`.
 - `client/`: Vite + TypeScript (strict), ESLint, Prettier, Vitest. `base: '/dwell/'`.
-  Renders a blank canvas and a build-info overlay (commit SHA).
+  Three.js (pinned) behind the `client/render` interface (ADR 0002); renders an empty scene
+  and a build-info overlay (commit SHA).
 - `server/`: CMake project, C++20, Jolt pulled via `FetchContent`, a unit-test target
   (e.g. Catch2/doctest), clang-format config. Rust toolchain pinned with `rust-toolchain.toml`;
   empty `server/net/wt` crate linked through Corrosion (ADR 0001) so the mixed build works from

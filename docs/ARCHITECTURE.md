@@ -19,6 +19,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 |---|---|
 | Authoritative server | C++20, Jolt Physics (native) |
 | Client | TypeScript; physics/prediction via the shared C++ sim core (Jolt linked in) compiled to WebAssembly |
+| Renderer | Three.js, WebGL2 first, behind a thin render interface (ADR 0002) |
 | Client shells | Browser (GitHub Pages) → Electron (desktop) → Capacitor (iOS/Android) |
 | Transport | WebTransport (HTTP/3 / QUIC); WebSocket fallback |
 | Simulation | 60 Hz internal physics step, 20 Hz network snapshots |
@@ -175,7 +176,7 @@ C ABI).
 | `world/` | Chunk store mirrored from server; applies voxel deltas in order. |
 | `worldgen/` | Runs the server's C++ terrain generator (WASM) in a Web Worker for `Generated` chunks. |
 | `mesh/` | Greedy mesher in a Web Worker; produces render meshes and collision triangles. |
-| `render/` | Scene, camera, chunk meshes, dynamic body meshes. Renderer library is an open decision (Three.js proposed). |
+| `render/` | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry, own shader materials, and a block texture array; rendering is camera-relative. Game code never touches Three.js objects directly. |
 | `physics/` | Hosts the sim-core WASM module (C++ `server/core` + Jolt, Emscripten): prediction world (local player + terrain + kinematic proxies) and debris world. The client does not use separate Jolt JS bindings. |
 | `predict/` | Input sampling, local prediction, server reconciliation & replay, ground-relative frames, present-time proxies. |
 | `interp/` | Snapshot buffer, Tier 1 transform interpolation (and bounded extrapolation). |
@@ -597,7 +598,7 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | # | Decision | Current leaning |
 |---|---|---|
 | 1 | ~~Server WebTransport/QUIC library~~ | **Resolved:** Rust `wtransport` behind a C ABI — [ADR 0001](./adr/0001-webtransport-server-library.md) |
-| 2 | Client renderer | Three.js (WebGL2) |
+| 2 | ~~Client renderer~~ | **Resolved:** Three.js on WebGL2 behind a thin render interface — [ADR 0002](./adr/0002-client-renderer.md) |
 | 3 | Server hosting provider (must allow UDP) | TBD before public multiplayer |
 | 4 | Cross-origin isolation on Pages (`coi-serviceworker`) for multithreaded Jolt | Defer; single-threaded first |
 | 5 | Persistence of the world across server restarts | Out of scope for Phases 1–6 |

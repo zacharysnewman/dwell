@@ -7,6 +7,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` §11 (Open Decisions) 
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-webtransport-server-library.md) | WebTransport server library: Rust `wtransport` behind a C ABI | Accepted |
+| [0002](0002-client-renderer.md) | Client renderer: Three.js on WebGL2, behind a thin render interface | Accepted |
 
 ## Template
 
