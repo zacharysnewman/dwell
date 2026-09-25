@@ -22,6 +22,8 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 | Client shells | Browser (GitHub Pages) → Electron (desktop) → Capacitor (iOS/Android) |
 | Transport | WebTransport (HTTP/3 / QUIC); WebSocket fallback |
 | Simulation | 60 Hz internal physics step, 20 Hz network snapshots |
+| Players | Physics-based `CharacterVirtual` + inner body, client-predicted (§9) |
+| Terrain | Seeded deterministic procedural generation, same C++ code on server and client (§6.3) |
 | First deployment target | **GitHub Pages** (static client) |
 
 ```
@@ -29,7 +31,9 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
                     │           Authoritative Server (C++)          │
                     │                                               │
   inputs (dgram) ──▶│ Input validation ─▶ Player sim (Jolt Char.)   │
-                    │                                               │
+                    │ Worldgen (seed)                               │
+                    │        │                                      │
+                    │        ▼                                      │
                     │ Master voxel grid ─▶ Structural integrity     │
                     │        ▲                 │  (flood-fill)      │
                     │        │ re-bake         ▼                    │
@@ -43,7 +47,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 ┌──────────────────────────────────────────────────────────────────────┐
 │                     Client (TS + Jolt WASM)                          │
 │  Input → Local prediction (Jolt CharacterVirtual) → Reconciliation   │
-│  Chunk store → Mesher (worker) → Renderer                            │
+│  Chunk store (+ worldgen WASM worker) → Mesher (worker) → Renderer   │
 │  Snapshot buffer → Interpolation of Tier 1 bodies                    │
 │  Local-only Jolt world → Tier 2 cosmetic debris                      │
 └──────────────────────────────────────────────────────────────────────┘
@@ -97,7 +101,8 @@ The same Vite build output is wrapped by:
 ```
 /client              TypeScript client (Vite). Renderer, prediction, interpolation, debris.
 /server              C++20 authoritative server (CMake). Jolt via FetchContent.
-  /core              Simulation core: voxel grid, integrity, clustering, physics, replication.
+  /core              Simulation core: voxel grid, worldgen, integrity, clustering, physics,
+                     players, replication.
                      Platform-free; compiled natively AND to WASM (local mode).
   /net               WebTransport (+ WebSocket) server front-end. Native only.
 /shared/protocol     Protocol spec, constants, and golden-byte test vectors used by both sides.
@@ -112,7 +117,8 @@ The same Vite build output is wrapped by:
 
 ### 4.1 Responsibilities
 - Validate player input (rate, magnitude, reach for block edits, anti-teleport).
-- Own the **master voxel grid** — the single source of truth for terrain.
+- Own the **master voxel grid** — the single source of truth for terrain — and generate
+  unmodified chunks from the world seed (§6.3).
 - Compute **structural integrity** and run flood-fill clustering on detached voxels.
 - Simulate all **Tier 1** dynamic bodies and all player characters.
 - Replicate state: snapshots (unreliable) and voxel deltas / events (reliable).
@@ -123,6 +129,7 @@ The same Vite build output is wrapped by:
 ```
 every 16.67 ms (60 Hz):
     drain & validate inputs (per player, ordered by input sequence)
+    integrate completed worldgen jobs (thread pool, budgeted)
     apply queued voxel edits → integrity → clustering → awaken bodies
     step players (Jolt CharacterVirtual)
     physicsSystem.Update(1/60)
@@ -149,10 +156,11 @@ is an open decision recorded as an ADR when made.
 |---|---|
 | `net/` | `Transport` interface; `WebTransportTransport`, `WebSocketTransport`, `LoopbackTransport`. Framing, encode/decode. |
 | `world/` | Chunk store mirrored from server; applies voxel deltas in order. |
+| `worldgen/` | Runs the server's C++ terrain generator (WASM) in a Web Worker for `Generated` chunks. |
 | `mesh/` | Greedy mesher in a Web Worker; produces render meshes and collision triangles. |
 | `render/` | Scene, camera, chunk meshes, dynamic body meshes. Renderer library is an open decision (Three.js proposed). |
 | `physics/` | Jolt WASM worlds: prediction world (local player + static terrain) and debris world. |
-| `predict/` | Input sampling, local prediction, server reconciliation & replay. |
+| `predict/` | Input sampling, local prediction, server reconciliation & replay, ground-relative frames, present-time proxies. |
 | `interp/` | Snapshot buffer, Tier 1 transform interpolation (and bounded extrapolation). |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
 
@@ -185,6 +193,69 @@ Static collision uses a per-chunk `MeshShape` built from greedy-meshed faces (a
 `HeightFieldShape` cannot represent overhangs/caves; it may be used for far/LOD terrain only).
 Both server and client build the same collision mesh from the same chunk data so client
 prediction collides with the same geometry the server does.
+
+### 6.3 Terrain Generation **[planned]**
+
+Terrain is **procedural, seeded, and deterministic**: an unmodified chunk is a pure function
+`generate(worldSeed, generatorVersion, ChunkCoord)`. The server is authoritative, but because
+generation is deterministic, the network and disk only need to carry *differences* from the
+generated baseline.
+
+#### World bounds
+- Vertical: `WORLD_MIN_Y` = −128 to `WORLD_MAX_Y` = 384 (16 chunks tall).
+- Horizontal: bounded to ±`WORLD_HALF_EXTENT` (65 536 m). At that distance float32 precision
+  is ~8 mm, acceptable for single-precision Jolt. The client renders relative to a
+  floating origin (camera-relative) to avoid visual jitter. Larger worlds would require Jolt's
+  `JPH_DOUBLE_PRECISION` build (open decision #7).
+- The bottom layers (`y < WORLD_MIN_Y + BEDROCK_LAYERS`) are indestructible **bedrock** — the
+  primary anchor for structural integrity (§7.1).
+
+#### Generator pipeline
+Executed per chunk; stages that need neighbor context (trees crossing chunk borders) read a
+deterministic function of the neighbor's coordinates, never the neighbor's generated data, so
+chunks can be generated in any order and in parallel.
+
+1. **Climate / biome field (2D).** Low-frequency noise for temperature, humidity,
+   continentalness, and erosion → biome ID per column (plains, forest, desert, mountains,
+   ocean, …) with smooth blending at borders.
+2. **Base height (2D).** Biome-weighted blend of fractal noise (fBm + ridged noise for
+   mountains) → terrain height per column.
+3. **Density (3D).** `density = (height − y) + overhangNoise3D(x, y, z)`; solid where
+   `density > 0`. Produces overhangs and arches on top of the heightmap.
+4. **Caves (3D).** Carve with "spaghetti" (|noiseA| + |noiseB| < t) and "cheese" (large
+   blobs) cave noise, attenuated near the surface and near bedrock.
+5. **Surface & strata.** Top-down column pass assigns grass/sand/snow, then dirt, then stone
+   layers by depth and biome; water fills below `SEA_LEVEL`.
+6. **Ores.** Seeded vein placement per chunk (material, depth range, frequency, vein size).
+7. **Features / structures.** Trees, boulders, and later hand-authored structures, placed at
+   deterministic hashed positions per region; each feature writes only voxels inside the chunk
+   being generated.
+8. **Stability pass.** Remove small floating components (islands with no path to terrain
+   within the chunk's generation neighborhood) so that newly generated terrain does not
+   collapse the first time a nearby voxel changes. Large generated overhangs are allowed and
+   are subject to normal integrity rules once edited.
+
+#### Determinism
+Server (native), local mode (WASM), and client (WASM) must produce **bit-identical** chunks:
+- The generator lives in `server/core/worldgen` (C++) and the client runs the **same code
+  compiled to WASM** in a worker — there is no second TypeScript implementation.
+- Noise uses integer hashing for gradients and evaluates in **fixed-point** (or strict IEEE
+  float with `-ffp-contract=off`, no `-ffast-math`, no transcendental library calls) so
+  native and WASM results match.
+- A golden test generates a fixed set of chunks and compares hashes across native and WASM in CI.
+- `generatorVersion` is bumped for any change that alters output; saved worlds record it.
+
+#### Authority, storage, and streaming
+- The server keeps only **modified** chunks in memory/storage as full chunks (or as deltas
+  against generated output); unmodified chunks are regenerated on demand and evicted freely.
+- Handshake sends `worldSeed` and `generatorVersion`. The client generates a verification
+  chunk and reports its hash; on mismatch (or on low-power devices by choice) the client uses
+  **full-chunk mode** and the server sends every chunk explicitly.
+- `ChunkData` has two forms: `Generated(coord, revision)` — "generate this yourself, no
+  changes" — and `Explicit(coord, revision, palette+RLE)` for modified chunks. This cuts
+  terrain bandwidth for unexplored or untouched areas to a few bytes per chunk.
+- Server generation runs on a worker thread pool with a per-tick budget; the spawn region is
+  pre-generated at startup. Client generation runs in a Web Worker off the main thread.
 
 ---
 
@@ -249,6 +320,9 @@ Triggered when the server registers an explosion, a block removal, or a structur
    cell.
 3. **Conflict resolution.** If a target cell is occupied, try small offsets (±1 cell,
    upward first); voxels that still cannot be placed are dropped and emitted as Tier 2 debris.
+   Cells overlapping a player capsule count as occupied, so re-baking never embeds a player
+   in terrain; a player standing on the body switches `groundEntityId` to 0 (static) in the
+   same tick.
 4. **Re-bake.** Destroy the Jolt body → write voxels into the master grid → rebuild affected
    chunk collision → run a structural-integrity check on the placed voxels (they may be
    unsupported) → broadcast reliable `VoxelModification` with reason `Rebake` plus
@@ -275,6 +349,24 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `MAX_TIER1_BODIES` | 512 | Server cap; oldest/smallest force-re-baked when exceeded |
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
+| **Players (§9)** | | |
+| `PLAYER_RADIUS` / `PLAYER_HEIGHT` | 0.3 m / 1.8 m | Character capsule |
+| `PLAYER_MASS` | 80 kg | Used for pushing and knockback |
+| `PLAYER_STEP_HEIGHT` | 0.6 m | Auto step-up (a full 1 m block needs a jump) |
+| `PLAYER_WALK_SPEED` / `PLAYER_SPRINT_SPEED` | 4.3 / 5.6 m/s | Ground speeds |
+| `PLAYER_JUMP_HEIGHT` | 1.25 m | Clears one block |
+| `PLAYER_MAX_PUSH_FORCE` | 800 N | Cap on force a player applies to Tier 1 bodies |
+| `CRUSH_SPEED_THRESHOLD` | 4 m/s | Relative contact speed that causes crush damage |
+| `CRUSH_STUCK_TICKS` | 6 | Unresolvable penetration ticks before crush death |
+| `FALL_DAMAGE_MIN_SPEED` | 12 m/s | Impact speed where fall damage begins |
+| `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |
+| `PREDICT_PROXY_RADIUS` | 16 m | Tier 1 bodies within this use present-time proxies |
+| `RESPAWN_SECONDS` | 5 s | Death → respawn delay |
+| **Terrain (§6.3)** | | |
+| `WORLD_MIN_Y` / `WORLD_MAX_Y` | −128 / 384 | Vertical world bounds |
+| `WORLD_HALF_EXTENT` | 65 536 m | Horizontal world bound |
+| `BEDROCK_LAYERS` | 4 | Indestructible anchor layers at the bottom |
+| `SEA_LEVEL` | 64 | Water fill height |
 
 ---
 
@@ -297,7 +389,7 @@ reliable socket; higher latency under loss but functionally identical), Loopback
 |---|---|---|
 | Datagrams | Unreliable | Player input (C→S), physics snapshots (S→C) |
 | Stream `control` | Reliable, bidi | Handshake, ping/clock sync, chat, block edit requests |
-| Stream `world` | Reliable, uni S→C | Chunk data, `VoxelModification`, `PhysicsEvent`, entity spawn/despawn |
+| Stream `world` | Reliable, uni S→C | Chunk data, `VoxelModification`, `PhysicsEvent`, `PlayerEvent`, entity spawn/despawn |
 
 All world-affecting reliable messages go on **one** ordered stream so a voxel removal and the
 event/entity that depends on it can never be reordered. Bulk chunk streaming may move to
@@ -323,7 +415,18 @@ repeat count:
 u8   type = 0x81
 u32  serverTick
 u32  ackInputSeq                // last input processed for this client
-[local player state: pos f32×3, vel f16×3, flags u8]
+local player state:
+  u32  groundEntityId           // 0 = static terrain / airborne; else pos/vel are body-local
+  f32×3 position, f16×3 velocity
+  u8   flags                    // grounded | crouched | swimming | dead
+  u8   health
+u8   remotePlayerCount
+repeat remotePlayerCount:
+  u16  playerId
+  u32  groundEntityId
+  f32×3 position, f16×3 velocity
+  i16  yaw, i16 pitch
+  u8   flags
 u8   entityCount
 repeat entityCount:             // ~32 bytes each → ~34 entities per datagram
   u32  networkEntityId
@@ -336,7 +439,28 @@ When more awake bodies are relevant than fit, a **priority accumulator** (distan
 speed, time since last sent) selects which bodies go in each snapshot; multiple datagrams per
 tick are allowed up to a per-client bandwidth budget.
 
-**Server → Client: `ChunkData` (reliable, `world`)** — `ChunkCoord`, `revision`, palette, RLE runs.
+**Server → Client: `Handshake` (reliable, `control`)** — protocol version, `playerId`,
+`worldSeed` (u64), `generatorVersion` (u32), server tick. Client replies with the hash of a
+generated verification chunk to select generated vs. full-chunk mode (§6.3).
+
+**Server → Client: `ChunkData` (reliable, `world`)**
+```
+u8   type = 0x11
+u8   form                       // Generated = 0 (client generates; no payload) | Explicit = 1
+ChunkCoord, u32 revision
+[Explicit only: palette + RLE runs]
+```
+
+**Server → Client: `PlayerEvent` (reliable, `world`)**
+```
+u8   type = 0x30
+u8   kind                       // Knockback | Damage | Death | Respawn
+u16  playerId
+u32  serverTick                 // tick the effect was applied (for predicted replay)
+f32×3 impulse                   // Knockback only
+u8   amount                     // Damage only
+u8   cause                      // Fall | Crush | Explosion | ...
+```
 
 **Server → Client: `VoxelModification` (reliable, `world`)**
 ```
@@ -360,20 +484,81 @@ initial transform, and (spawn only) the cluster voxel layout (local offsets + ma
 
 ---
 
-## 9. Player Movement: Prediction & Reconciliation **[planned]**
+## 9. Players: Physics-Based Characters **[planned]**
 
-- Both sides simulate players with Jolt `CharacterVirtual` using identical parameters and
-  the same fixed 60 Hz step.
-- Client samples input every step, tags it with `inputSeq`, applies it locally, stores it in a
-  ring buffer, and sends it (with the previous 3 inputs for loss resilience).
-- Server applies inputs in sequence order, one per step; missing inputs repeat the last known
-  input. Snapshots carry `ackInputSeq` and the authoritative player state.
-- On snapshot: client rewinds its player to the authoritative state, replays unacknowledged
-  inputs, and smooths any visible correction over a few frames. Errors above a threshold snap.
-- Remote players are rendered with the same interpolation path as Tier 1 bodies.
+Players are full participants in the physics simulation: they collide with and push dynamic
+bodies, ride on falling structures, get shoved, knocked back, and crushed — while keeping
+responsive, client-predicted movement.
 
-Bit-exact determinism between native Jolt and Jolt WASM is **not** assumed; reconciliation
-absorbs small divergence.
+### 9.1 Character model
+- Each player is a Jolt **`CharacterVirtual`** (capsule, `PLAYER_RADIUS` × `PLAYER_HEIGHT`)
+  **with an inner rigid body** (`CharacterVirtualSettings::mInnerBodyShape`). The virtual
+  character gives precise, stable, predictable movement (stairs/step-up, slopes, ground
+  detection); the inner body makes the player visible to the rest of the physics world, so
+  Tier 1 bodies, ray casts, and other characters collide with it.
+- Mass `PLAYER_MASS`; push strength limited by `PLAYER_MAX_PUSH_FORCE`.
+- Both server and client use identical character settings from `shared/protocol/constants`.
+
+**Rejected alternative:** a fully rigid-body-driven (or active-ragdoll) player. It is harder
+to predict client-side (stacking, friction, and contact solver divergence between native and
+WASM Jolt cause constant corrections) and behaves poorly on voxel steps. The chosen model gets
+the physical interactions below without giving up prediction quality.
+
+### 9.2 Physical interactions
+
+| Interaction | Behavior | Authority |
+|---|---|---|
+| Static terrain | Collide; auto step-up ≤ `PLAYER_STEP_HEIGHT`; 1-block ledges need a jump | Server; client predicts |
+| Player → Tier 1 body | Walking into a body applies an impulse via `CharacterContactListener`, scaled by mass ratio and capped by `PLAYER_MAX_PUSH_FORCE`; light clusters can be shoved, heavy ones cannot | Server only; client does not predict body motion |
+| Tier 1 body → player | Moving bodies push the character (contact velocity transferred to character velocity) | Server; client corrected via reconciliation |
+| Standing on a Tier 1 body | Character inherits the ground body's velocity (`GetGroundVelocity`) — ride a falling slab, a tipping tower | Server; client predicts in the body's frame (§9.4) |
+| Crushing | Damage when contact relative speed exceeds `CRUSH_SPEED_THRESHOLD` against a Tier 1 body, or instant death if the character cannot be depenetrated for `CRUSH_STUCK_TICKS` | Server |
+| Other players | Inner bodies collide; players block and gently push each other | Server; client treats remote players as obstacles |
+| Tier 2 debris | Debris bounces off the local player (player is a kinematic body in the debris world); debris **never** affects player movement, so clients cannot diverge from the server | Client only |
+| Explosions | Radial knockback impulse (`force × falloff / PLAYER_MASS`) added to character velocity, plus damage | Server; client replays at event tick (§9.3) |
+| Falling | Fall damage above `FALL_DAMAGE_MIN_SPEED` impact speed | Server |
+| Water | Swim mode below the water surface: buoyancy, drag, vertical input | Server; client predicts |
+
+### 9.3 Prediction & reconciliation
+- Fixed 60 Hz step on both sides. Client samples input every step, tags it with `inputSeq`,
+  applies it locally, stores it (plus resulting state) in a ring buffer, and sends it with the
+  previous 3 inputs for loss resilience.
+- Server applies inputs in sequence order, one per step; a missing input repeats the last
+  known one. Snapshots carry `ackInputSeq` and the authoritative player state.
+- On snapshot: client rewinds to the authoritative state, replays unacknowledged inputs, and
+  smooths visible corrections over a few frames; errors above `RECONCILE_SNAP_DISTANCE` snap.
+- **Server-originated impulses** (knockback, explosion) arrive as a reliable `PlayerEvent` with
+  the server tick at which they were applied; the client inserts the impulse into its history
+  at that tick and replays, so the knockback plays out predicted instead of as a snap.
+- Bit-exact determinism between native Jolt and Jolt WASM is **not** assumed; reconciliation
+  absorbs small divergence.
+
+### 9.4 Moving platforms & time frames
+The locally predicted player lives in the *present*, while Tier 1 bodies are normally rendered
+`INTERP_DELAY_MS` in the *past*. Mixing the two naively makes riding or dodging a falling
+structure unplayable. Therefore:
+- **Ground-relative state.** When a player stands on a Tier 1 body, snapshots report
+  `groundEntityId` and the player position/velocity **in that body's local frame**. The client
+  predicts in the same frame, so riding a moving body is stable regardless of latency.
+- **Present-time proxies.** Client collision proxies for Tier 1 bodies within
+  `PREDICT_PROXY_RADIUS` of the local player are **extrapolated to predicted time** from the
+  latest snapshot (position + velocities), not interpolated. The body the player stands on is
+  also *rendered* at present time so the player's feet stay planted. Bodies farther away stay
+  interpolated.
+- Mispredicted contacts with these proxies are corrected by normal reconciliation.
+
+### 9.5 Remote players
+Remote players are interpolated like Tier 1 bodies (in the ground body's frame when
+`groundEntityId` ≠ 0), and exist in the client's physics worlds as kinematic capsules.
+
+### 9.6 Health, death & respawn
+- Health is server-authoritative; damage sources are fall, crush, explosion.
+- On death the client spawns a **cosmetic ragdoll** (Jolt `Ragdoll`, Tier 2 rules — local,
+  unsynchronized, despawned on respawn); the server respawns the player after `RESPAWN_SECONDS`.
+
+### 9.7 Anti-cheat implications
+Clients only send inputs, never positions, so speed/teleport/fly hacks are structurally
+impossible; the server's simulation is the only source of player state.
 
 ---
 
@@ -398,3 +583,5 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 4 | Cross-origin isolation on Pages (`coi-serviceworker`) for multithreaded Jolt | Defer; single-threaded first |
 | 5 | Persistence of the world across server restarts | Out of scope for Phases 1–6 |
 | 6 | Final values for §7.4 tunables | Tune in Phases 4–6 |
+| 7 | Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`) | Not needed initially |
+| 8 | Worldgen noise numerics: fixed-point vs. strict IEEE float | Prototype both in Phase 3; pick by golden-test stability and speed |

@@ -75,13 +75,20 @@ Exit criteria
 
 ## Phase 2 — Player Movement (Prediction + Reconciliation)
 
-**Goal:** Spec Phase 2. Responsive, server-authoritative first-person movement (§9).
+**Goal:** Spec Phase 2. Responsive, server-authoritative, physics-based first-person
+movement (§9.1–9.3, 9.5).
 
 Deliverables
-- Shared movement parameters (speed, gravity, jump, step height, capsule size) in
-  `shared/protocol/constants`.
-- Server: per-player Jolt `CharacterVirtual`; input queue ordered by `inputSeq`; input
+- Shared character parameters (capsule, mass, speeds, gravity, jump, step height, push force)
+  in `shared/protocol/constants` (§7.4).
+- Server: per-player Jolt `CharacterVirtual` **with inner body**, so players collide with each
+  other and are visible to the physics world; input queue ordered by `inputSeq`; input
   validation and rate limiting (§10); `ackInputSeq` + authoritative state in snapshots.
+- Player-vs-player collision (block/gentle push) on the server; remote players as kinematic
+  capsules on the client.
+- Health, fall damage, death → cosmetic client ragdoll → respawn; reliable `PlayerEvent`.
+- Knockback plumbing: server-applied impulses sent as `PlayerEvent(Knockback, tick)` and
+  replayed into client prediction history (§9.3). Tested with a debug "launch pad" block.
 - Client: Jolt WASM loaded (single-threaded build on web); local `CharacterVirtual` against
   the same flat-world collision; input ring buffer; redundant input datagrams (last 4).
 - Reconciliation: rewind to server state, replay unacked inputs, smooth small corrections,
@@ -95,17 +102,33 @@ Exit criteria
 - With 150 ms RTT, 20 ms jitter and 5 % loss simulated, local movement feels immediate and
   steady-state correction error stays under ~5 cm.
 - Server rejects speed-hack inputs (tested).
+- Players bump into each other without jitter; debug knockback plays smoothly (no snap) at
+  150 ms RTT.
+- Fall damage and respawn work on all clients.
 
 ---
 
 ## Phase 3 — Static Terrain Streaming
 
-**Goal:** Spec Phase 3. Stream a real voxel world reliably and keep client and server
-collision identical (§6).
+**Goal:** Spec Phase 3. Generate a real procedural world, stream it reliably, and keep client
+and server collision identical (§6).
 
 Deliverables
-- Server world generator (noise-based terrain, caves/overhangs to exercise mesh collision).
-- Chunk encoding: palette + RLE (+ optional compression), with `revision` per chunk.
+- **Terrain generator** in `server/core/worldgen` (§6.3), built in stages:
+  1. Deterministic noise library (integer-hash gradients; fixed-point vs. strict-float
+     prototype → ADR for open decision #8).
+  2. Climate/biome fields, biome-blended base height, 3D overhang density.
+  3. Caves (spaghetti + cheese), surface/strata materials, water to `SEA_LEVEL`, bedrock.
+  4. Ores and features (trees, boulders) using order-independent hashed placement.
+  5. Stability pass removing small floating components.
+- Server worldgen thread pool with per-tick budget; spawn region pre-generated.
+- **Cross-platform determinism:** the generator compiled to WASM for the client worldgen worker
+  and local mode; CI golden test comparing chunk hashes between native and WASM builds.
+- Handshake carries `worldSeed` + `generatorVersion`; client verification-chunk hash selects
+  generated vs. full-chunk mode.
+- Chunk encoding: palette + RLE (+ optional compression), with `revision` per chunk;
+  `ChunkData` `Generated` / `Explicit` forms (§8.3). Server stores only modified chunks.
+- Debug tooling: seed selector, biome/heightmap overlay, "regenerate chunk and diff" check.
 - Interest management: per-client view radius; stream nearest-first; unload far chunks;
   bandwidth budget per client.
 - Greedy mesher shared in spirit by both sides:
@@ -121,6 +144,10 @@ Exit criteria
 - A block placed/removed by one client appears for all clients, and the player collides with
   it immediately after the update on both server and client.
 - Chunk serialization round-trips byte-for-byte between C++ and TS (golden tests).
+- The same seed produces bit-identical chunks natively, in local mode, and in the client
+  worker (CI golden test); untouched chunks cost only a `Generated` message on the wire.
+- Generated terrain shows distinct biomes, caves, and overhangs, and the player can walk,
+  jump, and swim through it with no collision mismatches.
 
 ---
 
@@ -137,6 +164,14 @@ Deliverables
 - `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
 - Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 5); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
+- **Player ↔ Tier 1 interaction** (§9.2, §9.4):
+  - Players push light clusters (capped by `PLAYER_MAX_PUSH_FORCE`); moving clusters push
+    players.
+  - Standing on / riding moving clusters: `groundEntityId` + body-local player state in
+    snapshots; client predicts in the body's frame.
+  - Present-time proxies for Tier 1 bodies within `PREDICT_PROXY_RADIUS`; the ground body is
+    rendered at present time.
+  - Crush damage / crush death.
 - Admin/debug command: cut a pillar / delete a region to trigger collapses on demand.
 
 Exit criteria
@@ -144,6 +179,9 @@ Exit criteria
 - A 10 000-voxel detached structure is processed without the server tick exceeding its budget
   (work is spread across ticks).
 - Unit tests for integrity/clustering on crafted voxel layouts (bridges, overhangs, rings).
+- A player can ride a falling slab to the ground at 150 ms RTT without sliding off or
+  jittering; a player under a falling tower is crushed on every client consistently.
+- Collapsing generated terrain (a cave ceiling, an overhang) works like built structures.
 
 ---
 
@@ -153,7 +191,10 @@ Exit criteria
 
 Deliverables
 - Explosion system on the server: radius/force, material strength attenuation, impulse to
-  existing Tier 1 bodies and newly awakened clusters.
+  existing Tier 1 bodies, newly awakened clusters, and **players** (knockback + damage via
+  `PlayerEvent`, replayed into prediction).
+- Tier 2 debris collides one-way with the local player (debris bounces off; player movement
+  unaffected).
 - Tier classification: `TIER1_MIN_BLOCKS`, `alwaysAuthoritative` materials.
 - Tier 2 path: voxels removed in `VoxelModification` (reason `Explosion`) + `PhysicsEvent`
   `Explosion(origin, force, radius)` in the same reliable batch; client derives debris from the
@@ -167,7 +208,8 @@ Deliverables
 Exit criteria
 - A large explosion (hundreds of fragments) runs at stable server tick rate; only Tier 1 bodies
   appear in snapshots; per-client bandwidth stays within budget.
-- Debris looks plausible on each client and never affects gameplay state.
+- Debris looks plausible on each client and never affects gameplay state or player movement.
+- Players caught in a blast are knocked back smoothly and consistently across clients.
 - Late-joining clients see correct terrain (debris is not replayed, by design).
 
 ---
@@ -180,6 +222,8 @@ Deliverables
 - Sleep monitor with `SLEEP_LINEAR_THRESHOLD`, `SLEEP_ANGULAR_THRESHOLD`, `SLEEP_SECONDS`.
 - Grid snapping to 24 axis-aligned orientations; occupied-cell conflict resolution with
   fallback to Tier 2 debris.
+- Player-safe re-bake: cells overlapping players are treated as occupied; riders transition
+  from body-relative to static ground without a visible pop.
 - Re-bake: destroy body → write grid → rebuild chunk collision → integrity check on placed
   voxels → reliable `VoxelModification(Rebake)` + `EntityDespawn` in one batch.
 - `MAX_TIER1_BODIES` enforcement (force re-bake of oldest/smallest).
