@@ -1,6 +1,6 @@
 [package]
 name = "dwell-net"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 publish = false
 description = "Dwell network front-end: WebTransport + WebRTC behind a C ABI (ADRs 0001, 0008)."
@@ -10,6 +10,14 @@ name = "dwell_net"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+wtransport = { version = "0.7.2", default-features = false, features = ["ring", "self-signed"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+str0m = { version = "0.23.1", default-features = false, features = ["aws-lc-rs"] }
+getrandom = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+wtransport = { version = "0.7.2", default-features = false, features = ["ring", "self-signed"] }
 
 [profile.release]
 debug = 1

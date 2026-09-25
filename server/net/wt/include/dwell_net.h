@@ -11,7 +11,69 @@
 /**
  * Version of this C ABI. Bumped on any incompatible change to the exported functions.
  */
-#define DWELL_NET_ABI_VERSION 1
+#define DWELL_NET_ABI_VERSION 3
+
+#define TRANSPORT_WEBRTC 2
+
+#define CHANNEL_CONTROL 0
+
+#define CHANNEL_WORLD 1
+
+#define TRANSPORT_WEBTRANSPORT 1
+
+typedef enum DwellNetEventKind {
+  None = 0,
+  Connected = 1,
+  Disconnected = 2,
+  Reliable = 3,
+  Datagram = 4,
+} DwellNetEventKind;
+
+/**
+ * Opaque network front-end handle.
+ */
+typedef struct DwellNet DwellNet;
+
+typedef struct DwellNetConfig {
+  /**
+   * WebTransport UDP port (0 = any free port).
+   */
+  uint16_t port;
+  /**
+   * WebRTC UDP port (0 = WebTransport port + 1).
+   */
+  uint16_t rtc_port;
+  /**
+   * NUL-terminated IP address clients use to reach the server (e.g. "127.0.0.1"); advertised
+   * in invite links and used as the WebRTC host candidate.
+   */
+  const char *advertised_ip;
+  uint32_t max_reliable_message_bytes;
+  uint32_t max_datagram_bytes;
+} DwellNetConfig;
+
+typedef struct DwellNetEvent {
+  enum DwellNetEventKind kind;
+  uint32_t session;
+  /**
+   * Connected: transport kind (protocol TransportKind; 1 = WebTransport, 2 = WebRTC).
+   */
+  uint8_t transport;
+  /**
+   * Reliable: channel id (0 = control, 1 = world).
+   */
+  uint8_t channel;
+  /**
+   * Connected: transport binding: SHA-256 of the server certificate (shared by WebTransport and
+   * WebRTC DTLS).
+   */
+  uint8_t binding[32];
+  /**
+   * Reliable/Datagram payload, valid until the next `dwell_net_poll` on this handle.
+   */
+  const uint8_t *data;
+  uintptr_t len;
+} DwellNetEvent;
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,9 +85,111 @@ extern "C" {
 uint32_t dwell_net_abi_version(void);
 
 /**
- * Returns this crate's version as a NUL-terminated static string (e.g. "0.0.0").
+ * Returns this crate's version as a NUL-terminated static string.
  */
 const char *dwell_net_crate_version(void);
+
+/**
+ * Last error from `dwell_net_start` on this thread, as a NUL-terminated string (empty if none).
+ * Valid until the next failing call on the same thread.
+ */
+const char *dwell_net_last_error(void);
+
+/**
+ * Starts listening. Returns NULL on failure (see `dwell_net_last_error`).
+ *
+ * # Safety
+ * `config` must point to a valid `DwellNetConfig` whose `advertised_ip` is NULL or a valid
+ * NUL-terminated string.
+ */
+struct DwellNet *dwell_net_start(const struct DwellNetConfig *config);
+
+/**
+ * Stops listening, closes all sessions, and frees the handle. NULL is ignored.
+ *
+ * # Safety
+ * `net` must be NULL or a handle from `dwell_net_start` not yet stopped.
+ */
+void dwell_net_stop(struct DwellNet *net);
+
+/**
+ * Writes the 32-byte SHA-256 of the server certificate (for `serverCertificateHashes`).
+ *
+ * # Safety
+ * `net` must be a live handle; `out` must point to 32 writable bytes.
+ */
+void dwell_net_cert_hash(const struct DwellNet *net, uint8_t *out);
+
+/**
+ * The UDP port actually bound.
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+uint16_t dwell_net_port(const struct DwellNet *net);
+
+/**
+ * The WebRTC UDP port actually bound.
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+uint16_t dwell_net_rtc_port(const struct DwellNet *net);
+
+/**
+ * The server's WebRTC ICE username fragment (NUL-terminated; valid while the handle lives).
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+const char *dwell_net_ice_ufrag(const struct DwellNet *net);
+
+/**
+ * The server's WebRTC ICE password (NUL-terminated; valid while the handle lives).
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+const char *dwell_net_ice_pwd(const struct DwellNet *net);
+
+/**
+ * Takes the next transport event. Returns false (and sets `kind = None`) when the queue is empty.
+ *
+ * # Safety
+ * `net` must be a live handle; `out` must point to a writable `DwellNetEvent`.
+ */
+bool dwell_net_poll(struct DwellNet *net, struct DwellNetEvent *out);
+
+/**
+ * Queues a reliable message on `channel` (0 = control, 1 = world). False if the session is gone.
+ *
+ * # Safety
+ * `net` must be a live handle; `data` must point to `len` readable bytes.
+ */
+bool dwell_net_send_reliable(const struct DwellNet *net,
+                             uint32_t session,
+                             uint8_t channel,
+                             const uint8_t *data,
+                             uintptr_t len);
+
+/**
+ * Queues an unreliable datagram. False if the session is gone.
+ *
+ * # Safety
+ * `net` must be a live handle; `data` must point to `len` readable bytes.
+ */
+bool dwell_net_send_datagram(const struct DwellNet *net,
+                             uint32_t session,
+                             const uint8_t *data,
+                             uintptr_t len);
+
+/**
+ * Closes a session after flushing queued reliable messages. A `Disconnected` event follows.
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+void dwell_net_close(const struct DwellNet *net, uint32_t session);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -38,3 +38,15 @@ When doing so:
 - If a change makes the implementation plan inaccurate, update `docs/IMPLEMENTATION_PLAN.md` too.
 
 A change that alters architecture without updating `docs/ARCHITECTURE.md` is incomplete.
+
+## Requirement: track implementation progress
+
+While implementing a phase of `docs/IMPLEMENTATION_PLAN.md`:
+
+- Tick each deliverable's checkbox (`- [x]`) **in the same commit** that completes it; tick exit
+  criteria only once they are actually verified (automated test or a described manual check).
+- Never tick partially done work: split the item, or move the unfinished part to a later phase
+  with a note.
+- Keep the plan's **Progress** table (phase status and PR) current, and the phase's `**Status:**`
+  line accurate, including anything outstanding.
+- Record deviations from the plan under the phase, with the reason.

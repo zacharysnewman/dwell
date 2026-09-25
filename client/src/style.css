@@ -15,6 +15,23 @@ body {
   touch-action: none;
 }
 
+#net-status:empty {
+  display: none;
+}
+
+#net-status {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  top: max(8px, env(safe-area-inset-top));
+  max-width: calc(100vw - 16px);
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 60%);
+  font:
+    13px ui-monospace,
+    monospace;
+}
+
 #build-info {
   position: fixed;
   left: max(8px, env(safe-area-inset-left));

@@ -61,13 +61,13 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 
 ## 2. Deployment Topology
 
-### 2.1 GitHub Pages (first target) **[in progress]**
+### 2.1 GitHub Pages (first target) **[built]** (items 1–4)
 
 GitHub Pages only serves static files. Consequences that shape the architecture:
 
 1. **The authoritative server cannot run on GitHub Pages.** The static client is served
    from Pages; servers are hosted by players (§2.3, §10). The client finds them through the
-   master server, a join code, or an invite link (`?join=host:port&cert=<sha256>`).
+   master server, a join code, or an invite link (§10.1).
 2. **No custom HTTP headers** → no `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy`
    → no `SharedArrayBuffer`. The web build of the sim core (and the Jolt inside it) is therefore
    compiled **single-threaded** (no pthreads); parallel work runs in **worker pools** of
@@ -80,23 +80,30 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    worker is scoped to `/dwell/`. Older client builds are kept at `/dwell/v/<version>/` so
    players can join servers that have not updated. A move to its own subdomain is a documented
    future option (ADR 0005).
-4. **Local mode.** So the Pages deployment is playable with no hosted server, the server's
-   simulation core is also compiled to WASM (Emscripten) and run in a Web Worker, connected
-   through an in-memory `LoopbackTransport` that implements the same interface as the network
-   transports. Same code, same protocol, no network.
+4. **Local mode** **[built]**. So the Pages deployment is playable with no hosted server, the
+   server's simulation core is also compiled to WASM (`server/wasm`, Emscripten) and run in a
+   module Web Worker (`client/src/local/worker.ts`), connected through `LoopbackTransport`, which
+   implements the same interface as the network transports. Same code, same protocol, same
+   device-key handshake, no network. The page starts local mode when it has no invite link (or
+   with `?local=1`).
 5. **One WASM build, three uses.** The same Emscripten build of `server/core` provides local mode,
    the client's prediction/debris physics, and the client terrain generator, so every piece of
    simulation logic (player controller, worldgen, physics setup) has exactly one implementation.
 
-Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds `client/` and
-publishes it with `actions/deploy-pages` on pushes to `main` (requires the repository's Pages
-source to be set to "GitHub Actions"). Local mode (item 4) is not built yet.
+Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds the WASM core
+(Emscripten) and `client/`, and publishes them with `actions/deploy-pages` on pushes to `main`
+(the repository's Pages source is "GitHub Actions"). The page carries a strict
+Content-Security-Policy `<meta>` tag, since Pages cannot send headers (§11).
 
-### 2.2 Desktop / Mobile shells **[planned]**
+### 2.2 Desktop / Mobile shells **[in progress]**
 
 The same Vite build output is wrapped by:
-- **Electron** (`platforms/electron`) — Chromium, full WebTransport support; serves its content
-  with COOP/COEP headers so the multithreaded sim-core build can be used (ADR 0007).
+- **Electron** (`platforms/electron`) **[built: shell]** — Chromium, full WebTransport support.
+  `main.js` serves the client build from a privileged, secure `dwell://` protocol (so WebCrypto,
+  IndexedDB, and WebTransport work) with COOP/COEP headers, ready for the multithreaded sim-core
+  build (ADR 0007; it currently loads the single-threaded one). Invite queries are passed with
+  `--join=<query>`; `--smoke` exits 0 once joined (used by CI under Xvfb). Packaging and "Host
+  world" come in Phase 7.
 - **Capacitor** (`platforms/capacitor`) — Android System WebView (Chromium) and iOS
   WKWebView. Where WebTransport is unavailable (possibly WKWebView), the client uses WebRTC. Single-threaded sim core unless
   `SharedArrayBuffer` is confirmed available on the app scheme (ADR 0007).
@@ -110,11 +117,12 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   forwards the port.
 - **Friend worlds:** any client (browser, phone, desktop) hosts its integrated server (the sim
   core in a worker) over WebRTC.
-- **Certificates:** dedicated servers generate short-lived self-signed ECDSA certificates
-  (≤14-day validity, by `server/net/wt`) and publish the SHA-256 through the master server or
-  the invite link; clients pass it as WebTransport `serverCertificateHashes`. Hosts with their
-  own domain may use a publicly trusted certificate instead. Local development uses the same
-  mechanism on `localhost`.
+- **Certificates:** dedicated servers generate a self-signed ECDSA P-256 certificate at startup
+  (13-day validity, by `server/net/wt`) used by **both** WebTransport and WebRTC DTLS, and
+  publish its SHA-256 through the master server or the invite link; clients pass it as
+  WebTransport `serverCertificateHashes` or pin it as the DTLS fingerprint. Hosts with their own
+  domain may use a publicly trusted certificate instead. Local development uses the same
+  mechanism on `127.0.0.1`. **[built]** (rotation before expiry: Phase 7)
 - **Our infrastructure** is limited to the static site (GitHub Pages), the master server, and a
   TURN relay.
 
@@ -124,41 +132,49 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 
 ```
 /client              TypeScript client (Vite). Renderer, prediction, interpolation, debris.
+  /e2e               Playwright end-to-end tests against a native server.
 /server              C++20 authoritative server (CMake). Jolt via FetchContent.
   /core              Simulation core: voxel grid, worldgen, integrity, clustering, physics,
                      players, replication.
                      Platform-free; compiled natively AND to WASM (local mode + client physics).
     /player          Physics player controller (PLAYER_CONTROLLER.md).
     /storage         World persistence: SQLite + zstd, native and OPFS VFS backends (ADR 0006).
+  /wasm              Emscripten build of the core for local mode (C exports, §2.1).
+  /app               dwell_server executable (event loop, CLI).
   /net               Network front-end (C++). Native only.
     /wt              Rust crate: WebTransport (`wtransport`) + WebRTC (`str0m`) behind a C ABI (ADRs 0001, 0008).
-/shared/protocol     Protocol spec, constants, and golden-byte test vectors used by both sides.
+/shared/protocol     constants.json (single source of protocol constants) + gen.mjs (→ C++ and TS
+                     headers), make_vectors.py (independent reference encoder) → vectors.txt
+                     (golden bytes both codecs must match).
 /services/master     Master server (listing, join codes, signaling, TURN credentials).
 /platforms/electron  Electron shell (incl. "Host world" launching the native server).
 /platforms/capacitor Capacitor shell.
 /docs                ARCHITECTURE.md, PLAYER_CONTROLLER.md, IMPLEMENTATION_PLAN.md, FUTURE.md.
   /adr               Architecture decision records.
-/.github/workflows   ci.yml (client + server checks), pages.yml (deploy).
+/.github/workflows   ci.yml (protocol, client, server, e2e jobs), pages.yml (deploy).
 rust-toolchain.toml  Pinned Rust toolchain.
 ```
 
-Built so far (Phase 0): the `client/` skeleton, `server/` with `core` (Jolt runtime), `net/wt`
-(Rust crate exposing a versioned C ABI), `app` (`dwell_server`), and `tests`; placeholder READMEs
-in `shared/protocol`, `platforms/*`, and `services/`.
+Built so far (Phases 0–1): `client/` (render interface, networking, identity, local mode, status
+overlay, e2e tests), `server/` (`core`: Jolt, voxels, protocol, server; `net/wt`: WebTransport +
+WebRTC; `wasm`; `app`; `tests`), `shared/protocol`, and `platforms/electron`. `player/`,
+`storage/`, `services/master`, and `platforms/capacitor` are not built yet.
 
 ### 3.1 Toolchain & CI **[built]**
 
 | Area | Choice (pinned) |
 |---|---|
-| Client | Node 22, Vite 8, TypeScript 6.0 (strict), ESLint (typescript-eslint strict, type-checked), Prettier, Vitest, Three.js 0.186 |
-| Server C++ | CMake ≥ 3.24 with presets (`dev`, `release`), Ninja, C++20, `-ffp-contract=off`; dependencies via FetchContent: Jolt v5.6.0 (`CROSS_PLATFORM_DETERMINISTIC=ON`), Corrosion v0.6.1, doctest v2.5.3; clang-format (Google-based) |
-| Server Rust | Toolchain 1.94.1 (`rust-toolchain.toml`), edition 2024; `server/net/wt` built by Corrosion as a static library; C header generated by cbindgen 0.29.4 (`gen-header.sh`) and checked in |
-| CI (`ci.yml`) | Client: format, lint, typecheck, test, build. Server: clang-format, `cargo fmt`/`clippy -D warnings`/`test`, stale-header check, CMake configure/build, ctest, smoke-run `dwell_server` |
-| Enforced boundaries | ESLint forbids importing `three` outside `client/src/render/three` (ADR 0002) |
+| Client | Node 22, Vite 8 (module workers), TypeScript 6.0 (strict), ESLint (typescript-eslint strict, type-checked), Prettier, Vitest, Playwright 1.56.1 (e2e), Three.js 0.186 |
+| Server C++ | CMake ≥ 3.24 with presets (`dev`, `release`, `wasm`), Ninja, C++20, `-ffp-contract=off`; dependencies via FetchContent: Jolt v5.6.0 (`CROSS_PLATFORM_DETERMINISTIC=ON`), Monocypher 4.0.3 (Ed25519 verification), Corrosion v0.6.1, doctest v2.5.3; clang-format (Google-based) |
+| WASM | Emscripten 6.0.10 (`wasm` preset): ES-module factory, single-threaded (ADR 0007), copied to `client/public/wasm` (not committed; `npm run build:wasm`) |
+| Server Rust | Toolchain 1.94.1 (`rust-toolchain.toml`), edition 2024; `server/net/wt` (wtransport 0.7.2 with ring, str0m 0.23.1 with aws-lc-rs, tokio) built by Corrosion as a static library; C header generated by cbindgen 0.29.4 (`gen-header.sh`) and checked in |
+| Desktop | Electron 44.4.5 (`platforms/electron`) |
+| CI (`ci.yml`) | Protocol: regenerated constants and vectors must match. Client: WASM build, format, lint, typecheck, unit tests (WASM smoke test required), build. Server: clang-format, `cargo fmt`/`clippy -D warnings`/`test`, stale-header check, CMake configure/build, ctest, smoke-run. E2E: native server + built client in Playwright Chromium (WebTransport, WebRTC, local mode, session replacement), Electron smoke under Xvfb |
+| Enforced boundaries | ESLint forbids importing `three` outside `client/src/render/three` (ADR 0002) and `node:` built-ins outside tests |
 
 ---
 
-## 4. Server (Authoritative) **[planned]**
+## 4. Server (Authoritative) **[in progress]**
 
 ### 4.1 Responsibilities
 - Validate player input (rate, magnitude, reach for block edits, anti-teleport).
@@ -186,24 +202,45 @@ every 3rd step (20 Hz):
 
 The loop uses a fixed timestep with an accumulator; the server never steps with a variable dt.
 
+**Built (Phase 1):** `dwell_server` (`server/app/main.cpp`) polls transport events and feeds them
+to the core, flushes the core's outbox immediately (so request/response latency doesn't wait for
+a tick), runs the due 60 Hz steps (`FixedStep`: carries remainders, drops backlogs beyond 8
+steps), and sleeps until the next step or at most 2 ms. Physics steps with Jolt's thread pool.
+Only the handshake, status, and ping paths exist so far; the pipeline above arrives with later
+phases.
+
 ### 4.3 Simulation core vs. network front-end
 `server/core` has no sockets, OS calls, or threads of its own (parallel work such as worldgen is
-exposed as jobs the host schedules); it consumes decoded messages and emits encoded messages
-through an interface. This lets the identical core run natively, in the browser's local mode, and
+exposed as jobs the host schedules; the host also supplies the Jolt job system and an `Entropy`
+source for nonces); it consumes decoded messages and emits encoded messages through an
+interface. **[built]** `dwell::core::Server`: `OnConnected(session, transportKind, binding)`,
+`OnReliable`, `OnDatagram`, `OnDisconnected`, `Step()`, and `TakeOutbox()` returning
+`{session, Reliable | Datagram | Close, channel, bytes}`. This lets the identical core run natively, in the browser's local mode, and
 as the client's prediction/debris physics (§2.1). `server/net` owns sessions and stream
 management for both server transports.
 
 **WebTransport stack (ADR [0001](./adr/0001-webtransport-server-library.md)).** WebTransport is
 provided by the Rust crate `wtransport`, wrapped in `server/net/wt` and exposed to C++ through a
-narrow, `cbindgen`-generated C ABI (sessions, streams, datagrams, dev-certificate helpers). The
-Rust async runtime runs on its own threads; transport events reach the main loop through
-lock-free queues drained once per tick, so no Rust callback ever enters the simulation. The
-crate is built by cargo and linked via Corrosion in the CMake build.
+narrow, `cbindgen`-generated C ABI **[built, ABI v3]**: `dwell_net_start(config)` /
+`dwell_net_stop`, `dwell_net_poll(event)` (Connected / Disconnected / Reliable / Datagram; payload
+valid until the next poll), `dwell_net_send_reliable(session, channel, bytes)`,
+`dwell_net_send_datagram`, `dwell_net_close` (flushes the control stream first), plus accessors
+for the certificate hash, ports, and ICE credentials. The Rust async runtime (tokio, 2 workers)
+runs on its own threads; events reach the main loop through a queue it drains, so no Rust
+callback ever enters the simulation. The crate is built by cargo and linked via Corrosion in the
+CMake build. Sockets bind dual-stack `[::]` and fall back to IPv4 where IPv6 is unavailable.
 
-**WebRTC fallback (ADR [0008](./adr/0008-dedicated-server-transports.md)).** The same crate hosts
-an ICE-lite WebRTC endpoint built on `str0m` (sans-I/O, driven by the crate's event loop), with
-the same channel mapping as friend worlds and the same C ABI and event queue. DTLS uses the
-server's self-signed certificate, whose fingerprint is published like the WebTransport cert hash.
+**WebRTC fallback (ADR [0008](./adr/0008-dedicated-server-transports.md)) [built].** The same
+crate hosts an ICE-lite WebRTC endpoint built on `str0m` (sans-I/O, one tokio task driving every
+WebRTC client), on its own UDP port (default: WebTransport port + 1), with the same C ABI and
+event queue. **No signaling:** the server has fixed ICE credentials (random per start) published
+in the invite link; it learns each client's ICE username from the client's first STUN binding
+request and then creates a `str0m::Rtc` for it (DTLS server role, SCTP, three pre-negotiated data
+channels). DTLS uses the WebTransport certificate, so both transports share one fingerprint.
+Client certificates are not verified (str0m fingerprint verification off): the client pins the
+server fingerprint and proves its identity with the device-key handshake, which is bound to that
+fingerprint. Clients that don't open all channels within 10 s are dropped, and half-open clients
+are capped at 512. Reliable writes queue while SCTP buffers are full.
 
 ---
 
@@ -211,7 +248,11 @@ server's self-signed certificate, whose fingerprint is published like the WebTra
 
 | Module | Responsibility |
 |---|---|
-| `net/` | `Transport` interface; `WebTransportTransport`, `WebRtcTransport`, `LoopbackTransport`. Framing, encode/decode. |
+| `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT). |
+| `protocol/` **[built]** | Codecs mirroring the C++ ones, constants generated from `shared/protocol`. |
+| `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
+| `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it. |
+| `ui/` **[built: status line]** | Connection status overlay (transport, player id, RTTs, server tick). |
 | `world/` | Chunk store mirrored from server; applies voxel deltas in order. |
 | `worldgen/` | Worldgen worker pool running the server's C++ terrain generator (WASM) for `Generated` chunks. |
 | `mesh/` | Greedy-mesher worker pool; produces render meshes and collision triangles. |
@@ -244,7 +285,13 @@ lower on mobile.
 
 ## 6. Voxel World
 
-### 6.1 Grid & chunks
+### 6.1 Grid & chunks **[in progress]**
+
+Built (Phase 1, `server/core/include/dwell/core/voxel.h`): material table (air, bedrock, stone,
+dirt, grass), 32³ chunks with revisions (generated chunks start at revision 0), generate-on-access
+`VoxelWorld`, and a flat test world (grass top face at y = 0, bedrock at the bottom). Encoding,
+streaming, and procedural generation come in Phase 3.
+
 - Voxel = 1 m cube; `uint16` material ID (0 = air). Material table defines density,
   strength, and render properties and is shared by server and client.
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`.
@@ -482,6 +529,16 @@ Implementations:
   master server, or the invite link, so no CA certificate is involved.
 - **Loopback** — local single-player (integrated server in a worker).
 
+**Wire mapping [built]:**
+
+| | WebTransport | WebRTC | Loopback |
+|---|---|---|---|
+| `control` | client-opened bidi stream | data channel id 0, reliable, ordered | worker message |
+| `world` | server-opened uni stream | data channel id 1, reliable, ordered | worker message |
+| datagrams | QUIC datagrams | data channel id 2, unordered, `maxRetransmits: 0` | worker message |
+| framing | first byte = channel id, then `u32 LE length ‖ payload` per message | none (SCTP keeps message boundaries) | none |
+| transport binding | SHA-256 of the server certificate | same (DTLS uses that certificate) | 32 zero bytes |
+
 ### 8.2 Channels
 
 | Channel | Kind | Content |
@@ -494,9 +551,19 @@ All world-affecting reliable messages go on **one** ordered stream so a voxel re
 event/entity that depends on it can never be reordered. Bulk chunk streaming may move to
 separate uni streams later if head-of-line blocking is measured to matter.
 
-`MAX_DATAGRAM_BYTES` = 1200 (safe QUIC payload). All multi-byte fields little-endian.
+`MAX_DATAGRAM_BYTES` = 1200 (safe QUIC payload); `MAX_RELIABLE_MESSAGE_BYTES` = 1 MiB. WebRTC
+reliable messages are additionally capped by SCTP `max-message-size` (256 KiB), so large world
+messages (Phase 3 chunk data) must stay under it or be split. All multi-byte fields
+little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per field
+(`shared/protocol/constants.json` `limits`).
 
-### 8.3 Message formats (v0 — to be finalized in Phase 1)
+### 8.3 Message formats
+
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v1):**
+`DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
+`ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
+0x47 / `Pong` 0x48 — layouts pinned by `shared/protocol/vectors.txt`. The remaining formats below
+are v0 drafts, finalized in the phase that builds them.
 
 **Client → Server: `PlayerInput` (datagram)**
 ```
@@ -554,11 +621,16 @@ S→C  Challenge     u8[32] nonce
 C→S  ClientAuth    u8[64] signature over (nonce ‖ transport binding ‖ publicKey)
                    [optional: account attestation — online mode, §10.4]
 S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick
-     or Reject     u8 reason (version, banned, full, not allow-listed, auth), str message
+     or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
+                   Malformed, Replaced), str message — followed by closing the session
 C→S  WorldgenCheck hash of a generated verification chunk → generated vs. full-chunk mode (§6.3)
 ```
-The transport binding is the WebTransport certificate hash or the WebRTC DTLS fingerprint, so a
-signed challenge cannot be relayed to a different server.
+The signature covers `"dwell-auth-v1" ‖ nonce ‖ transport binding ‖ publicKey`; the binding
+(§8.1) ties it to the server certificate, so a signed challenge cannot be relayed to a different
+server. **[built]** A successful login for a key that already has a joined session replaces it:
+the old session receives `Reject(Replaced)` and is closed (so a dropped connection can rejoin
+immediately). `Ping`/`Pong` (reliable) and `DatagramPing`/`DatagramPong` carry the client time and
+server tick for RTT and clock sync. `WorldgenCheck` arrives in Phase 3.
 
 **Server → Client: `ChunkData` (reliable, `world`)**
 ```
@@ -684,7 +756,7 @@ impossible; the server's simulation is the only source of player state.
 
 ---
 
-## 10. Multiplayer Hosting, Discovery & Identity **[planned]**
+## 10. Multiplayer Hosting, Discovery & Identity **[in progress]**
 
 Decisions: [ADR 0003](./adr/0003-multiplayer-hosting-model.md) (hosting model),
 [ADR 0004](./adr/0004-player-identity.md) (identity), [ADR 0005](./adr/0005-domain-and-origins.md)
@@ -695,8 +767,10 @@ trusted certificates.
 ### 10.1 Dedicated servers
 - Distributed as native binaries (Windows/macOS/Linux) and a Docker image, built by CI per
   release. The Electron app can launch the same binary as a background process ("Host world").
-- Transports: WebTransport, WebRTC fallback (ADR 0008). Certificates per §2.3. Invite links:
-  `?join=host:port&cert=<sha256>&ice=<ufrag>:<pwd>`.
+- Transports: WebTransport, WebRTC fallback (ADR 0008). Certificates per §2.3. Invite links
+  **[built]**: `?join=host:port&cert=<sha256 hex>[&rtc=<port>&ice=<ufrag>:<pwd>]`. The WebRTC part
+  requires an IP-literal host (WebRTC host candidates can't carry DNS names). `dwell_server
+  --advertise <ip>` sets the address printed in the link and used as the WebRTC candidate.
 - Operator settings, stored in the world database's `settings` table (§6.4): name, MOTD,
   icon, max players, visibility (public / unlisted / none), password or allow-list,
   online/offline mode (§10.4), physics and view-distance caps (`MAX_TIER1_BODIES`, view radius),
@@ -733,11 +807,13 @@ traffic passes through it.
 Direct invite links (`?join=host:port&cert=<sha256>`) work without the master server.
 
 ### 10.4 Identity
-- **Device keys (now):** each install generates an Ed25519 key pair; the public key is the
-  player ID. Web: non-extractable WebCrypto key in a `dwell`-namespaced IndexedDB database; apps: OS
-  keychain/keystore. Exportable/importable to move between devices. Proven on every join by
-  signing the server's challenge (§8.3). Servers key bans, allow-lists, ops, and player data by
-  public key.
+- **Device keys (now) [built on web]:** each install generates an Ed25519 key pair; the public
+  key is the player ID. Web: non-extractable WebCrypto key in the `dwell` IndexedDB database
+  (`identity` store); apps: OS keychain/keystore (Phase 7). Because the key is non-extractable it
+  cannot be exported; moving an identity between devices waits for accounts, which link several
+  device keys (ADR 0004 amendment). Proven on every join by signing the server's challenge
+  (§8.3), verified server-side with Monocypher. Servers key bans, allow-lists, ops, and player
+  data by public key.
 - **Accounts (later, additive):** sign-in through the master server; the master issues short-lived
   signed **attestations** binding device keys to an account, which servers verify offline with
   the master's published keys. Servers choose **offline mode** (any key) or **online mode**
@@ -772,6 +848,12 @@ No platform needs a trusted certificate to join any server (ADR 0008).
   as strictly as the server validates client messages (bounds, sizes, rates), and never executes
   server-provided content.
 - **Clients are identified by device key** (§10.4); impersonation requires the private key.
+- **Content-Security-Policy** (`client/index.html`): `default-src 'self'`; scripts only from the
+  site plus `'wasm-unsafe-eval'` for the WASM core; `connect-src 'self' https: ws: wss:` for
+  WebTransport to player servers (and the Vite dev server); no objects, no inline scripts.
+- The Electron shell uses context isolation, the renderer sandbox, and no Node integration.
+- WebRTC endpoint: half-open clients time out (10 s) and are capped (512) so STUN floods can't
+  allocate unbounded state.
 - Master server: per-key and per-IP rate limits; verified listing requires successful reachability
   check; server keys can be revoked.
 

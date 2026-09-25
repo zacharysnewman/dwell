@@ -10,6 +10,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  protocol:
+    name: Protocol (generated files up to date)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Regenerate constants and golden vectors
+        run: |
+          node shared/protocol/gen.mjs
+          python3 shared/protocol/make_vectors.py
+          git diff --exit-code
+
   client:
     name: Client (lint, typecheck, test, build)
     runs-on: ubuntu-24.04
@@ -23,11 +37,29 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
+      - name: Cache Emscripten
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-6.0.10-${{ runner.os }}
+      - name: Install Emscripten (keep in sync with ARCHITECTURE.md §3.1)
+        run: |
+          [ -d ~/emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install 6.0.10
+          ~/emsdk/emsdk activate 6.0.10
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
       - run: npm ci
+      - name: Build local-mode WASM core
+        run: npm run build:wasm
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+        env:
+          DWELL_REQUIRE_WASM: '1'
       - run: npm run build
 
   server:
@@ -43,7 +75,7 @@ jobs:
         with:
           workspaces: server/net/wt
       - name: C++ format
-        run: find server/core server/app server/tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+        run: find server/core server/app server/tests \( -name '*.cpp' -o -name '*.h' \) ! -name '*.gen.h' | xargs clang-format --dry-run --Werror
       - name: Rust format, clippy, tests
         working-directory: server/net/wt
         run: |
@@ -66,3 +98,59 @@ jobs:
         run: ctest --preset dev
       - name: Smoke-run server
         run: server/build/dev/app/dwell_server
+
+  e2e:
+    name: End-to-end (native server + Chromium + Electron)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            platforms/electron/package-lock.json
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb
+      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
+        run: rustup toolchain install 1.94.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server/net/wt
+      - name: Cache Emscripten
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-6.0.10-${{ runner.os }}
+      - name: Install Emscripten (keep in sync with ARCHITECTURE.md §3.1)
+        run: |
+          [ -d ~/emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install 6.0.10
+          ~/emsdk/emsdk activate 6.0.10
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+      - name: Build native server
+        working-directory: server
+        run: cmake --preset dev -DDWELL_BUILD_TESTS=OFF && cmake --build --preset dev --target dwell_server
+      - name: Build client (with local-mode WASM)
+        working-directory: client
+        run: |
+          npm ci
+          npm run build:wasm
+          npm run build
+      - name: Install Playwright Chromium
+        working-directory: client
+        run: npx playwright install --with-deps chromium
+      - name: Browser end-to-end tests
+        working-directory: client
+        run: npx playwright test
+      - name: Electron smoke test (WebTransport and local mode)
+        working-directory: platforms/electron
+        run: |
+          npm ci
+          ../../server/build/dev/app/dwell_server --port 4433 > server.log &
+          sleep 2
+          QUERY="?$(grep -o 'invite link: .*' server.log | cut -d'?' -f2)"
+          xvfb-run -a npx electron . --smoke --no-sandbox "--join=$QUERY"
+          xvfb-run -a npx electron . --smoke --no-sandbox "--join=?local=1"
