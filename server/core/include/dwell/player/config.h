@@ -43,7 +43,7 @@ struct PlayerControllerConfig {
   struct Jump {
     float height = 1.25f;
     std::uint16_t buffer_ticks = 12;  // 0.2 s
-    std::uint16_t coyote_ticks = 6;   // 0.1 s
+    std::uint16_t coyote_ticks = 12;  // ◆ 0.2 s (PPC: 0.1 s)
   } jump;
   struct Crouch {
     float height = 0.9f;  // ◆ fits 1-tall crawlspaces

@@ -16,7 +16,7 @@ import { quantizeInput } from '../predict/input';
 import type { PlayerView, Renderer } from '../render';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
-import { EyeSmoother, type EyeSample } from './eye';
+import { EyeCamera } from './eye';
 import { isCrouched, isDead, RemotePlayers } from './remotes';
 
 const TICK_MS = 1000 / SIM_HZ;
@@ -69,10 +69,7 @@ export class Game {
   private deathFeet: Vec3 = [0, 0, 0];
   private previous: ClientState | null = null;
   private current: ClientState;
-  private readonly eye = new EyeSmoother();
-  /** Smoothed camera eye height at the previous and current tick (drawn interpolated). */
-  private eyePrevious = 0;
-  private eyeCurrent = 0;
+  private readonly eye = new EyeCamera();
 
   constructor(
     readonly playerId: number,
@@ -83,7 +80,7 @@ export class Game {
     private readonly host: GameHost,
   ) {
     this.current = core.state();
-    this.eyeCurrent = this.eyePrevious = this.eye.tick(eyeSample(this.current), 1 / SIM_HZ);
+    this.eye.tick(this.current, 1 / SIM_HZ);
   }
 
   /** Handles a snapshot or player event from the session. */
@@ -171,8 +168,7 @@ export class Game {
     });
     this.previous = this.current;
     this.current = this.core.state();
-    this.eyePrevious = this.eyeCurrent;
-    this.eyeCurrent = this.eye.tick(eyeSample(this.current), 1 / SIM_HZ);
+    this.eye.tick(this.current, 1 / SIM_HZ);
     // The camera turns with rotating ground (PPC yawDelta).
     this.input.yaw += this.current.platformYawDelta;
   }
@@ -220,7 +216,7 @@ export class Game {
       this.hud.setMessage(c.active ? '' : 'Joining…');
       // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
       this.renderer.setCamera(
-        [center[0], lerp(this.eyePrevious, this.eyeCurrent), center[2]],
+        [center[0], this.eye.draw(alpha), center[2]],
         this.input.yaw,
         this.input.pitch,
       );
@@ -332,16 +328,4 @@ export class Game {
       }
     }
   }
-}
-
-function eyeSample(s: ClientState): EyeSample {
-  return {
-    feet: s.position[1] + s.renderOffset[1] - s.halfHeight,
-    crouched: (s.controllerFlags & ControllerFlags.crouching) !== 0,
-    grounded: (s.controllerFlags & ControllerFlags.grounded) !== 0,
-    velocityY: s.velocity[1],
-    eyeHeight: s.eyeHeight,
-    crouchEyeHeight: s.crouchEyeHeight,
-    maxStepHeight: s.maxStepHeight,
-  };
 }

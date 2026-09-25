@@ -351,7 +351,7 @@ engine movement, checked against Halo 3); rows marked ◆ differ from the PPC de
 | Probes | `groundProbeMargin` / `ceilingProbeMargin` | 0.15 / 0.10 m | same | |
 | | `maxSlopeAngle` | 45° | same | |
 | Jump | `height` | 1.25 m | same | Clears one block |
-| | `bufferTime` / `coyoteTime` | 0.2 / 0.1 s (12 / 6 ticks) | same | Stored as ticks |
+| | `bufferTime` / `coyoteTime` ◆ | 0.2 / 0.2 s (12 / 12 ticks) | 0.2 / 0.1 s | Stored as ticks. Coyote time doubled: 0.1 s felt stingy next to other games |
 | Crouch | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |
 | | `speed` / `midAirBoost` | 1.6 m/s / 0 | same | |
 | Climb | `speed` / `lookDownThreshold` | 3 m/s / 30° | same | |

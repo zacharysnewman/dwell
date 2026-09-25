@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { EyeSmoother, eyeOf, type EyeSample } from './eye';
+import { ControllerFlags } from '../protocol/constants.gen';
+import { EyeCamera, EyeSmoother, eyeOf, type EyeSample, type EyeState } from './eye';
 
 const DT = 1 / 60;
 const sample = (feet: number, over: Partial<EyeSample> = {}): EyeSample => ({
@@ -99,5 +100,80 @@ describe('EyeSmoother', () => {
   it('a teleport is not smoothed', () => {
     const eyes = run([sample(0), sample(30, { crouched: true })]);
     expect(eyes[1]).toBeCloseTo(30.8, 6);
+  });
+});
+
+// Drawn camera eye over whole client states, 4 frames per tick like a 240 Hz display: the bugs
+// players saw (a snap down each stair, a jolt crouching mid-air, a dip releasing a crouch) were
+// in how the per-frame camera was drawn from the ticks.
+describe('EyeCamera', () => {
+  const FRAMES = 4;
+  const state = (feet: number, { crouched = false, grounded = true, vy = 0 } = {}): EyeState => {
+    const half = crouched ? 0.45 : 0.9;
+    return {
+      position: [0, feet + half, 0],
+      renderOffset: [0, 0, 0],
+      halfHeight: half,
+      velocity: [0, vy, 0],
+      controllerFlags:
+        (crouched ? ControllerFlags.crouching : 0) | (grounded ? ControllerFlags.grounded : 0),
+      eyeHeight: 1.62,
+      crouchEyeHeight: 0.8,
+      maxStepHeight: 0.55,
+    };
+  };
+  /** The eye drawn on every frame while the states are ticked in turn. */
+  function frames(states: EyeState[]): number[] {
+    const camera = new EyeCamera();
+    const out: number[] = [];
+    for (const s of states) {
+      camera.tick(s, DT);
+      for (let f = 0; f < FRAMES; f++) out.push(camera.draw(f / FRAMES));
+    }
+    return out;
+  }
+  const hold = (n: number, s: EyeState) => Array.from({ length: n }, () => s);
+
+  it('walking down a stair lowers the eye smoothly (no snap on the ground snap)', () => {
+    const eyes = frames([...hold(5, state(0.5)), ...hold(40, state(0))]);
+    expect(largestTickChange(eyes)).toBeLessThan(0.05);
+    expect(eyes.at(-1)).toBeCloseTo(1.62, 4);
+  });
+
+  it('walking up a stair raises the eye smoothly', () => {
+    const eyes = frames([...hold(5, state(0)), ...hold(40, state(0.5))]);
+    expect(largestTickChange(eyes)).toBeLessThan(0.05);
+    expect(eyes.at(-1)).toBeCloseTo(2.12, 4);
+  });
+
+  it('crouching in mid-air does not jolt the eye', () => {
+    const vy = -3;
+    const states = Array.from({ length: 40 }, (_, i) =>
+      state(10 + vy * DT * i + (i >= 5 ? 0.9 : 0), {
+        grounded: false,
+        crouched: i >= 5,
+        vy,
+      }),
+    );
+    const eyes = frames(states);
+    // Per frame: the fall itself plus a little eye settling.
+    expect(largestTickChange(eyes)).toBeLessThan((Math.abs(vy) * DT) / FRAMES + 0.02);
+  });
+
+  it('a quick crouch tap on the ground dips and recovers without a snap', () => {
+    const eyes = frames([
+      ...hold(5, state(0)),
+      ...hold(2, state(0, { crouched: true })),
+      ...hold(40, state(0)),
+    ]);
+    expect(largestTickChange(eyes)).toBeLessThan(0.05);
+    expect(Math.max(...eyes)).toBeLessThan(1.62 + 1e-6);
+    expect(eyes.at(-1)).toBeCloseTo(1.62, 2);
+  });
+
+  it('a fall is drawn as it happens (no lag)', () => {
+    const states = Array.from({ length: 20 }, (_, i) => state(5 - 0.1 * i, { grounded: false }));
+    const eyes = frames(states);
+    expect(eyes.at(-FRAMES)).toBeCloseTo(eyeOf(sample(5 - 0.1 * 18)), 6);
   });
 });

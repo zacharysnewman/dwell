@@ -2,7 +2,10 @@
 // jumps the camera must not show: onto or down a step in one tick (step-up, ground snap), and by
 // up to a body height when crouching or standing in mid-air (the head stays put, the feet move).
 // Each jump is folded into an offset that then decays, so the eye always moves continuously.
-// Runs once per sim tick; the renderer interpolates between the last two results.
+// `EyeSmoother` runs once per sim tick; `EyeCamera` feeds it client states and interpolates its
+// last two results for each drawn frame.
+import { ControllerFlags } from '../protocol/constants.gen';
+import type { ClientState } from '../sim/clientCore';
 
 /** Step offset decay: a fixed speed (m/s, PPC SmoothSteps) plus a share of the offset (1/s). */
 const STEP_SPEED = 4;
@@ -59,5 +62,51 @@ export class EyeSmoother {
     if (Math.abs(this.crouch) > CROUCH_MAX) this.crouch = 0;
     this.last = s;
     return eyeOf(s) + this.step + this.crouch;
+  }
+}
+
+/** The parts of a predicted client state the camera reads. */
+export type EyeState = Pick<
+  ClientState,
+  | 'position'
+  | 'renderOffset'
+  | 'halfHeight'
+  | 'velocity'
+  | 'controllerFlags'
+  | 'eyeHeight'
+  | 'crouchEyeHeight'
+  | 'maxStepHeight'
+>;
+
+/** Feet height from a state's own half height: the capsule centre moves when crouching. */
+export function eyeSampleOf(s: EyeState): EyeSample {
+  return {
+    feet: s.position[1] + s.renderOffset[1] - s.halfHeight,
+    crouched: (s.controllerFlags & ControllerFlags.crouching) !== 0,
+    grounded: (s.controllerFlags & ControllerFlags.grounded) !== 0,
+    velocityY: s.velocity[1],
+    eyeHeight: s.eyeHeight,
+    crouchEyeHeight: s.crouchEyeHeight,
+    maxStepHeight: s.maxStepHeight,
+  };
+}
+
+/** The first-person camera's eye height: smoothed per tick, interpolated per frame. */
+export class EyeCamera {
+  private readonly smoother = new EyeSmoother();
+  private previous: number | null = null;
+  private current = 0;
+
+  /** Advances one sim tick of `dt` seconds with the newly predicted state. */
+  tick(s: EyeState, dt: number): void {
+    const eye = this.smoother.tick(eyeSampleOf(s), dt);
+    this.previous = this.previous === null ? eye : this.current;
+    this.current = eye;
+  }
+
+  /** Eye height drawn `alpha` ∈ [0, 1) of the way from the previous tick to the current one. */
+  draw(alpha: number): number {
+    const previous = this.previous ?? this.current;
+    return previous + (this.current - previous) * alpha;
   }
 }

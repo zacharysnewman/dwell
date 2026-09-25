@@ -95,9 +95,18 @@ TEST_SUITE("player: vertical") {
     CHECK(l.w.Vel(l.e).GetY() > 5.0f);
   }
 
+  TEST_CASE("coyote time lasts 0.2 s (a press 0.18 s after walking off still jumps)") {
+    const int off = TickWhenUngrounded();
+    REQUIRE(off > 0);
+    Ledge l(off + 11);
+    l.w.Step(off + 14);
+    CHECK(l.w.Count(l.e, Ev::kJumped) == 1);
+    CHECK(l.w.Vel(l.e).GetY() > 3.0f);
+  }
+
   TEST_CASE("coyote time expires") {
     const int off = TickWhenUngrounded();
-    Ledge l(off + 10);
+    Ledge l(off + 14);
     for (int i = 0; i < off + 20; ++i) {
       l.w.Step();
     }
