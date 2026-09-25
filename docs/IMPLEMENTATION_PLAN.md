@@ -18,9 +18,9 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | Phase | Status | PR |
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
-| 1 — Server core, protocol, transports, local mode | 🔍 In review (Safari check outstanding) | #3 |
-| 2 — Physics player controller | ✅ Complete (PR not yet opened; manual feel playtest recommended) | — |
-| 3 — Terrain generation & streaming | ⏳ Not started | — |
+| 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
+| 2 — Physics player controller | ✅ Complete (playtested; tuning follow-ups in progress) | #4, #5, #6 |
+| 3 — Terrain generation & streaming | 🚧 In progress (3a: generator) | — |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
 | 6 — Sleep / re-bake | ⏳ Not started | — |
@@ -59,12 +59,12 @@ Exit criteria
 
 ## Phase 1 — Server Core, Jolt, Headless Voxel Grid & Transport
 
-**Status:** in review (PR #3); the Safari check is outstanding.
+**Status:** complete (PR #3), including the manual Safari check.
 
 | Exit criterion | Result |
 |---|---|
 | Chromium and Electron connect to a native server on localhost via WebTransport, exchange ping/pong over datagrams and a reliable stream, and show RTT | ✅ Automated: Playwright e2e (Chromium) and the Electron `--smoke` run in CI |
-| Forcing the WebRTC fallback produces the same behavior, including in Safari | ✅ Chromium (e2e) and Electron (manual, against a routable IP). ⚠️ **Safari not yet tested** — no Safari in the build environment; needs a manual check on a Mac/iPhone |
+| Forcing the WebRTC fallback produces the same behavior, including in Safari | ✅ Chromium (e2e) and Electron (manual, against a routable IP). Safari: ✅ manual check |
 | The Pages deployment runs in local mode with no external server | ✅ e2e test against the production build; Pages workflow builds the WASM core |
 | Protocol golden tests pass in both languages | ✅ C++ (doctest) and TS (Vitest) against vectors from an independent Python encoder |
 
@@ -123,7 +123,7 @@ Exit criteria
 - [x] Browser (Chromium) and Electron connect to a native server on localhost via WebTransport,
   exchange ping/pong over datagrams and a reliable stream, and show RTT.
 - [x] Forcing the WebRTC fallback produces the same behavior (Chromium, Electron).
-- [ ] … including in Safari (needs a manual check; no Safari in the build environment).
+- [x] … including in Safari (manual check).
 - [x] The Pages deployment runs in local mode with no external server.
 - [x] Protocol golden tests pass in both languages.
 
