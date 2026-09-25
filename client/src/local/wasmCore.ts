@@ -18,9 +18,13 @@ export interface Outgoing {
 export class LocalCore {
   private constructor(private readonly m: DwellCoreModule) {}
 
-  static async load(factory: DwellCoreFactory, worldSeed = 0): Promise<LocalCore> {
+  static async load(
+    factory: DwellCoreFactory,
+    worldSeed = 0,
+    generatorVersion = 2,
+  ): Promise<LocalCore> {
     const m = await factory();
-    m._dwell_local_create(worldSeed);
+    m._dwell_local_create(worldSeed, generatorVersion);
     return new LocalCore(m);
   }
 

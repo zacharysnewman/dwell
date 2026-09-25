@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ATLAS_CELLS,
   ATLAS_SIZE,
   buildAtlas,
   CELL,
@@ -8,10 +9,11 @@ import {
   tileRect,
   tiledFbm,
   tiledNoise,
+  TILE_ORDER,
   type TileName,
 } from './textures';
 
-const TILES: TileName[] = ['plain', 'grass', 'grassSide', 'dirt', 'stone'];
+const TILES = TILE_ORDER;
 
 function texel(atlas: ReturnType<typeof buildAtlas>, x: number, y: number): number[] {
   const o = (y * ATLAS_SIZE + x) * 4;
@@ -49,6 +51,10 @@ describe('tiled noise', () => {
 
 describe('texture atlas', () => {
   const atlas = buildAtlas();
+
+  it('has a cell for every tile', () => {
+    expect(TILE_ORDER.length).toBeLessThanOrEqual(ATLAS_CELLS * ATLAS_CELLS);
+  });
 
   it('is deterministic', () => {
     expect(buildAtlas().data).toEqual(atlas.data);

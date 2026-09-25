@@ -16,7 +16,6 @@ using player::PlayerHandle;
 namespace {
 
 constexpr int kSnapshotEvery = kSimHz / kSnapshotHz;  // ticks
-constexpr int kWorldMinY = -128;                      // below this (minus a margin): the void
 constexpr std::size_t kMaxQueuedInputs = 16;          // hard cap per session
 constexpr std::size_t kInputBuffer = 2;               // jitter buffer depth (ticks)
 constexpr std::size_t kMaxBufferedInputs = 6;         // beyond this, skip to bound input latency
@@ -36,9 +35,11 @@ Server::Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs)
     : config_(std::move(config)),
       entropy_(entropy),
       physics_(jobs),
-      world_(GeneratorFor(config_.generator_version)),
+      world_(GeneratorFor(config_.generator_version, config_.world_seed)),
       terrain_(world_, physics_),
-      players_(world_, physics_, &terrain_) {}
+      players_(world_, physics_, &terrain_) {
+  if (!config_.spawn) config_.spawn = SpawnPointFor(config_.generator_version, config_.world_seed);
+}
 
 Server::~Server() = default;
 
@@ -181,8 +182,9 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
 void Server::SpawnPlayer(Session& s) {
   // Spread players around the spawn point so they don't start inside each other.
   const int slot = (s.player_id - 1) % 8;
-  const Vec3 spawn(config_.spawn[0] + static_cast<float>(slot % 4) - 1.5f, config_.spawn[1],
-                   config_.spawn[2] + static_cast<float>(slot / 4) * 1.5f - 0.75f);
+  const auto& at = *config_.spawn;
+  const Vec3 spawn(at[0] + static_cast<float>(slot % 4) - 1.5f, at[1],
+                   at[2] + static_cast<float>(slot / 4) * 1.5f - 0.75f);
   s.handle = players_.Spawn(player_config_, spawn);
   s.health = kMaxHealth;
   s.inputs.clear();

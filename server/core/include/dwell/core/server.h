@@ -30,9 +30,10 @@ struct ServerConfig {
   std::string motd = "";
   std::uint16_t max_players = 16;
   std::uint64_t world_seed = 0;
-  std::uint32_t generator_version = kGeneratorPlayground;  // 1 = playground (Phase 2)
+  std::uint32_t generator_version = kGeneratorTerrain;  // §6.3; 1 = movement playground
   std::string client_version_note = "";
-  float spawn[3] = {0.5f, 0.0f, 0.5f};  // feet position; players spread out around it
+  // Feet position; players spread out around it. Unset: the generator's spawn point.
+  std::optional<std::array<float, 3>> spawn = std::nullopt;
 };
 
 struct Outgoing {

@@ -11,8 +11,39 @@ export const CELL = TILE + 2 * GUTTER;
 export const ATLAS_CELLS = 4;
 export const ATLAS_SIZE = CELL * ATLAS_CELLS;
 
-export type TileName = 'plain' | 'grass' | 'grassSide' | 'dirt' | 'stone';
-const TILE_ORDER: readonly TileName[] = ['plain', 'grass', 'grassSide', 'dirt', 'stone'];
+export type TileName =
+  | 'plain'
+  | 'grass'
+  | 'grassSide'
+  | 'dirt'
+  | 'stone'
+  | 'sand'
+  | 'sandstone'
+  | 'gravel'
+  | 'snow'
+  | 'logSide'
+  | 'logTop'
+  | 'leaves'
+  | 'coalOre'
+  | 'ironOre'
+  | 'goldOre';
+export const TILE_ORDER: readonly TileName[] = [
+  'plain',
+  'grass',
+  'grassSide',
+  'dirt',
+  'stone',
+  'sand',
+  'sandstone',
+  'gravel',
+  'snow',
+  'logSide',
+  'logTop',
+  'leaves',
+  'coalOre',
+  'ironOre',
+  'goldOre',
+];
 
 export interface TileRect {
   u0: number;
@@ -120,12 +151,93 @@ function stone(x: number, y: number): Rgb {
   return c;
 }
 
+const SAND = rgb(0xdbcf9a);
+const SANDSTONE = rgb(0xc9b37a);
+const GRAVEL = rgb(0x8c8580);
+const SNOW = rgb(0xf2f5f8);
+const BARK = rgb(0x6b4a2b);
+const WOOD = rgb(0xb08a55);
+const LEAVES = rgb(0x3f7d2c);
+
+function sand(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 51);
+  const grain = hash(x, y, 1, 52);
+  let c = scale(SAND, 0.86 + 0.2 * n);
+  if (grain > 0.9) c = scale(c, 0.9);
+  return c;
+}
+
+/** Sandstone: sand with horizontal bands (the tile's rows wrap, so bands tile seamlessly). */
+function sandstone(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 61);
+  const band = tiledNoise(0, y, 8, 3, 62);
+  return scale(SANDSTONE, 0.78 + 0.18 * n + 0.12 * band);
+}
+
+function gravel(x: number, y: number): Rgb {
+  // Pebbles: coarse value noise quantised into light and dark stones.
+  const pebble = tiledNoise(x, y, 8, 1, 71);
+  const n = tiledFbm(x, y, 72);
+  return scale(GRAVEL, (pebble > 0.55 ? 1.12 : pebble < 0.4 ? 0.78 : 0.95) * (0.85 + 0.25 * n));
+}
+
+function snow(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 81);
+  return scale(SNOW, 0.92 + 0.08 * n);
+}
+
+/** Bark: vertical streaks (noise varying along x only, stretched along y). */
+function logSide(x: number, y: number): Rgb {
+  const streak = tiledNoise(x, y * 0.125, 16, 4, 91);
+  const n = tiledFbm(x, y, 92);
+  return scale(BARK, 0.7 + 0.35 * streak + 0.15 * n);
+}
+
+/** Cut wood with growth rings around the tile centre, and a bark rim. */
+function logTop(x: number, y: number): Rgb {
+  const dx = x - TILE / 2 + 0.5;
+  const dy = y - TILE / 2 + 0.5;
+  const r = Math.max(Math.abs(dx), Math.abs(dy));
+  if (r > TILE / 2 - 3) return logSide(x, y);
+  const ring = 0.5 + 0.5 * Math.cos(Math.hypot(dx, dy) * 1.3);
+  return scale(WOOD, 0.8 + 0.15 * ring + 0.1 * tiledFbm(x, y, 93));
+}
+
+function leaves(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 101);
+  const gap = hash(x, y, 2, 102);
+  let c = scale(LEAVES, 0.7 + 0.45 * n);
+  if (gap > 0.88) c = scale(c, 0.55); // dark gaps between leaves
+  return c;
+}
+
+/** Stone with clusters of a mineral colour. */
+function ore(color: number, seed: number): (x: number, y: number) => Rgb {
+  const mineral = rgb(color);
+  return (x, y) => {
+    const cluster = tiledNoise(x, y, 8, 0, seed);
+    const speck = hash(x, y, 6, seed + 1);
+    if (cluster > 0.62 && speck > 0.25) return scale(mineral, 0.8 + 0.3 * speck);
+    return stone(x, y);
+  };
+}
+
 const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   plain: () => [255, 255, 255],
   grass,
   grassSide,
   dirt,
   stone,
+  sand,
+  sandstone,
+  gravel,
+  snow,
+  logSide,
+  logTop,
+  leaves,
+  coalOre: ore(0x26262a, 111),
+  ironOre: ore(0xc8926a, 121),
+  goldOre: ore(0xf2c230, 131),
 };
 
 export interface Atlas {

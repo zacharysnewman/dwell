@@ -19,8 +19,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; tuning follow-ups in progress) | #4, #5, #6 |
-| 3 — Terrain generation & streaming | 🚧 In progress (3a: generator) | — |
+| 2 — Physics player controller | ✅ Complete (playtested; two follow-up fixes on the Phase 3 branch, PR pending) | #4, #5, #6 |
+| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) done; 3b streaming next | — |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
 | 6 — Sleep / re-bake | ⏳ Not started | — |
@@ -133,8 +133,10 @@ Exit criteria
 
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
-ragdoll and animation from `State` (Phase 5, see below). A human playtest of the movement feel
-(Open Decision #9) is still worthwhile; the numbers below are measured, not felt.
+ragdoll and animation from `State` (Phase 5, see below). Playtested by a human (Open Decision
+#9): two findings, fixed on the Phase 3 branch (PR pending): forward/back looked faster than
+strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
+at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
 
 | Exit criterion | Result |
 |---|---|
@@ -236,41 +238,69 @@ Exit criteria
 
 ## Phase 3 — Static Terrain Streaming
 
+**Status:** in progress. Sub-phases: **3a — generator** (done: deliverables ticked below);
+**3b — streaming** (chunk encoding, `Generated`/`Explicit`, interest management, worker pools);
+**3c — block edits** (edit loop, resync, client meshing worker); **3d — persistence and debug
+tooling**. Outstanding in 3a's area: the client worldgen worker and the verification chunk move
+to 3b with the pools and the wire format they depend on.
+
 **Goal:** Spec Phase 3. Generate a real procedural world, stream it reliably, and keep client
 and server collision identical (§6).
 
 Deliverables
-- [ ] **Terrain generator** in `server/core/worldgen` (§6.3), built in stages:
-  1. Deterministic noise library (integer-hash gradients; fixed-point vs. strict-float
-     prototype → ADR for open decision #8).
-  2. Climate/biome fields, biome-blended base height, 3D overhang density.
-  3. Caves (spaghetti + cheese), surface/strata materials, water to `SEA_LEVEL`, bedrock.
-  4. Ores and features (trees, boulders) using order-independent hashed placement.
-  5. Stability pass removing small floating components.
+- [x] **Terrain generator** in `server/core` (`dwell/worldgen`, §6.3), built in stages:
+  1. [x] Deterministic noise library (integer-hash gradients; fixed-point vs. strict-float
+     prototype → [ADR 0010](./adr/0010-worldgen-noise-numerics.md): strict float).
+  2. [x] Climate/biome fields, biome-blended base height, 3D overhang density.
+  3. [x] Caves (spaghetti + cheese), surface/strata materials, water to `SEA_LEVEL`, bedrock.
+  4. [x] Ores and features (trees, boulders) using order-independent hashed placement.
+  5. [x] Stability pass removing small floating components.
 - [ ] Server worldgen thread pool with per-tick budget; spawn region pre-generated. Client worldgen
-  and meshing worker pools with transferable buffers (ADR 0007).
-- [ ] **Cross-platform determinism:** the generator compiled to WASM for the client worldgen worker
-  and local mode; CI golden test comparing chunk hashes between native and WASM builds.
-- [ ] Handshake carries `worldSeed` + `generatorVersion`; client verification-chunk hash selects
-  generated vs. full-chunk mode.
+  and meshing worker pools with transferable buffers (ADR 0007). *(3b)*
+- **Cross-platform determinism:**
+  - [x] The generator compiled to WASM for local mode and the client sim; CI golden test comparing
+    chunk hashes between native and WASM builds (`dwell_tests`, `dwell_worldgen_tests.js`).
+  - [ ] The generator in the client worldgen worker. *(3b)*
+- [ ] Handshake carries `worldSeed` + `generatorVersion` *(done: the client sim builds the world
+  from them)*; client verification-chunk hash selects generated vs. full-chunk mode. *(3b)*
 - [ ] Chunk encoding: palette + RLE (+ optional compression), with `revision` per chunk;
-  `ChunkData` `Generated` / `Explicit` forms (§8.3). Server stores only modified chunks.
+  `ChunkData` `Generated` / `Explicit` forms (§8.3). Server stores only modified chunks. *(3b)*
 - [ ] **World persistence** (§6.4, ADR 0006): SQLite + zstd in `core/storage`; schema v1 (`meta`,
   `settings`, `chunks`, `players`, `permissions`); native VFS (WAL) and OPFS VFS in the worker;
   transactional autosave of dirty data off the tick; load on start; migrations framework.
-  Local-mode worlds persist across page reloads.
-- [ ] Debug tooling: seed selector, biome/heightmap overlay, "regenerate chunk and diff" check.
+  Local-mode worlds persist across page reloads. *(3d)*
+- Debug tooling:
+  - [x] Seed and generator selection (`?seed=`, `?world=`; `dwell_server --seed --generator`).
+  - [x] Biome/heightmap overview: `dwell_worldgen_inspect` (ASCII map, biome shares, timings,
+    spawn, vertical sections). An in-game overlay is still to come. *(3d)*
+  - [ ] "Regenerate chunk and diff" check. *(3d)*
 - [ ] Interest management: per-client view radius; stream nearest-first; unload far chunks;
-  bandwidth budget per client.
+  bandwidth budget per client. *(3b)*
 - [ ] Greedy mesher shared in spirit by both sides:
   - [x] Server: per-chunk Jolt `MeshShape`s, rebuilt on change (built in Phase 2b, as sub-shapes
     of one terrain body with unit-quad faces; greedy merging is not used for collision because
     its T-junctions cause ghost contacts — PLAYER_CONTROLLER.md §5).
   - [ ] Client: mesher in a Web Worker producing render mesh + collision triangles; client
-    prediction world uses the same collision.
+    prediction world uses the same collision. *(3c)*
 - [ ] Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
-  `VoxelModification` broadcast → clients apply in order and re-mesh.
-- [ ] Revision gap detection → client requests chunk resync.
+  `VoxelModification` broadcast → clients apply in order and re-mesh. *(3c)*
+- [ ] Revision gap detection → client requests chunk resync. *(3c)*
+
+Deviations and additions (3a):
+- The generator lives in `server/core/{include/dwell,src}/worldgen` (the core's layout) rather than
+  a `server/core/worldgen` directory.
+- Procedural terrain (generator version 2) replaced the playground as the default world for
+  dedicated servers and local mode; the playground stays available as version 1.
+- Players spawn at a generator-chosen point (level, open land near the origin) instead of a fixed
+  configured one; `ServerConfig.spawn` still overrides it.
+- The stability pass works within the chunk (components touching a chunk face are kept), so it
+  stays a pure function of the chunk coordinate; small pieces crossing a chunk border survive.
+- Until the worker pools (3b), the client generates and meshes chunks on the main thread within a
+  4 ms per-frame budget (it was two chunks per frame; procedural chunks cost ~1.5–4 ms each).
+- Found along the way: WebTransport datagram writes queued behind a slow main thread, so on slow
+  frames the server received inputs seconds late; datagrams now coalesce (newest per type).
+- The e2e two-client test walks 2 s instead of 1 s: two pages rendering terrain on CI's software
+  renderer can run below 60 ticks/s, and the test checks visibility, not speed.
 
 Exit criteria
 - [ ] Walking across the world streams chunks without hitches; memory stays bounded when moving.

@@ -1,4 +1,5 @@
 import type { FromWorker, ToWorker } from '../local/messages';
+import type { LocalWorld } from '../local/world';
 import { Channel, TransportKind } from '../protocol/constants.gen';
 import type { Transport, TransportHandlers } from './Transport';
 
@@ -21,7 +22,7 @@ export class LoopbackTransport implements Transport {
   }
 
   /** Starts the worker and resolves once the WASM core is loaded. */
-  static start(worker: Worker, worldSeed = 0): Promise<LoopbackTransport> {
+  static start(worker: Worker, world: LocalWorld): Promise<LoopbackTransport> {
     return new Promise((resolve, reject) => {
       worker.onmessage = (e: MessageEvent<FromWorker>) => {
         if (e.data.t === 'ready') {
@@ -35,7 +36,7 @@ export class LoopbackTransport implements Transport {
       worker.onerror = (e) => {
         reject(new Error(e.message || 'local world worker failed'));
       };
-      worker.postMessage({ t: 'start', worldSeed } satisfies ToWorker);
+      worker.postMessage({ t: 'start', ...world } satisfies ToWorker);
     });
   }
 

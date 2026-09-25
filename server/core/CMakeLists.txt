@@ -12,6 +12,8 @@ add_library(dwell_core
   src/player/controller.cpp
   src/player/net.cpp
   src/player/predictor.cpp
-  src/player/voxel_query.cpp)
+  src/player/voxel_query.cpp
+  src/worldgen/noise.cpp
+  src/worldgen/terrain.cpp)
 target_include_directories(dwell_core PUBLIC include)
 target_link_libraries(dwell_core PUBLIC Jolt PRIVATE dwell_options monocypher)

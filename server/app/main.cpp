@@ -36,8 +36,10 @@ struct Options {
 void Usage() {
   std::puts(
       "usage: dwell_server [--port N] [--rtc-port N] [--advertise IP] [--name NAME] [--motd TEXT]\n"
-      "                    [--max-players N] [--seed N] [--client-url URL]\n"
-      "  --advertise IP  address players use to reach this server (invite links, WebRTC)");
+      "                    [--max-players N] [--seed N] [--generator N] [--client-url URL]\n"
+      "  --advertise IP  address players use to reach this server (invite links, WebRTC)\n"
+      "  --generator N   world generator: 2 = procedural terrain (default), 1 = movement\n"
+      "                  playground, 0 = flat");
 }
 
 bool ParseOptions(int argc, char** argv, Options& o) {
@@ -61,6 +63,8 @@ bool ParseOptions(int argc, char** argv, Options& o) {
       o.server.max_players = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10));
     } else if (arg == "--seed") {
       o.server.world_seed = std::strtoull(v, nullptr, 10);
+    } else if (arg == "--generator") {
+      o.server.generator_version = static_cast<std::uint32_t>(std::strtoul(v, nullptr, 10));
     } else if (arg == "--client-url") {
       o.client_url = v;
     } else {

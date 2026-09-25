@@ -9,7 +9,7 @@ export interface DwellCoreModule {
   _malloc(size: number): number;
   _free(ptr: number): void;
   // Local-mode server.
-  _dwell_local_create(worldSeed: number): number;
+  _dwell_local_create(worldSeed: number, generatorVersion: number): number;
   _dwell_local_connected(session: number, kind: number, bindingPtr: number): void;
   _dwell_local_disconnected(session: number): void;
   _dwell_local_reliable(session: number, channel: number, ptr: number, len: number): void;
@@ -17,7 +17,7 @@ export interface DwellCoreModule {
   _dwell_local_advance(elapsedSeconds: number): number;
   _dwell_local_take_outbox(outLenPtr: number): number;
   // Client sim.
-  _dwell_client_create(generatorVersion: number): number;
+  _dwell_client_create(generatorVersion: number, seedLo: number, seedHi: number): number;
   _dwell_client_next_seq(): number;
   _dwell_client_tick(
     seq: number,

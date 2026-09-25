@@ -31,11 +31,13 @@ crouch, F3 debug overlay (`?debug=1` opens it on load). `?netsim=150,20,5` simul
 20 ms jitter and 5 % loss.
 
 **Touch (phones, tablets; play in landscape):** drag on the left half for a floating joystick
-(push past the ring to run), drag on the right half to look, and use the Jump (hold), Crouch and
-Run (toggle) buttons. On iOS, *Share → Add to Home Screen* runs it full screen. Safari has no
+(push past the ring to run), drag on the right half to look, and use the Jump and Crouch (hold)
+and Run (toggle) buttons. On iOS, *Share → Add to Home Screen* runs it full screen. Safari has no
 WebTransport, so use local mode or a WebRTC invite there.
-The default world is a movement playground: slab stairs, a block step, a doorway, a crawlspace, a
-ladder, a pool, and an orange launch pad just behind the spawn.
+The default world is procedural terrain (oceans, beaches, plains, forests, deserts, snowy land,
+mountains, caves); `?seed=N` picks the seed. `?world=playground` loads the movement playground
+instead (slab stairs, a block step, a doorway, a crawlspace, a ladder, a pool, and an orange launch
+pad just behind the spawn), and `?world=flat` a flat world.
 
 ### Server (`server/`)
 
@@ -49,9 +51,15 @@ cmake --preset dev
 cmake --build --preset dev
 ctest --preset dev
 DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="player: scenario"  # after intended controller changes
+DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="worldgen: golden"   # after a generator version bump
 ./build/dev/app/dwell_server --help
 ./build/dev/app/dwell_server   # prints an invite link to open in the client
+./build/dev/tools/dwell_worldgen_inspect 0 0 0 32          # ASCII biome map of seed 0 (32 m per character)
+./build/dev/tools/dwell_worldgen_inspect 0 0 0 1 slice     # vertical section through the origin
 ```
+
+`--seed N` and `--generator N` (2 = procedural terrain, the default; 1 = movement playground;
+0 = flat) choose the world.
 
 `--advertise <ip>` sets the address in the invite link (use your LAN or public IP for other
 players; the WebRTC fallback needs an IP, not a hostname). WebTransport listens on UDP 4433 and

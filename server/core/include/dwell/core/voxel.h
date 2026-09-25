@@ -9,9 +9,15 @@
 
 #include "dwell/protocol/constants.gen.h"
 
-// Voxel world storage (ARCHITECTURE.md §6.1). Phase 1: materials, 32³ chunks, and a flat test
-// world; procedural generation arrives in Phase 3.
+// Voxel world storage (ARCHITECTURE.md §6.1): materials, 32³ chunks, the flat test world and the
+// playground; the procedural terrain generator lives in dwell/worldgen (§6.3).
 namespace dwell::core {
+
+// World bounds and terrain constants (§6.3, §7.4).
+inline constexpr int kWorldMinY = -128;  // below this: the void
+inline constexpr int kWorldMaxY = 384;   // generated terrain stays below this
+inline constexpr int kBedrockLayers = 4;
+inline constexpr int kSeaLevel = 64;  // procedural terrain: water fills open space below this
 
 using MaterialId = std::uint16_t;
 
@@ -29,7 +35,17 @@ inline constexpr MaterialId kLadderS = 8;  // faces south (+Z)
 inline constexpr MaterialId kLadderW = 9;  // faces west (−X)
 inline constexpr MaterialId kWater = 10;
 inline constexpr MaterialId kLaunchPad = 11;  // debug: launches players standing on it (Phase 2)
-inline constexpr MaterialId kCount = 12;
+// Terrain generator materials (Phase 3, §6.3).
+inline constexpr MaterialId kSand = 12;
+inline constexpr MaterialId kSandstone = 13;
+inline constexpr MaterialId kGravel = 14;
+inline constexpr MaterialId kSnow = 15;
+inline constexpr MaterialId kLog = 16;
+inline constexpr MaterialId kLeaves = 17;
+inline constexpr MaterialId kCoalOre = 18;
+inline constexpr MaterialId kIronOre = 19;
+inline constexpr MaterialId kGoldOre = 20;
+inline constexpr MaterialId kCount = 21;
 }  // namespace Materials
 
 // Collision shape of a voxel inside its 1 m cell (PLAYER_CONTROLLER.md §5).
@@ -88,6 +104,8 @@ class Chunk {
   // Called once after generation: an unmodified generated chunk is revision 0 (§6.1, §6.3).
   void ResetRevision() { revision_ = 0; }
   const std::array<MaterialId, kChunkVolume>& voxels() const { return voxels_; }
+  // Generators write here directly (no revision bumps).
+  std::array<MaterialId, kChunkVolume>& generation_voxels() { return voxels_; }
 
  private:
   std::array<MaterialId, kChunkVolume> voxels_;
@@ -109,11 +127,16 @@ void GenerateEmptyChunk(const ChunkCoord& coord, Chunk& chunk);
 // a launch pad. See PlaygroundFeatures() for positions.
 void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk);
 
-// Generator versions announced in Welcome (§6.3): 0 = flat test world, 1 = playground. Unknown
-// versions fall back to the flat world.
+// Generator versions announced in Welcome (§6.3): 0 = flat test world, 1 = playground,
+// 2 = procedural terrain (worldgen::TerrainGenerator, uses the world seed). Unknown versions fall
+// back to the flat world. Bump the terrain version for any change that alters its output.
 inline constexpr std::uint32_t kGeneratorFlat = 0;
 inline constexpr std::uint32_t kGeneratorPlayground = 1;
-ChunkGenerator GeneratorFor(std::uint32_t generator_version);
+inline constexpr std::uint32_t kGeneratorTerrain = 2;
+ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world_seed = 0);
+
+// Feet position players spawn at for a generator: near the origin, on open level ground.
+std::array<float, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64_t world_seed);
 
 // Master voxel grid: chunks generated on first access.
 class VoxelWorld {

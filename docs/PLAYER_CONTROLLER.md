@@ -380,7 +380,8 @@ browser it runs in the client's own WASM instance of the sim core on the main th
 ### 8.1 Client prediction world
 Owned by the `Predictor` (same Jolt settings as the server):
 - static terrain collision from the client's chunks (same `TerrainCollision` and `VoxelQuery`;
-  Phase 2 clients generate the chunks themselves from the generator version in `Welcome`);
+  until Phase 3b streams chunks, clients generate them from the seed and generator version in
+  `Welcome`);
 - **kinematic** capsules for remote players at their **latest snapshot position, dead-reckoned by
   their velocity** until the next snapshot (at most 0.5 s). Measured against the alternative of
   extrapolating to the predicted present: head-on bumps corrected with 0.17–0.23 m per-tick
