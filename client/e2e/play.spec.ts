@@ -78,7 +78,9 @@ test('two clients on a native server see each other move', async ({ browser }) =
   const before = (await state(b))?.remotes.find((r) => r.playerId === sa.playerId)?.feet ?? [
     0, 0, 0,
   ];
-  await walkForward(a, 1000);
+  // Two pages share one CPU renderer (SwiftShader) in CI and may run below 60 ticks/s: walk long
+  // enough to cover 3 m either way; this checks that B sees A move, not A's speed.
+  await walkForward(a, 2000);
   await expect
     .poll(
       async () => {

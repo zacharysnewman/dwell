@@ -2,6 +2,7 @@ import { buildInfo, formatBuildInfo } from './buildInfo';
 import { Game, type GameDebugState } from './game/game';
 import { connectLocal, connectToInvite, type ConnectOptions } from './net/connect';
 import { parseInvite } from './net/invite';
+import { parseLocalWorld } from './local/world';
 import { parseNetConditions } from './net/netsim';
 import type { ClientSession, SessionStats } from './net/session';
 import { KeyboardMouseInput } from './predict/input';
@@ -113,11 +114,17 @@ function displayName(): string {
 }
 
 /** Starts the game once the session has joined: the client's own sim core runs prediction. */
-function play(app: App, session: ClientSession, playerId: number, generatorVersion: number): void {
+function play(
+  app: App,
+  session: ClientSession,
+  playerId: number,
+  generatorVersion: number,
+  worldSeed: bigint,
+): void {
   void (async () => {
     let core: ClientCore;
     try {
-      core = await ClientCore.load(await importDwellCore(), generatorVersion);
+      core = await ClientCore.load(await importDwellCore(), generatorVersion, worldSeed);
     } catch (err) {
       app.hud.setMessage(
         `Simulation unavailable: ${err instanceof Error ? err.message : String(err)}`,
@@ -152,6 +159,7 @@ async function connect(app: App): Promise<void> {
     clientVersion: buildInfo.sha.slice(0, 12),
     transport: forced === 'webrtc' || forced === 'webtransport' ? forced : 'auto',
     netsim: parseNetConditions(params.get('netsim')),
+    localWorld: parseLocalWorld(location.search),
   };
   status.textContent = invite ? `Connecting to ${target}…` : 'Starting local world…';
   try {
@@ -161,7 +169,7 @@ async function connect(app: App): Promise<void> {
       status.textContent = formatStatus(target, session.transportKind, state, stats);
       if (state.phase === 'joined' && !started) {
         started = true;
-        play(app, session, state.playerId, state.generatorVersion);
+        play(app, session, state.playerId, state.generatorVersion, state.worldSeed);
       }
     });
   } catch (err) {

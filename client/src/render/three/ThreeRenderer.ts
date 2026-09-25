@@ -24,6 +24,7 @@ import {
 } from 'three';
 import type { Vec3 } from '../../protocol/messages';
 import { buildChunkMeshes, type MeshArrays } from '../chunkMesh';
+import { VERTICAL_FOV, verticalFov } from '../fov';
 import { buildAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
 
@@ -51,7 +52,7 @@ interface PlayerMesh {
 export class ThreeRenderer implements Renderer {
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
-  private readonly camera = new PerspectiveCamera(75, 1, 0.05, 400);
+  private readonly camera = new PerspectiveCamera(VERTICAL_FOV, 1, 0.05, 400);
   /** Block textures: tiled-noise atlas (render/textures.ts), crisp up close, mipmapped far away. */
   private readonly atlas = ThreeRenderer.createAtlasTexture();
   private readonly opaqueMaterial = new MeshLambertMaterial({
@@ -102,6 +103,7 @@ export class ThreeRenderer implements Renderer {
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / Math.max(1, height);
+    this.camera.fov = verticalFov(this.camera.aspect);
     this.camera.updateProjectionMatrix();
   }
 

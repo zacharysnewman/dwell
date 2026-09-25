@@ -24,6 +24,11 @@ const MAX_TICKS_PER_FRAME = 5;
 /** Terrain drawn within this many chunks of the player (horizontally), one chunk up and down. */
 const VIEW_CHUNKS = 2;
 const CHUNK = 32;
+/**
+ * Main-thread time per frame for generating and meshing terrain chunks (at least one per frame).
+ * A procedural chunk costs a few milliseconds in WASM; Phase 3b moves this to worker pools.
+ */
+const STREAM_BUDGET_MS = 4;
 /** Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE. */
 const BUFFER_LOW = 1;
 const BUFFER_HIGH = 4;
@@ -298,15 +303,16 @@ export class Game {
     return lines;
   }
 
-  /** Builds render meshes for chunks near `center` (a couple per frame) and drops far ones. */
+  /** Builds render meshes for chunks near `center` (within a time budget) and drops far ones. */
   private streamTerrain(center: Vec3): void {
     const [cx, cy, cz] = center.map((v) => Math.floor(v / CHUNK)) as [number, number, number];
-    let budget = 2;
-    for (let r = 0; r <= VIEW_CHUNKS && budget > 0; r++) {
-      for (let x = cx - r; x <= cx + r && budget > 0; x++) {
-        for (let z = cz - r; z <= cz + r && budget > 0; z++) {
+    const deadline = performance.now() + STREAM_BUDGET_MS;
+    let more = true;
+    for (let r = 0; r <= VIEW_CHUNKS && more; r++) {
+      for (let x = cx - r; x <= cx + r && more; x++) {
+        for (let z = cz - r; z <= cz + r && more; z++) {
           if (Math.max(Math.abs(x - cx), Math.abs(z - cz)) !== r) continue;
-          for (let y = cy - 1; y <= cy + 1 && budget > 0; y++) {
+          for (let y = cy - 1; y <= cy + 1 && more; y++) {
             const key = `${String(x)},${String(y)},${String(z)}`;
             if (this.chunks.has(key)) continue;
             this.chunks.add(key);
@@ -315,7 +321,7 @@ export class Game {
               [x * CHUNK, y * CHUNK, z * CHUNK],
               this.core.chunkFaces(x, y, z),
             );
-            budget--;
+            more = performance.now() < deadline;
           }
         }
       }

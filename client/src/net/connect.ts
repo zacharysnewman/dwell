@@ -1,6 +1,7 @@
 // Chooses how to reach a server and runs the session (ARCHITECTURE.md §8.1, §10).
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from '../identity/deviceKey';
 import type { Invite } from './invite';
+import { GENERATORS, type LocalWorld } from '../local/world';
 import { LoopbackTransport } from './loopback';
 import { SimulatedTransport, type NetConditions } from './netsim';
 import { ClientSession } from './session';
@@ -14,6 +15,8 @@ export interface ConnectOptions {
   transport?: TransportPreference;
   /** Simulated latency / jitter / loss (`?netsim=`), for testing prediction. */
   netsim?: NetConditions | null;
+  /** Local mode: the world to generate (`?world=`, `?seed=`). */
+  localWorld?: LocalWorld;
 }
 
 function simulate(transport: Transport, options: ConnectOptions): Transport {
@@ -67,7 +70,8 @@ export async function connectToInvite(
 export async function connectLocal(options: ConnectOptions): Promise<ClientSession> {
   const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
   const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
-  const transport = simulate(await LoopbackTransport.start(worker), options);
+  const world = options.localWorld ?? { worldSeed: 0, generatorVersion: GENERATORS.terrain };
+  const transport = simulate(await LoopbackTransport.start(worker, world), options);
   const session = new ClientSession(transport, key, options);
   session.start();
   return session;

@@ -28,6 +28,32 @@ export function stickOutput(dx: number, dy: number, radius = STICK_RADIUS): Stic
   return { moveX: (dx / distance) * scaled, moveY: (-dy / distance) * scaled, run };
 }
 
+/** How a touch button reports its state: pressed while held, or latched on/off per tap. */
+export type TouchButtonMode = 'hold' | 'toggle';
+
+/** The on-screen buttons, left to right. */
+export const TOUCH_BUTTONS = {
+  run: { label: 'Run', id: 'touch-run', mode: 'toggle' },
+  crouch: { label: 'Crouch', id: 'touch-crouch', mode: 'hold' },
+  jump: { label: 'Jump', id: 'touch-jump', mode: 'hold' },
+} as const satisfies Record<string, { label: string; id: string; mode: TouchButtonMode }>;
+
+/** A button's on/off state as pointers press and release it. */
+export class TouchButtonState {
+  active = false;
+  constructor(readonly mode: TouchButtonMode) {}
+
+  press(): boolean {
+    this.active = this.mode === 'hold' ? true : !this.active;
+    return this.active;
+  }
+
+  release(): boolean {
+    if (this.mode === 'hold') this.active = false;
+    return this.active;
+  }
+}
+
 /** What touch contributes to the player's input each tick. */
 export interface TouchState {
   moveX: number;
@@ -78,15 +104,15 @@ export class TouchControls {
 
     const buttons = document.createElement('div');
     buttons.className = 'touch-buttons';
-    const jump = this.holdButton('Jump', 'touch-jump', (down) => {
-      this.state.jump = down;
-    });
-    const crouch = this.toggleButton('Crouch', 'touch-crouch', (on) => {
-      this.state.crouch = on;
-    });
-    const run = this.toggleButton('Run', 'touch-run', (on) => {
+    const run = touchButton(TOUCH_BUTTONS.run, (on) => {
       this.runLatched = on;
       this.state.run = this.runLatched || this.stickRun;
+    });
+    const crouch = touchButton(TOUCH_BUTTONS.crouch, (on) => {
+      this.state.crouch = on;
+    });
+    const jump = touchButton(TOUCH_BUTTONS.jump, (on) => {
+      this.state.jump = on;
     });
     buttons.append(run, crouch, jump);
 
@@ -172,32 +198,6 @@ export class TouchControls {
   private readonly onLookUp = (e: PointerEvent): void => {
     if (e.pointerId === this.lookPointer) this.lookPointer = null;
   };
-
-  private holdButton(label: string, id: string, set: (down: boolean) => void): HTMLButtonElement {
-    const b = button(label, id);
-    b.addEventListener('pointerdown', (e) => {
-      b.setPointerCapture(e.pointerId);
-      b.classList.add('pressed');
-      set(true);
-    });
-    const release = () => {
-      b.classList.remove('pressed');
-      set(false);
-    };
-    b.addEventListener('pointerup', release);
-    b.addEventListener('pointercancel', release);
-    return b;
-  }
-
-  private toggleButton(label: string, id: string, set: (on: boolean) => void): HTMLButtonElement {
-    const b = button(label, id);
-    b.addEventListener('pointerdown', () => {
-      const on = !b.classList.contains('pressed');
-      b.classList.toggle('pressed', on);
-      set(on);
-    });
-    return b;
-  }
 }
 
 function zone(id: string): HTMLDivElement {
@@ -207,10 +207,27 @@ function zone(id: string): HTMLDivElement {
   return z;
 }
 
-function button(label: string, id: string): HTMLButtonElement {
+function touchButton(
+  spec: { label: string; id: string; mode: TouchButtonMode },
+  set: (on: boolean) => void,
+): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
-  b.id = id;
-  b.textContent = label;
+  b.id = spec.id;
+  b.textContent = spec.label;
+  const state = new TouchButtonState(spec.mode);
+  const apply = (on: boolean) => {
+    b.classList.toggle('pressed', on);
+    set(on);
+  };
+  b.addEventListener('pointerdown', (e) => {
+    b.setPointerCapture(e.pointerId);
+    apply(state.press());
+  });
+  const release = () => {
+    apply(state.release());
+  };
+  b.addEventListener('pointerup', release);
+  b.addEventListener('pointercancel', release);
   return b;
 }

@@ -56,6 +56,8 @@ jobs:
         run: npm run build:wasm
       - name: Player controller suite under WASM (Node)
         run: node ../server/build/wasm/tools/dwell_player_tests.js
+      - name: Worldgen suite under WASM (Node) — golden chunk hashes match native (ADR 0010)
+        run: node ../server/build/wasm/tools/dwell_worldgen_tests.js
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck

@@ -60,9 +60,9 @@ function handle(msg: ToWorker): void {
   flush();
 }
 
-async function start(worldSeed: number): Promise<void> {
+async function start(worldSeed: number, generatorVersion: number): Promise<void> {
   try {
-    core = await LocalCore.load(await importDwellCore(), worldSeed);
+    core = await LocalCore.load(await importDwellCore(), worldSeed, generatorVersion);
   } catch (err) {
     scope.postMessage({
       t: 'error',
@@ -85,6 +85,6 @@ async function start(worldSeed: number): Promise<void> {
 
 scope.onmessage = (e) => {
   const msg = e.data;
-  if (msg.t === 'start') void start(msg.worldSeed);
+  if (msg.t === 'start') void start(msg.worldSeed, msg.generatorVersion);
   else handle(msg);
 };

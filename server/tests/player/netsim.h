@@ -114,7 +114,9 @@ struct SimClient {
 
 class NetSim {
  public:
-  explicit NetSim(LinkConditions conditions, core::ServerConfig config = {})
+  // The client side builds the playground (below), so the server defaults to it too.
+  explicit NetSim(LinkConditions conditions,
+                  core::ServerConfig config = {.generator_version = core::kGeneratorPlayground})
       : conditions_(conditions), server_(std::move(config), entropy_, jobs_) {}
 
   SimClient& Join(Script script) {

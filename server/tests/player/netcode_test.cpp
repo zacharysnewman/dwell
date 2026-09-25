@@ -226,9 +226,8 @@ TEST_SUITE("netcode: prediction") {
   }
 
   TEST_CASE("the debug launch pad knockback replays smoothly at 150 ms RTT") {
-    core::ServerConfig config;
-    config.spawn[0] = 2.5f;  // slot 0 spawns 1.5 m to the left of this
-    config.spawn[2] = -4.75f;
+    core::ServerConfig config{.generator_version = core::kGeneratorPlayground};
+    config.spawn = {2.5f, 0.0f, -4.75f};  // slot 0 spawns 1.5 m to the left of this
     NetSim sim({150, 20, 0.05}, config);
     auto& c = sim.Join([](int tick, const SimClient& self) {
       return tick < Ticks(4.0f) ? SteerTo(self, 0.5f, -5.5f) : player::Input{};

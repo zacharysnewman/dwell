@@ -147,6 +147,37 @@ TEST_SUITE("player: walking") {
     CHECK(w.C(e).state == State::kRunning);
   }
 
+  TEST_CASE("every direction moves at the same speed, walking and running") {
+    // Playtest finding: forward/back must not outpace strafing. Measures distance covered over
+    // two seconds of steady input, so probes, steps and wall rays count as well as velocity.
+    const Input dirs[] = {Move(0, 1), Move(0, -1), Move(1, 0), Move(-1, 0), Move(0.7071f, 0.7071f)};
+    for (const bool run : {false, true}) {
+      for (const float yaw : {0.0f, 37.0f, 90.0f}) {
+        float distances[5];
+        for (int d = 0; d < 5; ++d) {
+          PlayerTestWorld w;
+          w.Floor(0, 40);
+          const auto e = w.Spawn(Vec3(0.5f, 0, 0.5f));
+          Input in = dirs[d];
+          in.run = run;
+          in.look_yaw = yaw;
+          w.input = [in](int, PlayerHandle) { return in; };
+          w.Step(Ticks(0.5f));  // reach steady speed
+          const Vec3 start = w.Pos(e);
+          w.Step(Ticks(2.0f));
+          const Vec3 moved = w.Pos(e) - start;
+          distances[d] = std::sqrt(moved.GetX() * moved.GetX() + moved.GetZ() * moved.GetZ());
+        }
+        const float expected = 2.0f * (run ? player::DefaultConfig().movement.run_speed
+                                           : player::DefaultConfig().movement.walk_speed);
+        for (int d = 0; d < 5; ++d) {
+          INFO("run=" << run << " yaw=" << yaw << " direction " << d);
+          CHECK(distances[d] == doctest::Approx(expected).epsilon(0.01));
+        }
+      }
+    }
+  }
+
   TEST_CASE("movement is relative to camera yaw") {
     PlayerTestWorld w;
     w.Floor();

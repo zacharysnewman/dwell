@@ -51,6 +51,19 @@ While implementing a phase of `docs/IMPLEMENTATION_PLAN.md`:
   line accurate, including anything outstanding.
 - Record deviations from the plan under the phase, with the reason.
 
+## Requirement: keep the progress table current
+
+> Temporary: remove this section once every phase in `docs/IMPLEMENTATION_PLAN.md` is complete.
+
+Every change that advances, completes, reopens, or re-scopes implementation work updates the
+**Progress** table at the top of `docs/IMPLEMENTATION_PLAN.md` **in the same change**:
+
+- The phase's status (⏳ Not started, 🚧 In progress — naming the current sub-phase, 🔍 In review,
+  ✅ Complete) and anything still outstanding.
+- The PR number(s) once a PR exists for the phase.
+- Follow-up work on a finished phase (playtest findings, tuning, fixes) is noted in its row and in
+  the phase's `**Status:**` line until it merges.
+
 ## Requirement: every bug fix has a regression test
 
 When fixing a bug (reported, or found along the way):

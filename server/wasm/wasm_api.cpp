@@ -54,8 +54,9 @@ struct ClientSim {
   std::array<float, 64> state{};
   std::vector<dwell::core::RenderFace> faces;
 
-  explicit ClientSim(std::uint32_t generator_version)
-      : world(dwell::core::GeneratorFor(generator_version)), predictor(world, jobs, config) {}
+  ClientSim(std::uint32_t generator_version, std::uint64_t world_seed)
+      : world(dwell::core::GeneratorFor(generator_version, world_seed)),
+        predictor(world, jobs, config) {}
 };
 
 std::unique_ptr<ClientSim> g_client;
@@ -69,11 +70,12 @@ void Put32(std::vector<std::uint8_t>& out, std::uint32_t v) {
 extern "C" {
 
 // Creates (or recreates) the local server. Returns 1 on success.
-EMSCRIPTEN_KEEPALIVE int dwell_local_create(double world_seed) {
+EMSCRIPTEN_KEEPALIVE int dwell_local_create(double world_seed, std::uint32_t generator_version) {
   dwell::core::ServerConfig config;
   config.name = "Local world";
   config.max_players = 1;
   config.world_seed = static_cast<std::uint64_t>(world_seed);
+  config.generator_version = generator_version;
   g_server.reset();
   g_server = std::make_unique<LocalServer>(std::move(config));
   return 1;
@@ -128,10 +130,13 @@ EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_local_take_outbox(std::uint32_t* 
 
 // --- client sim ------------------------------------------------------------------------------
 
-// Creates (or recreates) the client sim for a world generator version. Returns 1 on success.
-EMSCRIPTEN_KEEPALIVE int dwell_client_create(std::uint32_t generator_version) {
+// Creates (or recreates) the client sim for a world (generator version and u64 seed, from
+// Welcome). Returns 1 on success.
+EMSCRIPTEN_KEEPALIVE int dwell_client_create(std::uint32_t generator_version, std::uint32_t seed_lo,
+                                             std::uint32_t seed_hi) {
   g_client.reset();
-  g_client = std::make_unique<ClientSim>(generator_version);
+  g_client = std::make_unique<ClientSim>(generator_version,
+                                         (static_cast<std::uint64_t>(seed_hi) << 32) | seed_lo);
   return 1;
 }
 

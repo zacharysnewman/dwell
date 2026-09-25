@@ -2,7 +2,7 @@
 import type { Channel } from '../protocol/constants.gen';
 
 export type ToWorker =
-  | { t: 'start'; worldSeed: number }
+  | { t: 'start'; worldSeed: number; generatorVersion: number }
   | { t: 'connect'; session: number; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
   | { t: 'datagram'; session: number; bytes: Uint8Array }

@@ -1,10 +1,9 @@
 #include "dwell/core/voxel.h"
 
+#include "dwell/worldgen/terrain.h"
+
 namespace dwell::core {
 namespace {
-
-constexpr int kWorldMinY = -128;  // ARCHITECTURE.md §6.3
-constexpr int kBedrockLayers = 4;
 
 using enum VoxelShape;
 
@@ -21,6 +20,15 @@ constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{
     {"ladder_w", 600.0f, false, false, kEmpty, true, Facing::kWest},
     {"water", 1000.0f, false, false, kEmpty, false, Facing::kNone, 1.0f, true},
     {"launch_pad", 2400.0f, true, false, kFull, false, Facing::kNone, 1.0f, false, 14.0f},
+    {"sand", 1600.0f, true, false, kFull},
+    {"sandstone", 2200.0f, true, false, kFull},
+    {"gravel", 1800.0f, true, false, kFull},
+    {"snow", 500.0f, true, false, kFull},
+    {"log", 700.0f, true, false, kFull},
+    {"leaves", 200.0f, true, false, kFull},
+    {"coal_ore", 2400.0f, true, false, kFull},
+    {"iron_ore", 3200.0f, true, false, kFull},
+    {"gold_ore", 3600.0f, true, false, kFull},
 }};
 
 MaterialId FlatMaterial(std::int32_t y) {
@@ -111,9 +119,20 @@ void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk) {
   }
 }
 
-ChunkGenerator GeneratorFor(std::uint32_t generator_version) {
+ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world_seed) {
+  if (generator_version == kGeneratorTerrain) {
+    auto terrain = std::make_shared<const worldgen::TerrainGenerator>(world_seed);
+    return [terrain](const ChunkCoord& coord, Chunk& chunk) { terrain->Generate(coord, chunk); };
+  }
   return generator_version == kGeneratorPlayground ? ChunkGenerator(GeneratePlaygroundChunk)
                                                    : ChunkGenerator(GenerateFlatChunk);
+}
+
+std::array<float, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64_t world_seed) {
+  if (generator_version == kGeneratorTerrain) {
+    return worldgen::TerrainGenerator(world_seed).SpawnPoint();
+  }
+  return {0.5f, 0.0f, 0.5f};
 }
 
 Chunk& VoxelWorld::GetOrCreate(const ChunkCoord& coord) {

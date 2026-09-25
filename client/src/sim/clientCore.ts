@@ -69,9 +69,17 @@ export const RENDER_FACE_BYTES = 8;
 export class ClientCore {
   private constructor(private readonly m: DwellCoreModule) {}
 
-  static async load(factory: DwellCoreFactory, generatorVersion: number): Promise<ClientCore> {
+  static async load(
+    factory: DwellCoreFactory,
+    generatorVersion: number,
+    worldSeed = 0n,
+  ): Promise<ClientCore> {
     const m = await factory();
-    m._dwell_client_create(generatorVersion);
+    m._dwell_client_create(
+      generatorVersion,
+      Number(BigInt.asUintN(32, worldSeed)),
+      Number(BigInt.asUintN(32, worldSeed >> 32n)),
+    );
     return new ClientCore(m);
   }
 
