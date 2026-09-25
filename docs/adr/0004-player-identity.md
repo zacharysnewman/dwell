@@ -12,7 +12,7 @@ App Store obligations (Sign in with Apple when offering third-party sign-in on i
 
 ## Options considered
 
-1. **No identity** (Minecraft offline mode): typed names only. Spoofable; weak moderation.
+1. **No identity:** typed names only. Spoofable; weak moderation.
 2. **Device keys:** each install generates a key pair; the public key is the player ID.
 3. **Accounts** via the master server (OAuth providers or passkeys, likely a managed auth
    service).

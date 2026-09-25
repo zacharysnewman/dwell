@@ -15,12 +15,12 @@ from the seed (ARCHITECTURE.md §6.3).
 
 ## Options considered
 
-1. **Custom region files** (Minecraft Java): tailored, but we would own crash safety,
+1. **Custom region files:** tailored, but we would own crash safety,
    fragmentation, and compaction; a folder is awkward to export from a browser.
 2. **SQLite, one file per world:** transactional, single file, mature tooling and online backup,
    the same C++ code natively and in WASM; costs a few hundred KB of WASM and a browser storage
    adapter.
-3. **LevelDB/RocksDB** (Minecraft Bedrock): awkward in browsers, folder-based.
+3. **LevelDB/RocksDB:** awkward in browsers, folder-based.
 4. **Per-platform storage** (files natively, IndexedDB in browsers): two formats plus conversion.
 
 ## Decision

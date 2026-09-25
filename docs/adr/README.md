@@ -12,6 +12,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0004](0004-player-identity.md) | Player identity: device keys now, optional accounts later | Accepted |
 | [0005](0005-domain-and-origins.md) | Domain and web origin: the default Pages path `dropkickarcade.com/dwell/` | Accepted |
 | [0006](0006-world-persistence-sqlite.md) | World persistence: one SQLite database per world, holding all data | Accepted |
+| [0007](0007-threading-model.md) | Threading model: single-threaded web sim core with worker pools; threads natively | Accepted |
 
 ## Template
 

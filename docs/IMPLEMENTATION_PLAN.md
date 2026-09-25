@@ -75,7 +75,8 @@ Deliverables
     export/import.
   - Connection status + RTT overlay.
 - **Local mode**
-  - Emscripten build target for `server/core` (Jolt linked in, single-threaded); loaded in a
+  - Emscripten build target for `server/core` (Jolt linked in, single-threaded per ADR 0007;
+    Jolt `JobSystemSingleThreaded` vs. `JobSystemThreadPool` selected at build time); loaded in a
     Web Worker by the client and wired through `LoopbackTransport`. Added to the Pages workflow.
     The same build later hosts client prediction (Phase 2) and worldgen (Phase 3).
 - **Electron shell (`platforms/electron`)** loading the same build; connects to a local server.
@@ -162,7 +163,8 @@ Deliverables
   3. Caves (spaghetti + cheese), surface/strata materials, water to `SEA_LEVEL`, bedrock.
   4. Ores and features (trees, boulders) using order-independent hashed placement.
   5. Stability pass removing small floating components.
-- Server worldgen thread pool with per-tick budget; spawn region pre-generated.
+- Server worldgen thread pool with per-tick budget; spawn region pre-generated. Client worldgen
+  and meshing worker pools with transferable buffers (ADR 0007).
 - **Cross-platform determinism:** the generator compiled to WASM for the client worldgen worker
   and local mode; CI golden test comparing chunk hashes between native and WASM builds.
 - Handshake carries `worldSeed` + `generatorVersion`; client verification-chunk hash selects
@@ -252,6 +254,9 @@ Deliverables
 - Snapshot packing: quantization (§8.3), priority accumulator, multiple datagrams per tick,
   per-client bandwidth budget.
 - Client debris lifecycle: lifetime, at-rest removal, `DEBRIS_MAX_BODIES` cap (platform-based).
+- **Threading checkpoint (ADR 0007):** profile a browser-hosted friend world at its host
+  profile's caps; if simulation-bound, plan a hosting-only threaded web build behind
+  `coi-serviceworker`.
 - Performance instrumentation: server tick time, active body count, bytes/sec per client;
   client frame time and debris count, shown in a debug overlay.
 
@@ -291,7 +296,7 @@ Exit criteria
 
 ## Phase 7 — Player Hosting, Master Server & Platform Packaging
 
-**Goal:** Minecraft-style multiplayer with no official game servers (ADR 0003): distributable
+**Goal:** Player-hosted multiplayer with no official game servers (ADR 0003): distributable
 dedicated servers, friend worlds hostable from any client, a master server for discovery, and
 packaged desktop/mobile apps (ARCHITECTURE §10).
 
@@ -311,9 +316,11 @@ Deliverables
 - **Friend worlds:** WebRTC transport (§8.1) in the client; hosting the integrated server over
   WebRTC; signaling via the master; STUN + TURN relay (Open Decision #11) with short-lived credentials; host profiles (player and physics caps);
   host-backgrounded pause.
-- **Electron:** packaging for Windows/macOS/Linux (electron-builder), multithreaded build,
+- **Electron:** packaging for Windows/macOS/Linux (electron-builder), custom protocol with
+  COOP/COEP and the multithreaded sim-core build (ADR 0007),
   "Host world" launching the native server; LAN discovery.
-- **Capacitor:** Android and iOS projects; verify WebTransport per WebView (WebSocket / WebRTC
+- **Capacitor:** Android and iOS projects; check `SharedArrayBuffer` availability on the app
+  scheme (threaded build if available, ADR 0007); verify WebTransport per WebView (WebSocket / WebRTC
   where unavailable); native handling of pinned certificate hashes on iOS if needed; touch
   controls (auto-jump preset); mobile caps; friend-world hosting with backgrounding handling.
 - Re-check Safari WebTransport support; if still absent, choose between WebRTC on dedicated

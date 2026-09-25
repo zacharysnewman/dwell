@@ -70,9 +70,10 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    master server, a join code, or an invite link (`?join=host:port&cert=<sha256>`).
 2. **No custom HTTP headers** → no `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy`
    → no `SharedArrayBuffer`. The web build of the sim core (and the Jolt inside it) is therefore
-   compiled **single-threaded** (no pthreads). A `coi-serviceworker` shim may enable
-   cross-origin isolation later (open decision #4). Electron/Capacitor builds can opt into a
-   multithreaded build.
+   compiled **single-threaded** (no pthreads); parallel work runs in **worker pools** of
+   independent WASM instances exchanging transferable buffers (§5.1,
+   [ADR 0007](./adr/0007-threading-model.md)). No `coi-serviceworker`. Electron uses a
+   multithreaded build; the native server is always multithreaded.
 3. **Default project path.** The site is served at `https://dropkickarcade.com/dwell/` (ADR 0005),
    Vite `base: '/dwell/'`. The origin is shared with other `dropkickarcade.com` games, so all
    browser storage is `dwell`-namespaced, the device key is non-extractable, and any service
@@ -93,10 +94,12 @@ with `actions/deploy-pages` on pushes to the default branch.
 ### 2.2 Desktop / Mobile shells **[planned]**
 
 The same Vite build output is wrapped by:
-- **Electron** (`platforms/electron`) — Chromium, full WebTransport support.
+- **Electron** (`platforms/electron`) — Chromium, full WebTransport support; serves its content
+  with COOP/COEP headers so the multithreaded sim-core build can be used (ADR 0007).
 - **Capacitor** (`platforms/capacitor`) — Android System WebView (Chromium) and iOS
   WKWebView. WKWebView WebTransport support must be verified per iOS version; the
-  WebSocket fallback exists primarily for this case.
+  WebSocket fallback exists primarily for this case. Single-threaded sim core unless
+  `SharedArrayBuffer` is confirmed available on the app scheme (ADR 0007).
 
 ### 2.3 Server hosting **[planned]**
 
@@ -191,8 +194,8 @@ C ABI).
 |---|---|
 | `net/` | `Transport` interface; `WebTransportTransport`, `WebSocketTransport`, `LoopbackTransport`. Framing, encode/decode. |
 | `world/` | Chunk store mirrored from server; applies voxel deltas in order. |
-| `worldgen/` | Runs the server's C++ terrain generator (WASM) in a Web Worker for `Generated` chunks. |
-| `mesh/` | Greedy mesher in a Web Worker; produces render meshes and collision triangles. |
+| `worldgen/` | Worldgen worker pool running the server's C++ terrain generator (WASM) for `Generated` chunks. |
+| `mesh/` | Greedy-mesher worker pool; produces render meshes and collision triangles. |
 | `render/` | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry, own shader materials, and a block texture array; rendering is camera-relative. Game code never touches Three.js objects directly. |
 | `physics/` | Hosts the sim-core WASM module (C++ `server/core` + Jolt, Emscripten): prediction world (local player + terrain + kinematic proxies) and debris world. The client does not use separate Jolt JS bindings. |
 | `predict/` | Input sampling, local prediction, server reconciliation & replay, ground-relative frames, present-time proxies. |
@@ -202,6 +205,21 @@ C ABI).
 The client never mutates the voxel grid on its own authority. Block edits are sent as
 requests; the visual change is applied when the server's reliable delta arrives (an optional
 optimistic "ghost" may be shown meanwhile).
+
+### 5.1 Threads and workers
+
+Per [ADR 0007](./adr/0007-threading-model.md):
+
+| Context | Web (Pages) / Capacitor | Electron | Native server |
+|---|---|---|---|
+| Main thread | Input, render, UI, networking | same | Main loop (tick) |
+| Sim core | Single-threaded WASM in a worker (integrated server) + the client's prediction/debris instance | Multithreaded WASM (COOP/COEP) | Native, Jolt `JobSystemThreadPool` |
+| Worldgen | Worker pool (≈ cores − 2) | Worker pool or threads | Thread pool |
+| Meshing (lighting later) | Worker pool | Worker pool | — (server does not mesh for rendering) |
+| Storage (SQLite) | Inside the sim-core worker (OPFS) | Same | I/O thread |
+
+Workers share no memory; jobs and results are transferable `ArrayBuffer`s. Pool sizes are capped,
+lower on mobile.
 
 ---
 
@@ -290,7 +308,7 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   changes" — and `Explicit(coord, revision, palette+RLE)` for modified chunks. This cuts
   terrain bandwidth for unexplored or untouched areas to a few bytes per chunk.
 - Server generation runs on a worker thread pool with a per-tick budget; the spawn region is
-  pre-generated at startup. Client generation runs in a Web Worker off the main thread.
+  pre-generated at startup. Client generation runs in the worldgen worker pool (§5.1).
 
 ### 6.4 World Persistence **[planned]**
 
@@ -509,7 +527,7 @@ tick are allowed up to a per-client bandwidth budget.
 
 **Status query (reliable, `control`)** — `StatusRequest` / `StatusResponse`: protocol version,
 server name, MOTD, player count / max, icon, online/offline mode. Answered without joining; used
-by the server browser and the master's reachability check (Minecraft's Server List Ping).
+by the server browser and the master's reachability check.
 
 **Join handshake (reliable, `control`)**
 ```
@@ -653,9 +671,11 @@ impossible; the server's simulation is the only source of player state.
 
 Decisions: [ADR 0003](./adr/0003-multiplayer-hosting-model.md) (hosting model),
 [ADR 0004](./adr/0004-player-identity.md) (identity), [ADR 0005](./adr/0005-domain-and-origins.md)
-(domain). Modeled on Minecraft: Java-style dedicated servers plus Bedrock-style friend worlds.
+(domain). Two hosting tiers — always-on dedicated servers and client-hosted friend worlds —
+follow from browser constraints: pages cannot accept inbound connections, and hosts rarely have
+trusted certificates.
 
-### 10.1 Dedicated servers (Java-style)
+### 10.1 Dedicated servers
 - Distributed as native binaries (Windows/macOS/Linux) and a Docker image, built by CI per
   release. The Electron app can launch the same binary as a background process ("Host world").
 - Transport: WebTransport, WebSocket fallback. Certificates per §2.3.
@@ -666,7 +686,7 @@ Decisions: [ADR 0003](./adr/0003-multiplayer-hosting-model.md) (hosting model),
 - Admin commands (ops, kick, ban by public key), UPnP/NAT-PMP port mapping with port-forwarding
   guidance when it fails.
 
-### 10.2 Friend worlds (Bedrock-style)
+### 10.2 Friend worlds
 - Any client hosts its **integrated server** — the sim core already used for local
   single-player — and "opens" it through the master server. Browser, Capacitor, and Electron
   all qualify.
@@ -751,7 +771,7 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 1 | ~~Server WebTransport/QUIC library~~ | **Resolved:** Rust `wtransport` behind a C ABI — [ADR 0001](./adr/0001-webtransport-server-library.md) |
 | 2 | ~~Client renderer~~ | **Resolved:** Three.js on WebGL2 behind a thin render interface — [ADR 0002](./adr/0002-client-renderer.md) |
 | 3 | ~~Server hosting~~ | **Resolved:** player-hosted dedicated servers + friend worlds + master server — [ADR 0003](./adr/0003-multiplayer-hosting-model.md); identity [ADR 0004](./adr/0004-player-identity.md); domain [ADR 0005](./adr/0005-domain-and-origins.md) |
-| 4 | Cross-origin isolation on Pages (`coi-serviceworker`) for multithreaded Jolt | Defer; single-threaded first |
+| 4 | ~~Browser multithreading / cross-origin isolation~~ | **Resolved:** single-threaded web sim core + worker pools; threads natively and in Electron — [ADR 0007](./adr/0007-threading-model.md) |
 | 5 | ~~World persistence format~~ | **Resolved:** one SQLite database per world holding all data — [ADR 0006](./adr/0006-world-persistence-sqlite.md) |
 | 6 | Final values for §7.4 tunables | Tune in Phases 4–6 |
 | 7 | Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`) | Not needed initially |
@@ -762,3 +782,5 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 12 | DNS provider / programmatic DNS for master-issued server hostnames | Follow-up; only needed for trusted server hostnames |
 | 13 | WebSocket fallback implementation (ADR 0001 follow-up) | Leaning `tokio-tungstenite` in `server/net/wt` |
 | 14 | Move the client to its own subdomain (`dwell.dropkickarcade.com`) | Future option (ADR 0005); consider before passkey-based accounts; needs a data-migration flow |
+| 15 | Friend-world host migration (hand the SQLite world to another player or a dedicated server when the host leaves) | Candidate improvement over sessions ending with the host; decide before Phase 7 |
+| 16 | Dedicated servers also accepting WebRTC (Safari/iOS web joining without trusted certs; strict-NAT servers via TURN) | Candidate; decide before Phase 7 |

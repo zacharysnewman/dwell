@@ -6,21 +6,19 @@
 
 ## Context
 
-Dwell will not run official game servers. Like Minecraft, worlds are hosted by players. Browsers
+Dwell will not run official game servers; worlds are hosted by players. Browsers
 constrain how that can work: pages cannot accept inbound connections, WebTransport needs a
 trusted certificate or a pinned certificate hash (≤14-day self-signed ECDSA certs), and the
 WebSocket fallback from an HTTPS page needs a trusted certificate. Home and mobile hosts sit
 behind NATs, often carrier-grade NAT on mobile data.
 
-Reference model: Minecraft Java (dedicated `server.jar`, direct connect by address, integrated
-server + "Open to LAN", no official directory) and Minecraft Bedrock (any device, phones
-included, hosts a friend world of about 8 players, joined over LAN or through Xbox network
-services with NAT traversal and relays; the world lives only while the host plays).
+Requirements: always-on worlds for communities, and quick sessions any player can start from
+any device (phones and browsers included) without networking setup.
 
 ## Options considered
 
 1. **Official hosted servers only** (VPS / cloud). Rejected: not the intended model.
-2. **Dedicated player servers only, direct connect.** Minecraft Java model. Works for desktop
+2. **Dedicated player servers only, direct connect.** Works for desktop
    hosts, but phones and browsers cannot host, and rotating certificate hashes make bare
    addresses insufficient.
 3. **Two tiers plus a master server** (chosen): dedicated servers *and* friend worlds hosted by
@@ -30,7 +28,7 @@ services with NAT traversal and relays; the world lives only while the host play
 
 Two hosting tiers, one protocol, one sim core:
 
-| | Friend worlds (Bedrock-style) | Dedicated servers (Java-style) |
+| | Friend worlds | Dedicated servers |
 |---|---|---|
 | Host | Any client — browser, phone (Capacitor), desktop — running the sim core as its integrated server | Native server binary (Windows/macOS/Linux), Docker image, or Electron "Host world" |
 | Transport | **WebRTC data channels** (unordered/unreliable ↔ datagrams, ordered/reliable ↔ streams); STUN, TURN relay fallback | **WebTransport** (WebSocket fallback) |
