@@ -52,7 +52,8 @@ traffic.
 friend-world hosting exposes that same integrated server over WebRTC. Electron can alternatively
 run the native server binary for better performance ("Host world").
 
-**Operators.** Dedicated servers ship with a config file (max players, visibility, password /
+**Operators.** (Storage of these settings: see ADR 0006 — they live in the world database.)
+Dedicated servers ship with settings (max players, visibility, password /
 allow-list, online/offline mode per ADR 0004, physics and view-distance caps), admin commands,
 UPnP/NAT-PMP port mapping with port-forwarding guidance, and world backups.
 

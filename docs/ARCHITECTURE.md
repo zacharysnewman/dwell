@@ -126,6 +126,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      players, replication.
                      Platform-free; compiled natively AND to WASM (local mode + client physics).
     /player          Physics player controller (PLAYER_CONTROLLER.md).
+    /storage         World persistence: SQLite + zstd, native and OPFS VFS backends (ADR 0006).
   /net               Network front-end (C++). Native only.
     /wt              Rust crate: WebTransport (`wtransport`) behind a C ABI (ADR 0001).
 /shared/protocol     Protocol spec, constants, and golden-byte test vectors used by both sides.
@@ -280,8 +281,8 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
 - `generatorVersion` is bumped for any change that alters output; saved worlds record it.
 
 #### Authority, storage, and streaming
-- The server keeps only **modified** chunks in memory/storage as full chunks (or as deltas
-  against generated output); unmodified chunks are regenerated on demand and evicted freely.
+- The server keeps only **modified** chunks in memory and in the world database (§6.4);
+  unmodified chunks are regenerated on demand and evicted freely.
 - Handshake sends `worldSeed` and `generatorVersion`. The client generates a verification
   chunk and reports its hash; on mismatch (or on low-power devices by choice) the client uses
   **full-chunk mode** and the server sends every chunk explicitly.
@@ -290,6 +291,35 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   terrain bandwidth for unexplored or untouched areas to a few bytes per chunk.
 - Server generation runs on a worker thread pool with a per-tick budget; the spawn region is
   pre-generated at startup. Client generation runs in a Web Worker off the main thread.
+
+### 6.4 World Persistence **[planned]**
+
+Decision: [ADR 0006](./adr/0006-world-persistence-sqlite.md). Each world is **one SQLite database
+file** holding **all** of its data; nothing about a world lives in side files.
+
+| Table | Contents |
+|---|---|
+| `meta` | Format version, world seed, generator version, spawn, world time, timestamps, preview image |
+| `settings` | Name, MOTD, icon, max players, visibility, password hash, online/offline mode, physics/view caps, autosave and backup policy |
+| `chunks` | Modified chunks only: `(cx, cy, cz)`, revision, generator version, zstd-compressed palette + RLE blob (same encoding as `ChunkData Explicit`) |
+| `players` | Keyed by device public key: display name, state blob (position, health, later inventory), first/last seen |
+| `bodies` | In-flight Tier 1 clusters (voxel layout, transform, velocities) |
+| `permissions` | Ops, bans, allow-list by public key, with reason/by/when |
+
+- **Same code everywhere:** SQLite and zstd are compiled into `server/core` (`core/storage`).
+  Backends: the native file VFS (WAL mode) for dedicated servers; an OPFS
+  `FileSystemSyncAccessHandle` VFS inside the sim-core worker for browsers (no cross-origin
+  isolation needed; files under a `dwell/` OPFS directory); Capacitor uses the OPFS VFS or a
+  native-file plugin VFS per platform.
+- **Saving:** every `AUTOSAVE_SECONDS`, dirty chunks, players, bodies, and meta commit in one
+  transaction, prepared on the tick and committed off it. Also on shutdown and when a friend-world
+  host backgrounds.
+- **Backups:** dedicated servers take rotating backups with SQLite's online backup API.
+- **Portability:** export/import of a `.dwellworld` file (the database itself) works across
+  dedicated servers, browsers, and apps.
+- **Migrations:** `meta.format_version` with ordered migrations on open.
+- **Settings and permissions** are edited through admin commands and a server CLI; the only
+  non-database inputs to a dedicated server are launch options (world file, bind address/port).
 
 ---
 
@@ -382,6 +412,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `INTERP_DELAY_MS` | 100 | Tier 1 interpolation delay (2 snapshots) |
 | `MAX_TIER1_BODIES` | 512 | Server cap; oldest/smallest force-re-baked when exceeded |
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
+| `AUTOSAVE_SECONDS` | 30 s | World autosave interval (per-world override in `settings`) |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
 | **Players (§9)** | | |
 | Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
@@ -628,9 +659,10 @@ Decisions: [ADR 0003](./adr/0003-multiplayer-hosting-model.md) (hosting model),
 - Distributed as native binaries (Windows/macOS/Linux) and a Docker image, built by CI per
   release. The Electron app can launch the same binary as a background process ("Host world").
 - Transport: WebTransport, WebSocket fallback. Certificates per §2.3.
-- Operator config file: name, MOTD, icon, max players, visibility (public / unlisted / none),
-  password or allow-list, online/offline mode (§10.4), physics and view-distance caps
-  (`MAX_TIER1_BODIES`, `DEBRIS`-related limits, view radius), backup schedule.
+- Operator settings, stored in the world database's `settings` table (§6.4): name, MOTD,
+  icon, max players, visibility (public / unlisted / none), password or allow-list,
+  online/offline mode (§10.4), physics and view-distance caps (`MAX_TIER1_BODIES`, view radius),
+  autosave and backup schedule. Edited by admin commands or the server CLI.
 - Admin commands (ops, kick, ban by public key), UPnP/NAT-PMP port mapping with port-forwarding
   guidance when it fails.
 
@@ -644,8 +676,8 @@ Decisions: [ADR 0003](./adr/0003-multiplayer-hosting-model.md) (hosting model),
 - Host profiles cap the load: e.g. mobile 4 players, desktop browser 8, with reduced physics
   caps. When the host backgrounds the app/tab, the world pauses and guests are notified; when
   the host quits, the session ends.
-- Saves live on the host (browser: OPFS/IndexedDB; apps: app storage) and use the same world
-  format as dedicated servers, so a friend world can be moved to a dedicated server.
+- Saves live on the host (browser: OPFS; apps: OPFS or app storage) as the same SQLite world
+  file as dedicated servers (§6.4), so a friend world can be exported to a dedicated server.
 
 ### 10.3 Master server
 A small HTTPS JSON service (`services/master`; hostname chosen in Phase 7); no game
@@ -720,7 +752,7 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 2 | ~~Client renderer~~ | **Resolved:** Three.js on WebGL2 behind a thin render interface — [ADR 0002](./adr/0002-client-renderer.md) |
 | 3 | ~~Server hosting~~ | **Resolved:** player-hosted dedicated servers + friend worlds + master server — [ADR 0003](./adr/0003-multiplayer-hosting-model.md); identity [ADR 0004](./adr/0004-player-identity.md); domain [ADR 0005](./adr/0005-domain-and-origins.md) |
 | 4 | Cross-origin isolation on Pages (`coi-serviceworker`) for multithreaded Jolt | Defer; single-threaded first |
-| 5 | World persistence format (saves on disk and in browser storage, portable between friend worlds and dedicated servers) | **Required** by ADR 0003; next to decide |
+| 5 | ~~World persistence format~~ | **Resolved:** one SQLite database per world holding all data — [ADR 0006](./adr/0006-world-persistence-sqlite.md) |
 | 6 | Final values for §7.4 tunables | Tune in Phases 4–6 |
 | 7 | Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`) | Not needed initially |
 | 8 | Worldgen noise numerics: fixed-point vs. strict IEEE float | Prototype both in Phase 3; pick by golden-test stability and speed |

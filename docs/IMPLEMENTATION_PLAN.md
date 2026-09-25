@@ -169,6 +169,10 @@ Deliverables
   generated vs. full-chunk mode.
 - Chunk encoding: palette + RLE (+ optional compression), with `revision` per chunk;
   `ChunkData` `Generated` / `Explicit` forms (§8.3). Server stores only modified chunks.
+- **World persistence** (§6.4, ADR 0006): SQLite + zstd in `core/storage`; schema v1 (`meta`,
+  `settings`, `chunks`, `players`, `permissions`); native VFS (WAL) and OPFS VFS in the worker;
+  transactional autosave of dirty data off the tick; load on start; migrations framework.
+  Local-mode worlds persist across page reloads.
 - Debug tooling: seed selector, biome/heightmap overlay, "regenerate chunk and diff" check.
 - Interest management: per-client view radius; stream nearest-first; unload far chunks;
   bandwidth budget per client.
@@ -186,6 +190,9 @@ Exit criteria
 - A block placed/removed by one client appears for all clients, and the player collides with
   it immediately after the update on both server and client.
 - Chunk serialization round-trips byte-for-byte between C++ and TS (golden tests).
+- A world edited on a native server and one edited in local mode both survive restarts/reloads;
+  a crash mid-save leaves the previous save intact; a world file saved natively opens in the
+  browser build and vice versa.
 - The same seed produces bit-identical chunks natively, in local mode, and in the client
   worker (CI golden test); untouched chunks cost only a `Generated` message on the wire.
 - Generated terrain shows distinct biomes, caves, and overhangs, and the player can walk,
@@ -270,6 +277,8 @@ Deliverables
 - Re-bake: destroy body → write grid → rebuild chunk collision → integrity check on placed
   voxels → reliable `VoxelModification(Rebake)` + `EntityDespawn` in one batch.
 - `MAX_TIER1_BODIES` enforcement (force re-bake of oldest/smallest).
+- Persist in-flight Tier 1 bodies in the `bodies` table (ADR 0006) so a world saved mid-collapse
+  resumes it on load.
 - Soak test harness: headless bots + scripted explosions for hours; tracks body count, memory,
   tick time.
 
@@ -288,12 +297,15 @@ packaged desktop/mobile apps (ARCHITECTURE §10).
 
 Deliverables
 - **Dedicated server distribution:** CI builds native binaries (Windows/macOS/Linux) and a
-  Docker image per release; operator config file; admin commands (ops, kick, ban by key);
-  allow-list/password; UPnP/NAT-PMP with port-forward guidance; backups; host-configurable
+  Docker image per release; settings and permissions in the world database edited via admin
+  commands and a server CLI (ADR 0006); ops, kick, ban by key; allow-list/password;
+  UPnP/NAT-PMP with port-forward guidance; rotating SQLite online backups; host-configurable
   physics and view caps. Certificate rotation with hash publication.
 - **Master server** (`services/master`; hostname and platform → Open Decision
   #10): registration + heartbeat, reachability-checked public listing, join codes, cert-hash
   distribution, rate limiting per key/IP.
+- **World export/import** (`.dwellworld`) across dedicated servers, browsers, and apps; Capacitor
+  storage VFS verified per platform.
 - **Server browser** in the client: listing, search/filter, client-side ping, status query,
   incompatible-version marking; versioned client builds at `/dwell/v/<version>/`.
 - **Friend worlds:** WebRTC transport (§8.1) in the client; hosting the integrated server over
