@@ -22,9 +22,12 @@ Deliverables
 - `client/`: Vite + TypeScript (strict), ESLint, Prettier, Vitest. `base: '/dwell/'`.
   Renders a blank canvas and a build-info overlay (commit SHA).
 - `server/`: CMake project, C++20, Jolt pulled via `FetchContent`, a unit-test target
-  (e.g. Catch2/doctest), clang-format config.
+  (e.g. Catch2/doctest), clang-format config. Rust toolchain pinned with `rust-toolchain.toml`;
+  empty `server/net/wt` crate linked through Corrosion (ADR 0001) so the mixed build works from
+  day one.
 - GitHub Actions:
-  - `ci.yml` — lint, typecheck, test, build for client; configure/build/test for server.
+  - `ci.yml` — lint, typecheck, test, build for client; configure/build/test for server
+    (C++ + cargo, with cargo caching, `cargo clippy`, and a stale-`cbindgen`-header check).
   - `pages.yml` — build client, upload artifact, `actions/deploy-pages`.
 - `docs/adr/` with an ADR template.
 
@@ -50,10 +53,15 @@ Deliverables
   - v0 message definitions (§8.3) and shared constants (§7.4).
   - Encoders/decoders in TS and C++, with golden-byte test vectors both sides must pass.
 - **Server network front-end (`server/net`)**
-  - WebTransport server (choose library → ADR #1). Handshake, `control` + `world` streams,
-    datagram send/receive, ping / clock sync.
-  - Dev TLS: generate short-lived ECDSA cert; print its SHA-256 for `serverCertificateHashes`.
-  - WebSocket fallback endpoint carrying the same framing.
+  - **Spike first:** `wtransport` crate behind the C ABI (ADR 0001) accepts a session from
+    Chrome (dev cert via `serverCertificateHashes`) and Electron; one reliable stream message
+    and one datagram each way. Fallback if it fails: Google QUICHE behind the same C ABI.
+  - WebTransport server on that crate: handshake, `control` + `world` streams, datagram
+    send/receive, ping / clock sync; transport events drained into the main loop once per tick.
+  - Dev TLS: the crate generates a short-lived ECDSA cert at startup and prints its SHA-256 for
+    `serverCertificateHashes`.
+  - WebSocket fallback endpoint carrying the same framing (implementation per the follow-up
+    to ADR 0001; leaning `tokio-tungstenite` in the same crate).
 - **Client networking (`client/net`)**
   - `Transport` interface with `WebTransportTransport`, `WebSocketTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebSocket.
