@@ -30,6 +30,15 @@ class FakeTransport implements Transport {
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+/** Waits until `pred` holds; the session signs asynchronously (WebCrypto), so one tick isn't enough. */
+async function until(pred: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!pred()) {
+    if (Date.now() > deadline) throw new Error('condition not met in time');
+    await new Promise((r) => setTimeout(r, 1));
+  }
+}
+
 async function setup() {
   const key = await loadOrCreateDeviceKey(new MemoryKeyStore());
   const transport = new FakeTransport();
@@ -53,7 +62,7 @@ describe('ClientSession', () => {
 
     const nonce = new Uint8Array(32).fill(9);
     transport.deliver({ type: MessageType.Challenge, nonce });
-    await flush();
+    await until(() => transport.sent.some((m) => m.type === MessageType.ClientAuth));
     const auth = transport.sent.find((m) => m.type === MessageType.ClientAuth);
     if (auth?.type !== MessageType.ClientAuth) throw new Error('no ClientAuth');
     const pub = await crypto.subtle.importKey('raw', key.publicKey, 'Ed25519', false, ['verify']);
