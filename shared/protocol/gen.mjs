@@ -30,6 +30,14 @@ cpp.push(`inline constexpr std::size_t kMaxDatagramBytes = ${c.maxDatagramBytes}
 cpp.push(`inline constexpr std::size_t kMaxReliableMessageBytes = ${c.maxReliableMessageBytes};`);
 cpp.push(`inline constexpr int kChunkSize = ${c.chunkSize};`);
 cpp.push(`inline constexpr std::string_view kAuthDomainTag = "${c.authDomainTag}";`);
+cpp.push(`inline constexpr std::size_t kMaxInputsPerDatagram = ${c.maxInputsPerDatagram};`);
+cpp.push('');
+// Player constants: distances and radii (metres) are floats, the rest integers.
+for (const [k, v] of enumEntries(c.players)) {
+  const isFloat = /Distance|Radius/.test(k);
+  const value = isFloat ? `${Number.isInteger(v) ? `${v}.0` : v}f` : `${v}`;
+  cpp.push(`inline constexpr ${isFloat ? 'float' : 'int'} k${k[0].toUpperCase()}${k.slice(1)} = ${value};`);
+}
 cpp.push('');
 for (const [k, v] of enumEntries(c.limits)) {
   cpp.push(`inline constexpr std::size_t k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
@@ -45,6 +53,30 @@ cppEnum('MessageType', 'std::uint8_t', c.messageTypes);
 cppEnum('RejectReason', 'std::uint8_t', c.rejectReasons);
 cpp.push(`inline constexpr std::uint8_t kMaxRejectReason = ${Math.max(...Object.values(c.rejectReasons))};`);
 cppEnum('TransportKind', 'std::uint8_t', c.transportKinds);
+cppEnum('PlayerState', 'std::uint8_t', c.playerStates);
+cppEnum('GroundKind', 'std::uint8_t', c.groundKinds);
+cppEnum('PlayerEventKind', 'std::uint8_t', c.playerEventKinds);
+cppEnum('DamageCause', 'std::uint8_t', c.damageCauses);
+const maxOf = (obj) => Math.max(...Object.values(obj));
+cpp.push('');
+cpp.push(`inline constexpr std::uint8_t kMaxPlayerState = ${maxOf(c.playerStates)};`);
+cpp.push(`inline constexpr std::uint8_t kMaxGroundKind = ${maxOf(c.groundKinds)};`);
+cpp.push(`inline constexpr std::uint8_t kMaxPlayerEventKind = ${maxOf(c.playerEventKinds)};`);
+cpp.push(`inline constexpr std::uint8_t kMaxDamageCause = ${maxOf(c.damageCauses)};`);
+const cppFlags = (name, type, obj) => {
+  cpp.push('');
+  cpp.push(`namespace ${name} {`);
+  let mask = 0;
+  for (const [k, v] of enumEntries(obj)) {
+    cpp.push(`inline constexpr ${type} k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
+    mask |= v;
+  }
+  cpp.push(`inline constexpr ${type} kAll = ${mask};`);
+  cpp.push(`}  // namespace ${name}`);
+};
+cppFlags('InputButtons', 'std::uint16_t', c.inputButtons);
+cppFlags('PlayerFlags', 'std::uint8_t', c.playerFlags);
+cppFlags('ControllerFlags', 'std::uint8_t', c.controllerFlags);
 cpp.push('');
 cpp.push('}  // namespace dwell::protocol');
 cpp.push('');
@@ -61,6 +93,11 @@ ts.push(`export const MAX_DATAGRAM_BYTES = ${c.maxDatagramBytes};`);
 ts.push(`export const MAX_RELIABLE_MESSAGE_BYTES = ${c.maxReliableMessageBytes};`);
 ts.push(`export const CHUNK_SIZE = ${c.chunkSize};`);
 ts.push(`export const AUTH_DOMAIN_TAG = '${c.authDomainTag}';`);
+ts.push(`export const MAX_INPUTS_PER_DATAGRAM = ${c.maxInputsPerDatagram};`);
+ts.push('');
+ts.push('export const Players = {');
+for (const [k, v] of enumEntries(c.players)) ts.push(`  ${k}: ${v},`);
+ts.push('} as const;');
 ts.push('');
 ts.push('export const Limits = {');
 for (const [k, v] of enumEntries(c.limits)) ts.push(`  ${k}: ${v},`);
@@ -76,6 +113,19 @@ tsEnum('Channel', c.channels);
 tsEnum('MessageType', c.messageTypes);
 tsEnum('RejectReason', c.rejectReasons);
 tsEnum('TransportKind', c.transportKinds);
+tsEnum('PlayerState', c.playerStates);
+tsEnum('GroundKind', c.groundKinds);
+tsEnum('PlayerEventKind', c.playerEventKinds);
+tsEnum('DamageCause', c.damageCauses);
+const tsFlags = (name, obj) => {
+  ts.push('');
+  ts.push(`export const ${name} = {`);
+  for (const [k, v] of enumEntries(obj)) ts.push(`  ${k}: ${v},`);
+  ts.push('} as const;');
+};
+tsFlags('InputButtons', c.inputButtons);
+tsFlags('PlayerFlags', c.playerFlags);
+tsFlags('ControllerFlags', c.controllerFlags);
 ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
 

@@ -10,6 +10,8 @@ add_library(dwell_core
   src/protocol/bytes.cpp
   src/protocol/messages.cpp
   src/player/controller.cpp
+  src/player/net.cpp
+  src/player/predictor.cpp
   src/player/voxel_query.cpp)
 target_include_directories(dwell_core PUBLIC include)
 target_link_libraries(dwell_core PUBLIC Jolt PRIVATE dwell_options monocypher)

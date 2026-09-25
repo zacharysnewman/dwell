@@ -1,6 +1,46 @@
 // Little-endian byte writer/reader for protocol messages (ARCHITECTURE.md §8.2).
 
 const encoder = new TextEncoder();
+
+const scratch = new DataView(new ArrayBuffer(4));
+
+/** IEEE 754 binary16 from a number, round to nearest even (matches the C++ FloatToHalf). */
+export function floatToHalf(value: number): number {
+  scratch.setFloat32(0, value);
+  let x = scratch.getUint32(0);
+  const sign = x & 0x80000000;
+  x = (x ^ sign) >>> 0;
+  let out: number;
+  if (x >= 0x47800000) {
+    out = x > 0x7f800000 ? 0x7e00 : 0x7c00;
+  } else if (x < 0x38800000) {
+    // Subnormal half (or zero): value / 2^-24, rounded half to even, in integer arithmetic.
+    const e = x >>> 23;
+    if (e < 102) {
+      out = 0;
+    } else {
+      const m = (x & 0x7fffff) | 0x800000;
+      const shift = 126 - e;
+      const q = m >>> shift;
+      const rem = m - q * 2 ** shift;
+      const half = 2 ** (shift - 1);
+      out = q + (rem > half || (rem === half && (q & 1) === 1) ? 1 : 0);
+    }
+  } else {
+    const mantissaOdd = (x >>> 13) & 1;
+    out = ((x + 0xc8000fff + mantissaOdd) >>> 0) >>> 13;
+  }
+  return (out | (sign >>> 16)) & 0xffff;
+}
+
+export function halfToFloat(h: number): number {
+  const sign = h & 0x8000 ? -1 : 1;
+  const exponent = (h >> 10) & 0x1f;
+  const mantissa = h & 0x3ff;
+  if (exponent === 0) return sign * mantissa * 2 ** -24;
+  if (exponent === 31) return mantissa ? NaN : sign * Infinity;
+  return sign * (1 + mantissa / 1024) * 2 ** (exponent - 15);
+}
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 export class ByteWriter {
@@ -42,6 +82,29 @@ export class ByteWriter {
     this.reserve(8);
     this.view.setFloat64(this.len, v, true);
     this.len += 8;
+  }
+  i8(v: number): void {
+    this.reserve(1);
+    this.view.setInt8(this.len, v);
+    this.len += 1;
+  }
+  i16(v: number): void {
+    this.reserve(2);
+    this.view.setInt16(this.len, v, true);
+    this.len += 2;
+  }
+  i32(v: number): void {
+    this.reserve(4);
+    this.view.setInt32(this.len, v, true);
+    this.len += 4;
+  }
+  f32(v: number): void {
+    this.reserve(4);
+    this.view.setFloat32(this.len, v, true);
+    this.len += 4;
+  }
+  f16(v: number): void {
+    this.u16(floatToHalf(v));
   }
   bytes(b: Uint8Array): void {
     this.reserve(b.length);
@@ -111,6 +174,35 @@ export class ByteReader {
     const v = this.view.getFloat64(this.pos, true);
     this.pos += 8;
     return v;
+  }
+  i8(): number {
+    this.need(1);
+    return this.view.getInt8(this.pos++);
+  }
+  i16(): number {
+    this.need(2);
+    const v = this.view.getInt16(this.pos, true);
+    this.pos += 2;
+    return v;
+  }
+  i32(): number {
+    this.need(4);
+    const v = this.view.getInt32(this.pos, true);
+    this.pos += 4;
+    return v;
+  }
+  f32(): number {
+    this.need(4);
+    const v = this.view.getFloat32(this.pos, true);
+    this.pos += 4;
+    return v;
+  }
+  f16(): number {
+    return halfToFloat(this.u16());
+  }
+  /** Throws DecodeError unless `condition` holds (range checks in decoders). */
+  check(condition: boolean, what: string): void {
+    if (!condition) throw new DecodeError(what);
   }
   fixed(n: number): Uint8Array {
     this.need(n);

@@ -111,6 +111,11 @@ void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk) {
   }
 }
 
+ChunkGenerator GeneratorFor(std::uint32_t generator_version) {
+  return generator_version == kGeneratorPlayground ? ChunkGenerator(GeneratePlaygroundChunk)
+                                                   : ChunkGenerator(GenerateFlatChunk);
+}
+
 Chunk& VoxelWorld::GetOrCreate(const ChunkCoord& coord) {
   auto [it, inserted] = chunks_.try_emplace(coord);
   if (inserted) {

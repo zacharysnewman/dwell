@@ -109,6 +109,12 @@ void GenerateEmptyChunk(const ChunkCoord& coord, Chunk& chunk);
 // a launch pad. See PlaygroundFeatures() for positions.
 void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk);
 
+// Generator versions announced in Welcome (§6.3): 0 = flat test world, 1 = playground. Unknown
+// versions fall back to the flat world.
+inline constexpr std::uint32_t kGeneratorFlat = 0;
+inline constexpr std::uint32_t kGeneratorPlayground = 1;
+ChunkGenerator GeneratorFor(std::uint32_t generator_version);
+
 // Master voxel grid: chunks generated on first access.
 class VoxelWorld {
  public:

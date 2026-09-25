@@ -8,7 +8,8 @@ add_executable(dwell_tests
   player/movement_test.cpp
   player/vertical_crouch_test.cpp
   player/platform_climb_swim_test.cpp
-  player/scenario_test.cpp)
+  player/scenario_test.cpp
+  player/netcode_test.cpp)
 target_link_libraries(dwell_tests PRIVATE dwell_core dwell_net dwell_options doctest::doctest monocypher)
 add_test(NAME dwell_tests COMMAND dwell_tests)
 target_compile_definitions(dwell_tests PRIVATE
