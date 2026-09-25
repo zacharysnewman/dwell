@@ -19,7 +19,7 @@ push to the default branch.
 
 Deliverables
 - Monorepo layout per §3: `client/`, `server/`, `shared/protocol/`, `platforms/`, `docs/`.
-- `client/`: Vite + TypeScript (strict), ESLint, Prettier, Vitest. `base: '/dwell/'`.
+- `client/`: Vite + TypeScript (strict), ESLint, Prettier, Vitest. `base: '/'`.
   Three.js (pinned) behind the `client/render` interface (ADR 0002); renders an empty scene
   and a build-info overlay (commit SHA).
 - `server/`: CMake project, C++20, Jolt pulled via `FetchContent`, a unit-test target
@@ -29,11 +29,14 @@ Deliverables
 - GitHub Actions:
   - `ci.yml` — lint, typecheck, test, build for client; configure/build/test for server
     (C++ + cargo, with cargo caching, `cargo clippy`, and a stale-`cbindgen`-header check).
-  - `pages.yml` — build client, upload artifact, `actions/deploy-pages`.
+  - `pages.yml` — build client, upload artifact (with a `CNAME` of `dwell.dropkickarcade.com`),
+    `actions/deploy-pages`.
 - `docs/adr/` with an ADR template.
 
 Exit criteria
-- `https://<user>.github.io/dwell/` serves the blank client.
+- `https://dwell.dropkickarcade.com/` serves the blank client (ADR 0005). Requires the DNS
+  record `CNAME dwell → zacharysnewman.github.io` and this repo's Pages custom domain set to
+  `dwell.dropkickarcade.com`.
 - CI is green on both client and server jobs.
 
 ---
@@ -59,6 +62,9 @@ Deliverables
     and one datagram each way. Fallback if it fails: Google QUICHE behind the same C ABI.
   - WebTransport server on that crate: handshake, `control` + `world` streams, datagram
     send/receive, ping / clock sync; transport events drained into the main loop once per tick.
+  - Status query and join handshake with **device-key identity** (ARCHITECTURE §8.3, §10.4,
+    ADR 0004): Ed25519 challenge signed by the client, bound to the transport; protocol-version
+    rejection with reasons.
   - Dev TLS: the crate generates a short-lived ECDSA cert at startup and prints its SHA-256 for
     `serverCertificateHashes`.
   - WebSocket fallback endpoint carrying the same framing (implementation per the follow-up
@@ -66,7 +72,9 @@ Deliverables
 - **Client networking (`client/net`)**
   - `Transport` interface with `WebTransportTransport`, `WebSocketTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebSocket.
-  - Server URL from build config, overridable with `?server=`; `?local=1` forces local mode.
+  - Connect via invite link `?join=host:port&cert=<sha256>`; `?local=1` forces local mode.
+  - Device key: generated on first run (non-extractable WebCrypto Ed25519 in IndexedDB),
+    export/import.
   - Connection status + RTT overlay.
 - **Local mode**
   - Emscripten build target for `server/core` (Jolt linked in, single-threaded); loaded in a
@@ -110,7 +118,7 @@ Deliverables
 - **2g — Test port.** The PPC headless suites ported to C++ on voxel geometry
   (`PLAYER_CONTROLLER.md` §10), including the multi-player golden trace.
 - **2h — Networking.**
-  - Server: input queue ordered by `inputSeq`, validation and rate limiting (§10); snapshots with
+  - Server: input queue ordered by `inputSeq`, validation and rate limiting (§11); snapshots with
     `ackInputSeq`, body state, and local controller state (~48 B).
   - Client: sim-core WASM build hosts the prediction world (terrain + kinematic proxies + local
     dynamic body); input ring buffer; redundant input datagrams (last 4); analog move vector.
@@ -274,23 +282,41 @@ Exit criteria
 
 ---
 
-## Phase 7 — Platform Packaging & Hosted Multiplayer
+## Phase 7 — Player Hosting, Master Server & Platform Packaging
 
-**Goal:** Ship beyond localhost: a hosted server that the GitHub Pages client connects to, and
-packaged desktop/mobile builds.
+**Goal:** Minecraft-style multiplayer with no official game servers (ADR 0003): distributable
+dedicated servers, friend worlds hostable from any client, a master server for discovery, and
+packaged desktop/mobile apps (ARCHITECTURE §10).
 
 Deliverables
-- Server hosting (decide provider → ADR #3): container image, UDP-capable host, trusted TLS
-  certificate, health checks, basic metrics/logging.
-- Pages build defaults to the hosted server; local mode remains available.
-- Electron: packaging for Windows/macOS/Linux (electron-builder), multithreaded Jolt build.
-- Capacitor: Android and iOS projects; verify WebTransport in each WebView, fall back to
-  WebSocket where unavailable; touch controls; mobile debris/body caps.
-- Protocol version handshake so old clients are rejected cleanly.
+- **Dedicated server distribution:** CI builds native binaries (Windows/macOS/Linux) and a
+  Docker image per release; operator config file; admin commands (ops, kick, ban by key);
+  allow-list/password; UPnP/NAT-PMP with port-forward guidance; backups; host-configurable
+  physics and view caps. Certificate rotation with hash publication.
+- **Master server** (`services/master`, `api.dwell.dropkickarcade.com`; platform → Open Decision
+  #10): registration + heartbeat, reachability-checked public listing, join codes, cert-hash
+  distribution, rate limiting per key/IP.
+- **Server browser** in the client: listing, search/filter, client-side ping, status query,
+  incompatible-version marking; versioned client builds at `/v/<version>/`.
+- **Friend worlds:** WebRTC transport (§8.1) in the client; hosting the integrated server over
+  WebRTC; signaling via the master; STUN + TURN relay (`turn.dwell.dropkickarcade.com`,
+  Open Decision #11) with short-lived credentials; host profiles (player and physics caps);
+  host-backgrounded pause.
+- **Electron:** packaging for Windows/macOS/Linux (electron-builder), multithreaded build,
+  "Host world" launching the native server; LAN discovery.
+- **Capacitor:** Android and iOS projects; verify WebTransport per WebView (WebSocket / WebRTC
+  where unavailable); native handling of pinned certificate hashes on iOS if needed; touch
+  controls (auto-jump preset); mobile caps; friend-world hosting with backgrounding handling.
+- Re-check Safari WebTransport support; if still absent, choose between WebRTC on dedicated
+  servers and master-issued trusted hostnames (ARCHITECTURE §10.6).
 
 Exit criteria
-- A player on the GitHub Pages site, one on Electron, and one on a phone share a world and see
-  the same collapse.
+- A player hosts a dedicated server at home from the downloadable binary; players on the GitHub
+  Pages site, Electron, and a phone find it in the server browser and see the same collapse.
+- A phone hosts a friend world; a browser player and an Electron player join by code, including
+  one on mobile data through the TURN relay.
+- Certificate rotation on a dedicated server is invisible to players joining through the master.
+- An outdated client is rejected with a clear message and offered the matching versioned build.
 
 ---
 

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-25
-- Resolves: ARCHITECTURE.md §11 open decision #1
+- Resolves: ARCHITECTURE.md Open Decisions #1
 
 ## Context
 
