@@ -309,7 +309,7 @@ Deliverables
   UPnP/NAT-PMP with port-forward guidance; rotating SQLite online backups; host-configurable
   physics and view caps. Certificate rotation with hash publication.
 - **Master server** (`services/master`; hostname and platform → Open Decision
-  #10): registration + heartbeat, reachability-checked public listing, join codes, cert-hash
+  #10): registration + heartbeat, reachability-verified public listing (method per #10), join codes, cert-hash
   distribution, rate limiting per key/IP.
 - **World export/import** (`.dwellworld`) across dedicated servers, browsers, and apps; Capacitor
   storage VFS verified per platform.

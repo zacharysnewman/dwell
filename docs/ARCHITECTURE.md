@@ -527,7 +527,7 @@ tick are allowed up to a per-client bandwidth budget.
 
 **Status query (reliable, `control`)** — `StatusRequest` / `StatusResponse`: protocol version,
 server name, MOTD, player count / max, icon, online/offline mode. Answered without joining; used
-by the server browser and the master's reachability check.
+by the server browser and by reachability verification (§10.3).
 
 **Join handshake (reliable, `control`)**
 ```
@@ -707,7 +707,7 @@ traffic passes through it.
 | Function | Detail |
 |---|---|
 | Registration & heartbeat | Dedicated servers register with a server key and heartbeat every ~30 s: address, port, current cert SHA-256, name, MOTD, players, protocol version, tags, visibility. Missed heartbeats delist. |
-| Server browser | Public listing with search/filter; clients ping candidates themselves. A server is listed only after the master's own reachability check (status query). |
+| Server browser | Public listing with search/filter; clients ping candidates themselves. A server is marked verified only after reachability verification — either a master-side status probe or player-attested join receipts, depending on the platform chosen for Open Decision #10. |
 | Join codes | Short codes (e.g. `KQ7-XM4`) resolve to the current address + cert hash (dedicated) or to a signaling session (friend world). |
 | Signaling | WebRTC offer/answer/ICE relay for friend worlds. |
 | TURN credentials | Short-lived TURN credentials for the TURN relay, rate-limited per player key. |
@@ -755,7 +755,7 @@ No platform needs a trusted certificate to join any server (ADR 0008).
   as strictly as the server validates client messages (bounds, sizes, rates), and never executes
   server-provided content.
 - **Clients are identified by device key** (§10.4); impersonation requires the private key.
-- Master server: per-key and per-IP rate limits; listing requires a successful reachability
+- Master server: per-key and per-IP rate limits; verified listing requires successful reachability
   check; server keys can be revoked.
 
 ---
@@ -776,8 +776,8 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 7 | Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`) | Not needed initially |
 | 8 | Worldgen noise numerics: fixed-point vs. strict IEEE float | Prototype both in Phase 3; pick by golden-test stability and speed |
 | 9 | Movement feel on voxels: PPC recommended feel (walk 5 / run 8 m/s) vs. slower voxel-genre speeds | Start with PPC feel; playtest in Phase 2 |
-| 10 | Master server platform, database, and hostname | Leaning Cloudflare Workers + small database |
-| 11 | TURN relay: self-hosted `coturn` vs. managed TURN | Decide with the master server (Phase 7) |
+| 10 | Master server platform, database, and hostname | **Deferred to Phase 7** (not needed before). Constraint: $0 during development. Candidates: Cloudflare Workers + Durable Objects + D1 (no UDP → player-attested reachability, managed TURN) or a free-tier VM with a Rust service (UDP → master probes, co-located `coturn`). Either way the service runs locally (Docker / Wrangler) for dev and CI |
+| 11 | TURN relay: managed vs. self-hosted `coturn` | **Deferred to Phase 7**, decided with #10; public Google STUN until then |
 | 12 | ~~Trusted hostnames for player servers~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) |
 | 13 | ~~Dedicated-server fallback transport~~ | **Resolved:** WebRTC (`str0m`), no WebSocket — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
 | 14 | ~~Own subdomain for the client~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) (ADR 0005) |

@@ -41,7 +41,7 @@ traffic.
 - Dedicated servers register and heartbeat (~30 s): address, port, current certificate hash,
   name, MOTD, player count, version, tags, visibility (public/unlisted). Clients get address +
   cert hash from it, so self-signed certificates can rotate transparently.
-- Public server listing (in-game browser). Listing requires a reachability check from the master.
+- Public server listing (in-game browser). Listing requires reachability verification (method chosen with the master-server platform).
 - Short **join codes** for unlisted servers and friend worlds.
 - **WebRTC signaling** for friend worlds, and issuing short-lived TURN credentials.
 - Direct invite links (`?join=host:port&cert=<sha256>`) keep working with no master server.
