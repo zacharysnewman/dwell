@@ -14,6 +14,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0006](0006-world-persistence-sqlite.md) | World persistence: one SQLite database per world, holding all data | Accepted |
 | [0007](0007-threading-model.md) | Threading model: single-threaded web sim core with worker pools; threads natively | Accepted |
 | [0008](0008-dedicated-server-transports.md) | Dedicated-server transports: WebTransport primary, WebRTC fallback, no WebSocket | Accepted |
+| [0009](0009-friend-world-lifetime.md) | Friend worlds end with their host; migration and cloud worlds deferred | Accepted |
 
 ## Template
 

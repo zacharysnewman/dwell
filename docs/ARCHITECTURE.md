@@ -135,7 +135,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /services/master     Master server (listing, join codes, signaling, TURN credentials).
 /platforms/electron  Electron shell (incl. "Host world" launching the native server).
 /platforms/capacitor Capacitor shell.
-/docs                ARCHITECTURE.md, PLAYER_CONTROLLER.md, IMPLEMENTATION_PLAN.md.
+/docs                ARCHITECTURE.md, PLAYER_CONTROLLER.md, IMPLEMENTATION_PLAN.md, FUTURE.md.
   /adr               Architecture decision records.
 ```
 
@@ -696,7 +696,7 @@ trusted certificates.
   traversal fails (common on mobile data).
 - Host profiles cap the load: e.g. mobile 4 players, desktop browser 8, with reduced physics
   caps. When the host backgrounds the app/tab, the world pauses and guests are notified; when
-  the host quits, the session ends.
+  the host quits, the session ends (no host migration — [ADR 0009](./adr/0009-friend-world-lifetime.md)).
 - Saves live on the host (browser: OPFS; apps: OPFS or app storage) as the same SQLite world
   file as dedicated servers (§6.4), so a friend world can be exported to a dedicated server.
 
@@ -762,7 +762,8 @@ No platform needs a trusted certificate to join any server (ADR 0008).
 
 ## 12. Open Decisions
 
-Record each resolution as an ADR in `docs/adr/` and update the relevant section above.
+Record each resolution as an ADR in `docs/adr/` and update the relevant section above. Ideas
+deliberately out of scope for the current implementation live in [`FUTURE.md`](./FUTURE.md).
 
 | # | Decision | Current leaning |
 |---|---|---|
@@ -777,8 +778,8 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 9 | Movement feel on voxels: PPC recommended feel (walk 5 / run 8 m/s) vs. slower voxel-genre speeds | Start with PPC feel; playtest in Phase 2 |
 | 10 | Master server platform, database, and hostname | Leaning Cloudflare Workers + small database |
 | 11 | TURN relay: self-hosted `coturn` vs. managed TURN | Decide with the master server (Phase 7) |
-| 12 | DNS provider / programmatic DNS for master-issued trusted server hostnames | Optional nicety only (stable names); no longer needed for reachability (ADR 0008) |
+| 12 | ~~Trusted hostnames for player servers~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) |
 | 13 | ~~Dedicated-server fallback transport~~ | **Resolved:** WebRTC (`str0m`), no WebSocket — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
-| 14 | Move the client to its own subdomain (`dwell.dropkickarcade.com`) | Future option (ADR 0005); consider before passkey-based accounts; needs a data-migration flow |
-| 15 | Friend-world host migration (hand the SQLite world to another player or a dedicated server when the host leaves) | Candidate improvement over sessions ending with the host; decide before Phase 7 |
+| 14 | ~~Own subdomain for the client~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) (ADR 0005) |
+| 15 | ~~Friend-world host migration~~ | **Resolved:** no migration; sessions end with the host — [ADR 0009](./adr/0009-friend-world-lifetime.md). Migration and paid cloud worlds in [`FUTURE.md`](./FUTURE.md) |
 | 16 | ~~Dedicated servers accepting WebRTC~~ | **Resolved** with #13 — [ADR 0008](./adr/0008-dedicated-server-transports.md) |

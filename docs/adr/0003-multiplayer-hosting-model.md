@@ -74,5 +74,5 @@ such in the browser. Old client builds are kept at versioned paths on GitHub Pag
   trusted certificates are added. Both are follow-ups.
 - World persistence (Open Decisions #5) is now required, and saves must be portable between
   friend worlds (browser/app storage) and dedicated servers (disk).
-- No official hosting; a Realms-like paid official tier can be added later with the same Docker
+- No official hosting; a paid cloud-hosted tier (see `docs/FUTURE.md`) can be added later with the same Docker
   image.

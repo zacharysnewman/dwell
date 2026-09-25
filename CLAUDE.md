@@ -14,6 +14,7 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/PLAYER_CONTROLLER.md` — detailed spec of the physics player controller (architecture sub-spec).
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
 - `docs/adr/` — architecture decision records.
+- `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 
 ## Requirement: keep ARCHITECTURE.md up to date
 

@@ -38,7 +38,7 @@ Because the origin is shared, Dwell's client:
 Service hostnames (master server, TURN relay) are chosen when those services are built
 (Phase 7); they do not affect the client origin.
 
-## Future option
+## Future option (tracked in `docs/FUTURE.md`)
 
 Moving the client to its own subdomain (`dwell.dropkickarcade.com`) remains a planned option,
 e.g. before accounts/passkeys ship. Browser-stored data does not follow an origin change, so the
