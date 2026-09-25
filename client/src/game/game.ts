@@ -16,6 +16,7 @@ import { quantizeInput } from '../predict/input';
 import type { PlayerView, Renderer } from '../render';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
+import { EyeSmoother, type EyeSample } from './eye';
 import { isCrouched, isDead, RemotePlayers } from './remotes';
 
 const TICK_MS = 1000 / SIM_HZ;
@@ -23,9 +24,6 @@ const MAX_TICKS_PER_FRAME = 5;
 /** Terrain drawn within this many chunks of the player (horizontally), one chunk up and down. */
 const VIEW_CHUNKS = 2;
 const CHUNK = 32;
-/** Camera eye smoothing (crouch) rate, 1/s; step smoothing speed, m/s (PPC SmoothSteps). */
-const EYE_RATE = 12;
-const STEP_SMOOTH_SPEED = 4;
 /** Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE. */
 const BUFFER_LOW = 1;
 const BUFFER_HIGH = 4;
@@ -71,8 +69,10 @@ export class Game {
   private deathFeet: Vec3 = [0, 0, 0];
   private previous: ClientState | null = null;
   private current: ClientState;
-  private eyeHeight = 1.62;
-  private stepFeet: number | null = null;
+  private readonly eye = new EyeSmoother();
+  /** Smoothed camera eye height at the previous and current tick (drawn interpolated). */
+  private eyePrevious = 0;
+  private eyeCurrent = 0;
 
   constructor(
     readonly playerId: number,
@@ -83,6 +83,7 @@ export class Game {
     private readonly host: GameHost,
   ) {
     this.current = core.state();
+    this.eyeCurrent = this.eyePrevious = this.eye.tick(eyeSample(this.current), 1 / SIM_HZ);
   }
 
   /** Handles a snapshot or player event from the session. */
@@ -138,7 +139,7 @@ export class Game {
       this.accumulator -= TICK_MS;
       this.tick();
     }
-    this.draw(nowMs, elapsed / 1000);
+    this.draw(nowMs);
   }
 
   debugState(): GameDebugState {
@@ -170,11 +171,13 @@ export class Game {
     });
     this.previous = this.current;
     this.current = this.core.state();
+    this.eyePrevious = this.eyeCurrent;
+    this.eyeCurrent = this.eye.tick(eyeSample(this.current), 1 / SIM_HZ);
     // The camera turns with rotating ground (PPC yawDelta).
     this.input.yaw += this.current.platformYawDelta;
   }
 
-  private draw(nowMs: number, dt: number): void {
+  private draw(nowMs: number): void {
     const c = this.current;
     const p = this.previous ?? c;
     const alpha = this.accumulator / TICK_MS;
@@ -184,7 +187,6 @@ export class Game {
       lerp(p.position[1] + p.renderOffset[1], c.position[1] + c.renderOffset[1]),
       lerp(p.position[2] + p.renderOffset[2], c.position[2] + c.renderOffset[2]),
     ];
-    const feet = center[1] - c.halfHeight;
     this.streamTerrain(c.active ? center : [0.5, 1, 0.5]);
 
     // Remote players, interpolated.
@@ -216,23 +218,9 @@ export class Game {
     } else {
       this.renderer.setPlayer(this.playerId, null);
       this.hud.setMessage(c.active ? '' : 'Joining…');
-      const crouched = (c.controllerFlags & ControllerFlags.crouching) !== 0;
-      const targetEye = crouched ? c.crouchEyeHeight : c.eyeHeight;
-      this.eyeHeight += (targetEye - this.eyeHeight) * Math.min(1, dt * EYE_RATE);
-      // Step smoothing: hide the one-tick lift onto slabs and small steps.
-      const grounded = (c.controllerFlags & ControllerFlags.grounded) !== 0;
-      if (
-        this.stepFeet === null ||
-        !grounded ||
-        feet < this.stepFeet ||
-        feet - this.stepFeet > c.maxStepHeight + 0.05
-      ) {
-        this.stepFeet = feet;
-      } else {
-        this.stepFeet = Math.min(feet, this.stepFeet + STEP_SMOOTH_SPEED * dt);
-      }
+      // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
       this.renderer.setCamera(
-        [center[0], this.stepFeet + this.eyeHeight, center[2]],
+        [center[0], lerp(this.eyePrevious, this.eyeCurrent), center[2]],
         this.input.yaw,
         this.input.pitch,
       );
@@ -344,4 +332,16 @@ export class Game {
       }
     }
   }
+}
+
+function eyeSample(s: ClientState): EyeSample {
+  return {
+    feet: s.position[1] + s.renderOffset[1] - s.halfHeight,
+    crouched: (s.controllerFlags & ControllerFlags.crouching) !== 0,
+    grounded: (s.controllerFlags & ControllerFlags.grounded) !== 0,
+    velocityY: s.velocity[1],
+    eyeHeight: s.eyeHeight,
+    crouchEyeHeight: s.crouchEyeHeight,
+    maxStepHeight: s.maxStepHeight,
+  };
 }

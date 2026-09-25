@@ -163,8 +163,13 @@ passes, `Tick` makes sure terrain collision exists around every player and syncs
   it. That leaves a phantom push-back that never decays in the air (air drag 0), so a player
   holding forward against a block could not jump onto it — the core voxel move. The horizontal
   layer therefore removes, per contact normal recorded by a Jolt `ContactListener` during the last
-  step, the part of the deviation that only cancels the player's own push into that contact
-  (`min(removed, into)` along the normal). Pushes by moving bodies are still absorbed.
+  step, the part of the deviation that only cancels the player's own push into that contact:
+  `into` is last tick's whole target velocity (horizontal contribution and vertical target) into
+  the normal, and at most `into × |horizontal part of the normal|` is removed along the normal's
+  horizontal direction. Counting the vertical drive matters on stairs: the ground snap drives the
+  capsule down into the edge of the step it is leaving, and that edge's sideways push-out would
+  otherwise become momentum that carries the player down several steps. Pushes by moving bodies
+  are still absorbed.
 - **Step-up nudge.** After lifting onto a step, the capsule also moves forward by
   `radius + stepProbeDistance − ringRadius + 1 cm`, so the probe ring (inside the slimmer voxel
   capsule) is over the step and the ground snap doesn't pull the player back down.
@@ -266,10 +271,13 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   ladder is mounted on.
 - A contiguous ladder column counts as one ladder for `released` purposes: a ladder you let go of is
   not re-grabbed until the capsule has left every cell of that column.
-- **Over the top** (voxel adaptation): a column's climbable region reaches 0.6 m above its top
-  cell, and within 0.3 m of the top, climbing up also moves towards `−facing` (without the face
-  snap), so the player gets onto the ledge the ladder leans on. (PPC ladder triggers overhang
-  their ledge instead; a voxel ladder cell cannot.)
+- **Over the top** (voxel adaptation): while climbing, a column's climbable region reaches 0.6 m
+  above its top cell, and within 0.3 m of the top, climbing up also moves towards `−facing`
+  (without the face snap), so the player gets onto the ledge the ladder leans on. (PPC ladder
+  triggers overhang their ledge instead; a voxel ladder cell cannot.) That extra reach only keeps
+  a climb going, it never starts one: grabbed from the ledge, the face snap would pull the player
+  back against the ledge and block the way down. Getting on at the top means stepping off the
+  ledge onto the ladder cells themselves.
 - Vines and scaffolding use the same flag with different speeds (`climbSpeedScale` per material).
 
 ### 6.4 Water (Dwell addition)
@@ -446,12 +454,20 @@ divergence added per tick. The whole ported player and netcode suite also passes
 
 ## 9. Client presentation (from the PPC view layer) **[built, except animation]**
 
-- **Camera** (`client/src/game/game.ts`): first-person at the smoothed render position
-  (interpolated between the last two ticks plus the correction offset); eye height follows crouch
-  with exponential smoothing (the sim's crouch is instant); **step smoothing** (PPC `SmoothSteps`:
-  the eye rises at most 4 m/s after a grounded lift up to `maxStepHeight`, never lags more than
-  that) hides the one-tick lift onto slabs; `platform.yawDelta` turns the camera with rotating
-  ground. Dwell's world is **right-handed, Y up**: yaw 0 looks along +Z, and right of +Z is −X (the
+- **Camera** (`client/src/game/game.ts`, eye height in `game/eye.ts`): first-person at the
+  smoothed render position (interpolated between the last two ticks plus the correction offset).
+  The eye height is computed once per tick from the feet (never the capsule centre, whose height
+  changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
+  camera must not show, and each is folded into an offset that decays:
+  - **Steps** (PPC `SmoothSteps`, extended to both directions): a grounded feet change of 0.1 m up
+    to `maxStepHeight` in one tick (the step-up lift, or the ground snap down a stair) decays at
+    4 m/s plus 6/s of the remaining offset, so it never lags more than one step.
+  - **Crouch**: the sim's crouch is instant, and in mid-air it moves the feet by the height
+    difference (the head stays put). The eye change on the crouch tick, less the tick's own
+    vertical motion, decays at 12/s.
+  - Offsets beyond a step (or 2 m for crouch) are teleports and are not smoothed.
+
+  `platform.yawDelta` turns the camera with rotating ground. Dwell's world is **right-handed, Y up**: yaw 0 looks along +Z, and right of +Z is −X (the
   PPC's Unity convention is left-handed); the controller's camera-right vector follows this.
 - **Players:** remote players are capsules with a visor, interpolated 100 ms in the past; dead
   players are drawn lying down (a cosmetic pose; the physics ragdoll moves to Phase 5 with the

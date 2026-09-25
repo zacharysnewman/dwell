@@ -159,6 +159,31 @@ TEST_SUITE("player: step smoothness") {
     }
   }
 
+  TEST_CASE("stepping down a stair's corner gains no momentum") {
+    // Diagonally down the playground's slab stairs: the ground snap drives the capsule into the
+    // corner of the step being left, and the contact's sideways push-out is not a kick.
+    for (float x : {-9.5f, -8.5f, -7.2f}) {
+      for (float yaw : {160.0f, 180.0f, 200.0f, 220.0f}) {
+        for (bool run : {false, true}) {
+          CAPTURE(x);
+          CAPTURE(yaw);
+          CAPTURE(run);
+          PlayerTestWorld w(player::DefaultConfig(), core::GeneratePlaygroundChunk);
+          const auto e = w.Spawn(Vec3(x, 2.0f, 10.5f), yaw);
+          w.input = [&](int, PlayerHandle) { return Move(0, 1, run, false, false, yaw); };
+          float external = 0.0f, driven = 0.0f;
+          for (int i = 0; i < 90; ++i) {
+            w.Step();
+            external = std::max(external, w.C(e).horizontal.external.Length());
+            driven = std::max(driven, w.C(e).horizontal.contribution.Length());
+          }
+          CHECK(external < 0.05f);
+          CHECK(driven <= (run ? 8.0f : 5.0f) + 0.01f);
+        }
+      }
+    }
+  }
+
   TEST_CASE("a 1 m ledge is a fall, not a step") {
     const Result r = RunStairs(1, 3, /*up=*/false, /*run=*/false, /*slabs=*/false);
     CHECK(r.airborne > 5);
