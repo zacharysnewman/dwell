@@ -1,4 +1,5 @@
 import { Channel, MAX_RELIABLE_MESSAGE_BYTES, TransportKind } from '../protocol/constants.gen';
+import { DatagramSender } from './datagramSender';
 import { frame, FrameReader } from './framing';
 import type { Transport, TransportHandlers } from './Transport';
 
@@ -15,7 +16,7 @@ export class WebTransportTransport implements Transport {
   readonly kind = TransportKind.WebTransport;
   private handlers: TransportHandlers | null = null;
   private closed = false;
-  private readonly datagramWriter: WritableStreamDefaultWriter<Uint8Array>;
+  private readonly datagrams: DatagramSender;
 
   private constructor(
     private readonly wt: WebTransport,
@@ -23,7 +24,8 @@ export class WebTransportTransport implements Transport {
     private readonly controlReader: ReadableStream<Uint8Array>,
     readonly binding: Uint8Array,
   ) {
-    this.datagramWriter = (wt.datagrams.writable as WritableStream<Uint8Array>).getWriter();
+    const writer = (wt.datagrams.writable as WritableStream<Uint8Array>).getWriter();
+    this.datagrams = new DatagramSender((bytes) => writer.write(bytes));
   }
 
   /** Connects using a pinned certificate hash (self-signed server certificate, §2.3). */
@@ -60,7 +62,7 @@ export class WebTransportTransport implements Transport {
 
   sendDatagram(bytes: Uint8Array): void {
     if (this.closed) return;
-    this.datagramWriter.write(bytes).catch(() => undefined);
+    this.datagrams.send(bytes);
   }
 
   close(): void {
