@@ -1,0 +1,15 @@
+{
+  "name": "@dwell/electron",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dwell desktop shell (ARCHITECTURE.md §2.2)",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke --ozone-platform=headless"
+  },
+  "devDependencies": {
+    "electron": "44.4.5"
+  }
+}

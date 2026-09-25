@@ -141,7 +141,7 @@ TEST_CASE("server: a signature for another transport binding is rejected") {
   CHECK(std::get<Reject>(f.Replies(1)[0]).reason == RejectReason::kAuthFailed);
 }
 
-TEST_CASE("server: the same key cannot join twice") {
+TEST_CASE("server: a new login replaces the old session for the same key") {
   Fixture f;
   const Identity who(5);
   f.Join(1, who);
@@ -149,7 +149,24 @@ TEST_CASE("server: the same key cannot join twice") {
   f.Send(2, ClientHello{kProtocolVersion, "t", who.public_key, "x"});
   const auto nonce = std::get<Challenge>(f.Replies(2)[0]).nonce;
   f.Send(2, ClientAuth{who.Sign(AuthTranscript(nonce, f.binding, who.public_key))});
-  CHECK(std::get<Reject>(f.Replies(2)[0]).reason == RejectReason::kAuthFailed);
+
+  bool old_closed = false, new_closed = false;
+  std::vector<Message> to_old, to_new;
+  for (auto& o : f.server.TakeOutbox()) {
+    auto& target = o.session == 1 ? to_old : to_new;
+    if (o.kind == Outgoing::Kind::kClose) {
+      (o.session == 1 ? old_closed : new_closed) = true;
+    } else {
+      target.push_back(*Decode(o.bytes));
+    }
+  }
+  REQUIRE(to_old.size() == 1);
+  CHECK(std::get<Reject>(to_old[0]).reason == RejectReason::kReplaced);
+  CHECK(old_closed);
+  REQUIRE(to_new.size() == 1);
+  CHECK(std::holds_alternative<Welcome>(to_new[0]));
+  CHECK_FALSE(new_closed);
+  CHECK(f.server.joined_players() == 1);
 }
 
 TEST_CASE("server: rejects joins when full") {

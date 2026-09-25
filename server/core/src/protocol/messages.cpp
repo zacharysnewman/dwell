@@ -110,7 +110,7 @@ void Write(ByteWriter& w, const Pong& m) {
   w.F64(m.server_time_ms);
 }
 
-bool IsRejectReason(std::uint8_t v) { return v >= 1 && v <= 6; }
+bool IsRejectReason(std::uint8_t v) { return v >= 1 && v <= kMaxRejectReason; }
 
 }  // namespace
 

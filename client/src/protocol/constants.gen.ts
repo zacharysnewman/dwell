@@ -44,6 +44,7 @@ export const RejectReason = {
   NotAllowListed: 4,
   AuthFailed: 5,
   Malformed: 6,
+  Replaced: 7,
 } as const;
 export type RejectReason = (typeof RejectReason)[keyof typeof RejectReason];
 

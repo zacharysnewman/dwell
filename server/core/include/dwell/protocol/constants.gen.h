@@ -47,7 +47,9 @@ enum class RejectReason : std::uint8_t {
   kNotAllowListed = 4,
   kAuthFailed = 5,
   kMalformed = 6,
+  kReplaced = 7,
 };
+inline constexpr std::uint8_t kMaxRejectReason = 7;
 
 enum class TransportKind : std::uint8_t {
   kWebTransport = 1,

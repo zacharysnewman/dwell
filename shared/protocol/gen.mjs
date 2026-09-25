@@ -43,6 +43,7 @@ const cppEnum = (name, type, obj) => {
 cppEnum('Channel', 'std::uint8_t', c.channels);
 cppEnum('MessageType', 'std::uint8_t', c.messageTypes);
 cppEnum('RejectReason', 'std::uint8_t', c.rejectReasons);
+cpp.push(`inline constexpr std::uint8_t kMaxRejectReason = ${Math.max(...Object.values(c.rejectReasons))};`);
 cppEnum('TransportKind', 'std::uint8_t', c.transportKinds);
 cpp.push('');
 cpp.push('}  // namespace dwell::protocol');

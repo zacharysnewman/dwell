@@ -37,7 +37,8 @@
     "Full": 3,
     "NotAllowListed": 4,
     "AuthFailed": 5,
-    "Malformed": 6
+    "Malformed": 6,
+    "Replaced": 7
   },
   "transportKinds": {
     "WebTransport": 1,

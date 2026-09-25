@@ -87,13 +87,16 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
         Reject(id, RejectReason::kAuthFailed, "Identity check failed.");
         return;
       }
-      const bool already_joined = std::any_of(sessions_.begin(), sessions_.end(), [&](auto& kv) {
-        return kv.first != id && kv.second.phase == Phase::kJoined &&
-               kv.second.public_key == s.public_key;
-      });
-      if (already_joined) {
-        Reject(id, RejectReason::kAuthFailed, "This player is already connected.");
-        return;
+      // The signature proves key ownership, so a new login replaces any older session for the
+      // same player (e.g. one whose connection dropped but hasn't timed out yet).
+      std::vector<SessionId> replaced;
+      for (const auto& [other_id, other] : sessions_) {
+        if (other_id != id && other.phase == Phase::kJoined && other.public_key == s.public_key) {
+          replaced.push_back(other_id);
+        }
+      }
+      for (const auto other_id : replaced) {
+        Reject(other_id, RejectReason::kReplaced, "Signed in from another connection.");
       }
       s.player_id = AllocatePlayerId();
       s.phase = Phase::kJoined;
