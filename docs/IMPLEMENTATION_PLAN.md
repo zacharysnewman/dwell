@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | 🔍 In review (Safari check outstanding) | #3 |
-| 2 — Physics player controller | ⏳ Not started | — |
+| 2 — Physics player controller | 🚧 In progress (2a–2g done) | — |
 | 3 — Terrain generation & streaming | ⏳ Not started | — |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
@@ -131,6 +131,23 @@ Exit criteria
 
 ## Phase 2 — Physics Player Controller (Prediction + Reconciliation)
 
+**Status:** in progress — 2a–2g (controller, voxel collision and queries, ported test suite) are
+done; 2h (networking), 2i (divergence measurement), and presentation are outstanding.
+
+Deviations from the deliverables below:
+- `maxStepHeight` is 0.55 m (PPC 0.45) so half-block slabs step up, as the exit criteria require.
+- Terrain collision is one static body with a `MutableCompoundShape` of per-chunk meshes, and chunk
+  meshes use unit quads rather than greedy-merged faces: separate chunk bodies and T-junctions both
+  caused ghost contacts at seams (PLAYER_CONTROLLER.md §5). Phase 3's greedy mesher is therefore for
+  render meshes only.
+- Controller fixes beyond the PPC (PLAYER_CONTROLLER.md §4): blocked motion isn't absorbed as
+  external velocity (needed to jump onto a block while holding forward), step-up nudge and grace,
+  crouched step probe height; ladders gained an over-the-top region.
+- `PlayerControllerConfig` lives in the C++ core rather than `shared/protocol`: the client runs the
+  same C++ in WASM, so no TypeScript copy is needed.
+- Added beyond plan: a playground world generator (generator version 1) with every test feature
+  near the spawn.
+
 **Goal:** Spec Phase 2. Port the Physics Player Controller to C++/Jolt on voxel terrain, then
 network it with client prediction and server reconciliation (§9, `PLAYER_CONTROLLER.md`).
 
@@ -138,22 +155,22 @@ The port follows the PPC Quantum port's own phase order, so each step can be che
 behaviour and tests of the original.
 
 Deliverables
-- [ ] **2a — Skeleton.** `PlayerController` state, `PlayerControllerConfig` (recommended-feel defaults
+- [x] **2a — Skeleton.** `PlayerController` state, `PlayerControllerConfig` (recommended-feel defaults
   with voxel dimensions, `PLAYER_CONTROLLER.md` §7), spawn, dynamic Jolt body (rotation locked,
   gravity 0, frictionless, no sleeping, enhanced internal edge removal), aggregate pass, and the
   ordered pipeline running before `PhysicsSystem::Update`.
-- [ ] **2b — Voxel collision & queries.** Per-chunk static collision `MeshShape` built from the grid
-  and rebuilt in the same tick as an edit; `VoxelQuery` (DDA ray cast, capsule-vs-cell overlap)
+- [x] **2b — Voxel collision & queries.** Per-chunk static collision `MeshShape` built from the grid
+  (as sub-shapes of one terrain body) and rebuilt in the same tick as an edit; `VoxelQuery` (DDA ray cast, capsule-vs-cell overlap)
   merged with Jolt queries for dynamic layers (`PLAYER_CONTROLLER.md` §5); `PlayerTestWorld`
   builder (floors, block and slab steps, walls, 1×2 doorways, crawlspaces, ladder columns, water).
-- [ ] **2c — Probes & horizontal layer.** Ground/ceiling rings, wall rays; walk/run, accel/decel/reverse,
+- [x] **2c — Probes & horizontal layer.** Ground/ceiling rings, wall rays; walk/run, accel/decel/reverse,
   air control, step-up, external absorption and decay.
-- [ ] **2d — Vertical layer & jump.** Gravity, ground following + snap, walk-off, ceiling, launches;
+- [x] **2d — Vertical layer & jump.** Gravity, ground following + snap, walk-off, ceiling, launches;
   buffer/coyote in ticks; `Jumped`/`Landed` events.
-- [ ] **2e — Crouch.** Shape swap with feet planted / head kept; overlap-tested stand-up; crawlspaces.
-- [ ] **2f — Climb & swim.** Climbable voxel materials with facing variants; exclusive climb layer;
+- [x] **2e — Crouch.** Shape swap with feet planted / head kept; overlap-tested stand-up; crawlspaces.
+- [x] **2f — Climb & swim.** Climbable voxel materials with facing variants; exclusive climb layer;
   water and the exclusive swim layer (Dwell addition); optional auto-jump and edge guard.
-- [ ] **2g — Test port.** The PPC headless suites ported to C++ on voxel geometry
+- [x] **2g — Test port.** The PPC headless suites ported to C++ on voxel geometry
   (`PLAYER_CONTROLLER.md` §10), including the multi-player golden trace.
 - [ ] **2h — Networking.**
   - [ ] 20 Hz snapshot tick in the server loop (moved from Phase 1).
@@ -178,15 +195,18 @@ Deliverables
 Exit criteria
 - [ ] All ported PPC scenarios pass on voxel geometry (natively and in WASM); the golden trace is
   stable across repeated native runs.
-- [ ] The player fits through 1×2 doorways and, crouched, through 1-tall crawlspaces; full blocks need
+- [x] The player fits through 1×2 doorways and, crouched, through 1-tall crawlspaces; full blocks need
   a jump; slabs are stepped up without leaving the ground.
+  Automated: `player: voxel geometry`, `player: crouch`, `player: steps and air`, `player: step
+  smoothness`.
 - [ ] Two clients see each other move smoothly. With 150 ms RTT, 20 ms jitter and 5 % loss simulated,
   local movement feels immediate, steady-state correction error stays under ~5 cm, and most
   snapshots need no replay.
 - [ ] Debug knockback plays smoothly (no snap) at 150 ms RTT; players bump into each other without
   jitter.
 - [ ] Server rejects out-of-range inputs; fall damage and respawn work on all clients.
-- [ ] 64 players' controller passes cost < 1 ms/tick on the reference server (excluding the Jolt step).
+- [x] 64 players' controller passes cost < 1 ms/tick on the reference server (excluding the Jolt step).
+  ~0.36 ms/tick in the Release build (`player: performance`, run strict in CI's Release step).
 
 ---
 
@@ -219,8 +239,9 @@ Deliverables
 - [ ] Interest management: per-client view radius; stream nearest-first; unload far chunks;
   bandwidth budget per client.
 - [ ] Greedy mesher shared in spirit by both sides:
-  - [ ] Server: per-chunk Jolt `MeshShape` static bodies, rebuilt on change (built in Phase 2b;
-    greedy meshing reduces triangle count here).
+  - [x] Server: per-chunk Jolt `MeshShape`s, rebuilt on change (built in Phase 2b, as sub-shapes
+    of one terrain body with unit-quad faces; greedy merging is not used for collision because
+    its T-junctions cause ghost contacts — PLAYER_CONTROLLER.md §5).
   - [ ] Client: mesher in a Web Worker producing render mesh + collision triangles; client
     prediction world uses the same collision.
 - [ ] Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
