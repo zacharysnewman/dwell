@@ -27,14 +27,17 @@ void OnSignal(int) { g_running = false; }
 
 struct Options {
   std::uint16_t port = 4433;
+  std::uint16_t rtc_port = 0;  // 0 = port + 1
+  std::string advertise = "127.0.0.1";
   dwell::core::ServerConfig server;
   std::string client_url = "http://localhost:5173/dwell/";
 };
 
 void Usage() {
   std::puts(
-      "usage: dwell_server [--port N] [--name NAME] [--motd TEXT] [--max-players N] [--seed N]\n"
-      "                    [--client-url URL]");
+      "usage: dwell_server [--port N] [--rtc-port N] [--advertise IP] [--name NAME] [--motd TEXT]\n"
+      "                    [--max-players N] [--seed N] [--client-url URL]\n"
+      "  --advertise IP  address players use to reach this server (invite links, WebRTC)");
 }
 
 bool ParseOptions(int argc, char** argv, Options& o) {
@@ -46,6 +49,10 @@ bool ParseOptions(int argc, char** argv, Options& o) {
     if (!(v = value())) return false;
     if (arg == "--port") {
       o.port = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10));
+    } else if (arg == "--rtc-port") {
+      o.rtc_port = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10));
+    } else if (arg == "--advertise") {
+      o.advertise = v;
     } else if (arg == "--name") {
       o.server.name = v;
     } else if (arg == "--motd") {
@@ -94,7 +101,8 @@ int main(int argc, char** argv) {
   dwell::core::Server server(options.server, entropy, jobs);
 
   const DwellNetConfig net_config{
-      options.port, static_cast<std::uint32_t>(dwell::protocol::kMaxReliableMessageBytes),
+      options.port, options.rtc_port, options.advertise.c_str(),
+      static_cast<std::uint32_t>(dwell::protocol::kMaxReliableMessageBytes),
       static_cast<std::uint32_t>(dwell::protocol::kMaxDatagramBytes)};
   DwellNet* net = dwell_net_start(&net_config);
   if (!net) {
@@ -108,10 +116,16 @@ int main(int argc, char** argv) {
 
   std::printf("dwell_server | %s | dwell-net %s | protocol v%u\n", dwell::core::JoltVersionString(),
               dwell_net_crate_version(), dwell::protocol::kProtocolVersion);
-  std::printf("listening on UDP %u (WebTransport)\n", port);
+  const std::uint16_t rtc_port = dwell_net_rtc_port(net);
+  std::printf("listening on UDP %u (WebTransport) and UDP %u (WebRTC)\n", port, rtc_port);
   std::printf("certificate sha-256: %s\n", hash_hex.c_str());
-  std::printf("invite link: %s?join=127.0.0.1:%u&cert=%s\n", options.client_url.c_str(), port,
-              hash_hex.c_str());
+  // IPv6 literals need brackets in host:port.
+  const std::string host = options.advertise.find(':') != std::string::npos
+                               ? "[" + options.advertise + "]"
+                               : options.advertise;
+  std::printf("invite link: %s?join=%s:%u&cert=%s&rtc=%u&ice=%s:%s\n", options.client_url.c_str(),
+              host.c_str(), port, hash_hex.c_str(), rtc_port, dwell_net_ice_ufrag(net),
+              dwell_net_ice_pwd(net));
   std::fflush(stdout);
 
   std::signal(SIGINT, OnSignal);

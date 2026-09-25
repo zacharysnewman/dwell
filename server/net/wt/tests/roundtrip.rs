@@ -15,6 +15,8 @@ impl Net {
     fn start() -> Net {
         let config = DwellNetConfig {
             port: 0,
+            rtc_port: 0,
+            advertised_ip: c"127.0.0.1".as_ptr(),
             max_reliable_message_bytes: 1 << 20,
             max_datagram_bytes: 1200,
         };

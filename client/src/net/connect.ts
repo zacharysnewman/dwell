@@ -4,23 +4,45 @@ import type { Invite } from './invite';
 import { LoopbackTransport } from './loopback';
 import { ClientSession } from './session';
 import type { Transport } from './Transport';
+import { isWebRtcSupported, WebRtcTransport } from './webRtc';
 import { isWebTransportSupported, WebTransportTransport } from './webTransport';
 
 export interface ConnectOptions {
   displayName: string;
   clientVersion: string;
+  transport?: TransportPreference;
 }
 
 export class TransportUnavailableError extends Error {
   override name = 'TransportUnavailableError';
 }
 
-/** Opens the best available transport to the invited server. WebRTC fallback arrives later. */
-export async function openTransport(invite: Invite): Promise<Transport> {
-  if (isWebTransportSupported()) {
-    return WebTransportTransport.connect(invite.url, invite.certHash);
+export type TransportPreference = 'auto' | 'webtransport' | 'webrtc';
+
+/**
+ * Opens the best available transport to the invited server (ARCHITECTURE.md §8.1): WebTransport
+ * when supported, otherwise — or if it fails — WebRTC when the invite allows it (ADR 0008).
+ */
+export async function openTransport(
+  invite: Invite,
+  preference: TransportPreference = 'auto',
+): Promise<Transport> {
+  const canWebRtc = invite.webrtc !== null && isWebRtcSupported();
+  if (preference !== 'webrtc' && isWebTransportSupported()) {
+    try {
+      return await WebTransportTransport.connect(invite.url, invite.certHash);
+    } catch (err) {
+      if (preference === 'webtransport' || !canWebRtc) throw err;
+    }
   }
-  throw new TransportUnavailableError('This browser does not support WebTransport yet.');
+  if (canWebRtc && invite.webrtc && preference !== 'webtransport') {
+    return WebRtcTransport.connect(invite.webrtc, invite.certHash);
+  }
+  throw new TransportUnavailableError(
+    invite.webrtc
+      ? 'This browser supports neither WebTransport nor WebRTC.'
+      : 'This browser does not support WebTransport, and the invite has no WebRTC details.',
+  );
 }
 
 export async function connectToInvite(
@@ -28,7 +50,7 @@ export async function connectToInvite(
   options: ConnectOptions,
 ): Promise<ClientSession> {
   const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
-  const transport = await openTransport(invite);
+  const transport = await openTransport(invite, options.transport);
   const session = new ClientSession(transport, key, options);
   session.start();
   return session;

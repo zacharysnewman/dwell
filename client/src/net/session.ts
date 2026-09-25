@@ -1,6 +1,12 @@
 // Client side of the join handshake and connection health (ARCHITECTURE.md §8.3, ADR 0004).
 import type { DeviceKey } from '../identity/deviceKey';
-import { Channel, MessageType, PROTOCOL_VERSION, RejectReason } from '../protocol/constants.gen';
+import {
+  Channel,
+  MessageType,
+  PROTOCOL_VERSION,
+  type RejectReason,
+  type TransportKind,
+} from '../protocol/constants.gen';
 import { authTranscript, decode, encode, type Message } from '../protocol/messages';
 import type { Transport } from './Transport';
 
@@ -73,6 +79,10 @@ export class ClientSession {
       this.ping();
     }, this.options.pingIntervalMs ?? 1000);
     this.ping();
+  }
+
+  get transportKind(): TransportKind {
+    return this.transport.kind;
   }
 
   subscribe(listener: (s: SessionState, stats: SessionStats) => void): () => void {

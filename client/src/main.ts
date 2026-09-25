@@ -1,5 +1,5 @@
 import { buildInfo, formatBuildInfo } from './buildInfo';
-import { connectLocal, connectToInvite } from './net/connect';
+import { connectLocal, connectToInvite, type ConnectOptions } from './net/connect';
 import { parseInvite } from './net/invite';
 import { createRenderer, RendererUnavailableError, type Renderer } from './render';
 import { formatStatus } from './ui/statusOverlay';
@@ -53,12 +53,17 @@ async function connect(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const invite = params.get('local') === '1' ? null : parseInvite(location.search);
   const target = invite ? `${invite.host}:${String(invite.port)}` : 'Local world';
-  const options = { displayName: displayName(), clientVersion: buildInfo.sha.slice(0, 12) };
+  const forced = params.get('transport');
+  const options: ConnectOptions = {
+    displayName: displayName(),
+    clientVersion: buildInfo.sha.slice(0, 12),
+    transport: forced === 'webrtc' || forced === 'webtransport' ? forced : 'auto',
+  };
   status.textContent = invite ? `Connecting to ${target}…` : 'Starting local world…';
   try {
     const session = invite ? await connectToInvite(invite, options) : await connectLocal(options);
     session.subscribe((state, stats) => {
-      status.textContent = formatStatus(target, state, stats);
+      status.textContent = formatStatus(target, session.transportKind, state, stats);
     });
   } catch (err) {
     status.textContent = `Could not connect to ${target}: ${err instanceof Error ? err.message : String(err)}`;

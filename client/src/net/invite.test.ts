@@ -15,6 +15,25 @@ describe('parseInvite', () => {
     expect(parseInvite(`?join=play.example.com:443&cert=${cert}`)?.port).toBe(443);
   });
 
+  it('parses the optional WebRTC fallback for IP hosts', () => {
+    const ice = 'abcd1234:ABCDEFGHIJKLMNOPQRSTUVWX';
+    expect(parseInvite(`?join=127.0.0.1:4433&cert=${cert}&rtc=4434&ice=${ice}`)?.webrtc).toEqual({
+      ip: '127.0.0.1',
+      port: 4434,
+      ufrag: 'abcd1234',
+      pwd: 'ABCDEFGHIJKLMNOPQRSTUVWX',
+    });
+    expect(parseInvite(`?join=[::1]:4433&cert=${cert}&rtc=4434&ice=${ice}`)?.webrtc?.ip).toBe(
+      '::1',
+    );
+    // DNS names can't be WebRTC host candidates; short passwords are invalid.
+    expect(parseInvite(`?join=a.example:4433&cert=${cert}&rtc=4434&ice=${ice}`)?.webrtc).toBeNull();
+    expect(
+      parseInvite(`?join=127.0.0.1:4433&cert=${cert}&rtc=4434&ice=abcd:short`)?.webrtc,
+    ).toBeNull();
+    expect(parseInvite(`?join=127.0.0.1:4433&cert=${cert}`)?.webrtc).toBeNull();
+  });
+
   it('rejects malformed invites', () => {
     expect(parseInvite('')).toBeNull();
     expect(parseInvite(`?join=127.0.0.1&cert=${cert}`)).toBeNull();

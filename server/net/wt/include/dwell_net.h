@@ -11,7 +11,9 @@
 /**
  * Version of this C ABI. Bumped on any incompatible change to the exported functions.
  */
-#define DWELL_NET_ABI_VERSION 2
+#define DWELL_NET_ABI_VERSION 3
+
+#define TRANSPORT_WEBRTC 2
 
 #define CHANNEL_CONTROL 0
 
@@ -34,9 +36,18 @@ typedef struct DwellNet DwellNet;
 
 typedef struct DwellNetConfig {
   /**
-   * UDP port to listen on (0 = any free port).
+   * WebTransport UDP port (0 = any free port).
    */
   uint16_t port;
+  /**
+   * WebRTC UDP port (0 = WebTransport port + 1).
+   */
+  uint16_t rtc_port;
+  /**
+   * NUL-terminated IP address clients use to reach the server (e.g. "127.0.0.1"); advertised
+   * in invite links and used as the WebRTC host candidate.
+   */
+  const char *advertised_ip;
   uint32_t max_reliable_message_bytes;
   uint32_t max_datagram_bytes;
 } DwellNetConfig;
@@ -45,7 +56,7 @@ typedef struct DwellNetEvent {
   enum DwellNetEventKind kind;
   uint32_t session;
   /**
-   * Connected: transport kind (protocol TransportKind; 1 = WebTransport).
+   * Connected: transport kind (protocol TransportKind; 1 = WebTransport, 2 = WebRTC).
    */
   uint8_t transport;
   /**
@@ -53,7 +64,8 @@ typedef struct DwellNetEvent {
    */
   uint8_t channel;
   /**
-   * Connected: transport binding (WebTransport: SHA-256 of the server certificate).
+   * Connected: transport binding: SHA-256 of the server certificate (shared by WebTransport and
+   * WebRTC DTLS).
    */
   uint8_t binding[32];
   /**
@@ -87,7 +99,8 @@ const char *dwell_net_last_error(void);
  * Starts listening. Returns NULL on failure (see `dwell_net_last_error`).
  *
  * # Safety
- * `config` must point to a valid `DwellNetConfig`.
+ * `config` must point to a valid `DwellNetConfig` whose `advertised_ip` is NULL or a valid
+ * NUL-terminated string.
  */
 struct DwellNet *dwell_net_start(const struct DwellNetConfig *config);
 
@@ -114,6 +127,30 @@ void dwell_net_cert_hash(const struct DwellNet *net, uint8_t *out);
  * `net` must be a live handle.
  */
 uint16_t dwell_net_port(const struct DwellNet *net);
+
+/**
+ * The WebRTC UDP port actually bound.
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+uint16_t dwell_net_rtc_port(const struct DwellNet *net);
+
+/**
+ * The server's WebRTC ICE username fragment (NUL-terminated; valid while the handle lives).
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+const char *dwell_net_ice_ufrag(const struct DwellNet *net);
+
+/**
+ * The server's WebRTC ICE password (NUL-terminated; valid while the handle lives).
+ *
+ * # Safety
+ * `net` must be a live handle.
+ */
+const char *dwell_net_ice_pwd(const struct DwellNet *net);
 
 /**
  * Takes the next transport event. Returns false (and sets `kind = None`) when the queue is empty.

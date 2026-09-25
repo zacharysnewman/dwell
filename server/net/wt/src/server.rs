@@ -4,7 +4,7 @@
 //! and sends `Command`s back, which are routed to the owning session task.
 
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, Mutex};
@@ -15,6 +15,7 @@ use wtransport::endpoint::IncomingSession;
 use wtransport::{Connection, Endpoint, Identity, SendStream, ServerConfig, VarInt};
 
 use crate::framing::{read_frame, write_frame};
+use crate::rtc::{self, RtcParams};
 
 pub const CHANNEL_CONTROL: u8 = 0;
 pub const CHANNEL_WORLD: u8 = 1;
@@ -46,13 +47,32 @@ pub enum Event {
     },
 }
 
+/// Session ids are unique across both transports.
+pub fn next_session_id() -> u32 {
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 pub enum Command {
     Reliable { channel: u8, data: Vec<u8> },
     Datagram(Vec<u8>),
     Close,
 }
 
-type Sessions = Arc<Mutex<HashMap<u32, mpsc::UnboundedSender<Command>>>>;
+/// Routes host commands to the task that owns each session (one task per WebTransport session;
+/// one shared task for all WebRTC sessions).
+pub type Sessions = Arc<Mutex<HashMap<u32, mpsc::UnboundedSender<(u32, Command)>>>>;
+
+pub struct StartOptions {
+    /// WebTransport UDP port (0 = any).
+    pub port: u16,
+    /// WebRTC UDP port (0 = WebTransport port + 1).
+    pub rtc_port: u16,
+    /// Address clients use to reach this server; advertised in invite links and used as the
+    /// WebRTC host candidate.
+    pub advertised_ip: IpAddr,
+    pub limits: Limits,
+}
 
 pub struct NetServer {
     runtime: tokio::runtime::Runtime,
@@ -60,10 +80,19 @@ pub struct NetServer {
     sessions: Sessions,
     cert_hash: [u8; 32],
     port: u16,
+    rtc_port: u16,
+    ice_ufrag: String,
+    ice_pwd: String,
 }
 
 impl NetServer {
-    pub fn start(port: u16, limits: Limits) -> Result<Self, String> {
+    pub fn start(options: StartOptions) -> Result<Self, String> {
+        let StartOptions {
+            port,
+            rtc_port,
+            advertised_ip,
+            limits,
+        } = options;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("dwell-net")
@@ -80,6 +109,11 @@ impl NetServer {
             .map_err(|e| format!("certificate: {e}"))?;
         let mut cert_hash = [0u8; 32];
         cert_hash.copy_from_slice(identity.certificate_chain().as_slice()[0].hash().as_ref());
+        // WebRTC's DTLS uses the same certificate, so both transports share one fingerprint.
+        let dtls_cert = str0m::config::DtlsCert {
+            certificate: identity.certificate_chain().as_slice()[0].der().to_vec(),
+            private_key: identity.private_key().secret_der().to_vec(),
+        };
 
         let socket = bind_udp(port)?;
         let port = socket.local_addr().map_err(|e| e.to_string())?.port();
@@ -91,6 +125,14 @@ impl NetServer {
             .map_err(|e| format!("idle timeout: {e}"))?
             .build();
 
+        let rtc_socket = bind_udp(if rtc_port == 0 {
+            port.wrapping_add(1)
+        } else {
+            rtc_port
+        })?;
+        let rtc_port = rtc_socket.local_addr().map_err(|e| e.to_string())?.port();
+        let ice = rtc::random_ice_credentials();
+
         let (event_tx, events) = std_mpsc::channel();
         let sessions: Sessions = Arc::default();
         let endpoint = {
@@ -99,11 +141,19 @@ impl NetServer {
         };
         runtime.spawn(accept_loop(
             endpoint,
-            event_tx,
+            event_tx.clone(),
             sessions.clone(),
             cert_hash,
             limits,
         ));
+        let rtc_params = RtcParams {
+            advertised: SocketAddr::new(advertised_ip, rtc_port),
+            cert: dtls_cert,
+            binding: cert_hash,
+            ice: ice.clone(),
+            limits,
+        };
+        runtime.spawn(rtc::run(rtc_socket, rtc_params, event_tx, sessions.clone()));
 
         Ok(Self {
             runtime,
@@ -111,6 +161,9 @@ impl NetServer {
             sessions,
             cert_hash,
             port,
+            rtc_port,
+            ice_ufrag: ice.ufrag,
+            ice_pwd: ice.pass,
         })
     }
 
@@ -122,6 +175,14 @@ impl NetServer {
         self.port
     }
 
+    pub fn rtc_port(&self) -> u16 {
+        self.rtc_port
+    }
+
+    pub fn ice_credentials(&self) -> (&str, &str) {
+        (&self.ice_ufrag, &self.ice_pwd)
+    }
+
     pub fn poll(&self) -> Option<Event> {
         self.events.try_recv().ok()
     }
@@ -130,7 +191,7 @@ impl NetServer {
         let sessions = self.sessions.lock().expect("sessions lock");
         sessions
             .get(&session)
-            .is_some_and(|tx| tx.send(command).is_ok())
+            .is_some_and(|tx| tx.send((session, command)).is_ok())
     }
 
     pub fn shutdown(self) {
@@ -152,10 +213,9 @@ async fn accept_loop(
     binding: [u8; 32],
     limits: Limits,
 ) {
-    static NEXT_SESSION: AtomicU32 = AtomicU32::new(1);
     loop {
         let incoming = endpoint.accept().await;
-        let session = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
+        let session = next_session_id();
         let events = events.clone();
         let sessions = sessions.clone();
         tokio::spawn(async move {
@@ -240,11 +300,11 @@ async fn run_session(
             }
             command = commands.recv() => {
                 match command {
-                    Some(Command::Reliable { channel: CHANNEL_CONTROL, data }) => match control_tx.as_mut() {
+                    Some((_, Command::Reliable { channel: CHANNEL_CONTROL, data })) => match control_tx.as_mut() {
                         Some(tx) => { if write_frame(tx, &data).await.is_err() { break; } }
                         None => pending_control.push(data),
                     },
-                    Some(Command::Reliable { channel: _, data }) => {
+                    Some((_, Command::Reliable { channel: _, data })) => {
                         if world_tx.is_none() {
                             world_tx = open_world_stream(&conn).await;
                         }
@@ -253,11 +313,11 @@ async fn run_session(
                             None => break,
                         }
                     }
-                    Some(Command::Datagram(data)) => {
+                    Some((_, Command::Datagram(data))) => {
                         // Datagrams are best-effort; oversize or congested sends are dropped.
                         let _ = conn.send_datagram(data);
                     }
-                    Some(Command::Close) | None => {
+                    Some((_, Command::Close)) | None => {
                         // Finish the control stream and give the client a moment to read it, so a
                         // final Reject arrives before the connection closes.
                         if let Some(tx) = control_tx.as_mut() {
