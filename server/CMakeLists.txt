@@ -20,6 +20,7 @@ else()
 endif()
 
 add_subdirectory(core)
+add_subdirectory(tools)
 
 if(EMSCRIPTEN)
   # Browser build: the simulation core only (no networking, no native app). ADR 0007.

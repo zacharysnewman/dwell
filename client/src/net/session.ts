@@ -12,7 +12,7 @@ import type { Transport } from './Transport';
 
 export type SessionState =
   | { phase: 'handshaking' }
-  | { phase: 'joined'; playerId: number; worldSeed: bigint }
+  | { phase: 'joined'; playerId: number; worldSeed: bigint; generatorVersion: number }
   | { phase: 'rejected'; reason: RejectReason; message: string }
   | { phase: 'closed'; message: string };
 
@@ -24,6 +24,13 @@ export interface SessionStats {
   /** Latest server tick seen. */
   serverTick: number;
 }
+
+/** Gameplay messages from the server (datagram snapshots, world-channel events), with raw bytes. */
+export type GameMessage = Extract<
+  Message,
+  { type: typeof MessageType.PhysicsSnapshot } | { type: typeof MessageType.PlayerEvent }
+>;
+export type GameListener = (message: GameMessage, bytes: Uint8Array) => void;
 
 export interface SessionOptions {
   displayName: string;
@@ -42,6 +49,7 @@ export class ClientSession {
   private state: SessionState = { phase: 'handshaking' };
   private readonly stats: SessionStats = { rttMs: null, datagramRttMs: null, serverTick: 0 };
   private readonly listeners = new Set<(s: SessionState, stats: SessionStats) => void>();
+  private readonly gameListeners = new Set<GameListener>();
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private pingSeq = 0;
   private readonly now: () => number;
@@ -55,6 +63,7 @@ export class ClientSession {
     transport.setHandlers({
       onReliable: (channel, bytes) => {
         if (channel === Channel.control) void this.onControl(bytes);
+        else this.onWorld(bytes);
       },
       onDatagram: (bytes) => {
         this.onDatagram(bytes);
@@ -89,6 +98,17 @@ export class ClientSession {
     this.listeners.add(listener);
     listener(this.state, this.stats);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Gameplay messages (snapshots, player events) while joined. */
+  onGame(listener: GameListener): () => void {
+    this.gameListeners.add(listener);
+    return () => this.gameListeners.delete(listener);
+  }
+
+  /** Sends a gameplay datagram (player input); dropped unless joined. */
+  sendGameDatagram(m: Message): void {
+    if (this.state.phase === 'joined') this.transport.sendDatagram(encode(m));
   }
 
   close(): void {
@@ -140,7 +160,12 @@ export class ClientSession {
       }
       case MessageType.Welcome:
         this.stats.serverTick = m.serverTick;
-        this.setState({ phase: 'joined', playerId: m.playerId, worldSeed: m.worldSeed });
+        this.setState({
+          phase: 'joined',
+          playerId: m.playerId,
+          worldSeed: m.worldSeed,
+          generatorVersion: m.generatorVersion,
+        });
         break;
       case MessageType.Reject:
         this.setState({ phase: 'rejected', reason: m.reason, message: m.message });
@@ -156,12 +181,34 @@ export class ClientSession {
     }
   }
 
+  private onWorld(bytes: Uint8Array): void {
+    let m: Message;
+    try {
+      m = decode(bytes);
+    } catch {
+      this.setState({ phase: 'closed', message: 'Server sent a malformed message.' });
+      this.close();
+      return;
+    }
+    if (m.type === MessageType.PlayerEvent) this.emitGame(m, bytes);
+  }
+
+  private emitGame(m: GameMessage, bytes: Uint8Array): void {
+    if (this.state.phase !== 'joined') return;
+    for (const l of this.gameListeners) l(m, bytes);
+  }
+
   private onDatagram(bytes: Uint8Array): void {
     let m: Message;
     try {
       m = decode(bytes);
     } catch {
       return; // unreliable traffic: drop malformed datagrams
+    }
+    if (m.type === MessageType.PhysicsSnapshot) {
+      this.stats.serverTick = Math.max(this.stats.serverTick, m.serverTick);
+      this.emitGame(m, bytes);
+      return;
     }
     if (m.type === MessageType.DatagramPong) {
       this.stats.datagramRttMs = smooth(this.stats.datagramRttMs, this.now() - m.clientTimeMs);

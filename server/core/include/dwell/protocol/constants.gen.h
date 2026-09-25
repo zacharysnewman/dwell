@@ -7,13 +7,20 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 1;
+inline constexpr std::uint16_t kProtocolVersion = 2;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
 inline constexpr std::size_t kMaxReliableMessageBytes = 1048576;
 inline constexpr int kChunkSize = 32;
 inline constexpr std::string_view kAuthDomainTag = "dwell-auth-v1";
+inline constexpr std::size_t kMaxInputsPerDatagram = 4;
+
+inline constexpr int kMaxHealth = 100;
+inline constexpr int kRespawnSeconds = 5;
+inline constexpr float kReconcileSnapDistance = 1.0f;
+inline constexpr int kInterpDelayMs = 100;
+inline constexpr float kPredictProxyRadius = 16.0f;
 
 inline constexpr std::size_t kDisplayNameMaxBytes = 64;
 inline constexpr std::size_t kClientVersionMaxBytes = 64;
@@ -27,6 +34,7 @@ enum class Channel : std::uint8_t {
 };
 
 enum class MessageType : std::uint8_t {
+  kPlayerInput = 1,
   kDatagramPing = 2,
   kDatagramPong = 130,
   kStatusRequest = 64,
@@ -38,6 +46,8 @@ enum class MessageType : std::uint8_t {
   kReject = 70,
   kPing = 71,
   kPong = 72,
+  kPlayerEvent = 48,
+  kPhysicsSnapshot = 129,
 };
 
 enum class RejectReason : std::uint8_t {
@@ -56,5 +66,68 @@ enum class TransportKind : std::uint8_t {
   kWebRtc = 2,
   kLoopback = 3,
 };
+
+enum class PlayerState : std::uint8_t {
+  kIdle = 0,
+  kWalking = 1,
+  kRunning = 2,
+  kCrouching = 3,
+  kSliding = 4,
+  kJumping = 5,
+  kFalling = 6,
+  kClimbing = 7,
+  kSwimming = 8,
+};
+
+enum class GroundKind : std::uint8_t {
+  kNone = 0,
+  kTerrain = 1,
+  kTier1Body = 2,
+  kPlayer = 3,
+};
+
+enum class PlayerEventKind : std::uint8_t {
+  kKnockback = 1,
+  kDamage = 2,
+  kDeath = 3,
+  kRespawn = 4,
+};
+
+enum class DamageCause : std::uint8_t {
+  kFall = 1,
+  kCrush = 2,
+  kExplosion = 3,
+};
+
+inline constexpr std::uint8_t kMaxPlayerState = 8;
+inline constexpr std::uint8_t kMaxGroundKind = 3;
+inline constexpr std::uint8_t kMaxPlayerEventKind = 4;
+inline constexpr std::uint8_t kMaxDamageCause = 3;
+
+namespace InputButtons {
+inline constexpr std::uint16_t kJump = 1;
+inline constexpr std::uint16_t kRun = 2;
+inline constexpr std::uint16_t kCrouch = 4;
+inline constexpr std::uint16_t kAll = 7;
+}  // namespace InputButtons
+
+namespace PlayerFlags {
+inline constexpr std::uint8_t kGrounded = 1;
+inline constexpr std::uint8_t kCrouched = 2;
+inline constexpr std::uint8_t kClimbing = 4;
+inline constexpr std::uint8_t kSwimming = 8;
+inline constexpr std::uint8_t kDead = 16;
+inline constexpr std::uint8_t kAll = 31;
+}  // namespace PlayerFlags
+
+namespace ControllerFlags {
+inline constexpr std::uint8_t kGrounded = 1;
+inline constexpr std::uint8_t kJumping = 2;
+inline constexpr std::uint8_t kCrouching = 4;
+inline constexpr std::uint8_t kClimbing = 8;
+inline constexpr std::uint8_t kHasReleased = 16;
+inline constexpr std::uint8_t kSwimming = 32;
+inline constexpr std::uint8_t kAll = 63;
+}  // namespace ControllerFlags
 
 }  // namespace dwell::protocol

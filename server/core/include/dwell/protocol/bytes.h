@@ -12,6 +12,10 @@
 
 namespace dwell::protocol {
 
+// IEEE 754 binary16 conversions (round to nearest even; overflow → ±inf; NaN kept).
+std::uint16_t FloatToHalf(float f);
+float HalfToFloat(std::uint16_t h);
+
 // Little-endian byte writer for protocol messages (ARCHITECTURE.md §8.2: all fields little-endian).
 class ByteWriter {
  public:
@@ -22,6 +26,11 @@ class ByteWriter {
   void U32(std::uint32_t v) { Le(v); }
   void U64(std::uint64_t v) { Le(v); }
   void F64(double v) { Le(std::bit_cast<std::uint64_t>(v)); }
+  void I8(std::int8_t v) { U8(static_cast<std::uint8_t>(v)); }
+  void I16(std::int16_t v) { U16(static_cast<std::uint16_t>(v)); }
+  void I32(std::int32_t v) { U32(static_cast<std::uint32_t>(v)); }
+  void F32(float v) { Le(std::bit_cast<std::uint32_t>(v)); }
+  void F16(float v) { U16(FloatToHalf(v)); }
   void Bytes(std::span<const std::uint8_t> b) { out_.insert(out_.end(), b.begin(), b.end()); }
   // UTF-8 string: u16 byte length, then bytes. Callers enforce per-field limits before encoding.
   void Str(std::string_view s) {
@@ -49,6 +58,15 @@ class ByteReader {
   std::uint32_t U32() { return Le<std::uint32_t>(); }
   std::uint64_t U64() { return Le<std::uint64_t>(); }
   double F64() { return std::bit_cast<double>(Le<std::uint64_t>()); }
+  std::int8_t I8() { return static_cast<std::int8_t>(U8()); }
+  std::int16_t I16() { return static_cast<std::int16_t>(U16()); }
+  std::int32_t I32() { return static_cast<std::int32_t>(U32()); }
+  float F32() { return std::bit_cast<float>(Le<std::uint32_t>()); }
+  float F16() { return HalfToFloat(U16()); }
+  // Fails the read (like truncation) when `condition` is false; for range checks in decoders.
+  void Check(bool condition) {
+    if (!condition) ok_ = false;
+  }
 
   template <std::size_t N>
   std::array<std::uint8_t, N> Fixed() {

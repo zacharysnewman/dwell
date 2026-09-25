@@ -2,7 +2,8 @@
 // protocol bytes with the main thread's LoopbackTransport.
 import { TransportKind } from '../protocol/constants.gen';
 import type { FromWorker, ToWorker } from './messages';
-import { LocalCore, OutgoingKind, type DwellCoreFactory } from './wasmCore';
+import { importDwellCore } from '../sim/module';
+import { LocalCore, OutgoingKind } from './wasmCore';
 
 interface WorkerScope {
   postMessage(message: FromWorker, transfer?: Transferable[]): void;
@@ -61,9 +62,7 @@ function handle(msg: ToWorker): void {
 
 async function start(worldSeed: number): Promise<void> {
   try {
-    const url = `${import.meta.env.BASE_URL}wasm/dwell_core.js`;
-    const mod = (await import(/* @vite-ignore */ url)) as { default: DwellCoreFactory };
-    core = await LocalCore.load(mod.default, worldSeed);
+    core = await LocalCore.load(await importDwellCore(), worldSeed);
   } catch (err) {
     scope.postMessage({
       t: 'error',

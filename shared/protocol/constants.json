@@ -1,12 +1,20 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
   "maxReliableMessageBytes": 1048576,
   "chunkSize": 32,
   "authDomainTag": "dwell-auth-v1",
+  "maxInputsPerDatagram": 4,
+  "players": {
+    "maxHealth": 100,
+    "respawnSeconds": 5,
+    "reconcileSnapDistance": 1.0,
+    "interpDelayMs": 100,
+    "predictProxyRadius": 16
+  },
   "limits": {
     "displayNameMaxBytes": 64,
     "clientVersionMaxBytes": 64,
@@ -19,6 +27,7 @@
     "world": 1
   },
   "messageTypes": {
+    "PlayerInput": 1,
     "DatagramPing": 2,
     "DatagramPong": 130,
     "StatusRequest": 64,
@@ -29,7 +38,9 @@
     "Welcome": 69,
     "Reject": 70,
     "Ping": 71,
-    "Pong": 72
+    "Pong": 72,
+    "PlayerEvent": 48,
+    "PhysicsSnapshot": 129
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -44,5 +55,53 @@
     "WebTransport": 1,
     "WebRtc": 2,
     "Loopback": 3
+  },
+  "inputButtons": {
+    "jump": 1,
+    "run": 2,
+    "crouch": 4
+  },
+  "playerStates": {
+    "Idle": 0,
+    "Walking": 1,
+    "Running": 2,
+    "Crouching": 3,
+    "Sliding": 4,
+    "Jumping": 5,
+    "Falling": 6,
+    "Climbing": 7,
+    "Swimming": 8
+  },
+  "playerFlags": {
+    "grounded": 1,
+    "crouched": 2,
+    "climbing": 4,
+    "swimming": 8,
+    "dead": 16
+  },
+  "controllerFlags": {
+    "grounded": 1,
+    "jumping": 2,
+    "crouching": 4,
+    "climbing": 8,
+    "hasReleased": 16,
+    "swimming": 32
+  },
+  "groundKinds": {
+    "None": 0,
+    "Terrain": 1,
+    "Tier1Body": 2,
+    "Player": 3
+  },
+  "playerEventKinds": {
+    "Knockback": 1,
+    "Damage": 2,
+    "Death": 3,
+    "Respawn": 4
+  },
+  "damageCauses": {
+    "Fall": 1,
+    "Crush": 2,
+    "Explosion": 3
   }
 }

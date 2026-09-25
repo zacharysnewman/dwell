@@ -2,6 +2,38 @@
 
 namespace dwell::protocol {
 
+// Round-to-nearest-even conversion after F. Giesen's float_to_half_fast3_rtne.
+std::uint16_t FloatToHalf(float f) {
+  std::uint32_t x = std::bit_cast<std::uint32_t>(f);
+  const std::uint32_t sign = x & 0x80000000u;
+  x ^= sign;
+  std::uint32_t out;
+  if (x >= 0x47800000u) {  // ≥ 65536, inf or NaN
+    out = x > 0x7F800000u ? 0x7E00u : 0x7C00u;
+  } else if (x < 0x38800000u) {  // subnormal half or zero: let float addition round
+    const float magic = std::bit_cast<float>(0x3F000000u);  // 0.5
+    out = std::bit_cast<std::uint32_t>(std::bit_cast<float>(x) + magic) - 0x3F000000u;
+  } else {
+    const std::uint32_t mantissa_odd = (x >> 13) & 1u;
+    x += 0xC8000FFFu;  // rebias the exponent (15 − 127) and round
+    x += mantissa_odd;
+    out = x >> 13;
+  }
+  return static_cast<std::uint16_t>(out | (sign >> 16));
+}
+
+float HalfToFloat(std::uint16_t h) {
+  const std::uint32_t sign = static_cast<std::uint32_t>(h & 0x8000u) << 16;
+  const std::uint32_t exponent = (h >> 10) & 0x1Fu;
+  const std::uint32_t mantissa = h & 0x3FFu;
+  if (exponent == 0) {
+    const float value = static_cast<float>(mantissa) * (1.0f / 16777216.0f);  // 2^-24
+    return std::bit_cast<float>(std::bit_cast<std::uint32_t>(value) | sign);
+  }
+  if (exponent == 31) return std::bit_cast<float>(sign | 0x7F800000u | (mantissa << 13));
+  return std::bit_cast<float>(sign | ((exponent + 112) << 23) | (mantissa << 13));
+}
+
 bool IsValidUtf8(std::string_view s) {
   std::size_t i = 0;
   const auto n = s.size();
