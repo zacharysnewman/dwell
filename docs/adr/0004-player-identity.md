@@ -46,3 +46,15 @@ App Store obligations (Sign in with Apple when offering third-party sign-in on i
   key before accounts exist, and can require accounts later.
 - When accounts are added: privacy policy, age handling (COPPA), data deletion, and Sign in with
   Apple on iOS become requirements.
+
+## Amendment (2026-09-25, Phase 1)
+
+The implementation keeps the private key **non-extractable** (ADR 0005: other pages on the shared
+`dropkickarcade.com` origin must not be able to copy it). A non-extractable WebCrypto key cannot
+be exported, so the "export/import (file or QR)" step above is **dropped**. Moving an identity to
+another device is instead handled by accounts, which link several device keys to one account.
+Until accounts exist, clearing site data creates a new identity.
+
+Also added during implementation: a successful login for a key that already has a joined session
+**replaces** that session (reject reason `Replaced`), so a player whose connection dropped can
+rejoin immediately instead of waiting for the stale session to time out.

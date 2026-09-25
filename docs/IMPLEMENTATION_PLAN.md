@@ -14,9 +14,7 @@ when its exit criteria pass and `ARCHITECTURE.md` reflects what was built.
 
 ## Phase 0 — Repository, Tooling & GitHub Pages Pipeline
 
-**Status:** code complete. Exit criteria verified locally (client lint/typecheck/test/build and a
-headless render check; server build, tests, and smoke run). Remaining: the first GitHub CI run and
-Pages deployment (requires Pages source = "GitHub Actions" in repository settings).
+**Status:** complete — CI green and the Pages deployment live (PR #2).
 
 **Goal:** A working monorepo skeleton that deploys a blank client to GitHub Pages on every
 push to the default branch.
@@ -44,6 +42,22 @@ Exit criteria
 ---
 
 ## Phase 1 — Server Core, Jolt, Headless Voxel Grid & Transport
+
+**Status:** complete, pending CI on the PR and your review.
+
+| Exit criterion | Result |
+|---|---|
+| Chromium and Electron connect to a native server on localhost via WebTransport, exchange ping/pong over datagrams and a reliable stream, and show RTT | ✅ Automated: Playwright e2e (Chromium) and the Electron `--smoke` run in CI |
+| Forcing the WebRTC fallback produces the same behavior, including in Safari | ✅ Chromium (e2e) and Electron (manual, against a routable IP). ⚠️ **Safari not yet tested** — no Safari in the build environment; needs a manual check on a Mac/iPhone |
+| The Pages deployment runs in local mode with no external server | ✅ e2e test against the production build; Pages workflow builds the WASM core |
+| Protocol golden tests pass in both languages | ✅ C++ (doctest) and TS (Vitest) against vectors from an independent Python encoder |
+
+Deviations from the deliverables below:
+- WebRTC uses its own UDP port (WebTransport port + 1) instead of sharing one (ADR 0008 notes).
+- Device keys are non-extractable, so key export/import was dropped (ADR 0004 amendment).
+- Added beyond plan: session replacement on re-login (reject reason `Replaced`), a strict CSP, and
+  an e2e CI job.
+- Electron loads the single-threaded WASM build; the threaded build comes later (ADR 0007).
 
 **Goal:** Spec Phase 1. A C++ server with Jolt and a headless voxel grid, reachable from the
 browser client over WebTransport, plus local mode so the Pages build works without a server.
@@ -76,9 +90,10 @@ Deliverables
 - **Client networking (`client/net`)**
   - `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
-  - Connect via invite link `?join=host:port&cert=<sha256>`; `?local=1` forces local mode.
-  - Device key: generated on first run (non-extractable WebCrypto Ed25519 in IndexedDB),
-    export/import.
+  - Connect via invite link `?join=host:port&cert=<sha256>[&rtc=<port>&ice=<ufrag>:<pwd>]`;
+    `?local=1` forces local mode.
+  - Device key: generated on first run (non-extractable WebCrypto Ed25519 in IndexedDB; no
+    export — ADR 0004 amendment).
   - Connection status + RTT overlay.
 - **Local mode**
   - Emscripten build target for `server/core` (Jolt linked in, single-threaded per ADR 0007;

@@ -56,3 +56,9 @@ Use **Rust `wtransport`**, wrapped in a small Rust crate (`server/net/wt`) that 
 - **Reversal:** everything above the C ABI is transport-agnostic. If the spike or later work
   fails, Google QUICHE (option 2) can replace the crate behind the same interface without
   touching `server/core` or the protocol.
+
+## Outcome (2026-09-25, Phase 1)
+
+The spike passed: headless Chromium connected to a `wtransport` server using
+`serverCertificateHashes` and exchanged a stream message and a datagram each way. The QUICHE
+fallback was not needed. The C ABI is described in ARCHITECTURE.md §4.3.

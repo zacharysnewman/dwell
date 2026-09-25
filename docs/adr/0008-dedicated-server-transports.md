@@ -55,3 +55,20 @@ removed** from the architecture.
   Loopback. Dedicated servers need only inbound UDP.
 - WebRTC on the server adds complexity (ICE-lite, DTLS, SCTP via `str0m`) and a slightly longer
   connection setup than WebTransport.
+
+## Implementation notes (2026-09-25, Phase 1)
+
+- The invite-link path was proven: Chromium connects to the ICE-lite `str0m` endpoint with only
+  the invite data. The browser's offer is created locally and the server's answer is synthesized
+  from address, ICE credentials, and fingerprint; the server learns the client's ICE username
+  from its first STUN request.
+- DTLS reuses the WebTransport certificate, so the invite carries a single fingerprint (`cert`).
+  Invite form: `?join=host:port&cert=<sha256>&rtc=<port>&ice=<ufrag>:<pwd>`.
+- WebRTC runs on a **separate UDP port** (default: WebTransport port + 1) rather than
+  demultiplexing one socket.
+- `str0m` needs a remote fingerprint on record even with verification disabled; a placeholder is
+  set.
+- Chrome and Electron don't pair loopback candidates, so WebRTC tests against `127.0.0.1` only
+  work in browsers that allow loopback (e.g. Playwright's Chromium); real servers advertise a
+  routable IP (`--advertise`).
+- Safari has not been tested yet (no Safari in the development environment).
