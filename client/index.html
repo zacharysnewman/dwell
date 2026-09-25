@@ -2,7 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <!-- Added to the iOS home screen: full screen, no Safari toolbars. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <!--
       Strict CSP (GitHub Pages can't send headers). wasm-unsafe-eval: the local-mode WASM core.
       connect-src https: for WebTransport to player servers; ws: for the Vite dev server.
@@ -20,6 +27,7 @@
     <div id="net-status" aria-live="polite"></div>
     <div id="build-info"></div>
     <div id="fatal" hidden></div>
+    <div id="rotate-hint">Rotate to landscape to play</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
