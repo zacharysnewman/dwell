@@ -456,6 +456,10 @@ divergence added per tick. The whole ported player and netcode suite also passes
 
 - **Camera** (`client/src/game/game.ts`, eye height in `game/eye.ts`): first-person at the
   smoothed render position (interpolated between the last two ticks plus the correction offset).
+  **Field of view** (`render/fov.ts`): 75° vertical, but never more than 100° horizontal — wider
+  screens (16:9 desktop, landscape phones) get a narrower vertical field of view. An uncapped wide
+  view made forward and backward walking look faster than strafing at the same speed (playtest);
+  the sim itself moves at the same speed in every direction (`player: walking` test).
   The eye height is computed once per tick from the feet (never the capsule centre, whose height
   changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
   camera must not show, and each is folded into an offset that decays:
