@@ -3,20 +3,22 @@
 ## Project
 
 Dwell is a server-authoritative, multiplayer-first voxel sandbox with large-scale dynamic
-physics. C++ server with Jolt Physics; TypeScript client with Jolt WASM; WebTransport
+physics. C++ server with Jolt Physics; TypeScript client running the shared C++ sim core (with Jolt) as WASM; WebTransport
 networking. The client is deployed to GitHub Pages first, then wrapped in Electron and
 Capacitor.
 
 ## Key documents
 
 - `docs/ARCHITECTURE.md` — the authoritative description of the game architecture.
+- `docs/PLAYER_CONTROLLER.md` — detailed spec of the physics player controller (architecture sub-spec).
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
 - `docs/adr/` — architecture decision records.
 
 ## Requirement: keep ARCHITECTURE.md up to date
 
 Whenever a change adds, removes, or modifies any part of the architecture, update
-`docs/ARCHITECTURE.md` **in the same change**. This includes, but is not limited to:
+`docs/ARCHITECTURE.md` — and any architecture sub-spec it links to, such as
+`docs/PLAYER_CONTROLLER.md` — **in the same change**. This includes, but is not limited to:
 
 - components, modules, or process boundaries (server, client, workers, shells);
 - network transports, channels, message types, or wire formats;

@@ -18,11 +18,11 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 | Concern | Choice |
 |---|---|
 | Authoritative server | C++20, Jolt Physics (native) |
-| Client | TypeScript, Jolt Physics via WebAssembly |
+| Client | TypeScript; physics/prediction via the shared C++ sim core (Jolt linked in) compiled to WebAssembly |
 | Client shells | Browser (GitHub Pages) → Electron (desktop) → Capacitor (iOS/Android) |
 | Transport | WebTransport (HTTP/3 / QUIC); WebSocket fallback |
 | Simulation | 60 Hz internal physics step, 20 Hz network snapshots |
-| Players | Physics-based `CharacterVirtual` + inner body, client-predicted (§9) |
+| Players | Dynamic-body, velocity-layer controller ported from the Physics Player Controller, client-predicted (§9, [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)) |
 | Terrain | Seeded deterministic procedural generation, same C++ code on server and client (§6.3) |
 | First deployment target | **GitHub Pages** (static client) |
 
@@ -45,8 +45,8 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
                                     │  WebTransport │
                                     │  (or WS)      ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│                     Client (TS + Jolt WASM)                          │
-│  Input → Local prediction (Jolt CharacterVirtual) → Reconciliation   │
+│                 Client (TS + sim core WASM w/ Jolt)                  │
+│  Input → Local prediction (player controller) → Reconciliation       │
 │  Chunk store (+ worldgen WASM worker) → Mesher (worker) → Renderer   │
 │  Snapshot buffer → Interpolation of Tier 1 bodies                    │
 │  Local-only Jolt world → Tier 2 cosmetic debris                      │
@@ -66,14 +66,18 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    from Pages; the server is hosted elsewhere (see 2.3). The client locates a server via
    a build-time default plus a `?server=` URL override.
 2. **No custom HTTP headers** → no `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy`
-   → no `SharedArrayBuffer`. The web build therefore uses the **single-threaded** Jolt WASM
-   build. (A `coi-serviceworker` shim may enable cross-origin isolation later; tracked as an
-   open question.) Electron/Capacitor builds can opt into the multithreaded Jolt build.
+   → no `SharedArrayBuffer`. The web build of the sim core (and the Jolt inside it) is therefore
+   compiled **single-threaded** (no pthreads). A `coi-serviceworker` shim may enable
+   cross-origin isolation later (open decision #4). Electron/Capacitor builds can opt into a
+   multithreaded build.
 3. **Project-site base path.** Assets are built with Vite `base: '/dwell/'`.
 4. **Local mode.** So the Pages deployment is playable with no hosted server, the server's
    simulation core is also compiled to WASM (Emscripten) and run in a Web Worker, connected
    through an in-memory `LoopbackTransport` that implements the same interface as the network
    transports. Same code, same protocol, no network.
+5. **One WASM build, three uses.** The same Emscripten build of `server/core` provides local mode,
+   the client's prediction/debris physics, and the client terrain generator, so every piece of
+   simulation logic (player controller, worldgen, physics setup) has exactly one implementation.
 
 Deployment is automated by a GitHub Actions workflow that builds `client/` and publishes it
 with `actions/deploy-pages` on pushes to the default branch.
@@ -103,12 +107,13 @@ The same Vite build output is wrapped by:
 /server              C++20 authoritative server (CMake). Jolt via FetchContent.
   /core              Simulation core: voxel grid, worldgen, integrity, clustering, physics,
                      players, replication.
-                     Platform-free; compiled natively AND to WASM (local mode).
+                     Platform-free; compiled natively AND to WASM (local mode + client physics).
+    /player          Physics player controller (PLAYER_CONTROLLER.md).
   /net               WebTransport (+ WebSocket) server front-end. Native only.
 /shared/protocol     Protocol spec, constants, and golden-byte test vectors used by both sides.
 /platforms/electron  Electron shell.
 /platforms/capacitor Capacitor shell.
-/docs                ARCHITECTURE.md, IMPLEMENTATION_PLAN.md, ADRs.
+/docs                ARCHITECTURE.md, PLAYER_CONTROLLER.md, IMPLEMENTATION_PLAN.md, ADRs.
 ```
 
 ---
@@ -131,7 +136,7 @@ every 16.67 ms (60 Hz):
     drain & validate inputs (per player, ordered by input sequence)
     integrate completed worldgen jobs (thread pool, budgeted)
     apply queued voxel edits → integrity → clustering → awaken bodies
-    step players (Jolt CharacterVirtual)
+    player controller pipeline per player (probes → layers → set body velocity; PLAYER_CONTROLLER.md §4)
     physicsSystem.Update(1/60)
     sleep monitor → re-bake queue → apply re-bakes
 every 3rd step (20 Hz):
@@ -142,9 +147,10 @@ every 3rd step (20 Hz):
 The loop uses a fixed timestep with an accumulator; the server never steps with a variable dt.
 
 ### 4.3 Simulation core vs. network front-end
-`server/core` has no sockets, threads, or OS calls; it consumes decoded messages and emits
-encoded messages through an interface. This lets the identical core run natively and in the
-browser's local mode (§2.1). `server/net` owns QUIC/HTTP3 sessions, stream management, and
+`server/core` has no sockets, OS calls, or threads of its own (parallel work such as worldgen is
+exposed as jobs the host schedules); it consumes decoded messages and emits encoded messages
+through an interface. This lets the identical core run natively, in the browser's local mode, and
+as the client's prediction/debris physics (§2.1). `server/net` owns QUIC/HTTP3 sessions, stream management, and
 the WebSocket fallback. The WebTransport library choice (e.g. libwebtransport/quiche/msquic-based)
 is an open decision recorded as an ADR when made.
 
@@ -159,7 +165,7 @@ is an open decision recorded as an ADR when made.
 | `worldgen/` | Runs the server's C++ terrain generator (WASM) in a Web Worker for `Generated` chunks. |
 | `mesh/` | Greedy mesher in a Web Worker; produces render meshes and collision triangles. |
 | `render/` | Scene, camera, chunk meshes, dynamic body meshes. Renderer library is an open decision (Three.js proposed). |
-| `physics/` | Jolt WASM worlds: prediction world (local player + static terrain) and debris world. |
+| `physics/` | Hosts the sim-core WASM module (C++ `server/core` + Jolt, Emscripten): prediction world (local player + terrain + kinematic proxies) and debris world. The client does not use separate Jolt JS bindings. |
 | `predict/` | Input sampling, local prediction, server reconciliation & replay, ground-relative frames, present-time proxies. |
 | `interp/` | Snapshot buffer, Tier 1 transform interpolation (and bounded extrapolation). |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
@@ -350,15 +356,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
 | **Players (§9)** | | |
-| `PLAYER_RADIUS` / `PLAYER_HEIGHT` | 0.3 m / 1.8 m | Character capsule |
-| `PLAYER_MASS` | 80 kg | Used for pushing and knockback |
-| `PLAYER_STEP_HEIGHT` | 0.6 m | Auto step-up (a full 1 m block needs a jump) |
-| `PLAYER_WALK_SPEED` / `PLAYER_SPRINT_SPEED` | 4.3 / 5.6 m/s | Ground speeds |
-| `PLAYER_JUMP_HEIGHT` | 1.25 m | Clears one block |
-| `PLAYER_MAX_PUSH_FORCE` | 800 N | Cap on force a player applies to Tier 1 bodies |
-| `CRUSH_SPEED_THRESHOLD` | 4 m/s | Relative contact speed that causes crush damage |
-| `CRUSH_STUCK_TICKS` | 6 | Unresolvable penetration ticks before crush death |
-| `FALL_DAMAGE_MIN_SPEED` | 12 m/s | Impact speed where fall damage begins |
+| Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
 | `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |
 | `PREDICT_PROXY_RADIUS` | 16 m | Tier 1 bodies within this use present-time proxies |
 | `RESPAWN_SECONDS` | 5 s | Death → respawn delay |
@@ -406,7 +404,8 @@ u32  lastReceivedSnapshotTick
 u8   count                      // redundancy: last N inputs (N ≤ 4)
 repeat count:
   u32  inputSeq
-  u16  buttons                  // bitfield: fwd/back/left/right/jump/crouch/sprint/...
+  i8   moveX, moveY             // analog move vector (keyboard: -127/0/127), |move| <= 1
+  u16  buttons                  // bitfield: jump/crouch/run/use/...
   i16  yaw, i16 pitch           // quantized view angles
 ```
 
@@ -418,14 +417,17 @@ u32  ackInputSeq                // last input processed for this client
 local player state:
   u32  groundEntityId           // 0 = static terrain / airborne; else pos/vel are body-local
   f32×3 position, f16×3 velocity
-  u8   flags                    // grounded | crouched | swimming | dead
+  u8   flags                    // grounded | crouched | climbing | swimming | dead
   u8   health
+  controller state (~48 B)      // layers, jump timers, crouch/climb/swim, ground ref —
+                                // exact layout in PLAYER_CONTROLLER.md §8.4
 u8   remotePlayerCount
 repeat remotePlayerCount:
   u16  playerId
   u32  groundEntityId
   f32×3 position, f16×3 velocity
   i16  yaw, i16 pitch
+  u8   state                    // player::State (animation)
   u8   flags
 u8   entityCount
 repeat entityCount:             // ~32 bytes each → ~34 entities per datagram
@@ -486,52 +488,56 @@ initial transform, and (spawn only) the cluster voxel layout (local offsets + ma
 
 ## 9. Players: Physics-Based Characters **[planned]**
 
-Players are full participants in the physics simulation: they collide with and push dynamic
-bodies, ride on falling structures, get shoved, knocked back, and crushed — while keeping
-responsive, client-predicted movement.
+Full specification: **[`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)** — a port of the
+[Physics Player Controller](https://github.com/zacharysnewman/physics-player-controller)
+(its deterministic Quantum 3 version) to C++/Jolt and Dwell's voxel world. This section is the
+architectural summary.
 
 ### 9.1 Character model
-- Each player is a Jolt **`CharacterVirtual`** (capsule, `PLAYER_RADIUS` × `PLAYER_HEIGHT`)
-  **with an inner rigid body** (`CharacterVirtualSettings::mInnerBodyShape`). The virtual
-  character gives precise, stable, predictable movement (stairs/step-up, slopes, ground
-  detection); the inner body makes the player visible to the rest of the physics world, so
-  Tier 1 bodies, ray casts, and other characters collide with it.
-- Mass `PLAYER_MASS`; push strength limited by `PLAYER_MAX_PUSH_FORCE`.
-- Both server and client use identical character settings from `shared/protocol/constants`.
-
-**Rejected alternative:** a fully rigid-body-driven (or active-ragdoll) player. It is harder
-to predict client-side (stacking, friction, and contact solver divergence between native and
-WASM Jolt cause constant corrections) and behaves poorly on voxel steps. The chosen model gets
-the physical interactions below without giving up prediction quality.
+- Each player is a **dynamic Jolt body** (capsule, rotation locked via `EAllowedDOFs`, gravity
+  factor 0, frictionless, never sleeps) driven by **velocity layers**: horizontal, vertical, and
+  exclusive climb/swim layers. The aggregate pass writes the summed target velocity to the body
+  before each physics step.
+- Whatever the solver does to the body (collisions, falling clusters, explosions) shows up next
+  tick as a deviation from the target, is **absorbed** as external velocity, and decays. That makes
+  players physically reactive without losing tight, predictable movement.
+- The controller is plain C++ in `server/core/player` (a copyable `PlayerController` value plus
+  ordered passes). The client runs the same code via the sim-core WASM build (§2.1).
+- Probes (ground/ceiling rings, wall rays, overlap tests) query the **voxel grid** directly (DDA)
+  for terrain and Jolt only for moving bodies (PLAYER_CONTROLLER.md §5).
 
 ### 9.2 Physical interactions
 
 | Interaction | Behavior | Authority |
 |---|---|---|
-| Static terrain | Collide; auto step-up ≤ `PLAYER_STEP_HEIGHT`; 1-block ledges need a jump | Server; client predicts |
-| Player → Tier 1 body | Walking into a body applies an impulse via `CharacterContactListener`, scaled by mass ratio and capped by `PLAYER_MAX_PUSH_FORCE`; light clusters can be shoved, heavy ones cannot | Server only; client does not predict body motion |
-| Tier 1 body → player | Moving bodies push the character (contact velocity transferred to character velocity) | Server; client corrected via reconciliation |
-| Standing on a Tier 1 body | Character inherits the ground body's velocity (`GetGroundVelocity`) — ride a falling slab, a tipping tower | Server; client predicts in the body's frame (§9.4) |
-| Crushing | Damage when contact relative speed exceeds `CRUSH_SPEED_THRESHOLD` against a Tier 1 body, or instant death if the character cannot be depenetrated for `CRUSH_STUCK_TICKS` | Server |
-| Other players | Inner bodies collide; players block and gently push each other | Server; client treats remote players as obstacles |
-| Tier 2 debris | Debris bounces off the local player (player is a kinematic body in the debris world); debris **never** affects player movement, so clients cannot diverge from the server | Client only |
-| Explosions | Radial knockback impulse (`force × falloff / PLAYER_MASS`) added to character velocity, plus damage | Server; client replays at event tick (§9.3) |
-| Falling | Fall damage above `FALL_DAMAGE_MIN_SPEED` impact speed | Server |
-| Water | Swim mode below the water surface: buoyancy, drag, vertical input | Server; client predicts |
+| Voxel terrain | Collide; step-up ≤ 0.45 m (slabs, debris); full blocks need a jump (optional auto-jump); ladders are climbable materials; water switches to the swim layer | Server; client predicts |
+| Player → Tier 1 body | Solver push, capped by contact mass scaling (`maxPushForce`, `pushableMassLimit`) | Server only; client does not predict body motion |
+| Tier 1 body → player | Solver push, absorbed as external velocity and decayed | Server; client corrected via reconciliation |
+| Standing on a Tier 1 body | Carried by the body's linear + angular velocity at the player's position (PPC platform model); camera turns with it | Server; client predicts in the body's frame (§9.4) |
+| Crushing | Opposing contacts with an approaching Tier 1 body sustained for `crushTicks` | Server |
+| Other players | Both dynamic: they block and push each other; standing on heads is grounded but not carried by default | Server; remote players are kinematic on the client |
+| Tier 2 debris | Bounces off the local player; never affects player movement | Client only |
+| Explosions | Radial velocity change with falloff and upward bias (PPC `AddExplosion`), plus damage | Server; client replays at event tick (§9.3) |
+| Falling | Fall damage from the controller's `Landed` impact speed | Server |
+| Voxel edits | Block removed under feet → normal walk-off; placement into any player capsule is rejected | Server |
 
 ### 9.3 Prediction & reconciliation
-- Fixed 60 Hz step on both sides. Client samples input every step, tags it with `inputSeq`,
-  applies it locally, stores it (plus resulting state) in a ring buffer, and sends it with the
-  previous 3 inputs for loss resilience.
-- Server applies inputs in sequence order, one per step; a missing input repeats the last
-  known one. Snapshots carry `ackInputSeq` and the authoritative player state.
-- On snapshot: client rewinds to the authoritative state, replays unacknowledged inputs, and
-  smooths visible corrections over a few frames; errors above `RECONCILE_SNAP_DISTANCE` snap.
-- **Server-originated impulses** (knockback, explosion) arrive as a reliable `PlayerEvent` with
-  the server tick at which they were applied; the client inserts the impulse into its history
-  at that tick and replays, so the knockback plays out predicted instead of as a snap.
-- Bit-exact determinism between native Jolt and Jolt WASM is **not** assumed; reconciliation
-  absorbs small divergence.
+- Fixed 60 Hz step on both sides. The client runs the controller pipeline for the local player
+  against a small prediction world (terrain, kinematic proxies, one dynamic body), records
+  `{inputSeq, input, controller state, body state}` per tick, and sends inputs with the previous 3
+  for loss resilience.
+- The server applies inputs in sequence order, one per step; a missing input repeats the last
+  known one. Snapshots carry `ackInputSeq`, the authoritative body state, and the local player's
+  controller state (layers, timers, crouch/climb/swim, ground ref).
+- On snapshot: if the stored prediction for `ackInputSeq` matches within tolerance, nothing is
+  replayed. Otherwise the client restores the server state, replays unacked inputs (pipeline +
+  prediction-world step), and smooths the visible correction; errors above
+  `RECONCILE_SNAP_DISTANCE` snap.
+- **Server-originated impulses** (knockback, explosion) arrive as a reliable `PlayerEvent` with the
+  tick they were applied; the client inserts them into history at that tick and replays.
+- Native and WASM Jolt are not assumed bit-identical. Divergence is minimized (Jolt
+  `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA contraction) and measured in CI; reconciliation
+  absorbs the rest.
 
 ### 9.4 Moving platforms & time frames
 The locally predicted player lives in the *present*, while Tier 1 bodies are normally rendered
@@ -549,7 +555,8 @@ structure unplayable. Therefore:
 
 ### 9.5 Remote players
 Remote players are interpolated like Tier 1 bodies (in the ground body's frame when
-`groundEntityId` ≠ 0), and exist in the client's physics worlds as kinematic capsules.
+`groundEntityId` ≠ 0), exist in the client's physics worlds as kinematic capsules, and are
+animated from `State` and flags in snapshots.
 
 ### 9.6 Health, death & respawn
 - Health is server-authoritative; damage sources are fall, crush, explosion.
@@ -566,7 +573,8 @@ impossible; the server's simulation is the only source of player state.
 
 - Server is the only authority on voxels, Tier 1 bodies, and player positions.
 - Inputs are rate-limited (≤ `SIM_HZ` per second plus redundancy) and range-checked.
-- Block edits are checked for reach, line of sight, cooldown, and permissions.
+- Block edits are checked for reach, line of sight, cooldown, and permissions; placements that
+  overlap any player capsule are rejected.
 - Message decoders bounds-check every length field; malformed messages drop the connection.
 
 ---
@@ -585,3 +593,4 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 6 | Final values for §7.4 tunables | Tune in Phases 4–6 |
 | 7 | Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`) | Not needed initially |
 | 8 | Worldgen noise numerics: fixed-point vs. strict IEEE float | Prototype both in Phase 3; pick by golden-test stability and speed |
+| 9 | Movement feel on voxels: PPC recommended feel (walk 5 / run 8 m/s) vs. slower voxel-genre speeds | Start with PPC feel; playtest in Phase 2 |

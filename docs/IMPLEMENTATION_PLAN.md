@@ -60,8 +60,9 @@ Deliverables
   - Server URL from build config, overridable with `?server=`; `?local=1` forces local mode.
   - Connection status + RTT overlay.
 - **Local mode**
-  - Emscripten build target for `server/core`; loaded in a Web Worker by the client and wired
-    through `LoopbackTransport`. Added to the Pages workflow.
+  - Emscripten build target for `server/core` (Jolt linked in, single-threaded); loaded in a
+    Web Worker by the client and wired through `LoopbackTransport`. Added to the Pages workflow.
+    The same build later hosts client prediction (Phase 2) and worldgen (Phase 3).
 - **Electron shell (`platforms/electron`)** loading the same build; connects to a local server.
 
 Exit criteria
@@ -73,38 +74,63 @@ Exit criteria
 
 ---
 
-## Phase 2 — Player Movement (Prediction + Reconciliation)
+## Phase 2 — Physics Player Controller (Prediction + Reconciliation)
 
-**Goal:** Spec Phase 2. Responsive, server-authoritative, physics-based first-person
-movement (§9.1–9.3, 9.5).
+**Goal:** Spec Phase 2. Port the Physics Player Controller to C++/Jolt on voxel terrain, then
+network it with client prediction and server reconciliation (§9, `PLAYER_CONTROLLER.md`).
+
+The port follows the PPC Quantum port's own phase order, so each step can be checked against the
+behaviour and tests of the original.
 
 Deliverables
-- Shared character parameters (capsule, mass, speeds, gravity, jump, step height, push force)
-  in `shared/protocol/constants` (§7.4).
-- Server: per-player Jolt `CharacterVirtual` **with inner body**, so players collide with each
-  other and are visible to the physics world; input queue ordered by `inputSeq`; input
-  validation and rate limiting (§10); `ackInputSeq` + authoritative state in snapshots.
-- Player-vs-player collision (block/gentle push) on the server; remote players as kinematic
-  capsules on the client.
-- Health, fall damage, death → cosmetic client ragdoll → respawn; reliable `PlayerEvent`.
-- Knockback plumbing: server-applied impulses sent as `PlayerEvent(Knockback, tick)` and
-  replayed into client prediction history (§9.3). Tested with a debug "launch pad" block.
-- Client: Jolt WASM loaded (single-threaded build on web); local `CharacterVirtual` against
-  the same flat-world collision; input ring buffer; redundant input datagrams (last 4).
-- Reconciliation: rewind to server state, replay unacked inputs, smooth small corrections,
-  snap large ones.
-- Remote players rendered via snapshot interpolation (`INTERP_DELAY_MS`).
-- Debug tools: network condition simulator in the client (added latency, jitter, loss) and an
-  overlay showing prediction error.
+- **2a — Skeleton.** `PlayerController` state, `PlayerControllerConfig` (recommended-feel defaults
+  with voxel dimensions, `PLAYER_CONTROLLER.md` §7), spawn, dynamic Jolt body (rotation locked,
+  gravity 0, frictionless, no sleeping, enhanced internal edge removal), aggregate pass, and the
+  ordered pipeline running before `PhysicsSystem::Update`.
+- **2b — Voxel collision & queries.** Per-chunk static collision `MeshShape` built from the grid
+  and rebuilt in the same tick as an edit; `VoxelQuery` (DDA ray cast, capsule-vs-cell overlap)
+  merged with Jolt queries for dynamic layers (`PLAYER_CONTROLLER.md` §5); `PlayerTestWorld`
+  builder (floors, block and slab steps, walls, 1×2 doorways, crawlspaces, ladder columns, water).
+- **2c — Probes & horizontal layer.** Ground/ceiling rings, wall rays; walk/run, accel/decel/reverse,
+  air control, step-up, external absorption and decay.
+- **2d — Vertical layer & jump.** Gravity, ground following + snap, walk-off, ceiling, launches;
+  buffer/coyote in ticks; `Jumped`/`Landed` events.
+- **2e — Crouch.** Shape swap with feet planted / head kept; overlap-tested stand-up; crawlspaces.
+- **2f — Climb & swim.** Climbable voxel materials with facing variants; exclusive climb layer;
+  water and the exclusive swim layer (Dwell addition); optional auto-jump and edge guard.
+- **2g — Test port.** The PPC headless suites ported to C++ on voxel geometry
+  (`PLAYER_CONTROLLER.md` §10), including the multi-player golden trace.
+- **2h — Networking.**
+  - Server: input queue ordered by `inputSeq`, validation and rate limiting (§10); snapshots with
+    `ackInputSeq`, body state, and local controller state (~48 B).
+  - Client: sim-core WASM build hosts the prediction world (terrain + kinematic proxies + local
+    dynamic body); input ring buffer; redundant input datagrams (last 4); analog move vector.
+  - Reconciliation: compare prediction at `ackInputSeq`; replay only on mismatch; smooth small
+    corrections, snap large ones.
+  - Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
+    Tested with a debug launch-pad block.
+  - Player-vs-player collision (block/push; standing on heads not carried); remote players as
+    interpolated kinematic capsules, animated from `State`.
+  - Health, fall damage from `Landed` impact speed, death → cosmetic ragdoll → respawn.
+- **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
+  contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
+  divergence, checked against `externalAbsorbThreshold`.
+- **Presentation & tools.** First-person camera with crouch eye smoothing and step smoothing;
+  debug overlay (state, probe rays, layer velocities, prediction error); network condition
+  simulator (latency, jitter, loss).
 
 Exit criteria
-- Two clients see each other move smoothly.
-- With 150 ms RTT, 20 ms jitter and 5 % loss simulated, local movement feels immediate and
-  steady-state correction error stays under ~5 cm.
-- Server rejects speed-hack inputs (tested).
-- Players bump into each other without jitter; debug knockback plays smoothly (no snap) at
-  150 ms RTT.
-- Fall damage and respawn work on all clients.
+- All ported PPC scenarios pass on voxel geometry (natively and in WASM); the golden trace is
+  stable across repeated native runs.
+- The player fits through 1×2 doorways and, crouched, through 1-tall crawlspaces; full blocks need
+  a jump; slabs are stepped up without leaving the ground.
+- Two clients see each other move smoothly. With 150 ms RTT, 20 ms jitter and 5 % loss simulated,
+  local movement feels immediate, steady-state correction error stays under ~5 cm, and most
+  snapshots need no replay.
+- Debug knockback plays smoothly (no snap) at 150 ms RTT; players bump into each other without
+  jitter.
+- Server rejects out-of-range inputs; fall damage and respawn work on all clients.
+- 64 players' controller passes cost < 1 ms/tick on the reference server (excluding the Jolt step).
 
 ---
 
@@ -132,7 +158,8 @@ Deliverables
 - Interest management: per-client view radius; stream nearest-first; unload far chunks;
   bandwidth budget per client.
 - Greedy mesher shared in spirit by both sides:
-  - Server: per-chunk Jolt `MeshShape` static bodies, rebuilt on change.
+  - Server: per-chunk Jolt `MeshShape` static bodies, rebuilt on change (built in Phase 2b;
+    greedy meshing reduces triangle count here).
   - Client: mesher in a Web Worker producing render mesh + collision triangles; client
     prediction world uses the same collision.
 - Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
@@ -165,13 +192,14 @@ Deliverables
 - Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 5); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
 - **Player ↔ Tier 1 interaction** (§9.2, §9.4):
-  - Players push light clusters (capped by `PLAYER_MAX_PUSH_FORCE`); moving clusters push
-    players.
+  - Players push light clusters (contact mass scaling: `maxPushForce`, `pushableMassLimit`);
+    moving clusters push players (absorbed as external velocity).
   - Standing on / riding moving clusters: `groundEntityId` + body-local player state in
     snapshots; client predicts in the body's frame.
   - Present-time proxies for Tier 1 bodies within `PREDICT_PROXY_RADIUS`; the ground body is
     rendered at present time.
-  - Crush damage / crush death.
+  - Crush damage / crush death (contact listener, `PLAYER_CONTROLLER.md` §6.6).
+  - Port of the PPC platform suite onto Tier 1 bodies (translating, rotating, falling).
 - Admin/debug command: cut a pillar / delete a region to trigger collapses on demand.
 
 Exit criteria
