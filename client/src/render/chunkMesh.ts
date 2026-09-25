@@ -1,11 +1,15 @@
 // Builds chunk geometry arrays from the sim core's visible faces (RenderFace: x, y, z, face,
 // u16 material). Pure data, so it is testable without WebGL; ThreeRenderer uploads the result.
-import { materialStyle } from '../world/materials';
+import { materialStyle, type MaterialStyle } from '../world/materials';
+import { tileRect, type TileRect } from './textures';
 
 export interface MeshArrays {
   positions: Float32Array;
   normals: Float32Array;
+  /** Shading × (untextured) material colour; multiplies the texture. */
   colors: Float32Array;
+  /** Atlas coordinates (render/textures.ts); untextured faces sample the plain white tile. */
+  uvs: Float32Array;
   indices: Uint32Array;
 }
 
@@ -32,9 +36,14 @@ class Builder {
   private readonly positions: number[] = [];
   private readonly normals: number[] = [];
   private readonly colors: number[] = [];
+  private readonly uvs: number[] = [];
   private readonly indices: number[] = [];
 
-  /** Quad on `axis = plane`, spanning [u0,u1] × [v0,v1] (u = axis+1, v = axis+2), facing `sign`. */
+  /**
+   * Quad on `axis = plane`, spanning [u0,u1] × [v0,v1] (u = axis+1, v = axis+2), facing `sign`.
+   * `cell` is the voxel's min corner: texture coordinates are the position within the cell (sides
+   * with t up, tops and bottoms in x/z) mapped into `tile`.
+   */
   quad(
     axis: number,
     sign: number,
@@ -44,6 +53,8 @@ class Builder {
     v0: number,
     v1: number,
     color: number,
+    cell: readonly number[],
+    tile: TileRect,
   ): void {
     const u = (axis + 1) % 3;
     const v = (axis + 2) % 3;
@@ -67,6 +78,12 @@ class Builder {
       n[axis] = sign;
       this.normals.push(n[0] ?? 0, n[1] ?? 0, n[2] ?? 0);
       this.colors.push(r, g, b);
+      // In-cell texture coordinates: s across, t up the face (world y on sides).
+      const px = (p[0] ?? 0) - (cell[0] ?? 0);
+      const py = (p[1] ?? 0) - (cell[1] ?? 0);
+      const pz = (p[2] ?? 0) - (cell[2] ?? 0);
+      const [st, tt] = axis === 1 ? [px, pz] : axis === 0 ? [pz, py] : [px, py];
+      this.uvs.push(tile.u0 + (tile.u1 - tile.u0) * st, tile.v0 + (tile.v1 - tile.v0) * tt);
     }
     // e_u × e_v = e_axis: (0, 1, 2) is counter-clockwise seen from +axis.
     if (sign > 0) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
@@ -78,9 +95,20 @@ class Builder {
       positions: Float32Array.from(this.positions),
       normals: Float32Array.from(this.normals),
       colors: Float32Array.from(this.colors),
+      uvs: Float32Array.from(this.uvs),
       indices: Uint32Array.from(this.indices),
     };
   }
+}
+
+const PLAIN = tileRect('plain');
+
+/** Vertex colour and texture tile of a face: textured faces take their colour from the texture. */
+function surface(style: MaterialStyle, axis: number, sign: number): [number, TileRect] {
+  const t = style.textures;
+  if (!t) return [style.color, PLAIN];
+  const name = axis !== 1 ? t.side : sign > 0 ? t.top : t.bottom;
+  return [0xffffff, tileRect(name)];
 }
 
 export function buildChunkMeshes(faces: Uint8Array): ChunkMeshes {
@@ -106,7 +134,8 @@ export function buildChunkMeshes(faces: Uint8Array): ChunkMeshes {
       plane = sign > 0 ? (lo[axis] ?? 0) + LADDER_INSET : (hi[axis] ?? 0) - LADDER_INSET;
     }
     const target = style.opacity < 1 ? transparent : opaque;
-    target.quad(axis, sign, plane, lo[u] ?? 0, hi[u] ?? 0, lo[v] ?? 0, hi[v] ?? 0, style.color);
+    const [color, tile] = surface(style, axis, sign);
+    target.quad(axis, sign, plane, lo[u] ?? 0, hi[u] ?? 0, lo[v] ?? 0, hi[v] ?? 0, color, lo, tile);
   }
   return { opaque: opaque.finish(), transparent: transparent.finish() };
 }

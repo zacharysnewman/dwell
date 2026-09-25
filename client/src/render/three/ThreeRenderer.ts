@@ -3,22 +3,28 @@ import {
   BufferGeometry,
   CapsuleGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   DoubleSide,
   Fog,
   Group,
   HemisphereLight,
+  LinearMipmapLinearFilter,
   LineBasicMaterial,
   LineSegments,
   Mesh,
   MeshLambertMaterial,
+  NearestFilter,
   PerspectiveCamera,
+  RGBAFormat,
   Scene,
+  SRGBColorSpace,
   Vector3,
   WebGLRenderer,
 } from 'three';
 import type { Vec3 } from '../../protocol/messages';
 import { buildChunkMeshes, type MeshArrays } from '../chunkMesh';
+import { buildAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
 
 const SKY = 0x87b5e0;
@@ -29,6 +35,7 @@ function geometryOf(arrays: MeshArrays): BufferGeometry | null {
   g.setAttribute('position', new BufferAttribute(arrays.positions, 3));
   g.setAttribute('normal', new BufferAttribute(arrays.normals, 3));
   g.setAttribute('color', new BufferAttribute(arrays.colors, 3));
+  g.setAttribute('uv', new BufferAttribute(arrays.uvs, 2));
   g.setIndex(new BufferAttribute(arrays.indices, 1));
   g.computeBoundingSphere();
   return g;
@@ -45,9 +52,15 @@ export class ThreeRenderer implements Renderer {
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(75, 1, 0.05, 400);
-  private readonly opaqueMaterial = new MeshLambertMaterial({ vertexColors: true });
+  /** Block textures: tiled-noise atlas (render/textures.ts), crisp up close, mipmapped far away. */
+  private readonly atlas = ThreeRenderer.createAtlasTexture();
+  private readonly opaqueMaterial = new MeshLambertMaterial({
+    vertexColors: true,
+    map: this.atlas,
+  });
   private readonly waterMaterial = new MeshLambertMaterial({
     vertexColors: true,
+    map: this.atlas,
     transparent: true,
     opacity: 0.55,
     depthWrite: false,
@@ -71,6 +84,18 @@ export class ThreeRenderer implements Renderer {
     this.scene.add(sun);
     this.camera.position.set(0, 6, 14);
     this.camera.lookAt(0, 0, 0);
+  }
+
+  private static createAtlasTexture(): DataTexture {
+    const atlas = buildAtlas();
+    const texture = new DataTexture(atlas.data, atlas.size, atlas.size, RGBAFormat);
+    texture.colorSpace = SRGBColorSpace;
+    texture.magFilter = NearestFilter;
+    texture.minFilter = LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    return texture;
   }
 
   resize(width: number, height: number, pixelRatio: number): void {
@@ -202,6 +227,7 @@ export class ThreeRenderer implements Renderer {
   }
 
   dispose(): void {
+    this.atlas.dispose();
     this.renderer.dispose();
   }
 }

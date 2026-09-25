@@ -1,22 +1,34 @@
 // Material ids and how they are drawn. Ids mirror the table in server/core/include/dwell/core/voxel.h
 // (ARCHITECTURE.md §6.1); the WASM core reports faces by these ids.
+import type { TileName } from '../render/textures';
 
 export type MaterialLook = 'cube' | 'slab' | 'ladder' | 'water';
+
+/** Texture tiles (render/textures.ts) per face group; untextured materials use `color`. */
+export interface MaterialTextures {
+  top: TileName;
+  side: TileName;
+  bottom: TileName;
+}
 
 export interface MaterialStyle {
   name: string;
   look: MaterialLook;
   color: number;
   opacity: number;
+  textures?: MaterialTextures;
 }
+
+const GRASS: MaterialTextures = { top: 'grass', side: 'grassSide', bottom: 'dirt' };
+const STONE: MaterialTextures = { top: 'stone', side: 'stone', bottom: 'stone' };
 
 export const MATERIALS: readonly MaterialStyle[] = [
   { name: 'air', look: 'cube', color: 0x000000, opacity: 0 },
   { name: 'bedrock', look: 'cube', color: 0x2e2e33, opacity: 1 },
-  { name: 'stone', look: 'cube', color: 0x8a8d91, opacity: 1 },
+  { name: 'stone', look: 'cube', color: 0x8a8d91, opacity: 1, textures: STONE },
   { name: 'dirt', look: 'cube', color: 0x7a5534, opacity: 1 },
-  { name: 'grass', look: 'cube', color: 0x5e9c3a, opacity: 1 },
-  { name: 'stone_slab', look: 'slab', color: 0xa9adb2, opacity: 1 },
+  { name: 'grass', look: 'cube', color: 0x5e9c3a, opacity: 1, textures: GRASS },
+  { name: 'stone_slab', look: 'slab', color: 0xa9adb2, opacity: 1, textures: STONE },
   { name: 'ladder_n', look: 'ladder', color: 0xa0703a, opacity: 1 },
   { name: 'ladder_e', look: 'ladder', color: 0xa0703a, opacity: 1 },
   { name: 'ladder_s', look: 'ladder', color: 0xa0703a, opacity: 1 },
