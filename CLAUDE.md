@@ -4,7 +4,7 @@
 
 Dwell is a server-authoritative, multiplayer-first voxel sandbox with large-scale dynamic
 physics. C++ server with Jolt Physics; TypeScript client running the shared C++ sim core (with Jolt) as WASM; WebTransport
-networking. The client is deployed to GitHub Pages (`https://dwell.dropkickarcade.com/`) first,
+networking. The client is deployed to GitHub Pages (`https://dropkickarcade.com/dwell/`) first,
 then wrapped in Electron and Capacitor. Game servers are hosted by players (dedicated servers
 and friend worlds), with a small master server for discovery; there are no official game servers.
 

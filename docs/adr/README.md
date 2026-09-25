@@ -10,7 +10,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0002](0002-client-renderer.md) | Client renderer: Three.js on WebGL2, behind a thin render interface | Accepted |
 | [0003](0003-multiplayer-hosting-model.md) | Multiplayer hosting model: player-hosted servers, friend worlds, and a master server | Accepted |
 | [0004](0004-player-identity.md) | Player identity: device keys now, optional accounts later | Accepted |
-| [0005](0005-domain-and-origins.md) | Domain and web origins: `dwell.dropkickarcade.com` | Accepted |
+| [0005](0005-domain-and-origins.md) | Domain and web origin: the default Pages path `dropkickarcade.com/dwell/` | Accepted |
 
 ## Template
 

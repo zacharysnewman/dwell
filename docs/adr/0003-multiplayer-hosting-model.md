@@ -38,7 +38,7 @@ Two hosting tiers, one protocol, one sim core:
 | Lifetime | While the host plays; pauses when the host backgrounds | Always on |
 | Scale | Small (host profile, e.g. 4–8 players, reduced physics caps) | Large, host-configured |
 
-**Master server** (`api.dwell.dropkickarcade.com`, ADR 0005): a small HTTPS service, no game
+**Master server** (hostname chosen in Phase 7): a small HTTPS service, no game
 traffic.
 - Dedicated servers register and heartbeat (~30 s): address, port, current certificate hash,
   name, MOTD, player count, version, tags, visibility (public/unlisted). Clients get address +
@@ -58,7 +58,7 @@ UPnP/NAT-PMP port mapping with port-forwarding guidance, and world backups.
 
 **Versioning.** The handshake carries the protocol version; incompatible servers are shown as
 such in the browser. Old client builds are kept at versioned paths on GitHub Pages
-(`/v/<version>/`) so players can join servers that have not updated.
+(`/dwell/v/<version>/`, ADR 0005) so players can join servers that have not updated.
 
 ## Consequences
 

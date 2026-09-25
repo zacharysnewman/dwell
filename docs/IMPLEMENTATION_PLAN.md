@@ -19,7 +19,7 @@ push to the default branch.
 
 Deliverables
 - Monorepo layout per §3: `client/`, `server/`, `shared/protocol/`, `platforms/`, `docs/`.
-- `client/`: Vite + TypeScript (strict), ESLint, Prettier, Vitest. `base: '/'`.
+- `client/`: Vite + TypeScript (strict), ESLint, Prettier, Vitest. `base: '/dwell/'`.
   Three.js (pinned) behind the `client/render` interface (ADR 0002); renders an empty scene
   and a build-info overlay (commit SHA).
 - `server/`: CMake project, C++20, Jolt pulled via `FetchContent`, a unit-test target
@@ -29,14 +29,12 @@ Deliverables
 - GitHub Actions:
   - `ci.yml` — lint, typecheck, test, build for client; configure/build/test for server
     (C++ + cargo, with cargo caching, `cargo clippy`, and a stale-`cbindgen`-header check).
-  - `pages.yml` — build client, upload artifact (with a `CNAME` of `dwell.dropkickarcade.com`),
-    `actions/deploy-pages`.
+  - `pages.yml` — build client, upload artifact, `actions/deploy-pages`.
 - `docs/adr/` with an ADR template.
 
 Exit criteria
-- `https://dwell.dropkickarcade.com/` serves the blank client (ADR 0005). Requires the DNS
-  record `CNAME dwell → zacharysnewman.github.io` and this repo's Pages custom domain set to
-  `dwell.dropkickarcade.com`.
+- `https://dropkickarcade.com/dwell/` serves the blank client (default project path under the
+  user site's custom domain; ADR 0005).
 - CI is green on both client and server jobs.
 
 ---
@@ -293,14 +291,13 @@ Deliverables
   Docker image per release; operator config file; admin commands (ops, kick, ban by key);
   allow-list/password; UPnP/NAT-PMP with port-forward guidance; backups; host-configurable
   physics and view caps. Certificate rotation with hash publication.
-- **Master server** (`services/master`, `api.dwell.dropkickarcade.com`; platform → Open Decision
+- **Master server** (`services/master`; hostname and platform → Open Decision
   #10): registration + heartbeat, reachability-checked public listing, join codes, cert-hash
   distribution, rate limiting per key/IP.
 - **Server browser** in the client: listing, search/filter, client-side ping, status query,
-  incompatible-version marking; versioned client builds at `/v/<version>/`.
+  incompatible-version marking; versioned client builds at `/dwell/v/<version>/`.
 - **Friend worlds:** WebRTC transport (§8.1) in the client; hosting the integrated server over
-  WebRTC; signaling via the master; STUN + TURN relay (`turn.dwell.dropkickarcade.com`,
-  Open Decision #11) with short-lived credentials; host profiles (player and physics caps);
+  WebRTC; signaling via the master; STUN + TURN relay (Open Decision #11) with short-lived credentials; host profiles (player and physics caps);
   host-backgrounded pause.
 - **Electron:** packaging for Windows/macOS/Linux (electron-builder), multithreaded build,
   "Host world" launching the native server; LAN discovery.

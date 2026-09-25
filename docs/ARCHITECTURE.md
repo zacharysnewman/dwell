@@ -27,7 +27,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 | Simulation | 60 Hz internal physics step, 20 Hz network snapshots |
 | Players | Dynamic-body, velocity-layer controller ported from the Physics Player Controller, client-predicted (§9, [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)) |
 | Terrain | Seeded deterministic procedural generation, same C++ code on server and client (§6.3) |
-| First deployment target | **GitHub Pages** at `https://dwell.dropkickarcade.com/` (ADR 0005) |
+| First deployment target | **GitHub Pages** at `https://dropkickarcade.com/dwell/` (ADR 0005) |
 
 ```
                     ┌───────────────────────────────────────────────┐
@@ -73,10 +73,12 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    compiled **single-threaded** (no pthreads). A `coi-serviceworker` shim may enable
    cross-origin isolation later (open decision #4). Electron/Capacitor builds can opt into a
    multithreaded build.
-3. **Own origin.** The site is served at `https://dwell.dropkickarcade.com/` (custom domain on
-   this repo's Pages site; ADR 0005), so browser storage — world saves and the device key — is
-   isolated from other `dropkickarcade.com` games. Vite `base: '/'`. Older client builds are
-   kept at `/v/<version>/` so players can join servers that have not updated.
+3. **Default project path.** The site is served at `https://dropkickarcade.com/dwell/` (ADR 0005),
+   Vite `base: '/dwell/'`. The origin is shared with other `dropkickarcade.com` games, so all
+   browser storage is `dwell`-namespaced, the device key is non-extractable, and any service
+   worker is scoped to `/dwell/`. Older client builds are kept at `/dwell/v/<version>/` so
+   players can join servers that have not updated. A move to its own subdomain is a documented
+   future option (ADR 0005).
 4. **Local mode.** So the Pages deployment is playable with no hosted server, the server's
    simulation core is also compiled to WASM (Emscripten) and run in a Web Worker, connected
    through an in-memory `LoopbackTransport` that implements the same interface as the network
@@ -646,7 +648,7 @@ Decisions: [ADR 0003](./adr/0003-multiplayer-hosting-model.md) (hosting model),
   format as dedicated servers, so a friend world can be moved to a dedicated server.
 
 ### 10.3 Master server
-A small HTTPS JSON service at `api.dwell.dropkickarcade.com` (`services/master`); no game
+A small HTTPS JSON service (`services/master`; hostname chosen in Phase 7); no game
 traffic passes through it.
 
 | Function | Detail |
@@ -655,14 +657,14 @@ traffic passes through it.
 | Server browser | Public listing with search/filter; clients ping candidates themselves. A server is listed only after the master's own reachability check (status query). |
 | Join codes | Short codes (e.g. `KQ7-XM4`) resolve to the current address + cert hash (dedicated) or to a signaling session (friend world). |
 | Signaling | WebRTC offer/answer/ICE relay for friend worlds. |
-| TURN credentials | Short-lived TURN credentials for `turn.dwell.dropkickarcade.com`, rate-limited per player key. |
+| TURN credentials | Short-lived TURN credentials for the TURN relay, rate-limited per player key. |
 | Accounts (later) | Sign-in and account attestations (§10.4). |
 
 Direct invite links (`?join=host:port&cert=<sha256>`) work without the master server.
 
 ### 10.4 Identity
 - **Device keys (now):** each install generates an Ed25519 key pair; the public key is the
-  player ID. Web: non-extractable WebCrypto key in IndexedDB on Dwell's own origin; apps: OS
+  player ID. Web: non-extractable WebCrypto key in a `dwell`-namespaced IndexedDB database; apps: OS
   keychain/keystore. Exportable/importable to move between devices. Proven on every join by
   signing the server's challenge (§8.3). Servers key bans, allow-lists, ops, and player data by
   public key.
@@ -674,7 +676,7 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 ### 10.5 Versioning
 - The handshake rejects incompatible `protocolVersion`s with a clear reason; the server browser
   marks incompatible servers.
-- The Pages site keeps older client builds at `/v/<version>/`; the browser can open the build
+- The Pages site keeps older client builds at `/dwell/v/<version>/`; the browser can open the build
   matching a server's version.
 
 ### 10.6 Platform reachability
@@ -687,7 +689,7 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 | iOS app (Capacitor) | ✅ native plugin may accept the pinned hash | ✅ | ✅ |
 
 Closing the ❌: dedicated servers accepting WebRTC, or master-issued hostnames with trusted
-certificates (`*.servers.dwell.dropkickarcade.com`) — both follow-ups (ADR 0003). Current
+certificates (e.g. `*.servers.dropkickarcade.com`) — both follow-ups (ADR 0003). Current
 Safari WebTransport support should be re-checked when Phase 7 starts.
 
 ---
@@ -723,7 +725,8 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 7 | Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`) | Not needed initially |
 | 8 | Worldgen noise numerics: fixed-point vs. strict IEEE float | Prototype both in Phase 3; pick by golden-test stability and speed |
 | 9 | Movement feel on voxels: PPC recommended feel (walk 5 / run 8 m/s) vs. slower voxel-genre speeds | Start with PPC feel; playtest in Phase 2 |
-| 10 | Master server platform and database | Leaning Cloudflare Workers + small database |
+| 10 | Master server platform, database, and hostname | Leaning Cloudflare Workers + small database |
 | 11 | TURN relay: self-hosted `coturn` vs. managed TURN | Decide with the master server (Phase 7) |
 | 12 | DNS provider / programmatic DNS for master-issued server hostnames | Follow-up; only needed for trusted server hostnames |
 | 13 | WebSocket fallback implementation (ADR 0001 follow-up) | Leaning `tokio-tungstenite` in `server/net/wt` |
+| 14 | Move the client to its own subdomain (`dwell.dropkickarcade.com`) | Future option (ADR 0005); consider before passkey-based accounts; needs a data-migration flow |
