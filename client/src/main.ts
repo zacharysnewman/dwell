@@ -1,5 +1,5 @@
 import { buildInfo, formatBuildInfo } from './buildInfo';
-import { connectToInvite } from './net/connect';
+import { connectLocal, connectToInvite } from './net/connect';
 import { parseInvite } from './net/invite';
 import { createRenderer, RendererUnavailableError, type Renderer } from './render';
 import { formatStatus } from './ui/statusOverlay';
@@ -50,18 +50,13 @@ function displayName(): string {
 
 async function connect(): Promise<void> {
   const status = element('net-status', HTMLDivElement);
-  const invite = parseInvite(location.search);
-  if (!invite) {
-    status.textContent = 'No server: open an invite link (?join=host:port&cert=…).';
-    return;
-  }
-  const target = `${invite.host}:${String(invite.port)}`;
-  status.textContent = `Connecting to ${target}…`;
+  const params = new URLSearchParams(location.search);
+  const invite = params.get('local') === '1' ? null : parseInvite(location.search);
+  const target = invite ? `${invite.host}:${String(invite.port)}` : 'Local world';
+  const options = { displayName: displayName(), clientVersion: buildInfo.sha.slice(0, 12) };
+  status.textContent = invite ? `Connecting to ${target}…` : 'Starting local world…';
   try {
-    const session = await connectToInvite(invite, {
-      displayName: displayName(),
-      clientVersion: buildInfo.sha.slice(0, 12),
-    });
+    const session = invite ? await connectToInvite(invite, options) : await connectLocal(options);
     session.subscribe((state, stats) => {
       status.textContent = formatStatus(target, state, stats);
     });

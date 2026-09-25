@@ -28,7 +28,23 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
+      - name: Cache Emscripten
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-6.0.10-${{ runner.os }}
+      - name: Install Emscripten (keep in sync with ARCHITECTURE.md §3.1)
+        run: |
+          [ -d ~/emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install 6.0.10
+          ~/emsdk/emsdk activate 6.0.10
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
       - run: npm ci
+      - name: Build local-mode WASM core
+        run: npm run build:wasm
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

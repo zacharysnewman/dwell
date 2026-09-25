@@ -1,2 +1,4 @@
 node_modules/
 dist/
+# Built by `npm run build:wasm` (server/wasm); not committed.
+public/wasm/

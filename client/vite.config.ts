@@ -20,6 +20,10 @@ export default defineConfig({
     __BUILD_SHA__: JSON.stringify(buildSha()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
+  // Module workers so the local-mode worker can load the WASM core with a dynamic import.
+  worker: {
+    format: 'es',
+  },
   build: {
     target: 'es2022',
     sourcemap: true,

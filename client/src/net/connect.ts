@@ -1,6 +1,7 @@
 // Chooses how to reach a server and runs the session (ARCHITECTURE.md §8.1, §10).
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from '../identity/deviceKey';
 import type { Invite } from './invite';
+import { LoopbackTransport } from './loopback';
 import { ClientSession } from './session';
 import type { Transport } from './Transport';
 import { isWebTransportSupported, WebTransportTransport } from './webTransport';
@@ -28,6 +29,16 @@ export async function connectToInvite(
 ): Promise<ClientSession> {
   const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
   const transport = await openTransport(invite);
+  const session = new ClientSession(transport, key, options);
+  session.start();
+  return session;
+}
+
+/** Starts the integrated server in a worker and joins it (local mode, ARCHITECTURE.md §2.1). */
+export async function connectLocal(options: ConnectOptions): Promise<ClientSession> {
+  const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
+  const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
+  const transport = await LoopbackTransport.start(worker);
   const session = new ClientSession(transport, key, options);
   session.start();
   return session;

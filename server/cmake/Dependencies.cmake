@@ -28,7 +28,10 @@ FetchContent_Declare(
   GIT_TAG v0.6.1
   GIT_SHALLOW TRUE)
 
-FetchContent_MakeAvailable(JoltPhysics Corrosion)
+FetchContent_MakeAvailable(JoltPhysics)
+if(NOT EMSCRIPTEN)
+  FetchContent_MakeAvailable(Corrosion)
+endif()
 
 # --- Monocypher (Ed25519 signature checks for device-key identity, ADR 0004) --------------------
 # Small, portable C with no build system of its own; compiles unchanged to WASM.
@@ -45,7 +48,7 @@ target_include_directories(monocypher SYSTEM PUBLIC
   ${monocypher_SOURCE_DIR}/src ${monocypher_SOURCE_DIR}/src/optional)
 
 # --- doctest ------------------------------------------------------------------------------------
-if(DWELL_BUILD_TESTS)
+if(DWELL_BUILD_TESTS AND NOT EMSCRIPTEN)
   FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git
