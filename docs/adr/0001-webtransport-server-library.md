@@ -49,8 +49,8 @@ Use **Rust `wtransport`**, wrapped in a small Rust crate (`server/net/wt`) that 
   addition to CMake/C++. Corrosion integrates the crate into the CMake build; CI caches cargo.
 - **Threading:** tokio runs on its own worker threads inside the server process; the main loop
   only exchanges messages through lock-free queues at tick boundaries.
-- **WebSocket fallback:** not decided by this ADR. Leaning: implement it in the same Rust crate
-  (`tokio-tungstenite`) behind the same C ABI, so both transports present identical events to C++.
+- **Fallback transport:** superseded by ADR 0008 — no WebSocket; dedicated servers also accept
+  WebRTC (`str0m`) in the same crate, behind the same C ABI.
 - **Verification:** Phase 1 starts with a spike connecting Chrome (dev certificate via
   `serverCertificateHashes`) and Electron, exchanging a reliable stream message and a datagram.
 - **Reversal:** everything above the C ABI is transport-agnostic. If the spike or later work

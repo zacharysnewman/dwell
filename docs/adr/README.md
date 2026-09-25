@@ -13,6 +13,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0005](0005-domain-and-origins.md) | Domain and web origin: the default Pages path `dropkickarcade.com/dwell/` | Accepted |
 | [0006](0006-world-persistence-sqlite.md) | World persistence: one SQLite database per world, holding all data | Accepted |
 | [0007](0007-threading-model.md) | Threading model: single-threaded web sim core with worker pools; threads natively | Accepted |
+| [0008](0008-dedicated-server-transports.md) | Dedicated-server transports: WebTransport primary, WebRTC fallback, no WebSocket | Accepted |
 
 ## Template
 

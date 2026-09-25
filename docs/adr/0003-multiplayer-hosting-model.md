@@ -31,7 +31,7 @@ Two hosting tiers, one protocol, one sim core:
 | | Friend worlds | Dedicated servers |
 |---|---|---|
 | Host | Any client — browser, phone (Capacitor), desktop — running the sim core as its integrated server | Native server binary (Windows/macOS/Linux), Docker image, or Electron "Host world" |
-| Transport | **WebRTC data channels** (unordered/unreliable ↔ datagrams, ordered/reliable ↔ streams); STUN, TURN relay fallback | **WebTransport** (WebSocket fallback) |
+| Transport | **WebRTC data channels** (unordered/unreliable ↔ datagrams, ordered/reliable ↔ streams); STUN, TURN relay fallback | **WebTransport**, WebRTC fallback (ADR 0008; originally WebSocket) |
 | Join | Join code / invite via master server (signaling) | Server browser, join code, or invite link |
 | Lifetime | While the host plays; pauses when the host backgrounds | Always on |
 | Scale | Small (host profile, e.g. 4–8 players, reduced physics caps) | Large, host-configured |
@@ -66,7 +66,7 @@ such in the browser. Old client builds are kept at versioned paths on GitHub Pag
   decision (leaning Cloudflare Workers + a small database).
 - TURN relay bandwidth is a running cost; credentials are only issued to identified players
   (ADR 0004) and are rate-limited.
-- Transports grow to four: WebTransport, WebSocket, WebRTC, Loopback — all behind the same
+- (Amended by ADR 0008: WebSocket dropped; three transports.) Transports grow to four: WebTransport, WebSocket, WebRTC, Loopback — all behind the same
   `Transport` interface; the protocol above it is unchanged.
 - Safari/iOS web players without WebTransport can always join friend worlds (WebRTC) but can only
   join dedicated servers that have a trusted certificate — unless dedicated servers also accept

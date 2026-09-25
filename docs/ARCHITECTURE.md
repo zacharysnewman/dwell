@@ -21,7 +21,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 | Client | TypeScript; physics/prediction via the shared C++ sim core (Jolt linked in) compiled to WebAssembly |
 | Renderer | Three.js, WebGL2 first, behind a thin render interface (ADR 0002) |
 | Client shells | Browser (GitHub Pages) → Electron (desktop) → Capacitor (iOS/Android) |
-| Transport | WebTransport (HTTP/3 / QUIC) for dedicated servers, WebSocket fallback; WebRTC data channels for friend worlds |
+| Transport | Dedicated servers: WebTransport (HTTP/3 / QUIC), WebRTC fallback. Friend worlds: WebRTC data channels (ADR 0008) |
 | Services | Master server: server listing, join codes, cert-hash distribution, WebRTC signaling, TURN credentials (§10) |
 | Identity | Device keys (Ed25519) now; optional accounts later (§10.4, ADR 0004) |
 | Simulation | 60 Hz internal physics step, 20 Hz network snapshots |
@@ -46,7 +46,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
                     │              voxel deltas / events (reliable) │
                     └───────────────▲───────────────┬───────────────┘
                                     │ WebTransport  │
-                                    │ / WS / WebRTC ▼
+                                    │  / WebRTC     ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Client (TS + sim core WASM w/ Jolt)                  │
 │  Input → Local prediction (player controller) → Reconciliation       │
@@ -97,8 +97,7 @@ The same Vite build output is wrapped by:
 - **Electron** (`platforms/electron`) — Chromium, full WebTransport support; serves its content
   with COOP/COEP headers so the multithreaded sim-core build can be used (ADR 0007).
 - **Capacitor** (`platforms/capacitor`) — Android System WebView (Chromium) and iOS
-  WKWebView. WKWebView WebTransport support must be verified per iOS version; the
-  WebSocket fallback exists primarily for this case. Single-threaded sim core unless
+  WKWebView. Where WebTransport is unavailable (possibly WKWebView), the client uses WebRTC. Single-threaded sim core unless
   `SharedArrayBuffer` is confirmed available on the app scheme (ADR 0007).
 
 ### 2.3 Server hosting **[planned]**
@@ -106,7 +105,7 @@ The same Vite build output is wrapped by:
 There are **no official game servers**; players host (ADR 0003, details in §10):
 - **Dedicated servers:** the native server binary (Windows/macOS/Linux) or Docker image on a
   player's machine or rented VM, or launched by the Electron app ("Host world"). Needs inbound
-  UDP (QUIC) and TCP (WebSocket fallback); UPnP/NAT-PMP is attempted, otherwise the host
+  UDP (QUIC and WebRTC); UPnP/NAT-PMP is attempted, otherwise the host
   forwards the port.
 - **Friend worlds:** any client (browser, phone, desktop) hosts its integrated server (the sim
   core in a worker) over WebRTC.
@@ -131,7 +130,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
     /player          Physics player controller (PLAYER_CONTROLLER.md).
     /storage         World persistence: SQLite + zstd, native and OPFS VFS backends (ADR 0006).
   /net               Network front-end (C++). Native only.
-    /wt              Rust crate: WebTransport (`wtransport`) behind a C ABI (ADR 0001).
+    /wt              Rust crate: WebTransport (`wtransport`) + WebRTC (`str0m`) behind a C ABI (ADRs 0001, 0008).
 /shared/protocol     Protocol spec, constants, and golden-byte test vectors used by both sides.
 /services/master     Master server (listing, join codes, signaling, TURN credentials).
 /platforms/electron  Electron shell (incl. "Host world" launching the native server).
@@ -174,17 +173,20 @@ The loop uses a fixed timestep with an accumulator; the server never steps with 
 `server/core` has no sockets, OS calls, or threads of its own (parallel work such as worldgen is
 exposed as jobs the host schedules); it consumes decoded messages and emits encoded messages
 through an interface. This lets the identical core run natively, in the browser's local mode, and
-as the client's prediction/debris physics (§2.1). `server/net` owns sessions, stream management, and
-the WebSocket fallback.
+as the client's prediction/debris physics (§2.1). `server/net` owns sessions and stream
+management for both server transports.
 
 **WebTransport stack (ADR [0001](./adr/0001-webtransport-server-library.md)).** WebTransport is
 provided by the Rust crate `wtransport`, wrapped in `server/net/wt` and exposed to C++ through a
 narrow, `cbindgen`-generated C ABI (sessions, streams, datagrams, dev-certificate helpers). The
 Rust async runtime runs on its own threads; transport events reach the main loop through
 lock-free queues drained once per tick, so no Rust callback ever enters the simulation. The
-crate is built by cargo and linked via Corrosion in the CMake build. The WebSocket fallback's
-implementation is still open (leaning: the same crate with `tokio-tungstenite`, behind the same
-C ABI).
+crate is built by cargo and linked via Corrosion in the CMake build.
+
+**WebRTC fallback (ADR [0008](./adr/0008-dedicated-server-transports.md)).** The same crate hosts
+an ICE-lite WebRTC endpoint built on `str0m` (sans-I/O, driven by the crate's event loop), with
+the same channel mapping as friend worlds and the same C ABI and event queue. DTLS uses the
+server's self-signed certificate, whose fingerprint is published like the WebTransport cert hash.
 
 ---
 
@@ -192,7 +194,7 @@ C ABI).
 
 | Module | Responsibility |
 |---|---|
-| `net/` | `Transport` interface; `WebTransportTransport`, `WebSocketTransport`, `LoopbackTransport`. Framing, encode/decode. |
+| `net/` | `Transport` interface; `WebTransportTransport`, `WebRtcTransport`, `LoopbackTransport`. Framing, encode/decode. |
 | `world/` | Chunk store mirrored from server; applies voxel deltas in order. |
 | `worldgen/` | Worldgen worker pool running the server's C++ terrain generator (WASM) for `Generated` chunks. |
 | `mesh/` | Greedy-mesher worker pool; produces render meshes and collision triangles. |
@@ -457,12 +459,10 @@ interface Transport {
 ```
 Implementations:
 - **WebTransport** — dedicated servers (primary).
-- **WebSocket** — dedicated-server fallback; datagrams are sent over the reliable socket (higher
-  latency under loss but functionally identical). Requires a trusted certificate when the page is
-  HTTPS.
-- **WebRTC** — friend worlds (§10.2). One unordered, `maxRetransmits: 0` data channel carries
-  datagrams; one ordered, reliable data channel per reliable channel (`control`, `world`).
-  DTLS fingerprints are exchanged during signaling, so no CA certificate is involved.
+- **WebRTC** — friend worlds (§10.2) and the dedicated-server fallback (ADR 0008). One unordered,
+  `maxRetransmits: 0` data channel carries datagrams; one ordered, reliable data channel per
+  reliable channel (`control`, `world`). The peer's DTLS fingerprint comes from signaling, the
+  master server, or the invite link, so no CA certificate is involved.
 - **Loopback** — local single-player (integrated server in a worker).
 
 ### 8.2 Channels
@@ -678,7 +678,8 @@ trusted certificates.
 ### 10.1 Dedicated servers
 - Distributed as native binaries (Windows/macOS/Linux) and a Docker image, built by CI per
   release. The Electron app can launch the same binary as a background process ("Host world").
-- Transport: WebTransport, WebSocket fallback. Certificates per §2.3.
+- Transports: WebTransport, WebRTC fallback (ADR 0008). Certificates per §2.3. Invite links:
+  `?join=host:port&cert=<sha256>&ice=<ufrag>:<pwd>`.
 - Operator settings, stored in the world database's `settings` table (§6.4): name, MOTD,
   icon, max players, visibility (public / unlisted / none), password or allow-list,
   online/offline mode (§10.4), physics and view-distance caps (`MAX_TIER1_BODIES`, view radius),
@@ -733,16 +734,13 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 
 ### 10.6 Platform reachability
 
-| Joining from → | Dedicated server, self-signed cert | Dedicated server, trusted cert | Friend world |
-|---|---|---|---|
-| Chromium browser / Electron / Android app | ✅ WebTransport + cert hash | ✅ | ✅ WebRTC |
-| Firefox | ✅ WebTransport + cert hash | ✅ | ✅ |
-| Safari / iOS web, if no WebTransport | ❌ (WebSocket needs a trusted cert) | ✅ WebSocket | ✅ |
-| iOS app (Capacitor) | ✅ native plugin may accept the pinned hash | ✅ | ✅ |
+| Joining from → | Dedicated server | Friend world |
+|---|---|---|
+| Browsers with WebTransport (Chromium, Firefox), Electron, Android app | ✅ WebTransport + cert hash | ✅ WebRTC |
+| Browsers / WebViews without WebTransport (e.g. Safari, iOS) | ✅ WebRTC + DTLS fingerprint | ✅ WebRTC |
+| Server behind strict NAT | ✅ WebRTC via TURN relay | ✅ via TURN |
 
-Closing the ❌: dedicated servers accepting WebRTC, or master-issued hostnames with trusted
-certificates (e.g. `*.servers.dropkickarcade.com`) — both follow-ups (ADR 0003). Current
-Safari WebTransport support should be re-checked when Phase 7 starts.
+No platform needs a trusted certificate to join any server (ADR 0008).
 
 ---
 
@@ -779,8 +777,8 @@ Record each resolution as an ADR in `docs/adr/` and update the relevant section 
 | 9 | Movement feel on voxels: PPC recommended feel (walk 5 / run 8 m/s) vs. slower voxel-genre speeds | Start with PPC feel; playtest in Phase 2 |
 | 10 | Master server platform, database, and hostname | Leaning Cloudflare Workers + small database |
 | 11 | TURN relay: self-hosted `coturn` vs. managed TURN | Decide with the master server (Phase 7) |
-| 12 | DNS provider / programmatic DNS for master-issued server hostnames | Follow-up; only needed for trusted server hostnames |
-| 13 | WebSocket fallback implementation (ADR 0001 follow-up) | Leaning `tokio-tungstenite` in `server/net/wt` |
+| 12 | DNS provider / programmatic DNS for master-issued trusted server hostnames | Optional nicety only (stable names); no longer needed for reachability (ADR 0008) |
+| 13 | ~~Dedicated-server fallback transport~~ | **Resolved:** WebRTC (`str0m`), no WebSocket — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
 | 14 | Move the client to its own subdomain (`dwell.dropkickarcade.com`) | Future option (ADR 0005); consider before passkey-based accounts; needs a data-migration flow |
 | 15 | Friend-world host migration (hand the SQLite world to another player or a dedicated server when the host leaves) | Candidate improvement over sessions ending with the host; decide before Phase 7 |
-| 16 | Dedicated servers also accepting WebRTC (Safari/iOS web joining without trusted certs; strict-NAT servers via TURN) | Candidate; decide before Phase 7 |
+| 16 | ~~Dedicated servers accepting WebRTC~~ | **Resolved** with #13 — [ADR 0008](./adr/0008-dedicated-server-transports.md) |

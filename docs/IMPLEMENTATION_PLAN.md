@@ -65,11 +65,13 @@ Deliverables
     rejection with reasons.
   - Dev TLS: the crate generates a short-lived ECDSA cert at startup and prints its SHA-256 for
     `serverCertificateHashes`.
-  - WebSocket fallback endpoint carrying the same framing (implementation per the follow-up
-    to ADR 0001; leaning `tokio-tungstenite` in the same crate).
+  - WebRTC fallback endpoint (ADR 0008): ICE-lite `str0m` in the same crate, same channel
+    mapping and framing. Spike includes the invite-link path (client synthesizes the remote
+    description from address + fingerprint + ICE credentials); if it fails, invite-link
+    fallback joins require the master server (Phase 7).
 - **Client networking (`client/net`)**
-  - `Transport` interface with `WebTransportTransport`, `WebSocketTransport`,
-    `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebSocket.
+  - `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
+    `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
   - Connect via invite link `?join=host:port&cert=<sha256>`; `?local=1` forces local mode.
   - Device key: generated on first run (non-extractable WebCrypto Ed25519 in IndexedDB),
     export/import.
@@ -84,7 +86,7 @@ Deliverables
 Exit criteria
 - Browser (Chromium) and Electron connect to a native server on localhost via WebTransport,
   exchange ping/pong over datagrams and a reliable stream, and show RTT.
-- Forcing the WebSocket fallback produces the same behavior.
+- Forcing the WebRTC fallback produces the same behavior, including in Safari.
 - The Pages deployment runs in local mode with no external server.
 - Protocol golden tests pass in both languages.
 
@@ -320,11 +322,10 @@ Deliverables
   COOP/COEP and the multithreaded sim-core build (ADR 0007),
   "Host world" launching the native server; LAN discovery.
 - **Capacitor:** Android and iOS projects; check `SharedArrayBuffer` availability on the app
-  scheme (threaded build if available, ADR 0007); verify WebTransport per WebView (WebSocket / WebRTC
-  where unavailable); native handling of pinned certificate hashes on iOS if needed; touch
+  scheme (threaded build if available, ADR 0007); verify WebTransport per WebView (WebRTC
+  where unavailable); touch
   controls (auto-jump preset); mobile caps; friend-world hosting with backgrounding handling.
-- Re-check Safari WebTransport support; if still absent, choose between WebRTC on dedicated
-  servers and master-issued trusted hostnames (ARCHITECTURE §10.6).
+- Dedicated-server WebRTC joins through master signaling and TURN (servers behind strict NAT).
 
 Exit criteria
 - A player hosts a dedicated server at home from the downloadable binary; players on the GitHub
@@ -332,6 +333,8 @@ Exit criteria
 - A phone hosts a friend world; a browser player and an Electron player join by code, including
   one on mobile data through the TURN relay.
 - Certificate rotation on a dedicated server is invisible to players joining through the master.
+- An iOS Safari player joins a self-signed dedicated server over WebRTC, including one behind
+  strict NAT via TURN.
 - An outdated client is rejected with a clear message and offered the matching versioned build.
 
 ---
