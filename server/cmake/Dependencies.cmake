@@ -30,6 +30,20 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(JoltPhysics Corrosion)
 
+# --- Monocypher (Ed25519 signature checks for device-key identity, ADR 0004) --------------------
+# Small, portable C with no build system of its own; compiles unchanged to WASM.
+FetchContent_Declare(
+  Monocypher
+  GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
+  GIT_TAG 4.0.3
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(Monocypher)
+add_library(monocypher STATIC
+  ${monocypher_SOURCE_DIR}/src/monocypher.c
+  ${monocypher_SOURCE_DIR}/src/optional/monocypher-ed25519.c)
+target_include_directories(monocypher SYSTEM PUBLIC
+  ${monocypher_SOURCE_DIR}/src ${monocypher_SOURCE_DIR}/src/optional)
+
 # --- doctest ------------------------------------------------------------------------------------
 if(DWELL_BUILD_TESTS)
   FetchContent_Declare(
