@@ -2,6 +2,7 @@
 // input exactly once; the server and the client's own prediction both dequantize the same
 // integers (C++ DequantizeInput), so they simulate identical inputs.
 import { InputButtons } from '../protocol/constants.gen';
+import type { TouchState } from './touch';
 import type { InputFrame } from '../protocol/messages';
 
 /** One tick of player input before quantization. */
@@ -79,6 +80,8 @@ export class KeyboardMouseInput {
   sensitivity = 0.12;
   /** Debug toggles: F3 overlay. */
   onToggle: ((key: string) => void) | null = null;
+  /** On-screen touch controls, merged into every sample (predict/touch.ts). */
+  touch: TouchState | null = null;
 
   constructor(private readonly target: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -104,14 +107,15 @@ export class KeyboardMouseInput {
 
   sample(): PlayerInputState {
     const k = (code: string) => this.keys.has(code);
+    const t = this.touch;
     return {
-      moveX: (k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0),
-      moveY: (k('KeyW') ? 1 : 0) - (k('KeyS') ? 1 : 0),
+      moveX: clamp((k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0) + (t?.moveX ?? 0), -1, 1),
+      moveY: clamp((k('KeyW') ? 1 : 0) - (k('KeyS') ? 1 : 0) + (t?.moveY ?? 0), -1, 1),
       yaw: this.yaw,
       pitch: this.pitch,
-      jump: k('Space'),
-      run: k('ShiftLeft') || k('ShiftRight'),
-      crouch: k('KeyC') || k('ControlLeft'),
+      jump: k('Space') || (t?.jump ?? false),
+      run: k('ShiftLeft') || k('ShiftRight') || (t?.run ?? false),
+      crouch: k('KeyC') || k('ControlLeft') || (t?.crouch ?? false),
     };
   }
 
@@ -134,7 +138,11 @@ export class KeyboardMouseInput {
   };
 
   private readonly onClick = (): void => {
-    if (document.pointerLockElement !== this.target) void this.target.requestPointerLock();
+    // Not every browser has pointer lock (iOS Safari doesn't); touch looks by dragging instead.
+    if (!('requestPointerLock' in this.target)) return;
+    if (document.pointerLockElement !== this.target) {
+      Promise.resolve(this.target.requestPointerLock()).catch(() => undefined);
+    }
   };
 
   private readonly onMouseMove = (e: MouseEvent): void => {

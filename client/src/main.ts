@@ -5,6 +5,7 @@ import { parseInvite } from './net/invite';
 import { parseNetConditions } from './net/netsim';
 import type { ClientSession, SessionStats } from './net/session';
 import { KeyboardMouseInput } from './predict/input';
+import { prefersTouch, TouchControls } from './predict/touch';
 import { createRenderer, RendererUnavailableError, type Renderer } from './render';
 import { ClientCore } from './sim/clientCore';
 import { importDwellCore } from './sim/module';
@@ -16,6 +17,7 @@ interface DwellDebug {
   state(): GameDebugState | null;
   press(code: string, down: boolean): void;
   look(yaw: number, pitch: number): void;
+  view(): { yaw: number; pitch: number };
 }
 
 declare global {
@@ -69,6 +71,16 @@ function start(): App {
     hud: new Hud(document.body),
     game: null,
   };
+  // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
+  const touch = new TouchControls(document.body, app.input);
+  touch.visible = prefersTouch();
+  app.input.touch = touch.state;
+  window.addEventListener('touchstart', () => (touch.visible = true), {
+    once: true,
+    passive: true,
+  });
+  // No F3 on a phone: ?debug=1 opens the debug overlay.
+  if (new URLSearchParams(location.search).get('debug') === '1') app.hud.toggleDebug();
   app.input.onToggle = (key) => {
     if (key === 'F3') app.hud.toggleDebug();
   };
@@ -81,6 +93,7 @@ function start(): App {
       app.input.yaw = yaw;
       app.input.pitch = pitch;
     },
+    view: () => ({ yaw: app.input.yaw, pitch: app.input.pitch }),
   };
 
   let last = performance.now();

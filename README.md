@@ -27,7 +27,13 @@ npm run e2e          # Playwright against a native server (build the server firs
 ```
 
 **Playing:** click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)
-crouch, F3 debug overlay. `?netsim=150,20,5` simulates 150 ms RTT, 20 ms jitter and 5 % loss.
+crouch, F3 debug overlay (`?debug=1` opens it on load). `?netsim=150,20,5` simulates 150 ms RTT,
+20 ms jitter and 5 % loss.
+
+**Touch (phones, tablets; play in landscape):** drag on the left half for a floating joystick
+(push past the ring to run), drag on the right half to look, and use the Jump (hold), Crouch and
+Run (toggle) buttons. On iOS, *Share → Add to Home Screen* runs it full screen. Safari has no
+WebTransport, so use local mode or a WebRTC invite there.
 The default world is a movement playground: slab stairs, a block step, a doorway, a crawlspace, a
 ladder, a pool, and an orange launch pad just behind the spawn.
 
