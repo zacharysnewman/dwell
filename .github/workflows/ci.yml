@@ -54,6 +54,8 @@ jobs:
       - run: npm ci
       - name: Build local-mode WASM core
         run: npm run build:wasm
+      - name: Player controller suite under WASM (Node)
+        run: node ../server/build/wasm/tools/dwell_player_tests.js
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
@@ -145,6 +147,10 @@ jobs:
           npm ci
           npm run build:wasm
           npm run build
+      - name: Native↔WASM controller divergence (PLAYER_CONTROLLER.md §8.3)
+        run: |
+          cmake --build server/build/dev --target dwell_scenario_trace
+          node server/tools/divergence.mjs server/build/dev/tools/dwell_scenario_trace server/build/wasm/tools/dwell_scenario_trace.js
       - name: Install Playwright Chromium
         working-directory: client
         run: npx playwright install --with-deps chromium

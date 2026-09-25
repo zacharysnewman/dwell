@@ -48,7 +48,8 @@ target_include_directories(monocypher SYSTEM PUBLIC
   ${monocypher_SOURCE_DIR}/src ${monocypher_SOURCE_DIR}/src/optional)
 
 # --- doctest ------------------------------------------------------------------------------------
-if(DWELL_BUILD_TESTS AND NOT EMSCRIPTEN)
+# Native unit tests, and the player test suite built to WASM (PLAYER_CONTROLLER.md §8.3).
+if(DWELL_BUILD_TESTS OR EMSCRIPTEN)
   FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git
