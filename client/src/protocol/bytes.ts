@@ -55,7 +55,7 @@ export class ByteWriter {
     this.bytes(b);
   }
 
-  finish(): Uint8Array {
+  finish(): Uint8Array<ArrayBuffer> {
     return this.buf.slice(0, this.len);
   }
 }

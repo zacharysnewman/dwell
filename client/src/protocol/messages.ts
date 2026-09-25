@@ -49,7 +49,7 @@ function fixedLength(b: Uint8Array, n: number, what: string): Uint8Array {
   return b;
 }
 
-export function encode(m: Message): Uint8Array {
+export function encode(m: Message): Uint8Array<ArrayBuffer> {
   const w = new ByteWriter();
   w.u8(m.type);
   switch (m.type) {
@@ -178,7 +178,7 @@ export function authTranscript(
   nonce: Uint8Array,
   transportBinding: Uint8Array,
   publicKey: Uint8Array,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const w = new ByteWriter();
   w.bytes(new TextEncoder().encode(AUTH_DOMAIN_TAG));
   w.bytes(fixedLength(nonce, 32, 'nonce'));

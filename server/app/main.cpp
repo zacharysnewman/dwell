@@ -1,13 +1,180 @@
-// Dwell dedicated server entry point. Phase 0: prove the C++ core, Jolt, and the Rust network
-// crate link together and report their versions.
-#include <cstdio>
+// Dwell dedicated server (ARCHITECTURE.md §4, §10.1). Hosts the simulation core behind the Rust
+// network front-end: transport events are drained into the core, the core steps at SIM_HZ, and its
+// outbox is sent back out.
+#include <Jolt/Jolt.h>
 
+#include <Jolt/Core/JobSystemThreadPool.h>
+
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <thread>
+
+#include "dwell/core/fixed_step.h"
 #include "dwell/core/jolt_runtime.h"
+#include "dwell/core/server.h"
 #include "dwell_net.h"
 
-int main() {
+namespace {
+
+std::atomic<bool> g_running{true};
+
+void OnSignal(int) { g_running = false; }
+
+struct Options {
+  std::uint16_t port = 4433;
+  dwell::core::ServerConfig server;
+  std::string client_url = "http://localhost:5173/dwell/";
+};
+
+void Usage() {
+  std::puts(
+      "usage: dwell_server [--port N] [--name NAME] [--motd TEXT] [--max-players N] [--seed N]\n"
+      "                    [--client-url URL]");
+}
+
+bool ParseOptions(int argc, char** argv, Options& o) {
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    auto value = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
+    const char* v = nullptr;
+    if (arg == "--help" || arg == "-h") return false;
+    if (!(v = value())) return false;
+    if (arg == "--port") {
+      o.port = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10));
+    } else if (arg == "--name") {
+      o.server.name = v;
+    } else if (arg == "--motd") {
+      o.server.motd = v;
+    } else if (arg == "--max-players") {
+      o.server.max_players = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10));
+    } else if (arg == "--seed") {
+      o.server.world_seed = std::strtoull(v, nullptr, 10);
+    } else if (arg == "--client-url") {
+      o.client_url = v;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string Hex(const std::uint8_t* bytes, std::size_t n) {
+  static constexpr char kDigits[] = "0123456789abcdef";
+  std::string out;
+  for (std::size_t i = 0; i < n; ++i) {
+    out += kDigits[bytes[i] >> 4];
+    out += kDigits[bytes[i] & 0xF];
+  }
+  return out;
+}
+
+dwell::protocol::TransportKind ToTransportKind(std::uint8_t v) {
+  return v == 2 ? dwell::protocol::TransportKind::kWebRtc
+                : dwell::protocol::TransportKind::kWebTransport;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  Options options;
+  if (!ParseOptions(argc, argv, options)) {
+    Usage();
+    return 2;
+  }
+
   dwell::core::JoltRuntime jolt;
-  std::printf("dwell_server (phase 0) | %s | dwell-net %s (C ABI v%u)\n",
-              dwell::core::JoltVersionString(), dwell_net_crate_version(), dwell_net_abi_version());
+  const int workers = std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1);
+  JPH::JobSystemThreadPool jobs(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, workers);
+  dwell::core::SystemEntropy entropy;
+  dwell::core::Server server(options.server, entropy, jobs);
+
+  const DwellNetConfig net_config{
+      options.port, static_cast<std::uint32_t>(dwell::protocol::kMaxReliableMessageBytes),
+      static_cast<std::uint32_t>(dwell::protocol::kMaxDatagramBytes)};
+  DwellNet* net = dwell_net_start(&net_config);
+  if (!net) {
+    std::fprintf(stderr, "dwell_server: failed to start networking: %s\n", dwell_net_last_error());
+    return 1;
+  }
+  std::uint8_t cert_hash[32];
+  dwell_net_cert_hash(net, cert_hash);
+  const std::uint16_t port = dwell_net_port(net);
+  const std::string hash_hex = Hex(cert_hash, sizeof cert_hash);
+
+  std::printf("dwell_server | %s | dwell-net %s | protocol v%u\n", dwell::core::JoltVersionString(),
+              dwell_net_crate_version(), dwell::protocol::kProtocolVersion);
+  std::printf("listening on UDP %u (WebTransport)\n", port);
+  std::printf("certificate sha-256: %s\n", hash_hex.c_str());
+  std::printf("invite link: %s?join=127.0.0.1:%u&cert=%s\n", options.client_url.c_str(), port,
+              hash_hex.c_str());
+  std::fflush(stdout);
+
+  std::signal(SIGINT, OnSignal);
+  std::signal(SIGTERM, OnSignal);
+
+  auto flush_outbox = [&] {
+    for (const auto& out : server.TakeOutbox()) {
+      switch (out.kind) {
+        case dwell::core::Outgoing::Kind::kReliable:
+          dwell_net_send_reliable(net, out.session, static_cast<std::uint8_t>(out.channel),
+                                  out.bytes.data(), out.bytes.size());
+          break;
+        case dwell::core::Outgoing::Kind::kDatagram:
+          dwell_net_send_datagram(net, out.session, out.bytes.data(), out.bytes.size());
+          break;
+        case dwell::core::Outgoing::Kind::kClose:
+          dwell_net_close(net, out.session);
+          break;
+      }
+    }
+  };
+
+  dwell::core::FixedStep fixed(dwell::protocol::kSimHz);
+  auto last = std::chrono::steady_clock::now();
+  while (g_running) {
+    DwellNetEvent ev;
+    while (dwell_net_poll(net, &ev)) {
+      switch (ev.kind) {
+        case DwellNetEventKind::Connected: {
+          dwell::core::TransportBinding binding;
+          std::memcpy(binding.data(), ev.binding, binding.size());
+          server.OnConnected(ev.session, ToTransportKind(ev.transport), binding);
+          break;
+        }
+        case DwellNetEventKind::Disconnected:
+          server.OnDisconnected(ev.session);
+          break;
+        case DwellNetEventKind::Reliable:
+          server.OnReliable(ev.session, static_cast<dwell::protocol::Channel>(ev.channel),
+                            {ev.data, ev.len});
+          break;
+        case DwellNetEventKind::Datagram:
+          server.OnDatagram(ev.session, {ev.data, ev.len});
+          break;
+        case DwellNetEventKind::None:
+          break;
+      }
+    }
+    // Replies to requests go out immediately rather than waiting for the next tick.
+    flush_outbox();
+
+    const auto now = std::chrono::steady_clock::now();
+    const int steps = fixed.Advance(std::chrono::duration<double>(now - last).count());
+    last = now;
+    for (int i = 0; i < steps; ++i) server.Step();
+    flush_outbox();
+
+    // Wake for the next step, and at least every 2 ms to keep request latency low.
+    const double sleep_s = std::min(fixed.TimeUntilNextStep(), 0.002);
+    std::this_thread::sleep_for(std::chrono::duration<double>(sleep_s));
+  }
+
+  std::puts("dwell_server: shutting down");
+  dwell_net_stop(net);
   return 0;
 }
