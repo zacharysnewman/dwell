@@ -613,9 +613,11 @@ bool Players::FindLadder(const Player& p, Cell& ladder, bool& in_released_column
           found = true;
         }
       });
-  if (found) return true;
+  if (found || !c.climb.climbing) return found;
   // The top of a column reaches kLadderTopReach above its last cell, so the climber can get
   // their feet over the top and onto the ledge (the PPC's ladder triggers overhang their ledge).
+  // It only keeps a climb going: grabbing it from the ledge would pull the player back against the
+  // ledge, so getting on at the top means stepping off onto the ladder itself.
   const float feet = center.GetY() - p.cfg->HalfHeight(c.crouch.crouching);
   const auto y = static_cast<std::int32_t>(std::floor(feet - kLadderTopReach));
   for (auto z = static_cast<std::int32_t>(std::floor(center.GetZ() - radius));
@@ -850,15 +852,19 @@ void Players::StepHorizontal(Player& p) {
   Vec3 external_delta = actual - h.contribution;
   // Dwell: velocity a contact removed because the player pushed into it (a wall, a block) is not
   // an external force. Absorbing it (as the PPC does) leaves a phantom push-back that, in the air,
-  // never decays, so a player holding forward against a block could not jump onto it.
+  // never decays, so a player holding forward against a block could not jump onto it. The drive
+  // is the whole of last tick's target velocity: snapping down a stair drives into the edge of
+  // the step being left, and its sideways push-out must not become momentum either.
+  const Vec3 driven = h.contribution + Vec3(0.0f, c.vertical.target_y, 0.0f);
   for (int i = 0; i < p.contact_count; ++i) {
-    Vec3 n = Flat(p.contact_normals[i]);
+    const Vec3 normal = p.contact_normals[i];
+    Vec3 n = Flat(normal);
     const float length = n.Length();
     if (length < 0.1f) continue;  // floors and ceilings: the vertical layer's business
     n /= length;
-    const float into = -h.contribution.Dot(n);  // how fast we drove into the contact
+    const float into = -driven.Dot(normal);  // how fast we drove into the contact
     const float removed = external_delta.Dot(n);
-    if (into > 0.0f && removed > 0.0f) external_delta -= n * std::min(removed, into);
+    if (into > 0.0f && removed > 0.0f) external_delta -= n * std::min(removed, into * length);
   }
   if (external_delta.Length() > cfg.advanced.external_absorb_threshold) {
     h.external += external_delta;

@@ -50,3 +50,19 @@ While implementing a phase of `docs/IMPLEMENTATION_PLAN.md`:
 - Keep the plan's **Progress** table (phase status and PR) current, and the phase's `**Status:**`
   line accurate, including anything outstanding.
 - Record deviations from the plan under the phase, with the reason.
+
+## Requirement: every bug fix has a regression test
+
+When fixing a bug (reported, or found along the way):
+
+- First write an automated test that reproduces it, and **run it against the unfixed code to see
+  it fail** for the reported reason. A test that has never failed does not prove the fix.
+- Then fix the bug and see the same test pass, along with the rest of the suite.
+- Commit the test with the fix. Mention the red → green check in the commit message or PR.
+- If the bug lives in code that can't be tested as written (e.g. per-frame rendering logic inside
+  the game loop), extract the logic into a testable unit as part of the fix.
+- If a bug genuinely cannot be covered by an automated test, say so in the PR and describe the
+  manual check that was done instead.
+
+Behaviour changes that are tuning rather than bugs (e.g. a longer coyote time) follow the same
+pattern: a test that pins the new behaviour and fails on the old.

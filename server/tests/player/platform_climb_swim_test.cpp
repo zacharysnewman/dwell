@@ -230,6 +230,31 @@ TEST_SUITE("player: climb") {
     CHECK(w.Feet(e) == doctest::Approx(3.0f).epsilon(0.01));
     CHECK(w.Pos(e).GetZ() > 2.3f);
   }
+
+  TEST_CASE("standing on the ledge above a ladder does not grab it") {
+    PlayerTestWorld w;
+    LadderWorld(w);
+    const auto e = w.Spawn(Vec3(0.5f, 3.0f, 2.3f), 180.0f);
+    w.Step(30);
+    CHECK_FALSE(w.C(e).climb.climbing);
+    CHECK(w.C(e).ground.grounded);
+  }
+
+  TEST_CASE("walking off the ledge onto the ladder climbs down it") {
+    PlayerTestWorld w;
+    LadderWorld(w);
+    // On the ledge facing the ladder (−Z), looking down: forward descends once on the ladder.
+    const auto e = w.Spawn(Vec3(0.5f, 3.0f, 3.0f), 180.0f);
+    w.input = [](int, PlayerHandle) { return Move(0, 1, false, false, false, 180, -45); };
+    float fastest_fall = 0.0f;
+    for (int i = 0; i < Ticks(3.0f); ++i) {
+      w.Step();
+      if (!w.C(e).ground.grounded) fastest_fall = std::max(fastest_fall, -w.Vel(e).GetY());
+    }
+    CHECK(w.Count(e, Ev::kClimbStarted) >= 1);
+    CHECK(w.Feet(e) == doctest::Approx(0.0f).epsilon(0.01));
+    CHECK(fastest_fall < 4.0f);  // climbed down, never fell
+  }
 }
 
 TEST_SUITE("player: swim") {
