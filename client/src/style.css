@@ -1,0 +1,39 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0d12;
+  color: #e6e8ee;
+  font-family: system-ui, sans-serif;
+}
+
+#view {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}
+
+#build-info {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 50%);
+  font:
+    12px ui-monospace,
+    monospace;
+  pointer-events: none;
+}
+
+#fatal:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  text-align: center;
+  background: #0b0d12;
+}

@@ -1,0 +1,5 @@
+# Pinned Rust toolchain for all Rust code in the repo (server/net/wt; later services/).
+[toolchain]
+channel = "1.94.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
