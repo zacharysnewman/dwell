@@ -96,8 +96,11 @@ jobs:
       - name: Test
         working-directory: server
         run: ctest --preset dev
-      - name: Smoke-run server
-        run: server/build/dev/app/dwell_server
+      - name: Smoke-run server (starts, prints an invite link, exits cleanly on SIGINT)
+        run: |
+          timeout --preserve-status -s INT 5 server/build/dev/app/dwell_server --port 0 > smoke.log 2>&1
+          cat smoke.log
+          grep -q "invite link: " smoke.log
 
   e2e:
     name: End-to-end (native server + Chromium + Electron)
