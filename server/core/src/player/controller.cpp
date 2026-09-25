@@ -102,9 +102,11 @@ JPH::RefConst<JPH::Shape> MakeCapsule(const PlayerControllerConfig& cfg, bool cr
 
 }  // namespace
 
+// Dwell's world is right-handed with Y up (Jolt, Three.js): facing +Z (yaw 0), right is −X.
+// (The PPC's Unity convention is left-handed, where it would be +X.)
 Vec3 CameraRight(float yaw_degrees) {
   const float yaw = yaw_degrees * kDegToRad;
-  return Vec3(std::cos(yaw), 0.0f, -std::sin(yaw));
+  return Vec3(-std::cos(yaw), 0.0f, std::sin(yaw));
 }
 
 Vec3 MoveDirection(const Input& input) {

@@ -2,6 +2,7 @@
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from '../identity/deviceKey';
 import type { Invite } from './invite';
 import { LoopbackTransport } from './loopback';
+import { SimulatedTransport, type NetConditions } from './netsim';
 import { ClientSession } from './session';
 import type { Transport } from './Transport';
 import { isWebRtcSupported, WebRtcTransport } from './webRtc';
@@ -11,6 +12,12 @@ export interface ConnectOptions {
   displayName: string;
   clientVersion: string;
   transport?: TransportPreference;
+  /** Simulated latency / jitter / loss (`?netsim=`), for testing prediction. */
+  netsim?: NetConditions | null;
+}
+
+function simulate(transport: Transport, options: ConnectOptions): Transport {
+  return options.netsim ? new SimulatedTransport(transport, options.netsim) : transport;
 }
 
 export class TransportUnavailableError extends Error {
@@ -50,7 +57,7 @@ export async function connectToInvite(
   options: ConnectOptions,
 ): Promise<ClientSession> {
   const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
-  const transport = await openTransport(invite, options.transport);
+  const transport = simulate(await openTransport(invite, options.transport), options);
   const session = new ClientSession(transport, key, options);
   session.start();
   return session;
@@ -60,7 +67,7 @@ export async function connectToInvite(
 export async function connectLocal(options: ConnectOptions): Promise<ClientSession> {
   const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
   const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
-  const transport = await LoopbackTransport.start(worker);
+  const transport = simulate(await LoopbackTransport.start(worker), options);
   const session = new ClientSession(transport, key, options);
   session.start();
   return session;

@@ -1,22 +1,8 @@
 // Typed wrapper around the local-mode WASM build of the server core (server/wasm/wasm_api.cpp).
 import type { Channel, TransportKind } from '../protocol/constants.gen';
+import { withHeapBytes, type DwellCoreFactory, type DwellCoreModule } from '../sim/module';
 
-/** Emscripten module surface used here (factory created with -sMODULARIZE -sEXPORT_ES6). */
-interface DwellCoreModule {
-  HEAPU8: Uint8Array;
-  HEAPU32: Uint32Array;
-  _malloc(size: number): number;
-  _free(ptr: number): void;
-  _dwell_local_create(worldSeed: number): number;
-  _dwell_local_connected(session: number, kind: number, bindingPtr: number): void;
-  _dwell_local_disconnected(session: number): void;
-  _dwell_local_reliable(session: number, channel: number, ptr: number, len: number): void;
-  _dwell_local_datagram(session: number, ptr: number, len: number): void;
-  _dwell_local_advance(elapsedSeconds: number): number;
-  _dwell_local_take_outbox(outLenPtr: number): number;
-}
-
-export type DwellCoreFactory = () => Promise<DwellCoreModule>;
+export type { DwellCoreFactory } from '../sim/module';
 
 export const OutgoingKind = { Reliable: 0, Datagram: 1, Close: 2 } as const;
 export type OutgoingKind = (typeof OutgoingKind)[keyof typeof OutgoingKind];
@@ -39,13 +25,7 @@ export class LocalCore {
   }
 
   private withBytes(bytes: Uint8Array, fn: (ptr: number) => void): void {
-    const ptr = this.m._malloc(Math.max(1, bytes.length));
-    try {
-      this.m.HEAPU8.set(bytes, ptr);
-      fn(ptr);
-    } finally {
-      this.m._free(ptr);
-    }
+    withHeapBytes(this.m, bytes, fn);
   }
 
   connected(session: number, kind: TransportKind, binding: Uint8Array): void {

@@ -20,7 +20,13 @@ export default defineConfig({
     launchOptions: {
       // Local sandboxes may provide a preinstalled Chromium; CI uses `playwright install`.
       ...(process.env.DWELL_CHROMIUM ? { executablePath: process.env.DWELL_CHROMIUM } : {}),
-      args: ['--enable-unsafe-swiftshader'],
+      // Two players run side by side: keep background pages' timers and frames running.
+      args: [
+        '--enable-unsafe-swiftshader',
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
+        '--disable-backgrounding-occluded-windows',
+      ],
     },
   },
 });

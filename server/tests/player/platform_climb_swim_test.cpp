@@ -46,7 +46,7 @@ TEST_SUITE("player: platforms") {
     PlayerTestWorld w;
     w.Box(Vec3(0, -0.5f, 0), Vec3(10, 0.5f, 10), JPH::Quat::sIdentity(), Vec3(0, 0, 3));
     const auto e = w.Spawn(Vec3::sZero());
-    w.input = [](int, PlayerHandle) { return Move(1, 0); };
+    w.input = [](int, PlayerHandle) { return Move(-1, 0); };  // strafe left: +X at yaw 0
     w.Step(Ticks(0.8f));
     CHECK(w.Vel(e).GetX() == doctest::Approx(5.0f).epsilon(0.02));
     CHECK(w.Vel(e).GetZ() == doctest::Approx(3.0f).epsilon(0.03));
@@ -187,7 +187,7 @@ TEST_SUITE("player: climb") {
     w.input = [](int t, PlayerHandle) { return t < 30 ? Move(0, 1) : Move(1, 0); };
     w.Step(33);
     CHECK(w.C(e).climb.climbing);
-    CHECK(w.Vel(e).GetX() == doctest::Approx(3.0f).epsilon(0.03));
+    CHECK(w.Vel(e).GetX() == doctest::Approx(-3.0f).epsilon(0.03));  // right of +Z is −X
   }
 
   TEST_CASE("jumping off launches away and does not re-grab") {

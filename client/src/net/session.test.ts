@@ -79,7 +79,12 @@ describe('ClientSession', () => {
       serverTick: 10,
     });
     await flush();
-    expect(states.at(-1)).toEqual({ phase: 'joined', playerId: 3, worldSeed: 5n });
+    expect(states.at(-1)).toEqual({
+      phase: 'joined',
+      playerId: 3,
+      worldSeed: 5n,
+      generatorVersion: 0,
+    });
     session.close();
   });
 

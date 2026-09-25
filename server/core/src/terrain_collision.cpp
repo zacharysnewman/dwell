@@ -100,6 +100,51 @@ ChunkMesh BuildChunkMesh(VoxelWorld& world, const ChunkCoord& coord) {
   return mesh;
 }
 
+std::vector<RenderFace> BuildRenderFaces(VoxelWorld& world, const ChunkCoord& coord) {
+  std::vector<RenderFace> faces;
+  Chunk& chunk = world.GetOrCreate(coord);
+  const int ox = coord.x * kChunkSize, oy = coord.y * kChunkSize, oz = coord.z * kChunkSize;
+  auto at = [&](int lx, int ly, int lz) -> MaterialId {
+    if (lx >= 0 && lx < kChunkSize && ly >= 0 && ly < kChunkSize && lz >= 0 && lz < kChunkSize) {
+      return chunk.Get(lx, ly, lz);
+    }
+    return world.GetVoxel(ox + lx, oy + ly, oz + lz);
+  };
+  static constexpr int kDirs[6][3] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                      {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+  for (int lz = 0; lz < kChunkSize; ++lz) {
+    for (int ly = 0; ly < kChunkSize; ++ly) {
+      for (int lx = 0; lx < kChunkSize; ++lx) {
+        const MaterialId m = chunk.Get(lx, ly, lz);
+        if (m == Materials::kAir) continue;
+        const MaterialInfo& info = GetMaterial(m);
+        auto emit = [&](int face) {
+          faces.push_back({static_cast<std::uint8_t>(lx), static_cast<std::uint8_t>(ly),
+                           static_cast<std::uint8_t>(lz), static_cast<std::uint8_t>(face), m});
+        };
+        if (info.climbable) {
+          // Facing side: north (−Z) = 5, east (+X) = 0, south (+Z) = 4, west (−X) = 1.
+          static constexpr int kFacingFace[] = {4, 5, 0, 4, 1};
+          emit(kFacingFace[static_cast<int>(info.facing)]);
+          continue;
+        }
+        for (int face = 0; face < 6; ++face) {
+          const MaterialId n = at(lx + kDirs[face][0], ly + kDirs[face][1], lz + kDirs[face][2]);
+          const MaterialInfo& ni = GetMaterial(n);
+          bool hidden = ni.shape == VoxelShape::kFull;
+          if (info.liquid) hidden = hidden || n == m;
+          if (info.shape == VoxelShape::kSlabBottom) {
+            if (face == 2) hidden = false;  // the top of a slab is always open
+            if (face != 2 && face != 3 && ni.shape == VoxelShape::kSlabBottom) hidden = true;
+          }
+          if (!hidden) emit(face);
+        }
+      }
+    }
+  }
+  return faces;
+}
+
 TerrainCollision::~TerrainCollision() {
   if (!body_.IsInvalid()) {
     physics_.bodies().RemoveBody(body_);

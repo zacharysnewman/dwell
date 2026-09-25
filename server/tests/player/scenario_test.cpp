@@ -20,7 +20,8 @@ using player::GroundRef;
 namespace Ev = player::Events;
 
 TEST_SUITE("player: stacking") {
-  // Player 0 stands on the floor; player 1 on player 0's head. Player 0 walks sideways from t = 30.
+  // Player 0 stands on the floor; player 1 on player 0's head. Player 0 strafes right (−X) from
+  // t = 30.
   struct Stack {
     PlayerTestWorld w;
     PlayerHandle bottom, top;
@@ -50,14 +51,14 @@ TEST_SUITE("player: stacking") {
   TEST_CASE("the player below walks out from under you") {
     Stack s(false);
     s.w.Step(30 + 30);
-    CHECK(s.w.Pos(s.bottom).GetX() > 1.0f);
+    CHECK(s.w.Pos(s.bottom).GetX() < 0.0f);
     CHECK(s.w.Pos(s.top).GetX() == doctest::Approx(0.5f).epsilon(0.1));
   }
 
   TEST_CASE("opting in carries you along") {
     Stack s(true);
     s.w.Step(30 + 30);
-    CHECK(s.w.Pos(s.top).GetX() > 1.0f);
+    CHECK(s.w.Pos(s.top).GetX() < 0.0f);
   }
 }
 

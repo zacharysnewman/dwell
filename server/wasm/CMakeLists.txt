@@ -7,11 +7,12 @@ target_link_options(dwell_core_wasm PRIVATE
   -sMODULARIZE=1
   -sEXPORT_ES6=1
   -sEXPORT_NAME=createDwellCore
-  -sENVIRONMENT=worker,node
+  -sENVIRONMENT=web,worker,node
   -sALLOW_MEMORY_GROWTH=1
   -sINITIAL_MEMORY=64MB
+  -sSTACK_SIZE=1MB
   -sEXPORTED_FUNCTIONS=_malloc,_free
-  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32
+  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF32
   -sFILESYSTEM=0)
 
 # Copy into the client so Vite serves it at <base>/wasm/.

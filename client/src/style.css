@@ -54,3 +54,67 @@ body {
   text-align: center;
   background: #0b0d12;
 }
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 80%);
+  box-shadow: 0 0 2px rgb(0 0 0 / 80%);
+}
+
+#health {
+  position: absolute;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 220px;
+  height: 10px;
+  margin-left: -110px;
+  border-radius: 5px;
+  background: rgb(0 0 0 / 50%);
+  overflow: hidden;
+}
+
+#health > div {
+  height: 100%;
+  background: #4fc26b;
+  transition: width 0.2s;
+}
+
+#health.hurt > div {
+  background: #e24a3b;
+}
+
+#center-message {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  text-align: center;
+  font-size: 28px;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 80%);
+}
+
+#debug-overlay {
+  position: absolute;
+  right: max(8px, env(safe-area-inset-right));
+  top: max(8px, env(safe-area-inset-top));
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 60%);
+  font:
+    12px ui-monospace,
+    monospace;
+  white-space: pre;
+}

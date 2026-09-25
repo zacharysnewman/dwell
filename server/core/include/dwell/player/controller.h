@@ -38,8 +38,8 @@ enum class State : std::uint8_t {
 // One tick of input. Buttons are held state; presses are detected in-sim.
 struct Input {
   float move_x = 0.0f, move_y = 0.0f;  // x = right, y = forward, camera-relative, |move| <= 1
-  float look_yaw = 0.0f;               // degrees; 0 = +Z, 90 = +X
-  float look_pitch = 0.0f;             // degrees; positive = up
+  float look_yaw = 0.0f;    // degrees; 0 = +Z, 90 = +X (right-handed: right of +Z is −X)
+  float look_pitch = 0.0f;  // degrees; positive = up
   bool jump = false, run = false, crouch = false;
 };
 

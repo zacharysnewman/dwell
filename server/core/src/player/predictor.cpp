@@ -138,7 +138,7 @@ void Predictor::Reset(const protocol::PhysicsSnapshot& snapshot) {
   players_->Restore(*handle_, c, center, ToVec3(l.velocity));
   latest_seq_ = std::max(latest_seq_, snapshot.ack_input_seq);
   last_ack_ = snapshot.ack_input_seq;
-  history_ = {};
+  for (Entry& e : history_) e.seq = 0;  // (no temporary: the array is ~100 KB)
   protocol::InputFrame none;
   none.seq = snapshot.ack_input_seq;
   if (none.seq == latest_seq_) Record(none);

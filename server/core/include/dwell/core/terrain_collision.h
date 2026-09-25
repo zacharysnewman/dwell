@@ -32,6 +32,18 @@ struct ChunkMesh {
 // merged faces create T-junctions, whose unshared edges produce ghost contacts.
 ChunkMesh BuildChunkMesh(VoxelWorld& world, const ChunkCoord& coord);
 
+// Visible voxel faces of one chunk for rendering (the client builds its meshes from these):
+// faces of non-air cells not hidden by a full-cube neighbour (water also hides against water,
+// slab sides against slabs). Ladders emit one face, their facing side (the plate is drawn there).
+struct RenderFace {
+  std::uint8_t x, y, z;  // chunk-local cell
+  std::uint8_t face;     // 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z
+  MaterialId material;
+  std::uint16_t reserved = 0;
+};
+static_assert(sizeof(RenderFace) == 8);
+std::vector<RenderFace> BuildRenderFaces(VoxelWorld& world, const ChunkCoord& coord);
+
 class TerrainCollision {
  public:
   TerrainCollision(VoxelWorld& world, PhysicsWorld& physics) : world_(world), physics_(physics) {}

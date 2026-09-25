@@ -261,3 +261,21 @@ TEST_SUITE("netcode: prediction") {
     }
   }
 }
+
+TEST_CASE("predictor: remote proxy right after the first snapshot") {
+  core::JoltRuntime runtime;
+  JPH::JobSystemSingleThreaded jobs(JPH::cMaxPhysicsJobs);
+  core::VoxelWorld world(core::GeneratorFor(1));
+  player::PlayerControllerConfig config;
+  player::Predictor p(world, jobs, config);
+  protocol::PhysicsSnapshot snap;
+  snap.server_tick = 3;
+  snap.local.position[1] = 0.9f;
+  snap.local.position[2] = -0.25f;
+  snap.local.controller.flags = protocol::ControllerFlags::kGrounded;
+  snap.local.controller.ground_kind = protocol::GroundKind::kTerrain;
+  p.OnSnapshot(snap);
+  p.SetRemote(1, JPH::Vec3(-1, 0, -0.25f), JPH::Vec3::sZero(), false, 0);
+  for (int i = 0; i < 10; ++i) p.Tick(player::QuantizeInput({}, p.next_seq()));
+  CHECK(p.active());
+}
