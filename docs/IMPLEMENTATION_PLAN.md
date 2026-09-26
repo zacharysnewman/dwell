@@ -19,8 +19,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; two follow-up fixes on the Phase 3 branch, PR pending) | #4, #5, #6 |
-| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) done; 3b streaming next | — |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7) | #4, #5, #6, #7 |
+| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b streaming next | #7 (3a) |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
 | 6 — Sleep / re-bake | ⏳ Not started | — |
@@ -134,7 +134,7 @@ Exit criteria
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
 ragdoll and animation from `State` (Phase 5, see below). Playtested by a human (Open Decision
-#9): two findings, fixed on the Phase 3 branch (PR pending): forward/back looked faster than
+#9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
 
