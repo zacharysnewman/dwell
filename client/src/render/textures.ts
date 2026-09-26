@@ -8,7 +8,7 @@ export const TILE = 32;
 /** Wrapped texels around each tile, so mip levels down to 4×4 texels per tile never bleed. */
 export const GUTTER = 16;
 export const CELL = TILE + 2 * GUTTER;
-export const ATLAS_CELLS = 4;
+export const ATLAS_CELLS = 8;
 export const ATLAS_SIZE = CELL * ATLAS_CELLS;
 
 export type TileName =
@@ -26,7 +26,11 @@ export type TileName =
   | 'leaves'
   | 'coalOre'
   | 'ironOre'
-  | 'goldOre';
+  | 'goldOre'
+  | 'bedrock'
+  | 'water'
+  | 'ladder'
+  | 'launchPad';
 export const TILE_ORDER: readonly TileName[] = [
   'plain',
   'grass',
@@ -43,6 +47,10 @@ export const TILE_ORDER: readonly TileName[] = [
   'coalOre',
   'ironOre',
   'goldOre',
+  'bedrock',
+  'water',
+  'ladder',
+  'launchPad',
 ];
 
 export interface TileRect {
@@ -222,6 +230,52 @@ function ore(color: number, seed: number): (x: number, y: number) => Rgb {
   };
 }
 
+const BEDROCK = rgb(0x4a4a50);
+const WATER = rgb(0x3f7fd8);
+const RAIL = rgb(0xa0703a);
+const LAUNCH = rgb(0xe8792a);
+
+/** Bedrock: dark, high-contrast rock with black cracks and pale flecks. */
+function bedrock(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 141);
+  const crack = tiledNoise(x, y, 8, 3, 142);
+  const fleck = hash(x, y, 4, 143);
+  let c = scale(BEDROCK, 0.55 + 0.7 * n);
+  if (Math.abs(crack - 0.5) < 0.04) c = scale(c, 0.35);
+  if (fleck > 0.95) c = scale(c, 1.5);
+  return c;
+}
+
+/** Water: soft ripples (the face's opacity makes it translucent). */
+function water(x: number, y: number): Rgb {
+  const ripple = tiledNoise(x, y, 4, 5, 151);
+  const fine = tiledFbm(x, y, 152);
+  return scale(WATER, 0.85 + 0.15 * ripple + 0.12 * fine);
+}
+
+/** Ladder: two rails and four rungs over a dark backing. */
+function ladder(x: number, y: number): Rgb {
+  const grain = 0.8 + 0.3 * tiledNoise(x, y * 0.25, 16, 6, 161);
+  const rail = (x >= 3 && x <= 6) || (x >= 25 && x <= 28);
+  const rung = y % 8 >= 2 && y % 8 <= 4;
+  if (rail) return scale(RAIL, grain);
+  if (rung) return scale(RAIL, grain * 0.9);
+  return scale(RAIL, 0.3 + 0.08 * tiledFbm(x, y, 162));
+}
+
+/** Debug launch pad: orange plate with a dark ring and an up arrow. */
+function launchPad(x: number, y: number): Rgb {
+  const dx = x - TILE / 2 + 0.5;
+  const dy = y - TILE / 2 + 0.5;
+  const r = Math.hypot(dx, dy);
+  const base = scale(LAUNCH, 0.85 + 0.2 * tiledFbm(x, y, 171));
+  const arrowHead = y >= 16 && y <= 25 && Math.abs(dx) <= 25 - y;
+  const arrowShaft = y >= 7 && y < 16 && Math.abs(dx) <= 2;
+  if (arrowHead || arrowShaft) return [245, 240, 230];
+  if (r > 12 && r < 14.5) return scale(base, 0.45);
+  return base;
+}
+
 const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   plain: () => [255, 255, 255],
   grass,
@@ -238,6 +292,10 @@ const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   coalOre: ore(0x26262a, 111),
   ironOre: ore(0xc8926a, 121),
   goldOre: ore(0xf2c230, 131),
+  bedrock,
+  water,
+  ladder,
+  launchPad,
 };
 
 export interface Atlas {

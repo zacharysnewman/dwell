@@ -266,11 +266,12 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `protocol/` **[built]** | Codecs mirroring the C++ ones, constants generated from `shared/protocol`. |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
 | `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. |
-| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message) and the F3 debug overlay (PLAYER_CONTROLLER.md §9). |
+| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message) and the F3 debug overlay (PLAYER_CONTROLLER.md §9). **[planned, Phase 3c]** the block hotbar (§6.5). |
+| `interact/` **[planned, Phase 3c]** | Block targeting (voxel ray cast from the eye), break/place input on desktop and touch, the infinite block palette and selection, and `BlockEditRequest` sending (§6.5). |
 | `world/` **[in progress]** | Material ids and render styles (mirroring `voxel.h`, checked by a test). Chunk store mirrored from the server, applying voxel deltas in order, arrives in Phase 3b (until then clients generate the world from its seed and generator version inside the sim core). |
 | `worldgen/` | Worldgen worker pool running the server's C++ terrain generator (WASM) for `Generated` chunks. |
 | `mesh/` | Greedy-mesher worker pool; produces render meshes and collision triangles. |
-| `render/` **[built: terrain chunks, player capsules, camera, debug lines]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry, own shader materials, and a block texture array; rendering is camera-relative. Game code never touches Three.js objects directly. Phase 2: chunk meshes built from the sim core's visible faces (`chunkMesh.ts`: one quad per face, water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), and debug line segments. **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), and the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters); packed in a 256² atlas with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close). Faces get UVs within their tile; vertex colours carry face shading (and the flat colour of untextured materials). |
+| `render/` **[built: terrain chunks, player capsules, camera, debug lines]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry, own shader materials, and a block texture array; rendering is camera-relative. Game code never touches Three.js objects directly. Phase 2: chunk meshes built from the sim core's visible faces (`chunkMesh.ts`: one quad per face, water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), and debug line segments. **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close). Faces get UVs within their tile; vertex colours carry face shading (and the flat colour of untextured materials). |
 | `physics/` | Debris world (Phase 5) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
 | `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 4; player interpolation is in `game/remotes.ts`. |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
@@ -452,6 +453,26 @@ file** holding **all** of its data; nothing about a world lives in side files.
 - **Settings and permissions** are edited through admin commands and a server CLI; the only
   non-database inputs to a dedicated server are launch options (world file, bind address/port).
 
+### 6.5 Block Interaction & Inventory **[planned]**
+
+Players break and place blocks (Phase 3c). Server-authoritative like every voxel change:
+
+- **Targeting (client):** each frame a voxel ray cast from the eye (the same `VoxelQuery` DDA the
+  controller uses, `REACH_DISTANCE` long) finds the targeted cell and face; the renderer outlines
+  the cell. Reach is also checked on the server.
+- **Actions:** desktop — left click breaks the targeted block, right click places the selected
+  block against the targeted face. Touch — a tap on the view acts, and a Break/Place toggle button
+  picks which action. The client sends a `BlockEditRequest` (§8.3); the server validates it
+  (§11: reach, line of sight, cooldown, permissions, no overlap with any player capsule, bedrock
+  unbreakable) and applies it, broadcasting a `VoxelModification`. The client does not predict
+  edits: the change shows when the modification arrives (one RTT), and the local collision mesh
+  rebuilds the same tick (PLAYER_CONTROLLER.md §5).
+- **Inventory:** creative-style and infinite — every placeable material (all but air, water and
+  the debug launch pad) is always available; nothing is consumed or collected. A hotbar HUD shows
+  the palette with the selected block highlighted; number keys and the scroll wheel (desktop) or
+  tapping a hotbar slot (touch) change the selection. Selection is client-side UI state and
+  travels in each `BlockEditRequest`. Collected, finite inventories are out of scope for now.
+
 ---
 
 ## 7. Physics Pipeline
@@ -552,6 +573,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `RESPAWN_SECONDS` | 5 s | Death → respawn delay |
 | `MAX_HEALTH` | 100 | Player health |
 | `MAX_INPUTS_PER_DATAGRAM` | 4 | Input redundancy per `PlayerInput` |
+| `REACH_DISTANCE` | 5 m | Block break/place reach from the eye (§6.5; planned, Phase 3c) |
 | **Terrain (§6.3)** | | |
 | `WORLD_MIN_Y` / `WORLD_MAX_Y` | −128 / 384 | Vertical world bounds |
 | `WORLD_HALF_EXTENT` | 65 536 m | Horizontal world bound |
@@ -684,6 +706,8 @@ S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serv
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
                    Malformed, Replaced), str message — followed by closing the session
 C→S  WorldgenCheck hash of a generated verification chunk → generated vs. full-chunk mode (§6.3)
+C→S  BlockEditRequest [planned, Phase 3c] u8 action (Break | Place), i32×3 cell, u8 face,
+                   u16 material (Place) — reliable on `control` (§6.5)
 ```
 The signature covers `"dwell-auth-v1" ‖ nonce ‖ transport binding ‖ publicKey`; the binding
 (§8.1) ties it to the server certificate, so a signed challenge cannot be relayed to a different

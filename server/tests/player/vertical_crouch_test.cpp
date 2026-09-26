@@ -164,13 +164,19 @@ TEST_SUITE("player: vertical") {
     const int turn = Ticks(1.4f);
     w.input = [turn](int t, PlayerHandle) { return Move(0, t < turn ? 1.0f : -1.0f); };
     int ungrounded = 0;
-    float climb_vy = 0;
+    Vec3 at_start, at_end;  // on the ramp, before turning back
     for (int i = 0; i < Ticks(2.8f); ++i) {
       w.Step();
       if (!w.C(e).ground.grounded) ++ungrounded;
-      if (i == Ticks(1.2f)) climb_vy = w.Vel(e).GetY();
+      if (i == Ticks(1.2f)) at_start = w.Pos(e);
+      if (i == Ticks(1.35f)) at_end = w.Pos(e);
     }
-    CHECK(climb_vy == doctest::Approx(5.0f * std::tan(20.0f * 3.14159265f / 180.0f)).epsilon(0.05));
+    // Climbing at walk speed along the ground plan, rising at speed × tan(slope): measured by
+    // displacement, since on a slope the step-up supplies part of the rise (not the body velocity).
+    const Vec3 climbed = (at_end - at_start) / 0.15f;
+    CHECK(climbed.GetZ() == doctest::Approx(5.0f).epsilon(0.03));
+    CHECK(climbed.GetY() ==
+          doctest::Approx(5.0f * std::tan(20.0f * 3.14159265f / 180.0f)).epsilon(0.15));
     CHECK(ungrounded == 0);
     CHECK(w.Feet(e) == doctest::Approx(0.0f).epsilon(0.03));
   }

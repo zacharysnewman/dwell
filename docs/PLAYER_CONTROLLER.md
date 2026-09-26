@@ -172,7 +172,11 @@ passes, `Tick` makes sure terrain collision exists around every player and syncs
   are still absorbed.
 - **Step-up nudge.** After lifting onto a step, the capsule also moves forward by
   `radius + stepProbeDistance − ringRadius + 1 cm`, so the probe ring (inside the slimmer voxel
-  capsule) is over the step and the ground snap doesn't pull the player back down.
+  capsule) is over the step and the ground snap doesn't pull the player back down. The nudge is
+  part of the tick's movement, not extra: that tick's horizontal contribution drops by
+  `nudge / dt` along the move (never below zero), so stepping onto a slab, landing on a block's
+  edge from a jump, or walking up a slope (a step-up every tick) moves no faster than the speed.
+  `current` is unchanged, so full speed resumes next tick.
 - **Step grace.** For 6 ticks after a step-up, only an upward deviation above 1.5 m/s counts as a
   launch: Jolt's speculative contact on the step's convex edge nudges the capsule up as it crosses.
 - **Step probe height.** The step ray starts at `max(centre, feet + maxStepHeight + 5 cm)`, so a

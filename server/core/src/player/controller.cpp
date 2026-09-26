@@ -785,11 +785,11 @@ void Players::StepSwim(Player& p) {
 
 // Lifts the player onto a step just ahead (PPC TryStep). The probe starts at centre height, or
 // just above step height when crouched (Dwell: a crouched centre is below a slab's top).
-void Players::TryStep(Player& p, Vec3 move_direction) {
+Vec3 Players::TryStep(Player& p, Vec3 move_direction) {
   const PlayerController& c = p.c;
   const PlayerControllerConfig& cfg = *p.cfg;
   const Vec3 flat = Flat(move_direction);
-  if (flat.Length() < kMinDirection) return;
+  if (flat.Length() < kMinDirection) return Vec3::sZero();
   auto& bodies = physics_.bodies();
   const Vec3 center(bodies.GetCenterOfMassPosition(p.body));
   const float half_height = cfg.HalfHeight(c.crouch.crouching);
@@ -798,7 +798,7 @@ void Players::TryStep(Player& p, Vec3 move_direction) {
   origin.SetY(std::max(center.GetY(), feet + cfg.movement.max_step_height + 0.05f));
   ProbeHit hit;
   if (!query_.CastRay(origin, -Vec3::sAxisY(), origin.GetY() - feet + half_height, p.body, hit)) {
-    return;
+    return Vec3::sZero();
   }
   const float step_height = hit.point.GetY() - feet;
   if (step_height > kMinStep && step_height <= cfg.movement.max_step_height &&
@@ -811,7 +811,9 @@ void Players::TryStep(Player& p, Vec3 move_direction) {
                        JPH::RVec3(center + Vec3(0, step_height, 0) + flat.Normalized() * nudge),
                        JPH::EActivation::Activate);
     p.c.vertical.step_grace = kStepGraceTicks;
+    return flat.Normalized() * nudge;
   }
+  return Vec3::sZero();
 }
 
 // Edge guard (Dwell addition): while crouched on the ground, don't move (per axis) where the
@@ -874,7 +876,9 @@ void Players::StepHorizontal(Player& p) {
 
   const Input& input = c.input;
   const Vec3 move_direction = MoveDirection(input);
-  if (grounded && move_direction.Length() > kMinDirection) TryStep(p, move_direction);
+  const Vec3 nudge = grounded && move_direction.Length() > kMinDirection
+                         ? TryStep(p, move_direction)
+                         : Vec3::sZero();
 
   const float speed = c.crouch.crouching ? cfg.crouch.speed
                       : input.run        ? m.run_speed
@@ -897,6 +901,15 @@ void Players::StepHorizontal(Player& p) {
   const Vec3 change = MoveTowards(Vec3::sZero(), relative_delta, rate * kDt);
   h.current = relative + change + base;
   h.contribution = h.current + h.external;
+  // Dwell: a step-up's forward nudge is part of this tick's movement, not extra: take it out of
+  // this tick's velocity (never below zero along the move), so stepping onto a slab or landing on a
+  // block's edge doesn't lurch the player forward. `current` is untouched, so full speed resumes
+  // next tick, and `contribution` (read back next tick) is what the body was actually driven at.
+  if (const float nudge_length = nudge.Length(); nudge_length > 0.0f) {
+    const Vec3 along = nudge / nudge_length;
+    const float pay = std::clamp(h.contribution.Dot(along), 0.0f, nudge_length / kDt);
+    h.contribution -= along * pay;
+  }
 
   if (m.edge_guard && grounded && c.crouch.crouching) ApplyEdgeGuard(p);
 }

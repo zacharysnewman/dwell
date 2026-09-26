@@ -14,6 +14,10 @@ using namespace dwell;
 using namespace dwell::test;
 using player::GroundRef;
 
+namespace {
+float Sq(float v) { return v * v; }
+}  // namespace
+
 TEST_SUITE("player: skeleton") {
   TEST_CASE("spawn configures a rotation-locked, gravity-free, frictionless dynamic capsule") {
     PlayerTestWorld w;
@@ -258,6 +262,59 @@ TEST_SUITE("player: steps and air") {
     w.Step(Ticks(1.5f));
     CHECK(w.Pos(e).GetZ() < 1.75f);
     CHECK(w.Feet(e) < 0.05f);
+  }
+
+  TEST_CASE("stepping up never moves the player faster than its speed") {
+    // Playtest bug: jump towards a block while holding forward and the player shot forward as it
+    // came down on the block's edge. The step-up there (and on every slab) moved the capsule
+    // forward by its nudge on top of the tick's own movement. Measures the distance moved per
+    // tick for every jump timing, from a running start to pressed against the block.
+    const auto& m = player::DefaultConfig().movement;
+    for (const bool run : {false, true}) {
+      CAPTURE(run);
+      const float limit = (run ? m.run_speed : m.walk_speed) / 60.0f * 1.02f;
+      float worst = 0.0f;
+      int worst_jump = -1, onto = 0;
+      for (int jump_tick = 0; jump_tick <= 60; jump_tick += 2) {
+        PlayerTestWorld w;
+        w.Floor(0, 40);
+        w.Fill(-3, 0, 3, 3, 0, 20, core::Materials::kStone);
+        const auto e = w.Spawn(Vec3(0.5f, 0, 0));
+        w.input = [&](int t, PlayerHandle) {
+          return Move(0, 1, run, t >= jump_tick && t < jump_tick + 3);
+        };
+        Vec3 prev = w.Pos(e);
+        for (int t = 0; t < jump_tick + Ticks(1.5f); ++t) {
+          w.Step(1);
+          const Vec3 p = w.Pos(e);
+          const float moved = std::sqrt(Sq(p.GetX() - prev.GetX()) + Sq(p.GetZ() - prev.GetZ()));
+          if (moved > worst) {
+            worst = moved;
+            worst_jump = jump_tick;
+          }
+          prev = p;
+        }
+        onto += w.Feet(e) > 0.95f;  // made it onto the block (early jumps land short)
+      }
+      INFO("worst step " << worst * 60.0f << " m/s, jumping at tick " << worst_jump);
+      CHECK(onto > 10);
+      CHECK(worst <= limit);
+    }
+    // Walking up a slab step.
+    PlayerTestWorld w;
+    w.Floor(0, 40);
+    w.Fill(-3, 0, 3, 3, 0, 20, core::Materials::kStoneSlab);
+    const auto e = w.Spawn(Vec3(0.5f, 0, 0));
+    w.input = [](int, PlayerHandle) { return Move(0, 1); };
+    Vec3 prev = w.Pos(e);
+    float worst = 0.0f;
+    for (int t = 0; t < Ticks(1.5f); ++t) {
+      w.Step(1);
+      worst = std::max(worst, w.Pos(e).GetZ() - prev.GetZ());
+      prev = w.Pos(e);
+    }
+    CHECK(w.Feet(e) > 0.45f);
+    CHECK(worst * 60.0f <= m.walk_speed * 1.02f);
   }
 
   TEST_CASE("air control scales airborne acceleration") {

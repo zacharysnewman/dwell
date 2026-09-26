@@ -19,8 +19,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; two follow-up fixes on the Phase 3 branch, PR pending) | #4, #5, #6 |
-| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) done; 3b streaming next | — |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7; step-up speed-burst fix in review in #8) | #4, #5, #6, #7, #8 |
+| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b streaming next | #7 (3a) |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
 | 6 — Sleep / re-bake | ⏳ Not started | — |
@@ -134,9 +134,13 @@ Exit criteria
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
 ragdoll and animation from `State` (Phase 5, see below). Playtested by a human (Open Decision
-#9): two findings, fixed on the Phase 3 branch (PR pending): forward/back looked faster than
+#9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
+Later finding (fix in review in #8): jumping onto a block while holding forward gave a
+burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
+of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
+that tick's velocity (PLAYER_CONTROLLER.md §4).
 
 | Exit criterion | Result |
 |---|---|
@@ -240,7 +244,8 @@ Exit criteria
 
 **Status:** in progress. Sub-phases: **3a — generator** (done: deliverables ticked below);
 **3b — streaming** (chunk encoding, `Generated`/`Explicit`, interest management, worker pools);
-**3c — block edits** (edit loop, resync, client meshing worker); **3d — persistence and debug
+**3c — block edits** (edit loop, block interaction and infinite inventory, resync, client
+meshing worker); **3d — persistence and debug
 tooling**. Outstanding in 3a's area: the client worldgen worker and the verification chunk move
 to 3b with the pools and the wire format they depend on.
 
@@ -285,6 +290,15 @@ Deliverables
 - [ ] Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
   `VoxelModification` broadcast → clients apply in order and re-mesh. *(3c)*
 - [ ] Revision gap detection → client requests chunk resync. *(3c)*
+- [ ] **Block interaction** (§6.5) *(3c)*:
+  - [ ] Targeting: voxel ray cast from the eye within `REACH_DISTANCE`; outline on the targeted
+    cell.
+  - [ ] Break (left click) and place against the targeted face (right click); touch: tap the view,
+    with a Break/Place toggle button.
+  - [ ] Infinite creative inventory: every placeable material; hotbar HUD; number keys, scroll
+    wheel, or tapping a slot selects.
+  - [ ] Server validation (§11): reach, line of sight, cooldown, permissions, no placement into a
+    player capsule, bedrock unbreakable.
 
 Deviations and additions (3a):
 - The generator lives in `server/core/{include/dwell,src}/worldgen` (the core's layout) rather than
@@ -304,6 +318,8 @@ Deviations and additions (3a):
 
 Exit criteria
 - [ ] Walking across the world streams chunks without hitches; memory stays bounded when moving.
+- [ ] A player can break and place every placeable block type (desktop and touch), picking it from
+  the hotbar; invalid edits (out of reach, into a player, bedrock) are rejected.
 - [ ] A block placed/removed by one client appears for all clients, and the player collides with
   it immediately after the update on both server and client.
 - [ ] Chunk serialization round-trips byte-for-byte between C++ and TS (golden tests).

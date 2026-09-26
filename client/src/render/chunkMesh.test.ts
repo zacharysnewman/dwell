@@ -57,11 +57,12 @@ describe('chunk meshes', () => {
     expect(opaque.positions[2]).toBeCloseTo(0.95);
   });
 
-  it('maps each face into its texture tile: grass top, grass side, untextured plain', () => {
+  it('maps each face into its texture tile: grass top, grass side, launch pad top, unknown plain', () => {
     const faces = Uint8Array.from([
       ...face(0, 0, 0, 2, 4),
       ...face(0, 0, 0, 4, 4),
       ...face(0, 0, 0, 2, 11),
+      ...face(0, 0, 0, 2, 999),
     ]);
     const { opaque } = buildChunkMeshes(faces);
     expect(opaque.uvs.length).toBe((opaque.positions.length / 3) * 2);
@@ -80,10 +81,11 @@ describe('chunk meshes', () => {
     };
     expectRect(0, 'grass');
     expectRect(1, 'grassSide');
-    expectRect(2, 'plain');
-    // Textured faces shade white (the texture carries the colour); the launch pad keeps its colour.
+    expectRect(2, 'launchPad');
+    expectRect(3, 'plain');
+    // Textured faces shade white (the texture carries the colour); unknown ids keep a flat colour.
     expect(opaque.colors[0]).toBe(1);
-    expect(opaque.colors[8 * 3]).not.toBe(1);
+    expect(opaque.colors[12 * 3 + 1]).toBe(0); // magenta
   });
 
   it('samples the bottom half of the tile on slab sides', () => {
