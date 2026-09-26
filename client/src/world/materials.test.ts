@@ -32,3 +32,10 @@ describe('material styles', () => {
     expect(materialStyle(999).color).toBe(0xff00ff);
   });
 });
+
+describe('material textures', () => {
+  it('every visible material is textured', () => {
+    const untextured = MATERIALS.filter((m) => m.opacity > 0 && !m.textures).map((m) => m.name);
+    expect(untextured).toEqual([]);
+  });
+});

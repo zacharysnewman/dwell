@@ -57,7 +57,8 @@ describe('texture atlas', () => {
   });
 
   it('is deterministic', () => {
-    expect(buildAtlas().data).toEqual(atlas.data);
+    // Byte comparison: a deep equality over the 1 MB atlas is slow.
+    expect(Buffer.compare(buildAtlas().data, atlas.data)).toBe(0);
   });
 
   it('pads every tile with its own wrapped texels (seamless and mip-safe)', () => {
