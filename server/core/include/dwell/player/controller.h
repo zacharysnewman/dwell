@@ -201,7 +201,8 @@ class Players {
   void StepState(Player& p);
 
   void PerformJump(Player& p);
-  void TryStep(Player& p, Vec3 move_direction);
+  // Returns the forward nudge applied by a step-up (zero if none).
+  Vec3 TryStep(Player& p, Vec3 move_direction);
   void ApplyEdgeGuard(Player& p);
   bool AutoJumpObstacle(Player& p);
   bool RingCast(const Player& p, Vec3 center, Vec3 dir, float distance, float radius,

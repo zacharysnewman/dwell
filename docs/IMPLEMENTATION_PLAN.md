@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7) | #4, #5, #6, #7 |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7; step-up speed-burst fix on the branch, PR pending) | #4, #5, #6, #7 |
 | 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b streaming next | #7 (3a) |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
@@ -137,6 +137,10 @@ ragdoll and animation from `State` (Phase 5, see below). Playtested by a human (
 #9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
+Later finding (fix on the branch, PR pending): jumping onto a block while holding forward gave a
+burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
+of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
+that tick's velocity (PLAYER_CONTROLLER.md §4).
 
 | Exit criterion | Result |
 |---|---|
