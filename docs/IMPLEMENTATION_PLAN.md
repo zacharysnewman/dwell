@@ -240,7 +240,8 @@ Exit criteria
 
 **Status:** in progress. Sub-phases: **3a — generator** (done: deliverables ticked below);
 **3b — streaming** (chunk encoding, `Generated`/`Explicit`, interest management, worker pools);
-**3c — block edits** (edit loop, resync, client meshing worker); **3d — persistence and debug
+**3c — block edits** (edit loop, block interaction and infinite inventory, resync, client
+meshing worker); **3d — persistence and debug
 tooling**. Outstanding in 3a's area: the client worldgen worker and the verification chunk move
 to 3b with the pools and the wire format they depend on.
 
@@ -285,6 +286,15 @@ Deliverables
 - [ ] Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
   `VoxelModification` broadcast → clients apply in order and re-mesh. *(3c)*
 - [ ] Revision gap detection → client requests chunk resync. *(3c)*
+- [ ] **Block interaction** (§6.5) *(3c)*:
+  - [ ] Targeting: voxel ray cast from the eye within `REACH_DISTANCE`; outline on the targeted
+    cell.
+  - [ ] Break (left click) and place against the targeted face (right click); touch: tap the view,
+    with a Break/Place toggle button.
+  - [ ] Infinite creative inventory: every placeable material; hotbar HUD; number keys, scroll
+    wheel, or tapping a slot selects.
+  - [ ] Server validation (§11): reach, line of sight, cooldown, permissions, no placement into a
+    player capsule, bedrock unbreakable.
 
 Deviations and additions (3a):
 - The generator lives in `server/core/{include/dwell,src}/worldgen` (the core's layout) rather than
@@ -304,6 +314,8 @@ Deviations and additions (3a):
 
 Exit criteria
 - [ ] Walking across the world streams chunks without hitches; memory stays bounded when moving.
+- [ ] A player can break and place every placeable block type (desktop and touch), picking it from
+  the hotbar; invalid edits (out of reach, into a player, bedrock) are rejected.
 - [ ] A block placed/removed by one client appears for all clients, and the player collides with
   it immediately after the update on both server and client.
 - [ ] Chunk serialization round-trips byte-for-byte between C++ and TS (golden tests).
