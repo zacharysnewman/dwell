@@ -344,10 +344,22 @@ export function sharedAtlas(): Atlas {
   return shared;
 }
 
+/** An sRGB byte (0–255) as linear light (0–1). */
+export function srgbToLinear(byte: number): number {
+  const c = byte / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+function linearToSrgbByte(v: number): number {
+  const c = v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+  return Math.round(Math.min(1, Math.max(0, c)) * 255);
+}
+
 const averages = new Map<TileName, number>();
 /**
- * A tile's average colour (0xRRGGBB, the mean of its texels): the flat colour of LOD faces
- * (ARCHITECTURE.md §6.6). Computed from the painters, without building the atlas.
+ * A tile's average colour (0xRRGGBB, sRGB): the mean of its texels in linear light, as a
+ * mipmapped sRGB texture averages from afar — the flat colour of LOD faces (ARCHITECTURE.md
+ * §6.6). Computed from the painters, without building the atlas.
  */
 export function averageTileColor(name: TileName): number {
   let c = averages.get(name);
@@ -359,13 +371,13 @@ export function averageTileColor(name: TileName): number {
     for (let y = 0; y < TILE; y++) {
       for (let x = 0; x < TILE; x++) {
         const [pr, pg, pb] = paint(x, y);
-        r += Math.min(255, Math.max(0, pr));
-        g += Math.min(255, Math.max(0, pg));
-        b += Math.min(255, Math.max(0, pb));
+        r += srgbToLinear(Math.round(Math.min(255, Math.max(0, pr))));
+        g += srgbToLinear(Math.round(Math.min(255, Math.max(0, pg))));
+        b += srgbToLinear(Math.round(Math.min(255, Math.max(0, pb))));
       }
     }
     const n = TILE * TILE;
-    c = (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
+    c = (linearToSrgbByte(r / n) << 16) | (linearToSrgbByte(g / n) << 8) | linearToSrgbByte(b / n);
     averages.set(name, c);
   }
   return c;

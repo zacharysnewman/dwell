@@ -114,6 +114,8 @@ interface Node {
 }
 
 const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
+/** Load order: work out of view ranks as if its cells were this much smaller (see schedule). */
+const OFF_VIEW_PRIORITY = 1 / 8;
 /** Drawable chunks wait at most this long (ms) for the LOD levels above them (see findCovered). */
 export const FORCE_CHUNKS_AFTER_MS = 1000;
 /** From this level up liquids are drawn opaque (a coarse sea has no floor to see through to). */
@@ -403,13 +405,19 @@ export class LodSystem {
     selection.drawn.push(node.coord);
   }
 
-  /** Refine while cells project larger than the pixel error, for nodes that may be in view. */
+  /**
+   * Refine while cells project larger than the pixel error — in every direction, not only in
+   * view: detail depends on distance alone, so turning shows what is already loaded instead of
+   * popping in. Where the camera looks only decides what loads first (schedule).
+   */
   private refine(node: Node, frustum: Frustum): boolean {
     const d = Math.max(1, frustum.distance(node.lo, node.hi));
-    // Out of view: kept coarse, unless it is close — a coarse section's surface (rounded up to
-    // its cells) beside or behind the camera can reach into the view.
-    if (d > sectionSize(node.coord[0]) && !frustum.intersects(node.lo, node.hi)) return false;
     return (cellSize(node.coord[0]) / d) * frustum.pixelsPerRadian > this.options.pixelError;
+  }
+
+  /** Out of view, and not close (a section beside the camera can reach into the view). */
+  private offView(node: Node, frustum: Frustum, d: number): boolean {
+    return d > sectionSize(node.coord[0]) && !frustum.intersects(node.lo, node.hi);
   }
 
   private box(c: LodCoord): { lo: Vec3; hi: Vec3 } {
@@ -545,7 +553,10 @@ export class LodSystem {
     // coarse levels before the camera's own ground. A parent always outranks its children.
     const priority = new Map<Node, number>();
     for (const n of wanted) {
-      priority.set(n, cellSize(n.coord[0]) / Math.max(1, frustum.distance(n.lo, n.hi)));
+      const d = Math.max(1, frustum.distance(n.lo, n.hi));
+      // What the view shows now goes first; the ring around it is loaded behind.
+      const scale = this.offView(n, frustum, d) ? OFF_VIEW_PRIORITY : 1;
+      priority.set(n, (cellSize(n.coord[0]) / d) * scale);
     }
     wanted.sort((a, b) => (priority.get(b) ?? 0) - (priority.get(a) ?? 0));
     for (const n of wanted) {

@@ -264,6 +264,47 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     expect(lod.chunkVisible([40, 0, 0])).toBe(false); // not streamed
   });
 
+  it('turning around shows the detail already loaded: it does not depend on the view', async () => {
+    // Regression (phone playtest): sections out of view were never refined, so turning showed
+    // coarse sections popping to fine ones everywhere the view swept.
+    const jobs = new Jobs();
+    const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {
+      pixelError: 8,
+      cacheBytes: 256 * 1048576,
+      maxGenerationJobs: 64,
+      maxMeshJobs: 64,
+    });
+    let frame = 0;
+    const settle = async (cam: LodCamera): Promise<void> => {
+      for (let i = 0; i < 600; i++) {
+        lod.update(cam, ++frame * 16);
+        if (jobs.pending.length === 0 && lod.active) return;
+        await jobs.finish(() => 0, 1);
+      }
+    };
+    const levelAt = (p: Vec3): number => {
+      const s = lod.lastSelection();
+      const leaf = [...s.drawn, ...s.empty, ...s.chunks].find((c) => contains(c, p));
+      return leaf ? leaf[0] : Infinity;
+    };
+    const random = rng(5);
+    await settle(camera([0, 40, 0], 0, -10));
+    for (const yaw of [90, 180, 270]) {
+      const cam = camera([0, 40, 0], yaw, -10);
+      lod.update(cam, ++frame * 16); // the first frame after turning: nothing new has loaded
+      const points: Vec3[] = [];
+      for (let n = 0; n < 300; n++) {
+        const p = pointInView(cam, random, 50_000);
+        if (p) points.push(p);
+      }
+      const before = points.map(levelAt);
+      await settle(cam);
+      points.forEach((p, n) => {
+        expect(before[n] ?? Infinity).toBeLessThanOrEqual(levelAt(p));
+      });
+    }
+  });
+
   it('refines by screen-space error: coarser with distance and altitude', async () => {
     const jobs = new Jobs();
     const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {

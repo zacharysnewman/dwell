@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices in #16; outstanding: the frame-rate check on a desktop and a mobile device | #14, #15, #16 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17); outstanding: the frame-rate check on a desktop and a mobile device | #14, #15, #16, #17 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -662,6 +662,16 @@ Deviations and additions (4c):
   generated. Drawable chunks now wait at most `FORCE_CHUNKS_AFTER_MS` (1 s); after that the
   walk descends to them regardless, leaving unready coarse siblings empty until ready.
   `lodSystem.test.ts` "shows the streamed chunks … not ready" failed before the fix.
+- **No popping when turning** (phone playtest): out-of-view sections were kept coarse, so detail
+  popped in wherever the view swept. Refinement now depends on distance alone; the view only
+  orders the work (out of view ranks 8× lower). Settled, ~65% more sections are loaded (all
+  around rather than in view); desktop's cache reached ~85 MB after 75 s in the browser (256 MB
+  budget; mobile's 96 MB is to be checked on a phone). "turning around shows the detail already
+  loaded" failed before the change.
+- **LOD colours match the chunks** (phone playtest: distant land paler): LOD vertex colours were
+  sRGB bytes used as linear, while the chunks' sRGB texture is decoded before lighting. They are
+  now linear, and a tile's average is taken in linear light. `lodMesher.test.ts` "writes linear
+  vertex colours" failed before the fix.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.
 
