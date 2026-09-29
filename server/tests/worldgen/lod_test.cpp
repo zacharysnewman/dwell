@@ -315,7 +315,8 @@ TEST_SUITE("lod: generation") {
 }
 
 TEST_SUITE("lod: surface") {
-  TEST_CASE("coarse cells taller than the relief show the ground's surface, not the world's floor") {
+  TEST_CASE(
+      "coarse cells taller than the relief show the ground's surface, not the world's floor") {
     // Regression: from level ~12 a cell spans from the world's floor past the terrain, so its
     // bottom-voxel sample is bedrock; the column's top cell must still look like its surface.
     const TerrainGenerator gen(0);
