@@ -23,6 +23,22 @@ std::string_view Clamp(std::string_view s, std::size_t max_bytes) {
 template <typename T>
 constexpr MessageType TypeOf();
 template <>
+constexpr MessageType TypeOf<LodIndex>() {
+  return MessageType::kLodIndex;
+}
+template <>
+constexpr MessageType TypeOf<LodIndexUpdate>() {
+  return MessageType::kLodIndexUpdate;
+}
+template <>
+constexpr MessageType TypeOf<LodRequest>() {
+  return MessageType::kLodRequest;
+}
+template <>
+constexpr MessageType TypeOf<LodData>() {
+  return MessageType::kLodData;
+}
+template <>
 constexpr MessageType TypeOf<DatagramPing>() {
   return MessageType::kDatagramPing;
 }
@@ -136,6 +152,7 @@ void Write(ByteWriter& w, const Welcome& m) {
   w.U32(m.generator_version);
   w.U32(m.server_tick);
   for (std::int32_t v : m.verification_chunk) w.I32(v);
+  w.U8(m.flags);
 }
 void Write(ByteWriter& w, const Reject& m) {
   w.U8(static_cast<std::uint8_t>(m.reason));
@@ -260,14 +277,13 @@ constexpr int WireToIndex(int i) {
   return (i & 31) | (((i >> 10) & 31) << 5) | (((i >> 5) & 31) << 10);
 }
 
-void WriteVoxels(ByteWriter& w, const std::vector<std::uint16_t>& voxels) {
-  auto at = [&](int wire) -> std::uint16_t {
-    const auto i = static_cast<std::size_t>(WireToIndex(wire));
-    return i < voxels.size() ? voxels[i] : std::uint16_t{0};
-  };
+// Palette + RLE over `count` cells taken in wire order through `at` (chunks: layer order; LOD
+// sections: their own cell order, already layered).
+template <class At>
+void WriteCells(ByteWriter& w, int count, At&& at) {
   // Runs first; the palette (first-appearance order) then needs one lookup per run.
   std::vector<std::pair<std::uint16_t, std::uint32_t>> runs;
-  for (int i = 0; i < kChunkVolume; ++i) {
+  for (int i = 0; i < count; ++i) {
     const auto m = at(i);
     if (!runs.empty() && runs.back().first == m) {
       ++runs.back().second;
@@ -302,6 +318,13 @@ void WriteVoxels(ByteWriter& w, const std::vector<std::uint16_t>& voxels) {
   }
 }
 
+void WriteVoxels(ByteWriter& w, const std::vector<std::uint16_t>& voxels) {
+  WriteCells(w, kChunkVolume, [&](int wire) -> std::uint16_t {
+    const auto i = static_cast<std::size_t>(WireToIndex(wire));
+    return i < voxels.size() ? voxels[i] : std::uint16_t{0};
+  });
+}
+
 std::uint32_t ReadVarint(ByteReader& r) {
   std::uint32_t v = 0;
   for (int shift = 0; shift < 21; shift += 7) {
@@ -314,22 +337,42 @@ std::uint32_t ReadVarint(ByteReader& r) {
   return 0;
 }
 
-std::vector<std::uint16_t> ReadVoxels(ByteReader& r) {
+template <class Put>
+void ReadCells(ByteReader& r, int volume, Put&& put) {
   const std::uint16_t count = r.U16();
-  r.Check(count >= 1 && count <= kChunkVolume);
-  if (!r.ok()) return {};
+  r.Check(count >= 1 && count <= std::min(volume, 0xFFFF));
+  if (!r.ok()) return;
   std::vector<std::uint16_t> palette(count);
   for (auto& m : palette) m = r.U16();
   const bool wide = count > 256;
-  std::vector<std::uint16_t> voxels(kChunkVolume);
-  for (int filled = 0; filled < kChunkVolume && r.ok();) {
+  for (int filled = 0; filled < volume && r.ok();) {
     const std::uint32_t run = ReadVarint(r);
     const std::uint16_t i = wide ? r.U16() : r.U8();
-    r.Check(run >= 1 && run <= static_cast<std::uint32_t>(kChunkVolume - filled) && i < count);
+    r.Check(run >= 1 && run <= static_cast<std::uint32_t>(volume - filled) && i < count);
     if (!r.ok()) break;
-    for (std::uint32_t k = 0; k < run; ++k) voxels[WireToIndex(filled++)] = palette[i];
+    for (std::uint32_t k = 0; k < run; ++k) put(filled++, palette[i]);
   }
+}
+
+std::vector<std::uint16_t> ReadVoxels(ByteReader& r) {
+  std::vector<std::uint16_t> voxels(kChunkVolume);
+  ReadCells(r, kChunkVolume, [&](int wire, std::uint16_t m) { voxels[WireToIndex(wire)] = m; });
+  if (!r.ok()) return {};
   return voxels;
+}
+
+std::vector<std::uint16_t> ReadLodCells(ByteReader& r) {
+  std::vector<std::uint16_t> cells(kLodCellCount);
+  ReadCells(r, kLodCellCount,
+            [&](int i, std::uint16_t m) { cells[static_cast<std::size_t>(i)] = m; });
+  if (!r.ok()) return {};
+  return cells;
+}
+
+void WriteLodCells(ByteWriter& w, const std::vector<std::uint16_t>& cells) {
+  WriteCells(w, kLodCellCount, [&](int i) -> std::uint16_t {
+    return static_cast<std::size_t>(i) < cells.size() ? cells[static_cast<std::size_t>(i)] : 0;
+  });
 }
 
 void WriteCoord(ByteWriter& w, const ChunkCoordNet& c) {
@@ -381,16 +424,70 @@ void Write(ByteWriter& w, const ChunkResync& m) {
   for (std::size_t i = 0; i < count; ++i) WriteCoord(w, m.coords[i]);
 }
 
+void WriteIndexEntries(ByteWriter& w, const std::vector<LodIndexEntry>& entries,
+                       std::size_t count) {
+  for (std::size_t i = 0; i < count; ++i) {
+    w.I32(entries[i].i);
+    w.I32(entries[i].k);
+    w.U32(entries[i].revision);
+  }
+}
+
+void Write(ByteWriter& w, const LodIndex& m) {
+  const std::size_t count = std::min(m.entries.size(), kMaxLodIndexEntries);
+  w.U8(m.last ? 1 : 0);
+  w.U32(static_cast<std::uint32_t>(count));
+  WriteIndexEntries(w, m.entries, count);
+}
+
+void Write(ByteWriter& w, const LodIndexUpdate& m) {
+  const std::size_t count = std::min(m.entries.size(), kMaxLodIndexEntries);
+  w.U16(static_cast<std::uint16_t>(count));
+  WriteIndexEntries(w, m.entries, count);
+}
+
+void Write(ByteWriter& w, const LodRequest& m) {
+  const std::size_t count =
+      std::min(m.sections.size(), static_cast<std::size_t>(kLodMaxRequestSections));
+  w.U8(static_cast<std::uint8_t>(count));
+  for (std::size_t i = 0; i < count; ++i) {
+    const LodSectionRequest& s = m.sections[i];
+    w.U8(s.level);
+    for (std::int32_t v : s.section) w.I32(v);
+    w.U32(s.known_revision);
+  }
+}
+
+void Write(ByteWriter& w, const LodData& m) {
+  w.U8(static_cast<std::uint8_t>(m.form));
+  w.U8(m.level);
+  for (std::int32_t v : m.section) w.I32(v);
+  w.U32(m.revision);
+  if (m.form == LodForm::kExplicit) WriteLodCells(w, m.cells);
+}
+
+std::vector<LodIndexEntry> ReadIndexEntries(ByteReader& r, std::uint32_t count) {
+  std::vector<LodIndexEntry> out;
+  for (std::uint32_t i = 0; i < count && r.ok(); ++i) {
+    LodIndexEntry e;
+    e.i = r.I32();
+    e.k = r.I32();
+    e.revision = r.U32();
+    out.push_back(e);
+  }
+  return out;
+}
+
 bool IsRejectReason(std::uint8_t v) { return v >= 1 && v <= kMaxRejectReason; }
 
 void Read3(ByteReader& r, float (&v)[3]) {
   for (float& x : v) x = r.F32();
 }
 
-// Positions must be finite and inside the i32 posfix range (±8 388 km), like every other world
-// position a peer may send.
+// Positions must be finite and within ±kPos64Limit: the world and the sky above it, up to the
+// creative-flight ceiling (other players' posfix positions clamp at ±8 388 km).
 void ReadPos64(ByteReader& r, double (&v)[3]) {
-  constexpr double kLimit = 2147483647.0 / kPositionFixedScale;
+  constexpr double kLimit = kPos64Limit;
   for (double& x : v) {
     x = r.F64();
     r.Check(x >= -kLimit && x <= kLimit);  // also rejects NaN
@@ -517,6 +614,7 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       m.generator_version = r.U32();
       m.server_tick = r.U32();
       m.verification_chunk = ReadCoord(r);
+      m.flags = r.U8();
       out = m;
       break;
     }
@@ -688,6 +786,53 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       out = std::move(m);
       break;
     }
+    case MessageType::kLodIndex: {
+      LodIndex m;
+      const auto flags = r.U8();
+      r.Check(flags <= 1);
+      m.last = flags == 1;
+      const std::uint32_t count = r.U32();
+      r.Check(count <= kMaxLodIndexEntries);
+      if (r.ok()) m.entries = ReadIndexEntries(r, count);
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kLodIndexUpdate: {
+      LodIndexUpdate m;
+      const std::uint16_t count = r.U16();
+      r.Check(count >= 1 && count <= kMaxLodIndexEntries);
+      if (r.ok()) m.entries = ReadIndexEntries(r, count);
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kLodRequest: {
+      LodRequest m;
+      const auto count = r.U8();
+      r.Check(count >= 1 && count <= kLodMaxRequestSections);
+      for (int i = 0; i < count && r.ok(); ++i) {
+        LodSectionRequest s;
+        s.level = r.U8();
+        r.Check(s.level >= 1 && s.level <= kLodMaxLevel);
+        for (std::int32_t& v : s.section) v = r.I32();
+        s.known_revision = r.U32();
+        m.sections.push_back(s);
+      }
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kLodData: {
+      LodData m;
+      const auto form = r.U8();
+      r.Check(form <= kMaxLodForm);
+      m.form = static_cast<LodForm>(form);
+      m.level = r.U8();
+      r.Check(m.level <= kLodMaxLevel);
+      for (std::int32_t& v : m.section) v = r.I32();
+      m.revision = r.U32();
+      if (r.ok() && m.form == LodForm::kExplicit) m.cells = ReadLodCells(r);
+      out = std::move(m);
+      break;
+    }
     default:
       return std::nullopt;
   }
@@ -707,6 +852,20 @@ std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std:
   auto voxels = ReadVoxels(r);
   if (!r.ok() || !r.AtEnd()) return std::nullopt;
   return voxels;
+}
+
+std::vector<std::uint8_t> EncodeLodCells(const std::vector<std::uint16_t>& cells) {
+  std::vector<std::uint8_t> out;
+  ByteWriter w(out);
+  WriteLodCells(w, cells);
+  return out;
+}
+
+std::optional<std::vector<std::uint16_t>> DecodeLodCells(std::span<const std::uint8_t> bytes) {
+  ByteReader r(bytes);
+  auto cells = ReadLodCells(r);
+  if (!r.ok() || !r.AtEnd()) return std::nullopt;
+  return cells;
 }
 
 std::int32_t ToFixedPosition(double v) {

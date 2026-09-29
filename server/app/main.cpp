@@ -44,15 +44,16 @@ void Usage() {
   std::puts(
       "usage: dwell_server [--world FILE] [--port N] [--rtc-port N] [--advertise IP]\n"
       "                    [--name NAME] [--motd TEXT] [--max-players N] [--edits POLICY]\n"
-      "                    [--seed N] [--generator N] [--op KEY] [--ban KEY] [--client-url URL]\n"
+      "                    [--flight POLICY] [--seed N] [--generator N] [--op KEY] [--ban KEY]\n"
+      "                    [--client-url URL]\n"
       "  --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps\n"
       "                  the world in memory only)\n"
       "  --advertise IP  address players use to reach this server (invite links, WebRTC)\n"
       "  --seed N, --generator N  a new world's seed and generator: 3 = procedural terrain\n"
       "                  (default), 1 = movement playground, 0 = flat (a saved world keeps its "
       "own)\n"
-      "  --name, --motd, --max-players, --edits everyone|ops|nobody  saved in the world's "
-      "settings\n"
+      "  --name, --motd, --max-players, --edits everyone|ops|nobody, --flight everyone|ops|nobody\n"
+      "                  saved in the world's settings (--flight: who may use creative flight)\n"
       "  --op KEY, --ban KEY  grant op or ban a player (hex device public key), saved in the "
       "world");
 }
@@ -83,6 +84,11 @@ bool ParseOptions(int argc, char** argv, Options& o) {
         return false;
       }
       o.settings.emplace_back("edits", v);
+    } else if (arg == "--flight") {
+      if (std::string(v) != "everyone" && std::string(v) != "ops" && std::string(v) != "nobody") {
+        return false;
+      }
+      o.settings.emplace_back("flight", v);
     } else if (arg == "--op") {
       o.grants.emplace_back(dwell::storage::PermissionKind::kOp, v);
     } else if (arg == "--ban") {
@@ -133,6 +139,10 @@ void ApplySetting(dwell::core::ServerConfig& c, const std::string& key, const st
     c.edits = value == "ops"      ? dwell::core::EditPolicy::kOps
               : value == "nobody" ? dwell::core::EditPolicy::kNobody
                                   : dwell::core::EditPolicy::kEveryone;
+  } else if (key == "flight") {
+    c.flight = value == "ops"      ? dwell::core::EditPolicy::kOps
+               : value == "nobody" ? dwell::core::EditPolicy::kNobody
+                                   : dwell::core::EditPolicy::kEveryone;
   } else if (key == "autosave_seconds") {
     c.autosave_seconds = std::max(1, std::atoi(value.c_str()));
   } else if (key == "allow_list") {
@@ -158,7 +168,7 @@ bool OpenWorld(Options& o) {
   }
   auto& db = store->db();
   for (const char* key :
-       {"name", "motd", "max_players", "edits", "autosave_seconds", "allow_list"}) {
+       {"name", "motd", "max_players", "edits", "flight", "autosave_seconds", "allow_list"}) {
     if (auto value = db.Setting(key)) ApplySetting(c, key, *value);
   }
   for (const auto& [key, value] : o.settings) {

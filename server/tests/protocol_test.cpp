@@ -128,6 +128,24 @@ std::vector<std::uint16_t> TestVoxels(Material material) {
       for (int x = 0; x < kChunkSize; ++x) v[x | (y << 5) | (z << 10)] = material(x, y, z);
   return v;
 }
+// Test LOD section "strata" (make_vectors.py lod_cell), cells −1..32 in LodCell order.
+std::vector<std::uint16_t> StrataSection() {
+  constexpr int P = kLodSectionCells + 2;
+  std::vector<std::uint16_t> out(static_cast<std::size_t>(kLodCellCount));
+  for (int y = -1; y < P - 1; ++y)
+    for (int z = -1; z < P - 1; ++z)
+      for (int x = -1; x < P - 1; ++x) {
+        const std::uint16_t m = y == -1             ? 1
+                                : x == -1 && z == 5 ? 17
+                                : y < 12            ? 2
+                                : y == 12           ? 4
+                                : y < 16 && x > 20  ? 10
+                                                    : 0;
+        out[static_cast<std::size_t>((x + 1) + P * ((z + 1) + P * (y + 1)))] = m;
+      }
+  return out;
+}
+
 std::vector<std::uint16_t> LayeredChunk() {
   return TestVoxels([](int x, int y, int z) -> std::uint16_t {
     if (x == 3 && y == 20 && z == 7) return 17;
@@ -145,7 +163,7 @@ std::map<std::string, Message> Expected() {
   PlayerInput input;
   input.last_snapshot_tick = 300;
   input.inputs = {{41, 127, -127, InputButtons::kJump | InputButtons::kRun, -16384, 32767},
-                  {42, 0, 90, InputButtons::kCrouch, 12345, -100}};
+                  {42, 0, 90, InputButtons::kCrouch | InputButtons::kFly, 12345, -100}};
   PhysicsSnapshot minimal;
   minimal.server_tick = 3;
   minimal.local = TestLocal(0, 100, PlayerState::kIdle, TestController(0));
@@ -177,7 +195,8 @@ std::map<std::string, Message> Expected() {
       {"client_hello", ClientHello{1, "0.1.0", Seq<32>(0), "Zack"}},
       {"challenge", Challenge{Seq<32>(0xA0)}},
       {"client_auth", ClientAuth{Seq<64>(0, 3)}},
-      {"welcome", Welcome{42, 0x0123456789ABCDEFull, 7, 123456, {-3, 2, 1000000}}},
+      {"welcome",
+       Welcome{42, 0x0123456789ABCDEFull, 7, 123456, {-3, 2, 1000000}, WelcomeFlags::kFlight}},
       {"worldgen_check", WorldgenCheck{0xFEDCBA9876543210ull}},
       {"chunk_data_generated", ChunkData{ChunkForm::kGenerated, {4, -2, -9}, 0, {}}},
       {"chunk_data_air", ChunkData{ChunkForm::kAir, {256000, 191, -3}, 0, {}}},
@@ -194,6 +213,15 @@ std::map<std::string, Message> Expected() {
                          {{{-1, 2, 256000}, 7, {{0, 0}, {32767, 300}}},
                           {{5, -64, -3}, 1, {{1 | (2 << 5) | (3 << 10), 16}}}}}},
       {"chunk_resync", ChunkResync{{{0, -1, 2}, {256000, 191, -256000}}}},
+      {"lod_index", LodIndex{true, {{1024, 1023, 7}, {0, 2047, 4000000000u}}}},
+      {"lod_index_empty", LodIndex{true, {}}},
+      {"lod_index_part", LodIndex{false, {{-5, 3, 1}}}},
+      {"lod_index_update", LodIndexUpdate{{{5, 6, 9}}}},
+      {"lod_request", LodRequest{{{3, {-4, 17, 8}, 0}, {19, {0, 0, 0}, 12}}}},
+      {"lod_data_generated", LodData{LodForm::kGenerated, 5, {100, 3, -2}, 0, {}}},
+      {"lod_data_unchanged", LodData{LodForm::kUnchanged, 12, {1, 0, 2}, 77, {}}},
+      {"lod_data_explicit",
+       LodData{LodForm::kExplicit, 1, {131072, 32, 131071}, 42, StrataSection()}},
       {"reject", Reject{RejectReason::kProtocolVersion, "Server runs protocol 2"}},
       {"ping", Ping{9, 1000.0}},
       {"pong", Pong{9, 1000.0, 60, 5000.125}},

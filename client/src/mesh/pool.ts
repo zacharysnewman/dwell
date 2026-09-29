@@ -2,6 +2,7 @@
 // thread. Jobs run in request order; each worker holds a few at once.
 import type { WorkerLike } from '../worldgen/pool';
 import { defaultWorkerCount } from '../worldgen/pool';
+import { meshSection, type SectionMeshes } from './lodMesher';
 import { meshChunk, type ChunkMeshes } from './mesher';
 import type { FromMesher } from './messages';
 
@@ -13,15 +14,26 @@ export interface Mesher {
   readonly pending: number;
 }
 
+/** Anything that meshes LOD sections asynchronously (§6.6). */
+export interface SectionMesher {
+  /**
+   * Meshes a section's 34³ cells (transferred: the caller gives up `cells`); liquids opaque at
+   * coarse levels (lodMesher.ts).
+   */
+  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids?: boolean): Promise<SectionMeshes>;
+}
+
 interface Job {
   id: number;
+  lod: boolean;
+  opaqueLiquids?: boolean;
   voxels: Uint16Array<ArrayBuffer>;
-  resolve: (m: ChunkMeshes) => void;
+  resolve: (m: unknown) => void;
 }
 
 const JOBS_PER_WORKER = 2;
 
-export class MeshPool implements Mesher {
+export class MeshPool implements Mesher, SectionMesher {
   private readonly queue: Job[] = [];
   private readonly running = new Map<WorkerLike, Job[]>();
   private runningCount = 0;
@@ -56,7 +68,29 @@ export class MeshPool implements Mesher {
 
   mesh(voxels: Uint16Array<ArrayBuffer>): Promise<ChunkMeshes> {
     return new Promise((resolve) => {
-      this.queue.push({ id: this.nextId++, voxels, resolve });
+      this.queue.push({
+        id: this.nextId++,
+        lod: false,
+        voxels,
+        resolve: (m) => {
+          resolve(m as ChunkMeshes);
+        },
+      });
+      this.dispatch();
+    });
+  }
+
+  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids = false): Promise<SectionMeshes> {
+    return new Promise((resolve) => {
+      this.queue.push({
+        id: this.nextId++,
+        lod: true,
+        opaqueLiquids,
+        voxels: cells,
+        resolve: (m) => {
+          resolve(m as SectionMeshes);
+        },
+      });
       this.dispatch();
     });
   }
@@ -88,15 +122,23 @@ export class MeshPool implements Mesher {
       if (!best || !job) return;
       this.running.get(best)?.push(job);
       this.runningCount++;
-      best.postMessage({ t: 'mesh', id: job.id, voxels: job.voxels }, [job.voxels.buffer]);
+      best.postMessage(
+        job.lod
+          ? { t: 'lod', id: job.id, cells: job.voxels, opaqueLiquids: job.opaqueLiquids ?? false }
+          : { t: 'mesh', id: job.id, voxels: job.voxels },
+        [job.voxels.buffer],
+      );
     }
   }
 }
 
 /** Meshes on the calling thread (tests; a fallback when workers are unavailable). */
-export class InlineMesher implements Mesher {
+export class InlineMesher implements Mesher, SectionMesher {
   pending = 0;
   mesh(voxels: Uint16Array<ArrayBuffer>): Promise<ChunkMeshes> {
     return Promise.resolve(meshChunk(voxels));
+  }
+  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids = false): Promise<SectionMeshes> {
+    return Promise.resolve(meshSection(cells, opaqueLiquids));
   }
 }

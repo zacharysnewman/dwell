@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 5;
+inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -23,6 +23,7 @@ inline constexpr int kInterpDelayMs = 100;
 inline constexpr float kPredictProxyRadius = 16.0f;
 inline constexpr float kReachDistance = 5.0f;
 inline constexpr int kBlockEditIntervalMs = 100;
+inline constexpr int kFlightCeiling = 24000000;
 
 inline constexpr int kWorldMinY = -2048;
 inline constexpr int kWorldMaxY = 6144;
@@ -34,6 +35,21 @@ inline constexpr int kUnloadMarginChunks = 1;
 inline constexpr int kChunkBytesPerSecond = 1048576;
 inline constexpr int kMaxChunksPerTick = 32;
 inline constexpr int kAutosaveSeconds = 30;
+inline constexpr int kPos64Limit = 33554432;
+
+inline constexpr int kLodSectionCells = 32;
+inline constexpr int kLodMaxLevel = 19;
+inline constexpr int kLodIndexLevel = 8;
+inline constexpr int kLodPixelErrorDesktop = 4;
+inline constexpr int kLodPixelErrorMobile = 8;
+inline constexpr int kLodNearSplitM = 1024;
+inline constexpr int kLodCacheMbDesktop = 256;
+inline constexpr int kLodCacheMbMobile = 96;
+inline constexpr int kLodBytesPerSecond = 262144;
+inline constexpr int kLodRequestsPerSecond = 64;
+inline constexpr int kLodIndexUpdateMs = 1000;
+inline constexpr int kLodPropagationSectionsPerTick = 8;
+inline constexpr int kLodMaxRequestSections = 32;
 
 inline constexpr std::size_t kDisplayNameMaxBytes = 64;
 inline constexpr std::size_t kClientVersionMaxBytes = 64;
@@ -41,10 +57,12 @@ inline constexpr std::size_t kServerNameMaxBytes = 64;
 inline constexpr std::size_t kMotdMaxBytes = 256;
 inline constexpr std::size_t kRejectMessageMaxBytes = 256;
 inline constexpr std::size_t kMaxResyncChunks = 64;
+inline constexpr std::size_t kMaxLodIndexEntries = 16384;
 
 enum class Channel : std::uint8_t {
   kControl = 0,
   kWorld = 1,
+  kLod = 2,
 };
 
 enum class MessageType : std::uint8_t {
@@ -68,6 +86,10 @@ enum class MessageType : std::uint8_t {
   kVoxelModification = 16,
   kBlockEditRequest = 74,
   kChunkResync = 75,
+  kLodIndex = 19,
+  kLodIndexUpdate = 20,
+  kLodData = 21,
+  kLodRequest = 76,
 };
 
 enum class RejectReason : std::uint8_t {
@@ -97,6 +119,7 @@ enum class PlayerState : std::uint8_t {
   kFalling = 6,
   kClimbing = 7,
   kSwimming = 8,
+  kFlying = 9,
 };
 
 enum class GroundKind : std::uint8_t {
@@ -125,6 +148,12 @@ enum class ChunkForm : std::uint8_t {
   kAir = 2,
 };
 
+enum class LodForm : std::uint8_t {
+  kGenerated = 0,
+  kExplicit = 1,
+  kUnchanged = 2,
+};
+
 enum class BlockEditAction : std::uint8_t {
   kBreak = 1,
   kPlace = 2,
@@ -137,11 +166,12 @@ enum class VoxelModificationReason : std::uint8_t {
   kRebake = 4,
 };
 
-inline constexpr std::uint8_t kMaxPlayerState = 8;
+inline constexpr std::uint8_t kMaxPlayerState = 9;
 inline constexpr std::uint8_t kMaxGroundKind = 3;
 inline constexpr std::uint8_t kMaxPlayerEventKind = 4;
 inline constexpr std::uint8_t kMaxDamageCause = 3;
 inline constexpr std::uint8_t kMaxChunkForm = 2;
+inline constexpr std::uint8_t kMaxLodForm = 2;
 inline constexpr std::uint8_t kMaxBlockEditAction = 2;
 inline constexpr std::uint8_t kMaxVoxelModificationReason = 4;
 
@@ -149,7 +179,8 @@ namespace InputButtons {
 inline constexpr std::uint16_t kJump = 1;
 inline constexpr std::uint16_t kRun = 2;
 inline constexpr std::uint16_t kCrouch = 4;
-inline constexpr std::uint16_t kAll = 7;
+inline constexpr std::uint16_t kFly = 8;
+inline constexpr std::uint16_t kAll = 15;
 }  // namespace InputButtons
 
 namespace PlayerFlags {
@@ -158,7 +189,8 @@ inline constexpr std::uint8_t kCrouched = 2;
 inline constexpr std::uint8_t kClimbing = 4;
 inline constexpr std::uint8_t kSwimming = 8;
 inline constexpr std::uint8_t kDead = 16;
-inline constexpr std::uint8_t kAll = 31;
+inline constexpr std::uint8_t kFlying = 32;
+inline constexpr std::uint8_t kAll = 63;
 }  // namespace PlayerFlags
 
 namespace ControllerFlags {
@@ -168,7 +200,13 @@ inline constexpr std::uint8_t kCrouching = 4;
 inline constexpr std::uint8_t kClimbing = 8;
 inline constexpr std::uint8_t kHasReleased = 16;
 inline constexpr std::uint8_t kSwimming = 32;
-inline constexpr std::uint8_t kAll = 63;
+inline constexpr std::uint8_t kFlying = 64;
+inline constexpr std::uint8_t kAll = 127;
 }  // namespace ControllerFlags
+
+namespace WelcomeFlags {
+inline constexpr std::uint8_t kFlight = 1;
+inline constexpr std::uint8_t kAll = 1;
+}  // namespace WelcomeFlags
 
 }  // namespace dwell::protocol

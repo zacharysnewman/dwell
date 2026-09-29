@@ -1,7 +1,7 @@
 // Protocol messages (ARCHITECTURE.md §8.3). Mirrors server/core/include/dwell/protocol/messages.h;
 // layouts are pinned by shared golden vectors.
 import { ByteReader, ByteWriter, DecodeError } from './bytes';
-import { CHUNK_VOLUME, readVoxels, writeVoxels } from './chunkVoxels';
+import { CHUNK_VOLUME, readLodCells, readVoxels, writeLodCells, writeVoxels } from './chunkVoxels';
 import {
   AUTH_DOMAIN_TAG,
   BlockEditAction,
@@ -11,6 +11,8 @@ import {
   GroundKind,
   InputButtons,
   Limits,
+  Lod,
+  LodForm,
   MAX_INPUTS_PER_DATAGRAM,
   MessageType,
   PlayerEventKind,
@@ -26,6 +28,20 @@ export const STATUS_FLAG_ONLINE_MODE = 1 << 0;
 export type Vec3 = [number, number, number];
 /** Chunk coordinate (i32 × 3). */
 export type ChunkCoord = [number, number, number];
+
+/** A modified section at LOD_INDEX_LEVEL (§6.6) and its lodRevision. */
+export interface LodIndexEntry {
+  i: number;
+  k: number;
+  revision: number;
+}
+
+/** One section of a LodRequest: [level, i, j, k] and the revision the client holds (0 = none). */
+export interface LodSectionRequest {
+  level: number;
+  section: Vec3;
+  knownRevision: number;
+}
 
 /** One tick of quantized input (see quantizeInput in predict/input.ts). */
 export interface InputFrame {
@@ -123,6 +139,8 @@ export type Message =
       serverTick: number;
       /** Chunk the client generates and hashes for WorldgenCheck (§6.3). */
       verificationChunk: ChunkCoord;
+      /** WelcomeFlags, e.g. whether this player may use creative flight (§8.3). */
+      flags: number;
     }
   | {
       type: typeof MessageType.WorldgenCheck;
@@ -155,6 +173,18 @@ export type Message =
       chunks: ChunkChanges[];
     }
   | { type: typeof MessageType.ChunkResync; coords: ChunkCoord[] }
+  | { type: typeof MessageType.LodIndex; last: boolean; entries: LodIndexEntry[] }
+  | { type: typeof MessageType.LodIndexUpdate; entries: LodIndexEntry[] }
+  | { type: typeof MessageType.LodRequest; sections: LodSectionRequest[] }
+  | {
+      type: typeof MessageType.LodData;
+      form: LodForm;
+      level: number;
+      section: Vec3;
+      revision: number;
+      /** Explicit: the 34³ cells with the apron (lod/grid.ts `lodCell` order); else null. */
+      cells: Uint16Array | null;
+    }
   | { type: typeof MessageType.Reject; reason: RejectReason; message: string }
   | { type: typeof MessageType.Ping; seq: number; clientTimeMs: number }
   | {
@@ -235,6 +265,7 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u32(m.generatorVersion);
       w.u32(m.serverTick);
       for (const v of m.verificationChunk) w.i32(v);
+      w.u8(m.flags);
       break;
     case MessageType.WorldgenCheck:
       w.u64(m.hash);
@@ -279,6 +310,40 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       }
       w.u16(m.coords.length);
       for (const c of m.coords) for (const v of c) w.i32(v);
+      break;
+    case MessageType.LodIndex:
+      if (m.entries.length > Limits.maxLodIndexEntries) throw new RangeError('index entries');
+      w.u8(m.last ? 1 : 0);
+      w.u32(m.entries.length);
+      writeIndexEntries(w, m.entries);
+      break;
+    case MessageType.LodIndexUpdate:
+      if (m.entries.length < 1 || m.entries.length > Limits.maxLodIndexEntries) {
+        throw new RangeError('index update entries');
+      }
+      w.u16(m.entries.length);
+      writeIndexEntries(w, m.entries);
+      break;
+    case MessageType.LodRequest:
+      if (m.sections.length < 1 || m.sections.length > Lod.maxRequestSections) {
+        throw new RangeError('LOD request count');
+      }
+      w.u8(m.sections.length);
+      for (const s of m.sections) {
+        w.u8(s.level);
+        for (const v of s.section) w.i32(v);
+        w.u32(s.knownRevision);
+      }
+      break;
+    case MessageType.LodData:
+      w.u8(m.form);
+      w.u8(m.level);
+      for (const v of m.section) w.i32(v);
+      w.u32(m.revision);
+      if (m.form === LodForm.Explicit) {
+        if (!m.cells) throw new RangeError('Explicit LodData needs cells');
+        writeLodCells(w, m.cells);
+      }
       break;
     case MessageType.Reject:
       w.u8(m.reason);
@@ -410,7 +475,9 @@ function readVec3(r: ByteReader): Vec3 {
   return [r.f32(), r.f32(), r.f32()];
 }
 
-const POS64_LIMIT = 2147483647 / World.positionFixedScale;
+// The world and the sky above it, up to the creative-flight ceiling (posfix positions of other
+// players clamp at ±8,388 km).
+const POS64_LIMIT = World.pos64Limit;
 
 function readPos64(r: ByteReader): Vec3 {
   const v: Vec3 = [r.f64(), r.f64(), r.f64()];
@@ -469,6 +536,21 @@ const rejectReasons = new Set<number>(Object.values(RejectReason));
 const editActions = new Set<number>(Object.values(BlockEditAction));
 const modificationReasons = new Set<number>(Object.values(VoxelModificationReason));
 const chunkForms = new Set<number>(Object.values(ChunkForm));
+const lodForms = new Set<number>(Object.values(LodForm));
+
+function writeIndexEntries(w: ByteWriter, entries: LodIndexEntry[]): void {
+  for (const e of entries) {
+    w.i32(e.i);
+    w.i32(e.k);
+    w.u32(e.revision);
+  }
+}
+
+function readIndexEntries(r: ByteReader, count: number): LodIndexEntry[] {
+  const out: LodIndexEntry[] = [];
+  for (let n = 0; n < count; n++) out.push({ i: r.i32(), k: r.i32(), revision: r.u32() });
+  return out;
+}
 
 function coord(r: ByteReader): ChunkCoord {
   return [r.i32(), r.i32(), r.i32()];
@@ -512,6 +594,7 @@ function decodeBody(r: ByteReader, type: number): Message {
         generatorVersion: r.u32(),
         serverTick: r.u32(),
         verificationChunk: coord(r),
+        flags: r.u8(),
       };
     case MessageType.WorldgenCheck:
       return { type, hash: r.u64() };
@@ -568,6 +651,39 @@ function decodeBody(r: ByteReader, type: number): Message {
       const coords: ChunkCoord[] = [];
       for (let i = 0; i < count; i++) coords.push(coord(r));
       return { type, coords };
+    }
+    case MessageType.LodIndex: {
+      const flags = r.u8();
+      r.check(flags <= 1, 'index flags');
+      const count = r.u32();
+      r.check(count <= Limits.maxLodIndexEntries, 'index entries');
+      return { type, last: flags === 1, entries: readIndexEntries(r, count) };
+    }
+    case MessageType.LodIndexUpdate: {
+      const count = r.u16();
+      r.check(count >= 1 && count <= Limits.maxLodIndexEntries, 'index update entries');
+      return { type, entries: readIndexEntries(r, count) };
+    }
+    case MessageType.LodRequest: {
+      const count = r.u8();
+      r.check(count >= 1 && count <= Lod.maxRequestSections, 'LOD request count');
+      const sections: LodSectionRequest[] = [];
+      for (let n = 0; n < count; n++) {
+        const level = r.u8();
+        r.check(level >= 1 && level <= Lod.maxLevel, 'LOD level');
+        sections.push({ level, section: [r.i32(), r.i32(), r.i32()], knownRevision: r.u32() });
+      }
+      return { type, sections };
+    }
+    case MessageType.LodData: {
+      const form = r.u8();
+      r.check(lodForms.has(form), 'LOD form');
+      const level = r.u8();
+      r.check(level <= Lod.maxLevel, 'LOD level');
+      const section: Vec3 = [r.i32(), r.i32(), r.i32()];
+      const revision = r.u32();
+      const cells = form === LodForm.Explicit ? readLodCells(r) : null;
+      return { type, form: form as LodForm, level, section, revision, cells };
     }
     case MessageType.Reject: {
       const reason = r.u8();

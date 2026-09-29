@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include "dwell/worldgen/noise.h"
@@ -721,6 +722,240 @@ void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint
          cx <= FloorDiv(x0 + S + kTreeSpread, kTreeCell); ++cx)
       if (const auto f = TreeInCell(cx, cz); f && in_range(*f, 0, kTreeReach))
         PlaceFeature(*f, write);
+}
+
+// --- level of detail (§6.6) ------------------------------------------------------------------
+
+namespace {
+// Rows of cells (m) near the surface where LOD cells evaluate caves, and room above the terrain
+// for features.
+constexpr int kLodCaveCells = 3;
+constexpr float kLodFeatureReach = 16.0f;
+// Tunnels are about 4 m wide: carved only in cells narrower than that.
+constexpr std::int64_t kTunnelWidth = 4;
+
+// Section columns −2..33 (the apron plus one more on each side, for slopes).
+constexpr int kLodCols = core::kLodPad + 2;
+int LodCol(int x, int z) { return (z + 2) * kLodCols + x + 2; }
+
+template <class ColumnOf>
+core::LodBounds LodBoundsOf(ColumnOf&& column, std::int64_t cell) {
+  core::LodBounds b;
+  b.lo = std::numeric_limits<double>::infinity();
+  b.hi = -std::numeric_limits<double>::infinity();
+  b.any_inside = false;
+  bool all_inside = true;
+  for (int z = -1; z <= core::kLodSectionCells; ++z)
+    for (int x = -1; x <= core::kLodSectionCells; ++x) {
+      const Column& col = column(x, z);
+      if (col.outside) {
+        all_inside = false;
+        continue;
+      }
+      b.any_inside = true;
+      b.hi = std::max(b.hi, static_cast<double>(col.height + col.overhang + kLodFeatureReach));
+      b.lo = std::min(b.lo, static_cast<double>(col.height - col.overhang * 1.1f -
+                                                static_cast<float>(kLodCaveCells * cell)));
+    }
+  if (!b.any_inside) return b;
+  b.hi = std::max(b.hi, static_cast<double>(kSeaLevel - 1));
+  if (!all_inside) b.lo = -std::numeric_limits<double>::infinity();
+  return b;
+}
+}  // namespace
+
+Column TerrainGenerator::ColumnLod(std::int64_t x, std::int64_t z, std::int64_t cell) const {
+  const auto kept = [&](std::int32_t wavelength, int octaves) {
+    return OctavesResolved(wavelength, octaves, cell);
+  };
+  Corner2 c;
+  c.continentalness = Fbm2(seeds_.continent, x, z, 1400, 5, kept(1400, 5));
+  c.erosion = Fbm2(seeds_.erosion, x, z, 700, 3, kept(700, 3));
+  c.temperature = Fbm2(seeds_.temperature, x, z, 1100, 3, kept(1100, 3));
+  c.humidity = Fbm2(seeds_.humidity, x, z, 900, 3, kept(900, 3));
+  c.hills = Fbm2(seeds_.hills, x, z, 96, 4, kept(96, 4));
+  c.ridges = Ridged2(seeds_.ridges, x, z, 360, 5, kept(360, 5));
+  c.macro = Fbm2(seeds_.macro, x, z, kMacroWavelength, 4, kept(kMacroWavelength, 4));
+  c.relief = Ridged2(seeds_.relief, x, z, kReliefWavelength, 4, kept(kReliefWavelength, 4));
+  Column col = Finish(c);
+  col.outside = !core::InsideWorldDisc64(x, z);
+  return col;
+}
+
+TerrainGenerator::Corner3 TerrainGenerator::NoiseLod(std::int64_t x, std::int64_t y, std::int64_t z,
+                                                     std::int64_t cell) const {
+  Corner3 n{0.0f, 1.0f, 1.0f, 0.0f};  // dropped: no overhang, no tunnel, no cavern
+  if (const int k = OctavesResolved(20, 2, cell)) {
+    n.overhang = Fbm3(seeds_.overhang, x, y, z, 28, 20, 28, 2, k);
+  }
+  if (cell < kTunnelWidth) {
+    n.spaghetti_a = Perlin3(seeds_.spaghetti_a, Lattice(x, 56), Lattice(y, 36), Lattice(z, 56));
+    n.spaghetti_b = Perlin3(seeds_.spaghetti_b, Lattice(x, 56), Lattice(y, 36), Lattice(z, 56));
+  }
+  if (const int k = OctavesResolved(48, 2, cell)) {
+    n.cheese = Fbm3(seeds_.cheese, x, y, z, 90, 48, 90, 2, k);
+  }
+  return n;
+}
+
+core::LodBounds TerrainGenerator::LodBoundsAt(int level, std::int32_t i, std::int32_t k) const {
+  const core::LodOrigin o = core::LodSectionOrigin({level, i, 0, k});
+  const std::int64_t cell = core::LodCellSize(level);
+  std::vector<Column> cols(static_cast<std::size_t>(core::kLodPad * core::kLodPad));
+  for (int z = -1; z <= core::kLodSectionCells; ++z)
+    for (int x = -1; x <= core::kLodSectionCells; ++x) {
+      cols[(z + 1) * core::kLodPad + x + 1] =
+          ColumnLod(o.x + x * cell + cell / 2, o.z + z * cell + cell / 2, cell);
+    }
+  return LodBoundsOf(
+      [&](int x, int z) -> const Column& { return cols[(z + 1) * core::kLodPad + x + 1]; }, cell);
+}
+
+core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCells& cells) const {
+  using core::kLodSectionCells;
+  using core::LodCell;
+  cells.assign(core::kLodVolume, M::kAir);
+  if (!core::LodInWorld(c)) return core::LodKind::kEmpty;
+  const core::LodOrigin o = core::LodSectionOrigin(c);
+  const std::int64_t cell = core::LodCellSize(c.level);
+  const std::int64_t half = cell / 2;
+
+  // 1–2. Climate and base height at each column's centre.
+  std::vector<Column> cols(static_cast<std::size_t>(kLodCols * kLodCols));
+  for (int z = -2; z <= kLodSectionCells + 1; ++z)
+    for (int x = -2; x <= kLodSectionCells + 1; ++x)
+      cols[LodCol(x, z)] = ColumnLod(o.x + x * cell + half, o.z + z * cell + half, cell);
+  const auto column = [&](int x, int z) -> const Column& { return cols[LodCol(x, z)]; };
+  const core::LodKind kind = core::LodKindFromBounds(c, LodBoundsOf(column, cell));
+  if (kind == core::LodKind::kEmpty) return kind;
+  if (kind == core::LodKind::kBuried) {
+    for (int y = -1; y <= kLodSectionCells; ++y) {
+      const std::int64_t a = o.y + y * cell;
+      std::fill_n(cells.begin() + LodCell(-1, y, -1), core::kLodPad * core::kLodPad,
+                  a < kWorldMinY + kBedrockLayers ? M::kBedrock : M::kStone);
+    }
+    return kind;
+  }
+
+  // 3–5. Cells top-down per column (from above the section, for surface depth): classified at
+  // their bottom voxel, then surface materials by depth in metres.
+  const int pad_rows = static_cast<int>(std::max<std::int64_t>(1, (kSurfacePad + cell - 1) / cell));
+  for (int z = -1; z <= kLodSectionCells; ++z)
+    for (int x = -1; x <= kLodSectionCells; ++x) {
+      const Column& col = column(x, z);
+      const std::int64_t wx = o.x + x * cell + half, wz = o.z + z * cell + half;
+      if (col.outside) {
+        continue;  // beyond the rim: the void
+      }
+      float slope = 0.0f;
+      for (const auto& [dx, dz] :
+           {std::pair{1, 0}, std::pair{-1, 0}, std::pair{0, 1}, std::pair{0, -1}}) {
+        const float d = column(x + dx, z + dz).height - col.height;
+        slope = std::max(slope, d < 0.0f ? -d : d);
+      }
+      slope /= static_cast<float>(cell);
+      const float deep =
+          col.height - col.overhang * 1.1f - static_cast<float>(kLodCaveCells * cell);
+      int run = 1000;  // solid above the padded top: treat as deep
+      bool under_water = false;
+      for (int y = kLodSectionCells + pad_rows; y >= -1; --y) {
+        const std::int64_t a = o.y + y * cell;
+        const std::size_t idx =
+            y <= kLodSectionCells ? static_cast<std::size_t>(LodCell(x, y, z)) : core::kLodVolume;
+        if (a < kWorldMinY) {
+          if (idx < core::kLodVolume) cells[idx] = M::kBedrock;  // the apron under the world
+          continue;
+        }
+        const auto ay = static_cast<std::int32_t>(a);
+        const Cell k = Classify(col, ay, [&] {
+          return static_cast<float>(a) < deep ? Corner3{0.0f, 1.0f, 1.0f, 0.0f}
+                                              : NoiseLod(wx, a, wz, cell);
+        });
+        if (k != kSolid) {
+          run = k == kCaveAir ? 1000 : 0;
+          under_water = k == kWater;
+          if (idx < core::kLodVolume) cells[idx] = k == kWater ? M::kWater : M::kAir;
+          continue;
+        }
+        if (idx < core::kLodVolume) {
+          const int depth =
+              run >= 1000 ? 1000 : static_cast<int>(std::min<std::int64_t>(run * cell, 1000));
+          if (run == 0) {
+            // The top of the column: the material of its surface as seen from above, taken where
+            // the surface lies within the cell (cells taller than the relief sample the world's
+            // floor, but should look like the ground on top of them). A sea whose water no cell
+            // sampled (the cell is deeper than the sea) shows its water, as Downsample keeps it.
+            const auto top = static_cast<std::int32_t>(
+                std::clamp<std::int64_t>(FloorToInt(col.height), a, a + cell - 1));
+            cells[idx] = a + cell <= kWorldMinY + kBedrockLayers ? M::kBedrock
+                         : !under_water && col.height < static_cast<float>(kSeaLevel)
+                             ? M::kWater
+                             : SurfaceMaterial(col, 0, under_water, top, slope);
+          } else {
+            cells[idx] = ay < kWorldMinY + kBedrockLayers
+                             ? M::kBedrock
+                             : SurfaceMaterial(col, depth, under_water, ay, slope);
+          }
+        }
+        if (run < 1000) ++run;
+      }
+    }
+
+  // 8. Features at least a cell wide: counted per cell, a cell taking a feature's material when
+  // the feature fills at least half of it (as Downsample would keep it).
+  if (cell > 4) return kind;
+  const std::int64_t volume = cell * cell * cell;
+  std::vector<std::uint16_t> stone(core::kLodVolume), wood(core::kLodVolume),
+      leaves(core::kLodVolume);
+  const std::int64_t span = (kLodSectionCells + 1) * cell;
+  const auto write = [&](std::int32_t vx, std::int32_t vy, std::int32_t vz, MaterialId m) {
+    const auto local = [&](std::int64_t v, std::int64_t origin) {
+      const std::int64_t d = v - origin;
+      return d < -cell || d >= span ? std::int64_t{-2} : (d >= 0 ? d / cell : -1);
+    };
+    const std::int64_t cx = local(vx, o.x), cy = local(vy, o.y), cz = local(vz, o.z);
+    if (cx < -1 || cy < -1 || cz < -1) return;
+    if (!core::InsideWorldDisc(vx, vz)) return;
+    const auto idx = static_cast<std::size_t>(
+        LodCell(static_cast<int>(cx), static_cast<int>(cy), static_cast<int>(cz)));
+    auto& counts = m == M::kLog ? wood : m == M::kLeaves ? leaves : stone;
+    ++counts[idx];
+  };
+  const std::int64_t x_lo = o.x - cell, x_hi = o.x + span, z_lo = o.z - cell, z_hi = o.z + span;
+  const std::int64_t y_lo = o.y - cell, y_hi = o.y + span;
+  const auto in_range = [&](const Feature& f, int down, int up) {
+    return f.y + up >= y_lo && f.y - down < y_hi;
+  };
+  const auto cells_of = [](std::int64_t lo, std::int64_t hi, int reach, int size) {
+    return std::pair{FloorDiv(static_cast<std::int32_t>(lo - reach), size),
+                     FloorDiv(static_cast<std::int32_t>(hi + reach), size)};
+  };
+  if (cell <= 2) {
+    const auto [bx0, bx1] = cells_of(x_lo, x_hi, kBoulderMaxRadius, kBoulderCell);
+    const auto [bz0, bz1] = cells_of(z_lo, z_hi, kBoulderMaxRadius, kBoulderCell);
+    for (std::int32_t cz = bz0; cz <= bz1; ++cz)
+      for (std::int32_t cx = bx0; cx <= bx1; ++cx)
+        if (const auto f = BoulderInCell(cx, cz);
+            f && in_range(*f, kBoulderMaxRadius, kBoulderMaxRadius)) {
+          PlaceFeature(*f, write);
+        }
+  }
+  const auto [tx0, tx1] = cells_of(x_lo, x_hi, kTreeSpread, kTreeCell);
+  const auto [tz0, tz1] = cells_of(z_lo, z_hi, kTreeSpread, kTreeCell);
+  for (std::int32_t cz = tz0; cz <= tz1; ++cz)
+    for (std::int32_t cx = tx0; cx <= tx1; ++cx)
+      if (const auto f = TreeInCell(cx, cz); f && in_range(*f, 0, kTreeReach)) {
+        PlaceFeature(*f, write);
+      }
+  for (std::size_t i = 0; i < cells.size(); ++i) {
+    if (cells[i] != M::kAir) continue;
+    if (2 * std::int64_t{stone[i]} >= volume) {
+      cells[i] = M::kStone;
+    } else if (2 * (std::int64_t{wood[i]} + leaves[i]) >= volume) {
+      cells[i] = wood[i] >= leaves[i] ? M::kLog : M::kLeaves;
+    }
+  }
+  return kind;
 }
 
 // --- spawn ----------------------------------------------------------------------------------

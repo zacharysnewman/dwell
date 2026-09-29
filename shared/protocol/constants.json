@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 5,
+  "protocolVersion": 7,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -15,7 +15,8 @@
     "interpDelayMs": 100,
     "predictProxyRadius": 16,
     "reachDistance": 5,
-    "blockEditIntervalMs": 100
+    "blockEditIntervalMs": 100,
+    "flightCeiling": 24000000
   },
   "world": {
     "worldMinY": -2048,
@@ -27,7 +28,23 @@
     "unloadMarginChunks": 1,
     "chunkBytesPerSecond": 1048576,
     "maxChunksPerTick": 32,
-    "autosaveSeconds": 30
+    "autosaveSeconds": 30,
+    "pos64Limit": 33554432
+  },
+  "lod": {
+    "sectionCells": 32,
+    "maxLevel": 19,
+    "indexLevel": 8,
+    "pixelErrorDesktop": 4,
+    "pixelErrorMobile": 8,
+    "nearSplitM": 1024,
+    "cacheMbDesktop": 256,
+    "cacheMbMobile": 96,
+    "bytesPerSecond": 262144,
+    "requestsPerSecond": 64,
+    "indexUpdateMs": 1000,
+    "propagationSectionsPerTick": 8,
+    "maxRequestSections": 32
   },
   "limits": {
     "displayNameMaxBytes": 64,
@@ -35,11 +52,13 @@
     "serverNameMaxBytes": 64,
     "motdMaxBytes": 256,
     "rejectMessageMaxBytes": 256,
-    "maxResyncChunks": 64
+    "maxResyncChunks": 64,
+    "maxLodIndexEntries": 16384
   },
   "channels": {
     "control": 0,
-    "world": 1
+    "world": 1,
+    "lod": 2
   },
   "messageTypes": {
     "PlayerInput": 1,
@@ -61,7 +80,11 @@
     "ChunkUnload": 18,
     "VoxelModification": 16,
     "BlockEditRequest": 74,
-    "ChunkResync": 75
+    "ChunkResync": 75,
+    "LodIndex": 19,
+    "LodIndexUpdate": 20,
+    "LodData": 21,
+    "LodRequest": 76
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -80,7 +103,8 @@
   "inputButtons": {
     "jump": 1,
     "run": 2,
-    "crouch": 4
+    "crouch": 4,
+    "fly": 8
   },
   "playerStates": {
     "Idle": 0,
@@ -91,14 +115,16 @@
     "Jumping": 5,
     "Falling": 6,
     "Climbing": 7,
-    "Swimming": 8
+    "Swimming": 8,
+    "Flying": 9
   },
   "playerFlags": {
     "grounded": 1,
     "crouched": 2,
     "climbing": 4,
     "swimming": 8,
-    "dead": 16
+    "dead": 16,
+    "flying": 32
   },
   "controllerFlags": {
     "grounded": 1,
@@ -106,7 +132,11 @@
     "crouching": 4,
     "climbing": 8,
     "hasReleased": 16,
-    "swimming": 32
+    "swimming": 32,
+    "flying": 64
+  },
+  "welcomeFlags": {
+    "flight": 1
   },
   "groundKinds": {
     "None": 0,
@@ -129,6 +159,11 @@
     "Generated": 0,
     "Explicit": 1,
     "Air": 2
+  },
+  "lodForms": {
+    "Generated": 0,
+    "Explicit": 1,
+    "Unchanged": 2
   },
   "blockEditActions": {
     "Break": 1,

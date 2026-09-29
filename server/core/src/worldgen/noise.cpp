@@ -112,12 +112,14 @@ float Perlin3(std::uint32_t seed, float x, float y, float z) {
   return Perlin3(seed, Split(x), Split(y), Split(z));
 }
 
-float Fbm2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
-           int octaves) {
+float Fbm2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength, int octaves,
+           int kept) {
   float sum = 0.0f, norm = 0.0f, amplitude = 1.0f;
   for (int o = 0; o < octaves; ++o) {
-    sum += Perlin2(OctaveSeed(seed, o), Lattice(x, wavelength, o), Lattice(z, wavelength, o)) *
-           amplitude;
+    if (kept < 0 || o < kept) {
+      sum += Perlin2(OctaveSeed(seed, o), Lattice(x, wavelength, o), Lattice(z, wavelength, o)) *
+             amplitude;
+    }
     norm += amplitude;
     amplitude *= 0.5f;
   }
@@ -125,11 +127,13 @@ float Fbm2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wave
 }
 
 float Fbm3(std::uint32_t seed, std::int64_t x, std::int64_t y, std::int64_t z, std::int32_t wx,
-           std::int32_t wy, std::int32_t wz, int octaves) {
+           std::int32_t wy, std::int32_t wz, int octaves, int kept) {
   float sum = 0.0f, norm = 0.0f, amplitude = 1.0f;
   for (int o = 0; o < octaves; ++o) {
-    sum += Perlin3(OctaveSeed(seed, o), Lattice(x, wx, o), Lattice(y, wy, o), Lattice(z, wz, o)) *
-           amplitude;
+    if (kept < 0 || o < kept) {
+      sum += Perlin3(OctaveSeed(seed, o), Lattice(x, wx, o), Lattice(y, wy, o), Lattice(z, wz, o)) *
+             amplitude;
+    }
     norm += amplitude;
     amplitude *= 0.5f;
   }
@@ -137,8 +141,10 @@ float Fbm3(std::uint32_t seed, std::int64_t x, std::int64_t y, std::int64_t z, s
 }
 
 float Ridged2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
-              int octaves) {
+              int octaves, int kept) {
   float sum = 0.0f, norm = 0.0f, amplitude = 1.0f, weight = 1.0f;
+  if (kept >= 0 && kept < octaves) octaves = kept;
+  if (octaves == 0) return 0.0f;
   for (int o = 0; o < octaves; ++o) {
     const float n =
         Perlin2(OctaveSeed(seed, o), Lattice(x, wavelength, o), Lattice(z, wavelength, o));

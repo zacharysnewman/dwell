@@ -1,6 +1,6 @@
 // Touch controls for phones and tablets (iOS Safari, Android, Capacitor later): a floating
 // joystick on the left half of the screen, drag-to-look on the right half, and Jump / Crouch / Run
-// buttons. Built on Pointer Events, one captured pointer per control, so every control works at
+// / Fly buttons. Built on Pointer Events, one captured pointer per control, so every control works at
 // the same time with several fingers.
 
 /** Pixels from the stick's centre to full deflection. */
@@ -44,6 +44,8 @@ export const TOUCH_BUTTONS = {
   // What a tap on the view does: Break, or (latched) Place (§6.5).
   edit: { label: 'Break', id: 'touch-edit', mode: 'toggle' },
   run: { label: 'Run', id: 'touch-run', mode: 'toggle' },
+  // Creative flight on/off (the flight toggle holds the state; the button shows it).
+  fly: { label: 'Fly', id: 'touch-fly', mode: 'hold' },
   crouch: { label: 'Crouch', id: 'touch-crouch', mode: 'hold' },
   jump: { label: 'Jump', id: 'touch-jump', mode: 'hold' },
 } as const satisfies Record<string, { label: string; id: string; mode: TouchButtonMode }>;
@@ -98,6 +100,10 @@ export class TouchControls {
   onTap: (() => void) | null = null;
   /** The Break/Place toggle changed: true = place. */
   onPlaceMode: ((place: boolean) => void) | null = null;
+  /** The Fly button, or Jump (a double tap toggles flight, as Space does), was pressed. */
+  onFly: (() => void) | null = null;
+  onJumpPress: ((nowMs: number) => void) | null = null;
+  private readonly flyButton: HTMLButtonElement;
   private runLatched = false;
   private stickRun = false;
 
@@ -127,13 +133,17 @@ export class TouchControls {
       this.state.crouch = on;
     });
     const jump = touchButton(TOUCH_BUTTONS.jump, (on) => {
+      if (on && !this.state.jump) this.onJumpPress?.(performance.now());
       this.state.jump = on;
+    });
+    this.flyButton = touchButton(TOUCH_BUTTONS.fly, (on) => {
+      if (on) this.onFly?.();
     });
     const edit = touchButton(TOUCH_BUTTONS.edit, (place) => {
       edit.textContent = place ? 'Place' : 'Break';
       this.onPlaceMode?.(place);
     });
-    buttons.append(edit, run, crouch, jump);
+    buttons.append(edit, this.flyButton, run, crouch, jump);
 
     this.root.append(moveZone, lookZone, this.stickBase, buttons);
     parent.append(this.root);
@@ -160,6 +170,12 @@ export class TouchControls {
 
   set visible(v: boolean) {
     this.root.hidden = !v;
+  }
+
+  /** Shows whether the player is flying, and hides the Fly button where flight is not allowed. */
+  setFlight(allowed: boolean, flying: boolean): void {
+    this.flyButton.hidden = !allowed;
+    this.flyButton.classList.toggle('flying', flying);
   }
 
   private readonly onStickDown = (e: PointerEvent): void => {

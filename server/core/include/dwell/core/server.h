@@ -13,6 +13,7 @@
 
 #include "dwell/core/block_edit.h"
 #include "dwell/core/entropy.h"
+#include "dwell/core/lod_propagation.h"
 #include "dwell/core/physics_world.h"
 #include "dwell/core/terrain_collision.h"
 #include "dwell/core/voxel.h"
@@ -29,7 +30,7 @@ namespace dwell::core {
 using SessionId = std::uint32_t;
 using TransportBinding = std::array<std::uint8_t, 32>;
 
-// Who may break and place blocks (§6.5, §11).
+// Who may break and place blocks (§6.5, §11), and who may fly (creative flight, §8.3).
 enum class EditPolicy : std::uint8_t { kEveryone, kOps, kNobody };
 
 struct ServerConfig {
@@ -49,8 +50,15 @@ struct ServerConfig {
   int view_radius_chunks = protocol::kViewRadiusChunks;         // sphere streamed to each client
   int chunk_bytes_per_second = protocol::kChunkBytesPerSecond;  // per client
 
+  // Level of detail (§6.6): propagation threads (−1: one when worldgen has threads, else none —
+  // then it runs on the tick within lod_budget_us), and the per-client `lod` stream budget.
+  int lod_threads = -1;
+  int lod_budget_us = 2000;
+  int lod_bytes_per_second = protocol::kLodBytesPerSecond;
+
   // Block edits (§6.5): who may edit, and the players (device public keys) who are ops.
   EditPolicy edits = EditPolicy::kEveryone;
+  EditPolicy flight = EditPolicy::kEveryone;
   std::vector<protocol::PublicKey> ops = {};
   // Access (§10.1): banned keys are refused; with an allow-list, only its keys may join.
   std::vector<protocol::PublicKey> banned = {};
@@ -84,6 +92,18 @@ struct Outgoing {
   Kind kind = Kind::kReliable;
   protocol::Channel channel = protocol::Channel::kControl;  // reliable only
   std::vector<std::uint8_t> bytes;                          // empty for kClose
+};
+
+// Level-of-detail traffic per client (§6.6), for tests and diagnostics.
+struct LodStats {
+  std::uint32_t requests = 0;          // sections requested and accepted
+  std::uint32_t requests_dropped = 0;  // over LOD_REQUESTS_PER_SECOND (or the queue), or too early
+  std::uint32_t generated_sent = 0;
+  std::uint32_t explicit_sent = 0;
+  std::uint32_t unchanged_sent = 0;
+  std::uint32_t index_entries = 0;  // in LodIndex and LodIndexUpdate messages
+  std::uint32_t index_updates = 0;  // LodIndexUpdate messages
+  std::uint64_t bytes = 0;          // on the lod stream
 };
 
 // Per-session counters, for tests and diagnostics.
@@ -150,6 +170,10 @@ class Server {
   std::optional<player::PlayerHandle> PlayerHandleOf(std::uint16_t player_id) const;
   std::optional<SessionStats> StatsOf(std::uint16_t player_id) const;
   std::optional<StreamStats> StreamStatsOf(std::uint16_t player_id) const;
+  std::optional<LodStats> LodStatsOf(std::uint16_t player_id) const;
+  const LodPropagation& lod() const { return lod_; }
+  // Runs LOD propagation until nothing is dirty (tests, tools).
+  void DrainLod();
   const ChunkCoord& verification_chunk() const { return verification_chunk_; }
   int HealthOf(std::uint16_t player_id) const;  // −1 when unknown
 
@@ -193,6 +217,12 @@ class Server {
     bool stream_complete = false;  // everything in view sent (until the center moves)
     double chunk_credit = 0;       // bytes the client may still receive this tick
     StreamStats stream_stats;
+    // Level of detail (§6.6).
+    bool lod_index_sent = false;
+    std::deque<protocol::LodSectionRequest> lod_requests;
+    double lod_credit = 0;                                        // bytes, like chunk_credit
+    double lod_request_credit = protocol::kLodRequestsPerSecond;  // token bucket
+    LodStats lod_stats;
   };
 
   void HandleControl(SessionId id, Session& s, const protocol::Message& m);
@@ -215,6 +245,8 @@ class Server {
   // the changed chunks.
   void ApplyEdits();
   bool MayEdit(const Session& s) const;
+  bool MayFly(const Session& s) const;
+  bool Allowed(EditPolicy policy, const Session& s) const;
   std::array<double, 3> EyeOf(const Session& s) const;
   // Terrain: generation around players, eviction, and per-client streaming (§6.3).
   std::optional<ChunkCoord> ViewCenter(const Session& s) const;
@@ -226,6 +258,12 @@ class Server {
   std::optional<protocol::ChunkData> ChunkMessage(const Session& s, const ChunkCoord& c,
                                                   bool generate);
   void Resync(SessionId id, Session& s, const protocol::ChunkResync& m);
+  // Level of detail (§6.6): propagation, the index and its updates, and answering requests.
+  std::vector<std::array<double, 3>> PlayerPositions() const;
+  LodPropagation::ModifiedChunk ModifiedChunkLookup();
+  void UpdateLod();
+  void SendLodIndex(SessionId id, Session& s);
+  void ServeLod(SessionId id, Session& s);
   Session* SessionOfPlayer(std::uint16_t player_id);
   const Session* SessionOfPlayer(std::uint16_t player_id) const;
   std::uint16_t PlayerIdOfBody(std::uint32_t body_id) const;
@@ -262,6 +300,14 @@ class Server {
   std::vector<storage::PlayerRecord> departed_;
   std::uint32_t next_save_tick_ = 0;
   SaveStats save_stats_;
+  // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
+  // save (and those in saves in flight), and whether the saved cache must be dropped (rebuild).
+  LodPropagation lod_;
+  std::unordered_map<std::uint64_t, protocol::LodIndexEntry> index_updates_;
+  std::uint32_t next_index_update_tick_ = 0;
+  std::unordered_set<LodCoord, LodCoordHash> lod_unsaved_;
+  std::unordered_map<std::uint64_t, std::vector<LodCoord>> lod_in_flight_;
+  bool lod_rebuild_ = false;
 };
 
 }  // namespace dwell::core

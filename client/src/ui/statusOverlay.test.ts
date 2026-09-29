@@ -14,6 +14,7 @@ describe('formatStatus', () => {
           worldSeed: 0n,
           generatorVersion: 1,
           verificationChunk: [0, 0, 0],
+          mayFly: false,
         },
         { rttMs: 12.4, datagramRttMs: null, serverTick: 99 },
       ),

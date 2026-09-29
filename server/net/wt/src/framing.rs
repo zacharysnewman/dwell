@@ -1,7 +1,8 @@
 //! Reliable-channel framing over WebTransport streams (ARCHITECTURE.md §8.2).
 //!
 //! A reliable channel is one QUIC stream. Its first byte is the channel id (0 = `control`,
-//! client-opened bidirectional; 1 = `world`, server-opened unidirectional). After that the stream
+//! client-opened bidirectional; 1 = `world` and 2 = `lod`, server-opened unidirectional). After
+//! that the stream
 //! carries messages as `u32 little-endian length ‖ payload`.
 
 use wtransport::{RecvStream, SendStream};

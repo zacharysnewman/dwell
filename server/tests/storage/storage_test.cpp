@@ -122,7 +122,7 @@ void CopyWorld(const std::string& from, const std::string& to) {
 
 }  // namespace
 
-TEST_CASE("storage: a new world file is created at the current format with schema v1") {
+TEST_CASE("storage: a new world file is created at the current format (schema v2)") {
   const std::string path = Scratch("fresh");
   auto db = OpenOrFail(path);
   CHECK(db->format_version() == kFormatVersion);
@@ -420,4 +420,103 @@ TEST_CASE("debug tooling: regenerate and diff lists exactly the voxels changed s
   CHECK(diff[1].index == LocalIndex(3, 31, 4));
   CHECK(diff[1].generated == Materials::kGrass);
   CHECK(diff[1].current == Materials::kAir);
+}
+
+TEST_CASE("storage: a format-1 world migrates to the LOD cache table (format 2)") {
+  const std::string path = Scratch("migrate");
+  { auto db = OpenOrFail(path); }
+  sqlite3* raw = nullptr;
+  REQUIRE(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
+  REQUIRE(sqlite3_exec(raw, "DROP TABLE lod_sections; PRAGMA user_version = 1;", nullptr, nullptr,
+                       nullptr) == SQLITE_OK);
+  sqlite3_close(raw);
+  auto db = OpenOrFail(path);
+  CHECK(db->format_version() == 2);
+  bool stale = true;
+  CHECK(db->LodSections(0, stale).empty());
+  CHECK_FALSE(stale);
+  SaveBatch b;
+  b.lod_sections.push_back({{3, 1, 2, 3}, 9, false, {1, 2, 3}});
+  b.lod_sections.push_back({{4, 5, 6, 7}, 0, true, {}});
+  std::string error;
+  REQUIRE(db->Save(b, error));
+  const auto rows = db->LodSections(0, stale);
+  REQUIRE(rows.size() == 2);
+  CHECK(db->LodSections(3, stale).empty());  // another generator version: stale
+  CHECK(stale);
+}
+
+namespace {
+
+// Server + store over one world file, reopened by each call.
+std::shared_ptr<WorldStore> OpenStore(const std::string& path) {
+  std::string error;
+  auto db = WorldDb::Open(path, error, kPlatform);
+  REQUIRE(db);
+  return std::make_shared<WorldStore>(std::move(db));  // saves inline
+}
+
+}  // namespace
+
+TEST_CASE("persistence: LOD sections survive a restart, and are rebuilt when stale or missing") {
+  const std::string path = Scratch("lod");
+  std::map<LodCoord, std::uint32_t, bool (*)(const LodCoord&, const LodCoord&)> saved(
+      [](const LodCoord& a, const LodCoord& b) {
+        return std::tie(a.level, a.i, a.j, a.k) < std::tie(b.level, b.i, b.j, b.k);
+      });
+  {
+    ServerConfig config = Flat();
+    config.store = OpenStore(path);
+    Fixture f(config);
+    f.Join(1, Client(1));
+    f.server.Step();
+    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-1, -1, 2}, 2, Materials::kLog});
+    f.server.Step();
+    f.server.DrainLod();
+    REQUIRE(f.server.lod().sections().size() ==
+            static_cast<std::size_t>(dwell::core::kLodMaxLevel));
+    for (const auto& [c, s] : f.server.lod().sections()) saved[c] = s.revision;
+    f.server.SaveNow();
+  }
+  {
+    // Restored as saved: nothing to recompute, the same revisions.
+    ServerConfig config = Flat();
+    config.store = OpenStore(path);
+    Fixture f(config);
+    CHECK(f.server.lod().pending() == 0);
+    REQUIRE(f.server.lod().sections().size() == saved.size());
+    for (const auto& [c, s] : f.server.lod().sections()) CHECK(saved[c] == s.revision);
+  }
+  // A world saved before the LOD cache existed (no rows): derived from its chunks.
+  {
+    sqlite3* raw = nullptr;
+    REQUIRE(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(raw, "DELETE FROM lod_sections;", nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(raw);
+    ServerConfig config = Flat();
+    config.store = OpenStore(path);
+    Fixture f(config);
+    CHECK(f.server.lod().pending() == 1);  // the edited chunk's level-1 section
+    f.server.DrainLod();
+    CHECK(f.server.lod().sections().size() == saved.size());
+    f.server.SaveNow();
+  }
+  // Rows of another generator version: dropped and rebuilt from the chunks.
+  {
+    sqlite3* raw = nullptr;
+    REQUIRE(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(raw, "UPDATE lod_sections SET generator_version = 99;", nullptr, nullptr,
+                         nullptr) == SQLITE_OK);
+    sqlite3_close(raw);
+    ServerConfig config = Flat();
+    config.store = OpenStore(path);
+    Fixture f(config);
+    CHECK(f.server.lod().sections().empty());
+    CHECK(f.server.lod().pending() == 1);
+    f.server.DrainLod();
+    f.server.SaveNow();
+    bool stale = true;
+    CHECK(config.store->db().LodSections(kGeneratorFlat, stale).size() == saved.size());
+    CHECK_FALSE(stale);
+  }
 }

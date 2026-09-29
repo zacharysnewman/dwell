@@ -2,6 +2,7 @@
 // input exactly once; the server and the client's own prediction both dequantize the same
 // integers (C++ DequantizeInput), so they simulate identical inputs.
 import { InputButtons } from '../protocol/constants.gen';
+import { FlightToggle } from './flight';
 import type { TouchState } from './touch';
 import type { InputFrame } from '../protocol/messages';
 
@@ -14,6 +15,8 @@ export interface PlayerInputState {
   jump: boolean;
   run: boolean;
   crouch: boolean;
+  /** Creative flight is on (PLAYER_CONTROLLER.md §6.7): held as a mode bit every tick. */
+  fly: boolean;
 }
 
 export const IDLE_INPUT: PlayerInputState = {
@@ -24,6 +27,7 @@ export const IDLE_INPUT: PlayerInputState = {
   jump: false,
   run: false,
   crouch: false,
+  fly: false,
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -57,7 +61,8 @@ export function quantizeInput(input: PlayerInputState, seq: number): InputFrame 
     buttons:
       (input.jump ? InputButtons.jump : 0) |
       (input.run ? InputButtons.run : 0) |
-      (input.crouch ? InputButtons.crouch : 0),
+      (input.crouch ? InputButtons.crouch : 0) |
+      (input.fly ? InputButtons.fly : 0),
     yaw: quantizeYaw(input.yaw),
     pitch: quantizePitch(input.pitch),
   };
@@ -72,8 +77,9 @@ export function dequantizePitch(q: number): number {
 }
 
 /**
- * Keyboard + pointer-lock mouse look. WASD move, Space jump, Shift run, C / Ctrl crouch; left and
- * right click break and place, number keys and the wheel pick a block (§6.5).
+ * Keyboard + pointer-lock mouse look. WASD move, Space jump, Shift run, C / Ctrl crouch, double-tap
+ * Space to fly (up with Space, down with crouch); left and right click break and place, number keys
+ * and the wheel pick a block (§6.5).
  */
 export class KeyboardMouseInput {
   private readonly keys = new Set<string>();
@@ -81,6 +87,8 @@ export class KeyboardMouseInput {
   pitch = 0;
   /** Degrees per pixel of mouse movement. */
   sensitivity = 0.12;
+  /** Creative flight, toggled by double-tapping Space (or the touch Fly button). */
+  readonly flight = new FlightToggle();
   /** Debug toggles: F3 overlay, F4 terrain map. */
   onToggle: ((key: string) => void) | null = null;
   /** On-screen touch controls, merged into every sample (predict/touch.ts). */
@@ -135,6 +143,7 @@ export class KeyboardMouseInput {
       jump: k('Space') || (t?.jump ?? false),
       run: k('ShiftLeft') || k('ShiftRight') || (t?.run ?? false),
       crouch: k('KeyC') || k('ControlLeft') || (t?.crouch ?? false),
+      fly: this.flight.flying,
     };
   }
 
@@ -145,6 +154,7 @@ export class KeyboardMouseInput {
       return;
     }
     this.keys.add(e.code);
+    if (e.code === 'Space' && !e.repeat) this.flight.jumpPressed(e.timeStamp);
     if (e.code.startsWith('Digit') && !e.repeat) this.onDigit?.(e.code);
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   };

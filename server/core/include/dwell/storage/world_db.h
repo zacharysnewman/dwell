@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
 #include "dwell/protocol/messages.h"
 
@@ -23,7 +24,7 @@ namespace dwell::storage {
 
 // Schema version written by this build (PRAGMA user_version, mirrored in meta.format_version).
 // Opening an older file migrates it in order; a newer one is refused.
-inline constexpr int kFormatVersion = 1;
+inline constexpr int kFormatVersion = 2;
 
 // File extension of world files (and of the export format: the database itself).
 inline constexpr std::string_view kWorldExtension = ".dwellworld";
@@ -41,6 +42,15 @@ struct SavedChunk {
   core::ChunkCoord coord;
   std::uint32_t revision = 0;
   std::vector<std::uint16_t> voxels;  // kChunkVolume materials, chunk index order
+};
+
+// A modified LOD section (§6.6): a cache derivable from the chunks. `encoded` is the palette + RLE
+// of its 34³ cells (protocol::EncodeLodCells); empty for a section still to compute (`dirty`).
+struct SavedLodSection {
+  core::LodCoord coord;
+  std::uint32_t revision = 0;
+  bool dirty = false;
+  std::vector<std::uint8_t> encoded;
 };
 
 // A player's saved state, keyed by device public key (§10.4).
@@ -67,6 +77,10 @@ struct SaveBatch {
   std::optional<WorldMeta> meta;
   std::vector<SavedChunk> chunks;
   std::vector<PlayerRecord> players;
+  // LOD cache rows written or re-marked since the last save; `clear_lod` drops the table first
+  // (a rebuild after a generator version change).
+  std::vector<SavedLodSection> lod_sections;
+  bool clear_lod = false;
 };
 
 struct OpenOptions {
@@ -92,6 +106,9 @@ class WorldDb {
   // Modified chunks in the file and their revisions.
   std::vector<std::pair<core::ChunkCoord, std::uint32_t>> ChunkIndex();
   std::optional<SavedChunk> LoadChunk(const core::ChunkCoord& coord);
+  // The LOD cache (format 2). Rows of another generator version are skipped and `stale` set: the
+  // cache must be rebuilt from the chunks.
+  std::vector<SavedLodSection> LodSections(std::uint32_t generator_version, bool& stale);
   std::optional<PlayerRecord> LoadPlayer(const protocol::PublicKey& key);
   std::optional<std::string> Setting(std::string_view key);
   bool SetSetting(std::string_view key, std::string_view value);
@@ -118,6 +135,11 @@ class WorldDb {
 // Player state blob (players.state), version 1: u8 1, f64×3 feet, u8 health.
 std::vector<std::uint8_t> EncodePlayerState(const PlayerRecord& player);
 bool DecodePlayerState(std::span<const std::uint8_t> bytes, PlayerRecord& player);
+
+// zstd (level 3) of a blob, and back (nullopt if corrupt or larger than `max_size`).
+std::vector<std::uint8_t> CompressBytes(std::span<const std::uint8_t> raw);
+std::optional<std::vector<std::uint8_t>> DecompressBytes(std::span<const std::uint8_t> blob,
+                                                         std::size_t max_size);
 
 // Chunk blob (chunks.data): zstd of the palette + RLE voxels (ChunkData Explicit payload).
 std::vector<std::uint8_t> CompressChunk(const std::vector<std::uint16_t>& voxels);

@@ -78,12 +78,13 @@ so prediction and authority never drift because of two implementations. See ARCH
 ```cpp
 namespace dwell::player {
 
-enum class State : uint8_t { Idle, Walking, Running, Crouching, Sliding, Jumping, Falling, Climbing, Swimming };
+enum class State : uint8_t { Idle, Walking, Running, Crouching, Sliding, Jumping, Falling, Climbing, Swimming, Flying };
 
 struct Input {                    // one tick; buttons are held state, edges are detected in-sim
   float move_x, move_y;           // x = right, y = forward, camera-relative, |move| <= 1
   float look_yaw, look_pitch;     // degrees; yaw 0 = +Z, 90 = +X; pitch positive = up
   bool  jump, run, crouch;
+  bool  fly;                      // creative flight mode is on (Dwell addition, §6.7)
 };
 
 struct GroundRef { enum Kind : uint8_t { None, Terrain, Tier1Body, Player } kind; uint32_t id; };  // id: Jolt BodyID
@@ -101,6 +102,7 @@ struct JumpState       { uint16_t buffer_ticks, coyote_ticks; bool jumping, jump
 struct CrouchState     { bool crouching; };
 struct ClimbState      { bool climbing; Cell ladder; Vec3 velocity; bool has_released; Cell released; };
 struct SwimState       { bool swimming; float submerged; Vec3 velocity; };            // Dwell addition
+struct FlyState        { bool flying; Vec3 velocity; };                               // Dwell addition
 struct PlatformState   { GroundRef ground; Vec3 ground_velocity, base_velocity; float yaw_delta; };
 
 struct PlayerController {        // static_assert(std::is_trivially_copyable_v<PlayerController>)
@@ -108,11 +110,11 @@ struct PlayerController {        // static_assert(std::is_trivially_copyable_v<P
   State state;
   GroundInfo ground;
   HorizontalLayer horizontal;  VerticalLayer vertical;
-  JumpState jump;  CrouchState crouch;  ClimbState climb;  SwimState swim;
+  JumpState jump;  CrouchState crouch;  ClimbState climb;  SwimState swim;  FlyState fly;
   PlatformState platform;
   Vec3 target_velocity;
   uint32_t events;                // Events:: bits raised this tick (Jumped, Landed, CrouchChanged,
-  float landed_speed;             //   ClimbStarted/Ended, SwimStarted/Ended); Landed's impact speed
+  float landed_speed;             //   Climb/Swim/FlyStarted/Ended); Landed's impact speed
 };
 
 }
@@ -138,14 +140,15 @@ The server main loop (ARCHITECTURE §4.2) runs, for every player, **before** `Ph
 | 1 | `stepInput` | `PPCInputSystem` | `previousInput = input`; take this tick's input; clamp `|move| <= 1` |
 | 2 | `stepProbe` | `PPCProbeSystem` | Ground ring (16 + centre), ceiling ring, 4 axis wall rays via `VoxelQuery` + dynamic bodies (§5) |
 | 3 | `stepPlatform` | `PPCPlatformSystem` | Velocity of the ground under the player (`v + ω × r` for Tier 1 bodies; zero for terrain; zero for players unless `carriedByCharacters`) |
-| 4 | `stepCrouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test |
-| 5 | `stepJump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulatedY = max(accumulatedY, jumpV + platformY)`; no coyote after a real jump |
-| 6 | `stepClimb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3) |
-| 7 | `stepSwim` | — (Dwell) | Exclusive layer in water voxels (§6.4) |
-| 8 | `stepHorizontal` | `PPCMovementLayerSystem` | Absorb external; accel/decel/reverse in the platform's frame; air control; step-up |
-| 9 | `stepVertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
-| 10 | `stepAggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.targetY, 0)`; `BodyInterface::SetLinearVelocity` |
-| 11 | `stepState` | `PPCStateSystem` | Priority: Climbing > Swimming > Crouching > Jumping/Falling > Running/Walking/Idle |
+| 4 | `stepFly` | — (Dwell) | Exclusive creative-flight layer while `fly` is held (§6.7) |
+| 5 | `stepCrouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test |
+| 6 | `stepJump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulatedY = max(accumulatedY, jumpV + platformY)`; no coyote after a real jump |
+| 7 | `stepClimb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
+| 8 | `stepSwim` | — (Dwell) | Exclusive layer in water voxels (§6.4); not while flying |
+| 9 | `stepHorizontal` | `PPCMovementLayerSystem` | Absorb external; accel/decel/reverse in the platform's frame; air control; step-up |
+| 10 | `stepVertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
+| 11 | `stepAggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.targetY, 0)`; `BodyInterface::SetLinearVelocity` |
+| 12 | `stepState` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Crouching > Jumping/Falling > Running/Walking/Idle |
 | — | *Jolt `PhysicsSystem::Update(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
 
 Each pass's behaviour is exactly the PPC Quantum system's, including its fixes over the Unity
@@ -356,6 +359,35 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   Tier 1 bodies use world gravity (9.81 m/s²). A player standing on a free-falling slab falls faster
   than it, so they stay on it instead of floating off.
 
+### 6.7 Creative flight (Dwell addition) **[built, Phase 4]**
+A flight mode for the player's own body — server-authoritative and predicted like every other
+layer — so a player can rise from the ground to see the whole world (ARCHITECTURE §6.6).
+- **Input.** `fly` is a *mode* bit held in every input frame while flight is on (`InputButtons.fly`);
+  the client toggles it (double-tap Space or the touch Jump button within 300 ms, or the touch Fly
+  button). The server clears the bit for players its flight policy excludes (`--flight
+  everyone|ops|nobody`, default everyone; `Welcome` says whether this player may fly), so a client
+  that sends it anyway just walks.
+- **Layer.** `stepFly` runs before crouch, so flying cancels climbing and swimming and stands a
+  crouched player up (the exclusive rule of `stepCrouch`). While flying there is no gravity: the
+  body's velocity is eased towards the wish with exponential `fly.drag` — horizontal from the move
+  input along the camera's yaw, up with jump, down with crouch — at
+  `fly.speed × (run ? fly.runFactor : 1) × (1 + max(0, feet − SEA_LEVEL) / fly.boostHeight)`, so
+  speed grows with height and the climb is exponential. Below `WORLD_MAX_Y` speed is capped at
+  `fly.terrainSpeed`: collision around the player is built a few ticks ahead (its reach is capped
+  at 64 m of travel), and the server has to generate the chunks being flown through. Collision is
+  unchanged — `LinearCast` motion keeps a fast dive from tunnelling into the ground.
+- **Limits.** The feet stop at `fly.ceiling` (`FLIGHT_CEILING`, 24,000 km: from there the 8,192 km
+  disc fills about two thirds of the view) and |x|, |z| at `fly.horizontalLimit` (just past the
+  rim); the velocity is clamped to arrive exactly, as a tick up there covers hundreds of
+  kilometres. The player body's Jolt velocity limit is raised to the fastest flight speed.
+- **Leaving flight** hands back to the normal layers with the current velocity, like leaving
+  water: the player falls, and a hard landing does fall damage. Landing while flying does not end
+  flight (the vertical layer, which reports `Landed`, is skipped), so flying into the ground is
+  harmless.
+- **Prediction.** The client normally waits for the terrain around the player before predicting
+  (collision needs it); a flying player keeps predicting, since flight outruns chunk streaming and
+  the server's collision corrects any difference.
+
 ---
 
 ## 7. Configuration
@@ -393,6 +425,8 @@ engine movement, checked against Halo 3); rows marked ◆ differ from the PPC de
 | | `jumpOffVelocity` / `snapStrength` | (0, 4, 3) m/s / 10 /s | same | |
 | Swim ◆ | `speed` / `enterFraction` / `exitFraction` | 3 m/s / 0.6 / 0.4 | — | Dwell addition |
 | | `buoyancy` / `drag` / `floatFraction` | 12 m/s² / 2 /s / 0.7 | — | |
+| Fly ◆ | `speed` / `runFactor` / `boostHeight` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × (1 + height above sea / boostHeight) |
+| | `terrainSpeed` / `ceiling` / `horizontalLimit` | 400 m/s / 24,000 km / 8,400 km | — | Below `WORLD_MAX_Y` / feet height / \|x\|, \|z\| |
 | Damage ◆ | `fallDamageMinSpeed` / `fallDamagePerSpeed` | 12 m/s / 8 per m/s | — | From the `Landed` event's impact speed |
 | | `crushSpeed` / `crushTicks` | 4 m/s / 6 | — | |
 | Advanced | `stepProbeDistance` / `probeRingRadius` / `wallCheckDistance` | 0.01 m / 0.9 / 0.16 m | same | |
@@ -474,23 +508,25 @@ divergence added per tick. The whole ported player and netcode suite also passes
 
 ### 8.4 Wire format
 - `PlayerInput`: analog move vector (`i8 moveX, moveY`) for gamepads and touch sticks; `jump`,
-  `run`, `crouch` in the `u16` button bitfield; quantized yaw and pitch (ARCHITECTURE §8.3).
+  `run`, `crouch`, `fly` in the `u16` button bitfield; quantized yaw and pitch (ARCHITECTURE §8.3).
 - The local player's snapshot block carries the body state (capsule centre `f64×3`, velocity
   `f32`),
   flags, health, `State`, `inputBuffer`, `lastKnockbackSeq`, and the controller state needed to
   resume simulation exactly (47 bytes, +12 while climbing, +8 after letting go of a ladder):
-  flags (grounded, jumping, crouching, climbing, hasReleased, swimming); horizontal `current`,
+  flags (grounded, jumping, crouching, climbing, hasReleased, swimming, flying); horizontal `current`,
   `external`, and `contribution` (x, z); vertical `accumulatedY`, `platformY`, `targetY`; the
   ground's vertical velocity; the ground reference (kind + player id); jump buffer and coyote ticks;
-  step grace; ladder and released cells. Per-tick scratch (inputs, events, probe results, climb
-  and swim velocities) is recomputed.
+  step grace; ladder and released cells. Per-tick scratch (inputs, events, probe results, climb,
+  swim and fly velocities) is recomputed.
 - Remote players receive only feet position (`i32×3` at 1/256 m, `posfix`), velocity (`f16`), view
   angles, `State`, and flags.
 - **[built, Phase 3c — protocol v4, ARCHITECTURE §8.3, ADR 0011]** For the 8,192 km world the
   controller runs on double-precision Jolt, the local player's capsule centre is `pos64` (exact, so
   reconciliation compares like for like anywhere) and remote feet positions `posfix`. Vertical
-  controller fields (`accumulatedY`, `platformY`, `targetY`) stay `f32`: heights are bounded to
-  −2 048…6 144 m, where f32 resolves under a millimetre.
+  controller fields (`accumulatedY`, `platformY`, `targetY`) stay `f32`: they are velocities and
+  platform heights, not the player's height. `pos64` accepts ±`POS64_LIMIT` (33,554 km), covering
+  creative flight up to its ceiling (protocol v7); a flying player's remote `posfix` position
+  clamps at ±8,388 km.
 
 ---
 
@@ -546,7 +582,7 @@ event counters. Expectations use Dwell's default config (recommended feel, voxel
 | Phase6Climb | Ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | Same scenarios on voxel geometry |
 | GoldenTrace | Four-player scenario: identical across repeated runs; within 1 mm of `server/tests/player/golden/scenario-trace.txt` (regenerate with `DWELL_UPDATE_GOLDEN=1`; regenerated in Phase 3c for double precision, which tipped one borderline crouch-under-a-ledge fit); native↔WASM compared by `divergence.mjs` (§8.3) |
-| — (Dwell) | Built: swim enter/float/dive/exit, shallow water, auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams, collision-mesh unit tests; networked players (`netcode_test.cpp`, `netsim.h`: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps. Later phases: placement rejection (3), crush and push-force cap (4) |
+| — (Dwell) | Built: swim enter/float/dive/exit, shallow water, creative flight (`flight_test.cpp`: hover, rise/sink/move, speed growing with height, the terrain-band cap and the ceiling, a fast dive stopping on the ground; the server's flight policy in `netcode_test.cpp`), auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams, collision-mesh unit tests; networked players (`netcode_test.cpp`, `netsim.h`: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps. Later phases: placement rejection (3), crush and push-force cap (4) |
 
 Performance gate: 64 players' controller passes (excluding the Jolt step) under 1 ms/tick —
 measured at ~0.42 ms in the Release build with double-precision Jolt (~0.43 ms before it), ~0.48 ms

@@ -21,6 +21,9 @@ import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
 import { ChunkStreamer } from './world/chunkStream';
 import { WorldgenPool } from './worldgen/pool';
+import { LodSystem } from './lod/lodSystem';
+import { Lod } from './protocol/constants.gen';
+import { verticalFov } from './render/fov';
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
 interface DwellDebug {
@@ -34,6 +37,8 @@ interface DwellDebug {
   select(slot: number): void;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
+  /** Turns creative flight on or off, as double-tapping Space does (if the server allows it). */
+  fly(on: boolean): void;
 }
 
 declare global {
@@ -123,6 +128,9 @@ function start(): App {
     edit: (action) => app.game?.edit(action, performance.now()) ?? false,
     select: (slot) => app.interaction?.select(slot),
     voxel: (x, y, z) => app.core?.voxel(x, y, z) ?? 0,
+    fly: (on) => {
+      app.input.flight.set(on);
+    },
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
   app.input.onAction = (action) => app.game?.edit(action, performance.now());
@@ -131,6 +139,16 @@ function start(): App {
     if (slot !== null && slot < PALETTE.length) app.interaction?.select(slot);
   };
   app.input.onScroll = (delta) => app.interaction?.scroll(delta);
+  // Creative flight (§8.3): double-tap Space or Jump, or the Fly button.
+  touch.onFly = () => {
+    input.flight.toggle();
+  };
+  touch.onJumpPress = (nowMs) => {
+    input.flight.jumpPressed(nowMs);
+  };
+  input.flight.onChange = (flying) => {
+    touch.setFlight(input.flight.allowed, flying);
+  };
   touch.onTap = () => {
     const action = app.interaction?.touchAction;
     if (action) app.game?.edit(action, performance.now());
@@ -164,6 +182,9 @@ function play(
   session: ClientSession,
   joined: Extract<SessionState, { phase: 'joined' }>,
 ) {
+  // Creative flight is the server's to allow (Welcome, §8.3).
+  app.input.flight.allowed = joined.mayFly;
+  app.touch.setFlight(joined.mayFly, app.input.flight.flying);
   void (async () => {
     // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
     const fullChunks = new URLSearchParams(location.search).get('chunks') === 'full';
@@ -181,7 +202,8 @@ function play(
     session.subscribe((_state, s) => {
       stats = s;
     });
-    const terrain = new ChunkStreamer(core, pool, MeshPool.create(), app.renderer, (coords) => {
+    const meshPool = MeshPool.create();
+    const terrain = new ChunkStreamer(core, pool, meshPool, app.renderer, (coords) => {
       session.sendControl({ type: MessageType.ChunkResync, coords });
     });
     const interaction = new BlockInteraction(core, (m) => {
@@ -229,6 +251,39 @@ function play(
       }
     }
     session.sendControl({ type: MessageType.WorldgenCheck, hash });
+
+    // The whole-world view (§6.6): generated here unless in full-chunk mode (?lod=0 turns it off).
+    const params = new URLSearchParams(location.search);
+    if (params.get('lod') !== '0') {
+      const mobile = prefersTouch();
+      const lod = new LodSystem(
+        pool,
+        meshPool,
+        app.renderer,
+        terrain,
+        (sections) => {
+          session.sendControl({ type: MessageType.LodRequest, sections });
+        },
+        {
+          pixelError: mobile ? Lod.pixelErrorMobile : Lod.pixelErrorDesktop,
+          cacheBytes: (mobile ? Lod.cacheMbMobile : Lod.cacheMbDesktop) * 1048576,
+          maxGenerationJobs: pool.capacity,
+          maxMeshJobs: meshPool.capacity,
+        },
+      );
+      lod.setFullMode(hash === 0n);
+      app.renderer.setChunkVisibility((c) => lod.chunkVisible(c));
+      app.renderer.setLodLevelColors(params.get('lodcolors') === '1');
+      game.viewport = () => {
+        const aspect = app.canvas.clientWidth / Math.max(1, app.canvas.clientHeight);
+        return {
+          fovYDeg: verticalFov(aspect),
+          aspect,
+          heightPx: app.canvas.clientHeight * Math.min(window.devicePixelRatio, 2),
+        };
+      };
+      game.lod = lod;
+    }
   })();
 }
 

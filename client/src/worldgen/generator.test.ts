@@ -8,6 +8,7 @@ import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import { World } from '../protocol/constants.gen';
 import { mapColumn } from '../ui/mapOverlay';
 import type { ChunkCoord } from '../protocol/messages';
+import { LOD_VOLUME } from '../lod/grid';
 import { ChunkGenerator, type DwellWorldgenFactory } from './generator';
 
 const wasmJs = new URL('../../public/wasm/dwell_worldgen.js', import.meta.url);
@@ -45,7 +46,54 @@ const golden = readFileSync(
     };
   });
 
+const lodGolden = readFileSync(
+  new URL('../../../server/tests/worldgen/golden/lod-hashes.txt', import.meta.url),
+  'utf8',
+)
+  .split('\n')
+  .filter((l) => l.trim() && !l.startsWith('#'))
+  .map((l) => {
+    const [seed = '0', level = '0', i = '0', j = '0', k = '0', kind = '0', hash = '0'] = l
+      .trim()
+      .split(/\s+/);
+    return {
+      seed: BigInt(seed),
+      coord: [Number(level), Number(i), Number(j), Number(k)] as const,
+      kind: Number(kind),
+      hash: BigInt(`0x${hash}`),
+    };
+  });
+
 describe.skipIf(skip)('worldgen module (WASM)', () => {
+  it('reproduces the golden LOD section hashes (GenerateLod, §6.6)', async () => {
+    expect(lodGolden.length).toBeGreaterThan(5);
+    const generators = new Map<bigint, ChunkGenerator>();
+    for (const g of lodGolden) {
+      let gen = generators.get(g.seed);
+      if (!gen) {
+        gen = await loadGenerator(GENERATOR_TERRAIN, g.seed);
+        generators.set(g.seed, gen);
+      }
+      const s = gen.lod(g.coord);
+      expect(s.cells.length).toBe(LOD_VOLUME);
+      // LodHash: the kind byte, then the cells.
+      let h = 0xcbf29ce484222325n;
+      h = BigInt.asUintN(64, (h ^ BigInt(s.kind)) * 0x100000001b3n);
+      for (const m of s.cells) {
+        for (const byte of [m & 0xff, m >> 8])
+          h = BigInt.asUintN(64, (h ^ BigInt(byte)) * 0x100000001b3n);
+      }
+      expect({ coord: g.coord, kind: s.kind, hash: h }).toEqual({
+        coord: g.coord,
+        kind: g.kind,
+        hash: g.hash,
+      });
+    }
+    const b = generators.get(0n)?.lodBounds(2, 65536, 65536);
+    expect(b?.anyInside).toBe(true);
+    expect((b?.hi ?? 0) > (b?.lo ?? 0)).toBe(true);
+  });
+
   it('reproduces the golden chunk hashes', async () => {
     expect(golden.length).toBeGreaterThan(10);
     const generators = new Map<bigint, ChunkGenerator>();

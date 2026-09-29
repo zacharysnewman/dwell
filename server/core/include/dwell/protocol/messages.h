@@ -58,6 +58,7 @@ struct Welcome {
   std::uint32_t server_tick = 0;
   // Chunk the client generates and hashes for WorldgenCheck (§6.3).
   ChunkCoordNet verification_chunk{};
+  std::uint8_t flags = 0;  // WelcomeFlags
 };
 struct Reject {
   RejectReason reason = RejectReason::kMalformed;
@@ -83,6 +84,9 @@ struct WorldgenCheck {
 // --- Terrain streaming (Phase 3b, §6.3, §8.3) ---
 
 inline constexpr int kChunkVolume = kChunkSize * kChunkSize * kChunkSize;
+// Cells of a LOD section with its one-cell apron (§6.6): 34³.
+inline constexpr int kLodCellCount =
+    (kLodSectionCells + 2) * (kLodSectionCells + 2) * (kLodSectionCells + 2);
 
 // S→C reliable (`world`). Generated: the client generates the chunk itself (no payload). Explicit:
 // the voxels travel as palette + RLE. Air: an unmodified chunk the generator leaves all air (no
@@ -134,6 +138,51 @@ struct VoxelModification {
 // gap), 1..kMaxResyncChunks.
 struct ChunkResync {
   std::vector<ChunkCoordNet> coords;
+};
+
+// --- Level of detail (Phase 4b, §6.6, §8.3) ---
+
+// A section at LOD_INDEX_LEVEL (one row, so no j) holding modified chunks, and its lodRevision.
+struct LodIndexEntry {
+  std::int32_t i = 0, k = 0;
+  std::uint32_t revision = 0;
+  bool operator==(const LodIndexEntry&) const = default;
+};
+
+// S→C reliable (`lod`), after WorldgenCheck: the modified sections at LOD_INDEX_LEVEL, over one or
+// more messages (≤ kMaxLodIndexEntries each), the last one flagged.
+struct LodIndex {
+  bool last = true;
+  std::vector<LodIndexEntry> entries;
+};
+
+// S→C reliable (`lod`): index entries written since the last update (coalesced, at most one per
+// LOD_INDEX_UPDATE_MS). 1..kMaxLodIndexEntries entries.
+struct LodIndexUpdate {
+  std::vector<LodIndexEntry> entries;
+};
+
+struct LodSectionRequest {
+  std::uint8_t level = 1;  // 1..LOD_MAX_LEVEL
+  std::array<std::int32_t, 3> section{};
+  std::uint32_t known_revision = 0;  // the revision the client holds (0 = none)
+  bool operator==(const LodSectionRequest&) const = default;
+};
+
+// C→S reliable (`control`): sections whose content the client needs (1..LOD_MAX_REQUEST_SECTIONS).
+struct LodRequest {
+  std::vector<LodSectionRequest> sections;
+};
+
+// S→C reliable (`lod`): the answer to one requested section. Generated: nothing below it is
+// modified (the client generates it and everything under it). Explicit: its content, 34³ cells
+// with the apron (`cells`, core::LodCell order). Unchanged: the client's revision is current.
+struct LodData {
+  LodForm form = LodForm::kGenerated;
+  std::uint8_t level = 1;
+  std::array<std::int32_t, 3> section{};
+  std::uint32_t revision = 0;
+  std::vector<std::uint16_t> cells;
 };
 
 // --- Players (Phase 2, PLAYER_CONTROLLER.md §8.4) ---
@@ -215,16 +264,23 @@ std::vector<std::uint8_t> EncodeChunkVoxels(const std::vector<std::uint16_t>& vo
 // nullopt unless `bytes` is exactly one canonical-length payload.
 std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std::uint8_t> bytes);
 
+// LOD section content as palette + RLE (the LodData Explicit payload, §6.6; before zstd, the
+// lod_sections encoding): kLodCellCount materials, already in layer order (core::LodCell), so
+// taken as they are.
+std::vector<std::uint8_t> EncodeLodCells(const std::vector<std::uint16_t>& cells);
+std::optional<std::vector<std::uint16_t>> DecodeLodCells(std::span<const std::uint8_t> bytes);
+
 // posfix: nearest multiple of 1/kPositionFixedScale m (halves round up), clamped to i32.
 std::int32_t ToFixedPosition(double v);
 inline double FromFixedPosition(std::int32_t v) {
   return v / static_cast<double>(kPositionFixedScale);
 }
 
-using Message = std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello,
-                             Challenge, ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput,
-                             PhysicsSnapshot, PlayerEvent, WorldgenCheck, ChunkData, ChunkUnload,
-                             BlockEditRequest, VoxelModification, ChunkResync>;
+using Message =
+    std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello, Challenge,
+                 ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput, PhysicsSnapshot, PlayerEvent,
+                 WorldgenCheck, ChunkData, ChunkUnload, BlockEditRequest, VoxelModification,
+                 ChunkResync, LodIndex, LodIndexUpdate, LodRequest, LodData>;
 
 // Appends the encoded message to `out`. Strings longer than their limit are truncated at a UTF-8
 // boundary, so encoding never produces a message the peer would reject.

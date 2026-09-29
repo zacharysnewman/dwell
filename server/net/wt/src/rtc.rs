@@ -3,9 +3,10 @@
 //! Clients connect without a signaling round-trip. The invite link carries the server address,
 //! ICE credentials, and certificate fingerprint; the browser builds the server's answer locally
 //! and starts ICE. The server learns each client's ICE username from its first STUN binding
-//! request and creates a `str0m::Rtc` for it. Three pre-negotiated data channels mirror the
+//! request and creates a `str0m::Rtc` for it. Four pre-negotiated data channels mirror the
 //! WebTransport channels: 0 = control (reliable, ordered), 1 = world (reliable, ordered),
-//! 2 = datagrams (unordered, no retransmits). SCTP preserves message boundaries, so no framing.
+//! 2 = datagrams (unordered, no retransmits), 3 = lod (reliable, ordered). SCTP preserves message
+//! boundaries, so no framing.
 //!
 //! Security: the client pins the server's DTLS fingerprint (the same certificate as WebTransport).
 //! The server does not verify client certificates; clients are authenticated by the device-key
@@ -26,11 +27,14 @@ use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 
 use crate::server::{
-    CHANNEL_CONTROL, CHANNEL_WORLD, Command, Event, Limits, Sessions, next_session_id,
+    CHANNEL_CONTROL, CHANNEL_LOD, CHANNEL_WORLD, Command, Event, Limits, Sessions, next_session_id,
 };
 
 pub const TRANSPORT_WEBRTC: u8 = 2;
 const DATAGRAM_CHANNEL: u16 = 2;
+const LOD_DATA_CHANNEL: u16 = 3;
+/// Data channel index (in `Client::channels`) of each reliable channel's queue: control, world, lod.
+const RELIABLE_CHANNELS: [usize; 3] = [0, 1, 3];
 /// Clients that haven't opened their data channels by then are dropped.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Bound on half-open clients, so STUN floods can't allocate unbounded state.
@@ -63,12 +67,12 @@ pub fn random_ice_credentials() -> IceCreds {
 struct Client {
     rtc: Rtc,
     session: u32,
-    channels: [ChannelId; 3],
-    open: [bool; 3],
+    channels: [ChannelId; 4],
+    open: [bool; 4],
     connected: bool,
     created: Instant,
-    /// Reliable messages waiting for SCTP buffer space, per channel (control, world).
-    pending: [VecDeque<Vec<u8>>; 2],
+    /// Reliable messages waiting for SCTP buffer space, per channel (control, world, lod).
+    pending: [VecDeque<Vec<u8>>; 3],
 }
 
 pub async fn run(
@@ -128,7 +132,11 @@ pub async fn run(
                 let Some(c) = by_session.get(&session).and_then(|a| clients.get_mut(a)) else { continue };
                 match command {
                     Command::Reliable { channel, data } => {
-                        let idx = if channel == CHANNEL_WORLD { 1 } else { 0 };
+                        let idx = match channel {
+                            CHANNEL_WORLD => 1,
+                            CHANNEL_LOD => 2,
+                            _ => 0,
+                        };
                         c.pending[idx].push_back(data);
                         flush_pending(c);
                     }
@@ -192,24 +200,25 @@ fn new_client(data: &[u8], params: &RtcParams) -> Option<Client> {
                 false,
                 Reliability::MaxRetransmits { retransmits: 0 },
             ),
+            make(LOD_DATA_CHANNEL, true, Reliability::Reliable),
         ]
     };
     Some(Client {
         rtc,
         session: next_session_id(),
         channels,
-        open: [false; 3],
+        open: [false; 4],
         connected: false,
         created: now,
-        pending: [VecDeque::new(), VecDeque::new()],
+        pending: [VecDeque::new(), VecDeque::new(), VecDeque::new()],
     })
 }
 
 /// Writes queued reliable messages while SCTP has buffer space.
 fn flush_pending(c: &mut Client) {
-    for idx in 0..2 {
+    for (idx, &channel) in RELIABLE_CHANNELS.iter().enumerate() {
         while let Some(msg) = c.pending[idx].front() {
-            let Some(mut ch) = c.rtc.channel(c.channels[idx]) else {
+            let Some(mut ch) = c.rtc.channel(c.channels[channel]) else {
                 break;
             };
             match ch.write(true, msg) {
@@ -279,7 +288,7 @@ async fn drive(
                                 data: d.data,
                             }
                         }
-                        // Clients never send on the world channel; oversize messages are dropped.
+                        // Clients never send on the world or lod channels; oversize messages are dropped.
                         _ => continue,
                     };
                     let _ = events.send(event);

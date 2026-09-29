@@ -27,7 +27,10 @@ npm run e2e          # Playwright against a native server (build the server firs
 ```
 
 **Playing:** click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)
-crouch, F3 debug overlay (`?debug=1` opens it on load). `?netsim=150,20,5` simulates 150 ms RTT,
+crouch, double-tap Space to fly (creative flight: Space/C up and down, Shift faster, the higher the
+faster — high enough to see the whole disc; servers choose who may with `--flight`), F3 debug
+overlay (`?debug=1` opens it on load), F4 terrain map. The
+whole-world view (LOD) is on by default; `?lodcolors=1` tints it by level, `?lod=0` turns it off. `?netsim=150,20,5` simulates 150 ms RTT,
 20 ms jitter and 5 % loss.
 
 **Touch (phones, tablets; play in landscape):** drag on the left half for a floating joystick

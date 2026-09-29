@@ -8,6 +8,7 @@ namespace {
 
 using protocol::ControllerFlags::kClimbing;
 using protocol::ControllerFlags::kCrouching;
+using protocol::ControllerFlags::kFlying;
 using protocol::ControllerFlags::kGrounded;
 using protocol::ControllerFlags::kHasReleased;
 using protocol::ControllerFlags::kJumping;
@@ -45,7 +46,8 @@ protocol::InputFrame QuantizeInput(const Input& input, std::uint32_t seq) {
   f.move_y = static_cast<std::int8_t>(RoundHalfUp(std::clamp(my, -1.0f, 1.0f) * 127.0f));
   f.buttons = static_cast<std::uint16_t>((input.jump ? protocol::InputButtons::kJump : 0) |
                                          (input.run ? protocol::InputButtons::kRun : 0) |
-                                         (input.crouch ? protocol::InputButtons::kCrouch : 0));
+                                         (input.crouch ? protocol::InputButtons::kCrouch : 0) |
+                                         (input.fly ? protocol::InputButtons::kFly : 0));
   f.yaw = QuantizeYaw(input.look_yaw);
   f.pitch = QuantizePitch(input.look_pitch);
   return f;
@@ -58,6 +60,7 @@ Input DequantizeInput(const protocol::InputFrame& f) {
   input.jump = (f.buttons & protocol::InputButtons::kJump) != 0;
   input.run = (f.buttons & protocol::InputButtons::kRun) != 0;
   input.crouch = (f.buttons & protocol::InputButtons::kCrouch) != 0;
+  input.fly = (f.buttons & protocol::InputButtons::kFly) != 0;
   input.look_yaw = DequantizeYaw(f.yaw);
   input.look_pitch = DequantizePitch(f.pitch);
   return input;
@@ -68,7 +71,8 @@ protocol::ControllerState ToNet(const PlayerController& c, const GroundToNet& gr
   s.flags = static_cast<std::uint8_t>(
       (c.ground.grounded ? kGrounded : 0) | (c.jump.jumping ? kJumping : 0) |
       (c.crouch.crouching ? kCrouching : 0) | (c.climb.climbing ? kClimbing : 0) |
-      (c.climb.has_released ? kHasReleased : 0) | (c.swim.swimming ? kSwimming : 0));
+      (c.climb.has_released ? kHasReleased : 0) | (c.swim.swimming ? kSwimming : 0) |
+      (c.fly.flying ? kFlying : 0));
   s.current_x = c.horizontal.current.GetX();
   s.current_z = c.horizontal.current.GetZ();
   s.external_x = c.horizontal.external.GetX();
@@ -99,6 +103,7 @@ void FromNet(const protocol::ControllerState& s, const GroundFromNet& ground, Pl
   c.climb.climbing = (s.flags & kClimbing) != 0;
   c.climb.has_released = (s.flags & kHasReleased) != 0;
   c.swim.swimming = (s.flags & kSwimming) != 0;
+  c.fly.flying = (s.flags & kFlying) != 0;
   c.horizontal.current = Vec3(s.current_x, 0.0f, s.current_z);
   c.horizontal.external = Vec3(s.external_x, 0.0f, s.external_z);
   c.horizontal.contribution = Vec3(s.contribution_x, 0.0f, s.contribution_z);
@@ -119,7 +124,8 @@ std::uint8_t PlayerFlagsOf(const PlayerController& c, bool dead) {
   using namespace protocol::PlayerFlags;
   return static_cast<std::uint8_t>(
       (c.ground.grounded ? kGrounded : 0) | (c.crouch.crouching ? kCrouched : 0) |
-      (c.climb.climbing ? kClimbing : 0) | (c.swim.swimming ? kSwimming : 0) | (dead ? kDead : 0));
+      (c.climb.climbing ? kClimbing : 0) | (c.swim.swimming ? kSwimming : 0) |
+      (c.fly.flying ? kFlying : 0) | (dead ? kDead : 0));
 }
 
 }  // namespace dwell::player

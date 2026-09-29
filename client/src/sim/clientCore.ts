@@ -63,6 +63,8 @@ export const ControllerEvents = {
   climbEnded: 1 << 4,
   swimStarted: 1 << 5,
   swimEnded: 1 << 6,
+  flyStarted: 1 << 7,
+  flyEnded: 1 << 8,
 } as const;
 
 /** A targeted block (§6.5): its cell and the face the view ray entered through. */

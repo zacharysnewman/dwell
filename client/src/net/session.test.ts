@@ -6,6 +6,7 @@ import {
   MessageType,
   RejectReason,
   TransportKind,
+  WelcomeFlags,
 } from '../protocol/constants.gen';
 import { authTranscript, decode, encode, type Message } from '../protocol/messages';
 import { ClientSession, type SessionState } from './session';
@@ -87,6 +88,7 @@ describe('ClientSession', () => {
       generatorVersion: 0,
       serverTick: 10,
       verificationChunk: [0, 2, 0],
+      flags: WelcomeFlags.flight,
     });
     await flush();
     expect(states.at(-1)).toEqual({
@@ -95,6 +97,7 @@ describe('ClientSession', () => {
       worldSeed: 5n,
       generatorVersion: 0,
       verificationChunk: [0, 2, 0],
+      mayFly: true,
     });
 
     // Chunks that arrive before the game subscribes are held for it, in order.

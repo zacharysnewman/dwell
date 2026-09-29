@@ -151,6 +151,12 @@ export class ChunkStreamer {
     return this.loaded.has(chunkKey(coord));
   }
 
+  /** Loaded and drawable (meshed, or all air): it can stand in for level 0 of the LOD (§6.6). */
+  drawable(coord: ChunkCoord): boolean {
+    const key = chunkKey(coord);
+    return this.loaded.has(key) && (this.air.has(key) || this.meshed.has(key));
+  }
+
   /** Revision of a loaded chunk (Air: 0), or null. */
   revision(coord: ChunkCoord): number | null {
     return this.loaded.get(chunkKey(coord))?.revision ?? null;

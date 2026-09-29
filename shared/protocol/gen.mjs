@@ -44,6 +44,11 @@ for (const [k, v] of enumEntries(c.world)) {
   cpp.push(`inline constexpr int k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
 }
 cpp.push('');
+// Level of detail (ARCHITECTURE.md §6.6, §7.4).
+for (const [k, v] of enumEntries(c.lod)) {
+  cpp.push(`inline constexpr int kLod${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
+}
+cpp.push('');
 for (const [k, v] of enumEntries(c.limits)) {
   cpp.push(`inline constexpr std::size_t k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
 }
@@ -63,6 +68,7 @@ cppEnum('GroundKind', 'std::uint8_t', c.groundKinds);
 cppEnum('PlayerEventKind', 'std::uint8_t', c.playerEventKinds);
 cppEnum('DamageCause', 'std::uint8_t', c.damageCauses);
 cppEnum('ChunkForm', 'std::uint8_t', c.chunkForms);
+cppEnum('LodForm', 'std::uint8_t', c.lodForms);
 cppEnum('BlockEditAction', 'std::uint8_t', c.blockEditActions);
 cppEnum('VoxelModificationReason', 'std::uint8_t', c.voxelModificationReasons);
 const maxOf = (obj) => Math.max(...Object.values(obj));
@@ -72,6 +78,7 @@ cpp.push(`inline constexpr std::uint8_t kMaxGroundKind = ${maxOf(c.groundKinds)}
 cpp.push(`inline constexpr std::uint8_t kMaxPlayerEventKind = ${maxOf(c.playerEventKinds)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxDamageCause = ${maxOf(c.damageCauses)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxChunkForm = ${maxOf(c.chunkForms)};`);
+cpp.push(`inline constexpr std::uint8_t kMaxLodForm = ${maxOf(c.lodForms)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxBlockEditAction = ${maxOf(c.blockEditActions)};`);
 cpp.push(
   `inline constexpr std::uint8_t kMaxVoxelModificationReason = ${maxOf(c.voxelModificationReasons)};`,
@@ -90,6 +97,7 @@ const cppFlags = (name, type, obj) => {
 cppFlags('InputButtons', 'std::uint16_t', c.inputButtons);
 cppFlags('PlayerFlags', 'std::uint8_t', c.playerFlags);
 cppFlags('ControllerFlags', 'std::uint8_t', c.controllerFlags);
+cppFlags('WelcomeFlags', 'std::uint8_t', c.welcomeFlags);
 cpp.push('');
 cpp.push('}  // namespace dwell::protocol');
 cpp.push('');
@@ -116,6 +124,10 @@ ts.push('export const World = {');
 for (const [k, v] of enumEntries(c.world)) ts.push(`  ${k}: ${v},`);
 ts.push('} as const;');
 ts.push('');
+ts.push('export const Lod = {');
+for (const [k, v] of enumEntries(c.lod)) ts.push(`  ${k}: ${v},`);
+ts.push('} as const;');
+ts.push('');
 ts.push('export const Limits = {');
 for (const [k, v] of enumEntries(c.limits)) ts.push(`  ${k}: ${v},`);
 ts.push('} as const;');
@@ -137,6 +149,7 @@ tsEnum('GroundKind', c.groundKinds);
 tsEnum('PlayerEventKind', c.playerEventKinds);
 tsEnum('DamageCause', c.damageCauses);
 tsEnum('ChunkForm', c.chunkForms);
+tsEnum('LodForm', c.lodForms);
 tsEnum('BlockEditAction', c.blockEditActions);
 tsEnum('VoxelModificationReason', c.voxelModificationReasons);
 const tsFlags = (name, obj) => {
@@ -148,6 +161,7 @@ const tsFlags = (name, obj) => {
 tsFlags('InputButtons', c.inputButtons);
 tsFlags('PlayerFlags', c.playerFlags);
 tsFlags('ControllerFlags', c.controllerFlags);
+tsFlags('WelcomeFlags', c.welcomeFlags);
 ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
 

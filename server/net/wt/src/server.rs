@@ -19,6 +19,8 @@ use crate::rtc::{self, RtcParams};
 
 pub const CHANNEL_CONTROL: u8 = 0;
 pub const CHANNEL_WORLD: u8 = 1;
+/// Level-of-detail data (ARCHITECTURE.md §6.6): its own stream, so it never delays `world`.
+pub const CHANNEL_LOD: u8 = 2;
 pub const TRANSPORT_WEBTRANSPORT: u8 = 1;
 
 #[derive(Clone, Copy)]
@@ -256,6 +258,7 @@ async fn run_session(
 
     let mut control_tx: Option<SendStream> = None;
     let mut world_tx: Option<SendStream> = None;
+    let mut lod_tx: Option<SendStream> = None;
     // Control replies can only be written once the client has opened the control stream.
     let mut pending_control: Vec<Vec<u8>> = Vec::new();
     let (inbound_tx, mut inbound) = mpsc::unbounded_channel::<Result<Vec<u8>, ()>>();
@@ -304,11 +307,16 @@ async fn run_session(
                         Some(tx) => { if write_frame(tx, &data).await.is_err() { break; } }
                         None => pending_control.push(data),
                     },
-                    Some((_, Command::Reliable { channel: _, data })) => {
-                        if world_tx.is_none() {
-                            world_tx = open_world_stream(&conn).await;
+                    Some((_, Command::Reliable { channel, data })) => {
+                        let (stream, id) = if channel == CHANNEL_LOD {
+                            (&mut lod_tx, CHANNEL_LOD)
+                        } else {
+                            (&mut world_tx, CHANNEL_WORLD)
+                        };
+                        if stream.is_none() {
+                            *stream = open_uni_stream(&conn, id).await;
                         }
-                        match world_tx.as_mut() {
+                        match stream.as_mut() {
                             Some(tx) => { if write_frame(tx, &data).await.is_err() { break; } }
                             None => break,
                         }
@@ -334,8 +342,9 @@ async fn run_session(
     let _ = events.send(Event::Disconnected { session });
 }
 
-async fn open_world_stream(conn: &Connection) -> Option<SendStream> {
+/// A server-opened unidirectional stream for a reliable channel (`world`, `lod`).
+async fn open_uni_stream(conn: &Connection, channel: u8) -> Option<SendStream> {
     let mut tx = conn.open_uni().await.ok()?.await.ok()?;
-    tx.write_all(&[CHANNEL_WORLD]).await.ok()?;
+    tx.write_all(&[channel]).await.ok()?;
     Some(tx)
 }

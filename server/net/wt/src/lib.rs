@@ -56,7 +56,7 @@ pub struct DwellNetEvent {
     pub session: u32,
     /// Connected: transport kind (protocol TransportKind; 1 = WebTransport, 2 = WebRTC).
     pub transport: u8,
-    /// Reliable: channel id (0 = control, 1 = world).
+    /// Reliable: channel id (0 = control, 1 = world, 2 = lod).
     pub channel: u8,
     /// Connected: transport binding: SHA-256 of the server certificate (shared by WebTransport and
     /// WebRTC DTLS).
@@ -276,7 +276,8 @@ pub unsafe extern "C" fn dwell_net_poll(net: *mut DwellNet, out: *mut DwellNetEv
     true
 }
 
-/// Queues a reliable message on `channel` (0 = control, 1 = world). False if the session is gone.
+/// Queues a reliable message on `channel` (0 = control, 1 = world, 2 = lod). False if the session
+/// is gone.
 ///
 /// # Safety
 /// `net` must be a live handle; `data` must point to `len` readable bytes.

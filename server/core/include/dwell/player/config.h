@@ -65,6 +65,18 @@ struct PlayerControllerConfig {
     float buoyancy = 12.0f;       // m/s² per unit of submersion off float_fraction
     float drag = 2.0f;            // 1/s
   } swim;
+  struct Fly {                // ◆ Dwell addition: creative flight (PLAYER_CONTROLLER.md §6.7)
+    float speed = 11.0f;      // m/s near the ground, walking
+    float run_factor = 2.5f;  // while running
+    float boost_height =
+        32.0f;          // m above sea level per extra ×1 of speed (so ascent is exponential)
+    float drag = 8.0f;  // 1/s: how quickly velocity follows the wish
+    // Speed limit below the top of the terrain band (WORLD_MAX_Y): collision around the player is
+    // built a few ticks ahead, and the server has to generate the chunks being flown through.
+    float terrain_speed = 400.0f;
+    float ceiling = static_cast<float>(protocol::kFlightCeiling);  // feet height (m)
+    float horizontal_limit = 8'400'000.0f;  // |x|, |z| (m): just past the world's rim
+  } fly;
   struct Damage {  // ◆ Dwell addition
     float fall_damage_min_speed = 12.0f;
     float fall_damage_per_speed = 8.0f;  // health points per m/s above the minimum

@@ -4,6 +4,8 @@ add_library(dwell_core
   src/crypto.cpp
   src/entropy.cpp
   src/jolt_runtime.cpp
+  src/lod.cpp
+  src/lod_propagation.cpp
   src/physics_world.cpp
   src/server.cpp
   src/terrain_collision.cpp
