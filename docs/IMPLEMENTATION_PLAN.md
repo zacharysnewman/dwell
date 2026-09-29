@@ -685,7 +685,8 @@ Deviations and additions (4c):
 - **Loading status in a corner, and phone overlays** (playtest): "Loading terrain…" moved from the
   centre of the view to a bottom-left status (`hudText.test.ts` failed before); on touch screens
   the connection status and F3 overlay stack below the hotbar instead of under it
-  (`touch.spec.ts` layout test failed before).
+  (`touch.spec.ts` layout test failed before); an ⓘ button top right toggles the debug overlay
+  on touch screens, which have no F3 (its e2e test failed before).
 - **Replaced sessions lost their Reject** (CI flake, seen twice): a client write racing the
   server's close failed first and dropped the pending `Reject(Replaced)`; the WebTransport client
   now reads the control stream to its end before reporting the close (`webTransport.test.ts`

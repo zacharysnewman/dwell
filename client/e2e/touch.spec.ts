@@ -129,7 +129,7 @@ test('on a phone the hotbar, connection status and debug overlay do not overlap'
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
     .toBe(true);
-  const selectors = ['#hotbar', '#net-status', '#debug-overlay'];
+  const selectors = ['#hotbar', '#net-status', '#debug-overlay', '#touch-debug'];
   const boxes: { x: number; y: number; width: number; height: number }[] = [];
   for (const selector of selectors) {
     await expect(page.locator(selector)).toBeVisible();
@@ -144,4 +144,24 @@ test('on a phone the hotbar, connection status and debug overlay do not overlap'
       expect(overlap, `${selectors[a]} overlaps ${selectors[a + 1 + k]}`).toBe(false);
     });
   });
+});
+
+test('on a phone a button toggles the debug overlay (no F3 key)', async ({ page }) => {
+  await page.goto('./?world=flat');
+  await expect
+    .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
+    .toBe(true);
+  const cdp = await page.context().newCDPSession(page);
+  const tapButton = async (id: number) => {
+    const box = await page.locator('#touch-debug').boundingBox();
+    if (!box) throw new Error('no debug button');
+    const p = { x: box.x + box.width / 2, y: box.y + box.height / 2, id };
+    await touch(cdp, 'touchStart', [p]);
+    await touch(cdp, 'touchEnd', []);
+  };
+  await expect(page.locator('#debug-overlay')).toBeHidden();
+  await tapButton(1);
+  await expect(page.locator('#debug-overlay')).toBeVisible();
+  await tapButton(2);
+  await expect(page.locator('#debug-overlay')).toBeHidden();
 });

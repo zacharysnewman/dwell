@@ -140,6 +140,9 @@ function start(): App {
   };
   app.input.onScroll = (delta) => app.interaction?.scroll(delta);
   // Creative flight (§8.3): double-tap Space or Jump, or the Fly button.
+  touch.onDebug = () => {
+    app.hud.toggleDebug();
+  };
   touch.onFly = () => {
     input.flight.toggle();
   };

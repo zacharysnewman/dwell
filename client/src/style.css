@@ -256,6 +256,28 @@ body {
   touch-action: none;
 }
 
+/* Debug overlay toggle (F3 on touch): top right, clear of the hotbar. */
+#touch-debug {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgb(255 255 255 / 45%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 35%);
+  color: #fff;
+  font:
+    italic 700 18px Georgia,
+    serif;
+  touch-action: none;
+}
+
+#touch-debug.pressed {
+  background: rgb(255 255 255 / 40%);
+  color: #111;
+}
+
 #touch-move {
   left: 0;
   width: 45%;

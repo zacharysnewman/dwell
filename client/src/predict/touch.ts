@@ -46,6 +46,8 @@ export const TOUCH_BUTTONS = {
   run: { label: 'Run', id: 'touch-run', mode: 'toggle' },
   // Creative flight on/off (the flight toggle holds the state; the button shows it).
   fly: { label: 'Fly', id: 'touch-fly', mode: 'hold' },
+  // The F3 debug overlay (phones have no function keys); top right, clear of the hotbar.
+  debug: { label: 'i', id: 'touch-debug', mode: 'hold' },
   crouch: { label: 'Crouch', id: 'touch-crouch', mode: 'hold' },
   jump: { label: 'Jump', id: 'touch-jump', mode: 'hold' },
 } as const satisfies Record<string, { label: string; id: string; mode: TouchButtonMode }>;
@@ -102,6 +104,8 @@ export class TouchControls {
   onPlaceMode: ((place: boolean) => void) | null = null;
   /** The Fly button, or Jump (a double tap toggles flight, as Space does), was pressed. */
   onFly: (() => void) | null = null;
+  /** The debug button was pressed (toggles the overlay, as F3 does). */
+  onDebug: (() => void) | null = null;
   onJumpPress: ((nowMs: number) => void) | null = null;
   private readonly flyButton: HTMLButtonElement;
   private runLatched = false;
@@ -144,8 +148,12 @@ export class TouchControls {
       this.onPlaceMode?.(place);
     });
     buttons.append(edit, this.flyButton, run, crouch, jump);
+    const debug = touchButton(TOUCH_BUTTONS.debug, (on) => {
+      if (on) this.onDebug?.();
+    });
+    debug.setAttribute('aria-label', 'Debug overlay');
 
-    this.root.append(moveZone, lookZone, this.stickBase, buttons);
+    this.root.append(moveZone, lookZone, this.stickBase, buttons, debug);
     parent.append(this.root);
 
     moveZone.addEventListener('pointerdown', this.onStickDown);

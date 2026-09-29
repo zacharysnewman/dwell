@@ -35,7 +35,8 @@ whole-world view (LOD) is on by default; `?lodcolors=1` tints it by level, `?lod
 
 **Touch (phones, tablets; play in landscape):** drag on the left half for a floating joystick
 (push past the ring to run), drag on the right half to look, and use the Jump and Crouch (hold)
-and Run (toggle) buttons. On iOS, *Share → Add to Home Screen* runs it full screen. Safari has no
+and Run (toggle) buttons; Fly toggles creative flight and the ⓘ button (top right) the debug
+overlay. On iOS, *Share → Add to Home Screen* runs it full screen. Safari has no
 WebTransport, so use local mode or a WebRTC invite there.
 The default world is procedural terrain (oceans, beaches, plains, forests, deserts, snowy land,
 mountains, caves); `?seed=N` picks the seed. `?world=playground` loads the movement playground
