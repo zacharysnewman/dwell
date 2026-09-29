@@ -90,7 +90,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    implements the same interface as the network transports. Same code, same protocol, same
    device-key handshake, no network. The page starts local mode when it has no invite link (or
    with `?local=1`). Local mode and dedicated servers generate the **procedural terrain** world
-   (generator version 3, §6.3) by default; `?world=playground|flat` and `?seed=N` (local mode) or
+   (generator version 4, §6.3) by default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
    **[built, Phase 3e]** Local worlds are saved in the browser: one world file per generator and
@@ -398,7 +398,9 @@ features) is architecture; its current *content* — the biomes, surface materia
 boulders — is prototype (§6.1).
 
 **Built (Phases 3a, 3c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
-`src/worldgen/`) is **generator version 3** (3c: the planet-scale world; version 2 is retired) and
+`src/worldgen/`) is **generator version 4** (3c: the planet-scale world as version 3; Phase 4 adds
+super tall massifs as version 4; versions 2 and 3 are retired — a world saved with one loads as the
+flat world) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
 tests and movement work. Players spawn at the generator's spawn point: the first level, open,
 tree-free land found in an 8 m spiral from the origin. A chunk takes ~1.2 ms to generate natively
@@ -426,9 +428,11 @@ A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
   translations in double precision, and debug lines are drawn relative to their first point. The
   player controller suite, golden trace and netcode tests run both at the origin and ~8,000 km
   from it (`--dwell-origin-x=far`), natively and in WASM, with the same results.
-- **Scale of terrain:** generator version 3 adds a placeholder planet-scale layer (prototype
-  content, §6.1): continents and oceans a few hundred kilometres across (a 262 km fBm shifting
-  continentalness), ranges up to ~1 950 m on large landmasses and basins to ~−540 m under large
+- **Scale of terrain:** a placeholder planet-scale layer (prototype content, §6.1; generator
+  version 3, extended in 4): continents and oceans a few hundred kilometres across (a 262 km fBm
+  shifting continentalness), ranges up to ~1 950 m on large landmasses, **massifs** in the cores
+  of the largest ranges whose crests rise a further 3,600 m (peaks ~5.3–5.6 km, about 1 % of land
+  above 3 km; kept under `WORLD_MAX_Y` with room for trees), and basins to ~−540 m under large
   oceans. The full-detail world (~5 × 10¹³ chunks) is never generated wholesale — distant terrain
   comes from the LOD system (§6.6).
 
@@ -451,7 +455,8 @@ arithmetic, so features placed by point queries agree with the chunks.
 2. **Base height (2D).** A continentalness spline (deep ocean ~−42 m → coast ~2 m → uplands
    ~40 m; sea level 0), plus biome-blended hills (fBm, amplitude 4–12 m by biome), plus ridged
    fractal mountains where continentalness is high and erosion low (up to ~190 m), plus the
-   planet-scale ranges and basins.
+   planet-scale ranges (1,800 m at a crest, 5,400 m where the 262 km field is highest: the
+   massifs of version 4) and basins.
 3. **Density (3D).** `density = (height − y) + overhang × overhangNoise3D(x, y, z)`; solid where
    `density > 0`. The overhang amplitude is ~3.5 m on land and up to ~17 m in mountains, giving
    overhangs and cliffs.
@@ -485,7 +490,7 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   and comparisons, `-ffp-contract=off`, no `-ffast-math`, no library calls.
 - A golden test (`server/tests/worldgen/golden/chunk-hashes.txt`) hashes chunks across the
   pipeline for two seeds — surface, caves, deep rock, bedrock, sky, the top of the world, ocean,
-  mountains, the rim, and terrain ~8,000 km out; CI runs it natively and under WASM (Node) and in
+  mountains, the rim, terrain ~8,000 km out, and a massif ~5.4 km up; CI runs it natively and under WASM (Node) and in
   the client's worldgen module.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
@@ -801,7 +806,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   pass and then, after a depth clear, a near pass (0.05 m to `LOD_NEAR_SPLIT_M`); everything is in
   both passes and each camera's frustum culls, so a section straddling the split is clipped at it.
   The far pass's near plane moves out to 0.8 × the camera's height above `WORLD_MAX_Y` (nothing is
-  nearer up there), keeping depth precise from orbit; fog starts at 20 km (or twice the altitude).
+  nearer up there), keeping depth precise from orbit. There is no distance fog for now: the whole
+  world is drawn without haze out to the rim (`render/fog.ts` holds the switch; when on, its start
+  and full-fog distances grow with height far above the terrain).
   The scene has no background colour — three.js would clear the far pass with it — the renderer's
   clear colour is the sky.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the

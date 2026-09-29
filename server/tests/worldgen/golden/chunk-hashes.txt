@@ -1,4 +1,4 @@
-# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 3
+# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 4
 0 0 0 0 2d2f2bba6ed62e17
 0 0 -1 0 582f6383c951a7c6
 0 0 -3 0 a294412ea0517d0a
@@ -18,3 +18,4 @@
 0 249990 0 10 a6b6dcb4d39f262a
 20260925 -3 -5 249000 cf2bb420213629cf
 0 -249990 0 -5 64a93be9f6ed88c3
+0 3036 169 36828 34c040b5c6e7627d

@@ -49,7 +49,7 @@ void Usage() {
       "  --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps\n"
       "                  the world in memory only)\n"
       "  --advertise IP  address players use to reach this server (invite links, WebRTC)\n"
-      "  --seed N, --generator N  a new world's seed and generator: 3 = procedural terrain\n"
+      "  --seed N, --generator N  a new world's seed and generator: 4 = procedural terrain\n"
       "                  (default), 1 = movement playground, 0 = flat (a saved world keeps its "
       "own)\n"
       "  --name, --motd, --max-players, --edits everyone|ops|nobody, --flight everyone|ops|nobody\n"
