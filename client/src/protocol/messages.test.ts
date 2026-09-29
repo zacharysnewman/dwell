@@ -18,6 +18,7 @@ import {
   PlayerState,
   RejectReason,
   VoxelModificationReason,
+  WelcomeFlags,
 } from './constants.gen';
 import {
   authTranscript,
@@ -144,7 +145,14 @@ const expected: Record<string, Message> = {
         yaw: -16384,
         pitch: 32767,
       },
-      { seq: 42, moveX: 0, moveY: 90, buttons: InputButtons.crouch, yaw: 12345, pitch: -100 },
+      {
+        seq: 42,
+        moveX: 0,
+        moveY: 90,
+        buttons: InputButtons.crouch | InputButtons.fly,
+        yaw: 12345,
+        pitch: -100,
+      },
     ],
   },
   physics_snapshot: {
@@ -225,6 +233,7 @@ const expected: Record<string, Message> = {
     generatorVersion: 7,
     serverTick: 123456,
     verificationChunk: [-3, 2, 1000000],
+    flags: WelcomeFlags.flight,
   },
   worldgen_check: { type: MessageType.WorldgenCheck, hash: 0xfedcba9876543210n },
   chunk_data_generated: {

@@ -70,7 +70,7 @@ def snapshot_local(flags, health, state, ctrl, input_buffer=0, knockback=0):
 PLAYER_INPUT = (
     struct.pack("<BIB", T["PlayerInput"], 300, 2)
     + input_frame(41, 127, -127, B["jump"] | B["run"], -16384, 32767)
-    + input_frame(42, 0, 90, B["crouch"], 12345, -100)
+    + input_frame(42, 0, 90, B["crouch"] | B["fly"], 12345, -100)
 )
 SNAPSHOT = (
     struct.pack("<BII", T["PhysicsSnapshot"], 603, 42)
@@ -232,8 +232,8 @@ vectors = {
     "client_hello": struct.pack("<BH", T["ClientHello"], 1) + s("0.1.0") + PK + s("Zack"),
     "challenge": struct.pack("<B", T["Challenge"]) + NONCE,
     "client_auth": struct.pack("<B", T["ClientAuth"]) + SIG,
-    "welcome": struct.pack("<BHQIIiii", T["Welcome"], 42, 0x0123456789ABCDEF, 7, 123456,
-                           -3, 2, 1000000),
+    "welcome": struct.pack("<BHQIIiiiB", T["Welcome"], 42, 0x0123456789ABCDEF, 7, 123456,
+                           -3, 2, 1000000, c["welcomeFlags"]["flight"]),
     "reject": struct.pack("<BB", T["Reject"], c["rejectReasons"]["ProtocolVersion"])
     + s("Server runs protocol 2"),
     "ping": struct.pack("<BId", T["Ping"], 9, 1000.0),
@@ -289,7 +289,7 @@ malformed = {
     "!snapshot_truncated_remote": SNAPSHOT[:-1],
     "!snapshot_missing_ladder": SNAPSHOT_MIN[:9 + 44] + bytes([CF["climbing"]]) + SNAPSHOT_MIN[9 + 45:],
     "!snapshot_position_nan": SNAPSHOT_MIN[:9] + f64s(float("nan")) + SNAPSHOT_MIN[9 + 8:],
-    "!respawn_out_of_range": EVENT_HEAD(EK["Respawn"]) + f64s(9e6, 0.0, 0.0),
+    "!respawn_out_of_range": EVENT_HEAD(EK["Respawn"]) + f64s(4e7, 0.0, 0.0),
     "!event_bad_kind": EVENT_HEAD(0) + f32s(0, 0, 0),
     "!event_bad_cause": EVENT_HEAD(EK["Damage"]) + struct.pack("<BB", 1, 0),
     "!chunk_bad_form": chunk_head(3, (0, 0, 0), 0),

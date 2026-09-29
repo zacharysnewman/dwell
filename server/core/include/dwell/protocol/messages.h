@@ -58,6 +58,7 @@ struct Welcome {
   std::uint32_t server_tick = 0;
   // Chunk the client generates and hashes for WorldgenCheck (§6.3).
   ChunkCoordNet verification_chunk{};
+  std::uint8_t flags = 0;  // WelcomeFlags
 };
 struct Reject {
   RejectReason reason = RejectReason::kMalformed;

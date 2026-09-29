@@ -1,5 +1,6 @@
 // Phase 4c: the whole-world view (ARCHITECTURE.md §6.6) in local mode — the streamed chunks stand
-// in for level 0 around the player, and the dev camera, high above, sees the whole disc drawn.
+// in for level 0 around the player, who then flies (creative flight) high enough to see the whole
+// disc drawn.
 import { expect, test, type Page } from '@playwright/test';
 
 interface LodStats {
@@ -10,9 +11,10 @@ interface LodStats {
   cacheBytes: number;
 }
 interface Hooks {
-  state(): { terrainReady: boolean; lod: LodStats | null; devcam: number[] | null } | null;
+  state(): { terrainReady: boolean; lod: LodStats | null; feet: number[]; flying: boolean } | null;
   look(yaw: number, pitch: number): void;
-  devcam(position: [number, number, number] | null): void;
+  press(code: string, down: boolean): void;
+  fly(on: boolean): void;
 }
 const hooks = () => (globalThis as unknown as { __dwell?: Hooks }).__dwell;
 
@@ -20,10 +22,12 @@ async function lod(page: Page): Promise<LodStats | null> {
   return page.evaluate(`(${hooks.toString()})()?.state()?.lod ?? null`);
 }
 
-test('local mode: LOD around the player, and the whole disc from the dev camera', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
+async function call(page: Page, expression: string): Promise<unknown> {
+  return page.evaluate(`(${hooks.toString()})()?.${expression}`);
+}
+
+test('local mode: LOD around the player, and the whole disc after flying up', async ({ page }) => {
+  test.setTimeout(240_000);
   await page.goto('./?local=1');
   await expect
     .poll(async () => (await lod(page))?.chunkSections ?? 0, { timeout: 60_000 })
@@ -32,9 +36,22 @@ test('local mode: LOD around the player, and the whole disc from the dev camera'
   // LOD sections beyond the streamed chunks.
   expect(ground?.drawn.reduce((a, b) => a + b, 0) ?? 0).toBeGreaterThan(0);
 
-  // Up to 24,000 km, looking straight down: the disc (radius 8,192 km) fills ~2/3 of the view.
-  await page.evaluate(`(${hooks.toString()})()?.devcam([0, 24000000, 0])`);
-  await page.evaluate(`(${hooks.toString()})()?.look(0, -89)`);
+  // Fly up (running doubles the climb) to the ceiling, 24,000 km, looking straight down: the disc
+  // (radius 8,192 km) fills ~2/3 of the view.
+  await call(page, 'fly(true)');
+  await call(page, 'look(0, -89)');
+  await call(page, "press('Space', true)");
+  await call(page, "press('ShiftLeft', true)");
+  await expect
+    .poll(async () => ((await call(page, 'state()?.flying')) as boolean | undefined) ?? false)
+    .toBe(true);
+  const climb = Date.now();
+  await expect
+    .poll(async () => ((await call(page, 'state()?.feet[1]')) as number | undefined) ?? 0, {
+      timeout: 150_000,
+    })
+    .toBeGreaterThan(23_900_000);
+  console.log(`flew to the ceiling in ${((Date.now() - climb) / 1000).toFixed(1)} s`);
   const start = Date.now();
   await expect
     .poll(

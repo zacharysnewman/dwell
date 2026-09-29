@@ -207,7 +207,9 @@ void Server::HandleInput(Session& s, const PlayerInput& m) {
     ++s.stats.inputs_received;
     const auto at = std::find_if(s.inputs.begin(), s.inputs.end(),
                                  [&](const QueuedInput& q) { return q.seq > f.seq; });
-    s.inputs.insert(at, {f.seq, player::DequantizeInput(f)});
+    player::Input input = player::DequantizeInput(f);
+    input.fly = input.fly && MayFly(s);  // creative flight is the server's to allow (§8.3)
+    s.inputs.insert(at, {f.seq, input});
     while (s.inputs.size() > kMaxQueuedInputs) s.inputs.pop_front();
   }
 }
@@ -279,12 +281,14 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
       joined.player_id = AllocatePlayerId();
       joined.phase = Phase::kJoined;
       joined.edit_credit = kEditBurst;
-      SendReliable(id,
-                   Welcome{joined.player_id,
-                           config_.world_seed,
-                           config_.generator_version,
-                           tick_,
-                           {verification_chunk_.x, verification_chunk_.y, verification_chunk_.z}});
+      SendReliable(
+          id,
+          Welcome{joined.player_id,
+                  config_.world_seed,
+                  config_.generator_version,
+                  tick_,
+                  {verification_chunk_.x, verification_chunk_.y, verification_chunk_.z},
+                  static_cast<std::uint8_t>(MayFly(joined) ? protocol::WelcomeFlags::kFlight : 0)});
       // A returning player continues where it left the world (§6.4), unless it was dead.
       std::optional<storage::PlayerRecord> saved;
       if (config_.store) saved = config_.store->db().LoadPlayer(joined.public_key);
@@ -651,8 +655,11 @@ void Server::Resync(SessionId id, Session& s, const ChunkResync& m) {
   }
 }
 
-bool Server::MayEdit(const Session& s) const {
-  switch (config_.edits) {
+bool Server::MayEdit(const Session& s) const { return Allowed(config_.edits, s); }
+bool Server::MayFly(const Session& s) const { return Allowed(config_.flight, s); }
+
+bool Server::Allowed(EditPolicy policy, const Session& s) const {
+  switch (policy) {
     case EditPolicy::kEveryone:
       return true;
     case EditPolicy::kOps:

@@ -97,6 +97,7 @@ const cppFlags = (name, type, obj) => {
 cppFlags('InputButtons', 'std::uint16_t', c.inputButtons);
 cppFlags('PlayerFlags', 'std::uint8_t', c.playerFlags);
 cppFlags('ControllerFlags', 'std::uint8_t', c.controllerFlags);
+cppFlags('WelcomeFlags', 'std::uint8_t', c.welcomeFlags);
 cpp.push('');
 cpp.push('}  // namespace dwell::protocol');
 cpp.push('');
@@ -160,6 +161,7 @@ const tsFlags = (name, obj) => {
 tsFlags('InputButtons', c.inputButtons);
 tsFlags('PlayerFlags', c.playerFlags);
 tsFlags('ControllerFlags', c.controllerFlags);
+tsFlags('WelcomeFlags', c.welcomeFlags);
 ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
 

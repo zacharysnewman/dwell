@@ -12,6 +12,7 @@ add_executable(dwell_tests
   player/movement_test.cpp
   player/vertical_crouch_test.cpp
   player/platform_climb_swim_test.cpp
+  player/flight_test.cpp
   player/scenario_test.cpp
   player/netcode_test.cpp
   worldgen/worldgen_test.cpp

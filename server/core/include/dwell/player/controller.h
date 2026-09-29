@@ -33,6 +33,7 @@ enum class State : std::uint8_t {
   kFalling,
   kClimbing,
   kSwimming,
+  kFlying,
 };
 
 // One tick of input. Buttons are held state; presses are detected in-sim.
@@ -41,6 +42,9 @@ struct Input {
   float look_yaw = 0.0f;    // degrees; 0 = +Z, 90 = +X (right-handed: right of +Z is −X)
   float look_pitch = 0.0f;  // degrees; positive = up
   bool jump = false, run = false, crouch = false;
+  // Creative flight (◆ Dwell): held while the player's flight mode is on; the server clears it
+  // for players who may not fly.
+  bool fly = false;
 };
 
 struct GroundInfo {
@@ -94,6 +98,11 @@ struct SwimState {  // Dwell addition
   Vec3 velocity = Vec3::sZero();
 };
 
+struct FlyState {  // ◆ Dwell addition: creative flight
+  bool flying = false;
+  Vec3 velocity = Vec3::sZero();
+};
+
 struct PlatformState {
   GroundRef ground;                      // what the ground probe sees (tracked even while airborne)
   Vec3 ground_velocity = Vec3::sZero();  // velocity of that ground under the player
@@ -110,6 +119,8 @@ inline constexpr std::uint32_t kClimbStarted = 1u << 3;
 inline constexpr std::uint32_t kClimbEnded = 1u << 4;
 inline constexpr std::uint32_t kSwimStarted = 1u << 5;
 inline constexpr std::uint32_t kSwimEnded = 1u << 6;
+inline constexpr std::uint32_t kFlyStarted = 1u << 7;
+inline constexpr std::uint32_t kFlyEnded = 1u << 8;
 }  // namespace Events
 
 // Complete controller state: a plain value, copied into history buffers and snapshots.
@@ -123,6 +134,7 @@ struct PlayerController {
   CrouchState crouch;
   ClimbState climb;
   SwimState swim;
+  FlyState fly;
   PlatformState platform;
   Vec3 target_velocity = Vec3::sZero();
   std::uint32_t events = 0;
@@ -130,7 +142,7 @@ struct PlayerController {
 
   bool JumpPressed() const { return input.jump && !previous_input.jump; }
   bool CrouchPressed() const { return input.crouch && !previous_input.crouch; }
-  bool Exclusive() const { return climb.climbing || swim.swimming; }
+  bool Exclusive() const { return climb.climbing || swim.swimming || fly.flying; }
 };
 static_assert(std::is_trivially_copyable_v<PlayerController>);
 
@@ -191,6 +203,7 @@ class Players {
   void StepInput(Player& p);
   void StepProbe(Player& p);
   void StepPlatform(Player& p);
+  void StepFly(Player& p);
   void StepCrouch(Player& p);
   void StepJump(Player& p);
   void StepClimb(Player& p);

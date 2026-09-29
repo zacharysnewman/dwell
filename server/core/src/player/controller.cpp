@@ -207,6 +207,10 @@ PlayerHandle Players::Spawn(const PlayerControllerConfig& config, RVec3 feet, fl
   s.mAllowSleeping = false;
   s.mMotionQuality = JPH::EMotionQuality::LinearCast;
   s.mEnhancedInternalEdgeRemoval = true;
+  // Creative flight near the ceiling is far faster than Jolt's default 500 m/s limit.
+  s.mMaxLinearVelocity = std::max(s.mMaxLinearVelocity,
+                                  config.fly.speed * config.fly.run_factor *
+                                      (1.0f + config.fly.ceiling / config.fly.boost_height) * 1.1f);
   p->body = physics_.bodies().CreateAndAddBody(s, JPH::EActivation::Activate);
 
   PlayerHandle handle = 0;
@@ -316,7 +320,9 @@ void Players::Tick() {
     for (Player* p : players_) {
       if (!p) continue;
       const RVec3 pos = bodies.GetCenterOfMassPosition(p->body);
-      const float reach = 3.0f + bodies.GetLinearVelocity(p->body).Length() * kDt * 2;
+      // Capped: fast flight high above the terrain must not ask for kilometres of collision.
+      const float reach =
+          3.0f + std::min(64.0f, bodies.GetLinearVelocity(p->body).Length() * kDt * 2);
       // The anchor's body gets the ground around the player before the player switches to it.
       const auto anchor = core::TerrainCollision::AnchorFor(pos, p->anchor);
       terrain_->EnsureBox(pos - Vec3::sReplicate(reach), pos + Vec3::sReplicate(reach), anchor);
@@ -346,10 +352,10 @@ void Players::Tick() {
   // Pass-major, like the PPC's Quantum system group: each pass runs for every player in turn.
   using Pass = void (Players::*)(Player&);
   static constexpr Pass kPasses[] = {
-      &Players::StepInput,     &Players::StepProbe,      &Players::StepPlatform,
-      &Players::StepCrouch,    &Players::StepJump,       &Players::StepClimb,
-      &Players::StepSwim,      &Players::StepHorizontal, &Players::StepVertical,
-      &Players::StepAggregate, &Players::StepState,
+      &Players::StepInput,    &Players::StepProbe,     &Players::StepPlatform,
+      &Players::StepFly,      &Players::StepCrouch,    &Players::StepJump,
+      &Players::StepClimb,    &Players::StepSwim,      &Players::StepHorizontal,
+      &Players::StepVertical, &Players::StepAggregate, &Players::StepState,
   };
   for (Pass pass : kPasses) {
     for (Player* p : players_) {
@@ -687,6 +693,7 @@ void Players::StepClimb(Player& p) {
   const bool found = FindLadder(p, ladder, in_released);
   if (climb.has_released && !in_released) climb.has_released = false;  // left that column
 
+  if (c.fly.flying) return;
   if (!climb.climbing) {
     if (!found || c.swim.swimming) return;
     climb.climbing = true;
@@ -769,7 +776,7 @@ void Players::StepSwim(Player& p) {
   auto& bodies = physics_.bodies();
   const RVec3 position = bodies.GetCenterOfMassPosition(p.body);
   swim.submerged = query_.SubmergedFraction(position, cfg.HalfHeight(c.crouch.crouching));
-  if (c.climb.climbing) return;
+  if (c.climb.climbing || c.fly.flying) return;
 
   const Vec3 body_velocity = bodies.GetLinearVelocity(p.body);
   if (!swim.swimming) {
@@ -810,6 +817,67 @@ void Players::StepSwim(Player& p) {
   velocity +=
       Vec3::sAxisY() * (cfg.swim.buoyancy * (swim.submerged - cfg.swim.float_fraction) * kDt);
   swim.velocity = velocity;
+
+  c.horizontal.current = Vec3::sZero();
+  c.horizontal.external = Vec3::sZero();
+  c.horizontal.contribution = Flat(velocity);
+  c.vertical.accumulated_y = 0.0f;
+  c.vertical.target_y = velocity.GetY();
+}
+
+// Creative flight (◆ Dwell, PLAYER_CONTROLLER.md §6.7): an exclusive mode while the fly input is
+// held — no gravity, velocity eased towards the wish: horizontal from the move input (camera yaw),
+// jump up, crouch down. Speed grows with height above the sea, so climbing is exponential and the
+// whole-world view (§6.6 of ARCHITECTURE.md) is seconds away; high up there is no terrain to hit,
+// and LinearCast motion keeps fast flight near the ground from tunnelling.
+void Players::StepFly(Player& p) {
+  PlayerController& c = p.c;
+  const PlayerControllerConfig& cfg = *p.cfg;
+  FlyState& fly = c.fly;
+  auto& bodies = physics_.bodies();
+  const Vec3 body_velocity = bodies.GetLinearVelocity(p.body);
+  if (!fly.flying) {
+    if (!c.input.fly) return;
+    fly.flying = true;
+    c.climb.climbing = false;
+    c.swim.swimming = false;
+    c.jump.jumping = false;
+    c.jump.buffer_ticks = 0;
+    c.events |= Events::kFlyStarted;
+  } else if (!c.input.fly) {
+    // Hand back to the normal layers with the current velocity: the player falls.
+    fly.flying = false;
+    fly.velocity = Vec3::sZero();
+    c.horizontal.current = Flat(body_velocity);
+    c.horizontal.external = Vec3::sZero();
+    c.horizontal.contribution = Flat(body_velocity);
+    c.vertical.accumulated_y = body_velocity.GetY();
+    c.vertical.target_y = body_velocity.GetY();
+    c.events |= Events::kFlyEnded;
+    return;
+  }
+
+  const RVec3 position = bodies.GetCenterOfMassPosition(p.body);
+  const double feet = position.GetY() - cfg.HalfHeight(c.crouch.crouching);
+  const float above_sea = static_cast<float>(std::max(0.0, feet - core::kSeaLevel));
+  float speed = cfg.fly.speed * (c.input.run ? cfg.fly.run_factor : 1.0f) *
+                (1.0f + above_sea / cfg.fly.boost_height);
+  if (feet < core::kWorldMaxY) speed = std::min(speed, cfg.fly.terrain_speed);
+  Vec3 wish = MoveDirection(c.input) * speed;
+  wish.SetY(((c.input.jump ? 1.0f : 0.0f) - (c.input.crouch ? 1.0f : 0.0f)) * speed);
+  Vec3 velocity = body_velocity + (wish - body_velocity) * (1.0f - std::exp(-cfg.fly.drag * kDt));
+  // Sideways, stop just past the rim (positions stay well inside the wire's range).
+  const double limit = cfg.fly.horizontal_limit;
+  const auto hold = [&](double at, float v) {
+    return static_cast<float>(std::clamp<double>(v, std::min(0.0, (-limit - at) / kDt),
+                                                 std::max(0.0, (limit - at) / kDt)));
+  };
+  velocity.SetX(hold(position.GetX(), velocity.GetX()));
+  velocity.SetZ(hold(position.GetZ(), velocity.GetZ()));
+  // Up here a tick covers hundreds of kilometres: arrive at the ceiling instead of passing it.
+  velocity.SetY(
+      std::min(velocity.GetY(), static_cast<float>(std::max(0.0, cfg.fly.ceiling - feet) / kDt)));
+  fly.velocity = velocity;
 
   c.horizontal.current = Vec3::sZero();
   c.horizontal.external = Vec3::sZero();
@@ -1022,6 +1090,8 @@ void Players::StepAggregate(Player& p) {
     target = c.climb.velocity;
   } else if (c.swim.swimming) {
     target = c.swim.velocity;
+  } else if (c.fly.flying) {
+    target = c.fly.velocity;
   } else {
     target = c.horizontal.contribution + Vec3(0, c.vertical.target_y, 0);
   }
@@ -1037,6 +1107,8 @@ void Players::StepState(Player& p) {
     c.state = State::kClimbing;
   } else if (c.swim.swimming) {
     c.state = State::kSwimming;
+  } else if (c.fly.flying) {
+    c.state = State::kFlying;
   } else if (c.crouch.crouching) {
     c.state = State::kCrouching;
   } else if (!c.ground.grounded) {

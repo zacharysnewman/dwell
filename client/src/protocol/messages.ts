@@ -139,6 +139,8 @@ export type Message =
       serverTick: number;
       /** Chunk the client generates and hashes for WorldgenCheck (§6.3). */
       verificationChunk: ChunkCoord;
+      /** WelcomeFlags, e.g. whether this player may use creative flight (§8.3). */
+      flags: number;
     }
   | {
       type: typeof MessageType.WorldgenCheck;
@@ -263,6 +265,7 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u32(m.generatorVersion);
       w.u32(m.serverTick);
       for (const v of m.verificationChunk) w.i32(v);
+      w.u8(m.flags);
       break;
     case MessageType.WorldgenCheck:
       w.u64(m.hash);
@@ -472,7 +475,9 @@ function readVec3(r: ByteReader): Vec3 {
   return [r.f32(), r.f32(), r.f32()];
 }
 
-const POS64_LIMIT = 2147483647 / World.positionFixedScale;
+// The world and the sky above it, up to the creative-flight ceiling (posfix positions of other
+// players clamp at ±8,388 km).
+const POS64_LIMIT = World.pos64Limit;
 
 function readPos64(r: ByteReader): Vec3 {
   const v: Vec3 = [r.f64(), r.f64(), r.f64()];
@@ -589,6 +594,7 @@ function decodeBody(r: ByteReader, type: number): Message {
         generatorVersion: r.u32(),
         serverTick: r.u32(),
         verificationChunk: coord(r),
+        flags: r.u8(),
       };
     case MessageType.WorldgenCheck:
       return { type, hash: r.u64() };

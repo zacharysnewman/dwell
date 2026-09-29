@@ -152,6 +152,7 @@ void Write(ByteWriter& w, const Welcome& m) {
   w.U32(m.generator_version);
   w.U32(m.server_tick);
   for (std::int32_t v : m.verification_chunk) w.I32(v);
+  w.U8(m.flags);
 }
 void Write(ByteWriter& w, const Reject& m) {
   w.U8(static_cast<std::uint8_t>(m.reason));
@@ -483,10 +484,10 @@ void Read3(ByteReader& r, float (&v)[3]) {
   for (float& x : v) x = r.F32();
 }
 
-// Positions must be finite and inside the i32 posfix range (±8 388 km), like every other world
-// position a peer may send.
+// Positions must be finite and within ±kPos64Limit: the world and the sky above it, up to the
+// creative-flight ceiling (other players' posfix positions clamp at ±8 388 km).
 void ReadPos64(ByteReader& r, double (&v)[3]) {
-  constexpr double kLimit = 2147483647.0 / kPositionFixedScale;
+  constexpr double kLimit = kPos64Limit;
   for (double& x : v) {
     x = r.F64();
     r.Check(x >= -kLimit && x <= kLimit);  // also rejects NaN
@@ -613,6 +614,7 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       m.generator_version = r.U32();
       m.server_tick = r.U32();
       m.verification_chunk = ReadCoord(r);
+      m.flags = r.U8();
       out = m;
       break;
     }

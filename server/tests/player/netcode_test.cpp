@@ -332,3 +332,36 @@ TEST_SUITE("netcode: block edits") {
     CHECK(client_max < 3.0f - 0.29f);
   }
 }
+
+// Creative flight (§8.3): who may fly is the server's call.
+TEST_SUITE("netcode: flight policy") {
+  auto fly_script = [](int, const SimClient&) {
+    player::Input i;
+    i.fly = true;
+    i.jump = true;
+    return i;
+  };
+
+  TEST_CASE("everyone may fly by default: Welcome says so and the server flies the player") {
+    NetSim sim({});
+    auto& c = sim.Join(fly_script);
+    CHECK((c.welcome_flags & protocol::WelcomeFlags::kFlight) != 0);
+    sim.Step(10);
+    const float start = c.Position().GetY();
+    sim.Step(Ticks(1.0f));
+    CHECK(c.Position().GetY() > start + 5.0f);
+  }
+
+  TEST_CASE("with flight off the server ignores the fly bit") {
+    core::ServerConfig config{.generator_version = core::kGeneratorPlayground};
+    config.flight = core::EditPolicy::kNobody;
+    NetSim sim({}, config);
+    auto& c = sim.Join(fly_script);
+    CHECK((c.welcome_flags & protocol::WelcomeFlags::kFlight) == 0);
+    sim.Step(10);
+    const float start = c.Position().GetY();
+    sim.Step(Ticks(1.0f));
+    // Jumping in place: never much above the start once the prediction is corrected.
+    CHECK(c.Position().GetY() < start + 2.0f);
+  }
+}

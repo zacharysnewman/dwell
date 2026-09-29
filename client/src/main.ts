@@ -37,8 +37,8 @@ interface DwellDebug {
   select(slot: number): void;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
-  /** Puts the dev camera at a position (turning it on), or turns it off (null). */
-  devcam(position: [number, number, number] | null): void;
+  /** Turns creative flight on or off, as double-tapping Space does (if the server allows it). */
+  fly(on: boolean): void;
 }
 
 declare global {
@@ -114,7 +114,6 @@ function start(): App {
   app.input.onToggle = (key) => {
     if (key === 'F3') app.hud.toggleDebug();
     if (key === 'F4') app.map.toggle();
-    if (key === 'F8') app.game?.toggleDevCamera();
   };
   window.__dwell = {
     state: () => app.game?.debugState() ?? null,
@@ -129,11 +128,8 @@ function start(): App {
     edit: (action) => app.game?.edit(action, performance.now()) ?? false,
     select: (slot) => app.interaction?.select(slot),
     voxel: (x, y, z) => app.core?.voxel(x, y, z) ?? 0,
-    devcam: (position) => {
-      const game = app.game;
-      if (!game) return;
-      if ((position !== null) !== game.devcam.active) game.toggleDevCamera();
-      if (position) game.devcam.position = [...position];
+    fly: (on) => {
+      app.input.flight.set(on);
     },
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
@@ -143,6 +139,16 @@ function start(): App {
     if (slot !== null && slot < PALETTE.length) app.interaction?.select(slot);
   };
   app.input.onScroll = (delta) => app.interaction?.scroll(delta);
+  // Creative flight (§8.3): double-tap Space or Jump, or the Fly button.
+  touch.onFly = () => {
+    input.flight.toggle();
+  };
+  touch.onJumpPress = (nowMs) => {
+    input.flight.jumpPressed(nowMs);
+  };
+  input.flight.onChange = (flying) => {
+    touch.setFlight(input.flight.allowed, flying);
+  };
   touch.onTap = () => {
     const action = app.interaction?.touchAction;
     if (action) app.game?.edit(action, performance.now());
@@ -176,6 +182,9 @@ function play(
   session: ClientSession,
   joined: Extract<SessionState, { phase: 'joined' }>,
 ) {
+  // Creative flight is the server's to allow (Welcome, §8.3).
+  app.input.flight.allowed = joined.mayFly;
+  app.touch.setFlight(joined.mayFly, app.input.flight.flying);
   void (async () => {
     // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
     const fullChunks = new URLSearchParams(location.search).get('chunks') === 'full';
@@ -274,14 +283,6 @@ function play(
         };
       };
       game.lod = lod;
-    }
-    if (params.get('devcam') === '1') {
-      // At the player's eye once it has spawned.
-      const wait = setInterval(() => {
-        if (!game.debugState().active) return;
-        clearInterval(wait);
-        if (!game.devcam.active) game.toggleDevCamera();
-      }, 100);
     }
   })();
 }

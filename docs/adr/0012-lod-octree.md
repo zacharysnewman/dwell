@@ -104,6 +104,9 @@ server and clients (ADR 0010), which DH's is not.
 7. **Dev camera.** A client-side free-fly camera, detached from the player's body, that can climb
    high enough to see the whole disc. It changes only what the client renders and requests; the
    server keeps streaming full-detail chunks around the body.
+   *Amended in Phase 4 (playtest feedback): replaced by **creative flight** for the player's own
+   body — server-authoritative and predicted, with a server flight policy (ARCHITECTURE.md §9.1,
+   PLAYER_CONTROLLER.md §6.7). The LOD camera is always the eye.*
 
 ## Consequences
 

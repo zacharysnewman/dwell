@@ -6,6 +6,7 @@ import {
   PROTOCOL_VERSION,
   type RejectReason,
   type TransportKind,
+  WelcomeFlags,
 } from '../protocol/constants.gen';
 import {
   authTranscript,
@@ -24,6 +25,8 @@ export type SessionState =
       worldSeed: bigint;
       generatorVersion: number;
       verificationChunk: ChunkCoord;
+      /** The server lets this player use creative flight (§8.3). */
+      mayFly: boolean;
     }
   | { phase: 'rejected'; reason: RejectReason; message: string }
   | { phase: 'closed'; message: string };
@@ -203,6 +206,7 @@ export class ClientSession {
           worldSeed: m.worldSeed,
           generatorVersion: m.generatorVersion,
           verificationChunk: m.verificationChunk,
+          mayFly: (m.flags & WelcomeFlags.flight) !== 0,
         });
         break;
       case MessageType.Reject:

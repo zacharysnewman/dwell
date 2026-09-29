@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built (draft PR #14); outstanding: the frame-rate check on a desktop and a mobile device | #14 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (playtest feedback); outstanding: the frame-rate check on a desktop and a mobile device | #14 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -514,11 +514,13 @@ Exit criteria
 ## Phase 4 — World LOD & Whole-World View
 
 **Status:** in progress — every deliverable built (4a grid and generation, 4b propagation and
-streaming, protocol v6, 4c the client's LOD system, rendering and the dev camera), in draft PR #14.
+streaming, protocol v6, 4c the client's LOD system, rendering and creative flight — protocol v7),
+in PR #14.
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
-propagation and streaming**; **4c — rendering and the dev camera**. Depends on Phase 3c (planet
+propagation and streaming**; **4c — rendering and the dev camera** (built as creative flight, see
+deviations). Depends on Phase 3c (planet
 scale) and 3d (meshing worker pool); 4b's propagation cache lands in the database from 3e.
 
 **Goal:** Everything that should be visible from the camera is visible, at a detail that drops
@@ -557,9 +559,10 @@ Deliverables
   - [x] LOD section meshing in the meshing worker pool: greedy-merged, flat colour per material,
     border faces culled only against same-level neighbours.
   - [x] Two-pass depth split at `LOD_NEAR_SPLIT_M` (far LOD pass, depth clear, near pass).
-  - [x] `devcam/`: free-fly dev camera (toggle key and `?devcam`), speed scaled with altitude,
-    able to rise until the whole disc is in view; the player's body and full-detail streaming
-    stay where they are.
+  - [x] ~~`devcam/`: free-fly dev camera~~ → creative flight for the player's body (see
+    deviations): toggled by double-tapping Space / Jump or the touch Fly button, speed scaled with
+    altitude, able to rise until the whole disc is in view; server-authoritative and predicted,
+    with a `--flight everyone|ops|nobody` policy (protocol v7).
   - [x] Debug: F3 overlay shows LOD node counts per level, pending jobs, cache use and LOD bytes/s;
     optional per-level colouring of LOD sections.
 
@@ -638,8 +641,18 @@ Deviations and additions (4c):
   filled cells) and a coarse `GenerateLod` cell over the sea is water: with solids and liquids
   counted apart, oceans showed their floor from afar (playtest feedback; `lod: sea` failed before
   the change). From level 3 liquids mesh opaque. LOD golden hashes regenerated.
-- Debug hooks: `window.__dwell.devcam(position | null)`; `?lod=0` disables LOD, `?lodcolors=1`
-  tints sections by level; F8 (not a letter key) toggles the dev camera.
+- **Creative flight replaces the dev camera** (playtest feedback: the "dev camera" was meant as a
+  creative flying mode for the player). A new exclusive controller layer (PLAYER_CONTROLLER.md
+  §6.7) driven by a held `fly` input bit: no gravity, move along the view's yaw, jump up / crouch
+  down, speed `11 m/s × (run ? 2.5) × (1 + height above sea / 32 m)`, capped at 400 m/s below
+  `WORLD_MAX_Y`, feet stopping at `FLIGHT_CEILING` (24,000 km). Server policy `--flight`
+  (default everyone) clears the bit for others and is told to the client in `Welcome` (u8 flags);
+  `pos64` decoders accept ±`POS64_LIMIT` (33,554 km) — protocol v7. The player body's Jolt velocity
+  limit is raised for it. The client keeps predicting while flying even where streamed terrain has
+  not arrived (it deadlocked otherwise: found in the browser, `gate.test.ts` failed before the
+  fix). `devcam/`, F8 and `?devcam=1` are gone; the LOD camera is the eye.
+- Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
+  level.
 
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section
@@ -667,11 +680,12 @@ Exit criteria
   overlaps": walking, turning and rising to 2,000 km with jobs finishing in random order, every
   frame's sampled view points lie in exactly one drawn, empty, buried or chunk-refined section,
   and every drawn section has a mesh.*
-- [ ] *(4c)* With the dev camera, the whole disc becomes visible within 30 s of reaching altitude
+- [ ] *(4c)* Flying up (was: with the dev camera), the whole disc becomes visible within 30 s of reaching altitude
   on a desktop build, and the frame rate stays above 60 fps (desktop) / 30 fps (mobile) with
   memory within `LOD_CACHE_MB`. *Verified: e2e `lod.spec.ts` (local mode, Chromium with
-  SwiftShader) — the disc is covered by drawn sections at 24,000 km within the 30 s (at once: the
-  coarse sections are already cached from the ground's horizon), with the cache under
+  SwiftShader) — the player flies to the 24,000 km ceiling (~65 s under SwiftShader, where the
+  sim runs slower than real time; ~27 s by the formula) and the disc is covered by drawn sections
+  on arrival (well within the 30 s), with the cache under
   `LOD_CACHE_MB`. Outstanding: the frame rates, on a desktop GPU and a phone.*
 - [x] *(4c)* A structure built by another player is visible in LOD from 50 km away and from
   altitude. *`lod: builds from afar`: a 512 m × 512 m wall (1 m thick) is solid in the sections

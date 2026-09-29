@@ -90,6 +90,7 @@ using Script = std::function<player::Input(int tick, const SimClient& self)>;
 struct SimClient {
   core::SessionId session = 0;
   std::uint16_t player_id = 0;
+  std::uint8_t welcome_flags = 0;
   core::VoxelWorld world{Shifted(core::GeneratorFor(core::kGeneratorPlayground))};
   std::unique_ptr<player::Predictor> predictor;
   Link up, down;
@@ -163,7 +164,10 @@ class NetSim {
     Control(id, protocol::ClientAuth{sig});
     for (auto& out : server_.TakeOutbox()) {
       if (auto m = protocol::Decode(out.bytes)) {
-        if (auto* w = std::get_if<protocol::Welcome>(&*m)) client->player_id = w->player_id;
+        if (auto* w = std::get_if<protocol::Welcome>(&*m)) {
+          client->player_id = w->player_id;
+          client->welcome_flags = w->flags;
+        }
       }
     }
     if (stream) {

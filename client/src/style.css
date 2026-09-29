@@ -292,6 +292,7 @@ body {
   height: 80px;
 }
 
+.touch-buttons button.flying,
 .touch-buttons button.pressed {
   background: rgb(255 255 255 / 40%);
   color: #111;

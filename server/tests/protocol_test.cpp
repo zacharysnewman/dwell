@@ -163,7 +163,7 @@ std::map<std::string, Message> Expected() {
   PlayerInput input;
   input.last_snapshot_tick = 300;
   input.inputs = {{41, 127, -127, InputButtons::kJump | InputButtons::kRun, -16384, 32767},
-                  {42, 0, 90, InputButtons::kCrouch, 12345, -100}};
+                  {42, 0, 90, InputButtons::kCrouch | InputButtons::kFly, 12345, -100}};
   PhysicsSnapshot minimal;
   minimal.server_tick = 3;
   minimal.local = TestLocal(0, 100, PlayerState::kIdle, TestController(0));
@@ -195,7 +195,8 @@ std::map<std::string, Message> Expected() {
       {"client_hello", ClientHello{1, "0.1.0", Seq<32>(0), "Zack"}},
       {"challenge", Challenge{Seq<32>(0xA0)}},
       {"client_auth", ClientAuth{Seq<64>(0, 3)}},
-      {"welcome", Welcome{42, 0x0123456789ABCDEFull, 7, 123456, {-3, 2, 1000000}}},
+      {"welcome",
+       Welcome{42, 0x0123456789ABCDEFull, 7, 123456, {-3, 2, 1000000}, WelcomeFlags::kFlight}},
       {"worldgen_check", WorldgenCheck{0xFEDCBA9876543210ull}},
       {"chunk_data_generated", ChunkData{ChunkForm::kGenerated, {4, -2, -9}, 0, {}}},
       {"chunk_data_air", ChunkData{ChunkForm::kAir, {256000, 191, -3}, 0, {}}},

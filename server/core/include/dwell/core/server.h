@@ -30,7 +30,7 @@ namespace dwell::core {
 using SessionId = std::uint32_t;
 using TransportBinding = std::array<std::uint8_t, 32>;
 
-// Who may break and place blocks (§6.5, §11).
+// Who may break and place blocks (§6.5, §11), and who may fly (creative flight, §8.3).
 enum class EditPolicy : std::uint8_t { kEveryone, kOps, kNobody };
 
 struct ServerConfig {
@@ -58,6 +58,7 @@ struct ServerConfig {
 
   // Block edits (§6.5): who may edit, and the players (device public keys) who are ops.
   EditPolicy edits = EditPolicy::kEveryone;
+  EditPolicy flight = EditPolicy::kEveryone;
   std::vector<protocol::PublicKey> ops = {};
   // Access (§10.1): banned keys are refused; with an allow-list, only its keys may join.
   std::vector<protocol::PublicKey> banned = {};
@@ -244,6 +245,8 @@ class Server {
   // the changed chunks.
   void ApplyEdits();
   bool MayEdit(const Session& s) const;
+  bool MayFly(const Session& s) const;
+  bool Allowed(EditPolicy policy, const Session& s) const;
   std::array<double, 3> EyeOf(const Session& s) const;
   // Terrain: generation around players, eviction, and per-client streaming (§6.3).
   std::optional<ChunkCoord> ViewCenter(const Session& s) const;
