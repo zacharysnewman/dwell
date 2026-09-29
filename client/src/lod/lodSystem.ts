@@ -25,6 +25,7 @@ import {
   LodKind,
   lodOfChunk,
   lodParent,
+  sectionAt,
   MAX_LEVEL,
   SECTION_CELLS,
   sectionOrigin,
@@ -113,6 +114,8 @@ interface Node {
 }
 
 const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
+/** Drawable chunks wait at most this long (ms) for the LOD levels above them (see findCovered). */
+export const FORCE_CHUNKS_AFTER_MS = 1000;
 /** From this level up liquids are drawn opaque (a coarse sea has no floor to see through to). */
 export const OPAQUE_LIQUID_LEVEL = 3;
 const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
@@ -146,6 +149,15 @@ export class LodSystem {
   private readonly received: { at: number; bytes: number }[] = [];
   private selection: Selection = { drawn: [], empty: [], chunks: [] };
   private readonly refined = new Set<number>();
+  /**
+   * Level-1 sections around the camera whose 8 chunks are drawable, and all their ancestors: the
+   * traversal always reaches them, whatever is still generating above (the player's surroundings
+   * never wait for coarse levels).
+   */
+  private readonly covered = new Set<number>();
+  private readonly coveredAncestors = new Set<number>();
+  /** When each level-1 section around the camera first had all its chunks drawable (ms). */
+  private readonly drawableSince = new Map<number, number>();
   // Collected by the traversal each frame.
   private wanted: Node[] = [];
   private due: Node[] = [];
@@ -230,6 +242,7 @@ export class LodSystem {
     this.remeshed = [];
     const selection: Selection = { drawn: [], empty: [], chunks: [] };
     this.refined.clear();
+    this.findCovered(camera.position, nowMs);
     const root = this.node(ROOT, null);
     this.touch(root);
     this.active = this.ready(root);
@@ -280,26 +293,29 @@ export class LodSystem {
   }
 
   private visit(node: Node, frustum: Frustum, selection: Selection): void {
-    if (node.kind === LodKind.Empty || node.kind === LodKind.Buried) {
+    // A node that is not ready is only reached on the way down to the covered chunks.
+    const ready = this.ready(node);
+    if (ready && (node.kind === LodKind.Empty || node.kind === LodKind.Buried)) {
       selection.empty.push(node.coord);
-      return;
-    }
-    if (!this.refine(node, frustum)) {
-      this.draw(node, selection);
       return;
     }
     if (node.coord[0] === 1) {
       // Level 0 is the streamed chunks: all 8 must be drawable.
-      let ready = true;
-      for (let o = 0; o < 8 && ready; o++) {
-        ready = this.chunks.drawable(chunkOfLod(lodChild(node.coord, o)));
-      }
-      if (ready) {
+      if (this.covered.has(node.id) && (!ready || this.refine(node, frustum))) {
         selection.chunks.push(node.coord);
         this.refined.add(node.id);
-      } else {
+      } else if (ready) {
         this.draw(node, selection);
       }
+      return;
+    }
+    if (!ready) {
+      // On the way to the covered chunks: descend; everything else here waits (a hole).
+      if (this.coveredAncestors.has(node.id)) this.visitKids(node, frustum, selection);
+      return;
+    }
+    if (!this.refine(node, frustum)) {
+      this.draw(node, selection);
       return;
     }
     if (!node.kids) {
@@ -318,10 +334,68 @@ export class LodSystem {
       }
     }
     if (!allReady) {
-      this.draw(node, selection);
+      // Coarse until the children are ready — unless that would hide the player's surroundings.
+      if (this.coveredAncestors.has(node.id)) {
+        for (const kid of node.kids) this.visit(kid, frustum, selection);
+      } else {
+        this.draw(node, selection);
+      }
       return;
     }
     for (const kid of node.kids) this.visit(kid, frustum, selection);
+  }
+
+  /** Visits the children of a node that is not ready itself (on the way to covered chunks). */
+  private visitKids(node: Node, frustum: Frustum, selection: Selection): void {
+    if (!node.kids) {
+      node.kids = [];
+      for (let o = 0; o < 8; o++) {
+        const c = lodChild(node.coord, o);
+        if (lodInWorld(c)) node.kids.push(this.node(c, node));
+      }
+    }
+    for (const kid of node.kids) {
+      this.touch(kid);
+      if (!this.ready(kid)) this.wanted.push(kid);
+      this.visit(kid, frustum, selection);
+    }
+  }
+
+  /**
+   * Level-1 sections near `p` whose chunks have all been drawable for FORCE_CHUNKS_AFTER_MS, and
+   * their ancestors. Normally the traversal reaches them long before; the grace period keeps
+   * holes (unready siblings on the forced path) to devices whose LOD is stalled or very slow.
+   */
+  private findCovered(p: Vec3, nowMs: number): void {
+    this.covered.clear();
+    this.coveredAncestors.clear();
+    const seen = new Set<number>();
+    const [, ci, cj, ck] = sectionAt(1, p);
+    const r = 2; // the streamed sphere (VIEW_RADIUS_CHUNKS) spans ±2 level-1 sections
+    for (let j = cj - r; j <= cj + r; j++) {
+      for (let k = ck - r; k <= ck + r; k++) {
+        for (let i = ci - r; i <= ci + r; i++) {
+          const c: LodCoord = [1, i, j, k];
+          if (!lodInWorld(c)) continue;
+          let all = true;
+          for (let o = 0; o < 8 && all; o++) all = this.chunks.drawable(chunkOfLod(lodChild(c, o)));
+          if (!all) continue;
+          const id = lodId(...c);
+          seen.add(id);
+          const since = this.drawableSince.get(id) ?? nowMs;
+          this.drawableSince.set(id, since);
+          if (nowMs - since < FORCE_CHUNKS_AFTER_MS) continue;
+          this.covered.add(id);
+          for (let a = lodParent(c); ; a = lodParent(a)) {
+            const id = lodId(...a);
+            if (this.coveredAncestors.has(id)) break;
+            this.coveredAncestors.add(id);
+            if (a[0] === MAX_LEVEL) break;
+          }
+        }
+      }
+    }
+    for (const id of this.drawableSince.keys()) if (!seen.has(id)) this.drawableSince.delete(id);
   }
 
   private draw(node: Node, selection: Selection): void {
