@@ -140,6 +140,9 @@ function start(): App {
   };
   app.input.onScroll = (delta) => app.interaction?.scroll(delta);
   // Creative flight (§8.3): double-tap Space or Jump, or the Fly button.
+  touch.onDebug = () => {
+    app.hud.toggleDebug();
+  };
   touch.onFly = () => {
     input.flight.toggle();
   };
@@ -269,6 +272,8 @@ function play(
           cacheBytes: (mobile ? Lod.cacheMbMobile : Lod.cacheMbDesktop) * 1048576,
           maxGenerationJobs: pool.capacity,
           maxMeshJobs: meshPool.capacity,
+          // Comparing ways to draw distant water: ?lodwater=tint recolours the floor instead.
+          coarseLiquids: params.get('lodwater') === 'tint' ? 'tint' : 'opaque',
         },
       );
       lod.setFullMode(hash === 0n);

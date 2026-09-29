@@ -2,7 +2,7 @@
 // thread. Jobs run in request order; each worker holds a few at once.
 import type { WorkerLike } from '../worldgen/pool';
 import { defaultWorkerCount } from '../worldgen/pool';
-import { meshSection, type SectionMeshes } from './lodMesher';
+import { meshSection, type LiquidMode, type SectionMeshes } from './lodMesher';
 import { meshChunk, type ChunkMeshes } from './mesher';
 import type { FromMesher } from './messages';
 
@@ -20,13 +20,13 @@ export interface SectionMesher {
    * Meshes a section's 34³ cells (transferred: the caller gives up `cells`); liquids opaque at
    * coarse levels (lodMesher.ts).
    */
-  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids?: boolean): Promise<SectionMeshes>;
+  meshSection(cells: Uint16Array<ArrayBuffer>, liquids?: LiquidMode): Promise<SectionMeshes>;
 }
 
 interface Job {
   id: number;
   lod: boolean;
-  opaqueLiquids?: boolean;
+  liquids?: LiquidMode;
   voxels: Uint16Array<ArrayBuffer>;
   resolve: (m: unknown) => void;
 }
@@ -80,12 +80,15 @@ export class MeshPool implements Mesher, SectionMesher {
     });
   }
 
-  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids = false): Promise<SectionMeshes> {
+  meshSection(
+    cells: Uint16Array<ArrayBuffer>,
+    liquids: LiquidMode = 'translucent',
+  ): Promise<SectionMeshes> {
     return new Promise((resolve) => {
       this.queue.push({
         id: this.nextId++,
         lod: true,
-        opaqueLiquids,
+        liquids,
         voxels: cells,
         resolve: (m) => {
           resolve(m as SectionMeshes);
@@ -124,7 +127,7 @@ export class MeshPool implements Mesher, SectionMesher {
       this.runningCount++;
       best.postMessage(
         job.lod
-          ? { t: 'lod', id: job.id, cells: job.voxels, opaqueLiquids: job.opaqueLiquids ?? false }
+          ? { t: 'lod', id: job.id, cells: job.voxels, liquids: job.liquids ?? 'translucent' }
           : { t: 'mesh', id: job.id, voxels: job.voxels },
         [job.voxels.buffer],
       );
@@ -138,7 +141,10 @@ export class InlineMesher implements Mesher, SectionMesher {
   mesh(voxels: Uint16Array<ArrayBuffer>): Promise<ChunkMeshes> {
     return Promise.resolve(meshChunk(voxels));
   }
-  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids = false): Promise<SectionMeshes> {
-    return Promise.resolve(meshSection(cells, opaqueLiquids));
+  meshSection(
+    cells: Uint16Array<ArrayBuffer>,
+    liquids: LiquidMode = 'translucent',
+  ): Promise<SectionMeshes> {
+    return Promise.resolve(meshSection(cells, liquids));
   }
 }

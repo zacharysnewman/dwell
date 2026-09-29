@@ -16,6 +16,7 @@ import type { InputFrame, Message, Vec3 } from '../protocol/messages';
 import type { PlayerInputState } from '../predict/input';
 import { quantizeInput } from '../predict/input';
 import { predictionMayRun } from './gate';
+import { hudText } from './hudText';
 import type { PlayerView, Renderer } from '../render';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
@@ -275,18 +276,10 @@ export class Game {
         this.input.yaw,
         -25,
       );
-      this.hud.setMessage('You died — respawning…');
+      this.showHudText();
     } else {
       this.renderer.setPlayer(this.playerId, null);
-      this.hud.setMessage(
-        this.terrain.error
-          ? `Terrain unavailable: ${this.terrain.error.message}`
-          : !c.active
-            ? 'Joining…'
-            : this.terrainReady()
-              ? ''
-              : 'Loading terrain…',
-      );
+      this.showHudText();
       // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
       const eye: Vec3 = [center[0], this.eye.draw(alpha), center[2]];
       this.renderer.setCamera(eye, this.input.yaw, this.input.pitch);
@@ -313,6 +306,17 @@ export class Game {
     } else {
       this.renderer.setDebugLines(null);
     }
+  }
+
+  private showHudText(): void {
+    const text = hudText({
+      dead: this.dead,
+      active: this.current.active,
+      terrainReady: this.terrainReady(),
+      terrainError: this.terrain.error?.message ?? null,
+    });
+    this.hud.setMessage(text.center);
+    this.hud.setStatus(text.status);
   }
 
   /** The whole-world view around the camera. */

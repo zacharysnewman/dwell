@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17); outstanding: the frame-rate check on a desktop and a mobile device | #14, #15, #16, #17 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), a distant-water comparison switch (#18); outstanding: the frame-rate check on a desktop and a mobile device | #14, #15, #16, #17, #18 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -672,8 +672,27 @@ Deviations and additions (4c):
   sRGB bytes used as linear, while the chunks' sRGB texture is decoded before lighting. They are
   now linear, and a tile's average is taken in linear light. `lodMesher.test.ts` "writes linear
   vertex colours" failed before the fix.
+- **Distant water, under comparison** (playtest request): `?lodwater=tint` draws coarse liquids
+  (level 3 up) as the floor under them, recoloured as seen through the near water, instead of
+  opaque blocks; off by default until chosen. `lodMesher.test.ts` "tint mode" covers it.
+- **Snapshots dropped while flying (and swimming)** (phone playtest: terrain never finished
+  loading after fast flight): `PlayerFlagsOf` resolved `kClimbing`/`kSwimming`/`kFlying` to the
+  *ControllerFlags* constants of the same names, so a flying player's snapshot carried an
+  unknown player-flag bit and every decoder dropped it; the client predicted on alone and the
+  server streamed around its own, lagging copy. Swimming had the same defect since Phase 2 (and
+  climbing showed as swimming to others). "player flags use the PlayerFlags bits" and "fast
+  creative flight keeps snapshots coming" failed before the fix.
+- **Loading status in a corner, and phone overlays** (playtest): "Loading terrain…" moved from the
+  centre of the view to a bottom-left status (`hudText.test.ts` failed before); on touch screens
+  the connection status and F3 overlay stack below the hotbar instead of under it
+  (`touch.spec.ts` layout test failed before); an ⓘ button top right toggles the debug overlay
+  on touch screens, which have no F3 (its e2e test failed before).
+- **Replaced sessions lost their Reject** (CI flake, seen twice): a client write racing the
+  server's close failed first and dropped the pending `Reject(Replaced)`; the WebTransport client
+  now reads the control stream to its end before reporting the close (`webTransport.test.ts`
+  failed before; the e2e passed 15/15 after).
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
-  level.
+  level, `?lodwater=tint` for the distant-water comparison.
 
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section

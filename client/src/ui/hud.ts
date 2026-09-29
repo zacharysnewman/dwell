@@ -41,6 +41,7 @@ export class Hud {
   private readonly health: HTMLDivElement;
   private readonly healthFill: HTMLDivElement;
   private readonly message: HTMLDivElement;
+  private readonly status: HTMLDivElement;
   private readonly debug: HTMLPreElement;
   private damageUntil = 0;
 
@@ -55,10 +56,12 @@ export class Hud {
     this.health.append(this.healthFill);
     this.message = document.createElement('div');
     this.message.id = 'center-message';
+    this.status = document.createElement('div');
+    this.status.id = 'status-chip';
     this.debug = document.createElement('pre');
     this.debug.id = 'debug-overlay';
     this.debug.hidden = true;
-    this.root.append(crosshair, this.health, this.message, this.debug);
+    this.root.append(crosshair, this.health, this.message, this.status, this.debug);
     parent.append(this.root);
   }
 
@@ -81,6 +84,11 @@ export class Hud {
 
   setMessage(text: string): void {
     this.message.textContent = text;
+  }
+
+  /** Background work (terrain loading), in a corner so it never covers the view. */
+  setStatus(text: string): void {
+    if (this.status.textContent !== text) this.status.textContent = text;
   }
 
   setDebug(text: string): void {

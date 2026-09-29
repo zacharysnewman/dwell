@@ -350,7 +350,8 @@ export function srgbToLinear(byte: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
-function linearToSrgbByte(v: number): number {
+/** Linear light (0–1) as an sRGB byte (0–255). */
+export function linearToSrgbByte(v: number): number {
   const c = v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
   return Math.round(Math.min(1, Math.max(0, c)) * 255);
 }

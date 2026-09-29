@@ -56,6 +56,8 @@ export interface LodOptions {
   /** LodRequest pacing (sections per second, under the server's limit) and unanswered retry. */
   requestsPerSecond?: number;
   requestTimeoutMs?: number;
+  /** Liquids from OPAQUE_LIQUID_LEVEL up: opaque (default), or tinting the floor (`?lodwater=tint`). */
+  coarseLiquids?: 'opaque' | 'tint';
 }
 
 export interface LodStats {
@@ -638,7 +640,9 @@ export class LodSystem {
     this.meshing++;
     const token = ++this.token;
     n.token = token;
-    void this.mesher.meshSection(cells, n.coord[0] >= OPAQUE_LIQUID_LEVEL).then((meshes) => {
+    const liquids =
+      n.coord[0] >= OPAQUE_LIQUID_LEVEL ? (this.options.coarseLiquids ?? 'opaque') : 'translucent';
+    void this.mesher.meshSection(cells, liquids).then((meshes) => {
       this.meshing--;
       n.meshing = false;
       if (n.token !== token || this.nodes.get(n.id) !== n) return;

@@ -365,3 +365,55 @@ TEST_SUITE("netcode: flight policy") {
     CHECK(c.Position().GetY() < start + 2.0f);
   }
 }
+
+TEST_CASE("netcode: fast creative flight keeps snapshots coming and prediction in step") {
+  NetSim sim({});
+  auto& c = sim.Join([](int tick, const SimClient&) {
+    player::Input i;
+    i.fly = true;
+    i.run = true;
+    if (tick < 300) {
+      i.jump = true;  // climb
+    } else {
+      i.move_y = 1;  // then race forward
+      i.look_yaw = 60;
+    }
+    return i;
+  });
+  sim.Step(10);
+  const auto before = c.predictor->stats().snapshots;
+  sim.Step(Ticks(20.0f));
+  const auto& st = c.predictor->stats();
+  MESSAGE("snapshots " << st.snapshots - before << " replays " << st.replays << " pos "
+                       << c.Position().GetX() << "," << c.Position().GetY() << ","
+                       << c.Position().GetZ());
+  CHECK(st.snapshots - before > 300);  // SNAPSHOT_HZ × 20 s, give or take
+  const auto server = sim.server().PlayerHandleOf(c.player_id);
+  REQUIRE(server);
+  const JPH::Vec3 authoritative = ToLocal(sim.server().players().Position(*server));
+  CHECK((authoritative - c.Position()).Length() < 50.0f);
+}
+
+TEST_CASE("netcode: player flags use the PlayerFlags bits, not the controller's") {
+  // Regression: PlayerFlagsOf picked up ControllerFlags constants of the same names, so a
+  // swimming (and now flying) player's snapshot carried an unknown bit and was dropped by every
+  // decoder, and a climbing player showed as swimming to others.
+  using namespace protocol;
+  player::PlayerController c;
+  CHECK(player::PlayerFlagsOf(c, false) == 0);
+  c.ground.grounded = true;
+  CHECK(player::PlayerFlagsOf(c, false) == PlayerFlags::kGrounded);
+  c = {};
+  c.crouch.crouching = true;
+  CHECK(player::PlayerFlagsOf(c, false) == PlayerFlags::kCrouched);
+  c = {};
+  c.climb.climbing = true;
+  CHECK(player::PlayerFlagsOf(c, false) == PlayerFlags::kClimbing);
+  c = {};
+  c.swim.swimming = true;
+  CHECK(player::PlayerFlagsOf(c, false) == PlayerFlags::kSwimming);
+  c = {};
+  c.fly.flying = true;
+  CHECK(player::PlayerFlagsOf(c, false) == PlayerFlags::kFlying);
+  CHECK(player::PlayerFlagsOf({}, true) == PlayerFlags::kDead);
+}

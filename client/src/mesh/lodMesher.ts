@@ -6,7 +6,7 @@
 // dropped: the renderer shows a side's skirt when the neighbour there is not drawn at the same
 // level, which closes the cracks between levels. Pure data, so it runs in the meshing workers.
 import { LOD_PAD, LOD_VOLUME, SECTION_CELLS } from '../lod/grid';
-import { averageTileColor, srgbToLinear } from '../render/textures';
+import { averageTileColor, linearToSrgbByte, srgbToLinear } from '../render/textures';
 import { materialStyle } from '../world/materials';
 
 export interface FlatMesh {
@@ -47,6 +47,14 @@ function isLiquid(m: number): boolean {
   return l;
 }
 
+/**
+ * How a section's liquids are drawn: `translucent` — see-through surfaces over the floor (fine
+ * levels); `opaque` — like solids (a coarse sea has no floor under its surface to see through
+ * to); `tint` — not drawn, the floor under them recoloured as seen through the near water
+ * (its colour blended over the floor at its opacity), an alternative to `opaque` for comparison.
+ */
+export type LiquidMode = 'translucent' | 'opaque' | 'tint';
+
 const colors = new Map<number, number>();
 /** A material's flat colour on a face group (0 top, 1 side, 2 bottom). */
 export function lodColor(m: number, group: number): number {
@@ -57,6 +65,25 @@ export function lodColor(m: number, group: number): number {
     const t = style.textures;
     c = t ? averageTileColor(group === 0 ? t.top : group === 2 ? t.bottom : t.side) : style.color;
     colors.set(key, c);
+  }
+  return c;
+}
+
+const tints = new Map<number, number>();
+/** A floor face's colour seen through liquid `l` (sRGB): blended in linear light at its opacity. */
+export function tintedColor(m: number, group: number, l: number): number {
+  const key = (m * 3 + group) * 65536 + l;
+  let c = tints.get(key);
+  if (c === undefined) {
+    const floor = lodColor(m, group);
+    const water = lodColor(l, 0);
+    const a = materialStyle(l).opacity;
+    const mix = (shift: number): number =>
+      linearToSrgbByte(
+        srgbToLinear((floor >> shift) & 0xff) * (1 - a) + srgbToLinear((water >> shift) & 0xff) * a,
+      );
+    c = (mix(16) << 16) | (mix(8) << 8) | mix(0);
+    tints.set(key, c);
   }
   return c;
 }
@@ -114,17 +141,24 @@ class Builder {
 }
 
 /**
- * Meshes a section's cells (LOD_VOLUME, `lodCell` order); positions in cells, 0..32. With
- * `opaqueLiquids` (coarse levels) liquids are drawn like solids — opaque, culling and culled,
- * with skirts — since a coarse sea has no floor under its surface to see through to.
+ * Meshes a section's cells (LOD_VOLUME, `lodCell` order); positions in cells, 0..32. Liquids per
+ * `liquids` (LiquidMode): with `opaque` they are drawn like solids — culling and culled, with
+ * skirts; with `tint` they are left out and the faces they cover take the tinted colour.
  */
-export function meshSection(cells: Uint16Array, opaqueLiquids = false): SectionMeshes {
+export function meshSection(
+  cells: Uint16Array,
+  liquids: LiquidMode = 'translucent',
+): SectionMeshes {
+  const translucent = liquids === 'translucent';
+  const tint = liquids === 'tint';
   if (cells.length !== LOD_VOLUME) throw new RangeError('section cells must be LOD_VOLUME');
   const N = SECTION_CELLS;
   const opaque = new Builder();
   const water = new Builder();
   const skirts = FACES.map(() => new Builder());
-  // Merge key per slice cell: 0 none, else (material + 1) · 2 + (1 for a skirt face).
+  // Merge key per slice cell: 0 none, else ((material + 1) · 1024 + tinting liquid) · 2 + (1 for
+  // a skirt face).
+  const TINT_IDS = 1024;
   const mask = new Int32Array(N * N);
   const cell = [0, 0, 0];
 
@@ -143,14 +177,15 @@ export function meshSection(cells: Uint16Array, opaqueLiquids = false): SectionM
           cell[u] = i;
           cell[v] = j;
           const m = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
-          if (m === 0) continue;
+          if (m === 0 || (tint && isLiquid(m))) continue;
           cell[axis] = d + sign;
           const n = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
-          const liquid = !opaqueLiquids && isLiquid(m);
-          const nSolid = n !== 0 && (opaqueLiquids || !isLiquid(n));
+          const liquid = translucent && isLiquid(m);
+          const nSolid = n !== 0 && (liquids === 'opaque' || !isLiquid(n));
           const hidden = nSolid || (liquid && n !== 0);
           if (hidden && (!border || liquid)) continue;
-          mask[i + N * j] = (m + 1) * 2 + (hidden ? 1 : 0);
+          const tinting = tint && n !== 0 && n < TINT_IDS && isLiquid(n) ? n : 0;
+          mask[i + N * j] = ((m + 1) * TINT_IDS + tinting) * 2 + (hidden ? 1 : 0);
           any = true;
         }
       }
@@ -170,10 +205,12 @@ export function meshSection(cells: Uint16Array, opaqueLiquids = false): SectionM
             h++;
           }
           for (let dv = 0; dv < h; dv++) mask.fill(0, i + N * (j + dv), i + w + N * (j + dv));
-          const m = (key >> 1) - 1;
+          const m = Math.floor((key >> 1) / TINT_IDS) - 1;
+          const tinting = (key >> 1) % TINT_IDS;
           const skirt = (key & 1) === 1;
-          const target = skirt ? skirts[face] : !opaqueLiquids && isLiquid(m) ? water : opaque;
-          target?.quad(axis, sign, sign > 0 ? d + 1 : d, i, i + w, j, j + h, lodColor(m, group));
+          const target = skirt ? skirts[face] : translucent && isLiquid(m) ? water : opaque;
+          const color = tinting ? tintedColor(m, group, tinting) : lodColor(m, group);
+          target?.quad(axis, sign, sign > 0 ? d + 1 : d, i, i + w, j, j + h, color);
           i += w;
         }
       }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LOD_VOLUME, lodCell } from '../lod/grid';
-import { averageTileColor } from '../render/textures';
-import { lodColor, meshSection } from './lodMesher';
+import { averageTileColor, srgbToLinear } from '../render/textures';
+import { lodColor, meshSection, tintedColor } from './lodMesher';
 
 const quads = (m: { indices: Uint32Array }): number => m.indices.length / 6;
 
@@ -69,6 +69,30 @@ describe('LOD section mesher (§6.6)', () => {
     }
   });
 
+  it('tint mode leaves liquids out and recolours the floor as seen through them', () => {
+    const cells = new Uint16Array(LOD_VOLUME);
+    for (let z = -1; z <= 32; z++) {
+      for (let x = -1; x <= 32; x++) {
+        cells[lodCell(x, 0, z)] = 12; // sand
+        cells[lodCell(x, 1, z)] = 10; // water
+      }
+    }
+    const m = meshSection(cells, 'tint');
+    expect(quads(m.water)).toBe(0);
+    // The sand's top (under water, tinted) and bottom (open, its own colour); sides are skirts.
+    expect(quads(m.opaque)).toBe(2);
+    const n = m.opaque.normals;
+    const c = m.opaque.colors;
+    const top = [0, 1, 2, 3].map((q) => q * 4).find((v) => n[v * 3 + 1] === 1) ?? -1;
+    expect(top).toBeGreaterThanOrEqual(0);
+    const expected = tintedColor(12, 0, 10);
+    expect(c[top * 3 + 1]).toBeCloseTo(srgbToLinear((expected >> 8) & 0xff), 4);
+    // Bluer than dry sand, still not the water's own colour.
+    expect(expected).not.toBe(lodColor(12, 0));
+    expect(expected & 0xff).toBeGreaterThan(lodColor(12, 0) & 0xff);
+    expect(expected).not.toBe(lodColor(10, 0));
+  });
+
   it('draws liquids opaque at coarse levels, hiding what is below and with skirts', () => {
     const cells = new Uint16Array(LOD_VOLUME);
     for (let z = -1; z <= 32; z++) {
@@ -77,7 +101,7 @@ describe('LOD section mesher (§6.6)', () => {
         cells[lodCell(x, 1, z)] = 10; // water
       }
     }
-    const m = meshSection(cells, true);
+    const m = meshSection(cells, 'opaque');
     expect(quads(m.water)).toBe(0);
     // The water's top, and the sand's bottom (nothing below it); the sand's top is hidden.
     expect(quads(m.opaque)).toBe(2);

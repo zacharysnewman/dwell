@@ -120,3 +120,48 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
   await tap(600, 150, 8);
   await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(0);
 });
+
+test('on a phone the hotbar, connection status and debug overlay do not overlap', async ({
+  page,
+}) => {
+  // Regression (phone playtest): the hotbar sat over both.
+  await page.goto('./?world=flat&debug=1');
+  await expect
+    .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
+    .toBe(true);
+  const selectors = ['#hotbar', '#net-status', '#debug-overlay', '#touch-debug'];
+  const boxes: { x: number; y: number; width: number; height: number }[] = [];
+  for (const selector of selectors) {
+    await expect(page.locator(selector)).toBeVisible();
+    const box = await page.locator(selector).boundingBox();
+    if (!box) throw new Error(`no ${selector}`);
+    boxes.push(box);
+  }
+  boxes.forEach((p, a) => {
+    boxes.slice(a + 1).forEach((q, k) => {
+      const overlap =
+        p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height;
+      expect(overlap, `${selectors[a]} overlaps ${selectors[a + 1 + k]}`).toBe(false);
+    });
+  });
+});
+
+test('on a phone a button toggles the debug overlay (no F3 key)', async ({ page }) => {
+  await page.goto('./?world=flat');
+  await expect
+    .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
+    .toBe(true);
+  const cdp = await page.context().newCDPSession(page);
+  const tapButton = async (id: number) => {
+    const box = await page.locator('#touch-debug').boundingBox();
+    if (!box) throw new Error('no debug button');
+    const p = { x: box.x + box.width / 2, y: box.y + box.height / 2, id };
+    await touch(cdp, 'touchStart', [p]);
+    await touch(cdp, 'touchEnd', []);
+  };
+  await expect(page.locator('#debug-overlay')).toBeHidden();
+  await tapButton(1);
+  await expect(page.locator('#debug-overlay')).toBeVisible();
+  await tapButton(2);
+  await expect(page.locator('#debug-overlay')).toBeHidden();
+});

@@ -4,6 +4,7 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <set>
 
 #include "dwell/core/worldgen_pool.h"
 #include "dwell/player/net.h"
@@ -245,4 +246,37 @@ TEST_CASE("world rim: walking off the edge of the disc falls into the void and k
   CHECK(died);
   CHECK(last_x > dwell::core::kWorldRadius);     // it went over the edge …
   CHECK(lowest_feet < dwell::core::kWorldMinY);  // … and fell past the bottom of the world
+}
+
+TEST_CASE("streaming: after fast flight the chunks around the player all arrive") {
+  // Fast flight (400 m/s, then down): the server still streams everything around the player.
+  Fixture f(ServerConfig{.world_seed = 5});
+  f.Join(1, Client(1));
+  f.Send(1, WorldgenCheck{0});
+  std::set<std::array<std::int32_t, 3>> held;
+  auto pump = [&](int ticks) {
+    std::vector<ChunkUnload> unloads;
+    for (const ChunkData& c : f.Chunks(1, ticks, &unloads)) held.insert(c.coord);
+    for (const ChunkUnload& u : unloads)
+      for (const auto& c : u.coords) held.erase(c);
+  };
+  pump(60);
+  // Up to 300 m, then 400 m/s (6.7 m per tick) to (4880, 3500), then down to 40 m.
+  double x = 8.5, y = 6.0, z = 0.5;
+  for (; y < 300; y += 6.7)
+    f.MoveTo(1, static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)), pump(1);
+  const double len = std::hypot(4880 - x, 3500 - z);
+  for (double d = 0; d < len; d += 6.7) {
+    f.MoveTo(1, static_cast<float>(x + (4880 - x) * d / len), 300.0f,
+             static_cast<float>(z + (3500 - z) * d / len));
+    pump(1);
+  }
+  for (y = 300; y > 40; y -= 6.7) f.MoveTo(1, 4880.0f, static_cast<float>(y), 3500.0f), pump(1);
+  f.MoveTo(1, 4880.0f, 40.0f, 3500.0f);
+  pump(600);
+  int missing = 0;
+  for (int cy = 0; cy <= 2; ++cy)
+    for (int cz = 108; cz <= 110; ++cz)
+      for (int cx = 151; cx <= 153; ++cx) missing += held.count({cx, cy, cz}) == 0;
+  CHECK(missing == 0);
 }
