@@ -283,8 +283,9 @@ Deliverables
     (1/256 m `i32`) for remote players (and later entities and `PhysicsEvent`); C++ and TS
     codecs; golden vectors regenerated from the Python reference encoder.
   - [ ] Generator version 3: split-coordinate noise (integer lattice cell + float offset, no whole
-    world coordinate converted to float); a planet-scale continent/ocean layer; relief rescaled
-    to the new vertical bounds with sea level at 0; nothing generated outside the disc; spawn
+    world coordinate converted to float); large-scale variation across the disc (a placeholder
+    continent/ocean layer — terrain style stays prototype, §6.1); relief rescaled to the new
+    vertical bounds with sea level at 0; nothing generated outside the disc; spawn
     search updated; golden hashes regenerated, adding chunks near the rim and at the top and
     bottom of the world; `dwell_worldgen_inspect` accepts far coordinates.
   - [ ] `ChunkIsAir(coord)`: a column-bound test, shared by server and client, proving a chunk is
@@ -327,8 +328,8 @@ Deliverables
     cell.
   - [ ] Break (left click) and place against the targeted face (right click); touch: tap the view,
     with a Break/Place toggle button.
-  - [ ] Infinite creative inventory: every placeable material; hotbar HUD; number keys, scroll
-    wheel, or tapping a slot selects.
+  - [ ] Infinite creative inventory: every placeable material of the prototype set (§6.1); hotbar
+    HUD; number keys, scroll wheel, or tapping a slot selects.
   - [ ] Server validation (§11): reach, line of sight, cooldown, permissions, no placement into a
     player capsule, bedrock unbreakable.
 
@@ -395,8 +396,8 @@ Exit criteria
   `worldgen/generator.test.ts`); untouched chunks cost only a `Generated` message on the wire
   (`streaming_test.cpp`). The same test covers generator version 3 once 3c regenerates the
   hashes, including chunks near the rim.
-- [ ] Generated terrain shows distinct biomes, caves, and overhangs, and the player can walk,
-  jump, and swim through it with no collision mismatches.
+- [ ] Generated terrain shows varied relief (prototype style, §6.1), caves, and overhangs, and the
+  player can walk, jump, and swim through it with no collision mismatches.
 
 ---
 
@@ -606,6 +607,9 @@ Exit criteria
 ---
 
 ## Cross-Cutting Work (every phase)
+
+- Materials and terrain style are prototype placeholders (ARCHITECTURE §6.1): phases build and
+  test mechanisms with them; none of them commits to a block set or world look.
 
 - Keep `docs/ARCHITECTURE.md` current (required by `CLAUDE.md`).
 - Record significant choices as ADRs in `docs/adr/`.

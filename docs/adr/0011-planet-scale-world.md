@@ -71,9 +71,9 @@ For the wire:
 - Protocol v4 changes snapshot, event and (later) entity layouts; golden vectors are regenerated
   from the Python reference encoder.
 - `ChunkCoord` and voxel coordinates stay `int32` (the rim is at chunk 256 000, voxel 8 192 000).
-- The generator needs a planet-scale layer (continents and oceans over hundreds to thousands of
-  kilometres) and kilometre-scale relief, or 16 000 km of the same noise will look the same
-  everywhere. The shapes are tuned in Phase 3c; the numbers are generator tunables, not
-  architecture.
+- The generator needs variation at planet scale (hundreds to thousands of kilometres) and
+  kilometre-scale relief, or 16 000 km of the same noise will look the same everywhere. Phase 3c
+  adds a placeholder version; like all current materials and terrain style it is prototype
+  content (ARCHITECTURE.md §6.1), and its numbers are generator tunables, not architecture.
 - Reversal: dropping back to single precision would require re-capping the world or moving to
   per-region physics worlds; the wire format would not need to change again.

@@ -313,6 +313,17 @@ lower on mobile.
 
 ### 6.1 Grid & chunks **[in progress]**
 
+> **Prototype content.** Every material that exists today — its name, look, and role (the
+> grass/dirt/stone layering, sand, snow, logs and leaves, the coal/iron/gold ores) — and the
+> terrain's style (§6.3: biomes, trees, boulders, ore distribution) are **placeholders** that
+> exercise the systems: meshing, textures, collision shapes, streaming, generation, and editing.
+> They are not Dwell's block set or world design and deliberately do not constrain it. The
+> architecture fixes only the *mechanisms*: a `u16` material id with per-material properties
+> (shape, liquid, climbable, strength, density, render style), one material table shared by
+> server and client (mirrored in TypeScript and checked by a test), and an indestructible anchor layer at the bottom of the world. Real
+> content replaces the prototype set later, through the generator version and the material table,
+> without architectural change.
+
 Built (Phases 1–3a, `server/core/include/dwell/core/voxel.h`): material table — air, bedrock,
 stone, dirt, grass, stone slab, ladders (`ladder_n/e/s/w`), water, a debug launch pad, and the
 terrain generator's sand, sandstone, gravel, snow, log, leaves, and coal/iron/gold ores — where
@@ -363,6 +374,10 @@ Terrain is **procedural, seeded, and deterministic**: an unmodified chunk is a p
 `generate(worldSeed, generatorVersion, ChunkCoord)`. The server is authoritative, but because
 generation is deterministic, the network and disk only need to carry *differences* from the
 generated baseline.
+
+The pipeline structure below (deterministic stages, lattice-sampled fields, order-independent
+features) is architecture; its current *content* — the biomes, surface materials, ores, trees and
+boulders — is prototype (§6.1).
 
 **Built (Phase 3a):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
 `src/worldgen/`) is **generator version 2** and the default for dedicated servers and local mode.
@@ -544,8 +559,8 @@ Players break and place blocks (Phase 3d). Server-authoritative like every voxel
   unbreakable) and applies it, broadcasting a `VoxelModification`. The client does not predict
   edits: the change shows when the modification arrives (one RTT), and the local collision mesh
   rebuilds the same tick (PLAYER_CONTROLLER.md §5).
-- **Inventory:** creative-style and infinite — every placeable material (all but air, water and
-  the debug launch pad) is always available; nothing is consumed or collected. A hotbar HUD shows
+- **Inventory:** creative-style and infinite — every placeable material in the (prototype, §6.1)
+  material table (all but air, water and the debug launch pad) is always available; nothing is consumed or collected. A hotbar HUD shows
   the palette with the selected block highlighted; number keys and the scroll wheel (desktop) or
   tapping a hotbar slot (touch) change the selection. Selection is client-side UI state and
   travels in each `BlockEditRequest`. Collected, finite inventories are out of scope for now.

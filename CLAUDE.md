@@ -16,6 +16,13 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 
+## Content is prototype
+
+All current materials (blocks, ores) and the terrain style are **prototype placeholders** for
+exercising systems, not Dwell's content design (`docs/ARCHITECTURE.md` §6.1). Don't treat them as
+design decisions, don't extend them with content borrowed from other games (e.g. Minecraft's
+block set), and keep new work data-driven so the real block set and world style can replace them.
+
 ## Requirement: keep ARCHITECTURE.md up to date
 
 Whenever a change adds, removes, or modifies any part of the architecture, update
