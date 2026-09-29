@@ -19,12 +19,16 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7 and #8; jump-over-block launch fix on the branch, PR pending) | #4, #5, #6, #7, #8 |
-| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b (streaming) in review in #9; 3c block edits next | #7 (3a), #9 (3b) |
-| 4 — Voxel awakening | ⏳ Not started | — |
-| 5 — Tiered physics | ⏳ Not started | — |
-| 6 — Sleep / re-bake | ⏳ Not started | — |
-| 7 — Player hosting, master server & packaging | ⏳ Not started | — |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
+| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) and 3b (streaming) merged (3b's long-walk playtest outstanding); re-scoped for the planet-scale world: 3c scale foundations next, then 3d block edits, 3e persistence | #7 (3a), #9 (3b) |
+| 4 — World LOD & whole-world view | ⏳ Not started (added 2026-09-29; ADR 0012) | — |
+| 5 — Voxel awakening | ⏳ Not started | — |
+| 6 — Tiered physics | ⏳ Not started | — |
+| 7 — Sleep / re-bake | ⏳ Not started | — |
+| 8 — Player hosting, master server & packaging | ⏳ Not started | — |
+
+Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
+the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
 
 ---
 
@@ -103,7 +107,7 @@ Deliverables
   - [x] WebRTC fallback endpoint (ADR 0008): ICE-lite `str0m` in the same crate, same channel
     mapping and framing. Spike includes the invite-link path (client synthesizes the remote
     description from address + fingerprint + ICE credentials); if it fails, invite-link
-    fallback joins require the master server (Phase 7).
+    fallback joins require the master server (Phase 8).
 - [x] **Client networking (`client/net`)**
   - [x] `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
@@ -133,7 +137,7 @@ Exit criteria
 
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
-ragdoll and animation from `State` (Phase 5, see below). Playtested by a human (Open Decision
+ragdoll and animation from `State` (Phase 6, see below). Playtested by a human (Open Decision
 #9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
@@ -175,9 +179,9 @@ Deviations from the deliverables below:
   gently (PLAYER_CONTROLLER.md §8.1).
 - Dwell uses right-handed axes: the controller's camera-right vector is the mirror of the PPC's
   (Unity, left-handed) so that strafing matches the screen.
-- The snapshot's `groundEntityId` fields are deferred to Phase 4, when Tier 1 bodies can be stood
+- The snapshot's `groundEntityId` fields are deferred to Phase 5, when Tier 1 bodies can be stood
   on (ARCHITECTURE §8.3).
-- Deferred to Phase 5: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
+- Deferred to Phase 6: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
   down until the client debris world exists — and animating players from `State` (players are
   capsules; there are no character models yet).
 
@@ -216,9 +220,9 @@ Deliverables
   - [x] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
-    interpolated kinematic capsules. (Animation from `State` moved to Phase 5.)
+    interpolated kinematic capsules. (Animation from `State` moved to Phase 6.)
   - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
-    to Phase 5; dead players are drawn lying down.)
+    to Phase 6; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
   divergence, checked against `externalAbsorbThreshold`. (Measured: positions bit-identical,
@@ -247,14 +251,17 @@ Exit criteria
 
 ## Phase 3 — Static Terrain Streaming
 
-**Status:** in progress. Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done, in
-review in #9: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
+**Status:** in progress. Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done,
+merged in #9: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
 server and client worldgen pools; the walking-without-hitches exit criterion awaits a playtest);
-**3c — block edits** (edit loop, block interaction and infinite inventory, resync, client meshing
-worker); **3d — persistence and debug tooling**.
+**3c — scale foundations** (next: the planet-scale world of ADR 0011 — bounds, double-precision
+physics, protocol v4 positions, planet-scale-safe worldgen, spherical streaming); **3d — block
+edits** (edit loop, block interaction and infinite inventory, resync, client meshing worker);
+**3e — persistence and debug tooling**. 3c comes before edits and persistence so the world's
+bounds, generator version and wire formats change before saved worlds depend on them.
 
 **Goal:** Spec Phase 3. Generate a real procedural world, stream it reliably, and keep client
-and server collision identical (§6).
+and server collision identical (§6) — at planet scale: an 8,192 km disc, 8,192 m tall (ADR 0011).
 
 Deliverables
 - [x] **Terrain generator** in `server/core` (`dwell/worldgen`, §6.3), built in stages:
@@ -266,7 +273,25 @@ Deliverables
   5. [x] Stability pass removing small floating components.
 - [x] Server worldgen thread pool with per-tick budget; spawn region pre-generated. Client worldgen
   worker pool with transferable buffers (ADR 0007). *(3b)*
-- [ ] Client meshing worker pool. *(3c)*
+- **Scale foundations** *(3c;* [ADR 0011](./adr/0011-planet-scale-world.md)*, §6.3)*:
+  - [ ] World constants in `shared/protocol/constants.json`: `WORLD_RADIUS` (8 192 000 m),
+    `WORLD_MIN_Y` / `WORLD_MAX_Y` (−2 048 / 6 144), `SEA_LEVEL` (0), `POSITION_FIXED_SCALE` (256);
+    `WORLD_HALF_EXTENT` and `VIEW_HEIGHT_CHUNKS` removed.
+  - [ ] Jolt built with `JPH_DOUBLE_PRECISION` natively and in every WASM build; `RVec3` world
+    positions through the server, player controller, terrain collision and predictor.
+  - [ ] Protocol v4: `pos64` for the local player's snapshot state and `Respawn`, `posfix`
+    (1/256 m `i32`) for remote players (and later entities and `PhysicsEvent`); C++ and TS
+    codecs; golden vectors regenerated from the Python reference encoder.
+  - [ ] Generator version 3: split-coordinate noise (integer lattice cell + float offset, no whole
+    world coordinate converted to float); a planet-scale continent/ocean layer; relief rescaled
+    to the new vertical bounds with sea level at 0; nothing generated outside the disc; spawn
+    search updated; golden hashes regenerated, adding chunks near the rim and at the top and
+    bottom of the world; `dwell_worldgen_inspect` accepts far coordinates.
+  - [ ] `ChunkIsAir(coord)`: a column-bound test, shared by server and client, proving a chunk is
+    all air; unmodified all-air chunks are neither generated nor sent.
+  - [ ] Spherical interest management and server generation region (`x² + y² + z² ≤ r² + r`),
+    clipped to the world's rows and the disc.
+- [ ] Client meshing worker pool. *(3d)*
 - **Cross-platform determinism:**
   - [x] The generator compiled to WASM for local mode and the client sim; CI golden test comparing
     chunk hashes between native and WASM builds (`dwell_tests`, `dwell_worldgen_tests.js`).
@@ -276,16 +301,16 @@ Deliverables
   `WorldgenCheck` hash selects generated vs. full-chunk mode. *(3b)*
 - [x] Chunk encoding: palette + RLE, with `revision` per chunk; `ChunkData` `Generated` /
   `Explicit` forms and `ChunkUnload` (§8.3). The server keeps modified chunks and evicts unmodified
-  ones far from players. *(3b; zstd compression comes with storage in 3d)*
+  ones far from players. *(3b; zstd compression comes with storage in 3e)*
 - [ ] **World persistence** (§6.4, ADR 0006): SQLite + zstd in `core/storage`; schema v1 (`meta`,
   `settings`, `chunks`, `players`, `permissions`); native VFS (WAL) and OPFS VFS in the worker;
   transactional autosave of dirty data off the tick; load on start; migrations framework.
-  Local-mode worlds persist across page reloads. *(3d)*
+  Local-mode worlds persist across page reloads. *(3e)*
 - Debug tooling:
   - [x] Seed and generator selection (`?seed=`, `?world=`; `dwell_server --seed --generator`).
   - [x] Biome/heightmap overview: `dwell_worldgen_inspect` (ASCII map, biome shares, timings,
-    spawn, vertical sections). An in-game overlay is still to come. *(3d)*
-  - [ ] "Regenerate chunk and diff" check. *(3d)*
+    spawn, vertical sections). An in-game overlay is still to come. *(3e)*
+  - [ ] "Regenerate chunk and diff" check. *(3e)*
 - [x] Interest management: per-client view radius; stream nearest-first; unload far chunks;
   bandwidth budget per client. *(3b)*
 - [ ] Greedy mesher shared in spirit by both sides:
@@ -293,11 +318,11 @@ Deliverables
     of one terrain body with unit-quad faces; greedy merging is not used for collision because
     its T-junctions cause ghost contacts — PLAYER_CONTROLLER.md §5).
   - [ ] Client: mesher in a Web Worker producing render mesh + collision triangles; client
-    prediction world uses the same collision. *(3c)*
+    prediction world uses the same collision. *(3d)*
 - [ ] Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
-  `VoxelModification` broadcast → clients apply in order and re-mesh. *(3c)*
-- [ ] Revision gap detection → client requests chunk resync. *(3c)*
-- [ ] **Block interaction** (§6.5) *(3c)*:
+  `VoxelModification` broadcast → clients apply in order and re-mesh. *(3d)*
+- [ ] Revision gap detection → client requests chunk resync. *(3d)*
+- [ ] **Block interaction** (§6.5) *(3d)*:
   - [ ] Targeting: voxel ray cast from the eye within `REACH_DISTANCE`; outline on the targeted
     cell.
   - [ ] Break (left click) and place against the targeted face (right click); touch: tap the view,
@@ -318,7 +343,7 @@ Deviations and additions (3a):
   stays a pure function of the chunk coordinate; small pieces crossing a chunk border survive.
 - Until the worker pools (3b), the client generated and meshed chunks on the main thread within a
   4 ms per-frame budget (it was two chunks per frame; procedural chunks cost ~1.5–4 ms each).
-  3b moved generation to the worldgen workers; meshing stays budgeted on the main thread until 3c.
+  3b moved generation to the worldgen workers; meshing stays budgeted on the main thread until 3d.
 - Found along the way: WebTransport datagram writes queued behind a slow main thread, so on slow
   frames the server received inputs seconds late; datagrams now coalesce (newest per type).
 - The e2e two-client test walks 2 s instead of 1 s: two pages rendering terrain on CI's software
@@ -328,9 +353,9 @@ Deviations and additions (3b):
 - The default view is `VIEW_RADIUS_CHUNKS` = 3 and `VIEW_HEIGHT_CHUNKS` = 1 (about 110 chunks;
   3a drew 5 × 5 × 3). A radius of 5 and ±2 rows (~485 chunks) streamed fine, but CI's software
   renderer drew the one-quad-per-face meshes at 2–6 fps, starving prediction. Raise the view once
-  render meshes are greedy-merged and meshed in a worker (3c).
+  render meshes are greedy-merged and meshed in a worker (3d).
 - The wire carries palette + RLE without general-purpose compression: generated mode sends 18-byte
-  `Generated` messages for untouched chunks. zstd comes with storage (3d).
+  `Generated` messages for untouched chunks. zstd comes with storage (3e).
 - `server/core` now owns threads: the worldgen pool (`ServerConfig::worldgen_threads`; 0 in the
   browser, where local mode generates on its tick within a 4 ms budget) rather than exposing jobs
   for the host to schedule.
@@ -343,6 +368,14 @@ Deviations and additions (3b):
   loading: two pages on CI's few cores run well below 60 ticks/s otherwise.
 
 Exit criteria
+- [ ] *(3c)* With double-precision Jolt, the controller scenarios, golden trace and netcode tests
+  pass natively and in WASM both at the origin and ~8,000 km from it, and 64 players still take
+  < 1 ms per tick (native Release and WASM).
+- [ ] *(3c)* Terrain near the rim has the same detail as near the origin: an automated check finds
+  no float quantization in noise sampled at 1 m steps there.
+- [ ] *(3c)* Walking off the rim of the disc falls into the void and kills the player.
+- [ ] *(3c)* Open sky costs nothing: all-air chunks are neither generated nor sent, and the
+  per-client chunk set stays bounded with 256 rows (`streaming_test.cpp`).
 - [ ] Walking across the world streams chunks without hitches; memory stays bounded when moving.
   *Automated for the server (`streaming_test.cpp`: chunks are generated ahead of a moving player,
   never on the tick; world, collision and per-client chunk sets stay bounded) and the client
@@ -360,13 +393,82 @@ Exit criteria
 - [x] The same seed produces bit-identical chunks natively, in local mode, and in the client
   worker (CI golden test: `dwell_tests`, `dwell_worldgen_tests.js`, and
   `worldgen/generator.test.ts`); untouched chunks cost only a `Generated` message on the wire
-  (`streaming_test.cpp`).
+  (`streaming_test.cpp`). The same test covers generator version 3 once 3c regenerates the
+  hashes, including chunks near the rim.
 - [ ] Generated terrain shows distinct biomes, caves, and overhangs, and the player can walk,
   jump, and swim through it with no collision mismatches.
 
 ---
 
-## Phase 4 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
+## Phase 4 — World LOD & Whole-World View
+
+**Status:** not started. Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
+the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
+propagation and streaming**; **4c — rendering and the dev camera**. Depends on Phase 3c (planet
+scale) and 3d (meshing worker pool); 4b's propagation cache lands in the database from 3e.
+
+**Goal:** Everything that should be visible from the camera is visible, at a detail that drops
+with distance — from the ground, a mountain top, or a dev camera high enough to see the whole
+8,192 km disc — including every player's builds (§6.6).
+
+Deliverables
+- **LOD data and generation** *(4a)*:
+  - [ ] LOD grid and coordinates (`(L, i, j, k)` from the corner (−2²³, `WORLD_MIN_Y`, −2²³);
+    levels 0–`LOD_MAX_LEVEL`), shared C++/TS; section content as 32³ materials plus a one-cell
+    apron, encoded with the chunk palette + RLE codec.
+  - [ ] `GenerateLod(seed, generatorVersion, L, i, j, k)` in `server/core/worldgen`: generator
+    evaluated at cell centres, octaves and features smaller than a cell dropped; all-air and
+    buried sections skipped from column height bounds. Built into `dwell_worldgen.wasm`.
+  - [ ] `Downsample` of 8 children (≥ 4 of 8 solid → solid; else ≥ 4 liquid → liquid; most common
+    material, ties to the upper cells), with unit tests on crafted layouts (one-voxel walls and
+    floors survive a level; pillars thinner than a cell do not).
+  - [ ] Golden hashes of `GenerateLod` sections at several levels (surface, mountains, ocean, the
+    rim, the root), checked natively and under WASM in CI.
+- **Propagation and streaming** *(4b)*:
+  - [ ] Server propagation: chunk changes (every `VoxelModification` source) mark level-1 sections
+    dirty; a budgeted off-tick job (`LOD_PROPAGATION_SECTIONS_PER_TICK`) downsamples dirty
+    sections nearest to players first up to the root, assigning `lodRevision`s; the
+    `lod_sections` cache table and its migration (§6.4); rebuilt on a generator version change.
+  - [ ] The LOD index at `LOD_INDEX_LEVEL`: `LodIndex` after `WorldgenCheck`, coalesced
+    `LodIndexUpdate` broadcasts.
+  - [ ] `LodRequest` / `LodData` (`Generated` | `Explicit` | `Unchanged`); the `lod` stream on
+    WebTransport, WebRTC (data channel 3) and loopback; `LOD_BYTES_PER_SECOND` budget and
+    `LOD_REQUESTS_PER_SECOND` limit; full-chunk mode answers `Explicit`. Golden vectors for every
+    new message in C++, TS and the Python reference encoder.
+- **Rendering and the dev camera** *(4c)*:
+  - [ ] `lod/`: octree walk around the camera by screen-space error (`LOD_PIXEL_ERROR`, lower
+    quality on mobile), parent-until-all-children-ready swaps with level-0 nodes backed by the
+    streamed chunks, coarsest-then-nearest job scheduling to the worldgen and meshing pools,
+    bounded cache (`LOD_CACHE_MB`).
+  - [ ] LOD section meshing in the meshing worker pool: greedy-merged, flat colour per material,
+    border faces culled only against same-level neighbours.
+  - [ ] Two-pass depth split at `LOD_NEAR_SPLIT_M` (far LOD pass, depth clear, near pass).
+  - [ ] `devcam/`: free-fly dev camera (toggle key and `?devcam`), speed scaled with altitude,
+    able to rise until the whole disc is in view; the player's body and full-detail streaming
+    stay where they are.
+  - [ ] Debug: F3 overlay shows LOD node counts per level, pending jobs, cache use and LOD bytes/s;
+    optional per-level colouring of LOD sections.
+
+Exit criteria
+- [ ] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section
+  generated at level L agrees with the downsample of generated level-0 chunks within a stated
+  tolerance on crafted and sampled terrain.
+- [ ] *(4b)* A block placed by one client changes the LOD sections above it on the server within
+  a bounded time, and another client far away receives the change (index update → request →
+  `Explicit`) without re-downloading unchanged sections; a client with no modifications in view
+  receives no `LodData` beyond the index.
+- [ ] *(4c)* From the ground, the view reaches the horizon with no holes: automated check that the
+  selected node set covers the view frustum at every frame while moving, and that swaps never
+  leave a region without a drawn node.
+- [ ] *(4c)* With the dev camera, the whole disc becomes visible within 30 s of reaching altitude
+  on a desktop build, and the frame rate stays above 60 fps (desktop) / 30 fps (mobile) with
+  memory within `LOD_CACHE_MB`.
+- [ ] *(4c)* A structure built by another player is visible in LOD from 50 km away and from
+  altitude.
+
+---
+
+## Phase 5 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
 
@@ -377,7 +479,7 @@ Deliverables
   (reason `Collapse`).
 - [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
 - [ ] `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
-- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 5); client
+- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 6); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
 - [ ] **Player ↔ Tier 1 interaction** (§9.2, §9.4):
   - [ ] Players push light clusters (contact mass scaling: `maxPushForce`, `pushableMassLimit`);
@@ -401,7 +503,7 @@ Exit criteria
 
 ---
 
-## Phase 5 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
+## Phase 6 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
 
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
@@ -435,7 +537,7 @@ Exit criteria
 
 ---
 
-## Phase 6 — Sleep / Re-bake Cycle
+## Phase 7 — Sleep / Re-bake Cycle
 
 **Goal:** Spec Phase 6. Long-running servers keep a bounded number of dynamic bodies (§7.3).
 
@@ -460,7 +562,7 @@ Exit criteria
 
 ---
 
-## Phase 7 — Player Hosting, Master Server & Platform Packaging
+## Phase 8 — Player Hosting, Master Server & Platform Packaging
 
 **Goal:** Player-hosted multiplayer with no official game servers (ADR 0003): distributable
 dedicated servers, friend worlds hostable from any client, a master server for discovery, and

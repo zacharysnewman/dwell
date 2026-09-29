@@ -15,7 +15,12 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0007](0007-threading-model.md) | Threading model: single-threaded web sim core with worker pools; threads natively | Accepted |
 | [0008](0008-dedicated-server-transports.md) | Dedicated-server transports: WebTransport primary, WebRTC fallback, no WebSocket | Accepted |
 | [0009](0009-friend-world-lifetime.md) | Friend worlds end with their host; migration and cloud worlds deferred | Accepted |
-| [0010](0010-worldgen-noise-numerics.md) | Worldgen noise numerics: strict IEEE float with integer-hash gradients | Accepted |
+| [0010](0010-worldgen-noise-numerics.md) | Worldgen noise numerics: strict IEEE float with integer-hash gradients | Accepted (coordinates at planet scale: 0011) |
+| [0011](0011-planet-scale-world.md) | Planet-scale world: an 8,192 km disc, 8,192 m tall, with double-precision physics | Accepted |
+| [0012](0012-lod-octree.md) | Whole-world view: a 3D level-of-detail octree, generated on the client | Accepted |
+
+Phase numbers in ADRs 0001–0010 follow the implementation plan as it was then: its Phases 4–7
+became Phases 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29.
 
 ## Template
 
