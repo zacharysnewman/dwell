@@ -170,7 +170,11 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
           const m = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
           if (m === 0) continue;
           // A column's surface cell: its top and sides are drawn at the surface (below).
-          if (face !== 3 && special.y[col(cell[0] ?? 0, cell[2] ?? 0)] === cell[1]) continue;
+          const sy = special.y[col(cell[0] ?? 0, cell[2] ?? 0)];
+          if (face !== 3 && sy === cell[1]) continue;
+          // Under a sea floor drawn in the water cell above, the top is covered — and where the
+          // floor lies on the cell's bottom, in the same plane (two tops there z-fight).
+          if (face === 2 && sy === (cell[1] ?? 0) + 1) continue;
           cell[axis] = d + sign;
           const n = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
           const liquid = isLiquid(m);
@@ -267,8 +271,12 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null): Surface
       // In 1/SURFACE_STEPS of a cell (at most 1/4 cell off: a pixel or two, as cells are a few
       // pixels on screen; finer steps cost far more triangles). At the cell's top the cell is
       // drawn as usual (and merges).
-      const steps = Math.round(Math.min(Math.max(h - y, 0), 1) * SURFACE_STEPS);
+      let steps = Math.round(Math.min(Math.max(h - y, 0), 1) * SURFACE_STEPS);
       if (steps === SURFACE_STEPS && !isLiquid(m)) continue;
+      // A sea floor is never drawn at its water cell's top, level with the water surface (only
+      // waterDrop, a sliver of a cell, from it: they z-fight) when that surface is this cell's.
+      if (isLiquid(m) && (cells[cellIndex(x, y + 1, z)] ?? 0) === 0)
+        steps = Math.min(steps, SURFACE_STEPS - 1);
       out.y[c] = y;
       out.h[c] = y + steps / SURFACE_STEPS;
       out.m[c] = isLiquid(m) ? (surface[c * SURFACE_STRIDE + 1] ?? m) : m;

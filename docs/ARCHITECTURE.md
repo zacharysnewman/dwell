@@ -841,7 +841,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   steps (at most 1/4 cell — a pixel or two — off; finer steps cost several times the triangles),
   with walls to lower neighbours, tops of equal height merged into rectangles and walls into
   strips (1.2–2× the triangles of plain cell tops). A sea floor inside a water cell (a cell
-  taller than the sea is deep) is drawn at its depth, with the water's surface above it. Each
+  taller than the sea is deep) is drawn at its depth, with the water's surface above it — never
+  level with that surface (at most half a cell up the water cell that holds it) and never as a
+  second top over the solid cell below (whose top it covers, so that top is not drawn): both
+  z-fought. Each
   wall — those on a section's border included — is drawn by exactly one section (the one whose
   surface cell it borders) into the opaque mesh; only the part the apron hides below it is a
   skirt. (Border steps drawn as skirts alone were hidden between same-level sections: sky-blue
