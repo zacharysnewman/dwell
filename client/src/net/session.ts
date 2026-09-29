@@ -44,6 +44,7 @@ export type GameMessage = Extract<
   | { type: typeof MessageType.PlayerEvent }
   | { type: typeof MessageType.ChunkData }
   | { type: typeof MessageType.ChunkUnload }
+  | { type: typeof MessageType.VoxelModification }
 >;
 export type GameListener = (message: GameMessage, bytes: Uint8Array) => void;
 
@@ -124,7 +125,7 @@ export class ClientSession {
     return () => this.gameListeners.delete(listener);
   }
 
-  /** Sends a reliable control message while joined (WorldgenCheck). */
+  /** Sends a reliable control message while joined (WorldgenCheck, block edits, resyncs). */
   sendControl(m: Message): void {
     if (this.state.phase === 'joined') this.send(m);
   }
@@ -217,7 +218,8 @@ export class ClientSession {
     if (
       m.type === MessageType.PlayerEvent ||
       m.type === MessageType.ChunkData ||
-      m.type === MessageType.ChunkUnload
+      m.type === MessageType.ChunkUnload ||
+      m.type === MessageType.VoxelModification
     ) {
       // Reliable world messages must not be lost while the game loads: hold them until then.
       if (this.state.phase === 'joined' && this.gameListeners.size === 0) {

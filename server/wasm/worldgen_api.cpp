@@ -3,15 +3,20 @@
 // or the rest of the sim core, so each worker's module stays small.
 #include <emscripten/emscripten.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "dwell/core/voxel.h"
+#include "dwell/worldgen/terrain.h"
 
 namespace {
 
 dwell::core::ChunkGenerator g_generator;
 std::unique_ptr<dwell::core::Chunk> g_chunk;
+std::unique_ptr<dwell::worldgen::TerrainGenerator> g_terrain;  // generator version 3 only
+std::vector<std::uint8_t> g_map;
 
 }  // namespace
 
@@ -23,7 +28,33 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_create(std::uint32_t generator_version,
   g_generator = dwell::core::GeneratorFor(generator_version,
                                           (static_cast<std::uint64_t>(seed_hi) << 32) | seed_lo);
   g_chunk = std::make_unique<dwell::core::Chunk>();
+  g_terrain.reset();
+  if (generator_version == dwell::core::kGeneratorTerrain) {
+    g_terrain = std::make_unique<dwell::worldgen::TerrainGenerator>(
+        (static_cast<std::uint64_t>(seed_hi) << 32) | seed_lo);
+  }
   return 1;
+}
+
+// Biome/height map for the in-game overlay (Phase 3e debug tooling): n × n columns from (x0, z0)
+// every `step` metres, row-major along x then z, 4 bytes each — i16 base height (m), u8 biome
+// (worldgen::Biome), u8 flags (1 = beyond the world's disc). Null for generators without a
+// terrain map. Valid until the next call.
+EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int step, int n) {
+  if (!g_terrain || n <= 0 || n > 512 || step <= 0) return nullptr;
+  g_map.assign(static_cast<std::size_t>(n) * n * 4, 0);
+  std::size_t i = 0;
+  for (int j = 0; j < n; ++j) {
+    for (int k = 0; k < n; ++k, i += 4) {
+      const auto c = g_terrain->ColumnAt(x0 + k * step, z0 + j * step);
+      const auto h = static_cast<std::int16_t>(std::clamp(c.height, -32768.0f, 32767.0f));
+      g_map[i] = static_cast<std::uint8_t>(h);
+      g_map[i + 1] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(h) >> 8);
+      g_map[i + 2] = static_cast<std::uint8_t>(c.biome);
+      g_map[i + 3] = c.outside ? 1 : 0;
+    }
+  }
+  return g_map.data();
 }
 
 // Generates a chunk; returns its kChunkVolume u16 materials (chunk index order), valid until the

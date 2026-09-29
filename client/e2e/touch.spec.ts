@@ -68,3 +68,55 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   await touch(cdp, 'touchEnd', []);
   expect(peak - ground).toBeGreaterThan(0.5);
 });
+
+test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({
+  page,
+}) => {
+  await page.goto('./?world=flat');
+  await expect
+    .poll(
+      async () =>
+        page.evaluate<boolean>(
+          '!!(globalThis.__dwell && globalThis.__dwell.state()?.terrainReady)',
+        ),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+  const cdp = await page.context().newCDPSession(page);
+  const tap = async (x: number, y: number, id: number) => {
+    await touch(cdp, 'touchStart', [{ x, y, id }]);
+    await touch(cdp, 'touchEnd', []);
+  };
+  const center = async (selector: string) => {
+    const box = await page.locator(selector).boundingBox();
+    if (!box) throw new Error(`no ${selector}`);
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+  // Look down at the ground ahead; the cell above the targeted one receives the block.
+  await page.evaluate('globalThis.__dwell.look(0, -45)');
+  await expect
+    .poll(() => page.evaluate('globalThis.__dwell.state()?.target ?? null'))
+    .not.toBeNull();
+  const target = await page.evaluate<{ cell: [number, number, number] }>(
+    'globalThis.__dwell.state().target',
+  );
+  const [x, y, z] = target.cell;
+  const above = `globalThis.__dwell.voxel(${String(x)}, ${String(y + 1)}, ${String(z)})`;
+
+  // Pick dirt (slot 2) on the hotbar, switch to Place, and tap the view.
+  const dirt = await center('.hotbar-slot[data-slot="1"]');
+  await tap(dirt.x, dirt.y, 4);
+  await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('data-slot', '1');
+  const edit = await center('#touch-edit');
+  await tap(edit.x, edit.y, 5);
+  await expect(page.locator('#touch-edit')).toHaveText('Place');
+  await tap(600, 150, 6);
+  await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(3);
+
+  // Back to Break: a tap removes it again.
+  await tap(edit.x, edit.y, 7);
+  await expect(page.locator('#touch-edit')).toHaveText('Break');
+  await page.waitForTimeout(150);
+  await tap(600, 150, 8);
+  await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(0);
+});

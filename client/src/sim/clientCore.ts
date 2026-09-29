@@ -2,6 +2,7 @@
 // reconciliation of the local player, remote-player proxies, the streamed chunks (§6.3), and
 // terrain faces for rendering. Wraps the dwell_client_* exports of server/wasm/wasm_api.cpp.
 import type { GroundKind, PlayerState } from '../protocol/constants.gen';
+import { PADDED_VOLUME } from '../mesh/mesher';
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import type { ChunkCoord, InputFrame, Vec3 } from '../protocol/messages';
 import { withHeapBytes, type DwellCoreFactory, type DwellCoreModule } from './module';
@@ -64,8 +65,12 @@ export const ControllerEvents = {
   swimEnded: 1 << 6,
 } as const;
 
-/** Bytes per face returned by chunkFaces: x, y, z, face (u8 each), material (u16), reserved. */
-export const RENDER_FACE_BYTES = 8;
+/** A targeted block (§6.5): its cell and the face the view ray entered through. */
+export interface BlockTarget {
+  cell: Vec3;
+  /** 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z. */
+  face: number;
+}
 
 export class ClientCore {
   private constructor(private readonly m: DwellCoreModule) {}
@@ -191,15 +196,52 @@ export class ClientCore {
     };
   }
 
-  /** Visible faces of a chunk (RENDER_FACE_BYTES each), copied out of the heap. */
-  chunkFaces(cx: number, cy: number, cz: number): Uint8Array {
-    const countPtr = this.m._malloc(4);
+  /** A chunk's voxels with a one-voxel apron (mesh/mesher.ts layout), for the meshing workers. */
+  paddedChunk(cx: number, cy: number, cz: number): Uint16Array<ArrayBuffer> {
+    const ptr = this.m._dwell_client_chunk_padded(cx, cy, cz);
+    return this.m.HEAPU16.slice(ptr >> 1, (ptr >> 1) + PADDED_VOLUME);
+  }
+
+  /** Applies a VoxelModification's changes to one chunk: interleaved (index, material) pairs. */
+  editChunk(coord: ChunkCoord, revision: number, changes: Uint16Array): void {
+    const bytes = new Uint8Array(changes.buffer, changes.byteOffset, changes.byteLength);
+    withHeapBytes(this.m, bytes, (ptr) => {
+      this.m._dwell_client_chunk_edit(
+        coord[0],
+        coord[1],
+        coord[2],
+        revision,
+        ptr,
+        changes.length / 2,
+      );
+    });
+  }
+
+  /** The block along a view ray (unit `dir`) within `maxDistance`, if any. */
+  target(origin: Vec3, dir: Vec3, maxDistance: number): BlockTarget | null {
+    const out = this.m._malloc(16);
     try {
-      const ptr = this.m._dwell_client_chunk_faces(cx, cy, cz, countPtr);
-      const count = this.m.HEAPU32[countPtr >> 2] ?? 0;
-      return this.m.HEAPU8.slice(ptr, ptr + count * RENDER_FACE_BYTES);
+      const hit = this.m._dwell_client_target(
+        origin[0],
+        origin[1],
+        origin[2],
+        dir[0],
+        dir[1],
+        dir[2],
+        maxDistance,
+        out,
+      );
+      if (!hit) return null;
+      const i = out >> 2;
+      const at = (k: number) => this.m.HEAP32[i + k] ?? 0;
+      return { cell: [at(0), at(1), at(2)], face: at(3) };
     } finally {
-      this.m._free(countPtr);
+      this.m._free(out);
     }
+  }
+
+  /** Material at a world voxel (missing chunks read as air). */
+  voxel(x: number, y: number, z: number): number {
+    return this.m._dwell_client_voxel(x, y, z);
   }
 }

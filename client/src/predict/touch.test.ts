@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { STICK_RADIUS, TOUCH_BUTTONS, TouchButtonState, stickOutput } from './touch';
+import {
+  isTap,
+  STICK_RADIUS,
+  TAP_MS,
+  TAP_SLOP,
+  TOUCH_BUTTONS,
+  TouchButtonState,
+  stickOutput,
+} from './touch';
 
 describe('touch stick', () => {
   it('maps drags to a move vector: up is forward, right is right', () => {
@@ -38,5 +46,20 @@ describe('touch buttons', () => {
     const run = new TouchButtonState(TOUCH_BUTTONS.run.mode);
     expect(pressAndRelease(run)).toEqual([true, true]);
     expect(pressAndRelease(run)).toEqual([false, false]);
+  });
+
+  it('the Break/Place button latches: one tap switches to placing, the next back', () => {
+    const edit = new TouchButtonState(TOUCH_BUTTONS.edit.mode);
+    expect(pressAndRelease(edit)).toEqual([true, true]);
+    expect(pressAndRelease(edit)).toEqual([false, false]);
+  });
+});
+
+describe('touch taps on the view (§6.5)', () => {
+  it('a short touch that barely moves is a tap; a drag or a long press is not', () => {
+    expect(isTap(0, 0, 80)).toBe(true);
+    expect(isTap(TAP_SLOP, 0, TAP_MS)).toBe(true);
+    expect(isTap(TAP_SLOP + 1, 0, 80)).toBe(false);
+    expect(isTap(3, 4, TAP_MS + 1)).toBe(false);
   });
 });

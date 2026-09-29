@@ -1,9 +1,10 @@
 // Protocol messages (ARCHITECTURE.md §8.3). Mirrors server/core/include/dwell/protocol/messages.h;
 // layouts are pinned by shared golden vectors.
 import { ByteReader, ByteWriter, DecodeError } from './bytes';
-import { readVoxels, writeVoxels } from './chunkVoxels';
+import { CHUNK_VOLUME, readVoxels, writeVoxels } from './chunkVoxels';
 import {
   AUTH_DOMAIN_TAG,
+  BlockEditAction,
   ChunkForm,
   ControllerFlags,
   DamageCause,
@@ -16,6 +17,7 @@ import {
   PlayerFlags,
   PlayerState,
   RejectReason,
+  VoxelModificationReason,
   World,
 } from './constants.gen';
 
@@ -82,6 +84,15 @@ export interface RemotePlayerState {
   flags: number;
 }
 
+/** Changes to one chunk in a VoxelModification (§8.3). */
+export interface ChunkChanges {
+  coord: ChunkCoord;
+  /** The chunk's revision after the changes. */
+  revision: number;
+  /** Interleaved (localIndex, material) pairs; localIndex = x | y << 5 | z << 10. */
+  changes: Uint16Array;
+}
+
 export type Message =
   | { type: typeof MessageType.DatagramPing; seq: number; clientTimeMs: number }
   | { type: typeof MessageType.DatagramPong; seq: number; clientTimeMs: number; serverTick: number }
@@ -127,6 +138,23 @@ export type Message =
       voxels: Uint16Array | null;
     }
   | { type: typeof MessageType.ChunkUnload; coords: ChunkCoord[] }
+  | {
+      type: typeof MessageType.BlockEditRequest;
+      action: BlockEditAction;
+      /** World voxel coordinate of the targeted cell. */
+      cell: Vec3;
+      /** Targeted face: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z. */
+      face: number;
+      /** Place only (0 for Break). */
+      material: number;
+    }
+  | {
+      type: typeof MessageType.VoxelModification;
+      reason: VoxelModificationReason;
+      serverTick: number;
+      chunks: ChunkChanges[];
+    }
+  | { type: typeof MessageType.ChunkResync; coords: ChunkCoord[] }
   | { type: typeof MessageType.Reject; reason: RejectReason; message: string }
   | { type: typeof MessageType.Ping; seq: number; clientTimeMs: number }
   | {
@@ -222,6 +250,33 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       break;
     case MessageType.ChunkUnload:
       if (m.coords.length < 1 || m.coords.length > 0xffff) throw new RangeError('unload count');
+      w.u16(m.coords.length);
+      for (const c of m.coords) for (const v of c) w.i32(v);
+      break;
+    case MessageType.BlockEditRequest:
+      w.u8(m.action);
+      for (const v of m.cell) w.i32(v);
+      w.u8(m.face);
+      if (m.action === BlockEditAction.Place) w.u16(m.material);
+      break;
+    case MessageType.VoxelModification:
+      if (m.chunks.length < 1 || m.chunks.length > 0xffff) throw new RangeError('chunk count');
+      w.u8(m.reason);
+      w.u32(m.serverTick);
+      w.u16(m.chunks.length);
+      for (const c of m.chunks) {
+        const n = c.changes.length / 2;
+        if (n < 1 || n > 0xffff || !Number.isInteger(n)) throw new RangeError('change count');
+        for (const v of c.coord) w.i32(v);
+        w.u32(c.revision);
+        w.u16(n);
+        for (const v of c.changes) w.u16(v);
+      }
+      break;
+    case MessageType.ChunkResync:
+      if (m.coords.length < 1 || m.coords.length > Limits.maxResyncChunks) {
+        throw new RangeError('resync count');
+      }
       w.u16(m.coords.length);
       for (const c of m.coords) for (const v of c) w.i32(v);
       break;
@@ -411,6 +466,8 @@ function readController(r: ByteReader): ControllerState {
 }
 
 const rejectReasons = new Set<number>(Object.values(RejectReason));
+const editActions = new Set<number>(Object.values(BlockEditAction));
+const modificationReasons = new Set<number>(Object.values(VoxelModificationReason));
 const chunkForms = new Set<number>(Object.values(ChunkForm));
 
 function coord(r: ByteReader): ChunkCoord {
@@ -469,6 +526,45 @@ function decodeBody(r: ByteReader, type: number): Message {
     case MessageType.ChunkUnload: {
       const count = r.u16();
       r.check(count >= 1, 'unload count');
+      const coords: ChunkCoord[] = [];
+      for (let i = 0; i < count; i++) coords.push(coord(r));
+      return { type, coords };
+    }
+    case MessageType.BlockEditRequest: {
+      const action = r.u8();
+      r.check(editActions.has(action), 'unknown block edit action');
+      const cell: Vec3 = [r.i32(), r.i32(), r.i32()];
+      const face = r.u8();
+      r.check(face < 6, 'bad face');
+      const material = action === BlockEditAction.Place ? r.u16() : 0;
+      return { type, action: action as BlockEditAction, cell, face, material };
+    }
+    case MessageType.VoxelModification: {
+      const reason = r.u8();
+      r.check(modificationReasons.has(reason), 'unknown modification reason');
+      const serverTick = r.u32();
+      const count = r.u16();
+      r.check(count >= 1, 'modification chunk count');
+      const chunks: ChunkChanges[] = [];
+      for (let i = 0; i < count; i++) {
+        const at = coord(r);
+        const revision = r.u32();
+        const n = r.u16();
+        r.check(n >= 1, 'modification change count');
+        const changes = new Uint16Array(n * 2);
+        for (let k = 0; k < n; k++) {
+          const index = r.u16();
+          r.check(index < CHUNK_VOLUME, 'voxel index');
+          changes[k * 2] = index;
+          changes[k * 2 + 1] = r.u16();
+        }
+        chunks.push({ coord: at, revision, changes });
+      }
+      return { type, reason: reason as VoxelModificationReason, serverTick, chunks };
+    }
+    case MessageType.ChunkResync: {
+      const count = r.u16();
+      r.check(count >= 1 && count <= Limits.maxResyncChunks, 'resync count');
       const coords: ChunkCoord[] = [];
       for (let i = 0; i < count; i++) coords.push(coord(r));
       return { type, coords };

@@ -20,7 +20,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
-| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) and 3b (streaming) merged (3b's long-walk playtest outstanding); 3c (scale foundations) done on `claude/phase-3c-scale`, PR pending; 3d block edits next, then 3e persistence | #7 (3a), #9 (3b), #11 (re-scope) |
+| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
 | 4 — World LOD & whole-world view | ⏳ Not started (added 2026-09-29; ADR 0012) | — |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
@@ -251,15 +251,20 @@ Exit criteria
 
 ## Phase 3 — Static Terrain Streaming
 
-**Status:** in progress. Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done,
+**Status:** in progress — all sub-phases built; two exit criteria await playtests (the long walk,
+and walking/jumping/swimming the terrain). Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done,
 merged in #9: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
 server and client worldgen pools; the walking-without-hitches exit criterion awaits a playtest);
-**3c — scale foundations** (done, PR pending: the planet-scale world of ADR 0011 — bounds and
+**3c — scale foundations** (done, merged in #12: the planet-scale world of ADR 0011 — bounds and
 the rim, double-precision physics with region-anchored terrain collision, protocol v4 positions,
 generator version 3, air chunks, spherical streaming; every 3c exit criterion verified);
-**3d — block edits** (next: edit loop, block interaction and infinite inventory, resync, client
-meshing worker);
-**3e — persistence and debug tooling**. 3c comes before edits and persistence so the world's
+**3d — block edits** (done, PR pending: protocol v5 edit loop, block interaction and infinite
+inventory on desktop and touch, revision gaps and resync, the greedy meshing worker pool; every 3d
+exit criterion verified);
+**3e — persistence and debug tooling** (done, PR pending: SQLite + zstd world files natively and in
+OPFS, autosave off the tick, migrations, crash-safe saves, settings and permissions from launch
+options; the in-game terrain map and regenerate-and-diff checks; every 3e exit criterion verified).
+3c comes before edits and persistence so the world's
 bounds, generator version and wire formats change before saved worlds depend on them.
 
 **Goal:** Spec Phase 3. Generate a real procedural world, stream it reliably, and keep client
@@ -299,7 +304,7 @@ Deliverables
   - [x] Spherical interest management (`x² + y² + z² ≤ r² + r`, unloading outside r + margin),
     clipped to the world's rows; the server's generation region and startup pre-generation skip
     air chunks.
-- [ ] Client meshing worker pool. *(3d)*
+- [x] Client meshing worker pool. *(3d: `mesh/pool.ts`, `cores − 2` workers, 1–4)*
 - **Cross-platform determinism:**
   - [x] The generator compiled to WASM for local mode and the client sim; CI golden test comparing
     chunk hashes between native and WASM builds (`dwell_tests`, `dwell_worldgen_tests.js`).
@@ -309,35 +314,39 @@ Deliverables
   `WorldgenCheck` hash selects generated vs. full-chunk mode. *(3b)*
 - [x] Chunk encoding: palette + RLE, with `revision` per chunk; `ChunkData` `Generated` /
   `Explicit` forms and `ChunkUnload` (§8.3). The server keeps modified chunks and evicts unmodified
-  ones far from players. *(3b; zstd compression comes with storage in 3e)*
-- [ ] **World persistence** (§6.4, ADR 0006): SQLite + zstd in `core/storage`; schema v1 (`meta`,
+  ones far from players. *(3b; zstd compresses chunks in the world file, 3e; the wire stays
+  uncompressed — see the 3e deviations)*
+- [x] **World persistence** (§6.4, ADR 0006): SQLite + zstd in `core/storage`; schema v1 (`meta`,
   `settings`, `chunks`, `players`, `permissions`); native VFS (WAL) and OPFS VFS in the worker;
   transactional autosave of dirty data off the tick; load on start; migrations framework.
   Local-mode worlds persist across page reloads. *(3e)*
 - Debug tooling:
   - [x] Seed and generator selection (`?seed=`, `?world=`; `dwell_server --seed --generator`).
   - [x] Biome/heightmap overview: `dwell_worldgen_inspect` (ASCII map, biome shares, timings,
-    spawn, vertical sections). An in-game overlay is still to come. *(3e)*
-  - [ ] "Regenerate chunk and diff" check. *(3e)*
+    spawn, vertical sections); in game, the F4 terrain map (biome and hill-shaded height around the
+    player, from a worldgen worker). *(overlay: 3e)*
+  - [x] "Regenerate chunk and diff" check: `dwell_world FILE diff [cx cy cz]` over a world file,
+    and in game the F3 overlay's line for the player's chunk. *(3e)*
 - [x] Interest management: per-client view radius; stream nearest-first; unload far chunks;
   bandwidth budget per client. *(3b)*
-- [ ] Greedy mesher shared in spirit by both sides:
+- [x] Greedy mesher shared in spirit by both sides:
   - [x] Server: per-chunk Jolt `MeshShape`s, rebuilt on change (built in Phase 2b, as sub-shapes
     of one terrain body with unit-quad faces; greedy merging is not used for collision because
     its T-junctions cause ghost contacts — PLAYER_CONTROLLER.md §5).
-  - [ ] Client: mesher in a Web Worker producing render mesh + collision triangles; client
-    prediction world uses the same collision. *(3d)*
-- [ ] Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
-  `VoxelModification` broadcast → clients apply in order and re-mesh. *(3d)*
-- [ ] Revision gap detection → client requests chunk resync. *(3d)*
-- [ ] **Block interaction** (§6.5) *(3d)*:
-  - [ ] Targeting: voxel ray cast from the eye within `REACH_DISTANCE`; outline on the targeted
+  - [x] Client: greedy mesher in a Web Worker producing render meshes; the client prediction world
+    uses the same collision as the server (the sim core's C++ `TerrainCollision`, not triangles from
+    the worker — see deviations). *(3d)*
+- [x] Block edit loop: client `BlockEditRequest` on `control` → server validation → reliable
+  `VoxelModification` broadcast → clients apply in order and re-mesh. *(3d; protocol v5)*
+- [x] Revision gap detection → client requests chunk resync (`ChunkResync`). *(3d)*
+- [x] **Block interaction** (§6.5) *(3d)*:
+  - [x] Targeting: voxel ray cast from the eye within `REACH_DISTANCE`; outline on the targeted
     cell.
-  - [ ] Break (left click) and place against the targeted face (right click); touch: tap the view,
+  - [x] Break (left click) and place against the targeted face (right click); touch: tap the view,
     with a Break/Place toggle button.
-  - [ ] Infinite creative inventory: every placeable material of the prototype set (§6.1); hotbar
+  - [x] Infinite creative inventory: every placeable material of the prototype set (§6.1); hotbar
     HUD; number keys, scroll wheel, or tapping a slot selects.
-  - [ ] Server validation (§11): reach, line of sight, cooldown, permissions, no placement into a
+  - [x] Server validation (§11): reach, line of sight, cooldown, permissions, no placement into a
     player capsule, bedrock unbreakable.
 
 Deviations and additions (3a):
@@ -395,6 +404,61 @@ Deviations and additions (3c):
 - The flat and playground generators respect the rim too, so test worlds near the rim behave like
   the terrain.
 
+Deviations and additions (3d):
+- Render meshing moved entirely to TypeScript (`mesh/mesher.ts`, in workers): the sim core no
+  longer builds render faces (`BuildRenderFaces` and `dwell_client_chunk_faces` removed) and instead
+  hands out each chunk's voxels with a one-voxel apron (`dwell_client_chunk_padded`). The workers
+  produce render meshes only: collision stays in the client sim's C++ `TerrainCollision`, the
+  server's own code, which is how the prediction world collides with exactly the server's geometry.
+- Greedy merging applies to full cubes and water; slabs and ladders stay one quad per face. The
+  chunk shader repeats textures per block across merged quads (fract + `textureGrad` into the atlas)
+  instead of switching to a texture array.
+- Bedrock is not placeable (placed bedrock could never be removed); the palette is every material
+  but air, liquids, bedrock and the launch pad, with the four ladders as one slot whose facing
+  follows the placement.
+- The edit cooldown is a token bucket (one per `BLOCK_EDIT_INTERVAL_MS` = 100 ms, bursts of 3) so
+  edits bunched by the network are not rejected, and the server allows 1 m of reach beyond
+  `REACH_DISTANCE` for its lagging view of the player. Permissions are an edit policy (everyone /
+  ops / nobody) with ops by device key; the `permissions` table (3e) will supply them.
+- The line-of-sight check samples five points on the targeted face and follows each ray 1 m past
+  it: at grazing angles a ray needs a while to cross the last centimetre (found by the netcode test).
+- Found along the way: creating a chunk where the air test had read open sky did not advance the
+  world's epoch, so probes kept a cached pointer to the shared air chunk and did not see a block
+  placed there (`block edit: probes see a block placed into a chunk they read as open sky`, red
+  before the fix).
+- Touch taps allow 500 ms (the software-rendered e2e page delivers the lift ~435 ms later).
+- The view radius stays 3: raising it now that meshes are greedy and built in workers is left to a
+  measured change (CI still renders with SwiftShader).
+
+Deviations and additions (3e):
+- The browser VFS is Dwell's own (`core/src/storage/opfs_vfs.cpp`, SQLite built with
+  `SQLITE_OS_OTHER`), calling OPFS sync access handles the worker opens up front (`dwellFiles`),
+  rather than SQLite's JS/WASM distribution: the storage code is the core's C++ in both builds.
+  Having no shared memory, it uses exclusive locking and a rollback journal (`TRUNCATE`) instead of
+  WAL; each side converts the other's file on open.
+- Saved chunks are read on demand (≤ 16 per tick around players, or when streamed) from an index
+  loaded at startup, and modified chunks are evicted once saved, so memory stays bounded as
+  edited worlds grow.
+- Local mode saves every 5 s (not `AUTOSAVE_SECONDS`) and when the page is hidden or closed: a tab
+  can go away at any time. One world file per generator and seed; a second tab on the same world
+  runs without persistence (sync access handles are exclusive).
+- Settings and permissions come from launch options saved into the world (`--name`, `--motd`,
+  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 8. Bans and an
+  allow-list (`allow_list` setting) are enforced at join. `permissions` records who granted an
+  entry (`granted_by`).
+- The wire stays without zstd: Explicit chunks are rare in generated mode, and QUIC/SCTP framing
+  already bounds the cost; storage uses it.
+- `dwell_server` now saves to `world.dwellworld` in its working directory by default (`--world ""`
+  for an in-memory world); CI's smoke run and the e2e server use their own.
+- SQLite comes from sqlite.org's amalgamation (3.53.4). This sandbox could not reach sqlite.org, so
+  local builds here used the same version's amalgamation as bundled by the better-sqlite3 npm package
+  (via `FETCHCONTENT_SOURCE_DIR_SQLITE3`);
+  CI downloads the official archive.
+- Found along the way: the e2e test `local mode: the predicted player walks forward` could walk off
+  a 1 m terrain ledge (its walk overshoots the 60 counted ticks by however long releasing the key
+  takes); it now walks on the flat world.
+- Backups, export/import UI, `bodies` and `lod_sections` remain for later phases (§6.4).
+
 Exit criteria
 - [x] *(3c)* With double-precision Jolt, the controller scenarios, golden trace and netcode tests
   pass natively and in WASM both at the origin and ~8,000 km from it, and 64 players still take
@@ -417,15 +481,26 @@ Exit criteria
   never on the tick; world, collision and per-client chunk sets stay bounded) and the client
   (`chunkStream.test.ts`: unloads drop chunks and meshes; e2e: the view streams in and the player
   walks). Outstanding: a playtest walking a long distance.*
-- [ ] A player can break and place every placeable block type (desktop and touch), picking it from
-  the hotbar; invalid edits (out of reach, into a player, bedrock) are rejected.
-- [ ] A block placed/removed by one client appears for all clients, and the player collides with
-  it immediately after the update on both server and client.
+- [x] *(3d)* A player can break and place every placeable block type (desktop and touch), picking
+  it from the hotbar; invalid edits (out of reach, into a player, bedrock) are rejected. *e2e
+  `edit.spec.ts` (all 14 slots, by number key and hotbar click) and `touch.spec.ts` (hotbar tap,
+  Break/Place toggle, taps on the view); `block_edit_test.cpp` (reach, line of sight, bedrock,
+  occupied cells, players, the world's bounds, rate, edit policy).*
+- [x] *(3d)* A block placed/removed by one client appears for all clients, and the player collides
+  with it immediately after the update on both server and client. *e2e `an edit by one client
+  appears for another on a native server`; `netcode: block edits` (a wall placed by one player
+  stops another on the server and in its prediction, at 100 ms RTT, at the origin and ~8,000 km
+  out); `collides with a block right after the edit arrives` (WASM client sim).*
 - [x] Chunk serialization round-trips byte-for-byte between C++ and TS (golden tests:
   `chunk_data_*` in `shared/protocol/vectors.txt`, from the Python reference encoder).
-- [ ] A world edited on a native server and one edited in local mode both survive restarts/reloads;
-  a crash mid-save leaves the previous save intact; a world file saved natively opens in the
-  browser build and vice versa.
+- [x] *(3e)* A world edited on a native server and one edited in local mode both survive
+  restarts/reloads; a crash mid-save leaves the previous save intact; a world file saved natively
+  opens in the browser build and vice versa. *`persistence: an edited world survives a server
+  restart` (native and WASM); e2e `local mode: an edited world is saved in the browser and survives
+  a reload` (OPFS in Chromium); `storage: a crash at any point of a save leaves the previous save or
+  the new one` (a VFS dropping every write after the Nth, each N: 231 crash points natively over
+  WAL, 84 in WASM over the rollback journal); `storage: world files written natively and in WASM
+  open in both builds` (golden files in `server/tests/storage/golden`).*
 - [x] The same seed produces bit-identical chunks natively, in local mode, and in the client
   worker (CI golden test: `dwell_tests`, `dwell_worldgen_tests.js`, and
   `worldgen/generator.test.ts`); untouched chunks cost only a `Generated` message on the wire

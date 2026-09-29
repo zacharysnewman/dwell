@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { PADDED_VOLUME } from '../mesh/mesher';
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import { CHUNK_SIZE, ChunkForm } from '../protocol/constants.gen';
 import type { ChunkCoord, Vec3 } from '../protocol/messages';
+import type { ChunkMeshes } from '../mesh/mesher';
+import { InlineMesher } from '../mesh/pool';
 import type { ChunkSource, GeneratedChunk } from '../worldgen/pool';
 import {
   chunkKey,
@@ -36,6 +39,7 @@ class ManualSource implements ChunkSource {
 
 class FakeStore implements ChunkStore {
   chunks = new Map<string, { revision: number; first: number }>();
+  edits: { key: string; revision: number; changes: number[] }[] = [];
   meshedFrom: string[] = [];
   setChunk(coord: ChunkCoord, revision: number, voxels: Uint16Array): void {
     this.chunks.set(chunkKey(coord), { revision, first: voxels[0] ?? -1 });
@@ -43,16 +47,22 @@ class FakeStore implements ChunkStore {
   removeChunk(coord: ChunkCoord): void {
     this.chunks.delete(chunkKey(coord));
   }
-  chunkFaces(cx: number, cy: number, cz: number): Uint8Array {
+  editChunk(coord: ChunkCoord, revision: number, changes: Uint16Array): void {
+    const key = chunkKey(coord);
+    this.edits.push({ key, revision, changes: [...changes] });
+    const c = this.chunks.get(key);
+    if (c) c.revision = revision;
+  }
+  paddedChunk(cx: number, cy: number, cz: number): Uint16Array<ArrayBuffer> {
     this.meshedFrom.push(chunkKey([cx, cy, cz]));
-    return new Uint8Array(8);
+    return new Uint16Array(PADDED_VOLUME);
   }
 }
 
 class FakeView implements TerrainView {
   chunks = new Map<string, Vec3>();
-  setTerrainChunk(key: string, origin: Vec3, faces: Uint8Array | null): void {
-    if (faces) this.chunks.set(key, origin);
+  setTerrainChunk(key: string, origin: Vec3, meshes: ChunkMeshes | null): void {
+    if (meshes) this.chunks.set(key, origin);
     else this.chunks.delete(key);
   }
 }
@@ -63,8 +73,18 @@ function setup() {
   const source = new ManualSource();
   const store = new FakeStore();
   const view = new FakeView();
-  return { source, store, view, streamer: new ChunkStreamer(store, source, view) };
+  const resyncs: string[] = [];
+  const streamer = new ChunkStreamer(store, source, new InlineMesher(), view, (coords) => {
+    resyncs.push(...coords.map(chunkKey));
+  });
+  return { source, store, view, resyncs, streamer };
 }
+
+const modification = (coord: ChunkCoord, revision: number, ...pairs: number[]) => ({
+  coord,
+  revision,
+  changes: Uint16Array.from(pairs),
+});
 
 const generated = (coord: ChunkCoord) => ({
   form: ChunkForm.Generated,
@@ -74,7 +94,7 @@ const generated = (coord: ChunkCoord) => ({
 });
 
 describe('ChunkStreamer', () => {
-  it('treats Air chunks as loaded without generating, storing, or meshing them', () => {
+  it('treats Air chunks as loaded without generating, storing, or meshing them', async () => {
     const { source, store, view, streamer } = setup();
     for (let y = -1; y <= 1; y++)
       for (let z = -1; z <= 1; z++)
@@ -99,6 +119,7 @@ describe('ChunkStreamer', () => {
       voxels: new Uint16Array(CHUNK_VOLUME).fill(2),
     });
     streamer.meshDirty([0, 0, 0], 100);
+    await flush();
     expect(view.chunks.has('5,0,0')).toBe(true);
     streamer.onChunkData({ form: ChunkForm.Air, coord: [5, 0, 0], revision: 0, voxels: null });
     expect(store.chunks.has('5,0,0')).toBe(false);
@@ -133,6 +154,7 @@ describe('ChunkStreamer', () => {
     source.finish([0, 0, 0]);
     await flush();
     streamer.meshDirty([0, 0, 0], 10);
+    await flush();
     expect(view.chunks.has('0,0,0')).toBe(true);
     streamer.onChunkData(generated([3, 0, 0]));
 
@@ -143,7 +165,14 @@ describe('ChunkStreamer', () => {
     expect(store.chunks.size).toBe(0);
     expect(view.chunks.size).toBe(0);
     expect(source.cancelled).toContain('3,0,0');
-    expect(streamer.stats()).toEqual({ loaded: 0, generating: 0, meshed: 0, dirty: 0 });
+    expect(streamer.stats()).toEqual({
+      loaded: 0,
+      generating: 0,
+      meshed: 0,
+      dirty: 0,
+      meshing: 0,
+      resyncs: 0,
+    });
   });
 
   it('ignores a generation that finishes after its chunk was unloaded', async () => {
@@ -194,6 +223,80 @@ describe('ChunkStreamer', () => {
     await flush();
     streamer.meshDirty([0, 0, 0], 100);
     expect(store.meshedFrom.sort()).toEqual(['0,0,0', '0,0,0', '0,1,0']);
+  });
+
+  it("keeps at most the mesher's capacity of jobs in flight", async () => {
+    const source = new ManualSource();
+    const store = new FakeStore();
+    const view = new FakeView();
+    const mesher = Object.assign(new InlineMesher(), { capacity: 2 });
+    const streamer = new ChunkStreamer(store, source, mesher, view);
+    for (let x = 0; x < 5; x += 2)
+      streamer.onChunkData({
+        form: ChunkForm.Explicit,
+        coord: [x, 0, 0],
+        revision: 0,
+        voxels: new Uint16Array(CHUNK_VOLUME),
+      });
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(2);
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(0);
+    await flush();
+    expect(view.chunks.size).toBe(2);
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(1);
+  });
+
+  it('applies voxel modifications in revision order and re-meshes the chunk and its neighbours', async () => {
+    const { store, streamer, resyncs } = setup();
+    const explicit = (coord: ChunkCoord, revision: number) => ({
+      form: ChunkForm.Explicit,
+      coord,
+      revision,
+      voxels: new Uint16Array(CHUNK_VOLUME),
+    });
+    streamer.onChunkData(explicit([0, 0, 0], 3));
+    streamer.onChunkData(explicit([1, 0, 0], 0));
+    streamer.onChunkData(explicit([0, 1, 0], 0));
+    streamer.meshDirty([0, 0, 0], 100);
+    await flush();
+    store.meshedFrom = [];
+    // A voxel on the +X border (x = 31): the chunk and its +X neighbour re-mesh.
+    streamer.onVoxelModification([modification([0, 0, 0], 4, 31 | (5 << 5), 2)]);
+    expect(store.edits).toEqual([{ key: '0,0,0', revision: 4, changes: [31 | (5 << 5), 2] }]);
+    expect(streamer.revision([0, 0, 0])).toBe(4);
+    streamer.meshDirty([0, 0, 0], 100);
+    expect(store.meshedFrom.sort()).toEqual(['0,0,0', '1,0,0']);
+    // Stale revisions are ignored; unknown chunks too.
+    streamer.onVoxelModification([modification([0, 0, 0], 4, 0, 3)]);
+    streamer.onVoxelModification([modification([9, 9, 9], 1, 0, 3)]);
+    expect(store.edits.length).toBe(1);
+    // A gap asks for a resync (once), and nothing is applied until the chunk comes again.
+    streamer.onVoxelModification([modification([0, 0, 0], 6, 0, 3)]);
+    streamer.onVoxelModification([modification([0, 0, 0], 7, 0, 3)]);
+    expect(resyncs).toEqual(['0,0,0']);
+    expect(store.edits.length).toBe(1);
+    expect(streamer.stats().resyncs).toBe(1);
+    streamer.onChunkData(explicit([0, 0, 0], 7));
+    streamer.onVoxelModification([modification([0, 0, 0], 8, 0, 3)]);
+    expect(store.edits.length).toBe(2);
+    expect(streamer.revision([0, 0, 0])).toBe(8);
+  });
+
+  it('holds modifications of a chunk still generating, and edits Air chunks into stored ones', async () => {
+    const { source, store, streamer, resyncs } = setup();
+    streamer.onChunkData(generated([2, 0, 0]));
+    streamer.onVoxelModification([modification([2, 0, 0], 1, 7, 2)]);
+    streamer.onVoxelModification([modification([2, 0, 0], 2, 8, 2)]);
+    expect(store.edits).toEqual([]);
+    source.finish([2, 0, 0]);
+    await flush();
+    expect(store.edits.map((e) => e.revision)).toEqual([1, 2]);
+    expect(resyncs).toEqual([]);
+
+    streamer.onChunkData({ form: ChunkForm.Air, coord: [0, 5, 0], revision: 0, voxels: null });
+    streamer.onVoxelModification([modification([0, 5, 0], 1, 0, 2)]);
+    expect(store.chunks.get('0,5,0')).toEqual({ revision: 1, first: 0 });
+    streamer.meshDirty([0, 160, 0], 100);
+    expect(store.meshedFrom).toContain('0,5,0');
   });
 
   it('is ready once the chunks around the player are loaded', () => {

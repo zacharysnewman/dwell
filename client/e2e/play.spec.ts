@@ -73,7 +73,9 @@ async function walkForward(page: Page, ticks: number): Promise<void> {
 }
 
 test('local mode: the predicted player walks forward', async ({ page }) => {
-  await page.goto('./');
+  // Level ground: the walk overshoots its 60 ticks by however long releasing the key takes, which
+  // on procedural terrain can reach a ledge.
+  await page.goto('./?world=flat');
   await waitActive(page);
   const start = await waitTerrain(page);
   await walkForward(page, 60);

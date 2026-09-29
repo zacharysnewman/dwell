@@ -13,10 +13,13 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "dwell/core/fixed_step.h"
 #include "dwell/core/jolt_runtime.h"
 #include "dwell/core/server.h"
+#include "dwell/storage/world_store.h"
 #include "dwell_net.h"
 
 namespace {
@@ -31,15 +34,27 @@ struct Options {
   std::string advertise = "127.0.0.1";
   dwell::core::ServerConfig server;
   std::string client_url = "http://localhost:5173/dwell/";
+  std::string world = "world.dwellworld";  // empty: nothing is saved
+  // Launch options that also change the world's settings table (§6.4, §10.1).
+  std::vector<std::pair<std::string, std::string>> settings;
+  std::vector<std::pair<dwell::storage::PermissionKind, std::string>> grants;  // key hex
 };
 
 void Usage() {
   std::puts(
-      "usage: dwell_server [--port N] [--rtc-port N] [--advertise IP] [--name NAME] [--motd TEXT]\n"
-      "                    [--max-players N] [--seed N] [--generator N] [--client-url URL]\n"
+      "usage: dwell_server [--world FILE] [--port N] [--rtc-port N] [--advertise IP]\n"
+      "                    [--name NAME] [--motd TEXT] [--max-players N] [--edits POLICY]\n"
+      "                    [--seed N] [--generator N] [--op KEY] [--ban KEY] [--client-url URL]\n"
+      "  --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps\n"
+      "                  the world in memory only)\n"
       "  --advertise IP  address players use to reach this server (invite links, WebRTC)\n"
-      "  --generator N   world generator: 2 = procedural terrain (default), 1 = movement\n"
-      "                  playground, 0 = flat");
+      "  --seed N, --generator N  a new world's seed and generator: 3 = procedural terrain\n"
+      "                  (default), 1 = movement playground, 0 = flat (a saved world keeps its "
+      "own)\n"
+      "  --name, --motd, --max-players, --edits everyone|ops|nobody  saved in the world's "
+      "settings\n"
+      "  --op KEY, --ban KEY  grant op or ban a player (hex device public key), saved in the "
+      "world");
 }
 
 bool ParseOptions(int argc, char** argv, Options& o) {
@@ -55,12 +70,23 @@ bool ParseOptions(int argc, char** argv, Options& o) {
       o.rtc_port = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10));
     } else if (arg == "--advertise") {
       o.advertise = v;
+    } else if (arg == "--world") {
+      o.world = v;
     } else if (arg == "--name") {
-      o.server.name = v;
+      o.settings.emplace_back("name", v);
     } else if (arg == "--motd") {
-      o.server.motd = v;
+      o.settings.emplace_back("motd", v);
     } else if (arg == "--max-players") {
-      o.server.max_players = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10));
+      o.settings.emplace_back("max_players", v);
+    } else if (arg == "--edits") {
+      if (std::string(v) != "everyone" && std::string(v) != "ops" && std::string(v) != "nobody") {
+        return false;
+      }
+      o.settings.emplace_back("edits", v);
+    } else if (arg == "--op") {
+      o.grants.emplace_back(dwell::storage::PermissionKind::kOp, v);
+    } else if (arg == "--ban") {
+      o.grants.emplace_back(dwell::storage::PermissionKind::kBan, v);
     } else if (arg == "--seed") {
       o.server.world_seed = std::strtoull(v, nullptr, 10);
     } else if (arg == "--generator") {
@@ -84,6 +110,95 @@ std::string Hex(const std::uint8_t* bytes, std::size_t n) {
   return out;
 }
 
+bool ParseKey(const std::string& hex, dwell::protocol::PublicKey& key) {
+  if (hex.size() != 64) return false;
+  for (std::size_t i = 0; i < key.size(); ++i) {
+    const std::string byte = hex.substr(2 * i, 2);
+    char* end = nullptr;
+    key[i] = static_cast<std::uint8_t>(std::strtoul(byte.c_str(), &end, 16));
+    if (end != byte.c_str() + 2) return false;
+  }
+  return true;
+}
+
+// Applies a setting to the server config (§10.1): stored settings first, launch options after.
+void ApplySetting(dwell::core::ServerConfig& c, const std::string& key, const std::string& value) {
+  if (key == "name") {
+    c.name = value;
+  } else if (key == "motd") {
+    c.motd = value;
+  } else if (key == "max_players") {
+    c.max_players = static_cast<std::uint16_t>(std::strtoul(value.c_str(), nullptr, 10));
+  } else if (key == "edits") {
+    c.edits = value == "ops"      ? dwell::core::EditPolicy::kOps
+              : value == "nobody" ? dwell::core::EditPolicy::kNobody
+                                  : dwell::core::EditPolicy::kEveryone;
+  } else if (key == "autosave_seconds") {
+    c.autosave_seconds = std::max(1, std::atoi(value.c_str()));
+  } else if (key == "allow_list") {
+    if (value == "1") c.allow_list.emplace();
+  }
+}
+
+// Opens the world file and folds its settings and permissions (plus the launch options, which are
+// saved into it) into the config. False on failure.
+bool OpenWorld(Options& o) {
+  auto& c = o.server;
+  for (const auto& [key, value] : o.settings) ApplySetting(c, key, value);
+  if (o.world.empty()) {
+    std::puts("world: in memory only (--world \"\"): nothing is saved");
+    return true;
+  }
+  std::string error;
+  auto store = dwell::storage::WorldStore::OpenFile(o.world, error);
+  if (!store) {
+    std::fprintf(stderr, "dwell_server: cannot open world file %s: %s\n", o.world.c_str(),
+                 error.c_str());
+    return false;
+  }
+  auto& db = store->db();
+  for (const char* key :
+       {"name", "motd", "max_players", "edits", "autosave_seconds", "allow_list"}) {
+    if (auto value = db.Setting(key)) ApplySetting(c, key, *value);
+  }
+  for (const auto& [key, value] : o.settings) {
+    ApplySetting(c, key, value);
+    db.SetSetting(key, value);
+  }
+  for (const auto& [kind, hex] : o.grants) {
+    dwell::storage::PermissionEntry e;
+    if (!ParseKey(hex, e.key)) {
+      std::fprintf(stderr, "dwell_server: not a device public key: %s\n", hex.c_str());
+      return false;
+    }
+    e.kind = kind;
+    db.SetPermission(e);
+  }
+  for (const auto& e : db.Permissions()) {
+    switch (e.kind) {
+      case dwell::storage::PermissionKind::kOp:
+        c.ops.push_back(e.key);
+        break;
+      case dwell::storage::PermissionKind::kBan:
+        c.banned.push_back(e.key);
+        break;
+      case dwell::storage::PermissionKind::kAllow:
+        if (c.allow_list) c.allow_list->push_back(e.key);
+        break;
+    }
+  }
+  const auto meta = db.LoadMeta();
+  if (meta &&
+      (meta->world_seed != c.world_seed || meta->generator_version != c.generator_version)) {
+    std::printf("world: %s keeps its own seed %llu and generator %u\n", o.world.c_str(),
+                static_cast<unsigned long long>(meta->world_seed), meta->generator_version);
+  }
+  std::printf("world: %s (%s, %zu modified chunks)\n", o.world.c_str(), meta ? "loaded" : "new",
+              db.ChunkIndex().size());
+  c.store = std::move(store);
+  return true;
+}
+
 dwell::protocol::TransportKind ToTransportKind(std::uint8_t v) {
   return v == 2 ? dwell::protocol::TransportKind::kWebRtc
                 : dwell::protocol::TransportKind::kWebTransport;
@@ -98,6 +213,7 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  if (!OpenWorld(options)) return 1;
   dwell::core::JoltRuntime jolt;
   const int workers = std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1);
   JPH::JobSystemThreadPool jobs(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, workers);
@@ -197,5 +313,16 @@ int main(int argc, char** argv) {
 
   std::puts("dwell_server: shutting down");
   dwell_net_stop(net);
+  if (options.server.store) {
+    server.SaveNow();
+    options.server.store->Flush();
+    server.Step();  // collects the save's result
+    const auto stats = server.save_stats();
+    if (stats.failed > 0) {
+      std::fprintf(stderr, "dwell_server: saving failed: %s\n", stats.last_error.c_str());
+      return 1;
+    }
+    std::puts("world saved");
+  }
   return 0;
 }

@@ -5,6 +5,7 @@ import type { ChunkCoord } from '../protocol/messages';
 
 /** Module surface of dwell_worldgen.js (-sMODULARIZE -sEXPORT_ES6). */
 export interface DwellWorldgenModule {
+  HEAPU8: Uint8Array;
   HEAPU16: Uint16Array;
   HEAPU32: Uint32Array;
   _malloc(size: number): number;
@@ -12,6 +13,7 @@ export interface DwellWorldgenModule {
   _dwell_worldgen_create(generatorVersion: number, seedLo: number, seedHi: number): number;
   _dwell_worldgen_generate(cx: number, cy: number, cz: number): number;
   _dwell_worldgen_hash(outPtr: number): void;
+  _dwell_worldgen_map(x0: number, z0: number, step: number, n: number): number;
 }
 
 export type DwellWorldgenFactory = () => Promise<DwellWorldgenModule>;
@@ -42,6 +44,15 @@ export class ChunkGenerator {
   generate(coord: ChunkCoord): Uint16Array<ArrayBuffer> {
     const ptr = this.m._dwell_worldgen_generate(coord[0], coord[1], coord[2]);
     return this.m.HEAPU16.slice(ptr >> 1, (ptr >> 1) + CHUNK_VOLUME);
+  }
+
+  /**
+   * The terrain's biome/height map (n × n columns from (x0, z0) every `step` m, 4 bytes each:
+   * i16 height, u8 biome, u8 flags), or null for generators without one.
+   */
+  map(x0: number, z0: number, step: number, n: number): Uint8Array<ArrayBuffer> | null {
+    const ptr = this.m._dwell_worldgen_map(x0, z0, step, n);
+    return ptr ? this.m.HEAPU8.slice(ptr, ptr + n * n * 4) : null;
   }
 
   /** ChunkHash (FNV-1a 64) of the chunk generated last: the WorldgenCheck value. */

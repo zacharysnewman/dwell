@@ -91,6 +91,19 @@ constexpr MessageType TypeOf<ChunkUnload>() {
   return MessageType::kChunkUnload;
 }
 
+template <>
+constexpr MessageType TypeOf<BlockEditRequest>() {
+  return MessageType::kBlockEditRequest;
+}
+template <>
+constexpr MessageType TypeOf<VoxelModification>() {
+  return MessageType::kVoxelModification;
+}
+template <>
+constexpr MessageType TypeOf<ChunkResync>() {
+  return MessageType::kChunkResync;
+}
+
 void Write(ByteWriter& w, const DatagramPing& m) {
   w.U32(m.seq);
   w.F64(m.client_time_ms);
@@ -333,6 +346,37 @@ void Write(ByteWriter& w, const ChunkData& m) {
 
 void Write(ByteWriter& w, const ChunkUnload& m) {
   const std::size_t count = std::min<std::size_t>(m.coords.size(), 0xFFFF);
+  w.U16(static_cast<std::uint16_t>(count));
+  for (std::size_t i = 0; i < count; ++i) WriteCoord(w, m.coords[i]);
+}
+
+void Write(ByteWriter& w, const BlockEditRequest& m) {
+  w.U8(static_cast<std::uint8_t>(m.action));
+  WriteCoord(w, m.cell);
+  w.U8(m.face);
+  if (m.action == BlockEditAction::kPlace) w.U16(m.material);
+}
+
+void Write(ByteWriter& w, const VoxelModification& m) {
+  w.U8(static_cast<std::uint8_t>(m.reason));
+  w.U32(m.server_tick);
+  const std::size_t count = std::min<std::size_t>(m.chunks.size(), 0xFFFF);
+  w.U16(static_cast<std::uint16_t>(count));
+  for (std::size_t i = 0; i < count; ++i) {
+    const ChunkChanges& c = m.chunks[i];
+    WriteCoord(w, c.coord);
+    w.U32(c.revision);
+    const std::size_t n = std::min<std::size_t>(c.changes.size(), 0xFFFF);
+    w.U16(static_cast<std::uint16_t>(n));
+    for (std::size_t k = 0; k < n; ++k) {
+      w.U16(c.changes[k].index);
+      w.U16(c.changes[k].material);
+    }
+  }
+}
+
+void Write(ByteWriter& w, const ChunkResync& m) {
+  const std::size_t count = std::min(m.coords.size(), kMaxResyncChunks);
   w.U16(static_cast<std::uint16_t>(count));
   for (std::size_t i = 0; i < count; ++i) WriteCoord(w, m.coords[i]);
 }
@@ -598,11 +642,71 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       out = std::move(m);
       break;
     }
+    case MessageType::kBlockEditRequest: {
+      BlockEditRequest m;
+      const auto action = r.U8();
+      r.Check(action >= 1 && action <= kMaxBlockEditAction);
+      m.action = static_cast<BlockEditAction>(action);
+      m.cell = ReadCoord(r);
+      m.face = r.U8();
+      r.Check(m.face < 6);
+      if (r.ok() && m.action == BlockEditAction::kPlace) m.material = r.U16();
+      out = m;
+      break;
+    }
+    case MessageType::kVoxelModification: {
+      VoxelModification m;
+      const auto reason = r.U8();
+      r.Check(reason >= 1 && reason <= kMaxVoxelModificationReason);
+      m.reason = static_cast<VoxelModificationReason>(reason);
+      m.server_tick = r.U32();
+      const std::uint16_t count = r.U16();
+      r.Check(count >= 1);
+      for (int i = 0; i < count && r.ok(); ++i) {
+        ChunkChanges c;
+        c.coord = ReadCoord(r);
+        c.revision = r.U32();
+        const std::uint16_t n = r.U16();
+        r.Check(n >= 1);
+        for (int k = 0; k < n && r.ok(); ++k) {
+          VoxelChange v;
+          v.index = r.U16();
+          v.material = r.U16();
+          r.Check(v.index < kChunkVolume);
+          c.changes.push_back(v);
+        }
+        m.chunks.push_back(std::move(c));
+      }
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kChunkResync: {
+      ChunkResync m;
+      const std::uint16_t count = r.U16();
+      r.Check(count >= 1 && count <= kMaxResyncChunks);
+      for (int i = 0; i < count && r.ok(); ++i) m.coords.push_back(ReadCoord(r));
+      out = std::move(m);
+      break;
+    }
     default:
       return std::nullopt;
   }
   if (!r.AtEnd()) return std::nullopt;
   return out;
+}
+
+std::vector<std::uint8_t> EncodeChunkVoxels(const std::vector<std::uint16_t>& voxels) {
+  std::vector<std::uint8_t> out;
+  ByteWriter w(out);
+  WriteVoxels(w, voxels);
+  return out;
+}
+
+std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std::uint8_t> bytes) {
+  ByteReader r(bytes);
+  auto voxels = ReadVoxels(r);
+  if (!r.ok() || !r.AtEnd()) return std::nullopt;
+  return voxels;
 }
 
 std::int32_t ToFixedPosition(double v) {

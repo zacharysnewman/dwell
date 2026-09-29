@@ -278,3 +278,57 @@ TEST_CASE("predictor: remote proxy right after the first snapshot") {
   for (int i = 0; i < 10; ++i) p.Tick(player::QuantizeInput({}, p.next_seq()));
   CHECK(p.active());
 }
+
+TEST_SUITE("netcode: block edits") {
+  TEST_CASE("a block placed by one player blocks another on the server and in its prediction") {
+    core::ServerConfig config{.generator_version = core::kGeneratorPlayground};
+    config.spawn = {20.5, 0.0, 0.5};  // open ground; slot 0 at x 19, slot 1 at x 20
+    NetSim sim({100, 10, 0.0}, config);
+    bool walk = false;
+    auto& a = sim.Join(nullptr, /*stream=*/true);
+    auto& b = sim.Join(
+        [&walk](int, const SimClient& self) {
+          return walk ? SteerTo(self, 20.5f, 8.0f) : player::Input{};
+        },
+        /*stream=*/true);
+    sim.Step(Ticks(1.0f));
+
+    // A builds a wall two blocks high across B's path at z = 3 (edits spaced for the rate limit).
+    for (int y : {-1, 0}) {
+      for (int x : {19, 20, 21}) {
+        sim.Send(a, protocol::BlockEditRequest{protocol::BlockEditAction::kPlace,
+                                               {WorldCellX(x), y, 3},
+                                               2,
+                                               core::Materials::kStone});
+        sim.Step(8);
+      }
+    }
+    sim.Step(Ticks(0.5f));
+    auto& server_world = sim.server().world();
+    for (int y : {0, 1}) {
+      for (int x : {19, 20, 21}) {
+        CAPTURE(x);
+        CAPTURE(y);
+        CHECK(server_world.GetVoxel(WorldCellX(x), y, 3) == core::Materials::kStone);
+        CHECK(a.world.GetVoxel(WorldCellX(x), y, 3) == core::Materials::kStone);
+        CHECK(b.world.GetVoxel(WorldCellX(x), y, 3) == core::Materials::kStone);
+      }
+    }
+    CHECK(sim.server().StatsOf(a.player_id)->edits_applied == 6);
+    CHECK(b.modifications.size() >= 2);
+
+    // B walks into it: stopped by the wall on the server and in its own prediction.
+    walk = true;
+    float server_max = -10, client_max = -10;
+    for (int i = 0; i < Ticks(3.0f); ++i) {
+      sim.Step(1);
+      const auto h = *sim.server().PlayerHandleOf(b.player_id);
+      server_max = std::max(server_max, ToLocal(sim.server().players().Position(h)).GetZ());
+      client_max = std::max(client_max, b.Position().GetZ());
+    }
+    MESSAGE("closest approach: server " << server_max << ", client " << client_max);
+    CHECK(server_max > 2.5f);  // it did walk up to the wall
+    CHECK(server_max < 3.0f - 0.29f);
+    CHECK(client_max < 3.0f - 0.29f);
+  }
+}

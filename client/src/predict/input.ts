@@ -71,24 +71,36 @@ export function dequantizePitch(q: number): number {
   return (q * 90) / 32767;
 }
 
-/** Keyboard + pointer-lock mouse look. WASD move, Space jump, Shift run, C / Ctrl crouch. */
+/**
+ * Keyboard + pointer-lock mouse look. WASD move, Space jump, Shift run, C / Ctrl crouch; left and
+ * right click break and place, number keys and the wheel pick a block (§6.5).
+ */
 export class KeyboardMouseInput {
   private readonly keys = new Set<string>();
   yaw = 0;
   pitch = 0;
   /** Degrees per pixel of mouse movement. */
   sensitivity = 0.12;
-  /** Debug toggles: F3 overlay. */
+  /** Debug toggles: F3 overlay, F4 terrain map. */
   onToggle: ((key: string) => void) | null = null;
   /** On-screen touch controls, merged into every sample (predict/touch.ts). */
   touch: TouchState | null = null;
+  /** Block interaction (§6.5): left click breaks, right click places — while the pointer is locked. */
+  onAction: ((action: 'break' | 'place') => void) | null = null;
+  /** Hotbar: a number key was pressed (its code, e.g. Digit3). */
+  onDigit: ((code: string) => void) | null = null;
+  /** Hotbar: the wheel turned (sign: +1 next slot, −1 previous). */
+  onScroll: ((delta: number) => void) | null = null;
 
   constructor(private readonly target: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);
     target.addEventListener('click', this.onClick);
+    target.addEventListener('mousedown', this.onMouseDown);
+    target.addEventListener('contextmenu', this.onContextMenu);
     document.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('wheel', this.onWheel, { passive: true });
   }
 
   dispose(): void {
@@ -96,7 +108,14 @@ export class KeyboardMouseInput {
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
     this.target.removeEventListener('click', this.onClick);
+    this.target.removeEventListener('mousedown', this.onMouseDown);
+    this.target.removeEventListener('contextmenu', this.onContextMenu);
     document.removeEventListener('mousemove', this.onMouseMove);
+    window.removeEventListener('wheel', this.onWheel);
+  }
+
+  private get locked(): boolean {
+    return document.pointerLockElement === this.target;
   }
 
   /** Presses or releases a key programmatically (tests and automation). */
@@ -120,13 +139,29 @@ export class KeyboardMouseInput {
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (e.code === 'F3') {
+    if (e.code === 'F3' || e.code === 'F4') {
       e.preventDefault();
       this.onToggle?.(e.code);
       return;
     }
     this.keys.add(e.code);
+    if (e.code.startsWith('Digit') && !e.repeat) this.onDigit?.(e.code);
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+  };
+
+  private readonly onMouseDown = (e: MouseEvent): void => {
+    // The first click only locks the pointer; it doesn't break anything.
+    if (!this.locked) return;
+    if (e.button === 0) this.onAction?.('break');
+    else if (e.button === 2) this.onAction?.('place');
+  };
+
+  private readonly onContextMenu = (e: Event): void => {
+    e.preventDefault();
+  };
+
+  private readonly onWheel = (e: WheelEvent): void => {
+    if (this.locked && e.deltaY !== 0) this.onScroll?.(Math.sign(e.deltaY));
   };
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
@@ -146,7 +181,7 @@ export class KeyboardMouseInput {
   };
 
   private readonly onMouseMove = (e: MouseEvent): void => {
-    if (document.pointerLockElement !== this.target) return;
+    if (!this.locked) return;
     // Right-handed, Y up: facing +Z (yaw 0), right is −X, so turning right decreases yaw.
     this.yaw = (((this.yaw - e.movementX * this.sensitivity) % 360) + 360) % 360;
     this.pitch = clamp(this.pitch - e.movementY * this.sensitivity, -89, 89);

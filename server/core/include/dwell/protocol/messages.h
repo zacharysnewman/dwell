@@ -100,6 +100,42 @@ struct ChunkUnload {
   std::vector<ChunkCoordNet> coords;  // 1..65535
 };
 
+// --- Block edits (Phase 3d, §6.5, §8.3) ---
+
+// C→S reliable (`control`): break the targeted cell, or place `material` against its `face`
+// (0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z). `material` travels only for Place.
+struct BlockEditRequest {
+  BlockEditAction action = BlockEditAction::kBreak;
+  std::array<std::int32_t, 3> cell{};
+  std::uint8_t face = 0;
+  std::uint16_t material = 0;
+};
+
+struct VoxelChange {
+  std::uint16_t index = 0;  // chunk-local x | y << 5 | z << 10
+  std::uint16_t material = 0;
+  bool operator==(const VoxelChange&) const = default;
+};
+struct ChunkChanges {
+  ChunkCoordNet coord{};
+  std::uint32_t revision = 0;        // the chunk's revision after the changes
+  std::vector<VoxelChange> changes;  // 1..65535
+};
+
+// S→C reliable (`world`): voxel changes, applied by clients in order. A chunk's revision advances
+// by one per modification that touches it, so a client can detect a gap and resync (§6.3).
+struct VoxelModification {
+  VoxelModificationReason reason = VoxelModificationReason::kEdit;
+  std::uint32_t server_tick = 0;
+  std::vector<ChunkChanges> chunks;  // 1..65535
+};
+
+// C→S reliable (`control`): chunks the client wants sent again (a revision
+// gap), 1..kMaxResyncChunks.
+struct ChunkResync {
+  std::vector<ChunkCoordNet> coords;
+};
+
 // --- Players (Phase 2, PLAYER_CONTROLLER.md §8.4) ---
 
 // One tick of quantized input: move ∈ [−127, 127]² (|move| ≤ 127), buttons (InputButtons), yaw as
@@ -173,6 +209,12 @@ struct PlayerEvent {
   DamageCause cause = DamageCause::kFall;  // Damage, Death
 };
 
+// Chunk voxels as palette + RLE (the ChunkData Explicit payload, §6.1): kChunkVolume materials in
+// chunk index order. Also the world file's chunk encoding (before zstd, §6.4).
+std::vector<std::uint8_t> EncodeChunkVoxels(const std::vector<std::uint16_t>& voxels);
+// nullopt unless `bytes` is exactly one canonical-length payload.
+std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std::uint8_t> bytes);
+
 // posfix: nearest multiple of 1/kPositionFixedScale m (halves round up), clamped to i32.
 std::int32_t ToFixedPosition(double v);
 inline double FromFixedPosition(std::int32_t v) {
@@ -181,7 +223,8 @@ inline double FromFixedPosition(std::int32_t v) {
 
 using Message = std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello,
                              Challenge, ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput,
-                             PhysicsSnapshot, PlayerEvent, WorldgenCheck, ChunkData, ChunkUnload>;
+                             PhysicsSnapshot, PlayerEvent, WorldgenCheck, ChunkData, ChunkUnload,
+                             BlockEditRequest, VoxelModification, ChunkResync>;
 
 // Appends the encoded message to `out`. Strings longer than their limit are truncated at a UTF-8
 // boundary, so encoding never produces a message the peer would reject.

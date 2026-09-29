@@ -1,15 +1,21 @@
+import type { DwellFiles } from '../local/worldFiles';
+
 // The Emscripten build of the sim core (server/wasm/wasm_api.cpp): one ES-module factory, one
 // instance per use (the local-mode server in its worker; the client sim on the main thread).
 
 /** Module surface (factory created with -sMODULARIZE -sEXPORT_ES6). */
 export interface DwellCoreModule {
   HEAPU8: Uint8Array;
+  HEAPU16: Uint16Array;
+  HEAP32: Int32Array;
   HEAPU32: Uint32Array;
   HEAPF64: Float64Array;
   _malloc(size: number): number;
   _free(ptr: number): void;
   // Local-mode server.
-  _dwell_local_create(worldSeed: number, generatorVersion: number): number;
+  _dwell_local_create(worldSeed: number, generatorVersion: number, persist: number): number;
+  _dwell_local_storage_error(): number;
+  _dwell_local_save(): number;
   _dwell_local_connected(session: number, kind: number, bindingPtr: number): void;
   _dwell_local_disconnected(session: number): void;
   _dwell_local_reliable(session: number, channel: number, ptr: number, len: number): void;
@@ -45,10 +51,30 @@ export interface DwellCoreModule {
   ): void;
   _dwell_client_remove_remote(playerId: number): void;
   _dwell_client_state(): number;
-  _dwell_client_chunk_faces(cx: number, cy: number, cz: number, outCountPtr: number): number;
+  _dwell_client_chunk_padded(cx: number, cy: number, cz: number): number;
+  _dwell_client_chunk_edit(
+    cx: number,
+    cy: number,
+    cz: number,
+    revision: number,
+    pairsPtr: number,
+    count: number,
+  ): void;
+  _dwell_client_target(
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    maxDistance: number,
+    outPtr: number,
+  ): number;
+  _dwell_client_voxel(x: number, y: number, z: number): number;
 }
 
-export type DwellCoreFactory = () => Promise<DwellCoreModule>;
+/** Module options: `dwellFiles` gives the local server its world file (local/worldFiles.ts). */
+export type DwellCoreFactory = (options?: { dwellFiles?: DwellFiles }) => Promise<DwellCoreModule>;
 
 /** URL of the WASM core's JS loader, served from `public/wasm` at the site base. */
 export function dwellCoreUrl(): string {

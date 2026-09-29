@@ -32,5 +32,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Unit tests only: e2e/*.spec.ts are Playwright's (`npm run e2e`), not Vitest's.
+    include: ['src/**/*.test.ts'],
   },
 });

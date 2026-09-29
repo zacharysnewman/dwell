@@ -6,6 +6,7 @@
 #include <memory>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "dwell/protocol/constants.gen.h"
 
@@ -102,6 +103,10 @@ class Chunk {
     ++revision_;
   }
   std::uint32_t revision() const { return revision_; }
+  // Edits (§6.5): voxels changed without per-voxel revision bumps, then one bump for the batch, so
+  // a chunk's revision advances by one per VoxelModification that touches it.
+  void SetAt(int index, MaterialId m) { voxels_[static_cast<std::size_t>(index)] = m; }
+  void BumpRevision() { ++revision_; }
   // Called once after generation: an unmodified generated chunk is revision 0 (§6.1, §6.3).
   void ResetRevision() { revision_ = 0; }
   // Streamed chunks take the revision the server sent.
@@ -152,6 +157,14 @@ std::array<double, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64
 // test and the WorldgenCheck verification hash (§6.3).
 std::uint64_t ChunkHash(const Chunk& chunk);
 
+// "Regenerate and diff" (Phase 3e debug tooling): the voxels where `current` differs from the
+// chunk as generated, in chunk index order.
+struct VoxelDiff {
+  int index;  // x | y << 5 | z << 10
+  MaterialId generated, current;
+};
+std::vector<VoxelDiff> DiffChunk(const Chunk& generated, const Chunk& current);
+
 // The world's disc (ADR 0011): a column (x, z) is inside when x² + z² < WORLD_RADIUS². Beyond it,
 // generators produce nothing (the void).
 inline bool InsideWorldDisc(std::int32_t x, std::int32_t z) {
@@ -173,6 +186,14 @@ inline int ChunkDistance(const ChunkCoord& a, const ChunkCoord& b) {
   const int dz = a.z > b.z ? a.z - b.z : b.z - a.z;
   return dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
 }
+
+// Chunks kept outside memory — the world file (§6.4): `has` names them, `load` reads one (null on
+// failure: the chunk is generated instead). A world loads them rather than generating them, and
+// never reads them as air.
+struct SavedChunks {
+  std::function<bool(const ChunkCoord&)> has;
+  std::function<std::unique_ptr<Chunk>(const ChunkCoord&)> load;
+};
 
 // Voxel grid. With a generator (the server; tests) missing chunks are generated on first access,
 // and unmodified ones can be evicted and regenerated later (§6.3). Without one (a *streamed* world:
@@ -198,6 +219,9 @@ class VoxelWorld {
   void Remove(const ChunkCoord& coord);
   // Drops unmodified (revision 0) chunks that `keep` rejects; returns how many.
   std::size_t EvictUnmodified(const std::function<bool(const ChunkCoord&)>& keep);
+  // Drops the chunks `evict` selects (callers keep modified chunks that are not saved).
+  std::size_t Evict(const std::function<bool(const ChunkCoord&, const Chunk&)>& evict);
+  void SetSaved(SavedChunks saved) { saved_ = std::move(saved); }
 
   // Changes whenever a chunk is replaced or removed (or appears in a streamed world): pointers
   // and references to chunks obtained before a change may be stale.
@@ -205,13 +229,17 @@ class VoxelWorld {
   std::size_t loaded_chunks() const { return chunks_.size(); }
   // Chunks generated synchronously on access (the tick waited for them).
   std::uint64_t generated_on_access() const { return generated_on_access_; }
+  // Chunks read from the world file (SavedChunks).
+  std::uint64_t loaded_saved() const { return loaded_saved_; }
 
  private:
   ChunkGenerator generator_;
   AirChunkTest air_;
+  SavedChunks saved_;
   std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash> chunks_;
   std::uint64_t epoch_ = 0;
   std::uint64_t generated_on_access_ = 0;
+  std::uint64_t loaded_saved_ = 0;
 };
 
 }  // namespace dwell::core

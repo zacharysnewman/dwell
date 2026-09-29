@@ -13,9 +13,14 @@ const scope = self as unknown as WorkerScope;
 let generator: ChunkGenerator | null = null;
 const queued: ToWorldgen[] = [];
 
-function generate(msg: Extract<ToWorldgen, { t: 'generate' }>, g: ChunkGenerator): void {
-  const voxels = g.generate(msg.coord);
-  scope.postMessage({ t: 'chunk', id: msg.id, voxels, hash: g.lastHash() }, [voxels.buffer]);
+function generate(msg: ToWorldgen, g: ChunkGenerator): void {
+  if (msg.t === 'generate') {
+    const voxels = g.generate(msg.coord);
+    scope.postMessage({ t: 'chunk', id: msg.id, voxels, hash: g.lastHash() }, [voxels.buffer]);
+  } else if (msg.t === 'map') {
+    const bytes = g.map(msg.x0, msg.z0, msg.step, msg.n);
+    scope.postMessage({ t: 'map', id: msg.id, bytes }, bytes ? [bytes.buffer] : []);
+  }
 }
 
 async function init(generatorVersion: number, worldSeed: bigint): Promise<void> {
@@ -32,7 +37,7 @@ async function init(generatorVersion: number, worldSeed: bigint): Promise<void> 
     return;
   }
   scope.postMessage({ t: 'ready' });
-  for (const msg of queued.splice(0)) if (msg.t === 'generate') generate(msg, generator);
+  for (const msg of queued.splice(0)) generate(msg, generator);
 }
 
 scope.onmessage = (e) => {

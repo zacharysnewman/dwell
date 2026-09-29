@@ -60,6 +60,8 @@ jobs:
         run: node ../server/build/wasm/tools/dwell_player_tests.js --dwell-origin-x=far
       - name: Worldgen suite under WASM (Node) — golden chunk hashes match native (ADR 0010)
         run: node ../server/build/wasm/tools/dwell_worldgen_tests.js
+      - name: Storage suite under WASM (Node) — the browser's VFS; opens the natively written world file (§6.4)
+        run: node ../server/build/wasm/tools/dwell_storage_tests.js
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
@@ -106,7 +108,7 @@ jobs:
         working-directory: server
         run: build/dev/tests/dwell_tests --dwell-origin-x=far -ts="player*,netcode*"
       - name: Smoke-run server
-        run: server/build/dev/app/dwell_server
+        run: server/build/dev/app/dwell_server --world ''
       - name: Player controller performance gate and golden trace (Release)
         working-directory: server
         run: |

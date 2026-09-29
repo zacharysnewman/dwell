@@ -6,10 +6,13 @@ export type ToWorker =
   | { t: 'connect'; session: number; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
   | { t: 'datagram'; session: number; bytes: Uint8Array }
-  | { t: 'disconnect'; session: number };
+  | { t: 'disconnect'; session: number }
+  /** Save the world now (the page is being hidden or closed). */
+  | { t: 'save' };
 
 export type FromWorker =
-  | { t: 'ready' }
+  /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
+  | { t: 'ready'; persisted: boolean }
   | { t: 'error'; message: string }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
   | { t: 'datagram'; session: number; bytes: Uint8Array }

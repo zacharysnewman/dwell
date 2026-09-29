@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIALS, materialStyle } from './materials';
+import { MATERIALS, materialStyle, PLACEABLE } from './materials';
 
 describe('material styles', () => {
   it('mirror the C++ material table id for id (server/core/include/dwell/core/voxel.h)', () => {
@@ -16,6 +16,28 @@ describe('material styles', () => {
       'ladder_w',
       'water',
       'launch_pad',
+      'sand',
+      'sandstone',
+      'gravel',
+      'snow',
+      'log',
+      'leaves',
+      'coal_ore',
+      'iron_ore',
+      'gold_ore',
+    ]);
+  });
+
+  it('mark the placeable set of the C++ table (Placeable, block_edit_test.cpp)', () => {
+    expect(PLACEABLE.map((id) => MATERIALS[id]?.name)).toEqual([
+      'stone',
+      'dirt',
+      'grass',
+      'stone_slab',
+      'ladder_n',
+      'ladder_e',
+      'ladder_s',
+      'ladder_w',
       'sand',
       'sandstone',
       'gravel',

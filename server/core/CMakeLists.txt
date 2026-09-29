@@ -1,5 +1,6 @@
 # Simulation core: platform-free; compiled natively and (from Phase 1) to WASM. ARCHITECTURE.md §4.3.
 add_library(dwell_core
+  src/block_edit.cpp
   src/crypto.cpp
   src/entropy.cpp
   src/jolt_runtime.cpp
@@ -15,7 +16,13 @@ add_library(dwell_core
   src/player/predictor.cpp
   src/player/voxel_query.cpp
   src/worldgen/noise.cpp
-  src/worldgen/terrain.cpp)
+  src/worldgen/terrain.cpp
+  src/storage/world_db.cpp
+  src/storage/world_store.cpp)
+if(EMSCRIPTEN)
+  # SQLite's OS layer in the browser: files are OPFS sync access handles (§6.4).
+  target_sources(dwell_core PRIVATE src/storage/opfs_vfs.cpp)
+endif()
 target_include_directories(dwell_core PUBLIC include)
 find_package(Threads REQUIRED)
-target_link_libraries(dwell_core PUBLIC Jolt Threads::Threads PRIVATE dwell_options monocypher)
+target_link_libraries(dwell_core PUBLIC Jolt Threads::Threads PRIVATE dwell_options monocypher dwell_sqlite dwell_zstd)

@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 4;
+inline constexpr std::uint16_t kProtocolVersion = 5;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -21,6 +21,8 @@ inline constexpr int kRespawnSeconds = 5;
 inline constexpr float kReconcileSnapDistance = 1.0f;
 inline constexpr int kInterpDelayMs = 100;
 inline constexpr float kPredictProxyRadius = 16.0f;
+inline constexpr float kReachDistance = 5.0f;
+inline constexpr int kBlockEditIntervalMs = 100;
 
 inline constexpr int kWorldMinY = -2048;
 inline constexpr int kWorldMaxY = 6144;
@@ -31,12 +33,14 @@ inline constexpr int kViewRadiusChunks = 3;
 inline constexpr int kUnloadMarginChunks = 1;
 inline constexpr int kChunkBytesPerSecond = 1048576;
 inline constexpr int kMaxChunksPerTick = 32;
+inline constexpr int kAutosaveSeconds = 30;
 
 inline constexpr std::size_t kDisplayNameMaxBytes = 64;
 inline constexpr std::size_t kClientVersionMaxBytes = 64;
 inline constexpr std::size_t kServerNameMaxBytes = 64;
 inline constexpr std::size_t kMotdMaxBytes = 256;
 inline constexpr std::size_t kRejectMessageMaxBytes = 256;
+inline constexpr std::size_t kMaxResyncChunks = 64;
 
 enum class Channel : std::uint8_t {
   kControl = 0,
@@ -61,6 +65,9 @@ enum class MessageType : std::uint8_t {
   kWorldgenCheck = 73,
   kChunkData = 17,
   kChunkUnload = 18,
+  kVoxelModification = 16,
+  kBlockEditRequest = 74,
+  kChunkResync = 75,
 };
 
 enum class RejectReason : std::uint8_t {
@@ -118,11 +125,25 @@ enum class ChunkForm : std::uint8_t {
   kAir = 2,
 };
 
+enum class BlockEditAction : std::uint8_t {
+  kBreak = 1,
+  kPlace = 2,
+};
+
+enum class VoxelModificationReason : std::uint8_t {
+  kEdit = 1,
+  kExplosion = 2,
+  kCollapse = 3,
+  kRebake = 4,
+};
+
 inline constexpr std::uint8_t kMaxPlayerState = 8;
 inline constexpr std::uint8_t kMaxGroundKind = 3;
 inline constexpr std::uint8_t kMaxPlayerEventKind = 4;
 inline constexpr std::uint8_t kMaxDamageCause = 3;
 inline constexpr std::uint8_t kMaxChunkForm = 2;
+inline constexpr std::uint8_t kMaxBlockEditAction = 2;
+inline constexpr std::uint8_t kMaxVoxelModificationReason = 4;
 
 namespace InputButtons {
 inline constexpr std::uint16_t kJump = 1;

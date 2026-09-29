@@ -14,7 +14,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run --dir src",
+    "test": "vitest run",
     "build:wasm": "cd ../server && cmake --preset wasm >/dev/null && cmake --build --preset wasm",
     "e2e": "playwright test"
   },

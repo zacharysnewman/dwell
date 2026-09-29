@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { floatToHalf, halfToFloat } from './bytes';
 import {
+  BlockEditAction,
   CHUNK_SIZE,
   ChunkForm,
   ControllerFlags,
@@ -15,6 +16,7 @@ import {
   PlayerFlags,
   PlayerState,
   RejectReason,
+  VoxelModificationReason,
 } from './constants.gen';
 import {
   authTranscript,
@@ -244,6 +246,36 @@ const expected: Record<string, Message> = {
     coords: [
       [1, 2, 3],
       [-4, -5, 2000000],
+    ],
+  },
+  block_edit_break: {
+    type: MessageType.BlockEditRequest,
+    action: BlockEditAction.Break,
+    cell: [8191999, -2048, -12],
+    face: 3,
+    material: 0,
+  },
+  block_edit_place: {
+    type: MessageType.BlockEditRequest,
+    action: BlockEditAction.Place,
+    cell: [-7, 64, 3],
+    face: 4,
+    material: 16,
+  },
+  voxel_modification: {
+    type: MessageType.VoxelModification,
+    reason: VoxelModificationReason.Edit,
+    serverTick: 4242,
+    chunks: [
+      { coord: [-1, 2, 256000], revision: 7, changes: Uint16Array.of(0, 0, 32767, 300) },
+      { coord: [5, -64, -3], revision: 1, changes: Uint16Array.of(1 | (2 << 5) | (3 << 10), 16) },
+    ],
+  },
+  chunk_resync: {
+    type: MessageType.ChunkResync,
+    coords: [
+      [0, -1, 2],
+      [256000, 191, -256000],
     ],
   },
   reject: {
