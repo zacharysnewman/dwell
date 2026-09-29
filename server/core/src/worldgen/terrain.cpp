@@ -34,7 +34,9 @@ constexpr int kSnowLine = 900;
 constexpr std::int32_t kMacroWavelength = 262144;  // m
 constexpr std::int32_t kReliefWavelength = 49152;  // m
 constexpr float kMacroReliefHeight = 1800.0f;      // m, at the crest of a range
-constexpr float kMacroOceanDepth = 500.0f;         // m, added below the continental shelf
+// Massifs: in the cores of the largest ranges crests rise this much higher (peaks ~5.5 km).
+constexpr float kMassifHeight = 3600.0f;    // m
+constexpr float kMacroOceanDepth = 500.0f;  // m, added below the continental shelf
 // Trees reach at most this far above their ground, and leaves this far sideways from the trunk.
 constexpr int kTreeReach = 12;
 constexpr int kTreeSpread = 3;
@@ -212,9 +214,10 @@ Column TerrainGenerator::Finish(const Corner2& c) {
   // Kilometre-scale ranges on large landmasses; deep basins under large oceans.
   const float range = SmoothStep(0.15f, 0.55f, macro) * land * c.relief * c.relief;
   const float basin = SmoothStep(-0.1f, -0.6f, macro);
+  const float massif = SmoothStep(0.4f, 0.85f, macro);
   col.height = Spline(kContinentHeight, cont) + c.hills * hill_amplitude * (0.35f + 0.65f * land) +
-               col.mountain * (18.0f + c.ridges * 150.0f) + range * kMacroReliefHeight -
-               basin * kMacroOceanDepth;
+               col.mountain * (18.0f + c.ridges * 150.0f) +
+               range * (kMacroReliefHeight + massif * kMassifHeight) - basin * kMacroOceanDepth;
   col.mountain = std::max(col.mountain, SmoothStep(0.05f, 0.25f, range));
   col.overhang = 2.5f * land + 1.0f + 14.0f * col.mountain;
 

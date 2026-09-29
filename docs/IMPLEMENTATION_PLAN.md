@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (playtest feedback); outstanding: the frame-rate check on a desktop and a mobile device | #14 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight, fog off and super tall mountains (generator version 4), from playtest feedback; outstanding: the frame-rate check on a desktop and a mobile device | #14 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -652,6 +652,11 @@ Deviations and additions (4c):
   limit is raised for it. The client keeps predicting while flying even where streamed terrain has
   not arrived (it deadlocked otherwise: found in the browser, `gate.test.ts` failed before the
   fix). `devcam/`, F8 and `?devcam=1` are gone; the LOD camera is the eye.
+- **Super tall mountains** (playtest request): generator version 4 adds massifs in the cores of
+  the largest ranges, crests rising a further 3,600 m (peaks ~5.3–5.6 km, ~1 % of land above
+  3 km), so the whole-world view has something tall to see. Prototype relief (§6.1); version 3 is
+  retired like version 2. `worldgen: terrain` "super tall peaks" failed on version 3 (highest
+  ~1,900 m); the golden chunk and LOD sets gained a massif and were regenerated.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.
 

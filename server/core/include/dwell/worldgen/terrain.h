@@ -8,7 +8,7 @@
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
 
-// Procedural terrain, generator version 3 (ARCHITECTURE.md §6.3). A chunk is a pure function of
+// Procedural terrain, generator version 4 (ARCHITECTURE.md §6.3). A chunk is a pure function of
 // (world seed, chunk coordinate): every stage reads only noise and hashes of world coordinates,
 // never another chunk's data, so chunks generate in any order, on any thread, natively or in WASM,
 // with bit-identical results (noise.h, ADR 0010).

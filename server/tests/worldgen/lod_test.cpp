@@ -411,6 +411,8 @@ TEST_SUITE("lod: golden") {
         {20260925, 1, 31, 0, -97},
         {20260925, 5, -7'990'000, 0, 5000},
         {0, core::kLodMaxLevel, 0, 0, 0},
+        {0, 6, 97152, 5400, 1178496},  // a massif's peak
+        {0, 9, 97152, 5400, 1178496},
     };
     std::vector<std::string> actual;
     for (const Case& k : cases) {
@@ -427,7 +429,7 @@ TEST_SUITE("lod: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 3\n";
+      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 4\n";
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden LOD hashes written to " << path);
       return;

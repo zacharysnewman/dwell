@@ -1,4 +1,4 @@
-# seed level i j k kind fnv1a64(kind, cells) - generator version 3
+# seed level i j k kind fnv1a64(kind, cells) - generator version 4
 0 1 131072 32 131072 2 abd7e63778281fde
 0 2 65536 15 65536 2 abf304f9b14105c5
 0 3 32766 8 32763 2 cd11ce1bd4853e4e
@@ -10,3 +10,5 @@
 20260925 1 131072 32 131070 2 2ef35fef27b11dfd
 20260925 5 389 2 8196 2 b5988a6719ac715a
 0 19 0 0 0 2 ac14bfdad63ceff5
+0 6 4143 3 4671 2 d4d16cbf4bcc6b20
+0 9 517 0 583 2 c9f59e3a8b2ab255

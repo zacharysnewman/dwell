@@ -128,6 +128,35 @@ TEST_SUITE("worldgen: noise") {
 }
 
 TEST_SUITE("worldgen: terrain") {
+  TEST_CASE("the tallest ranges reach super tall peaks, rarely, and stay inside the world") {
+    // Prototype relief (§6.1): massifs in the cores of the largest ranges rise to ~5.5 km.
+    for (const std::uint64_t seed : {0ull, 42ull}) {
+      CAPTURE(seed);
+      const TerrainGenerator gen(seed);
+      float highest = -1e9f;
+      std::int32_t peak_x = 0, peak_z = 0;
+      int land = 0, above_3km = 0;
+      constexpr std::int32_t kStep = 8192, kHalf = 2'000'000;
+      for (std::int32_t z = -kHalf; z <= kHalf; z += kStep)
+        for (std::int32_t x = -kHalf; x <= kHalf; x += kStep) {
+          const float h = gen.ColumnAt(x, z).height;
+          if (h > highest) {
+            highest = h;
+            peak_x = x;
+            peak_z = z;
+          }
+          if (h > 0) ++land;
+          if (h > 3000) ++above_3km;
+        }
+      MESSAGE("highest sampled column " << highest << " m at (" << peak_x << ", " << peak_z << "); "
+                                        << above_3km << " of " << land
+                                        << " land samples above 3 km");
+      CHECK(highest > 4500.0f);
+      CHECK(highest < static_cast<float>(core::kWorldMaxY - 400));
+      CHECK(above_3km < land / 50);  // super tall peaks are rare
+    }
+  }
+
   TEST_CASE("a chunk is a pure function of seed and coordinate") {
     const TerrainGenerator a(123), b(123), c(124);
     const ChunkCoord coord{1, 0, -1};  // at the surface (sea level is y = 0)
@@ -436,7 +465,8 @@ TEST_SUITE("worldgen: golden") {
       ChunkCoord c;
     };
     // Surface, caves, deep rock, bedrock, sky and the top of the world, ocean, mountains; the
-    // rim of the disc; and terrain ~8,000 km out (its surface chunk found from the column).
+    // rim of the disc; terrain ~8,000 km out (its surface chunk found from the column); and a
+    // super tall massif.
     constexpr int kSurface = 1 << 20;  // y placeholder: the chunk holding the column's surface
     std::vector<Case> cases = {
         {0, {0, 0, 0}},
@@ -458,6 +488,7 @@ TEST_SUITE("worldgen: golden") {
         {0, {249990, kSurface, 10}},
         {20260925, {-3, kSurface, 249000}},
         {0, {-249990, kSurface, -5}},
+        {0, {3036, kSurface, 36828}},  // a massif's slopes, ~5.4 km up
     };
     std::vector<std::string> actual;
     for (auto& k : cases) {
@@ -474,7 +505,7 @@ TEST_SUITE("worldgen: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 3\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 4\n";
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);
       return;
