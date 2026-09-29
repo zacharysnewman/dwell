@@ -672,8 +672,11 @@ Deviations and additions (4c):
   sRGB bytes used as linear, while the chunks' sRGB texture is decoded before lighting. They are
   now linear, and a tile's average is taken in linear light. `lodMesher.test.ts` "writes linear
   vertex colours" failed before the fix.
+- **Distant water, under comparison** (playtest request): `?lodwater=tint` draws coarse liquids
+  (level 3 up) as the floor under them, recoloured as seen through the near water, instead of
+  opaque blocks; off by default until chosen. `lodMesher.test.ts` "tint mode" covers it.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
-  level.
+  level, `?lodwater=tint` for the distant-water comparison.
 
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section

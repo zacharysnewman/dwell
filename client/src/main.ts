@@ -269,6 +269,8 @@ function play(
           cacheBytes: (mobile ? Lod.cacheMbMobile : Lod.cacheMbDesktop) * 1048576,
           maxGenerationJobs: pool.capacity,
           maxMeshJobs: meshPool.capacity,
+          // Comparing ways to draw distant water: ?lodwater=tint recolours the floor instead.
+          coarseLiquids: params.get('lodwater') === 'tint' ? 'tint' : 'opaque',
         },
       );
       lod.setFullMode(hash === 0n);

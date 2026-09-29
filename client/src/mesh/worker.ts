@@ -13,7 +13,7 @@ const scope = self as unknown as WorkerScope;
 scope.onmessage = (e) => {
   const msg = e.data;
   if (msg.t === 'lod') {
-    const meshes = meshSection(msg.cells, msg.opaqueLiquids);
+    const meshes = meshSection(msg.cells, msg.liquids);
     scope.postMessage({ t: 'lod', id: msg.id, meshes }, sectionBuffers(meshes));
     return;
   }

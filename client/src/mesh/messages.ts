@@ -1,5 +1,5 @@
 // Messages between the main thread and a meshing worker (worker.ts).
-import type { SectionMeshes } from './lodMesher';
+import type { LiquidMode, SectionMeshes } from './lodMesher';
 import type { ChunkMeshes } from './mesher';
 
 export type ToMesher =
@@ -10,7 +10,7 @@ export type ToMesher =
       voxels: Uint16Array<ArrayBuffer>;
     }
   /** A LOD section's 34³ cells (lodMesher.ts), transferred. */
-  | { t: 'lod'; id: number; cells: Uint16Array<ArrayBuffer>; opaqueLiquids: boolean };
+  | { t: 'lod'; id: number; cells: Uint16Array<ArrayBuffer>; liquids: LiquidMode };
 
 /** `meshes` buffers are transferred. */
 export type FromMesher =
