@@ -6,7 +6,7 @@
 // dropped: the renderer shows a side's skirt when the neighbour there is not drawn at the same
 // level, which closes the cracks between levels. Pure data, so it runs in the meshing workers.
 import { LOD_PAD, LOD_VOLUME, SECTION_CELLS } from '../lod/grid';
-import { averageTileColor, linearToSrgbByte, srgbToLinear } from '../render/textures';
+import { averageTileColor, srgbToLinear } from '../render/textures';
 import { materialStyle } from '../world/materials';
 
 export interface FlatMesh {
@@ -47,14 +47,6 @@ function isLiquid(m: number): boolean {
   return l;
 }
 
-/**
- * How a section's liquids are drawn: `translucent` — see-through surfaces over the floor (fine
- * levels, like the chunks); `tint` — not drawn, the floor under them recoloured as seen through
- * the near water (its colour blended over the floor at its opacity): coarse levels, where a
- * see-through surface over a coarse floor would sort and blend badly.
- */
-export type LiquidMode = 'translucent' | 'tint';
-
 const colors = new Map<number, number>();
 /** A material's flat colour on a face group (0 top, 1 side, 2 bottom). */
 export function lodColor(m: number, group: number): number {
@@ -65,25 +57,6 @@ export function lodColor(m: number, group: number): number {
     const t = style.textures;
     c = t ? averageTileColor(group === 0 ? t.top : group === 2 ? t.bottom : t.side) : style.color;
     colors.set(key, c);
-  }
-  return c;
-}
-
-const tints = new Map<number, number>();
-/** A floor face's colour seen through liquid `l` (sRGB): blended in linear light at its opacity. */
-export function tintedColor(m: number, group: number, l: number): number {
-  const key = (m * 3 + group) * 65536 + l;
-  let c = tints.get(key);
-  if (c === undefined) {
-    const floor = lodColor(m, group);
-    const water = lodColor(l, 0);
-    const a = materialStyle(l).opacity;
-    const mix = (shift: number): number =>
-      linearToSrgbByte(
-        srgbToLinear((floor >> shift) & 0xff) * (1 - a) + srgbToLinear((water >> shift) & 0xff) * a,
-      );
-    c = (mix(16) << 16) | (mix(8) << 8) | mix(0);
-    tints.set(key, c);
   }
   return c;
 }
@@ -147,19 +120,9 @@ export const SURFACE_STEPS = 2;
 const SURFACE_VALID = 1;
 const SURFACE_WET = 2;
 
-/** The first liquid material (the water the tinted floor is seen through). */
-let waterId = -1;
-function waterMaterial(): number {
-  if (waterId < 0) {
-    for (let m = 1; m < 256 && waterId < 0; m++) if (isLiquid(m)) waterId = m;
-  }
-  return waterId;
-}
-
 /**
- * Meshes a section's cells (LOD_VOLUME, `lodCell` order); positions in cells, 0..32. Liquids per
- * `liquids` (LiquidMode): with `tint` they are left out and the faces they cover take the
- * tinted colour.
+ * Meshes a section's cells (LOD_VOLUME, `lodCell` order); positions in cells, 0..32. Liquids are
+ * see-through surfaces (the `water` mesh) over the floor, as the chunks draw them.
  *
  * `surface` (optional; generated sections): each column's exact surface, 34² × SURFACE_STRIDE
  * floats in (z + 1) · 34 + (x + 1) order — height in cells from the section's bottom, material,
@@ -167,22 +130,26 @@ function waterMaterial(): number {
  * up to a cell (kilometres far away); where a column's topmost solid cell holds its surface, that
  * cell's top is drawn at the surface instead, with walls down to lower neighbours.
  */
-export function meshSection(
-  cells: Uint16Array,
-  liquids: LiquidMode = 'translucent',
-  surface: Float32Array | null = null,
-): SectionMeshes {
-  const translucent = liquids === 'translucent';
-  const tint = liquids === 'tint';
+export interface MeshSectionOptions {
+  /** Column surfaces (see above). */
+  surface?: Float32Array | null;
+  /**
+   * How far (in cells) a liquid's top face sits below its cell's top — the chunks draw water's
+   * surface at 7/8 of a block, so at sea level it is 1/8 m below the LOD cells' grid.
+   */
+  waterDrop?: number;
+}
+
+export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}): SectionMeshes {
+  const surface = options.surface ?? null;
+  const waterDrop = options.waterDrop ?? 0;
   if (cells.length !== LOD_VOLUME) throw new RangeError('section cells must be LOD_VOLUME');
   const N = SECTION_CELLS;
   const opaque = new Builder();
   const waterMesh = new Builder();
   const skirts = FACES.map(() => new Builder());
-  const special = findSurfaces(cells, tint, surface);
-  // Merge key per slice cell: 0 none, else ((material + 1) · 1024 + tinting liquid) · 2 + (1 for
-  // a skirt face).
-  const TINT_IDS = 1024;
+  const special = findSurfaces(cells, surface);
+  // Merge key per slice cell: 0 none, else (material + 1) · 2 + (1 for a skirt face).
   const mask = new Int32Array(N * N);
   const cell = [0, 0, 0];
 
@@ -201,17 +168,16 @@ export function meshSection(
           cell[u] = i;
           cell[v] = j;
           const m = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
-          if (m === 0 || (tint && isLiquid(m))) continue;
+          if (m === 0) continue;
           // A column's surface cell: its top and sides are drawn at the surface (below).
           if (face !== 3 && special.y[col(cell[0] ?? 0, cell[2] ?? 0)] === cell[1]) continue;
           cell[axis] = d + sign;
           const n = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
-          const liquid = translucent && isLiquid(m);
+          const liquid = isLiquid(m);
           const nSolid = n !== 0 && !isLiquid(n);
           const hidden = nSolid || (liquid && n !== 0);
           if (hidden && (!border || liquid)) continue;
-          const tinting = tint && n !== 0 && n < TINT_IDS && isLiquid(n) ? n : 0;
-          mask[i + N * j] = ((m + 1) * TINT_IDS + tinting) * 2 + (hidden ? 1 : 0);
+          mask[i + N * j] = (m + 1) * 2 + (hidden ? 1 : 0);
           any = true;
         }
       }
@@ -231,18 +197,27 @@ export function meshSection(
             h++;
           }
           for (let dv = 0; dv < h; dv++) mask.fill(0, i + N * (j + dv), i + w + N * (j + dv));
-          const m = Math.floor((key >> 1) / TINT_IDS) - 1;
-          const tinting = (key >> 1) % TINT_IDS;
+          const m = (key >> 1) - 1;
           const skirt = (key & 1) === 1;
-          const target = skirt ? skirts[face] : translucent && isLiquid(m) ? waterMesh : opaque;
-          const color = tinting ? tintedColor(m, group, tinting) : lodColor(m, group);
-          target?.quad(axis, sign, sign > 0 ? d + 1 : d, i, i + w, j, j + h, color);
+          const target = skirt ? skirts[face] : isLiquid(m) ? waterMesh : opaque;
+          // Water's surface where the chunks draw it (waterDrop below the cell's top).
+          const drop = axis === 1 && sign > 0 && isLiquid(m) ? waterDrop : 0;
+          target?.quad(
+            axis,
+            sign,
+            (sign > 0 ? d + 1 : d) - drop,
+            i,
+            i + w,
+            j,
+            j + h,
+            lodColor(m, group),
+          );
           i += w;
         }
       }
     }
   }
-  emitSurfaces(cells, tint, special, opaque, skirts);
+  emitSurfaces(cells, special, opaque, waterMesh, skirts, waterDrop);
   return {
     opaque: opaque.finish(),
     water: waterMesh.finish(),
@@ -260,18 +235,16 @@ interface Surfaces {
   h: Float32Array;
   /** The surface cell's material (for a sea's floor drawn in a water cell, the floor's). */
   m: Uint16Array;
-  wet: Uint8Array;
 }
 const NO_SURFACE = -1000;
 
 /** Which cell of each column holds its surface, where the surface data says so. */
-function findSurfaces(cells: Uint16Array, tint: boolean, surface: Float32Array | null): Surfaces {
+function findSurfaces(cells: Uint16Array, surface: Float32Array | null): Surfaces {
   const n = LOD_PAD * LOD_PAD;
   const out: Surfaces = {
     y: new Int16Array(n).fill(NO_SURFACE),
     h: new Float32Array(n),
     m: new Uint16Array(n),
-    wet: new Uint8Array(n),
   };
   if (!surface || surface.length < n * SURFACE_STRIDE) return out;
   const top: number = SECTION_CELLS;
@@ -287,7 +260,7 @@ function findSurfaces(cells: Uint16Array, tint: boolean, surface: Float32Array |
         const m = cells[cellIndex(x, y, z)] ?? 0;
         if (m !== 0 && !isLiquid(m)) break;
         // A sea's floor within one of its water cells (a cell taller than the sea is deep).
-        if (tint && m !== 0 && flags & SURFACE_WET && h >= y && h <= y + 1) break;
+        if (m !== 0 && flags & SURFACE_WET && h >= y && h <= y + 1) break;
       }
       if (y < -1 || y === top || h < y - 1e-3 || h > y + 1 + 1e-3) continue;
       const m = cells[cellIndex(x, y, z)] ?? 0;
@@ -299,7 +272,6 @@ function findSurfaces(cells: Uint16Array, tint: boolean, surface: Float32Array |
       out.y[c] = y;
       out.h[c] = y + steps / SURFACE_STEPS;
       out.m[c] = isLiquid(m) ? (surface[c * SURFACE_STRIDE + 1] ?? m) : m;
-      out.wet[c] = flags & SURFACE_WET ? 1 : 0;
     }
   }
   return out;
@@ -319,36 +291,35 @@ interface Wall {
   sign: number;
   lo: number;
   hi: number;
-  color: number;
+  material: number;
 }
 
 /**
  * Tops at the surface height and the walls between columns (see meshSection), merged like the
- * rest: tops of equal height and colour into rectangles, walls along a row into strips.
+ * rest: tops of equal height and material into rectangles, walls along a row into strips. A sea
+ * floor drawn in a water cell gets that cell's water surface above it.
  */
 function emitSurfaces(
   cells: Uint16Array,
-  tint: boolean,
   s: Surfaces,
   opaque: Builder,
+  waterMesh: Builder,
   skirts: Builder[],
+  waterDrop: number,
 ): void {
   const N = SECTION_CELLS;
-  const colorOf = (m: number, group: number, wet: boolean): number =>
-    tint && wet ? tintedColor(m, group, waterMaterial()) : lodColor(m, group);
   const builder = (target: number): Builder =>
     target === 0 ? opaque : (skirts[target - 1] ?? opaque);
 
-  // Tops: greedy rectangles over (z, x) of equal height and colour.
+  // Tops: greedy rectangles over (z, x) of equal height and material.
   const topKey = new Float64Array(N * N);
   for (let z = 0; z < N; z++) {
     for (let x = 0; x < N; x++) {
       const c = col(x, z);
       const y = s.y[c] ?? NO_SURFACE;
       if (y < 0) continue;
-      const color = colorOf(s.m[c] ?? 0, 0, s.wet[c] === 1);
-      // Height in 1/SURFACE_STEPS cells (integral), then colour: exact in a double.
-      topKey[z + N * x] = (Math.round((s.h[c] ?? y) * SURFACE_STEPS) + 1) * 0x1000000 + color;
+      // Height in 1/SURFACE_STEPS cells (integral) and material: exact in a double.
+      topKey[z + N * x] = (Math.round((s.h[c] ?? y) * SURFACE_STEPS) + 1) * 0x10000 + (s.m[c] ?? 0);
     }
   }
   for (let x = 0; x < N; x++) {
@@ -366,53 +337,99 @@ function emitSurfaces(
         d++;
       }
       for (let dx = 0; dx < d; dx++) topKey.fill(0, z + N * (x + dx), z + w + N * (x + dx));
-      const h = (Math.floor(key / 0x1000000) - 1) / SURFACE_STEPS;
+      const h = (Math.floor(key / 0x10000) - 1) / SURFACE_STEPS;
       // The top: axis y, u = z, v = x.
-      opaque.quad(1, 1, h, z, z + w, x, x + d, key % 0x1000000);
+      opaque.quad(1, 1, h, z, z + w, x, x + d, lodColor(key % 0x10000, 0));
       z += w;
     }
   }
 
-  // Walls, per side: computed per column, then runs of equal walls along the row merged.
-  for (const [axis, sign, face] of SIDES) {
-    for (let a = 0; a < N; a++) {
-      // `a` is the coordinate along the wall's axis (x for ±X walls, z for ±Z), `b` along the row.
-      let run: Wall | null = null;
-      let runStart = 0;
-      const flush = (bEnd: number): void => {
-        if (!run || run.hi - run.lo < 1e-4) return;
-        const plane = sign > 0 ? a + 1 : a;
-        // Axis x: u = y, v = z; axis z: u = x, v = y.
-        if (axis === 0)
-          builder(run.target).quad(0, run.sign, plane, run.lo, run.hi, runStart, bEnd, run.color);
-        else
-          builder(run.target).quad(2, run.sign, plane, runStart, bEnd, run.lo, run.hi, run.color);
-      };
-      for (let b = 0; b <= N; b++) {
-        let wall: Wall | null = null;
-        if (b < N) {
-          const x = axis === 0 ? a : b;
-          const z = axis === 0 ? b : a;
-          wall = wallOf(cells, s, x, z, axis, sign, face, colorOf);
+  // The water surface over floors drawn inside water cells.
+  {
+    // Greedy rectangles over (z, x) of equal water level and liquid.
+    for (let z = 0; z < N; z++) {
+      for (let x = 0; x < N; x++) {
+        const c = col(x, z);
+        const y = s.y[c] ?? NO_SURFACE;
+        topKey[z + N * x] = 0;
+        if (y < 0) continue;
+        const m = cells[cellIndex(x, y, z)] ?? 0;
+        const above = cells[cellIndex(x, y + 1, z)] ?? 0;
+        if (!isLiquid(m) || above !== 0) continue;
+        topKey[z + N * x] = (y + 1) * 0x10000 + m;
+      }
+    }
+    for (let x = 0; x < N; x++) {
+      for (let z = 0; z < N;) {
+        const key = topKey[z + N * x] ?? 0;
+        if (key === 0) {
+          z++;
+          continue;
         }
-        const same =
-          wall &&
-          run &&
-          wall.target === run.target &&
-          wall.sign === run.sign &&
-          wall.lo === run.lo &&
-          wall.hi === run.hi &&
-          wall.color === run.color;
-        if (same) continue;
-        flush(b);
-        run = wall;
-        runStart = b;
+        let w = 1;
+        while (z + w < N && topKey[z + w + N * x] === key) w++;
+        let d = 1;
+        grow: while (x + d < N) {
+          for (let k = 0; k < w; k++) if (topKey[z + k + N * (x + d)] !== key) break grow;
+          d++;
+        }
+        for (let dx = 0; dx < d; dx++) topKey.fill(0, z + N * (x + dx), z + w + N * (x + dx));
+        const top = Math.floor(key / 0x10000);
+        waterMesh.quad(1, 1, top - waterDrop, z, z + w, x, x + d, lodColor(key % 0x10000, 0));
+        z += w;
       }
     }
   }
+
+  // Walls, per side and slot (see wallOf): computed per column, then runs of equal walls along
+  // the row merged.
+  for (const [axis, sign, faceIndex] of SIDES) {
+    for (let slot = 0; slot < 2; slot++)
+      for (let a = 0; a < N; a++) {
+        // `a` is the coordinate along the wall's axis (x for ±X walls, z for ±Z), `b` along the row.
+        let run: Wall | null = null;
+        let runStart = 0;
+        const flush = (bEnd: number): void => {
+          if (!run || run.hi - run.lo < 1e-4) return;
+          const plane = sign > 0 ? a + 1 : a;
+          // Axis x: u = y, v = z; axis z: u = x, v = y.
+          const color = lodColor(run.material, 1);
+          if (axis === 0)
+            builder(run.target).quad(0, run.sign, plane, run.lo, run.hi, runStart, bEnd, color);
+          else builder(run.target).quad(2, run.sign, plane, runStart, bEnd, run.lo, run.hi, color);
+        };
+        for (let b = 0; b <= N; b++) {
+          let wall: Wall | null = null;
+          if (b < N) {
+            const x = axis === 0 ? a : b;
+            const z = axis === 0 ? b : a;
+            wall = wallOf(cells, s, x, z, axis, sign, faceIndex, slot);
+          }
+          const same =
+            wall &&
+            run &&
+            wall.target === run.target &&
+            wall.sign === run.sign &&
+            wall.lo === run.lo &&
+            wall.hi === run.hi &&
+            wall.material === run.material;
+          if (same) continue;
+          flush(b);
+          run = wall;
+          runStart = b;
+        }
+      }
+  }
 }
 
-/** The wall on one side of column (x, z) with a surface, if any (see meshSection). */
+/**
+ * The wall on one side of column (x, z) with a surface, if any (see meshSection). Slot 0 is what
+ * shows; slot 1 the skirt below it on the section's border, which the apron hides.
+ *
+ * Every wall is drawn by exactly one section, including those on its border: a step between our
+ * surface and a neighbour's across the border is ours to draw (the neighbour section's cells see
+ * our apron cell as solid and draw only a skirt there, shown only when we are not).
+ */
 function wallOf(
   cells: Uint16Array,
   s: Surfaces,
@@ -421,7 +438,7 @@ function wallOf(
   axis: number,
   sign: number,
   face: number,
-  colorOf: (m: number, group: number, wet: boolean) => number,
+  slot: number,
 ): Wall | null {
   const N = SECTION_CELLS;
   const c = col(x, z);
@@ -435,17 +452,20 @@ function wallOf(
   const nm = cells[cellIndex(nx, y, nz)] ?? 0;
   const nSurfaceHere = (s.y[nc] ?? NO_SURFACE) === y;
   const nFilled = nSurfaceHere || (nm !== 0 && !isLiquid(nm));
-  const side = colorOf(s.m[c] ?? 0, 1, s.wet[c] === 1);
-  if (!nFilled) return { target: 0, sign, lo: y, hi: h, color: side }; // open: up to our surface
+  const material = s.m[c] ?? 0;
+  const skirt = face + 1;
+  if (!nFilled) return slot === 0 ? { target: 0, sign, lo: y, hi: h, material } : null; // open
   if (nSurfaceHere) {
-    // Both surfaces in this row: the higher one's side shows down to the lower.
-    const lo = s.h[nc] ?? y + 1;
-    return lo < h ? { target: border ? face + 1 : 0, sign, lo, hi: h, color: side } : null;
+    // Both surfaces in this row: the higher one's side shows down to the lower (and below that,
+    // on the border, a skirt).
+    const lo = Math.min(s.h[nc] ?? y + 1, h);
+    if (slot === 0) return lo < h ? { target: 0, sign, lo, hi: h, material } : null;
+    return border && lo > y ? { target: skirt, sign, lo: y, hi: lo, material } : null;
   }
-  // A full neighbour cell stands taller: its face towards us, above our surface (a neighbour
-  // section's cell draws its own).
-  if (!border) return { target: 0, sign: -sign, lo: h, hi: y + 1, color: lodColor(nm, 1) };
-  return { target: face + 1, sign, lo: y, hi: h, color: side }; // hidden by the apron: a skirt
+  // A full neighbour cell stands taller: its face towards us, above our surface (and on the
+  // border, our side below as a skirt).
+  if (slot === 0) return { target: 0, sign: -sign, lo: h, hi: y + 1, material: nm };
+  return border ? { target: skirt, sign, lo: y, hi: h, material } : null;
 }
 
 /** The buffers of a result, for transferring it between threads. */

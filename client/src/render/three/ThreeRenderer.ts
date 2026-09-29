@@ -34,6 +34,7 @@ import { FOG, fogRange } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
 import { sharedAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
+import { WaterBatch, type WaterHandle } from './waterBatch';
 
 const SKY = 0x87b5e0;
 /** Near/far depth split (§6.6): LOD beyond it in a far pass, then a depth clear and a near pass. */
@@ -54,6 +55,8 @@ function flatGeometry(m: FlatMesh): BufferGeometry | null {
 interface LodGroup {
   group: Group;
   level: number;
+  /** The section's water in the shared batch (lodWater), if it has any. */
+  water: WaterHandle | null;
   /** Per face index; null where the section has no skirt faces on that side. */
   skirts: (Mesh | null)[];
 }
@@ -138,12 +141,15 @@ export class ThreeRenderer implements Renderer {
   private readonly lod = new Map<number, LodGroup>();
   private lodShown: ReadonlyMap<number, number> = new Map();
   private readonly lodMaterial = new MeshLambertMaterial({ vertexColors: true });
+  /** Like the chunks' water (see-through from both sides, at their opacity), untextured. */
   private readonly lodWaterMaterial = new MeshLambertMaterial({
     vertexColors: true,
     transparent: true,
-    opacity: 0.6,
+    opacity: 0.55,
     depthWrite: false,
+    side: DoubleSide,
   });
+  private readonly lodWater = new WaterBatch(this.lodWaterMaterial);
   private lodLevelMaterials: MeshLambertMaterial[] | null = null;
   /** The far pass's camera (the main camera is the near pass's). */
   private readonly farCamera = new PerspectiveCamera(VERTICAL_FOV, 1, NEAR_SPLIT, FAR_PLANE);
@@ -169,6 +175,8 @@ export class ThreeRenderer implements Renderer {
     this.scene.add(sun);
     this.outline.visible = false;
     this.scene.add(this.outline);
+    this.lodWater.mesh.renderOrder = 1;
+    this.scene.add(this.lodWater.mesh);
     this.camera.position.set(0, 6, 14);
     this.camera.lookAt(0, 0, 0);
   }
@@ -202,6 +210,7 @@ export class ThreeRenderer implements Renderer {
     for (const [id, l] of this.lod) {
       const mask = this.lodShown.get(id);
       l.group.visible = mask !== undefined;
+      if (l.water) this.lodWater.setVisible(l.water, mask !== undefined);
       if (mask === undefined) continue;
       l.skirts.forEach((s, face) => {
         if (s) s.visible = (mask & (1 << face)) !== 0;
@@ -235,6 +244,7 @@ export class ThreeRenderer implements Renderer {
         if (child instanceof Mesh) (child.geometry as BufferGeometry).dispose();
       }
       this.scene.remove(old.group);
+      if (old.water) this.lodWater.remove(old.water);
       this.lod.delete(id);
     }
     if (!meshes) return;
@@ -246,12 +256,9 @@ export class ThreeRenderer implements Renderer {
     const material = this.lodLevelMaterials?.[level] ?? this.lodMaterial;
     const opaque = flatGeometry(meshes.opaque);
     if (opaque) group.add(new Mesh(opaque, material));
-    const water = flatGeometry(meshes.water);
-    if (water) {
-      const w = new Mesh(water, this.lodWaterMaterial);
-      w.renderOrder = 1;
-      group.add(w);
-    }
+    const waterGeometry = flatGeometry(meshes.water);
+    const water = waterGeometry ? this.lodWater.add(waterGeometry, origin, cellSize) : null;
+    waterGeometry?.dispose();
     const skirts = meshes.skirts.map((s) => {
       const g = flatGeometry(s);
       if (!g) return null;
@@ -260,7 +267,7 @@ export class ThreeRenderer implements Renderer {
       return m;
     });
     this.scene.add(group);
-    this.lod.set(id, { group, level, skirts });
+    this.lod.set(id, { group, level, water, skirts });
   }
 
   showLodSections(visible: ReadonlyMap<number, number>): void {
@@ -278,9 +285,7 @@ export class ThreeRenderer implements Renderer {
     for (const l of this.lod.values()) {
       const material = this.lodLevelMaterials?.[l.level] ?? this.lodMaterial;
       for (const child of l.group.children) {
-        if (child instanceof Mesh && child.material !== this.lodWaterMaterial) {
-          child.material = material;
-        }
+        if (child instanceof Mesh) child.material = material;
       }
     }
   }

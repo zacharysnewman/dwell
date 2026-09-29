@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SectionMeshes } from '../mesh/lodMesher';
+import type { MeshSectionOptions, SectionMeshes } from '../mesh/lodMesher';
 import type { SectionMesher } from '../mesh/pool';
 import { LodForm, MessageType, World } from '../protocol/constants.gen';
 import type { ChunkCoord, LodSectionRequest, Vec3 } from '../protocol/messages';
@@ -84,11 +84,11 @@ class Jobs implements SectionSource, SectionMesher {
       });
     });
   }
-  /** How each meshing job was asked to draw liquids. */
-  liquids: string[] = [];
-  meshSection(_cells: Uint16Array, liquids = 'translucent'): Promise<SectionMeshes> {
+  /** Each meshing job's options. */
+  options: MeshSectionOptions[] = [];
+  meshSection(_cells: Uint16Array, options: MeshSectionOptions = {}): Promise<SectionMeshes> {
     // Selection only needs to know a mesh exists (lodMesher.test.ts tests meshing itself).
-    this.liquids.push(liquids);
+    this.options.push(options);
     return new Promise((resolve) =>
       this.pending.push(() => {
         resolve(EMPTY_MESHES);
@@ -308,8 +308,9 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     }
   });
 
-  it('draws coarse water as the floor under it, tinted (not as solid blocks)', async () => {
-    // Playtest choice: tinting matched the near, see-through water; solid blocks did not.
+  it("draws water at every level as see-through, at the chunks' water height", async () => {
+    // Regression (playtest: near and coarse water did not join): every level draws see-through
+    // water (the mesher's only way) with its surface 1/8 m lower in world units, as the chunks do.
     const jobs = new Jobs();
     const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {
       pixelError: 4,
@@ -317,14 +318,23 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
       maxGenerationJobs: 64,
       maxMeshJobs: 64,
     });
-    // From 1,000 km up every section meshed is far coarser than level 3.
-    for (let i = 0; i < 200; i++) {
-      lod.update(camera([0, 1e6, 0], 0, -90), i * 16);
-      if (jobs.pending.length === 0 && lod.active) break;
-      await jobs.finish(() => 0, 1);
+    for (const altitude of [100, 1e6]) {
+      for (let i = 0; i < 200; i++) {
+        lod.update(camera([0, altitude, 0], 0, -90), i * 16);
+        if (jobs.pending.length === 0 && lod.active) break;
+        await jobs.finish(() => 0, 1);
+      }
     }
-    expect(jobs.liquids.length).toBeGreaterThan(0);
-    expect(new Set(jobs.liquids)).toEqual(new Set(['tint']));
+    expect(jobs.options.length).toBeGreaterThan(0);
+    // waterDrop is in cells: 1/8 m over the section's cell size, a power of two.
+    const cellSizes = new Set<number>();
+    for (const o of jobs.options) {
+      const size = 0.125 / (o.waterDrop ?? 0);
+      expect(Number.isInteger(Math.log2(size))).toBe(true);
+      cellSizes.add(size);
+    }
+    expect(Math.min(...cellSizes)).toBeLessThanOrEqual(2); // near levels...
+    expect(Math.max(...cellSizes)).toBeGreaterThanOrEqual(256); // ...and coarse ones
   });
 
   it('refines by screen-space error: coarser with distance and altitude', async () => {

@@ -2,7 +2,7 @@
 // thread. Jobs run in request order; each worker holds a few at once.
 import type { WorkerLike } from '../worldgen/pool';
 import { defaultWorkerCount } from '../worldgen/pool';
-import { meshSection, type LiquidMode, type SectionMeshes } from './lodMesher';
+import { meshSection, type MeshSectionOptions, type SectionMeshes } from './lodMesher';
 import { meshChunk, type ChunkMeshes } from './mesher';
 import type { FromMesher } from './messages';
 
@@ -22,16 +22,14 @@ export interface SectionMesher {
    */
   meshSection(
     cells: Uint16Array<ArrayBuffer>,
-    liquids?: LiquidMode,
-    surface?: Float32Array<ArrayBuffer> | null,
+    options?: MeshSectionOptions & { surface?: Float32Array<ArrayBuffer> | null },
   ): Promise<SectionMeshes>;
 }
 
 interface Job {
   id: number;
   lod: boolean;
-  liquids?: LiquidMode;
-  surface?: Float32Array<ArrayBuffer> | null;
+  options?: MeshSectionOptions & { surface?: Float32Array<ArrayBuffer> | null };
   voxels: Uint16Array<ArrayBuffer>;
   resolve: (m: unknown) => void;
 }
@@ -87,15 +85,13 @@ export class MeshPool implements Mesher, SectionMesher {
 
   meshSection(
     cells: Uint16Array<ArrayBuffer>,
-    liquids: LiquidMode = 'translucent',
-    surface: Float32Array<ArrayBuffer> | null = null,
+    options: MeshSectionOptions & { surface?: Float32Array<ArrayBuffer> | null } = {},
   ): Promise<SectionMeshes> {
     return new Promise((resolve) => {
       this.queue.push({
         id: this.nextId++,
         lod: true,
-        liquids,
-        surface,
+        options,
         voxels: cells,
         resolve: (m) => {
           resolve(m as SectionMeshes);
@@ -132,16 +128,10 @@ export class MeshPool implements Mesher, SectionMesher {
       if (!best || !job) return;
       this.running.get(best)?.push(job);
       this.runningCount++;
-      const surface = job.surface ?? null;
+      const surface = job.options?.surface ?? null;
       best.postMessage(
         job.lod
-          ? {
-              t: 'lod',
-              id: job.id,
-              cells: job.voxels,
-              liquids: job.liquids ?? 'translucent',
-              surface,
-            }
+          ? { t: 'lod', id: job.id, cells: job.voxels, options: job.options ?? {} }
           : { t: 'mesh', id: job.id, voxels: job.voxels },
         surface ? [job.voxels.buffer, surface.buffer] : [job.voxels.buffer],
       );
@@ -157,9 +147,8 @@ export class InlineMesher implements Mesher, SectionMesher {
   }
   meshSection(
     cells: Uint16Array<ArrayBuffer>,
-    liquids: LiquidMode = 'translucent',
-    surface: Float32Array<ArrayBuffer> | null = null,
+    options: MeshSectionOptions = {},
   ): Promise<SectionMeshes> {
-    return Promise.resolve(meshSection(cells, liquids, surface));
+    return Promise.resolve(meshSection(cells, options));
   }
 }

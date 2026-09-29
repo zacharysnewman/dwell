@@ -120,11 +120,8 @@ const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
 const OFF_VIEW_PRIORITY = 1 / 8;
 /** Drawable chunks wait at most this long (ms) for the LOD levels above them (see findCovered). */
 export const FORCE_CHUNKS_AFTER_MS = 1000;
-/**
- * From this level up liquids are not drawn: the floor under them is tinted as seen through the
- * near water (lodMesher LiquidMode `tint`); below it they are see-through like the chunks'.
- */
-export const TINTED_WATER_LEVEL = 3;
+/** The chunks draw water's surface 1/8 m below a full block (mesher.ts WATER_SURFACE). */
+const CHUNK_WATER_DROP_M = 0.125;
 const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
   [1, 0, 0],
   [-1, 0, 0],
@@ -645,8 +642,11 @@ export class LodSystem {
     this.meshing++;
     const token = ++this.token;
     n.token = token;
-    const liquids = n.coord[0] >= TINTED_WATER_LEVEL ? 'tint' : 'translucent';
-    void this.mesher.meshSection(cells, liquids, this.surfaceInCells(n)).then((meshes) => {
+    const options = {
+      surface: this.surfaceInCells(n),
+      waterDrop: CHUNK_WATER_DROP_M / cellSize(n.coord[0]),
+    };
+    void this.mesher.meshSection(cells, options).then((meshes) => {
       this.meshing--;
       n.meshing = false;
       if (n.token !== token || this.nodes.get(n.id) !== n) return;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LOD_PAD, LOD_VOLUME, lodCell } from '../lod/grid';
-import { averageTileColor, srgbToLinear } from '../render/textures';
-import { lodColor, meshSection, SURFACE_STRIDE, tintedColor } from './lodMesher';
+import { averageTileColor } from '../render/textures';
+import { lodColor, meshSection, SURFACE_STRIDE } from './lodMesher';
 
 const quads = (m: { indices: Uint32Array }): number => m.indices.length / 6;
 
@@ -69,30 +69,6 @@ describe('LOD section mesher (§6.6)', () => {
     }
   });
 
-  it('tint mode leaves liquids out and recolours the floor as seen through them', () => {
-    const cells = new Uint16Array(LOD_VOLUME);
-    for (let z = -1; z <= 32; z++) {
-      for (let x = -1; x <= 32; x++) {
-        cells[lodCell(x, 0, z)] = 12; // sand
-        cells[lodCell(x, 1, z)] = 10; // water
-      }
-    }
-    const m = meshSection(cells, 'tint');
-    expect(quads(m.water)).toBe(0);
-    // The sand's top (under water, tinted) and bottom (open, its own colour); sides are skirts.
-    expect(quads(m.opaque)).toBe(2);
-    const n = m.opaque.normals;
-    const c = m.opaque.colors;
-    const top = [0, 1, 2, 3].map((q) => q * 4).find((v) => n[v * 3 + 1] === 1) ?? -1;
-    expect(top).toBeGreaterThanOrEqual(0);
-    const expected = tintedColor(12, 0, 10);
-    expect(c[top * 3 + 1]).toBeCloseTo(srgbToLinear((expected >> 8) & 0xff), 4);
-    // Bluer than dry sand, still not the water's own colour.
-    expect(expected).not.toBe(lodColor(12, 0));
-    expect(expected & 0xff).toBeGreaterThan(lodColor(12, 0) & 0xff);
-    expect(expected).not.toBe(lodColor(10, 0));
-  });
-
   it('draws a column top at its surface height, not at its cell top', () => {
     // Regression (playtest: distant land and seas looked too tall): cells fill from their bottom
     // voxel, so cell tops lift the ground by up to a cell — kilometres at the horizon.
@@ -107,7 +83,7 @@ describe('LOD section mesher (§6.6)', () => {
         surface[col(x, z) + 2] = 1; // valid
       }
     }
-    const m = meshSection(cells, 'translucent', surface);
+    const m = meshSection(cells, { surface });
     const tops = new Set<number>();
     let wallUp = 0;
     const p = m.opaque.positions;
@@ -121,29 +97,78 @@ describe('LOD section mesher (§6.6)', () => {
     expect(wallUp).toBeCloseTo(1, 5);
   });
 
-  it('tint mode draws a sea floor inside a water cell at its depth, tinted', () => {
-    // At coarse levels a cell can be taller than the sea is deep: it samples the floor and is
-    // written as water. The floor is drawn at its height, as seen through the water.
+  it("draws a sea floor inside a water cell under a water surface at the chunks' water height", () => {
+    // Regression (playtest: a seam and a height step where near water met LOD water, and a hard
+    // edge where coarse water stopped being drawn): every level draws the see-through surface,
+    // 1/8 m below its cell top as the chunks draw it (waterDrop, in cells), over the true floor.
     const cells = new Uint16Array(LOD_VOLUME);
     const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
     for (let z = -1; z <= 32; z++) {
       for (let x = -1; x <= 32; x++) {
+        cells[lodCell(x, -1, z)] = 12; // sand below
         cells[lodCell(x, 0, z)] = 10; // water (the cell holds the whole sea)
         const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
-        surface[c] = 0.4;
+        surface[c] = 0.5;
         surface[c + 1] = 12; // a sand floor
         surface[c + 2] = 1 | 2; // valid, wet
       }
     }
-    const m = meshSection(cells, 'tint', surface);
-    expect(quads(m.water)).toBe(0);
-    const p = m.opaque.positions;
-    const n = m.opaque.normals;
-    let top = -1;
-    for (let v = 0; v < p.length / 3; v++) if (n[v * 3 + 1] === 1) top = v;
-    // Drawn in half cells: at most 1/4 cell off.
-    expect(Math.abs((p[top * 3 + 1] ?? 0) - 0.4)).toBeLessThanOrEqual(0.25);
-    const expected = tintedColor(12, 0, 10);
-    expect(m.opaque.colors[top * 3 + 1]).toBeCloseTo(srgbToLinear((expected >> 8) & 0xff), 4);
+    const waterDrop = 0.125 / 256; // level 8
+    const m = meshSection(cells, { surface, waterDrop });
+    const heights = (f: typeof m.opaque, up: boolean) => {
+      const ys = new Set<number>();
+      for (let v = 0; v < f.positions.length / 3; v++) {
+        if ((f.normals[v * 3 + 1] ?? 0) === (up ? 1 : -1)) ys.add(f.positions[v * 3 + 1] ?? 0);
+      }
+      return [...ys];
+    };
+    expect(heights(m.water, true)).toEqual([1 - waterDrop]);
+    expect(heights(m.opaque, true)).toEqual([0.5]);
+    // One merged rectangle of water over the section.
+    expect(quads(m.water)).toBe(1);
+  });
+
+  it('closes steps between surfaces across the section border without skirts', () => {
+    // Regression (playtest: sky-blue cracks along straight lines): where a column's surface was
+    // lower than its neighbour across the border, the step between them went only into a skirt,
+    // which is hidden when the neighbour section is drawn at the same level.
+    const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+    const cells = new Uint16Array(LOD_VOLUME);
+    const set = (x: number, z: number, top: number, h: number) => {
+      for (let y = -1; y <= top; y++) cells[lodCell(x, y, z)] = 4;
+      const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
+      surface[c] = h;
+      surface[c + 1] = 4;
+      surface[c + 2] = 1;
+    };
+    for (let z = -1; z <= 32; z++) {
+      set(-1, z, 1, 1.5); // across the −X border: a full cell 1, surface half way up it
+      set(0, z, 0, 0.5); // ours: surface half way up cell 0, a whole cell and a half lower
+      for (let x = 1; x <= 32; x++) set(x, z, 0, 0.5);
+    }
+    // On the −X border plane, the neighbour's cell 0 shows above our surface: from 0.5 to 1,
+    // facing us (+X), in the opaque mesh (the neighbour section draws its cell 1 itself).
+    const covered = (m: ReturnType<typeof meshSection>, facing: number) => {
+      const p = m.opaque.positions;
+      const n = m.opaque.normals;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let v = 0; v < p.length / 3; v++) {
+        if (p[v * 3] !== 0 || n[v * 3] !== facing) continue;
+        lo = Math.min(lo, p[v * 3 + 1] ?? 0);
+        hi = Math.max(hi, p[v * 3 + 1] ?? 0);
+      }
+      return [lo, hi];
+    };
+    expect(covered(meshSection(cells, { surface }), 1)).toEqual([0.5, 1]);
+    // Both surfaces in cell 0, ours higher: our side shows from the neighbour's (0) to ours (0.5),
+    // facing it (−X).
+    cells.fill(0);
+    surface.fill(0);
+    for (let z = -1; z <= 32; z++) {
+      set(-1, z, 0, 0);
+      for (let x = 0; x <= 32; x++) set(x, z, 0, 0.5);
+    }
+    expect(covered(meshSection(cells, { surface }), -1)).toEqual([0, 0.5]);
   });
 });
