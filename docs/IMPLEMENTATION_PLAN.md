@@ -20,7 +20,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7 and #8) | #4, #5, #6, #7, #8 |
-| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b (streaming) in review; 3c block edits next | #7 (3a), #9 (3b) |
+| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b (streaming) implemented, awaiting a PR; 3c block edits next | #7 (3a) |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
 | 6 — Sleep / re-bake | ⏳ Not started | — |
@@ -242,8 +242,8 @@ Exit criteria
 
 ## Phase 3 — Static Terrain Streaming
 
-**Status:** in progress. Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done, in
-review in #9: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
+**Status:** in progress. Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done,
+awaiting a PR: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
 server and client worldgen pools; the walking-without-hitches exit criterion awaits a playtest);
 **3c — block edits** (edit loop, block interaction and infinite inventory, resync, client meshing
 worker); **3d — persistence and debug tooling**.
