@@ -111,6 +111,23 @@ body {
   text-shadow: 0 1px 4px rgb(0 0 0 / 80%);
 }
 
+#status-chip:empty {
+  display: none;
+}
+
+/* Background work (terrain loading): bottom left, above the build label. */
+#status-chip {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 30px);
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 50%);
+  font:
+    12px ui-monospace,
+    monospace;
+}
+
 #debug-overlay {
   position: absolute;
   right: max(8px, env(safe-area-inset-right));
@@ -194,6 +211,22 @@ body {
 }
 
 @media (pointer: coarse) {
+  /* The hotbar takes the top centre: the connection status goes below it, the debug overlay
+     below that, across the screen (it is wider than a phone's half). */
+  #net-status {
+    top: calc(max(8px, env(safe-area-inset-top)) + 80px);
+    font-size: 11px;
+  }
+
+  #debug-overlay {
+    top: calc(max(8px, env(safe-area-inset-top)) + 112px);
+    left: max(8px, env(safe-area-inset-left));
+    max-height: calc(100dvh - 180px);
+    overflow: hidden;
+    font-size: 10px;
+    white-space: pre-wrap;
+  }
+
   #hotbar {
     top: max(8px, env(safe-area-inset-top));
     bottom: auto;
