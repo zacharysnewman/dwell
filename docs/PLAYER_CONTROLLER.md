@@ -220,22 +220,40 @@ Why:
 **Built** (`VoxelQuery`, `voxel_query.h`):
 - `CastVoxels` walks cells Amanatides–Woo style and intersects the ray with each cell's *shape box*
   (full cube, or the bottom half for slabs). A hit is the ray *entering* a shape from free space;
-  a ray that starts inside solid terrain only hits after leaving it (like a surface mesh).
+  a ray that starts inside solid terrain only hits after leaving it (like a surface mesh). Positions
+  are double precision (`RVec3`, ADR 0011); the walk runs in float relative to the origin's cell,
+  and segment–box distances relative to the capsule centre, so probes are equally exact anywhere
+  in the 8,192 km world.
 - `CastBodies` is a Jolt `NarrowPhaseQuery::CastRay` restricted to the `Tier1` and `Character`
   layers, ignoring the player's own body. `CastRay` returns the nearer of the two. A ring of probes
   first asks the broad phase once (`BodiesNear`) and skips Jolt when no moving body is in reach —
-  the common case — which keeps 64 players' passes at ~0.36 ms/tick (Release, CI-class machine).
+  the common case — which keeps 64 players' passes at ~0.42 ms/tick (Release; ~0.48 ms ~8,000 km
+  from the origin).
 - `OverlapsSolid` tests the vertical capsule against solid cell shapes exactly (segment–box
   distance) and against moving bodies with `CollideShape`. `SubmergedFraction` samples the centre
   column. Voxel lookups cache the last chunk.
 
-**Terrain collision** (`core/terrain_collision.h`) is **one static body** whose
-`MutableCompoundShape` holds one `MeshShape` per chunk (added on demand around players, replaced
-in place on edit). Chunk meshes emit every exposed face as its own unit quad on the grid — not
-greedy-merged — and adjacent slabs hide their shared faces. Both choices remove ghost contacts:
-Jolt's enhanced internal edge removal voids edges by shared vertex positions *within one body
-pair*, so seams between separate chunk bodies, or T-junctions from merged faces, would bump the
-capsule (verified by the seam test: no loss of ground crossing chunk borders in 8 directions).
+**Terrain collision** (`core/terrain_collision.h`): static bodies whose `MutableCompoundShape`
+holds one `MeshShape` per chunk (added on demand around players, replaced in place on edit). Chunk
+meshes emit every exposed face as its own unit quad on the grid — not greedy-merged — and adjacent
+slabs hide their shared faces. Both choices remove ghost contacts: Jolt's enhanced internal edge
+removal voids edges by shared vertex positions *within one body pair*, so seams between separate
+chunk bodies, or T-junctions from merged faces, would bump the capsule (verified by the seam test:
+no loss of ground crossing chunk borders in 8 directions).
+
+**Regions and anchors** (Phase 3c, ADR 0011). One body for the whole 8,192 km world would put
+sub-shapes kilometres from its origin, where float offsets are inexact. So each body sits at the
+centre of a *region* (64³ chunks, 2 048 m) and holds the chunks around the players *anchored* to it
+— including chunks beyond the region's border; a chunk's `MeshShape` is shared by every body that
+holds it. Dividing chunks between bodies by position was tried first and bumped the capsule 5.6 cm
+at a region border. Instead:
+- A player's anchor is the region it is in, kept (hysteresis) until it is more than 8 chunks outside
+  that region; the new anchor's body gets the ground around the player before the player switches.
+- A Jolt `GroupFilter` lets a character collide only with its anchor's terrain body (other bodies
+  collide with every terrain body), so there is never a seam under a player.
+- Verified by `walking across terrain collision regions never loses the ground` (a region border
+  and an anchor switch, axis and diagonal, no lift or airborne tick), at the origin and ~8,000 km
+  out.
 
 Rules that keep the grid and the physics world consistent:
 - A voxel edit rebuilds the affected chunk's collision `MeshShape` **in the same tick** on the
@@ -451,7 +469,8 @@ divergence added per tick. The whole ported player and netcode suite also passes
 ### 8.4 Wire format
 - `PlayerInput`: analog move vector (`i8 moveX, moveY`) for gamepads and touch sticks; `jump`,
   `run`, `crouch` in the `u16` button bitfield; quantized yaw and pitch (ARCHITECTURE §8.3).
-- The local player's snapshot block carries the body state (capsule centre and velocity, `f32`),
+- The local player's snapshot block carries the body state (capsule centre `f64×3`, velocity
+  `f32`),
   flags, health, `State`, `inputBuffer`, `lastKnockbackSeq`, and the controller state needed to
   resume simulation exactly (47 bytes, +12 while climbing, +8 after letting go of a ladder):
   flags (grounded, jumping, crouching, climbing, hasReleased, swimming); horizontal `current`,
@@ -459,13 +478,13 @@ divergence added per tick. The whole ported player and netcode suite also passes
   ground's vertical velocity; the ground reference (kind + player id); jump buffer and coyote ticks;
   step grace; ladder and released cells. Per-tick scratch (inputs, events, probe results, climb
   and swim velocities) is recomputed.
-- Remote players receive only feet position (`f32`), velocity (`f16`), view angles, `State`, and
-  flags.
-- **[planned, Phase 3c — protocol v4, ARCHITECTURE §8.3, ADR 0011]** For the 8,192 km world the
-  controller runs on double-precision Jolt, the local player's capsule centre becomes `f64×3`
-  (`pos64`) and remote feet positions `i32×3` at 1/256 m (`posfix`). Vertical controller fields
-  (`accumulatedY`, `platformY`, `targetY`) stay `f32`: heights are bounded to −2 048…6 144 m,
-  where f32 resolves under a millimetre.
+- Remote players receive only feet position (`i32×3` at 1/256 m, `posfix`), velocity (`f16`), view
+  angles, `State`, and flags.
+- **[built, Phase 3c — protocol v4, ARCHITECTURE §8.3, ADR 0011]** For the 8,192 km world the
+  controller runs on double-precision Jolt, the local player's capsule centre is `pos64` (exact, so
+  reconciliation compares like for like anywhere) and remote feet positions `posfix`. Vertical
+  controller fields (`accumulatedY`, `platformY`, `targetY`) stay `f32`: heights are bounded to
+  −2 048…6 144 m, where f32 resolves under a millimetre.
 
 ---
 
@@ -520,9 +539,17 @@ event counters. Expectations use Dwell's default config (recommended feel, voxel
 | Phase5Platform | Riding translating, rotating, and falling Tier 1 bodies; jump-off keeps momentum; explosion |
 | Phase6Climb | Ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | Same scenarios on voxel geometry |
-| GoldenTrace | Four-player scenario: identical across repeated runs; within 1 mm of `server/tests/player/golden/scenario-trace.txt` (regenerate with `DWELL_UPDATE_GOLDEN=1`); native↔WASM compared by `divergence.mjs` (§8.3) |
+| GoldenTrace | Four-player scenario: identical across repeated runs; within 1 mm of `server/tests/player/golden/scenario-trace.txt` (regenerate with `DWELL_UPDATE_GOLDEN=1`; regenerated in Phase 3c for double precision, which tipped one borderline crouch-under-a-ledge fit); native↔WASM compared by `divergence.mjs` (§8.3) |
 | — (Dwell) | Built: swim enter/float/dive/exit, shallow water, auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams, collision-mesh unit tests; networked players (`netcode_test.cpp`, `netsim.h`: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps. Later phases: placement rejection (3), crush and push-force cap (4) |
 
 Performance gate: 64 players' controller passes (excluding the Jolt step) under 1 ms/tick —
-measured at ~0.36 ms in the Release build; checked by `player: performance` (strict under
-`NDEBUG`, loose in Debug builds).
+measured at ~0.42 ms in the Release build with double-precision Jolt (~0.43 ms before it), ~0.48 ms
+~8,000 km from the origin; checked by `player: performance` (strict under `NDEBUG`, loose in Debug
+builds).
+
+**Far from the origin** (ADR 0011): every test describes its world in a local frame that
+`test_origin.h` places in the world; `--dwell-origin-x=far` (in `tests/main.cpp`) puts it
+7 999 488 m east (a whole number of collision regions), and the player and netcode suites, the
+golden trace and the performance gate pass there unchanged, natively and in WASM (CI runs both).
+World-level tests cover the rest: walking off the rim of the disc into the void kills
+(`streaming_test.cpp`).

@@ -55,7 +55,7 @@ float Percentile(std::vector<float> v, float p) {
 // Keeps a wandering player inside a box on open ground (flat world away from the playground).
 Script Roam(float cx, float cz, int offset) {
   return [cx, cz, offset](int tick, const SimClient& self) {
-    const JPH::Vec3 p = self.predictor->Position();
+    const JPH::Vec3 p = self.Position();
     if (std::abs(p.GetX() - cx) > 6 || std::abs(p.GetZ() - cz) > 6) return SteerTo(self, cx, cz);
     return Wander(tick, offset);
   };
@@ -126,12 +126,12 @@ TEST_SUITE("netcode: server") {
     // Drop player A from 5 m (lands at ~14 m/s: damaged) and later from 30 m (lethal).
     auto& players = sim.server().players();
     const auto ha = *sim.server().PlayerHandleOf(a.player_id);
-    players.Teleport(ha, JPH::Vec3(8.5f, 5.9f, -8.5f), JPH::Vec3::sZero());
+    players.Teleport(ha, ToWorld(8.5, 5.9, -8.5), JPH::Vec3::sZero());
     sim.Step(90);
     const int health = sim.server().HealthOf(a.player_id);
     CHECK(health < protocol::kMaxHealth);
     CHECK(health > 0);
-    players.Teleport(*sim.server().PlayerHandleOf(a.player_id), JPH::Vec3(8.5f, 30.9f, -8.5f),
+    players.Teleport(*sim.server().PlayerHandleOf(a.player_id), ToWorld(8.5, 30.9, -8.5),
                      JPH::Vec3::sZero());
     sim.Step(150);
     CHECK(sim.server().HealthOf(a.player_id) == 0);
@@ -159,8 +159,8 @@ TEST_SUITE("netcode: server") {
     auto& b = sim.Join([](int, const SimClient& self) { return SteerTo(self, 8.5f, -8.5f); });
     sim.Step(Ticks(6.0f));
     auto& players = sim.server().players();
-    const JPH::Vec3 pa = players.Position(*sim.server().PlayerHandleOf(a.player_id));
-    const JPH::Vec3 pb = players.Position(*sim.server().PlayerHandleOf(b.player_id));
+    const JPH::Vec3 pa = ToLocal(players.Position(*sim.server().PlayerHandleOf(a.player_id)));
+    const JPH::Vec3 pb = ToLocal(players.Position(*sim.server().PlayerHandleOf(b.player_id)));
     CHECK((pa - pb).Length() > 0.55f);  // two 0.3 m capsules can't overlap
   }
 }
@@ -274,7 +274,7 @@ TEST_CASE("predictor: remote proxy right after the first snapshot") {
   snap.local.controller.flags = protocol::ControllerFlags::kGrounded;
   snap.local.controller.ground_kind = protocol::GroundKind::kTerrain;
   p.OnSnapshot(snap);
-  p.SetRemote(1, JPH::Vec3(-1, 0, -0.25f), JPH::Vec3::sZero(), false, 0);
+  p.SetRemote(1, JPH::RVec3(-1, 0, -0.25), JPH::Vec3::sZero(), false, 0);
   for (int i = 0; i < 10; ++i) p.Tick(player::QuantizeInput({}, p.next_seq()));
   CHECK(p.active());
 }

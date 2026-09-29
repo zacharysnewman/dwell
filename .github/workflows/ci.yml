@@ -56,6 +56,8 @@ jobs:
         run: npm run build:wasm
       - name: Player controller suite under WASM (Node)
         run: node ../server/build/wasm/tools/dwell_player_tests.js
+      - name: Player controller suite under WASM, ~8,000 km from the origin (ADR 0011)
+        run: node ../server/build/wasm/tools/dwell_player_tests.js --dwell-origin-x=far
       - name: Worldgen suite under WASM (Node) — golden chunk hashes match native (ADR 0010)
         run: node ../server/build/wasm/tools/dwell_worldgen_tests.js
       - run: npm run format:check
@@ -100,6 +102,9 @@ jobs:
       - name: Test
         working-directory: server
         run: ctest --preset dev
+      - name: Player and netcode suites ~8,000 km from the origin (ADR 0011)
+        working-directory: server
+        run: build/dev/tests/dwell_tests --dwell-origin-x=far -ts="player*,netcode*"
       - name: Smoke-run server
         run: server/build/dev/app/dwell_server
       - name: Player controller performance gate and golden trace (Release)
@@ -108,6 +113,7 @@ jobs:
           cmake --preset release
           cmake --build --preset release --target dwell_tests
           build/release/tests/dwell_tests -ts="player: performance,player: scenario"
+          build/release/tests/dwell_tests --dwell-origin-x=far -ts="player: performance,player: scenario"
 
   e2e:
     name: End-to-end (native server + Chromium + Electron)

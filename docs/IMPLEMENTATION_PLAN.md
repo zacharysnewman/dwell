@@ -20,7 +20,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
-| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) and 3b (streaming) merged (3b's long-walk playtest outstanding); re-scoped for the planet-scale world: 3c scale foundations next, then 3d block edits, 3e persistence | #7 (3a), #9 (3b) |
+| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) and 3b (streaming) merged (3b's long-walk playtest outstanding); 3c (scale foundations) done on `claude/phase-3c-scale`, PR pending; 3d block edits next, then 3e persistence | #7 (3a), #9 (3b), #11 (re-scope) |
 | 4 — World LOD & whole-world view | ⏳ Not started (added 2026-09-29; ADR 0012) | — |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
@@ -254,9 +254,11 @@ Exit criteria
 **Status:** in progress. Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done,
 merged in #9: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
 server and client worldgen pools; the walking-without-hitches exit criterion awaits a playtest);
-**3c — scale foundations** (next: the planet-scale world of ADR 0011 — bounds, double-precision
-physics, protocol v4 positions, planet-scale-safe worldgen, spherical streaming); **3d — block
-edits** (edit loop, block interaction and infinite inventory, resync, client meshing worker);
+**3c — scale foundations** (done, PR pending: the planet-scale world of ADR 0011 — bounds and
+the rim, double-precision physics with region-anchored terrain collision, protocol v4 positions,
+generator version 3, air chunks, spherical streaming; every 3c exit criterion verified);
+**3d — block edits** (next: edit loop, block interaction and infinite inventory, resync, client
+meshing worker);
 **3e — persistence and debug tooling**. 3c comes before edits and persistence so the world's
 bounds, generator version and wire formats change before saved worlds depend on them.
 
@@ -274,24 +276,29 @@ Deliverables
 - [x] Server worldgen thread pool with per-tick budget; spawn region pre-generated. Client worldgen
   worker pool with transferable buffers (ADR 0007). *(3b)*
 - **Scale foundations** *(3c;* [ADR 0011](./adr/0011-planet-scale-world.md)*, §6.3)*:
-  - [ ] World constants in `shared/protocol/constants.json`: `WORLD_RADIUS` (8 192 000 m),
+  - [x] World constants in `shared/protocol/constants.json`: `WORLD_RADIUS` (8 192 000 m),
     `WORLD_MIN_Y` / `WORLD_MAX_Y` (−2 048 / 6 144), `SEA_LEVEL` (0), `POSITION_FIXED_SCALE` (256);
     `WORLD_HALF_EXTENT` and `VIEW_HEIGHT_CHUNKS` removed.
-  - [ ] Jolt built with `JPH_DOUBLE_PRECISION` natively and in every WASM build; `RVec3` world
-    positions through the server, player controller, terrain collision and predictor.
-  - [ ] Protocol v4: `pos64` for the local player's snapshot state and `Respawn`, `posfix`
-    (1/256 m `i32`) for remote players (and later entities and `PhysicsEvent`); C++ and TS
-    codecs; golden vectors regenerated from the Python reference encoder.
-  - [ ] Generator version 3: split-coordinate noise (integer lattice cell + float offset, no whole
+  - [x] Jolt built with `JPH_DOUBLE_PRECISION` natively and in every WASM build; `RVec3` world
+    positions through the server, player controller, probes, terrain collision (regions with
+    anchors, PLAYER_CONTROLLER.md §5) and predictor; the client sim's state block in doubles.
+  - [x] Protocol v4: `pos64` for the local player's snapshot state and `Respawn`, `posfix`
+    (1/256 m `i32`) for remote players (entities and `PhysicsEvent` get it when built); C++ and TS
+    codecs; golden vectors regenerated from the Python reference encoder (positions near the rim,
+    a NaN and an out-of-range position among the malformed ones).
+  - [x] Generator version 3: split-coordinate noise (integer lattice cell + float offset, no whole
     world coordinate converted to float); large-scale variation across the disc (a placeholder
-    continent/ocean layer — terrain style stays prototype, §6.1); relief rescaled to the new
-    vertical bounds with sea level at 0; nothing generated outside the disc; spawn
-    search updated; golden hashes regenerated, adding chunks near the rim and at the top and
-    bottom of the world; `dwell_worldgen_inspect` accepts far coordinates.
-  - [ ] `ChunkIsAir(coord)`: a column-bound test, shared by server and client, proving a chunk is
-    all air; unmodified all-air chunks are neither generated nor sent.
-  - [ ] Spherical interest management and server generation region (`x² + y² + z² ≤ r² + r`),
-    clipped to the world's rows and the disc.
+    continent/ocean layer with ranges and basins — terrain style stays prototype, §6.1); relief
+    rescaled to the new vertical bounds with sea level at 0; nothing generated outside the disc
+    (in every generator); spawn search unchanged apart from the new sea level; golden hashes
+    regenerated, adding chunks near the rim, ~8,000 km out, and at the top and bottom of the world;
+    `dwell_worldgen_inspect` accepts far coordinates.
+  - [x] Air test (`AirTestFor`, `TerrainGenerator::IsAirChunk`): the generator's own sky shortcut,
+    cached per chunk column; unmodified all-air chunks are neither generated nor stored, and travel
+    as payload-free `Air` messages (see deviations).
+  - [x] Spherical interest management (`x² + y² + z² ≤ r² + r`, unloading outside r + margin),
+    clipped to the world's rows; the server's generation region and startup pre-generation skip
+    air chunks.
 - [ ] Client meshing worker pool. *(3d)*
 - **Cross-platform determinism:**
   - [x] The generator compiled to WASM for local mode and the client sim; CI golden test comparing
@@ -368,15 +375,43 @@ Deviations and additions (3b):
 - The e2e walks count predicted ticks instead of wall time, and wait for the terrain to finish
   loading: two pages on CI's few cores run well below 60 ticks/s otherwise.
 
+Deviations and additions (3c):
+- Terrain collision is split into region bodies (2 048 m, each at its region's centre) so sub-shape
+  offsets stay exact. Dividing chunks between bodies by position bumped the capsule 5.6 cm at
+  region borders, so bodies hold the chunks around the players anchored to them and a player
+  collides only with its anchor's body (Jolt group filter, anchor hysteresis 8 chunks); Jolt is
+  now built with RTTI to allow the filter (ADR 0011 implementation notes).
+- Air chunks are sent as a payload-free `Air` form of `ChunkData` instead of not at all: the client
+  waits for the chunks around the player before predicting, so it must know they exist. Neither
+  side generates, stores or meshes them.
+- Tests can move their world: `--dwell-origin-x=far` places every player/netcode test 7 999 488 m
+  east; `ServerConfig::generator_override` lets the network simulation shift its playground.
+- Found along the way: debug lines were written to the vertex buffer in absolute float32
+  coordinates (0.5 m steps far out); they are now relative to their first point
+  (`render/debugLines.ts`, with a test).
+- The golden player trace was regenerated: double precision resolves a borderline "fits standing"
+  check (a crouched player pressed exactly against a ledge) the other way from tick 320; the far
+  run matches the origin within 1 µm.
+- The flat and playground generators respect the rim too, so test worlds near the rim behave like
+  the terrain.
+
 Exit criteria
-- [ ] *(3c)* With double-precision Jolt, the controller scenarios, golden trace and netcode tests
+- [x] *(3c)* With double-precision Jolt, the controller scenarios, golden trace and netcode tests
   pass natively and in WASM both at the origin and ~8,000 km from it, and 64 players still take
-  < 1 ms per tick (native Release and WASM).
-- [ ] *(3c)* Terrain near the rim has the same detail as near the origin: an automated check finds
-  no float quantization in noise sampled at 1 m steps there.
-- [ ] *(3c)* Walking off the rim of the disc falls into the void and kills the player.
-- [ ] *(3c)* Open sky costs nothing: all-air chunks are neither generated nor sent, and the
-  per-client chunk set stays bounded with 256 rows (`streaming_test.cpp`).
+  < 1 ms per tick (native Release and WASM). *`dwell_tests` and `dwell_player_tests.js` with and
+  without `--dwell-origin-x=far` (CI runs both); golden trace within 1 µm at 8,000 km; 0.42 ms per
+  tick at the origin, 0.48 ms far out (native Release); `divergence.mjs` native↔WASM 1.2e-7 m/s,
+  no state mismatches.*
+- [x] *(3c)* Terrain near the rim has the same detail as near the origin: an automated check finds
+  no float quantization in noise sampled at 1 m steps there. *`noise is as detailed ~8,000 km from
+  the origin as at it` (also shows the old float-coordinate approach failing there).*
+- [x] *(3c)* Walking off the rim of the disc falls into the void and kills the player. *`world
+  rim: walking off the edge of the disc falls into the void and kills` (fails with the rim
+  disabled).*
+- [x] *(3c)* Open sky costs nothing: all-air chunks are neither generated nor stored, travel
+  without payload, and the per-client chunk set stays bounded with 256 rows. *`streaming: open sky
+  costs nothing; the view is a sphere across the world's rows`, `chunks the air test reports as
+  air generate as all air`, and the existing unload/memory test.*
 - [ ] Walking across the world streams chunks without hitches; memory stays bounded when moving.
   *Automated for the server (`streaming_test.cpp`: chunks are generated ahead of a moving player,
   never on the tick; world, collision and per-client chunk sets stay bounded) and the client
@@ -394,8 +429,8 @@ Exit criteria
 - [x] The same seed produces bit-identical chunks natively, in local mode, and in the client
   worker (CI golden test: `dwell_tests`, `dwell_worldgen_tests.js`, and
   `worldgen/generator.test.ts`); untouched chunks cost only a `Generated` message on the wire
-  (`streaming_test.cpp`). The same test covers generator version 3 once 3c regenerates the
-  hashes, including chunks near the rim.
+  (`streaming_test.cpp`). Re-verified for generator version 3 (3c), including chunks near the rim
+  and ~8,000 km out.
 - [ ] Generated terrain shows varied relief (prototype style, §6.1), caves, and overhangs, and the
   player can walk, jump, and swim through it with no collision mismatches.
 

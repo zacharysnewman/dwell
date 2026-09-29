@@ -24,6 +24,7 @@ import {
 } from 'three';
 import type { Vec3 } from '../../protocol/messages';
 import { buildChunkMeshes, type MeshArrays } from '../chunkMesh';
+import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { VERTICAL_FOV, verticalFov } from '../fov';
 import { buildAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
@@ -202,28 +203,28 @@ export class ThreeRenderer implements Renderer {
     this.camera.lookAt(this.camera.position.clone().add(forward));
   }
 
-  setDebugLines(segments: readonly { from: Vec3; to: Vec3; color: number }[] | null): void {
+  setDebugLines(segments: readonly DebugSegment[] | null): void {
     if (this.debug) {
       this.debug.geometry.dispose();
       this.scene.remove(this.debug);
       this.debug = null;
     }
     if (!segments || segments.length === 0) return;
-    const positions = new Float32Array(segments.length * 6);
-    const colors = new Float32Array(segments.length * 6);
+    const lines = debugLineArrays(segments);
+    const colors = new Float32Array(lines.colors.length * 3);
     const c = new Color();
-    segments.forEach((s, i) => {
-      positions.set([...s.from, ...s.to], i * 6);
-      c.setHex(s.color);
-      colors.set([c.r, c.g, c.b, c.r, c.g, c.b], i * 6);
+    lines.colors.forEach((hex, i) => {
+      c.setHex(hex);
+      colors.set([c.r, c.g, c.b], i * 3);
     });
     const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(positions, 3));
+    g.setAttribute('position', new BufferAttribute(lines.positions, 3));
     g.setAttribute('color', new BufferAttribute(colors, 3));
     this.debug = new LineSegments(
       g,
       new LineBasicMaterial({ vertexColors: true, depthTest: false }),
     );
+    this.debug.position.set(...lines.origin);
     this.debug.renderOrder = 2;
     this.scene.add(this.debug);
   }

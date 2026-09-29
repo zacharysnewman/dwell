@@ -3,10 +3,11 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "dwell/core/voxel.h"
 
-// Procedural terrain, generator version 2 (ARCHITECTURE.md §6.3). A chunk is a pure function of
+// Procedural terrain, generator version 3 (ARCHITECTURE.md §6.3). A chunk is a pure function of
 // (world seed, chunk coordinate): every stage reads only noise and hashes of world coordinates,
 // never another chunk's data, so chunks generate in any order, on any thread, natively or in WASM,
 // with bit-identical results (noise.h, ADR 0010).
@@ -22,6 +23,12 @@
 //   7. Ores: hashed vein blobs in stone.
 //   8. Features: trees and boulders at hashed positions per region cell.
 // 2D fields are sampled every 4 columns and 3D noise every 4 voxels, then interpolated.
+//
+// Version 3 (ADR 0011): the 8,192 km disc. Noise splits world coordinates into integer lattice
+// cells and float offsets (noise.h), so terrain is equally detailed everywhere; a placeholder
+// planet-scale layer varies land, ocean and kilometre-scale relief across the disc; sea level is
+// 0; nothing is generated outside the disc. The terrain's content (biomes, materials, features) is
+// prototype (ARCHITECTURE.md §6.1).
 namespace dwell::worldgen {
 
 enum class Biome : std::uint8_t { kOcean, kBeach, kPlains, kForest, kDesert, kSnowy, kMountains };
@@ -37,6 +44,7 @@ struct Column {
   float height = 0;    // base terrain height (m), before overhang noise
   float overhang = 0;  // amplitude (m) of the 3D overhang noise
   Biome biome = Biome::kPlains;
+  bool outside = false;  // beyond the world's disc: nothing is generated
 };
 
 // A tree or boulder; positions are world voxel coordinates.
@@ -61,6 +69,16 @@ class TerrainGenerator {
   void Generate(const core::ChunkCoord& coord, core::Chunk& chunk,
                 std::uint8_t stages = kAllStages) const;
 
+  // True when Generate would leave the chunk all air: outside the world's rows or disc, or sky
+  // above everything the chunk's columns (and features reaching into it) can hold. Exactly the
+  // generator's own shortcut, so a chunk this reports as air is never generated or sent.
+  bool IsAirChunk(const core::ChunkCoord& coord) const;
+  // The sky test's height for a chunk column: chunks with y0 above it (and at or above sea level)
+  // are air. Depends only on (cx, cz), so callers can cache it per column.
+  float SkyFloorAt(std::int32_t cx, std::int32_t cz) const;
+  // IsAirChunk given SkyFloorAt(coord.x, coord.z).
+  static bool IsAirChunk(const core::ChunkCoord& coord, float sky_floor);
+
   // Point queries with exactly the chunk path's arithmetic (used by features, spawn, and tests).
   Column ColumnAt(std::int32_t x, std::int32_t z) const;
   // Terrain solidity after caves, before the stability pass and features.
@@ -73,7 +91,7 @@ class TerrainGenerator {
   std::optional<Feature> BoulderInCell(std::int32_t cx, std::int32_t cz) const;
 
   // Feet position for players: near the origin, on land, on level ground with no tree nearby.
-  std::array<float, 3> SpawnPoint() const;
+  std::array<double, 3> SpawnPoint() const;
 
   static constexpr int kTreeCell = 7;
   static constexpr int kBoulderCell = 24;
@@ -81,16 +99,20 @@ class TerrainGenerator {
  private:
   struct Seeds {
     std::uint32_t continent, erosion, temperature, humidity, hills, ridges, overhang, spaghetti_a,
-        spaghetti_b, cheese, trees, boulders, ores;
+        spaghetti_b, cheese, trees, boulders, ores, macro, relief;
   } seeds_;
 
   struct Corner2 {
-    float continentalness, erosion, temperature, humidity, hills, ridges;
+    float continentalness, erosion, temperature, humidity, hills, ridges, macro, relief;
   };
+
   struct Corner3 {
     float overhang, spaghetti_a, spaghetti_b, cheese;
   };
   Corner2 SampleCorner2(std::int32_t lx, std::int32_t lz) const;
+  // Columns of a chunk and one beyond each side ((S + 2)², row-major from (x0 − 1, z0 − 1)).
+  void ChunkColumns(std::int32_t x0, std::int32_t z0, std::vector<Column>& cols) const;
+  static float SkyFloor(const std::vector<Column>& cols);
   Corner3 SampleCorner3(std::int32_t lx, std::int32_t ly, std::int32_t lz) const;
   static Column Finish(const Corner2& c);
   static Column Interp2(const Corner2 (&c)[4], int fx, int fz);

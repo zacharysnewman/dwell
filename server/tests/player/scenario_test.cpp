@@ -235,6 +235,53 @@ TEST_SUITE("player: voxel geometry") {
     CHECK(max_lift < 0.003f);  // sub-millimetre ripples at most
   }
 
+  TEST_CASE("walking across terrain collision regions never loses the ground") {
+    // Terrain bodies are per region (ADR 0011). Crossing a region border (x = 1 024 m) keeps the
+    // player's anchor, and the anchor's body holds the ground on both sides; well inside the next
+    // region (x = 1 280 m) the player switches to that region's body. Neither may bump or drop the
+    // player.
+    constexpr int kBorder = core::TerrainCollision::kRegionChunks / 2 * core::kChunkSize;
+    constexpr int kSwitch =
+        kBorder + core::TerrainCollision::kAnchorHysteresisChunks * core::kChunkSize;
+    const auto run = [](PlayerTestWorld& w, PlayerHandle e, float yaw, int ticks) {
+      w.input = [yaw](int, PlayerHandle) { return Move(0, 1, true, false, false, yaw); };
+      struct {
+        int airborne = 0;
+        float max_lift = 0;
+        std::size_t max_regions = 0;
+      } r;
+      for (int i = 0; i < ticks; ++i) {
+        w.Step();
+        if (!w.C(e).ground.grounded) ++r.airborne;
+        r.max_lift = std::max(r.max_lift, std::abs(w.Feet(e)));
+        r.max_regions = std::max(r.max_regions, w.terrain.regions());
+      }
+      return r;
+    };
+    // Across the border, along an axis and diagonally, both ways: one body throughout.
+    for (const float yaw : {90.0f, 45.0f, 135.0f, 270.0f}) {
+      CAPTURE(yaw);
+      PlayerTestWorld w;
+      w.Fill(kBorder - 24, -1, -24, kBorder + 23, -1, 23, core::Materials::kStone);
+      const float start = yaw == 270.0f ? kBorder + 12.5f : kBorder - 11.5f;
+      const auto e = w.Spawn(Vec3(start, 0, yaw == 45.0f ? -8.5f : yaw == 135.0f ? 8.5f : 0.5f));
+      const auto r = run(w, e, yaw, 180);
+      CHECK(std::abs(w.Pos(e).GetX() - start) > 16.0f);  // it crossed
+      CHECK(r.airborne == 0);
+      CHECK(r.max_lift < 0.003f);
+      CHECK(r.max_regions == 1);
+    }
+    // From the first region, past the border, on to the switch: a second body takes over.
+    PlayerTestWorld w;
+    w.Fill(kBorder - 8, -1, -3, kSwitch + 16, -1, 3, core::Materials::kStone);
+    const auto e = w.Spawn(Vec3(kBorder - 4.5f, 0, 0.5f));
+    const auto r = run(w, e, 90.0f, Ticks((kSwitch + 8 - kBorder) / 8.0f));
+    CHECK(w.Pos(e).GetX() > kSwitch + 2.0f);
+    CHECK(r.airborne == 0);
+    CHECK(r.max_lift < 0.003f);
+    CHECK(r.max_regions == 2);
+  }
+
   TEST_CASE("a block removed under the feet starts a fall") {
     PlayerTestWorld w;
     w.Floor(-10);

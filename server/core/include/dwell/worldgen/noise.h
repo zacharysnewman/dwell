@@ -53,16 +53,44 @@ constexpr float SmoothStep(float e0, float e1, float v) {
   return t * t * (3.0f - 2.0f * t);
 }
 
+// A coordinate on a noise lattice, split into its integer cell and the float offset within it.
+struct LatticeCoord {
+  std::int32_t cell;
+  float frac;  // [0, 1)
+};
+
+// World coordinate `p` (m) on a lattice whose spacing is `wavelength / 2^octave` m. The split is
+// exact integer arithmetic; only the offset within the cell is a float (one correctly rounded
+// division), so noise is equally precise anywhere in the 8,192 km world (ADR 0011). A whole world
+// coordinate is never converted to float.
+constexpr LatticeCoord Lattice(std::int64_t p, std::int32_t wavelength, int octave = 0) {
+  const std::int64_t v = p * (std::int64_t{1} << octave);
+  std::int64_t cell = v / wavelength, rem = v % wavelength;
+  if (rem < 0) {
+    --cell;
+    rem += wavelength;
+  }
+  return {static_cast<std::int32_t>(cell),
+          static_cast<float>(rem) / static_cast<float>(wavelength)};
+}
+
 // Gradient (Perlin) noise, roughly in [−1, 1], zero at lattice points.
+float Perlin2(std::uint32_t seed, LatticeCoord x, LatticeCoord z);
+float Perlin3(std::uint32_t seed, LatticeCoord x, LatticeCoord y, LatticeCoord z);
+// Float-coordinate forms, for small (local) coordinates only: tests and tools.
 float Perlin2(std::uint32_t seed, float x, float z);
 float Perlin3(std::uint32_t seed, float x, float y, float z);
 
 // Fractal sums, normalised by the total amplitude (so roughly in [−1, 1]). Each octave doubles the
-// frequency, halves the amplitude, and uses its own seed.
-float Fbm2(std::uint32_t seed, float x, float z, int octaves);
-float Fbm3(std::uint32_t seed, float x, float y, float z, int octaves);
+// frequency, halves the amplitude, and uses its own seed. World coordinates are integers (m) and
+// `wavelength` the first octave's lattice spacing (m), per axis for 3D.
+float Fbm2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
+           int octaves);
+float Fbm3(std::uint32_t seed, std::int64_t x, std::int64_t y, std::int64_t z, std::int32_t wx,
+           std::int32_t wy, std::int32_t wz, int octaves);
 // Ridged fractal: (1 − |noise|)² per octave, weighted by the previous octave; in [0, 1]. Sharp
 // crests for mountain ranges.
-float Ridged2(std::uint32_t seed, float x, float z, int octaves);
+float Ridged2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
+              int octaves);
 
 }  // namespace dwell::worldgen

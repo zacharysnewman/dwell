@@ -27,7 +27,13 @@ constexpr float kLatticeStep = 0.25f;  // 1 / kLattice, exact
 constexpr int kSurfacePad = 8;
 // Solid components smaller than this, not touching a chunk face, are removed (stability pass).
 constexpr int kMinComponent = 48;
-constexpr int kSnowLine = 170;
+constexpr int kSnowLine = 900;
+// Placeholder planet-scale layer (prototype, §6.1): continents and oceans a few hundred km across,
+// and ranges of kilometre-scale relief on the larger landmasses.
+constexpr std::int32_t kMacroWavelength = 262144;  // m
+constexpr std::int32_t kReliefWavelength = 49152;  // m
+constexpr float kMacroReliefHeight = 1800.0f;      // m, at the crest of a range
+constexpr float kMacroOceanDepth = 500.0f;         // m, added below the continental shelf
 // Trees reach at most this far above their ground, and leaves this far sideways from the trunk.
 constexpr int kTreeReach = 12;
 constexpr int kTreeSpread = 3;
@@ -46,10 +52,10 @@ float Spline(const Knot (&k)[N], float x) {
   return k[N - 1].y;
 }
 
-// Base height (m) from continentalness: deep ocean, shelf, coast, lowlands, uplands.
-constexpr Knot kContinentHeight[] = {{-1.0f, 22.0f},  {-0.45f, 38.0f}, {-0.2f, 54.0f},
-                                     {-0.08f, 61.0f}, {0.0f, 66.0f},   {0.25f, 72.0f},
-                                     {0.6f, 86.0f},   {1.0f, 104.0f}};
+// Base height (m, sea level 0) from continentalness: deep ocean, shelf, coast, lowlands, uplands.
+constexpr Knot kContinentHeight[] = {{-1.0f, -42.0f}, {-0.45f, -26.0f}, {-0.2f, -10.0f},
+                                     {-0.08f, -3.0f}, {0.0f, 2.0f},     {0.25f, 8.0f},
+                                     {0.6f, 22.0f},   {1.0f, 40.0f}};
 
 float Clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
@@ -66,7 +72,7 @@ std::uint32_t SeedWord(std::uint64_t world_seed, std::uint32_t stream) {
 // paths so both give bit-identical answers.
 template <class Noise>
 Cell Classify(const Column& col, std::int32_t y, Noise&& noise) {
-  if (y < kWorldMinY || y >= kWorldMaxY) return kOpenAir;
+  if (col.outside || y < kWorldMinY || y >= kWorldMaxY) return kOpenAir;
   if (y < kWorldMinY + kBedrockLayers) return kSolid;
   const float fy = static_cast<float>(y);
   // Above the reach of the overhang noise: open sky (or sea). No noise needed.
@@ -125,9 +131,9 @@ struct OreSpec {
 };
 constexpr int kOreCell = 16;
 constexpr OreSpec kOres[] = {
-    {M::kCoalOre, -100, 200, 2, 2, 0.6f},
-    {M::kIronOre, -110, 72, 3, 1, 0.8f},
-    {M::kGoldOre, -120, 16, 1, 1, 0.5f},
+    {M::kCoalOre, -164, 136, 2, 2, 0.6f},
+    {M::kIronOre, -174, 8, 3, 1, 0.8f},
+    {M::kGoldOre, -184, -48, 1, 1, 0.5f},
 };
 
 }  // namespace
@@ -157,7 +163,7 @@ TerrainGenerator::TerrainGenerator(std::uint64_t world_seed) {
   for (std::uint32_t* s :
        {&seeds_.continent, &seeds_.erosion, &seeds_.temperature, &seeds_.humidity, &seeds_.hills,
         &seeds_.ridges, &seeds_.overhang, &seeds_.spaghetti_a, &seeds_.spaghetti_b, &seeds_.cheese,
-        &seeds_.trees, &seeds_.boulders, &seeds_.ores}) {
+        &seeds_.trees, &seeds_.boulders, &seeds_.ores, &seeds_.macro, &seeds_.relief}) {
     *s = SeedWord(world_seed, ++stream);
   }
 }
@@ -165,21 +171,27 @@ TerrainGenerator::TerrainGenerator(std::uint64_t world_seed) {
 // --- 1–2: climate and base height -----------------------------------------------------------
 
 TerrainGenerator::Corner2 TerrainGenerator::SampleCorner2(std::int32_t lx, std::int32_t lz) const {
-  const float x = static_cast<float>(lx * kLattice), z = static_cast<float>(lz * kLattice);
+  // World coordinates stay integers; noise splits them per octave (noise.h, ADR 0011).
+  const std::int64_t x = std::int64_t{lx} * kLattice, z = std::int64_t{lz} * kLattice;
   Corner2 c;
-  c.continentalness = Fbm2(seeds_.continent, x * (1.0f / 1400.0f), z * (1.0f / 1400.0f), 5);
-  c.erosion = Fbm2(seeds_.erosion, x * (1.0f / 700.0f), z * (1.0f / 700.0f), 3);
-  c.temperature = Fbm2(seeds_.temperature, x * (1.0f / 1100.0f), z * (1.0f / 1100.0f), 3);
-  c.humidity = Fbm2(seeds_.humidity, x * (1.0f / 900.0f), z * (1.0f / 900.0f), 3);
-  c.hills = Fbm2(seeds_.hills, x * (1.0f / 96.0f), z * (1.0f / 96.0f), 4);
-  c.ridges = Ridged2(seeds_.ridges, x * (1.0f / 360.0f), z * (1.0f / 360.0f), 5);
+  c.continentalness = Fbm2(seeds_.continent, x, z, 1400, 5);
+  c.erosion = Fbm2(seeds_.erosion, x, z, 700, 3);
+  c.temperature = Fbm2(seeds_.temperature, x, z, 1100, 3);
+  c.humidity = Fbm2(seeds_.humidity, x, z, 900, 3);
+  c.hills = Fbm2(seeds_.hills, x, z, 96, 4);
+  c.ridges = Ridged2(seeds_.ridges, x, z, 360, 5);
+  c.macro = Fbm2(seeds_.macro, x, z, kMacroWavelength, 4);
+  c.relief = Ridged2(seeds_.relief, x, z, kReliefWavelength, 4);
   return c;
 }
 
 Column TerrainGenerator::Finish(const Corner2& c) {
   Column col;
   // Fractal Perlin sums rarely leave ±0.5; stretch the climate fields to about ±1.
-  col.continentalness = Clamp(c.continentalness * 2.2f + 0.15f, -1.0f, 1.0f);  // ~⅓ ocean
+  // The planet-scale layer shifts the local continentalness: whole regions of ocean or land.
+  const float macro = Clamp(c.macro * 2.2f, -1.0f, 1.0f);
+  col.continentalness =
+      Clamp(c.continentalness * 2.2f + macro * 0.9f + 0.15f, -1.0f, 1.0f);  // ~⅓ ocean
   col.erosion = Clamp(c.erosion * 2.2f, -1.0f, 1.0f);
   col.temperature = Clamp(c.temperature * 2.2f, -1.0f, 1.0f);
   col.humidity = Clamp(c.humidity * 2.2f, -1.0f, 1.0f);
@@ -196,8 +208,13 @@ Column TerrainGenerator::Finish(const Corner2& c) {
 
   const float land = SmoothStep(-0.12f, 0.05f, cont);
   col.mountain = SmoothStep(0.05f, 0.4f, cont) * SmoothStep(-0.05f, -0.4f, col.erosion);
+  // Kilometre-scale ranges on large landmasses; deep basins under large oceans.
+  const float range = SmoothStep(0.15f, 0.55f, macro) * land * c.relief * c.relief;
+  const float basin = SmoothStep(-0.1f, -0.6f, macro);
   col.height = Spline(kContinentHeight, cont) + c.hills * hill_amplitude * (0.35f + 0.65f * land) +
-               col.mountain * (18.0f + c.ridges * 150.0f);
+               col.mountain * (18.0f + c.ridges * 150.0f) + range * kMacroReliefHeight -
+               basin * kMacroOceanDepth;
+  col.mountain = std::max(col.mountain, SmoothStep(0.05f, 0.25f, range));
   col.overhang = 2.5f * land + 1.0f + 14.0f * col.mountain;
 
   const float h = col.height;
@@ -232,6 +249,8 @@ Column TerrainGenerator::Interp2(const Corner2 (&c)[4], int fx, int fz) {
   m.humidity = bi(&Corner2::humidity);
   m.hills = bi(&Corner2::hills);
   m.ridges = bi(&Corner2::ridges);
+  m.macro = bi(&Corner2::macro);
+  m.relief = bi(&Corner2::relief);
   return Finish(m);
 }
 
@@ -239,22 +258,22 @@ Column TerrainGenerator::ColumnAt(std::int32_t x, std::int32_t z) const {
   const std::int32_t lx = FloorDiv(x, kLattice), lz = FloorDiv(z, kLattice);
   const Corner2 c[4] = {SampleCorner2(lx, lz), SampleCorner2(lx + 1, lz), SampleCorner2(lx, lz + 1),
                         SampleCorner2(lx + 1, lz + 1)};
-  return Interp2(c, FloorMod(x, kLattice), FloorMod(z, kLattice));
+  Column col = Interp2(c, FloorMod(x, kLattice), FloorMod(z, kLattice));
+  col.outside = !core::InsideWorldDisc(x, z);
+  return col;
 }
 
 // --- 3–4: density and caves -----------------------------------------------------------------
 
 TerrainGenerator::Corner3 TerrainGenerator::SampleCorner3(std::int32_t lx, std::int32_t ly,
                                                           std::int32_t lz) const {
-  const float x = static_cast<float>(lx * kLattice), y = static_cast<float>(ly * kLattice),
-              z = static_cast<float>(lz * kLattice);
+  const std::int64_t x = std::int64_t{lx} * kLattice, y = std::int64_t{ly} * kLattice,
+                     z = std::int64_t{lz} * kLattice;
   Corner3 c;
-  c.overhang = Fbm3(seeds_.overhang, x * (1.0f / 28.0f), y * (1.0f / 20.0f), z * (1.0f / 28.0f), 2);
-  c.spaghetti_a =
-      Perlin3(seeds_.spaghetti_a, x * (1.0f / 56.0f), y * (1.0f / 36.0f), z * (1.0f / 56.0f));
-  c.spaghetti_b =
-      Perlin3(seeds_.spaghetti_b, x * (1.0f / 56.0f), y * (1.0f / 36.0f), z * (1.0f / 56.0f));
-  c.cheese = Fbm3(seeds_.cheese, x * (1.0f / 90.0f), y * (1.0f / 48.0f), z * (1.0f / 90.0f), 2);
+  c.overhang = Fbm3(seeds_.overhang, x, y, z, 28, 20, 28, 2);
+  c.spaghetti_a = Perlin3(seeds_.spaghetti_a, Lattice(x, 56), Lattice(y, 36), Lattice(z, 56));
+  c.spaghetti_b = Perlin3(seeds_.spaghetti_b, Lattice(x, 56), Lattice(y, 36), Lattice(z, 56));
+  c.cheese = Fbm3(seeds_.cheese, x, y, z, 90, 48, 90, 2);
   return c;
 }
 
@@ -352,7 +371,7 @@ std::optional<Feature> TerrainGenerator::TreeInCell(std::int32_t cx, std::int32_
       kind = Feature::Kind::kSpruce;
       break;
     case Biome::kMountains:
-      chance = col.height < 140.0f ? 0.12f : 0.0f;
+      chance = col.height < 600.0f ? 0.12f : 0.0f;
       kind = Feature::Kind::kSpruce;
       break;
     default:
@@ -440,21 +459,16 @@ void TerrainGenerator::PlaceFeature(const Feature& f, Write&& write) const {
 
 // --- chunk generation -----------------------------------------------------------------------
 
-void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint8_t stages) const {
-  constexpr int S = kChunkSize;
-  const std::int32_t x0 = coord.x * S, y0 = coord.y * S, z0 = coord.z * S;
-  auto& voxels = chunk.generation_voxels();  // all air
-  if (y0 + S <= kWorldMinY || y0 >= kWorldMaxY) return;
-
-  // 1–2. Columns −1..S (one beyond each side, for slopes), from a 2D lattice of corners.
-  constexpr int kCols = S + 2;
+void TerrainGenerator::ChunkColumns(std::int32_t x0, std::int32_t z0,
+                                    std::vector<Column>& cols) const {
+  // Columns −1..S (one beyond each side, for slopes), from a 2D lattice of corners.
+  constexpr int S = kChunkSize, kCols = S + 2;
   const std::int32_t lx0 = FloorDiv(x0 - 1, kLattice), lz0 = FloorDiv(z0 - 1, kLattice);
   const int nl = FloorDiv(x0 + S, kLattice) - lx0 + 2;
   std::vector<Corner2> corners2(static_cast<std::size_t>(nl * nl));
   for (int j = 0; j < nl; ++j)
     for (int i = 0; i < nl; ++i) corners2[j * nl + i] = SampleCorner2(lx0 + i, lz0 + j);
-  std::vector<Column> cols(kCols * kCols);
-  float top = -1e9f;
+  cols.resize(kCols * kCols);
   for (int z = -1; z <= S; ++z)
     for (int x = -1; x <= S; ++x) {
       const std::int32_t wx = x0 + x, wz = z0 + z;
@@ -463,12 +477,63 @@ void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint
                             corners2[(j + 1) * nl + i], corners2[(j + 1) * nl + i + 1]};
       Column& col = cols[(z + 1) * kCols + x + 1];
       col = Interp2(c, FloorMod(wx, kLattice), FloorMod(wz, kLattice));
-      top = std::max(top, col.height + col.overhang);
+      col.outside = !core::InsideWorldDisc(wx, wz);
     }
+}
+
+float TerrainGenerator::SkyFloor(const std::vector<Column>& cols) {
+  // Top of the terrain (height + overhang reach) of the columns inside the disc, with room for
+  // trees from neighbouring columns. Chunks starting above it (and not below sea level) are air.
+  float top = -1e9f;
+  for (const Column& col : cols) {
+    if (!col.outside) top = std::max(top, col.height + col.overhang);
+  }
+  return top + static_cast<float>(kTreeReach + 12);
+}
+
+float TerrainGenerator::SkyFloorAt(std::int32_t cx, std::int32_t cz) const {
+  std::vector<Column> cols;
+  ChunkColumns(cx * kChunkSize, cz * kChunkSize, cols);
+  return SkyFloor(cols);
+}
+
+bool TerrainGenerator::IsAirChunk(const ChunkCoord& coord, float sky_floor) {
+  const std::int32_t y0 = coord.y * kChunkSize;
+  if (y0 + kChunkSize <= kWorldMinY || y0 >= kWorldMaxY) return true;
+  if (core::ChunkDiscOverlap(coord.x, coord.z) == core::DiscOverlap::kOutside) return true;
+  return y0 >= kSeaLevel && static_cast<float>(y0) > sky_floor;
+}
+
+bool TerrainGenerator::IsAirChunk(const ChunkCoord& coord) const {
+  const std::int32_t y0 = coord.y * kChunkSize;
+  if (y0 < kSeaLevel || y0 >= kWorldMaxY ||
+      core::ChunkDiscOverlap(coord.x, coord.z) == core::DiscOverlap::kOutside) {
+    return IsAirChunk(coord, 0.0f);  // decided without the columns
+  }
+  return IsAirChunk(coord, SkyFloorAt(coord.x, coord.z));
+}
+
+void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint8_t stages) const {
+  constexpr int S = kChunkSize;
+  constexpr int kCols = S + 2;
+  const std::int32_t x0 = coord.x * S, y0 = coord.y * S, z0 = coord.z * S;
+  auto& voxels = chunk.generation_voxels();  // all air
+  if (y0 + S <= kWorldMinY || y0 >= kWorldMaxY) return;
+  // Beyond the rim of the world's disc: nothing, not even bedrock (the void).
+  if (core::ChunkDiscOverlap(coord.x, coord.z) == core::DiscOverlap::kOutside) return;
+
+  // 1–2. Climate and base height per column.
+  std::vector<Column> cols;
+  ChunkColumns(x0, z0, cols);
+  float top = -1e9f;
+  for (const Column& col : cols) {
+    if (!col.outside) top = std::max(top, col.height + col.overhang);
+  }
   const auto column = [&](int x, int z) -> const Column& { return cols[(z + 1) * kCols + x + 1]; };
 
-  // Sky above all terrain and sea, with room for trees from neighbouring columns: all air.
-  if (static_cast<float>(y0) > top + static_cast<float>(kTreeReach + 12) && y0 >= kSeaLevel) return;
+  // Sky above all terrain and sea, with room for trees from neighbouring columns: all air
+  // (IsAirChunk is this same test).
+  if (static_cast<float>(y0) > SkyFloor(cols) && y0 >= kSeaLevel) return;
 
   // 3–4. Classify voxels (plus kSurfacePad above the chunk) from a 3D lattice of noise corners.
   constexpr int kH = S + kSurfacePad;
@@ -635,6 +700,7 @@ void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint
   const auto write = [&](std::int32_t wx, std::int32_t wy, std::int32_t wz, MaterialId m) {
     const std::int32_t x = wx - x0, y = wy - y0, z = wz - z0;
     if (x < 0 || y < 0 || z < 0 || x >= S || y >= S || z >= S) return;
+    if (column(x, z).outside) return;  // features stop at the rim
     MaterialId& cur = voxels[core::LocalIndex(x, y, z)];
     if (cur == M::kAir || (m == M::kLog && cur == M::kLeaves)) cur = m;
   };
@@ -659,8 +725,8 @@ void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint
 
 // --- spawn ----------------------------------------------------------------------------------
 
-std::array<float, 3> TerrainGenerator::SpawnPoint() const {
-  std::optional<std::array<float, 3>> fallback;
+std::array<double, 3> TerrainGenerator::SpawnPoint() const {
+  std::optional<std::array<double, 3>> fallback;
   // Square spiral outwards from the origin in 8 m steps.
   std::int32_t x = 0, z = 0, dx = 1, dz = 0, leg = 1, walked = 0, turns = 0;
   for (int n = 0; n < 40000; ++n) {
@@ -669,8 +735,7 @@ std::array<float, 3> TerrainGenerator::SpawnPoint() const {
                       col.biome != Biome::kBeach && col.biome != Biome::kOcean;
     if (land) {
       if (const auto g = GroundY(x, z)) {
-        const std::array<float, 3> here{static_cast<float>(x) + 0.5f, static_cast<float>(*g + 1),
-                                        static_cast<float>(z) + 0.5f};
+        const std::array<double, 3> here{x + 0.5, *g + 1.0, z + 0.5};
         if (!fallback) fallback = here;
         bool level = true;
         for (int oz = -3; oz <= 3 && level; ++oz)
@@ -707,7 +772,7 @@ std::array<float, 3> TerrainGenerator::SpawnPoint() const {
       if (++turns % 2 == 0) ++leg;
     }
   }
-  return fallback.value_or(std::array<float, 3>{0.5f, static_cast<float>(kSeaLevel) + 1.0f, 0.5f});
+  return fallback.value_or(std::array<double, 3>{0.5, kSeaLevel + 1.0, 0.5});
 }
 
 }  // namespace dwell::worldgen

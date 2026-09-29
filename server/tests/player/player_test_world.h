@@ -3,7 +3,8 @@
 // PlayerTestWorld (PLAYER_CONTROLLER.md §10): a headless world for controller tests, the voxel
 // counterpart of the PPC's PPCTestWorld + HeadlessSession. Voxel primitives (floors, block and slab
 // steps, walls, doorways, crawlspaces, ladder columns, water) plus Tier 1 boxes as moving
-// platforms, scheduled kicks and explosions, and per-player event counters.
+// platforms, scheduled kicks and explosions, and per-player event counters. Everything is in the
+// test's local frame, which sits at the test origin (test_origin.h).
 #include <Jolt/Jolt.h>
 
 #include <Jolt/Core/JobSystemSingleThreaded.h>
@@ -17,6 +18,7 @@
 #include <numbers>
 #include <vector>
 
+#include "../test_origin.h"
 #include "dwell/core/jolt_runtime.h"
 #include "dwell/core/physics_world.h"
 #include "dwell/core/terrain_collision.h"
@@ -59,7 +61,7 @@ class PlayerTestWorld {
   explicit PlayerTestWorld(player::PlayerControllerConfig config = player::DefaultConfig(),
                            core::ChunkGenerator generator = core::GenerateEmptyChunk)
       : config(config),
-        world(std::move(generator)),
+        world(Shifted(std::move(generator))),
         physics(jobs),
         terrain(world, physics),
         players(world, physics, &terrain) {}
@@ -68,18 +70,19 @@ class PlayerTestWorld {
   void Fill(int x0, int y0, int z0, int x1, int y1, int z1, core::MaterialId m) {
     for (int z = z0; z <= z1; ++z)
       for (int y = y0; y <= y1; ++y)
-        for (int x = x0; x <= x1; ++x) world.SetVoxel(x, y, z, m);
+        for (int x = x0; x <= x1; ++x) world.SetVoxel(WorldCellX(x), y, z, m);
   }
   // A one-cell-thick floor whose top face is at `top_y`.
   void Floor(int top_y = 0, int half = 16) {
     Fill(-half, top_y - 1, -half, half - 1, top_y - 1, half - 1, core::Materials::kStone);
   }
-  void Remove(int x, int y, int z) { world.SetVoxel(x, y, z, core::Materials::kAir); }
+  void Set(int x, int y, int z, core::MaterialId m) { world.SetVoxel(WorldCellX(x), y, z, m); }
+  void Remove(int x, int y, int z) { Set(x, y, z, core::Materials::kAir); }
 
   // --- bodies (Tier 1 layer) ---
   JPH::BodyID Box(Vec3 center, Vec3 half, JPH::Quat rotation = JPH::Quat::sIdentity(),
                   Vec3 velocity = Vec3::sZero(), float yaw_rate_deg = 0.0f) {
-    JPH::BodyCreationSettings s(new JPH::BoxShape(half, 0.0f), JPH::RVec3(center), rotation,
+    JPH::BodyCreationSettings s(new JPH::BoxShape(half, 0.0f), ToWorld(center), rotation,
                                 JPH::EMotionType::Kinematic, core::ObjectLayers::kTier1);
     s.mLinearVelocity = velocity;
     s.mAngularVelocity = Vec3(0, yaw_rate_deg * std::numbers::pi_v<float> / 180.0f, 0);
@@ -87,7 +90,7 @@ class PlayerTestWorld {
   }
   JPH::BodyID DynamicBox(Vec3 center, Vec3 half, float mass, Vec3 velocity,
                          bool lock_rotation = true) {
-    JPH::BodyCreationSettings s(new JPH::BoxShape(half, 0.0f), JPH::RVec3(center),
+    JPH::BodyCreationSettings s(new JPH::BoxShape(half, 0.0f), ToWorld(center),
                                 JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic,
                                 core::ObjectLayers::kTier1);
     s.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
@@ -102,10 +105,12 @@ class PlayerTestWorld {
     }
     return physics.bodies().CreateAndAddBody(s, JPH::EActivation::Activate);
   }
-  Vec3 BodyPosition(JPH::BodyID id) { return Vec3(physics.bodies().GetCenterOfMassPosition(id)); }
+  Vec3 BodyPosition(JPH::BodyID id) {
+    return ToLocal(physics.bodies().GetCenterOfMassPosition(id));
+  }
 
   PlayerHandle Spawn(Vec3 feet, float yaw = 0.0f) {
-    const PlayerHandle h = players.Spawn(config, feet, yaw);
+    const PlayerHandle h = players.Spawn(config, ToWorld(feet), yaw);
     if (h >= counts.size()) counts.resize(h + 1);
     return h;
   }
@@ -131,7 +136,7 @@ class PlayerTestWorld {
         if (k.tick == tick) players.AddVelocity(k.player, k.dv);
       }
       for (const auto& e : explosions) {
-        if (e.tick == tick) players.AddExplosion(e.center, e.radius, e.speed, e.bias);
+        if (e.tick == tick) players.AddExplosion(ToWorld(e.center), e.radius, e.speed, e.bias);
       }
       physics.Step(1.0f / 60.0f);
       ++tick;
@@ -146,7 +151,7 @@ class PlayerTestWorld {
   }
 
   const player::PlayerController& C(PlayerHandle h) const { return players.controller(h); }
-  Vec3 Pos(PlayerHandle h) const { return players.Position(h); }
+  Vec3 Pos(PlayerHandle h) const { return ToLocal(players.Position(h)); }
   Vec3 Vel(PlayerHandle h) const { return players.Velocity(h); }
   float Feet(PlayerHandle h) const { return players.Feet(h); }
   float Head(PlayerHandle h) const { return players.Head(h); }

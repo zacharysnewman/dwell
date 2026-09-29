@@ -2,7 +2,10 @@
 // values below mirror shared/protocol/make_vectors.py and client/src/protocol/messages.test.ts.
 #include <doctest/doctest.h>
 
+#include <climits>
+#include <cmath>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <sstream>
 #include <string>
@@ -63,9 +66,9 @@ ControllerState TestController(std::uint8_t flags) {
 LocalPlayerState TestLocal(std::uint8_t flags, std::uint8_t health, PlayerState state,
                            ControllerState controller) {
   LocalPlayerState l;
-  l.position[0] = 10.5f;
-  l.position[1] = 0.9f;
-  l.position[2] = -3.25f;
+  l.position[0] = 8191999.125;  // pos64: exact near the rim of the world
+  l.position[1] = 0.9;
+  l.position[2] = -3.25;
   l.velocity[0] = 5.0f;
   l.velocity[1] = -0.5f;
   l.flags = flags;
@@ -98,7 +101,7 @@ PhysicsSnapshot TestSnapshot() {
                        PlayerState::kRunning,
                        PlayerFlags::kGrounded});
   m.remotes.push_back({9,
-                       {-1, 0, 65504.0f},
+                       {-1, 0.00390625, 8192000.5},  // posfix: multiples of 1/256 m
                        {65504.0f, -0.0f, 1.0f},
                        0,
                        0,
@@ -155,8 +158,9 @@ std::map<std::string, Message> Expected() {
   PlayerEvent death = TestEvent(PlayerEventKind::kDeath);
   death.cause = DamageCause::kCrush;
   PlayerEvent respawn = TestEvent(PlayerEventKind::kRespawn);
-  respawn.vector[0] = 0.5f;
-  respawn.vector[2] = 0.5f;
+  respawn.position[0] = 7999488.5;
+  respawn.position[1] = 12.0;
+  respawn.position[2] = -0.25;
   return {
       {"player_input", input},
       {"physics_snapshot", TestSnapshot()},
@@ -176,6 +180,7 @@ std::map<std::string, Message> Expected() {
       {"welcome", Welcome{42, 0x0123456789ABCDEFull, 7, 123456, {-3, 2, 1000000}}},
       {"worldgen_check", WorldgenCheck{0xFEDCBA9876543210ull}},
       {"chunk_data_generated", ChunkData{ChunkForm::kGenerated, {4, -2, -9}, 0, {}}},
+      {"chunk_data_air", ChunkData{ChunkForm::kAir, {256000, 191, -3}, 0, {}}},
       {"chunk_data_explicit", ChunkData{ChunkForm::kExplicit, {-1, 2, 70000}, 5, LayeredChunk()}},
       {"chunk_data_explicit_wide", ChunkData{ChunkForm::kExplicit, {1, 1, 1}, 3, WideChunk()}},
       {"chunk_data_explicit_solid",
@@ -246,6 +251,23 @@ TEST_CASE("protocol: snapshot fields survive decoding (f16 velocities included)"
   CHECK(m.remotes[0].velocity[1] == -8.0f);
   CHECK(m.remotes[1].velocity[0] == 65504.0f);
   CHECK(m.remotes[1].flags == (PlayerFlags::kSwimming | PlayerFlags::kDead));
+  CHECK(m.local.position[0] == 8191999.125);
+  CHECK(m.remotes[1].position[2] == 8192000.5);
+}
+
+TEST_CASE("protocol: posfix positions round to the nearest 1/256 m and clamp") {
+  CHECK(ToFixedPosition(1.0) == 256);
+  CHECK(ToFixedPosition(-1.0) == -256);
+  CHECK(ToFixedPosition(0.5 / 256) == 1);   // halves round up
+  CHECK(ToFixedPosition(-0.5 / 256) == 0);  // … towards +∞, as in TypeScript
+  CHECK(ToFixedPosition(8192000.3) == 2097152077);
+  CHECK(ToFixedPosition(1e10) == INT32_MAX);
+  CHECK(ToFixedPosition(-1e10) == INT32_MIN);
+  CHECK(ToFixedPosition(std::numeric_limits<double>::quiet_NaN()) == INT32_MIN);
+  // Everywhere in the world, a remote position is within 2 mm of the truth.
+  for (double x : {0.0, 12.345678, -4096.001, 7999501.7208, -8191999.9999}) {
+    CHECK(std::abs(FromFixedPosition(ToFixedPosition(x)) - x) <= 0.5 / 256);
+  }
 }
 
 TEST_CASE("protocol: half floats round to nearest even and saturate to infinity") {

@@ -56,19 +56,20 @@ core::MaterialId VoxelQuery::Material(std::int32_t x, std::int32_t y, std::int32
                             z - coord.z * core::kChunkSize);
 }
 
-bool VoxelQuery::BodiesNear(Vec3 min, Vec3 max, JPH::BodyID self) const {
+bool VoxelQuery::BodiesNear(RVec3 min, RVec3 max, JPH::BodyID self) const {
   MovingBroadPhase broad;
   MovingLayers layers;
   JPH::AllHitCollisionCollector<JPH::CollideShapeBodyCollector> collector;
-  physics_.GetBroadPhaseQuery().CollideAABox(JPH::AABox(min, max), collector, broad, layers);
+  physics_.GetBroadPhaseQuery().CollideAABox(JPH::AABox(min.ToVec3RoundDown(), max.ToVec3RoundUp()),
+                                             collector, broad, layers);
   for (const JPH::BodyID& id : collector.mHits) {
     if (id != self) return true;
   }
   return false;
 }
 
-bool VoxelQuery::CastRay(Vec3 origin, Vec3 dir, float max_distance, JPH::BodyID self, ProbeHit& hit,
-                         bool bodies) const {
+bool VoxelQuery::CastRay(RVec3 origin, Vec3 dir, float max_distance, JPH::BodyID self,
+                         ProbeHit& hit, bool bodies) const {
   ProbeHit a, b;
   const bool hit_a = CastVoxels(origin, dir, max_distance, a);
   const bool hit_b = bodies && CastBodies(origin, dir, hit_a ? a.distance : max_distance, self, b);
@@ -80,12 +81,18 @@ bool VoxelQuery::CastRay(Vec3 origin, Vec3 dir, float max_distance, JPH::BodyID 
   return hit_a;
 }
 
-bool VoxelQuery::CastVoxels(Vec3 origin, Vec3 dir, float max_distance, ProbeHit& hit) const {
+bool VoxelQuery::CastVoxels(RVec3 origin, Vec3 dir, float max_distance, ProbeHit& hit) const {
   // Amanatides–Woo walk. Per cell, the ray's span [t_cell, t_next] is intersected with the cell's
-  // shape box; a hit is the ray entering a shape from free space.
-  float o[3] = {origin.GetX(), origin.GetY(), origin.GetZ()};
+  // shape box; a hit is the ray entering a shape from free space. The walk runs in float relative
+  // to the origin's cell (`base`), so it is equally precise anywhere in the world (ADR 0011).
+  std::int32_t base[3];
+  float o[3];
+  for (int i = 0; i < 3; ++i) {
+    base[i] = static_cast<std::int32_t>(std::floor(origin[i]));
+    o[i] = static_cast<float>(origin[i] - static_cast<double>(base[i]));
+  }
   float d[3] = {dir.GetX(), dir.GetY(), dir.GetZ()};
-  std::int32_t cell[3], step[3];
+  std::int32_t cell[3], step[3];  // cell: relative to base
   float t_max[3], t_delta[3];
   for (int i = 0; i < 3; ++i) {
     cell[i] = static_cast<std::int32_t>(std::floor(o[i]));
@@ -109,7 +116,8 @@ bool VoxelQuery::CastVoxels(Vec3 origin, Vec3 dir, float max_distance, ProbeHit&
   int entry_axis = -1;
   while (t_cell <= max_distance) {
     const float t_next = std::min({t_max[0], t_max[1], t_max[2]});
-    const auto& material = core::GetMaterial(Material(cell[0], cell[1], cell[2]));
+    const auto& material =
+        core::GetMaterial(Material(base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]));
     const float height = core::ShapeHeight(material.shape);
     bool free_after = true;
     if (height > 0.0f) {
@@ -166,9 +174,9 @@ bool VoxelQuery::CastVoxels(Vec3 origin, Vec3 dir, float max_distance, ProbeHit&
   return false;
 }
 
-bool VoxelQuery::CastBodies(Vec3 origin, Vec3 dir, float max_distance, JPH::BodyID self,
+bool VoxelQuery::CastBodies(RVec3 origin, Vec3 dir, float max_distance, JPH::BodyID self,
                             ProbeHit& hit) const {
-  const JPH::RRayCast ray{JPH::RVec3(origin), dir * max_distance};
+  const JPH::RRayCast ray{origin, dir * max_distance};
   JPH::RayCastResult result;
   MovingBroadPhase broad;
   MovingLayers layers;
@@ -181,30 +189,31 @@ bool VoxelQuery::CastBodies(Vec3 origin, Vec3 dir, float max_distance, JPH::Body
   const JPH::Body& body = lock.GetBody();
   const JPH::RVec3 point = ray.GetPointOnRay(result.mFraction);
   hit.distance = result.mFraction * max_distance;
-  hit.point = Vec3(point);
+  hit.point = point;
   hit.normal = body.GetWorldSpaceSurfaceNormal(result.mSubShapeID2, point);
   hit.ground = RefForBody(body.GetObjectLayer(), body.GetID());
   return true;
 }
 
-float VoxelQuery::SegmentBoxDistance(const Capsule& c, Vec3 lo, Vec3 hi) {
-  const float dx = std::max({lo.GetX() - c.center.GetX(), 0.0f, c.center.GetX() - hi.GetX()});
-  const float dz = std::max({lo.GetZ() - c.center.GetZ(), 0.0f, c.center.GetZ() - hi.GetZ()});
-  const float seg_lo = c.center.GetY() - c.half_cylinder;
-  const float seg_hi = c.center.GetY() + c.half_cylinder;
-  const float dy = std::max({lo.GetY() - seg_hi, 0.0f, seg_lo - hi.GetY()});
+float VoxelQuery::SegmentBoxDistance(const Capsule& c, RVec3 world_lo, RVec3 world_hi) {
+  // Relative to the capsule centre, so float is exact enough anywhere in the world.
+  const Vec3 lo(world_lo - c.center), hi(world_hi - c.center);
+  const float dx = std::max({lo.GetX(), 0.0f, -hi.GetX()});
+  const float dz = std::max({lo.GetZ(), 0.0f, -hi.GetZ()});
+  const float dy = std::max({lo.GetY() - c.half_cylinder, 0.0f, -c.half_cylinder - hi.GetY()});
   return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 bool VoxelQuery::OverlapsVoxels(const Capsule& c) const {
   bool overlaps = false;
-  ForEachOverlappingCell(
-      c, [&](std::int32_t x, std::int32_t y, std::int32_t z, core::MaterialId m) {
-        const float height = core::ShapeHeight(core::GetMaterial(m).shape);
-        if (overlaps || height <= 0.0f) return;
-        const Vec3 lo(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-        if (SegmentBoxDistance(c, lo, lo + Vec3(1.0f, height, 1.0f)) < c.radius) overlaps = true;
-      });
+  ForEachOverlappingCell(c,
+                         [&](std::int32_t x, std::int32_t y, std::int32_t z, core::MaterialId m) {
+                           const float height = core::ShapeHeight(core::GetMaterial(m).shape);
+                           if (overlaps || height <= 0.0f) return;
+                           const RVec3 lo(x, y, z);
+                           if (SegmentBoxDistance(c, lo, lo + Vec3(1.0f, height, 1.0f)) < c.radius)
+                             overlaps = true;
+                         });
   return overlaps;
 }
 
@@ -218,14 +227,15 @@ bool VoxelQuery::OverlapsSolid(const Capsule& c, JPH::BodyID self) const {
   MovingLayers layers;
   JPH::IgnoreSingleBodyFilter body_filter(self);
   physics_.GetNarrowPhaseQuery().CollideShape(
-      &shape, Vec3::sReplicate(1.0f), JPH::RMat44::sTranslation(JPH::RVec3(c.center)), settings,
+      &shape, Vec3::sReplicate(1.0f), JPH::RMat44::sTranslation(c.center), settings,
       JPH::RVec3::sZero(), collector, broad, layers, body_filter);
   return collector.HadHit();
 }
 
-float VoxelQuery::SubmergedFraction(Vec3 center, float half_height) const {
-  const float feet = center.GetY() - half_height;
-  const float head = center.GetY() + half_height;
+float VoxelQuery::SubmergedFraction(RVec3 center, float half_height) const {
+  // Heights are bounded (WORLD_MIN_Y..WORLD_MAX_Y), so float y is exact enough.
+  const float feet = static_cast<float>(center.GetY()) - half_height;
+  const float head = static_cast<float>(center.GetY()) + half_height;
   const auto x = static_cast<std::int32_t>(std::floor(center.GetX()));
   const auto z = static_cast<std::int32_t>(std::floor(center.GetZ()));
   float wet = 0.0f;

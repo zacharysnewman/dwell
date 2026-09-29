@@ -85,8 +85,9 @@ struct WorldgenCheck {
 inline constexpr int kChunkVolume = kChunkSize * kChunkSize * kChunkSize;
 
 // S→C reliable (`world`). Generated: the client generates the chunk itself (no payload). Explicit:
-// the voxels travel as palette + RLE. `voxels` holds kChunkVolume materials in chunk index order
-// (x | y << 5 | z << 10) for Explicit and is empty for Generated.
+// the voxels travel as palette + RLE. Air: an unmodified chunk the generator leaves all air (no
+// payload; neither side generates or stores it). `voxels` holds kChunkVolume materials in chunk
+// index order (x | y << 5 | z << 10) for Explicit and is empty otherwise.
 struct ChunkData {
   ChunkForm form = ChunkForm::kGenerated;
   ChunkCoordNet coord{};
@@ -130,8 +131,10 @@ struct ControllerState {
   std::int32_t released_x = 0, released_z = 0;            // only when hasReleased
 };
 
+// World positions (protocol v4, ADR 0011): `pos64` (f64×3) where prediction must match the server
+// exactly, `posfix` (i32×3 in 1/kPositionFixedScale m) elsewhere. Both decode to doubles.
 struct LocalPlayerState {
-  float position[3] = {0, 0, 0};  // capsule centre
+  double position[3] = {0, 0, 0};  // capsule centre (pos64)
   float velocity[3] = {0, 0, 0};
   std::uint8_t flags = 0;  // PlayerFlags
   std::uint8_t health = 0;
@@ -143,8 +146,8 @@ struct LocalPlayerState {
 
 struct RemotePlayerState {
   std::uint16_t player_id = 0;
-  float position[3] = {0, 0, 0};
-  float velocity[3] = {0, 0, 0};  // f16 on the wire
+  double position[3] = {0, 0, 0};  // feet (posfix)
+  float velocity[3] = {0, 0, 0};   // f16 on the wire
   std::int16_t yaw = 0, pitch = 0;
   PlayerState state = PlayerState::kIdle;
   std::uint8_t flags = 0;  // PlayerFlags
@@ -163,11 +166,18 @@ struct PlayerEvent {
   PlayerEventKind kind = PlayerEventKind::kKnockback;
   std::uint16_t player_id = 0;
   std::uint32_t server_tick = 0;
-  std::uint32_t input_seq = 0;  // that player's input processed on server_tick (for replay)
-  float vector[3] = {0, 0, 0};  // Knockback: velocity change; Respawn: position
-  std::uint8_t amount = 0;      // Damage
+  std::uint32_t input_seq = 0;     // that player's input processed on server_tick (for replay)
+  float vector[3] = {0, 0, 0};     // Knockback: velocity change
+  double position[3] = {0, 0, 0};  // Respawn: feet position (pos64)
+  std::uint8_t amount = 0;         // Damage
   DamageCause cause = DamageCause::kFall;  // Damage, Death
 };
+
+// posfix: nearest multiple of 1/kPositionFixedScale m (halves round up), clamped to i32.
+std::int32_t ToFixedPosition(double v);
+inline double FromFixedPosition(std::int32_t v) {
+  return v / static_cast<double>(kPositionFixedScale);
+}
 
 using Message = std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello,
                              Challenge, ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput,

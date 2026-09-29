@@ -13,6 +13,11 @@ set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
 set(PROFILER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
 # Minimize native/WASM divergence (PLAYER_CONTROLLER.md §8.3).
 set(CROSS_PLATFORM_DETERMINISTIC ON CACHE BOOL "" FORCE)
+# Planet-scale world (ADR 0011): body positions are doubles (RVec3); shapes and velocities stay float.
+set(DOUBLE_PRECISION ON CACHE BOOL "" FORCE)
+# RTTI, so Dwell can subclass Jolt interfaces whose key functions live in the library (GroupFilter:
+# terrain collision groups, core/terrain_collision.cpp).
+set(CPP_RTTI_ENABLED ON CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
   JoltPhysics

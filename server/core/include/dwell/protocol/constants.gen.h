@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 3;
+inline constexpr std::uint16_t kProtocolVersion = 4;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -22,10 +22,12 @@ inline constexpr float kReconcileSnapDistance = 1.0f;
 inline constexpr int kInterpDelayMs = 100;
 inline constexpr float kPredictProxyRadius = 16.0f;
 
-inline constexpr int kWorldMinY = -128;
-inline constexpr int kWorldMaxY = 384;
+inline constexpr int kWorldMinY = -2048;
+inline constexpr int kWorldMaxY = 6144;
+inline constexpr int kSeaLevel = 0;
+inline constexpr int kWorldRadius = 8192000;
+inline constexpr int kPositionFixedScale = 256;
 inline constexpr int kViewRadiusChunks = 3;
-inline constexpr int kViewHeightChunks = 1;
 inline constexpr int kUnloadMarginChunks = 1;
 inline constexpr int kChunkBytesPerSecond = 1048576;
 inline constexpr int kMaxChunksPerTick = 32;
@@ -113,13 +115,14 @@ enum class DamageCause : std::uint8_t {
 enum class ChunkForm : std::uint8_t {
   kGenerated = 0,
   kExplicit = 1,
+  kAir = 2,
 };
 
 inline constexpr std::uint8_t kMaxPlayerState = 8;
 inline constexpr std::uint8_t kMaxGroundKind = 3;
 inline constexpr std::uint8_t kMaxPlayerEventKind = 4;
 inline constexpr std::uint8_t kMaxDamageCause = 3;
-inline constexpr std::uint8_t kMaxChunkForm = 1;
+inline constexpr std::uint8_t kMaxChunkForm = 2;
 
 namespace InputButtons {
 inline constexpr std::uint16_t kJump = 1;

@@ -5,7 +5,7 @@
 export interface DwellCoreModule {
   HEAPU8: Uint8Array;
   HEAPU32: Uint32Array;
-  HEAPF32: Float32Array;
+  HEAPF64: Float64Array;
   _malloc(size: number): number;
   _free(ptr: number): void;
   // Local-mode server.

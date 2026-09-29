@@ -150,7 +150,7 @@ class Players {
   Players& operator=(const Players&) = delete;
 
   // Spawns a player standing with its feet at `feet`. The config must outlive the player.
-  PlayerHandle Spawn(const PlayerControllerConfig& config, Vec3 feet, float yaw_degrees = 0.0f);
+  PlayerHandle Spawn(const PlayerControllerConfig& config, RVec3 feet, float yaw_degrees = 0.0f);
   void Despawn(PlayerHandle handle);
   bool Exists(PlayerHandle handle) const;
 
@@ -162,22 +162,22 @@ class Players {
   // Instant velocity change (knockback, launch pads, explosions): absorbed next tick.
   void AddVelocity(PlayerHandle handle, Vec3 delta_v);
   // Radial push with linear falloff and upward bias (PPC AddExplosion), for players in range.
-  void AddExplosion(Vec3 center, float radius, float speed, float upward_bias);
+  void AddExplosion(RVec3 center, float radius, float speed, float upward_bias);
 
   // --- state access (tests, snapshots, reconciliation) ---
   const PlayerController& controller(PlayerHandle handle) const;
   PlayerController& mutable_controller(PlayerHandle handle);
   const PlayerControllerConfig& config(PlayerHandle handle) const;
   JPH::BodyID body(PlayerHandle handle) const;
-  Vec3 Position(PlayerHandle handle) const;  // capsule centre
+  RVec3 Position(PlayerHandle handle) const;  // capsule centre
   Vec3 Velocity(PlayerHandle handle) const;
   float Feet(PlayerHandle handle) const;
   float Head(PlayerHandle handle) const;
   float HalfHeight(PlayerHandle handle) const;
   // Restores a player's full state (controller + body), e.g. from a snapshot before replaying.
-  void Restore(PlayerHandle handle, const PlayerController& state, Vec3 position, Vec3 velocity);
+  void Restore(PlayerHandle handle, const PlayerController& state, RVec3 position, Vec3 velocity);
   // Moves the body (and swaps its capsule to match `crouching`).
-  void Teleport(PlayerHandle handle, Vec3 position, Vec3 velocity);
+  void Teleport(PlayerHandle handle, RVec3 position, Vec3 velocity);
 
   std::vector<PlayerHandle> handles() const;
   const VoxelQuery& query() const { return query_; }
@@ -205,9 +205,9 @@ class Players {
   Vec3 TryStep(Player& p, Vec3 move_direction);
   void ApplyEdgeGuard(Player& p);
   bool AutoJumpObstacle(Player& p);
-  bool RingCast(const Player& p, Vec3 center, Vec3 dir, float distance, float radius,
+  bool RingCast(const Player& p, RVec3 center, Vec3 dir, float distance, float radius,
                 ProbeHit* closest) const;
-  bool FitsStanding(const Player& p, Vec3 center) const;
+  bool FitsStanding(const Player& p, RVec3 center) const;
   bool FindLadder(const Player& p, Cell& ladder, bool& in_released_column) const;
 
   // Contact normals of each player's body from the last physics step (a Jolt ContactListener).
