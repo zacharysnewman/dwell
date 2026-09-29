@@ -772,9 +772,10 @@ Every player's builds are therefore visible from anywhere.
 Each frame the octree is walked from the root around the **camera** (the eye):
 - A node is refined while its cells project larger than `LOD_PIXEL_ERROR` pixels (screen-space
   error; equivalent to a log-distance rule at a fixed field of view, and right for altitude and
-  zoom). Nodes outside the view frustum are not refined — unless closer than their own size: a
-  coarse section's surface is rounded up to its cells, so one beside or behind the camera would
-  reach into the view. Level-0 nodes are the streamed chunks: a level-1 section refines into its 8
+  zoom) — in every direction: detail depends on distance only, not on where the camera looks,
+  so turning shows what is already loaded instead of popping in (playtest feedback). The view
+  decides only the load order: work outside it (and not closer than its own size) ranks 8× lower,
+  so what the camera faces loads first and the ring around it after. Level-0 nodes are the streamed chunks: a level-1 section refines into its 8
   chunks when all are loaded and meshed (or air); chunks whose level-1 section is not refined are
   hidden, since LOD draws there (all chunks show until the root is ready). Away from the body the
   finest level drawn is 1. **The player's surroundings never wait for coarse levels:** a level-1
@@ -802,8 +803,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   revision, and `Unchanged` sections keep their content. Requests are paced under
   `LOD_REQUESTS_PER_SECOND` (60/s, 32 per message) and re-sent after 5 s unanswered. In full-chunk
   mode every node asks.
-- Meshes are greedy-merged with one flat colour per material (the average of its texture tile,
-  per face group) and face shading, in cell units (a group scaled by the cell size). Border faces
+- Meshes are greedy-merged with one flat colour per material (the average of its texture tile in
+  linear light, per face group, as a mipmapped sRGB texture averages from afar) and face shading,
+  written as linear vertex colours like the chunks' decoded texels (sRGB values used directly drew
+  distant land paler than the chunks — playtest), in cell units (a group scaled by the cell size). Border faces
   the apron hides go to a per-side **skirt** mesh, shown when the neighbour on that side is not
   drawn at the same level (and not buried), closing cracks between levels. A generated section
   next to a modified one takes that neighbour's border into its apron before meshing.

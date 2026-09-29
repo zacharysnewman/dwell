@@ -49,6 +49,26 @@ describe('LOD section mesher (§6.6)', () => {
     expect(lodColor(2, 1)).toBe(averageTileColor('stone'));
   });
 
+  it('writes linear vertex colours: the textured chunks are sRGB, decoded before lighting', () => {
+    // Regression (phone playtest): sRGB bytes used as linear colours drew distant land paler.
+    const cells = new Uint16Array(LOD_VOLUME);
+    cells[lodCell(3, 4, 5)] = 4; // grass: its top face is lit at full shade
+    const m = meshSection(cells);
+    const n = m.opaque.normals;
+    let top = -1;
+    for (let v = 0; v < n.length / 3; v++) if (n[v * 3 + 1] === 1) top = v;
+    expect(top).toBeGreaterThanOrEqual(0);
+    const srgb = averageTileColor('grass');
+    const linear = (byte: number): number => {
+      const c = byte / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const rgb = [(srgb >> 16) & 0xff, (srgb >> 8) & 0xff, srgb & 0xff];
+    for (let ch = 0; ch < 3; ch++) {
+      expect(m.opaque.colors[top * 3 + ch]).toBeCloseTo(linear(rgb[ch] ?? 0), 4);
+    }
+  });
+
   it('draws liquids opaque at coarse levels, hiding what is below and with skirts', () => {
     const cells = new Uint16Array(LOD_VOLUME);
     for (let z = -1; z <= 32; z++) {

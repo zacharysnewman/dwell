@@ -662,6 +662,16 @@ Deviations and additions (4c):
   generated. Drawable chunks now wait at most `FORCE_CHUNKS_AFTER_MS` (1 s); after that the
   walk descends to them regardless, leaving unready coarse siblings empty until ready.
   `lodSystem.test.ts` "shows the streamed chunks … not ready" failed before the fix.
+- **No popping when turning** (phone playtest): out-of-view sections were kept coarse, so detail
+  popped in wherever the view swept. Refinement now depends on distance alone; the view only
+  orders the work (out of view ranks 8× lower). Settled, ~65% more sections are loaded (all
+  around rather than in view); desktop's cache reached ~85 MB after 75 s in the browser (256 MB
+  budget; mobile's 96 MB is to be checked on a phone). "turning around shows the detail already
+  loaded" failed before the change.
+- **LOD colours match the chunks** (phone playtest: distant land paler): LOD vertex colours were
+  sRGB bytes used as linear, while the chunks' sRGB texture is decoded before lighting. They are
+  now linear, and a tile's average is taken in linear light. `lodMesher.test.ts` "writes linear
+  vertex colours" failed before the fix.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.
 
