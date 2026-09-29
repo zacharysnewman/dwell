@@ -675,6 +675,21 @@ Deviations and additions (4c):
 - **Distant water, under comparison** (playtest request): `?lodwater=tint` draws coarse liquids
   (level 3 up) as the floor under them, recoloured as seen through the near water, instead of
   opaque blocks; off by default until chosen. `lodMesher.test.ts` "tint mode" covers it.
+- **Snapshots dropped while flying (and swimming)** (phone playtest: terrain never finished
+  loading after fast flight): `PlayerFlagsOf` resolved `kClimbing`/`kSwimming`/`kFlying` to the
+  *ControllerFlags* constants of the same names, so a flying player's snapshot carried an
+  unknown player-flag bit and every decoder dropped it; the client predicted on alone and the
+  server streamed around its own, lagging copy. Swimming had the same defect since Phase 2 (and
+  climbing showed as swimming to others). "player flags use the PlayerFlags bits" and "fast
+  creative flight keeps snapshots coming" failed before the fix.
+- **Loading status in a corner, and phone overlays** (playtest): "Loading terrain…" moved from the
+  centre of the view to a bottom-left status (`hudText.test.ts` failed before); on touch screens
+  the connection status and F3 overlay stack below the hotbar instead of under it
+  (`touch.spec.ts` layout test failed before).
+- **Replaced sessions lost their Reject** (CI flake, seen twice): a client write racing the
+  server's close failed first and dropped the pending `Reject(Replaced)`; the WebTransport client
+  now reads the control stream to its end before reporting the close (`webTransport.test.ts`
+  failed before; the e2e passed 15/15 after).
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level, `?lodwater=tint` for the distant-water comparison.
 

@@ -3,6 +3,9 @@ import { DatagramSender } from './datagramSender';
 import { frame, FrameReader } from './framing';
 import type { Transport, TransportHandlers } from './Transport';
 
+/** How long a closing connection keeps reading the control stream for the server's last words. */
+const CLOSE_DRAIN_MS = 2000;
+
 export function isWebTransportSupported(): boolean {
   return typeof globalThis.WebTransport === 'function';
 }
@@ -16,6 +19,10 @@ export class WebTransportTransport implements Transport {
   readonly kind = TransportKind.WebTransport;
   private handlers: TransportHandlers | null = null;
   private closed = false;
+  /** fail() has started ending the connection (reported once, after draining). */
+  private ending = false;
+  /** Resolves once the control stream has been read to its end (or failed). */
+  private controlRead: Promise<void> = Promise.resolve();
   private readonly datagrams: DatagramSender;
 
   private constructor(
@@ -72,7 +79,7 @@ export class WebTransportTransport implements Transport {
   }
 
   private run(): void {
-    void this.readStream(this.controlReader, Channel.control);
+    this.controlRead = this.readStream(this.controlReader, Channel.control);
     void this.acceptWorldStreams();
     void this.readDatagrams();
     this.wt.closed
@@ -87,12 +94,24 @@ export class WebTransportTransport implements Transport {
       .catch(() => undefined);
   }
 
+  /**
+   * The connection is ending: stop sending, but first read what the server sent before it closed
+   * (a Reject such as Replaced often arrives just ahead of the close, and a write racing the close
+   * fails first). Then close and report once.
+   */
   private fail(message: string): void {
-    const wasClosed = this.closed;
+    if (this.ending) return;
+    this.ending = true;
     this.closed = true;
-    if (!wasClosed) this.wt.close();
-    this.handlers?.onClose({ message });
-    this.handlers = null;
+    const drained = Promise.race([
+      this.controlRead,
+      new Promise<void>((resolve) => setTimeout(resolve, CLOSE_DRAIN_MS)),
+    ]);
+    void drained.then(() => {
+      this.wt.close();
+      this.handlers?.onClose({ message });
+      this.handlers = null;
+    });
   }
 
   private async readStream(stream: ReadableStream<Uint8Array>, channel: Channel): Promise<void> {
