@@ -1,4 +1,5 @@
-// Runs the real client sim (WASM) under Node: prediction from a snapshot, input, render faces.
+// Runs the real client sim (WASM) under Node: streamed chunks, prediction from a snapshot, input,
+// render faces.
 // Skipped until `npm run build:wasm` has been run, unless DWELL_REQUIRE_WASM is set (CI).
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -7,9 +8,12 @@ import { encode, type ControllerState } from '../protocol/messages';
 import { IDLE_INPUT, quantizeInput } from '../predict/input';
 import { ClientCore, RENDER_FACE_BYTES } from './clientCore';
 import type { DwellCoreFactory } from './module';
+import { ChunkGenerator, type DwellWorldgenFactory } from '../worldgen/generator';
 
 const wasmJs = new URL('../../public/wasm/dwell_core.js', import.meta.url);
+const worldgenJs = new URL('../../public/wasm/dwell_worldgen.js', import.meta.url);
 const skip = !existsSync(wasmJs) && !process.env.DWELL_REQUIRE_WASM;
+const GENERATOR_PLAYGROUND = 1;
 
 const controller: ControllerState = {
   flags: ControllerFlags.grounded,
@@ -33,13 +37,23 @@ const controller: ControllerState = {
 };
 
 describe.skipIf(skip)('client sim core (WASM)', () => {
+  /** A client sim holding the playground's chunks around the origin, as streaming would. */
   async function load(): Promise<ClientCore> {
     const mod = (await import(/* @vite-ignore */ wasmJs.href)) as { default: DwellCoreFactory };
-    return ClientCore.load(mod.default, 1);
+    const core = await ClientCore.load(mod.default);
+    const wg = (await import(/* @vite-ignore */ worldgenJs.href)) as {
+      default: DwellWorldgenFactory;
+    };
+    const gen = await ChunkGenerator.load(wg.default, GENERATOR_PLAYGROUND, 0n);
+    for (let y = -1; y <= 0; y++)
+      for (let z = -2; z <= 1; z++)
+        for (let x = -2; x <= 1; x++) core.setChunk([x, y, z], 0, gen.generate([x, y, z]));
+    return core;
   }
 
   it('starts from a snapshot and predicts movement from input', async () => {
     const core = await load();
+    expect(core.chunkCount()).toBe(32);
     expect(core.state().active).toBe(false);
     const snapshot = encode({
       type: MessageType.PhysicsSnapshot,
@@ -74,6 +88,14 @@ describe.skipIf(skip)('client sim core (WASM)', () => {
     const faces = core.chunkFaces(0, 0, 0);
     expect(faces.length % RENDER_FACE_BYTES).toBe(0);
     expect(faces.length / RENDER_FACE_BYTES).toBeGreaterThan(50);
-    expect(core.chunkFaces(40, 10, 40).length).toBe(0); // open sky
+    expect(core.chunkFaces(40, 10, 40).length).toBe(0); // not streamed: air
+  });
+
+  it('drops removed chunks', async () => {
+    const core = await load();
+    expect(core.chunkFaces(0, -1, 0).length).toBeGreaterThan(0);
+    core.removeChunk([0, -1, 0]);
+    expect(core.chunkCount()).toBe(31);
+    expect(core.chunkFaces(0, -1, 0).length).toBe(0);
   });
 });

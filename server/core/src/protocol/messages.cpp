@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 
 #include "dwell/protocol/bytes.h"
 
@@ -75,6 +76,18 @@ template <>
 constexpr MessageType TypeOf<PlayerEvent>() {
   return MessageType::kPlayerEvent;
 }
+template <>
+constexpr MessageType TypeOf<WorldgenCheck>() {
+  return MessageType::kWorldgenCheck;
+}
+template <>
+constexpr MessageType TypeOf<ChunkData>() {
+  return MessageType::kChunkData;
+}
+template <>
+constexpr MessageType TypeOf<ChunkUnload>() {
+  return MessageType::kChunkUnload;
+}
 
 void Write(ByteWriter& w, const DatagramPing& m) {
   w.U32(m.seq);
@@ -107,6 +120,7 @@ void Write(ByteWriter& w, const Welcome& m) {
   w.U64(m.world_seed);
   w.U32(m.generator_version);
   w.U32(m.server_tick);
+  for (std::int32_t v : m.verification_chunk) w.I32(v);
 }
 void Write(ByteWriter& w, const Reject& m) {
   w.U8(static_cast<std::uint8_t>(m.reason));
@@ -207,6 +221,108 @@ void Write(ByteWriter& w, const PlayerEvent& m) {
       w.U8(static_cast<std::uint8_t>(m.cause));
       break;
   }
+}
+
+void Write(ByteWriter& w, const WorldgenCheck& m) { w.U64(m.hash); }
+
+// --- Chunk voxels: palette + RLE (§6.1) ---
+// Voxels go on the wire in layer order (x fastest, then z, then y) so horizontal strata make long
+// runs. Palette: u16 count (1..kChunkVolume), then the materials in order of first appearance.
+// Runs until the chunk is full: LEB128 length (1..kChunkVolume, minimal encoding), then the palette
+// index as u8 (palette ≤ 256 entries) or u16. The encoding is canonical: maximal runs, palette in
+// first-appearance order, so encode(decode(bytes)) == bytes.
+constexpr int WireToIndex(int i) {
+  return (i & 31) | (((i >> 10) & 31) << 5) | (((i >> 5) & 31) << 10);
+}
+
+void WriteVoxels(ByteWriter& w, const std::vector<std::uint16_t>& voxels) {
+  auto at = [&](int wire) -> std::uint16_t {
+    const auto i = static_cast<std::size_t>(WireToIndex(wire));
+    return i < voxels.size() ? voxels[i] : std::uint16_t{0};
+  };
+  // Runs first; the palette (first-appearance order) then needs one lookup per run.
+  std::vector<std::pair<std::uint16_t, std::uint32_t>> runs;
+  for (int i = 0; i < kChunkVolume; ++i) {
+    const auto m = at(i);
+    if (!runs.empty() && runs.back().first == m) {
+      ++runs.back().second;
+    } else {
+      runs.emplace_back(m, 1);
+    }
+  }
+  std::vector<std::uint16_t> palette;
+  std::unordered_map<std::uint16_t, std::uint16_t> index;
+  for (const auto& [m, length] : runs) {
+    if (index.try_emplace(m, static_cast<std::uint16_t>(palette.size())).second) {
+      palette.push_back(m);
+    }
+  }
+  w.U16(static_cast<std::uint16_t>(palette.size()));
+  for (std::uint16_t m : palette) w.U16(m);
+  const bool wide = palette.size() > 256;
+  for (const auto& [m, length] : runs) {
+    for (std::uint32_t v = length;;) {
+      if (v < 0x80) {
+        w.U8(static_cast<std::uint8_t>(v));
+        break;
+      }
+      w.U8(static_cast<std::uint8_t>((v & 0x7F) | 0x80));
+      v >>= 7;
+    }
+    if (wide) {
+      w.U16(index[m]);
+    } else {
+      w.U8(static_cast<std::uint8_t>(index[m]));
+    }
+  }
+}
+
+std::uint32_t ReadVarint(ByteReader& r) {
+  std::uint32_t v = 0;
+  for (int shift = 0; shift < 21; shift += 7) {
+    const std::uint8_t b = r.U8();
+    r.Check(shift == 0 || b != 0);  // minimal encoding only
+    v |= static_cast<std::uint32_t>(b & 0x7F) << shift;
+    if ((b & 0x80) == 0) return v;
+  }
+  r.Check(false);
+  return 0;
+}
+
+std::vector<std::uint16_t> ReadVoxels(ByteReader& r) {
+  const std::uint16_t count = r.U16();
+  r.Check(count >= 1 && count <= kChunkVolume);
+  if (!r.ok()) return {};
+  std::vector<std::uint16_t> palette(count);
+  for (auto& m : palette) m = r.U16();
+  const bool wide = count > 256;
+  std::vector<std::uint16_t> voxels(kChunkVolume);
+  for (int filled = 0; filled < kChunkVolume && r.ok();) {
+    const std::uint32_t run = ReadVarint(r);
+    const std::uint16_t i = wide ? r.U16() : r.U8();
+    r.Check(run >= 1 && run <= static_cast<std::uint32_t>(kChunkVolume - filled) && i < count);
+    if (!r.ok()) break;
+    for (std::uint32_t k = 0; k < run; ++k) voxels[WireToIndex(filled++)] = palette[i];
+  }
+  return voxels;
+}
+
+void WriteCoord(ByteWriter& w, const ChunkCoordNet& c) {
+  for (std::int32_t v : c) w.I32(v);
+}
+ChunkCoordNet ReadCoord(ByteReader& r) { return {r.I32(), r.I32(), r.I32()}; }
+
+void Write(ByteWriter& w, const ChunkData& m) {
+  w.U8(static_cast<std::uint8_t>(m.form));
+  WriteCoord(w, m.coord);
+  w.U32(m.revision);
+  if (m.form == ChunkForm::kExplicit) WriteVoxels(w, m.voxels);
+}
+
+void Write(ByteWriter& w, const ChunkUnload& m) {
+  const std::size_t count = std::min<std::size_t>(m.coords.size(), 0xFFFF);
+  w.U16(static_cast<std::uint16_t>(count));
+  for (std::size_t i = 0; i < count; ++i) WriteCoord(w, m.coords[i]);
 }
 
 bool IsRejectReason(std::uint8_t v) { return v >= 1 && v <= kMaxRejectReason; }
@@ -330,6 +446,7 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       m.world_seed = r.U64();
       m.generator_version = r.U32();
       m.server_tick = r.U32();
+      m.verification_chunk = ReadCoord(r);
       out = m;
       break;
     }
@@ -429,6 +546,28 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
           break;
       }
       out = m;
+      break;
+    }
+    case MessageType::kWorldgenCheck:
+      out = WorldgenCheck{r.U64()};
+      break;
+    case MessageType::kChunkData: {
+      ChunkData m;
+      const auto form = r.U8();
+      r.Check(form <= kMaxChunkForm);
+      m.form = static_cast<ChunkForm>(form);
+      m.coord = ReadCoord(r);
+      m.revision = r.U32();
+      if (r.ok() && m.form == ChunkForm::kExplicit) m.voxels = ReadVoxels(r);
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kChunkUnload: {
+      ChunkUnload m;
+      const std::uint16_t count = r.U16();
+      r.Check(count >= 1);
+      for (int i = 0; i < count && r.ok(); ++i) m.coords.push_back(ReadCoord(r));
+      out = std::move(m);
       break;
     }
     default:

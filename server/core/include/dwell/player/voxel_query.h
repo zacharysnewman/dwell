@@ -75,6 +75,7 @@ class VoxelQuery {
   JPH::PhysicsSystem& physics_;
   mutable core::ChunkCoord cached_coord_{};
   mutable const core::Chunk* cached_chunk_ = nullptr;
+  mutable std::uint64_t cached_epoch_ = 0;  // world epoch the cached pointer is valid for
 };
 
 template <typename Fn>

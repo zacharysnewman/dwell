@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { floatToHalf, halfToFloat } from './bytes';
 import {
+  CHUNK_SIZE,
+  ChunkForm,
   ControllerFlags,
   DamageCause,
   GroundKind,
@@ -90,6 +92,15 @@ const event = (kind: PlayerEventKind) => ({
   amount: 0,
   cause: DamageCause.Fall as DamageCause,
 });
+
+/** Test chunks of make_vectors.py, in chunk index order (x | y << 5 | z << 10). */
+function testVoxels(material: (x: number, y: number, z: number) => number): Uint16Array {
+  const v = new Uint16Array(CHUNK_SIZE ** 3);
+  for (let z = 0; z < CHUNK_SIZE; z++)
+    for (let y = 0; y < CHUNK_SIZE; y++)
+      for (let x = 0; x < CHUNK_SIZE; x++) v[x | (y << 5) | (z << 10)] = material(x, y, z);
+  return v;
+}
 
 const expected: Record<string, Message> = {
   player_input: {
@@ -181,6 +192,47 @@ const expected: Record<string, Message> = {
     worldSeed: 0x0123456789abcdefn,
     generatorVersion: 7,
     serverTick: 123456,
+    verificationChunk: [-3, 2, 1000000],
+  },
+  worldgen_check: { type: MessageType.WorldgenCheck, hash: 0xfedcba9876543210n },
+  chunk_data_generated: {
+    type: MessageType.ChunkData,
+    form: ChunkForm.Generated,
+    coord: [4, -2, -9],
+    revision: 0,
+    voxels: null,
+  },
+  chunk_data_explicit: {
+    type: MessageType.ChunkData,
+    form: ChunkForm.Explicit,
+    coord: [-1, 2, 70000],
+    revision: 5,
+    voxels: testVoxels((x, y, z) => {
+      if (x === 3 && y === 20 && z === 7) return 17;
+      if (x === 31 && y === 31 && z === 31) return 300;
+      return y < 10 ? 2 : y === 10 ? 4 : 0;
+    }),
+  },
+  chunk_data_explicit_wide: {
+    type: MessageType.ChunkData,
+    form: ChunkForm.Explicit,
+    coord: [1, 1, 1],
+    revision: 3,
+    voxels: testVoxels((x, y, z) => (y === 0 ? ((x + CHUNK_SIZE * z) % 300) + 1 : 0)),
+  },
+  chunk_data_explicit_solid: {
+    type: MessageType.ChunkData,
+    form: ChunkForm.Explicit,
+    coord: [0, 0, 0],
+    revision: 1,
+    voxels: new Uint16Array(CHUNK_SIZE ** 3).fill(2),
+  },
+  chunk_unload: {
+    type: MessageType.ChunkUnload,
+    coords: [
+      [1, 2, 3],
+      [-4, -5, 2000000],
+    ],
   },
   reject: {
     type: MessageType.Reject,
@@ -209,7 +261,7 @@ describe('protocol golden vectors', () => {
 
   const malformed = [...vectors.keys()].filter((k) => k.startsWith('!'));
   it('has malformed vectors', () => {
-    expect(malformed.length).toBeGreaterThanOrEqual(15);
+    expect(malformed.length).toBeGreaterThanOrEqual(25);
   });
   for (const name of malformed) {
     it(`rejects ${name}`, () => {

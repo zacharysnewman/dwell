@@ -116,6 +116,28 @@ PlayerEvent TestEvent(PlayerEventKind kind) {
   return e;
 }
 
+// Test chunks of make_vectors.py, in chunk index order (x | y << 5 | z << 10).
+template <class Material>
+std::vector<std::uint16_t> TestVoxels(Material material) {
+  std::vector<std::uint16_t> v(kChunkVolume);
+  for (int z = 0; z < kChunkSize; ++z)
+    for (int y = 0; y < kChunkSize; ++y)
+      for (int x = 0; x < kChunkSize; ++x) v[x | (y << 5) | (z << 10)] = material(x, y, z);
+  return v;
+}
+std::vector<std::uint16_t> LayeredChunk() {
+  return TestVoxels([](int x, int y, int z) -> std::uint16_t {
+    if (x == 3 && y == 20 && z == 7) return 17;
+    if (x == 31 && y == 31 && z == 31) return 300;
+    return y < 10 ? 2 : y == 10 ? 4 : 0;
+  });
+}
+std::vector<std::uint16_t> WideChunk() {
+  return TestVoxels([](int x, int y, int z) -> std::uint16_t {
+    return y == 0 ? static_cast<std::uint16_t>((x + kChunkSize * z) % 300 + 1) : 0;
+  });
+}
+
 std::map<std::string, Message> Expected() {
   PlayerInput input;
   input.last_snapshot_tick = 300;
@@ -151,7 +173,14 @@ std::map<std::string, Message> Expected() {
       {"client_hello", ClientHello{1, "0.1.0", Seq<32>(0), "Zack"}},
       {"challenge", Challenge{Seq<32>(0xA0)}},
       {"client_auth", ClientAuth{Seq<64>(0, 3)}},
-      {"welcome", Welcome{42, 0x0123456789ABCDEFull, 7, 123456}},
+      {"welcome", Welcome{42, 0x0123456789ABCDEFull, 7, 123456, {-3, 2, 1000000}}},
+      {"worldgen_check", WorldgenCheck{0xFEDCBA9876543210ull}},
+      {"chunk_data_generated", ChunkData{ChunkForm::kGenerated, {4, -2, -9}, 0, {}}},
+      {"chunk_data_explicit", ChunkData{ChunkForm::kExplicit, {-1, 2, 70000}, 5, LayeredChunk()}},
+      {"chunk_data_explicit_wide", ChunkData{ChunkForm::kExplicit, {1, 1, 1}, 3, WideChunk()}},
+      {"chunk_data_explicit_solid",
+       ChunkData{ChunkForm::kExplicit, {0, 0, 0}, 1, std::vector<std::uint16_t>(kChunkVolume, 2)}},
+      {"chunk_unload", ChunkUnload{{{1, 2, 3}, {-4, -5, 2000000}}}},
       {"reject", Reject{RejectReason::kProtocolVersion, "Server runs protocol 2"}},
       {"ping", Ping{9, 1000.0}},
       {"pong", Pong{9, 1000.0, 60, 5000.125}},
@@ -177,6 +206,9 @@ TEST_CASE("protocol: decoding golden vectors round-trips") {
     REQUIRE(decoded.has_value());
     CHECK(decoded->index() == message.index());
     CHECK(Encode(*decoded) == vectors.at(name));
+    if (const auto* chunk = std::get_if<ChunkData>(&*decoded)) {
+      CHECK(chunk->voxels == std::get<ChunkData>(message).voxels);
+    }
   }
 }
 
@@ -188,7 +220,7 @@ TEST_CASE("protocol: malformed vectors are rejected") {
     CHECK_FALSE(Decode(bytes).has_value());
     ++count;
   }
-  CHECK(count >= 15);
+  CHECK(count >= 25);
 }
 
 TEST_CASE("protocol: auth transcript layout") {

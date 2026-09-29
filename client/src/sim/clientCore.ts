@@ -1,8 +1,9 @@
 // The client's own instance of the sim core (PLAYER_CONTROLLER.md §8): prediction and
-// reconciliation of the local player, remote-player proxies, and terrain faces for rendering.
-// Wraps the dwell_client_* exports of server/wasm/wasm_api.cpp.
+// reconciliation of the local player, remote-player proxies, the streamed chunks (§6.3), and
+// terrain faces for rendering. Wraps the dwell_client_* exports of server/wasm/wasm_api.cpp.
 import type { GroundKind, PlayerState } from '../protocol/constants.gen';
-import type { InputFrame, Vec3 } from '../protocol/messages';
+import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
+import type { ChunkCoord, InputFrame, Vec3 } from '../protocol/messages';
 import { withHeapBytes, type DwellCoreFactory, type DwellCoreModule } from './module';
 
 export interface PredictionStats {
@@ -69,18 +70,28 @@ export const RENDER_FACE_BYTES = 8;
 export class ClientCore {
   private constructor(private readonly m: DwellCoreModule) {}
 
-  static async load(
-    factory: DwellCoreFactory,
-    generatorVersion: number,
-    worldSeed = 0n,
-  ): Promise<ClientCore> {
+  /** A client sim with an empty streamed world: chunks arrive through setChunk. */
+  static async load(factory: DwellCoreFactory): Promise<ClientCore> {
     const m = await factory();
-    m._dwell_client_create(
-      generatorVersion,
-      Number(BigInt.asUintN(32, worldSeed)),
-      Number(BigInt.asUintN(32, worldSeed >> 32n)),
-    );
+    m._dwell_client_create();
     return new ClientCore(m);
+  }
+
+  /** Stores a chunk: CHUNK_VOLUME materials in chunk index order (x | y << 5 | z << 10). */
+  setChunk(coord: ChunkCoord, revision: number, voxels: Uint16Array): void {
+    if (voxels.length !== CHUNK_VOLUME) throw new RangeError('chunk voxels must be CHUNK_VOLUME');
+    const bytes = new Uint8Array(voxels.buffer, voxels.byteOffset, voxels.byteLength);
+    withHeapBytes(this.m, bytes, (ptr) => {
+      this.m._dwell_client_chunk_set(coord[0], coord[1], coord[2], revision, ptr);
+    });
+  }
+
+  removeChunk(coord: ChunkCoord): void {
+    this.m._dwell_client_chunk_remove(coord[0], coord[1], coord[2]);
+  }
+
+  chunkCount(): number {
+    return this.m._dwell_client_chunk_count();
   }
 
   nextSeq(): number {

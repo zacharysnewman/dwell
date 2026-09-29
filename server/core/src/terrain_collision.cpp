@@ -41,7 +41,7 @@ void AddQuad(ChunkMesh& mesh, int axis, int sign, float plane, float u0, float u
 
 ChunkMesh BuildChunkMesh(VoxelWorld& world, const ChunkCoord& coord) {
   ChunkMesh mesh;
-  Chunk& chunk = world.GetOrCreate(coord);
+  const Chunk& chunk = world.Read(coord);
   bool any = false;
   for (MaterialId m : chunk.voxels()) {
     if (m != Materials::kAir) {
@@ -102,7 +102,7 @@ ChunkMesh BuildChunkMesh(VoxelWorld& world, const ChunkCoord& coord) {
 
 std::vector<RenderFace> BuildRenderFaces(VoxelWorld& world, const ChunkCoord& coord) {
   std::vector<RenderFace> faces;
-  Chunk& chunk = world.GetOrCreate(coord);
+  const Chunk& chunk = world.Read(coord);
   const int ox = coord.x * kChunkSize, oy = coord.y * kChunkSize, oz = coord.z * kChunkSize;
   auto at = [&](int lx, int ly, int lz) -> MaterialId {
     if (lx >= 0 && lx < kChunkSize && ly >= 0 && ly < kChunkSize && lz >= 0 && lz < kChunkSize) {
@@ -170,6 +170,24 @@ void TerrainCollision::EnsureBox(JPH::Vec3 min, JPH::Vec3 max) {
   }
 }
 
+void TerrainCollision::Retain(const std::function<bool(const ChunkCoord&)>& keep) {
+  for (auto it = chunks_.begin(); it != chunks_.end();) {
+    if (keep(it->first)) {
+      ++it;
+      continue;
+    }
+    if (it->second.sub_shape != kNoShape) {
+      const JPH::Vec3 previous_com = compound_->GetCenterOfMass();
+      compound_->ModifyShape(it->second.sub_shape, JPH::Vec3::sZero(), JPH::Quat::sIdentity(),
+                             new JPH::EmptyShape);
+      physics_.bodies().NotifyShapeChanged(body_, previous_com, /*updateMassProperties=*/false,
+                                           JPH::EActivation::DontActivate);
+      free_sub_shapes_.push_back(it->second.sub_shape);
+    }
+    it = chunks_.erase(it);
+  }
+}
+
 void TerrainCollision::Sync() {
   for (auto& [coord, built] : chunks_) {
     if (Revisions(coord) != built.revisions) Build(coord, built);
@@ -183,7 +201,9 @@ std::array<std::uint32_t, 7> TerrainCollision::Revisions(const ChunkCoord& c) {
   for (int i = 0; i < 7; ++i) {
     const Chunk* chunk =
         world_.Find({c.x + kOffsets[i][0], c.y + kOffsets[i][1], c.z + kOffsets[i][2]});
-    r[i] = chunk ? chunk->revision() : 0;
+    // A missing chunk of a streamed world may still arrive; a generated world's missing chunk is
+    // an evicted unmodified one (revision 0).
+    r[i] = chunk ? chunk->revision() : world_.streamed() ? kMissing : 0;
   }
   return r;
 }
@@ -220,6 +240,10 @@ void TerrainCollision::Build(const ChunkCoord& coord, Built& built) {
     return;
   }
   const JPH::Vec3 previous_com = compound_->GetCenterOfMass();
+  if (built.sub_shape == kNoShape && !free_sub_shapes_.empty()) {
+    built.sub_shape = free_sub_shapes_.back();
+    free_sub_shapes_.pop_back();
+  }
   if (built.sub_shape == kNoShape) {
     built.sub_shape = compound_->AddShape(origin - previous_com, JPH::Quat::sIdentity(), shape);
   } else {

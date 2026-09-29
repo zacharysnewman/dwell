@@ -102,6 +102,9 @@ int main(int argc, char** argv) {
   const int workers = std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1);
   JPH::JobSystemThreadPool jobs(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, workers);
   dwell::core::SystemEntropy entropy;
+  // Terrain generation off the tick (§6.3): about cores − 2 threads beside the physics pool.
+  options.server.worldgen_threads =
+      std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 2);
   dwell::core::Server server(options.server, entropy, jobs);
 
   const DwellNetConfig net_config{

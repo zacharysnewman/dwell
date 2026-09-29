@@ -25,11 +25,13 @@ constexpr float kDegToRad = std::numbers::pi_v<float> / 180.0f;
 
 // Constants from the PPC Quantum systems.
 constexpr int kRingRays = 16;
-constexpr float kRisingMargin = 0.10f;        // PPCProbeSystem
-constexpr float kWallMinAngle = 45.0f;        // PPCProbeSystem
-constexpr float kInputDeadzone = 0.10f;       // PPCMovementLayerSystem
-constexpr float kReverseDot = -0.10f;         // PPCMovementLayerSystem
-constexpr float kMinDirection = 0.01f;        // PPCMovementLayerSystem
+constexpr float kRisingMargin = 0.10f;           // PPCProbeSystem
+constexpr float kWallMinAngle = 45.0f;           // PPCProbeSystem
+constexpr float kInputDeadzone = 0.10f;          // PPCMovementLayerSystem
+constexpr float kReverseDot = -0.10f;            // PPCMovementLayerSystem
+constexpr float kMinDirection = 0.01f;           // PPCMovementLayerSystem
+constexpr std::uint32_t kRetainEveryTicks = 64;  // how often far terrain collision unloads
+constexpr int kRetainChunks = 2;              // collision kept within this many chunks of a player
 constexpr float kMinStep = 0.01f;             // PPCMovementLayerSystem
 constexpr float kLaunchThreshold = 0.10f;     // PPCVerticalLayerSystem
 constexpr float kStepLaunchThreshold = 1.5f;  // Dwell: during step_grace
@@ -304,6 +306,22 @@ void Players::Tick() {
       const Vec3 pos(physics_.bodies().GetCenterOfMassPosition(p->body));
       const float reach = 3.0f + physics_.bodies().GetLinearVelocity(p->body).Length() * kDt * 2;
       terrain_->EnsureBox(pos - Vec3::sReplicate(reach), pos + Vec3::sReplicate(reach));
+    }
+    // Now and then, unload collision far from every player (memory stays bounded when moving).
+    if (++ticks_ % kRetainEveryTicks == 0) {
+      std::vector<core::ChunkCoord> centers;
+      for (Player* p : players_) {
+        if (!p) continue;
+        const Vec3 pos(physics_.bodies().GetCenterOfMassPosition(p->body));
+        centers.push_back(core::ChunkOf(static_cast<std::int32_t>(std::floor(pos.GetX())),
+                                        static_cast<std::int32_t>(std::floor(pos.GetY())),
+                                        static_cast<std::int32_t>(std::floor(pos.GetZ()))));
+      }
+      terrain_->Retain([&](const core::ChunkCoord& c) {
+        return std::any_of(centers.begin(), centers.end(), [&](const core::ChunkCoord& center) {
+          return core::ChunkDistance(c, center) <= kRetainChunks;
+        });
+      });
     }
     terrain_->Sync();
   }

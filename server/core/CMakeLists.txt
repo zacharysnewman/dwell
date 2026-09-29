@@ -7,6 +7,7 @@ add_library(dwell_core
   src/server.cpp
   src/terrain_collision.cpp
   src/voxel.cpp
+  src/worldgen_pool.cpp
   src/protocol/bytes.cpp
   src/protocol/messages.cpp
   src/player/controller.cpp
@@ -16,4 +17,5 @@ add_library(dwell_core
   src/worldgen/noise.cpp
   src/worldgen/terrain.cpp)
 target_include_directories(dwell_core PUBLIC include)
-target_link_libraries(dwell_core PUBLIC Jolt PRIVATE dwell_options monocypher)
+find_package(Threads REQUIRED)
+target_link_libraries(dwell_core PUBLIC Jolt Threads::Threads PRIVATE dwell_options monocypher)

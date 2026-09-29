@@ -47,9 +47,10 @@ constexpr float kInf = std::numeric_limits<float>::infinity();
 
 core::MaterialId VoxelQuery::Material(std::int32_t x, std::int32_t y, std::int32_t z) const {
   const core::ChunkCoord coord = core::ChunkOf(x, y, z);
-  if (!cached_chunk_ || !(coord == cached_coord_)) {
-    cached_chunk_ = &world_.GetOrCreate(coord);
+  if (!cached_chunk_ || !(coord == cached_coord_) || cached_epoch_ != world_.epoch()) {
+    cached_chunk_ = &world_.Read(coord);
     cached_coord_ = coord;
+    cached_epoch_ = world_.epoch();
   }
   return cached_chunk_->Get(x - coord.x * core::kChunkSize, y - coord.y * core::kChunkSize,
                             z - coord.z * core::kChunkSize);

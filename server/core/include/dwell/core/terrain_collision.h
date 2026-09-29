@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -59,11 +60,16 @@ class TerrainCollision {
   // after voxel edits, before the next query or physics step.
   void Sync();
 
+  // Unloads collision of chunks that `keep` rejects (players moved away); their compound slots are
+  // reused by later chunks, so memory stays bounded while moving.
+  void Retain(const std::function<bool(const ChunkCoord&)>& keep);
+
   std::size_t built_chunks() const { return chunks_.size(); }
   JPH::BodyID body() const { return body_; }
 
  private:
   static constexpr JPH::uint kNoShape = ~0u;
+  static constexpr std::uint32_t kMissing = ~0u;  // revision of a not-yet-streamed chunk
   struct Built {
     JPH::uint sub_shape = kNoShape;          // index in the compound; kNoShape until it has faces
     std::array<std::uint32_t, 7> revisions;  // own + 6 neighbours
@@ -75,6 +81,7 @@ class TerrainCollision {
   VoxelWorld& world_;
   PhysicsWorld& physics_;
   std::unordered_map<ChunkCoord, Built, ChunkCoordHash> chunks_;
+  std::vector<JPH::uint> free_sub_shapes_;  // EmptyShape slots of unloaded chunks
   JPH::Ref<JPH::MutableCompoundShape> compound_;
   JPH::BodyID body_;
 };

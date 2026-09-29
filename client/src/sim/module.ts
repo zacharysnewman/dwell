@@ -17,7 +17,10 @@ export interface DwellCoreModule {
   _dwell_local_advance(elapsedSeconds: number): number;
   _dwell_local_take_outbox(outLenPtr: number): number;
   // Client sim.
-  _dwell_client_create(generatorVersion: number, seedLo: number, seedHi: number): number;
+  _dwell_client_create(): number;
+  _dwell_client_chunk_set(cx: number, cy: number, cz: number, revision: number, ptr: number): void;
+  _dwell_client_chunk_remove(cx: number, cy: number, cz: number): void;
+  _dwell_client_chunk_count(): number;
   _dwell_client_next_seq(): number;
   _dwell_client_tick(
     seq: number,

@@ -22,6 +22,36 @@ constexpr std::size_t kMaxBufferedInputs = 6;         // beyond this, skip to bo
 constexpr std::uint32_t kMaxSeqAhead = 256;           // inputs further ahead are rejected
 constexpr std::uint32_t kInputDatagramsPerSecond = 2 * kSimHz;  // §11: SIM_HZ + redundancy
 constexpr int kLaunchCooldownTicks = kSimHz / 2;
+constexpr int kPrefetchChunks = 2;  // generated ahead around each player (collision reach + 1)
+constexpr int kKeepChunks = 3;      // unmodified chunks kept around players; farther: evicted
+constexpr std::uint32_t kEvictEveryTicks = 64;
+constexpr std::size_t kMaxExplicitWanted = 64;  // full-mode chunks queued for generation per tick
+
+ChunkCoord ChunkAt(float x, float y, float z) {
+  return ChunkOf(static_cast<std::int32_t>(std::floor(x)), static_cast<std::int32_t>(std::floor(y)),
+                 static_cast<std::int32_t>(std::floor(z)));
+}
+
+// Offsets within Chebyshev distance `r`, nearest first.
+std::vector<ChunkCoord> CubeOffsets(int r) {
+  std::vector<ChunkCoord> out;
+  for (int y = -r; y <= r; ++y)
+    for (int z = -r; z <= r; ++z)
+      for (int x = -r; x <= r; ++x) out.push_back({x, y, z});
+  std::stable_sort(out.begin(), out.end(), [](const ChunkCoord& a, const ChunkCoord& b) {
+    return a.x * a.x + a.y * a.y + a.z * a.z < b.x * b.x + b.y * b.y + b.z * b.z;
+  });
+  return out;
+}
+
+const std::vector<ChunkCoord>& PrefetchOffsets() {
+  static const std::vector<ChunkCoord> offsets = CubeOffsets(kPrefetchChunks);
+  return offsets;
+}
+
+ChunkCoord Add(const ChunkCoord& a, const ChunkCoord& b) {
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
 
 // §11: move within the unit circle (plus quantization slack), pitch within ±90°.
 bool InputInRange(const InputFrame& f) {
@@ -37,8 +67,36 @@ Server::Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs)
       physics_(jobs),
       world_(GeneratorFor(config_.generator_version, config_.world_seed)),
       terrain_(world_, physics_),
-      players_(world_, physics_, &terrain_) {
+      players_(world_, physics_, &terrain_),
+      worldgen_(GeneratorFor(config_.generator_version, config_.world_seed),
+                config_.worldgen_threads) {
   if (!config_.spawn) config_.spawn = SpawnPointFor(config_.generator_version, config_.world_seed);
+  const auto& at = *config_.spawn;
+  const ChunkCoord spawn_chunk = ChunkAt(at[0], at[1], at[2]);
+  verification_chunk_ = ChunkAt(at[0], at[1] - 1.0f, at[2]);
+
+  // Pre-generate the spawn region, so the first players never wait for terrain.
+  std::vector<ChunkCoord> region;
+  for (const ChunkCoord& o : CubeOffsets(config_.pregen_radius_chunks)) {
+    region.push_back(Add(spawn_chunk, o));
+  }
+  region.push_back(verification_chunk_);
+  worldgen_.SetWanted(region);
+  std::vector<WorldgenPool::Result> ready;
+  worldgen_.Drain(ready);
+  for (auto& [coord, chunk] : ready) world_.Put(coord, std::move(chunk));
+  verification_hash_ = ChunkHash(world_.Read(verification_chunk_));
+
+  // The view: a cylinder of view_radius_chunks around the center, view_height_chunks up and down.
+  const int r = config_.view_radius_chunks, h = config_.view_height_chunks;
+  for (int y = -h; y <= h; ++y)
+    for (int z = -r; z <= r; ++z)
+      for (int x = -r; x <= r; ++x)
+        if (x * x + z * z <= r * r + r) view_offsets_.push_back({x, y, z});
+  std::stable_sort(view_offsets_.begin(), view_offsets_.end(),
+                   [](const ChunkCoord& a, const ChunkCoord& b) {
+                     return a.x * a.x + a.y * a.y + a.z * a.z < b.x * b.x + b.y * b.y + b.z * b.z;
+                   });
 }
 
 Server::~Server() = default;
@@ -168,12 +226,22 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
       joined.player_id = AllocatePlayerId();
       joined.phase = Phase::kJoined;
       SendReliable(id,
-                   Welcome{joined.player_id, config_.world_seed, config_.generator_version, tick_});
+                   Welcome{joined.player_id,
+                           config_.world_seed,
+                           config_.generator_version,
+                           tick_,
+                           {verification_chunk_.x, verification_chunk_.y, verification_chunk_.z}});
       SpawnPlayer(joined);
       return;
     }
     case Phase::kJoined:
-      // Joined clients send gameplay input as datagrams; no further control messages yet.
+      // Gameplay input comes as datagrams. On control: the one WorldgenCheck, which picks how the
+      // client receives chunks (§6.3); anything else is ignored.
+      if (const auto* check = std::get_if<WorldgenCheck>(&m);
+          check && s.chunk_mode == ChunkMode::kAwaitingCheck) {
+        s.chunk_mode = check->hash != 0 && check->hash == verification_hash_ ? ChunkMode::kGenerated
+                                                                             : ChunkMode::kFull;
+      }
       return;
   }
   Reject(id, RejectReason::kMalformed, "Unexpected message.");
@@ -266,6 +334,15 @@ void Server::AfterControllerTick(Session& s) {
 }
 
 void Server::Step() {
+  // 0. Chunks generated since the last tick (off-thread, or here within the budget).
+  {
+    std::vector<WorldgenPool::Result> ready;
+    worldgen_.Collect(ready, std::chrono::microseconds(config_.worldgen_budget_us));
+    for (auto& [coord, chunk] : ready) {
+      if (!world_.Find(coord)) world_.Put(coord, std::move(chunk));
+    }
+  }
+
   // 1. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
   for (auto& [id, s] : sessions_) {
     if (s.phase != Phase::kJoined || !s.handle) continue;
@@ -329,6 +406,113 @@ void Server::Step() {
     BroadcastWorld(e);
   }
   if (tick_ % kSnapshotEvery == 0) SendSnapshots();
+
+  // 5. Terrain streaming, then what to generate next and what to forget.
+  explicit_wanted_.clear();
+  for (auto& [id, s] : sessions_) StreamChunks(id, s);
+  UpdateWorldgen();
+}
+
+std::optional<ChunkCoord> Server::ViewCenter(const Session& s) const {
+  if (s.phase != Phase::kJoined) return std::nullopt;
+  if (s.handle) {
+    const Vec3 p = players_.Position(*s.handle);
+    return ChunkAt(p.GetX(), p.GetY(), p.GetZ());
+  }
+  return ChunkAt(s.death_position[0], s.death_position[1], s.death_position[2]);
+}
+
+void Server::UpdateWorldgen() {
+  std::vector<ChunkCoord> centers;
+  for (const auto& [id, s] : sessions_) {
+    if (const auto c = ViewCenter(s)) centers.push_back(*c);
+  }
+  // Around players first (collision needs them), then chunks full-mode clients are waiting for.
+  std::vector<ChunkCoord> wanted;
+  for (const ChunkCoord& o : PrefetchOffsets()) {
+    for (const ChunkCoord& center : centers) {
+      const ChunkCoord c = Add(center, o);
+      if (c.y >= kMinChunkY && c.y <= kMaxChunkY && !world_.Find(c)) wanted.push_back(c);
+    }
+  }
+  wanted.insert(wanted.end(), explicit_wanted_.begin(), explicit_wanted_.end());
+  worldgen_.SetWanted(wanted);
+
+  if (tick_ % kEvictEveryTicks == 0) {
+    world_.EvictUnmodified([&](const ChunkCoord& c) {
+      return c == verification_chunk_ ||
+             std::any_of(centers.begin(), centers.end(), [&](const ChunkCoord& center) {
+               return ChunkDistance(c, center) <= kKeepChunks;
+             });
+    });
+  }
+}
+
+void Server::StreamChunks(SessionId id, Session& s) {
+  if (s.chunk_mode == ChunkMode::kAwaitingCheck) return;
+  const auto center = ViewCenter(s);
+  if (!center) return;
+  const double per_tick = static_cast<double>(config_.chunk_bytes_per_second) / kSimHz;
+  s.chunk_credit = std::min(s.chunk_credit + per_tick, per_tick);
+
+  if (!s.stream_center || !(*s.stream_center == *center)) {
+    s.stream_center = center;
+    s.stream_complete = false;
+    // Chunks beyond the view plus a margin (hysteresis) leave the client.
+    const int r = config_.view_radius_chunks + kUnloadMarginChunks;
+    const int h = config_.view_height_chunks + kUnloadMarginChunks;
+    ChunkUnload unload;
+    for (auto it = s.streamed.begin(); it != s.streamed.end();) {
+      const int dx = it->x - center->x, dy = it->y - center->y, dz = it->z - center->z;
+      if (dx * dx + dz * dz > r * r + r || dy > h || -dy > h) {
+        unload.coords.push_back({it->x, it->y, it->z});
+        it = s.streamed.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    s.stream_stats.unloaded += static_cast<std::uint32_t>(unload.coords.size());
+    while (!unload.coords.empty()) {
+      const std::size_t n = std::min<std::size_t>(unload.coords.size(), 0xFFFF);
+      ChunkUnload part;
+      part.coords.assign(unload.coords.end() - static_cast<std::ptrdiff_t>(n), unload.coords.end());
+      unload.coords.resize(unload.coords.size() - n);
+      SendReliable(id, part, Channel::kWorld);
+    }
+  }
+  if (s.stream_complete) return;
+
+  // Nearest first, within the bandwidth budget (§6.3).
+  bool complete = true;
+  int sent = 0;
+  for (const ChunkCoord& o : view_offsets_) {
+    const ChunkCoord c = Add(*center, o);
+    if (c.y < kMinChunkY || c.y > kMaxChunkY || s.streamed.count(c)) continue;
+    complete = false;
+    if (s.chunk_credit <= 0 || sent >= kMaxChunksPerTick) break;
+    const Chunk* chunk = world_.Find(c);
+    ChunkData m;
+    m.coord = {c.x, c.y, c.z};
+    if (s.chunk_mode == ChunkMode::kGenerated && !(chunk && chunk->revision() > 0)) {
+      m.form = ChunkForm::kGenerated;
+    } else if (chunk) {
+      m.form = ChunkForm::kExplicit;
+      m.revision = chunk->revision();
+      m.voxels.assign(chunk->voxels().begin(), chunk->voxels().end());
+    } else {
+      // Full mode: generate it first (a later tick sends it).
+      if (explicit_wanted_.size() < kMaxExplicitWanted) explicit_wanted_.push_back(c);
+      continue;
+    }
+    auto bytes = Encode(m);
+    s.chunk_credit -= static_cast<double>(bytes.size());
+    outbox_.push_back({id, Outgoing::Kind::kReliable, Channel::kWorld, std::move(bytes)});
+    s.streamed.insert(c);
+    ++sent;
+    ++(m.form == ChunkForm::kGenerated ? s.stream_stats.generated_sent
+                                       : s.stream_stats.explicit_sent);
+  }
+  s.stream_complete = complete;
 }
 
 void Server::SendSnapshots() {
@@ -447,6 +631,14 @@ std::optional<PlayerHandle> Server::PlayerHandleOf(std::uint16_t player_id) cons
 std::optional<SessionStats> Server::StatsOf(std::uint16_t player_id) const {
   const Session* s = SessionOfPlayer(player_id);
   return s ? std::optional<SessionStats>(s->stats) : std::nullopt;
+}
+
+std::optional<StreamStats> Server::StreamStatsOf(std::uint16_t player_id) const {
+  const Session* s = SessionOfPlayer(player_id);
+  if (!s) return std::nullopt;
+  StreamStats out = s->stream_stats;
+  out.streamed = s->streamed.size();
+  return out;
 }
 
 int Server::HealthOf(std::uint16_t player_id) const {
