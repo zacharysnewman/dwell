@@ -777,7 +777,12 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   reach into the view. Level-0 nodes are the streamed chunks: a level-1 section refines into its 8
   chunks when all are loaded and meshed (or air); chunks whose level-1 section is not refined are
   hidden, since LOD draws there (all chunks show until the root is ready). Away from the body the
-  finest level drawn is 1.
+  finest level drawn is 1. **The player's surroundings never wait for coarse levels:** a level-1
+  section around the camera whose chunks have been drawable for `FORCE_CHUNKS_AFTER_MS` (1 s)
+  is always reached — the walk descends to it through ancestors whose children are not all
+  ready, drawing the ready siblings and leaving the unready ones empty (sky) until they are,
+  never drawing a coarse section over the chunks. A device that keeps up never takes this path;
+  one whose LOD generation is slow or stalled still shows the world around the player.
 - A parent stays drawn until **all its children** are ready (meshed, or known empty or buried),
   then they swap in; unused children are evicted only as whole sibling sets, least recently used
   first, while the cache is over `LOD_CACHE_MB` — the view never has holes. A test walks, turns

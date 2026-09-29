@@ -66,19 +66,23 @@ function flatSection(c: LodCoord): GeneratedSection {
 /** Worker pools whose jobs finish when the test says, in any order. */
 class Jobs implements SectionSource, SectionMesher {
   pending: (() => void)[] = [];
+  /** Generation (and bounds) below this level never finishes: a stalled or very slow device. */
+  stuckBelow = 0;
   lod(c: LodCoord): Promise<GeneratedSection> {
-    return new Promise((resolve) =>
+    return new Promise((resolve) => {
+      if (c[0] < this.stuckBelow) return;
       this.pending.push(() => {
         resolve(flatSection(c));
-      }),
-    );
+      });
+    });
   }
-  lodBounds(): Promise<LodBounds> {
-    return new Promise((resolve) =>
+  lodBounds(level: number): Promise<LodBounds> {
+    return new Promise((resolve) => {
+      if (level < this.stuckBelow) return;
       this.pending.push(() => {
         resolve(flatBounds());
-      }),
-    );
+      });
+    });
   }
   meshSection(): Promise<SectionMeshes> {
     // Selection only needs to know a mesh exists (lodMesher.test.ts tests meshing itself).
@@ -181,7 +185,8 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     for (const cam of path) {
       for (let repeat = 0; repeat < 3; repeat++) {
         frames++;
-        lod.update(cam, frames * 16);
+        // A device that keeps up: well within FORCE_CHUNKS_AFTER_MS, so never a forced path.
+        lod.update(cam, frames);
         await jobs.finish(random, 0.5);
         if (!lod.active) continue;
         const s = lod.lastSelection();
@@ -212,6 +217,51 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     expect(lod.lastSelection().chunks.length).toBeGreaterThan(0);
     expect(lod.chunkVisible([0, 0, 0])).toBe(true);
     expect(lod.chunkVisible([40, 0, 0])).toBe(false); // not streamed: LOD draws there
+  });
+
+  it('shows the streamed chunks around the player while the levels above them are not ready', async () => {
+    // Regression (phone playtest): chunks were drawn only once every LOD level down to them was
+    // generated, so a device whose LOD generation stalled drew nothing at all.
+    const jobs = new Jobs();
+    jobs.stuckBelow = 12;
+    const view = new View();
+    const chunks = {
+      drawable: (c: ChunkCoord) => Math.max(Math.abs(c[0]), Math.abs(c[1]), Math.abs(c[2])) <= 3,
+    };
+    const lod = new LodSystem(jobs, jobs, view, chunks, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 64 * 1048576,
+      maxGenerationJobs: 16,
+      maxMeshJobs: 8,
+    });
+    const cam = camera([0.5, 1.6, 0.5], 0, -10);
+    const random = rng(3);
+    const noOverlaps = (at: LodCamera): void => {
+      const s = lod.lastSelection();
+      const leaves = [...s.drawn, ...s.empty, ...s.chunks];
+      for (let n = 0; n < 100; n++) {
+        const p = pointInView(at, random, 3e6);
+        if (p) expect(leaves.filter((c) => contains(c, p)).length).toBeLessThanOrEqual(1);
+      }
+    };
+    // Looking around, then standing still: 3 s, past FORCE_CHUNKS_AFTER_MS.
+    for (let frame = 1; frame <= 60; frame++) {
+      const at = frame < 40 ? camera([0.5, 1.6, 0.5], frame * 9, -10) : cam;
+      lod.update(at, frame * 50);
+      await jobs.finish(() => 0, 1);
+      noOverlaps(at);
+    }
+    expect(lod.active).toBe(true);
+    for (const c of [
+      [0, 0, 0],
+      [1, 0, 2],
+      [-2, -1, 1],
+    ] as ChunkCoord[]) {
+      expect(lod.chunkVisible(c)).toBe(true);
+    }
+    // Coarse sections are not drawn over the chunks (unready ones are holes); drawn ones have meshes.
+    for (const c of lod.lastSelection().drawn) expect(view.meshed.has(lodId(...c))).toBe(true);
+    expect(lod.chunkVisible([40, 0, 0])).toBe(false); // not streamed
   });
 
   it('refines by screen-space error: coarser with distance and altitude', async () => {
