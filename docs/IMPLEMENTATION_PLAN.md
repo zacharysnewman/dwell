@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); outstanding: the frame-rate check on a desktop and a mobile device | #14–#20 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#20 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -515,7 +515,8 @@ Exit criteria
 
 **Status:** in progress — every deliverable built (4a grid and generation, 4b propagation and
 streaming, protocol v6, 4c the client's LOD system, rendering and creative flight — protocol v7),
-in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #15.
+in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #15; a fix for
+z-fighting on distant water pending review.
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
@@ -695,6 +696,12 @@ Deviations and additions (4c):
   four downward views from 400 m (seed 5) showed 234–368 sky-coloured pixels before, 0 after;
   `lodMesher.test.ts` "closes steps between surfaces across the section border without skirts"
   failed before the fix.
+- **Z-fighting on distant water** (playtest, since column surfaces): a sea floor inside a water
+  cell, rounded to half cells, could land on the cell's top — level with the water surface, 1/8 m
+  from it — or on its bottom, in the plane of the solid cell's own top below (drawn too, in
+  another colour). The floor now stays at most half a cell up the top water cell, and the covered
+  top below it is not drawn. `lodMesher.test.ts` "never draws a sea floor in the water surface or
+  over the cell below" failed before the fix.
 - **Snapshots dropped while flying (and swimming)** (phone playtest: terrain never finished
   loading after fast flight): `PlayerFlagsOf` resolved `kClimbing`/`kSwimming`/`kFlying` to the
   *ControllerFlags* constants of the same names, so a flying player's snapshot carried an

@@ -128,6 +128,49 @@ describe('LOD section mesher (§6.6)', () => {
     expect(quads(m.water)).toBe(1);
   });
 
+  it('never draws a sea floor in the water surface or over the cell below', () => {
+    // Regression (playtest: z-fighting on distant water): a floor inside a water cell, rounded to
+    // half cells, landed on the cell's bottom — a second top over the solid cell's own — or on its
+    // top, level with the water surface (1/8 m, a sliver of a cell, above or below it).
+    const upward = (f: {
+      positions: Float32Array;
+      normals: Float32Array;
+      indices: Uint32Array;
+    }) => {
+      // Upward quads by height.
+      const at = new Map<number, number>();
+      for (let q = 0; q < f.indices.length / 6; q++) {
+        const v = f.indices[q * 6] ?? 0;
+        if (f.normals[v * 3 + 1] !== 1) continue;
+        const y = f.positions[v * 3 + 1] ?? 0;
+        at.set(y, (at.get(y) ?? 0) + 1);
+      }
+      return at;
+    };
+    for (const floor of [0.1, 0.9]) {
+      const cells = new Uint16Array(LOD_VOLUME);
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let z = -1; z <= 32; z++) {
+        for (let x = -1; x <= 32; x++) {
+          cells[lodCell(x, 0, z)] = 12; // sand below
+          cells[lodCell(x, 1, z)] = 10; // water
+          const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
+          surface[c] = 1 + floor;
+          surface[c + 1] = 4; // a floor of another material than the cell below
+          surface[c + 2] = 1 | 2; // valid, wet
+        }
+      }
+      const waterDrop = 0.125 / 256; // level 8
+      const m = meshSection(cells, { surface, waterDrop });
+      const tops = upward(m.opaque);
+      // One floor, drawn once, clearly under the water surface.
+      expect([...tops.values()], `floor ${String(floor)}`).toEqual([1]);
+      const [y = 1] = [...tops.keys()];
+      expect(y, `floor ${String(floor)}`).toBeLessThanOrEqual(1.5);
+      expect([...upward(m.water).keys()]).toEqual([2 - waterDrop]);
+    }
+  });
+
   it('closes steps between surfaces across the section border without skirts', () => {
     // Regression (playtest: sky-blue cracks along straight lines): where a column's surface was
     // lower than its neighbour across the border, the step between them went only into a skirt,
