@@ -633,7 +633,8 @@ Deviations and additions (4c):
 - **Skirts** are separate meshes per side (only non-empty ones are created), shown per frame.
 - **Renderer:** the scene lost its background colour (three.js clears with it in every `render()`,
   wiping the far pass — found in the browser); the far pass's near plane follows altitude; fog
-  scales with altitude.
+  scales with altitude. Ground visibility raised from 400 km to 512 km (fog from 32 km), about
+  the farthest anyone sees on Earth (playtest feedback; `fog.test.ts` failed on the old values).
 - **Coarse surfaces:** a column's top cell takes its surface's material, not the bedrock a cell
   taller than the relief samples at its bottom (found in the browser: the disc was grey from
   orbit; `lod: surface` failed before the fix, and the LOD golden hashes were regenerated).

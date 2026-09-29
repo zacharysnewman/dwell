@@ -801,7 +801,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   pass and then, after a depth clear, a near pass (0.05 m to `LOD_NEAR_SPLIT_M`); everything is in
   both passes and each camera's frustum culls, so a section straddling the split is clipped at it.
   The far pass's near plane moves out to 0.8 × the camera's height above `WORLD_MAX_Y` (nothing is
-  nearer up there), keeping depth precise from orbit; fog starts at 20 km (or twice the altitude).
+  nearer up there), keeping depth precise from orbit. Linear fog (`render/fog.ts`) fades terrain
+  from 32 km and hides it at 512 km — about the farthest anyone sees on Earth, so that is the view
+  from the ground or a mountain; above ~13 km both grow with height (2× and 40× it), so the disc
+  stays visible from orbit.
   The scene has no background colour — three.js would clear the far pass with it — the renderer's
   clear colour is the sky.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
