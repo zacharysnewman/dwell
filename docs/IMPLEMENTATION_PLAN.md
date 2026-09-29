@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7 and #8) | #4, #5, #6, #7, #8 |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7 and #8; jump-over-block launch fix on the branch, PR pending) | #4, #5, #6, #7, #8 |
 | 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b (streaming) in review in #9; 3c block edits next | #7 (3a), #9 (3b) |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
@@ -137,10 +137,15 @@ ragdoll and animation from `State` (Phase 5, see below). Playtested by a human (
 #9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
-Later finding (fix in review in #8): jumping onto a block while holding forward gave a
+Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
-that tick's velocity (PLAYER_CONTROLLER.md §4).
+that tick's velocity (PLAYER_CONTROLLER.md §4). The fix merged in #8.
+Later finding (fix on the branch, PR pending): jumping over a lone block while pressed against it
+launched the player forward, and one jump floated the player up a diagonal staircase of full
+blocks — the block's top edge deflected the forward drive upwards and the airborne vertical layer
+absorbed that as an external force (a second jump). That lift is no longer absorbed
+(PLAYER_CONTROLLER.md §4, "Edge lift is not absorbed").
 
 | Exit criterion | Result |
 |---|---|

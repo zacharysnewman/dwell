@@ -317,6 +317,56 @@ TEST_SUITE("player: steps and air") {
     CHECK(worst * 60.0f <= m.walk_speed * 1.02f);
   }
 
+  TEST_CASE("clearing a block's top edge doesn't launch the player") {
+    // Playtest bug: run into a lone block, keep holding forward and jump; as the capsule's rounded
+    // bottom slid over the block's top edge, the contact turned the forward drive into upward
+    // velocity, which the airborne vertical layer absorbed as an external force: a second jump
+    // (apex 2.1 m for a 1.25 m jump) that launched the player far past the block. Sweeps every
+    // jump timing from a running start to pressed against the block, walking and running.
+    const auto& cfg = player::DefaultConfig();
+    for (const bool run : {false, true}) {
+      CAPTURE(run);
+      float highest = 0.0f;
+      int highest_jump = -1;
+      for (int jump_tick = 0; jump_tick <= 60; jump_tick += 3) {
+        PlayerTestWorld w;
+        w.Floor(0, 40);
+        w.Fill(0, 0, 3, 0, 0, 3, core::Materials::kStone);  // one block, x 0..1, z 3..4
+        const auto e = w.Spawn(Vec3(0.5f, 0, 0));
+        w.input = [&](int t, PlayerHandle) {
+          return Move(0, 1, run, t >= jump_tick && t < jump_tick + 3);
+        };
+        const float apex = w.MaxFeet(e, jump_tick + Ticks(1.5f));
+        if (apex > highest) {
+          highest = apex;
+          highest_jump = jump_tick;
+        }
+      }
+      INFO("apex " << highest << " m, jumping at tick " << highest_jump);
+      CHECK(highest <= cfg.jump.height + 0.05f);
+    }
+  }
+
+  TEST_CASE("one jump climbs one step of a diagonal staircase") {
+    // Same bug: running diagonally at a staircase of full blocks (convex corners towards the
+    // player), each step's edge lifted the player onto the next, so a single jump floated it up
+    // the whole staircase.
+    PlayerTestWorld w;
+    w.Floor(0, 40);
+    for (int z = 0; z < 30; ++z) {
+      for (int x = 0; x < 30; ++x) {
+        const int height = std::min(x, z) - 2;  // step k: min(x, z) >= k + 2
+        for (int y = 0; y < height; ++y) w.world.SetVoxel(x, y, z, core::Materials::kStone);
+      }
+    }
+    const auto e = w.Spawn(Vec3(0.5f, 0, 0.5f), 45.0f);
+    w.input = [](int t, PlayerHandle) { return Move(0, 1, true, t >= 20 && t < 23, false, 45.0f); };
+    const float apex = w.MaxFeet(e, Ticks(3.0f));
+    CHECK(w.Count(e, player::Events::kJumped) == 1);
+    CHECK(apex <= player::DefaultConfig().jump.height + 0.05f);
+    CHECK(w.Feet(e) == doctest::Approx(1.0f).epsilon(0.02));  // on the first step
+  }
+
   TEST_CASE("air control scales airborne acceleration") {
     PlayerTestWorld w;
     const auto e = w.Spawn(Vec3(0, 20, 0));
