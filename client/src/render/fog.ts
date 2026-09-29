@@ -1,10 +1,11 @@
-// Distance fog (ARCHITECTURE.md §6.6): linear, from `near` (terrain starts to fade) to `far`
-// (terrain is sky-coloured). On the ground the view reaches FOG_VISIBILITY_M; high above the
-// terrain both scale with height so the disc stays visible from orbit.
-export const FOG_START_M = 32_000;
-export const FOG_VISIBILITY_M = 512_000; // about the farthest anyone sees on Earth
+// Distance fog (ARCHITECTURE.md §6.6). Off for now: the whole world is drawn without haze out to
+// the rim. To bring it back, set FOG to a start and full-fog distance for the ground; high above
+// the terrain both scale with height (2× and 40× it) so the disc stays visible from orbit.
+export const FOG: { startM: number; visibilityM: number } | null = null;
 
-export function fogRange(height: number): { near: number; far: number } {
+/** Linear fog range at a camera height, or null for no fog. */
+export function fogRange(height: number): { near: number; far: number } | null {
+  if (!FOG) return null;
   const h = Math.max(0, height);
-  return { near: Math.max(FOG_START_M, h * 2), far: Math.max(FOG_VISIBILITY_M, h * 40) };
+  return { near: Math.max(FOG.startM, h * 2), far: Math.max(FOG.visibilityM, h * 40) };
 }

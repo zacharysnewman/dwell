@@ -30,7 +30,7 @@ import type { FlatMesh, SectionMeshes } from '../../mesh/lodMesher';
 import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
 import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
-import { FOG_START_M, FOG_VISIBILITY_M, fogRange } from '../fog';
+import { FOG, fogRange } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
 import { sharedAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
@@ -162,7 +162,7 @@ export class ThreeRenderer implements Renderer {
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
     this.renderer.autoClear = false;
     this.renderer.setClearColor(SKY);
-    this.scene.fog = new Fog(SKY, FOG_START_M, FOG_VISIBILITY_M);
+    this.scene.fog = FOG ? new Fog(SKY, FOG.startM, FOG.visibilityM) : null;
     this.scene.add(new HemisphereLight(0xdfefff, 0x4a3b2a, 1.4));
     const sun = new DirectionalLight(0xffffff, 1.6);
     sun.position.set(0.4, 1, 0.25);
@@ -217,10 +217,11 @@ export class ThreeRenderer implements Renderer {
     far.aspect = this.camera.aspect;
     far.near = Math.max(NEAR_SPLIT * 0.95, altitude * 0.8);
     far.updateProjectionMatrix();
-    const fog = this.scene.fog as Fog;
     const range = fogRange(this.camera.position.y);
-    fog.near = range.near;
-    fog.far = range.far;
+    if (range && this.scene.fog instanceof Fog) {
+      this.scene.fog.near = range.near;
+      this.scene.fog.far = range.far;
+    }
     this.renderer.clear();
     this.renderer.render(this.scene, far);
     this.renderer.clearDepth();
