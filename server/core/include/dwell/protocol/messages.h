@@ -150,7 +150,7 @@ struct RemotePlayerState {
   std::uint8_t flags = 0;  // PlayerFlags
 };
 
-// S→C datagram, SNAPSHOT_HZ. Tier 1 entities join in Phase 4.
+// S→C datagram, SNAPSHOT_HZ. Tier 1 entities join in Phase 5.
 struct PhysicsSnapshot {
   std::uint32_t server_tick = 0;
   std::uint32_t ack_input_seq = 0;  // last input of this client processed

@@ -7,7 +7,7 @@
 > prediction and reconciliation, and presentation (`server/core/include/dwell/player`,
 > `server/core/src/player`, `server/tests/player`, `client/src/game`). Not yet: animation (no
 > character models), and the Tier 1 interactions of §6.6 (push cap, crush, riding clusters —
-> Phase 4).
+> Phase 5).
 
 This spec ports the **Physics Player Controller (PPC)** —
 [`zacharysnewman/physics-player-controller`](https://github.com/zacharysnewman/physics-player-controller),
@@ -398,7 +398,7 @@ Owned by the `Predictor` (same Jolt settings as the server):
   extrapolating to the predicted present: head-on bumps corrected with 0.17–0.23 m per-tick
   rendered steps and no snaps, versus snaps of 1–2 m (an extrapolated kinematic proxy shoves the
   local player, while on the server two equal-mass bodies stop each other). Tier 1 proxies
-  (present-time within `PREDICT_PROXY_RADIUS`, ARCHITECTURE §9.4) arrive in Phase 4;
+  (present-time within `PREDICT_PROXY_RADIUS`, ARCHITECTURE §9.4) arrive in Phase 5;
 - the local player as the only dynamic body, with the server's body settings.
 
 ### 8.2 Loop
@@ -461,6 +461,11 @@ divergence added per tick. The whole ported player and netcode suite also passes
   and swim velocities) is recomputed.
 - Remote players receive only feet position (`f32`), velocity (`f16`), view angles, `State`, and
   flags.
+- **[planned, Phase 3c — protocol v4, ARCHITECTURE §8.3, ADR 0011]** For the 8,192 km world the
+  controller runs on double-precision Jolt, the local player's capsule centre becomes `f64×3`
+  (`pos64`) and remote feet positions `i32×3` at 1/256 m (`posfix`). Vertical controller fields
+  (`accumulatedY`, `platformY`, `targetY`) stay `f32`: heights are bounded to −2 048…6 144 m,
+  where f32 resolves under a millimetre.
 
 ---
 
@@ -486,7 +491,7 @@ divergence added per tick. The whole ported player and netcode suite also passes
   `platform.yawDelta` turns the camera with rotating ground. Dwell's world is **right-handed, Y up**: yaw 0 looks along +Z, and right of +Z is −X (the
   PPC's Unity convention is left-handed); the controller's camera-right vector follows this.
 - **Players:** remote players are capsules with a visor, interpolated 100 ms in the past; dead
-  players are drawn lying down (a cosmetic pose; the physics ragdoll moves to Phase 5 with the
+  players are drawn lying down (a cosmetic pose; the physics ragdoll moves to Phase 6 with the
   client debris world). While dead, the camera orbits the body until respawn.
 - **Animation:** not yet — there are no character models. The parameters listed by the PPC
   (`Speed`, `IsGrounded`, … from `State`, velocity, and flags) are all available client-side.

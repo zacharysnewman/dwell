@@ -24,7 +24,7 @@ const TICK_MS = 1000 / SIM_HZ;
 const MAX_TICKS_PER_FRAME = 5;
 /**
  * Main-thread time per frame for meshing streamed chunks (at least one per frame). Generation runs
- * in the worldgen workers; meshing moves to a worker pool in Phase 3c.
+ * in the worldgen workers; meshing moves to a worker pool in Phase 3d.
  */
 const MESH_BUDGET_MS = 4;
 /** Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE. */

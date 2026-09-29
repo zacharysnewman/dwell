@@ -19,7 +19,7 @@ export interface PlayerView {
  * Three.js implementation lives in ./three and is the only code allowed to import three.
  *
  * Phase 2 adds terrain chunk meshes (from the sim core's visible faces), player capsules, the
- * first-person camera, and debug lines. Dynamic body meshes arrive with Tier 1 bodies (Phase 4).
+ * first-person camera, and debug lines. Dynamic body meshes arrive with Tier 1 bodies (Phase 5).
  */
 export interface Renderer {
   /** Resize the drawing buffer to CSS pixels × device pixel ratio. */
