@@ -822,11 +822,15 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
   material of the column's surface (not the bedrock its bottom voxel samples; a regression test
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
-  top, as `Downsample` keeps it (`lod: sea`). Levels 1–2 keep the chunks' see-through water. From
-  level 3 (`TINTED_WATER_LEVEL`, 8 m cells) liquids are not drawn: the floor faces they cover take
-  the colour seen through the near water (its colour blended over the floor at its opacity, in
-  linear light), so distant seas continue the near water's look — chosen over opaque water blocks
-  in a side-by-side playtest comparison.
+  top, as `Downsample` keeps it (`lod: sea`). Every level draws water as the chunks do: a
+  see-through surface (opacity 0.55, visible from both sides) 1/8 m below the cell grid, where the
+  chunks' water surface sits (the mesher's `waterDrop`, in cells), over the floor at its true
+  depth — so near and distant water join without a step, a seam or a change of look. (Opaque
+  water blocks, then a floor tinted as seen through water from level 3, came first; the tint
+  showed a seam, a brighter band and a hard edge where it began, in playtests.) All LOD sections'
+  water is one three.js `BatchedMesh` (`render/three/waterBatch.ts`): one draw call per pass,
+  sorted and culled per section. Drawn per section it added ~25% more draw calls in a coastal
+  view; batched it is within a few percent of the tinted floor's, for ~3–8% more triangles.
 - **Column surfaces** (true heights at a distance): a cell counts as filled from its bottom voxel,
   so drawing each column's top cell to its top lifted the ground by up to a cell — ~220 m at level
   8, ~2 km at level 12 — and seas to +2,048 m (level 12) and +6,144 m (level 13): the horizon
@@ -837,7 +841,11 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   steps (at most 1/4 cell — a pixel or two — off; finer steps cost several times the triangles),
   with walls to lower neighbours, tops of equal height merged into rectangles and walls into
   strips (1.2–2× the triangles of plain cell tops). A sea floor inside a water cell (a cell
-  taller than the sea is deep) is drawn at its depth, tinted. The cells themselves — and so the
+  taller than the sea is deep) is drawn at its depth, with the water's surface above it. Each
+  wall — those on a section's border included — is drawn by exactly one section (the one whose
+  surface cell it borders) into the opaque mesh; only the part the apron hides below it is a
+  skirt. (Border steps drawn as skirts alone were hidden between same-level sections: sky-blue
+  cracks along section borders, found in a playtest.) The cells themselves — and so the
   server, `Downsample`, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in

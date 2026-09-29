@@ -21,7 +21,7 @@ class FakeWorker implements WorkerLike {
     if (!job) throw new Error('no job');
     if (job.t === 'lod') {
       this.onmessage?.({
-        data: { t: 'lod', id: job.id, meshes: meshSection(job.cells, job.liquids, job.surface) },
+        data: { t: 'lod', id: job.id, meshes: meshSection(job.cells, job.options) },
       } as MessageEvent);
       return;
     }

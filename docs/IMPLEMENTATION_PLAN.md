@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); outstanding: the frame-rate check on a desktop and a mobile device | #14–#19 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#19 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -641,7 +641,7 @@ Deviations and additions (4c):
 - **Liquids count as filled** in `Downsample` (≥ 4 of 8 non-air, material from the columns' top
   filled cells) and a coarse `GenerateLod` cell over the sea is water: with solids and liquids
   counted apart, oceans showed their floor from afar (playtest feedback; `lod: sea` failed before
-  the change). From level 3 liquids meshed opaque (since replaced by a tinted floor, below). LOD
+  the change). From level 3 liquids meshed opaque (since replaced, below). LOD
   golden hashes regenerated.
 - **Creative flight replaces the dev camera** (playtest feedback: the "dev camera" was meant as a
   creative flying mode for the player). A new exclusive controller layer (PLAYER_CONTROLLER.md
@@ -677,7 +677,24 @@ Deviations and additions (4c):
   (via a temporary `?lodwater=tint` switch), the tinted floor was chosen: coarse liquids (level 3
   up) are left out and the floor under them is recoloured as seen through the near water. The
   opaque mode and the switch are gone. `lodSystem.test.ts` "draws coarse water as the floor under
-  it, tinted" failed while opaque was the default.
+  it, tinted" failed while opaque was the default. *Since replaced (next item).*
+- **Distant water see-through at every level** (playtest: a seam and a height step where near
+  water met LOD water, a brighter band at the transition, darker tinted seas, a hard edge where
+  the surface stopped at level 3): every level now draws the see-through surface over the floor
+  at its true depth, 1/8 m below the cell grid as the chunks draw it, at the chunks' opacity and
+  from both sides; the tint mode is gone. Compared with an improved tint (lit like the water's
+  surface) for cost: per-section water meshes added ~25% draw calls in a coastal view (triangles
+  +3–8%, meshing time equal), so all LOD water is one `BatchedMesh` — draw calls within a few
+  percent of the tint's. `lodMesher.test.ts` "draws a sea floor inside a water cell under a water
+  surface at the chunks' water height" and `lodSystem.test.ts` "draws water at every level as
+  see-through, at the chunks' water height" failed before the change.
+- **Cracks at section borders** (playtest: sky-blue gaps along lines in the terrain, since
+  column surfaces): a step between surfaces across a section border was drawn only as a skirt,
+  which is hidden when the neighbour section is at the same level. Border steps are now opaque
+  walls of the section that owns them (skirts keep only the part the apron hides). In the browser,
+  four downward views from 400 m (seed 5) showed 234–368 sky-coloured pixels before, 0 after;
+  `lodMesher.test.ts` "closes steps between surfaces across the section border without skirts"
+  failed before the fix.
 - **Snapshots dropped while flying (and swimming)** (phone playtest: terrain never finished
   loading after fast flight): `PlayerFlagsOf` resolved `kClimbing`/`kSwimming`/`kFlying` to the
   *ControllerFlags* constants of the same names, so a flying player's snapshot carried an
