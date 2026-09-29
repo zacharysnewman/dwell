@@ -49,11 +49,11 @@ function isLiquid(m: number): boolean {
 
 /**
  * How a section's liquids are drawn: `translucent` — see-through surfaces over the floor (fine
- * levels); `opaque` — like solids (a coarse sea has no floor under its surface to see through
- * to); `tint` — not drawn, the floor under them recoloured as seen through the near water
- * (its colour blended over the floor at its opacity), an alternative to `opaque` for comparison.
+ * levels, like the chunks); `tint` — not drawn, the floor under them recoloured as seen through
+ * the near water (its colour blended over the floor at its opacity): coarse levels, where a
+ * see-through surface over a coarse floor would sort and blend badly.
  */
-export type LiquidMode = 'translucent' | 'opaque' | 'tint';
+export type LiquidMode = 'translucent' | 'tint';
 
 const colors = new Map<number, number>();
 /** A material's flat colour on a face group (0 top, 1 side, 2 bottom). */
@@ -142,8 +142,8 @@ class Builder {
 
 /**
  * Meshes a section's cells (LOD_VOLUME, `lodCell` order); positions in cells, 0..32. Liquids per
- * `liquids` (LiquidMode): with `opaque` they are drawn like solids — culling and culled, with
- * skirts; with `tint` they are left out and the faces they cover take the tinted colour.
+ * `liquids` (LiquidMode): with `tint` they are left out and the faces they cover take the
+ * tinted colour.
  */
 export function meshSection(
   cells: Uint16Array,
@@ -181,7 +181,7 @@ export function meshSection(
           cell[axis] = d + sign;
           const n = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
           const liquid = translucent && isLiquid(m);
-          const nSolid = n !== 0 && (liquids === 'opaque' || !isLiquid(n));
+          const nSolid = n !== 0 && !isLiquid(n);
           const hidden = nSolid || (liquid && n !== 0);
           if (hidden && (!border || liquid)) continue;
           const tinting = tint && n !== 0 && n < TINT_IDS && isLiquid(n) ? n : 0;

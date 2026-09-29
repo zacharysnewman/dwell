@@ -84,8 +84,11 @@ class Jobs implements SectionSource, SectionMesher {
       });
     });
   }
-  meshSection(): Promise<SectionMeshes> {
+  /** How each meshing job was asked to draw liquids. */
+  liquids: string[] = [];
+  meshSection(_cells: Uint16Array, liquids = 'translucent'): Promise<SectionMeshes> {
     // Selection only needs to know a mesh exists (lodMesher.test.ts tests meshing itself).
+    this.liquids.push(liquids);
     return new Promise((resolve) =>
       this.pending.push(() => {
         resolve(EMPTY_MESHES);
@@ -303,6 +306,25 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
         expect(before[n] ?? Infinity).toBeLessThanOrEqual(levelAt(p));
       });
     }
+  });
+
+  it('draws coarse water as the floor under it, tinted (not as solid blocks)', async () => {
+    // Playtest choice: tinting matched the near, see-through water; solid blocks did not.
+    const jobs = new Jobs();
+    const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 64 * 1048576,
+      maxGenerationJobs: 64,
+      maxMeshJobs: 64,
+    });
+    // From 1,000 km up every section meshed is far coarser than level 3.
+    for (let i = 0; i < 200; i++) {
+      lod.update(camera([0, 1e6, 0], 0, -90), i * 16);
+      if (jobs.pending.length === 0 && lod.active) break;
+      await jobs.finish(() => 0, 1);
+    }
+    expect(jobs.liquids.length).toBeGreaterThan(0);
+    expect(new Set(jobs.liquids)).toEqual(new Set(['tint']));
   });
 
   it('refines by screen-space error: coarser with distance and altitude', async () => {

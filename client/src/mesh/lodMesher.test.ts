@@ -92,20 +92,4 @@ describe('LOD section mesher (§6.6)', () => {
     expect(expected & 0xff).toBeGreaterThan(lodColor(12, 0) & 0xff);
     expect(expected).not.toBe(lodColor(10, 0));
   });
-
-  it('draws liquids opaque at coarse levels, hiding what is below and with skirts', () => {
-    const cells = new Uint16Array(LOD_VOLUME);
-    for (let z = -1; z <= 32; z++) {
-      for (let x = -1; x <= 32; x++) {
-        cells[lodCell(x, 0, z)] = 12; // sand
-        cells[lodCell(x, 1, z)] = 10; // water
-      }
-    }
-    const m = meshSection(cells, 'opaque');
-    expect(quads(m.water)).toBe(0);
-    // The water's top, and the sand's bottom (nothing below it); the sand's top is hidden.
-    expect(quads(m.opaque)).toBe(2);
-    // Sides of both layers are hidden by the apron: skirts, water included.
-    for (const face of [0, 1, 4, 5]) expect(quads(m.skirts[face] ?? m.water)).toBe(2);
-  });
 });

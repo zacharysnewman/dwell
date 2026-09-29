@@ -56,8 +56,6 @@ export interface LodOptions {
   /** LodRequest pacing (sections per second, under the server's limit) and unanswered retry. */
   requestsPerSecond?: number;
   requestTimeoutMs?: number;
-  /** Liquids from OPAQUE_LIQUID_LEVEL up: opaque (default), or tinting the floor (`?lodwater=tint`). */
-  coarseLiquids?: 'opaque' | 'tint';
 }
 
 export interface LodStats {
@@ -120,8 +118,11 @@ const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
 const OFF_VIEW_PRIORITY = 1 / 8;
 /** Drawable chunks wait at most this long (ms) for the LOD levels above them (see findCovered). */
 export const FORCE_CHUNKS_AFTER_MS = 1000;
-/** From this level up liquids are drawn opaque (a coarse sea has no floor to see through to). */
-export const OPAQUE_LIQUID_LEVEL = 3;
+/**
+ * From this level up liquids are not drawn: the floor under them is tinted as seen through the
+ * near water (lodMesher LiquidMode `tint`); below it they are see-through like the chunks'.
+ */
+export const TINTED_WATER_LEVEL = 3;
 const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
   [1, 0, 0],
   [-1, 0, 0],
@@ -640,8 +641,7 @@ export class LodSystem {
     this.meshing++;
     const token = ++this.token;
     n.token = token;
-    const liquids =
-      n.coord[0] >= OPAQUE_LIQUID_LEVEL ? (this.options.coarseLiquids ?? 'opaque') : 'translucent';
+    const liquids = n.coord[0] >= TINTED_WATER_LEVEL ? 'tint' : 'translucent';
     void this.mesher.meshSection(cells, liquids).then((meshes) => {
       this.meshing--;
       n.meshing = false;

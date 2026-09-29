@@ -29,12 +29,16 @@ async function call(page: Page, expression: string): Promise<unknown> {
 test('local mode: LOD around the player, and the whole disc after flying up', async ({ page }) => {
   test.setTimeout(240_000);
   await page.goto('./?local=1');
+  // The streamed chunks around the player, then LOD sections beyond them (the chunks may show
+  // first: they never wait for the coarse levels).
   await expect
     .poll(async () => (await lod(page))?.chunkSections ?? 0, { timeout: 60_000 })
     .toBeGreaterThan(0);
-  const ground = await lod(page);
-  // LOD sections beyond the streamed chunks.
-  expect(ground?.drawn.reduce((a, b) => a + b, 0) ?? 0).toBeGreaterThan(0);
+  await expect
+    .poll(async () => (await lod(page))?.drawn.reduce((a, b) => a + b, 0) ?? 0, {
+      timeout: 60_000,
+    })
+    .toBeGreaterThan(0);
 
   // Fly up (running doubles the climb) to the ceiling, 24,000 km, looking straight down: the disc
   // (radius 8,192 km) fills ~2/3 of the view.

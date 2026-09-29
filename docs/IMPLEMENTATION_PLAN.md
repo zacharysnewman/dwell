@@ -641,7 +641,8 @@ Deviations and additions (4c):
 - **Liquids count as filled** in `Downsample` (≥ 4 of 8 non-air, material from the columns' top
   filled cells) and a coarse `GenerateLod` cell over the sea is water: with solids and liquids
   counted apart, oceans showed their floor from afar (playtest feedback; `lod: sea` failed before
-  the change). From level 3 liquids mesh opaque. LOD golden hashes regenerated.
+  the change). From level 3 liquids meshed opaque (since replaced by a tinted floor, below). LOD
+  golden hashes regenerated.
 - **Creative flight replaces the dev camera** (playtest feedback: the "dev camera" was meant as a
   creative flying mode for the player). A new exclusive controller layer (PLAYER_CONTROLLER.md
   §6.7) driven by a held `fly` input bit: no gravity, move along the view's yaw, jump up / crouch
@@ -672,9 +673,11 @@ Deviations and additions (4c):
   sRGB bytes used as linear, while the chunks' sRGB texture is decoded before lighting. They are
   now linear, and a tile's average is taken in linear light. `lodMesher.test.ts` "writes linear
   vertex colours" failed before the fix.
-- **Distant water, under comparison** (playtest request): `?lodwater=tint` draws coarse liquids
-  (level 3 up) as the floor under them, recoloured as seen through the near water, instead of
-  opaque blocks; off by default until chosen. `lodMesher.test.ts` "tint mode" covers it.
+- **Distant water as a tinted floor** (playtest): compared side by side with opaque water blocks
+  (via a temporary `?lodwater=tint` switch), the tinted floor was chosen: coarse liquids (level 3
+  up) are left out and the floor under them is recoloured as seen through the near water. The
+  opaque mode and the switch are gone. `lodSystem.test.ts` "draws coarse water as the floor under
+  it, tinted" failed while opaque was the default.
 - **Snapshots dropped while flying (and swimming)** (phone playtest: terrain never finished
   loading after fast flight): `PlayerFlagsOf` resolved `kClimbing`/`kSwimming`/`kFlying` to the
   *ControllerFlags* constants of the same names, so a flying player's snapshot carried an
@@ -692,7 +695,7 @@ Deviations and additions (4c):
   now reads the control stream to its end before reporting the close (`webTransport.test.ts`
   failed before; the e2e passed 15/15 after).
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
-  level, `?lodwater=tint` for the distant-water comparison.
+  level.
 
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section

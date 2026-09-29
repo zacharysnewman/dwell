@@ -822,15 +822,14 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
   material of the column's surface (not the bedrock its bottom voxel samples; a regression test
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
-  top, as `Downsample` keeps it (`lod: sea`). From level 3 (`OPAQUE_LIQUID_LEVEL`, 8 m cells)
-  liquids mesh opaque, culled and culling like solids and with skirts — a coarse sea has no floor
-  beneath its surface to see through to; levels 1–2 keep the chunks' see-through water. Under
-  comparison (`?lodwater=tint`, off by default): from level 3, liquids are left out and the floor
-  faces they cover take the colour seen through the near water (its colour blended over the floor
-  at its opacity, in linear light).
+  top, as `Downsample` keeps it (`lod: sea`). Levels 1–2 keep the chunks' see-through water. From
+  level 3 (`TINTED_WATER_LEVEL`, 8 m cells) liquids are not drawn: the floor faces they cover take
+  the colour seen through the near water (its colour blended over the floor at its opacity, in
+  linear light), so distant seas continue the near water's look — chosen over opaque water blocks
+  in a side-by-side playtest comparison.
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use and LOD bytes/s; `?lodcolors=1` tints sections
-  by level, `?lod=0` turns the LOD off, `?lodwater=tint` draws distant water as a tinted floor. Measured under Node with a fake worker pool, one frame's update
+  by level, `?lod=0` turns the LOD off. Measured under Node with a fake worker pool, one frame's update
   (selection, skirts, jobs) costs ~2–4 ms for ~2,800 drawn sections.
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
