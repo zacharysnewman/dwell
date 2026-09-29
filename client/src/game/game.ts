@@ -113,6 +113,13 @@ export class Game {
       this.terrain.onVoxelModification(m.chunks);
       return;
     }
+    if (
+      m.type === MessageType.LodIndex ||
+      m.type === MessageType.LodIndexUpdate ||
+      m.type === MessageType.LodData
+    ) {
+      return; // the LOD system (§6.6, Phase 4c)
+    }
     if (m.type === MessageType.PhysicsSnapshot) {
       if (m.serverTick <= this.lastSnapshotTick) return; // reordered datagram
       this.lastSnapshotTick = m.serverTick;

@@ -130,7 +130,7 @@ export class WebTransportTransport implements Transport {
     const first = await reader.read().catch(() => ({ value: undefined, done: true }));
     if (first.done || !first.value || first.value.length === 0) return;
     const channel = first.value[0];
-    if (channel !== Channel.world) {
+    if (channel !== Channel.world && channel !== Channel.lod) {
       this.fail('unexpected server stream');
       return;
     }

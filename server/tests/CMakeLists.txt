@@ -7,6 +7,7 @@ add_executable(dwell_tests
   server_test.cpp
   streaming_test.cpp
   block_edit_test.cpp
+  lod_server_test.cpp
   storage/storage_test.cpp
   player/movement_test.cpp
   player/vertical_crouch_test.cpp

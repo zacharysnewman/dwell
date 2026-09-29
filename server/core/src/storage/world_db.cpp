@@ -39,10 +39,22 @@ constexpr const char* kMigrations[] = {
         at INTEGER NOT NULL,
         PRIMARY KEY (public_key, kind)) WITHOUT ROWID;
     )sql",
+    // 1 → 2: the LOD cache (Phase 4, §6.6).
+    R"sql(
+      CREATE TABLE lod_sections (
+        level INTEGER NOT NULL, i INTEGER NOT NULL, j INTEGER NOT NULL, k INTEGER NOT NULL,
+        revision INTEGER NOT NULL,
+        dirty INTEGER NOT NULL,
+        generator_version INTEGER NOT NULL,
+        data BLOB NOT NULL,
+        PRIMARY KEY (level, i, j, k)) WITHOUT ROWID;
+    )sql",
 };
 static_assert(std::size(kMigrations) == kFormatVersion);
 
 constexpr int kZstdLevel = 3;
+// Palette + RLE of one LOD section is at most palette (2 + 2·65535) + runs (4 per cell).
+constexpr std::size_t kMaxLodBytes = 2 + 2 * 65535 + 5ull * core::kLodVolume;
 
 const char* KindName(PermissionKind k) {
   return k == PermissionKind::kOp ? "op" : k == PermissionKind::kBan ? "ban" : "allow";
@@ -71,7 +83,11 @@ class Stmt {
     return *this;
   }
   Stmt& Blob(int i, std::span<const std::uint8_t> v) {
-    sqlite3_bind_blob(s_, i, v.data(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
+    if (v.empty()) {
+      sqlite3_bind_zeroblob(s_, i, 0);  // an empty blob, not NULL
+    } else {
+      sqlite3_bind_blob(s_, i, v.data(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
+    }
     return *this;
   }
   // SQLITE_ROW, SQLITE_DONE, or an error.
@@ -213,6 +229,33 @@ std::optional<SavedChunk> WorldDb::LoadChunk(const core::ChunkCoord& c) {
   return SavedChunk{c, static_cast<std::uint32_t>(s.ColInt(0)), std::move(*voxels)};
 }
 
+std::vector<SavedLodSection> WorldDb::LodSections(std::uint32_t generator_version, bool& stale) {
+  stale = false;
+  std::vector<SavedLodSection> out;
+  Stmt s(db_, "SELECT level, i, j, k, revision, dirty, generator_version, data FROM lod_sections;");
+  while (s.Step() == SQLITE_ROW) {
+    if (static_cast<std::uint32_t>(s.ColInt(6)) != generator_version) {
+      stale = true;
+      continue;
+    }
+    SavedLodSection l;
+    l.coord = {static_cast<int>(s.ColInt(0)), static_cast<std::int32_t>(s.ColInt(1)),
+               static_cast<std::int32_t>(s.ColInt(2)), static_cast<std::int32_t>(s.ColInt(3))};
+    l.revision = static_cast<std::uint32_t>(s.ColInt(4));
+    l.dirty = s.ColInt(5) != 0;
+    if (const auto blob = s.ColBlob(7); !blob.empty()) {
+      auto raw = DecompressBytes(blob, kMaxLodBytes);
+      if (!raw) {
+        l.dirty = true;  // unreadable: compute it again
+      } else {
+        l.encoded = std::move(*raw);
+      }
+    }
+    out.push_back(std::move(l));
+  }
+  return out;
+}
+
 std::optional<PlayerRecord> WorldDb::LoadPlayer(const protocol::PublicKey& key) {
   Stmt s(db_,
          "SELECT display_name, state, first_seen, last_seen FROM players WHERE public_key = ?;");
@@ -328,6 +371,17 @@ bool WorldDb::Save(const SaveBatch& batch, std::string& error) {
       put.Reset();
     }
   }
+  if (batch.clear_lod && !Exec("DELETE FROM lod_sections;", &error)) return fail("lod_sections");
+  if (!batch.lod_sections.empty()) {
+    Stmt put(db_, "INSERT OR REPLACE INTO lod_sections VALUES (?, ?, ?, ?, ?, ?, ?, ?);");
+    for (const SavedLodSection& l : batch.lod_sections) {
+      put.Int(1, l.coord.level).Int(2, l.coord.i).Int(3, l.coord.j).Int(4, l.coord.k);
+      put.Int(5, l.revision).Int(6, l.dirty ? 1 : 0).Int(7, generator_version);
+      put.Blob(8, l.encoded.empty() ? std::vector<std::uint8_t>{} : CompressBytes(l.encoded));
+      if (put.Step() != SQLITE_DONE) return fail("lod_sections");
+      put.Reset();
+    }
+  }
   if (!batch.players.empty()) {
     Stmt put(db_,
              "INSERT INTO players VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (public_key) DO UPDATE "
@@ -365,8 +419,7 @@ bool DecodePlayerState(std::span<const std::uint8_t> bytes, PlayerRecord& p) {
   return r.AtEnd();
 }
 
-std::vector<std::uint8_t> CompressChunk(const std::vector<std::uint16_t>& voxels) {
-  const auto raw = protocol::EncodeChunkVoxels(voxels);
+std::vector<std::uint8_t> CompressBytes(std::span<const std::uint8_t> raw) {
   std::vector<std::uint8_t> out(ZSTD_compressBound(raw.size()));
   const std::size_t n = ZSTD_compress(out.data(), out.size(), raw.data(), raw.size(), kZstdLevel);
   if (ZSTD_isError(n)) return {};
@@ -374,17 +427,28 @@ std::vector<std::uint8_t> CompressChunk(const std::vector<std::uint16_t>& voxels
   return out;
 }
 
-std::optional<std::vector<std::uint16_t>> DecompressChunk(std::span<const std::uint8_t> blob) {
+std::optional<std::vector<std::uint8_t>> DecompressBytes(std::span<const std::uint8_t> blob,
+                                                         std::size_t max_size) {
   const unsigned long long size = ZSTD_getFrameContentSize(blob.data(), blob.size());
-  // Palette + RLE of one chunk is at most palette (2 + 2·32768) + runs (4 per voxel): bounded.
-  constexpr unsigned long long kMaxRaw = 2 + 2 * core::kChunkVolume + 5ull * core::kChunkVolume;
-  if (size == ZSTD_CONTENTSIZE_ERROR || size == ZSTD_CONTENTSIZE_UNKNOWN || size > kMaxRaw) {
+  if (size == ZSTD_CONTENTSIZE_ERROR || size == ZSTD_CONTENTSIZE_UNKNOWN || size > max_size) {
     return std::nullopt;
   }
   std::vector<std::uint8_t> raw(size);
   const std::size_t n = ZSTD_decompress(raw.data(), raw.size(), blob.data(), blob.size());
   if (ZSTD_isError(n) || n != size) return std::nullopt;
-  return protocol::DecodeChunkVoxels(raw);
+  return raw;
+}
+
+std::vector<std::uint8_t> CompressChunk(const std::vector<std::uint16_t>& voxels) {
+  return CompressBytes(protocol::EncodeChunkVoxels(voxels));
+}
+
+std::optional<std::vector<std::uint16_t>> DecompressChunk(std::span<const std::uint8_t> blob) {
+  // Palette + RLE of one chunk is at most palette (2 + 2·32768) + runs (4 per voxel): bounded.
+  constexpr std::size_t kMaxRaw = 2 + 2 * core::kChunkVolume + 5ull * core::kChunkVolume;
+  const auto raw = DecompressBytes(blob, kMaxRaw);
+  if (!raw) return std::nullopt;
+  return protocol::DecodeChunkVoxels(*raw);
 }
 
 }  // namespace dwell::storage

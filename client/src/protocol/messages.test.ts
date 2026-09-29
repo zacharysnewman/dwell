@@ -11,6 +11,7 @@ import {
   DamageCause,
   GroundKind,
   InputButtons,
+  LodForm,
   MessageType,
   PlayerEventKind,
   PlayerFlags,
@@ -104,6 +105,30 @@ function testVoxels(material: (x: number, y: number, z: number) => number): Uint
     for (let y = 0; y < CHUNK_SIZE; y++)
       for (let x = 0; x < CHUNK_SIZE; x++) v[x | (y << 5) | (z << 10)] = material(x, y, z);
   return v;
+}
+
+/** Test LOD section "strata" (make_vectors.py lod_cell): cells −1..32 in layer order. */
+function strataSection(): Uint16Array {
+  const P = 34;
+  const out = new Uint16Array(P ** 3);
+  for (let y = -1; y < P - 1; y++)
+    for (let z = -1; z < P - 1; z++)
+      for (let x = -1; x < P - 1; x++) {
+        const m =
+          y === -1
+            ? 1
+            : x === -1 && z === 5
+              ? 17
+              : y < 12
+                ? 2
+                : y === 12
+                  ? 4
+                  : y < 16 && x > 20
+                    ? 10
+                    : 0;
+        out[x + 1 + P * (z + 1 + P * (y + 1))] = m;
+      }
+  return out;
 }
 
 const expected: Record<string, Message> = {
@@ -277,6 +302,52 @@ const expected: Record<string, Message> = {
       [0, -1, 2],
       [256000, 191, -256000],
     ],
+  },
+  lod_index: {
+    type: MessageType.LodIndex,
+    last: true,
+    entries: [
+      { i: 1024, k: 1023, revision: 7 },
+      { i: 0, k: 2047, revision: 4000000000 },
+    ],
+  },
+  lod_index_empty: { type: MessageType.LodIndex, last: true, entries: [] },
+  lod_index_part: {
+    type: MessageType.LodIndex,
+    last: false,
+    entries: [{ i: -5, k: 3, revision: 1 }],
+  },
+  lod_index_update: { type: MessageType.LodIndexUpdate, entries: [{ i: 5, k: 6, revision: 9 }] },
+  lod_request: {
+    type: MessageType.LodRequest,
+    sections: [
+      { level: 3, section: [-4, 17, 8], knownRevision: 0 },
+      { level: 19, section: [0, 0, 0], knownRevision: 12 },
+    ],
+  },
+  lod_data_generated: {
+    type: MessageType.LodData,
+    form: LodForm.Generated,
+    level: 5,
+    section: [100, 3, -2],
+    revision: 0,
+    cells: null,
+  },
+  lod_data_unchanged: {
+    type: MessageType.LodData,
+    form: LodForm.Unchanged,
+    level: 12,
+    section: [1, 0, 2],
+    revision: 77,
+    cells: null,
+  },
+  lod_data_explicit: {
+    type: MessageType.LodData,
+    form: LodForm.Explicit,
+    level: 1,
+    section: [131072, 32, 131071],
+    revision: 42,
+    cells: strataSection(),
   },
   reject: {
     type: MessageType.Reject,

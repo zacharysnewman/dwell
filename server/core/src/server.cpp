@@ -33,6 +33,16 @@ constexpr std::size_t kMaxQueuedEdits = 8;      // per session per tick; more ar
 constexpr double kEditsPerTick = 1000.0 / (kBlockEditIntervalMs * kSimHz);
 constexpr double kEditBurst = 3.0;
 constexpr int kMaxSavedLoadsPerTick = 16;  // saved chunks read from the world file per tick
+// Level of detail (§6.6).
+constexpr std::uint32_t kIndexUpdateEveryTicks =
+    static_cast<std::uint32_t>(kLodIndexUpdateMs * kSimHz / 1000);
+constexpr std::size_t kMaxQueuedLodRequests = 256;  // per session; more are dropped
+constexpr double kLodRequestsPerTick = static_cast<double>(kLodRequestsPerSecond) / kSimHz;
+
+std::uint64_t IndexKey(std::int32_t i, std::int32_t k) {
+  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(i)) << 32) |
+         static_cast<std::uint32_t>(k);
+}
 
 ChunkCoord ChunkAt(double x, double y, double z) {
   return ChunkOf(static_cast<std::int32_t>(std::floor(x)), static_cast<std::int32_t>(std::floor(y)),
@@ -84,7 +94,10 @@ Server::Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs)
       worldgen_(config_.generator_override
                     ? config_.generator_override
                     : GeneratorFor(config_.generator_version, config_.world_seed),
-                config_.worldgen_threads) {
+                config_.worldgen_threads),
+      lod_(
+          LodGeneratorFor(config_.generator_version, config_.world_seed),
+          config_.lod_threads >= 0 ? config_.lod_threads : (config_.worldgen_threads > 0 ? 1 : 0)) {
   if (!config_.spawn) config_.spawn = SpawnPointFor(config_.generator_version, config_.world_seed);
   const auto& at = *config_.spawn;
   const ChunkCoord spawn_chunk = ChunkAt(at[0], at[1], at[2]);
@@ -291,6 +304,7 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
           check && s.chunk_mode == ChunkMode::kAwaitingCheck) {
         s.chunk_mode = check->hash != 0 && check->hash == verification_hash_ ? ChunkMode::kGenerated
                                                                              : ChunkMode::kFull;
+        SendLodIndex(id, s);  // §6.6: the modified sections, right after the check
       } else if (const auto* edit = std::get_if<BlockEditRequest>(&m)) {
         if (s.edits.size() < kMaxQueuedEdits) {
           s.edits.push_back(*edit);
@@ -299,6 +313,18 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
         }
       } else if (const auto* resync = std::get_if<ChunkResync>(&m)) {
         Resync(id, s, *resync);
+      } else if (const auto* lod = std::get_if<LodRequest>(&m)) {
+        // Rate-limited (LOD_REQUESTS_PER_SECOND, a token bucket); answered within the lod budget.
+        for (const LodSectionRequest& r : lod->sections) {
+          if (s.chunk_mode == ChunkMode::kAwaitingCheck || s.lod_request_credit < 1.0 ||
+              s.lod_requests.size() >= kMaxQueuedLodRequests) {
+            ++s.lod_stats.requests_dropped;
+            continue;
+          }
+          s.lod_request_credit -= 1.0;
+          ++s.lod_stats.requests;
+          s.lod_requests.push_back(r);
+        }
       }
       return;
   }
@@ -475,6 +501,9 @@ void Server::Step() {
   explicit_wanted_.clear();
   for (auto& [id, s] : sessions_) StreamChunks(id, s);
   UpdateWorldgen();
+
+  // 6b. Level of detail: propagation off the tick, index updates, answers to requests (§6.6).
+  UpdateLod();
 
   // 7. Autosave (§6.4): prepared here, committed off the tick.
   if (config_.store && tick_ >= next_save_tick_) SaveNow();
@@ -682,6 +711,7 @@ void Server::ApplyEdits() {
                                    cell[2] - coord.z * kChunkSize);
       world_.GetOrCreate(coord).SetAt(local, outcome.material);
       dirty_.insert(coord);
+      lod_.MarkChunk(coord);
       auto [at, inserted] = index.try_emplace(coord, changed.size());
       if (inserted) changed.push_back({{coord.x, coord.y, coord.z}, 0, {}});
       auto& changes = changed[at->second].changes;
@@ -794,6 +824,130 @@ void Server::SendSnapshots() {
   }
 }
 
+std::vector<std::array<double, 3>> Server::PlayerPositions() const {
+  std::vector<std::array<double, 3>> out;
+  for (const auto& [id, s] : sessions_) {
+    if (s.phase != Phase::kJoined) continue;
+    if (s.handle) {
+      const RVec3 p = players_.Position(*s.handle);
+      out.push_back({p.GetX(), p.GetY(), p.GetZ()});
+    } else {
+      out.push_back({s.death_position[0], s.death_position[1], s.death_position[2]});
+    }
+  }
+  return out;
+}
+
+LodPropagation::ModifiedChunk Server::ModifiedChunkLookup() {
+  return [this](const ChunkCoord& c) -> const Chunk* {
+    const Chunk* chunk = world_.Find(c);
+    if (!chunk && IsSaved(c)) chunk = &world_.GetOrCreate(c);  // read from the world file
+    return chunk && chunk->revision() > 0 ? chunk : nullptr;
+  };
+}
+
+void Server::DrainLod() {
+  lod_.Drain(PlayerPositions(), ModifiedChunkLookup());
+  UpdateLod();
+}
+
+void Server::UpdateLod() {
+  lod_.Step(PlayerPositions(), ModifiedChunkLookup(), kLodPropagationSectionsPerTick,
+            std::chrono::microseconds(config_.lod_budget_us));
+  for (const LodCoord& c : lod_.TakeWritten()) {
+    lod_unsaved_.insert(c);
+    if (c.level == kLodIndexLevel) {
+      index_updates_[IndexKey(c.i, c.k)] = {c.i, c.k, lod_.Find(c)->revision};
+    }
+  }
+  // Index changes, coalesced to at most one LodIndexUpdate per LOD_INDEX_UPDATE_MS.
+  if (!index_updates_.empty() && tick_ >= next_index_update_tick_) {
+    next_index_update_tick_ = tick_ + kIndexUpdateEveryTicks;
+    std::vector<LodIndexEntry> entries;
+    for (const auto& [key, e] : index_updates_) entries.push_back(e);
+    index_updates_.clear();
+    for (std::size_t from = 0; from < entries.size(); from += kMaxLodIndexEntries) {
+      LodIndexUpdate m;
+      m.entries.assign(entries.begin() + static_cast<std::ptrdiff_t>(from),
+                       entries.begin() + static_cast<std::ptrdiff_t>(
+                                             std::min(entries.size(), from + kMaxLodIndexEntries)));
+      const auto bytes = Encode(m);
+      for (auto& [id, s] : sessions_) {
+        if (!s.lod_index_sent) continue;
+        ++s.lod_stats.index_updates;
+        s.lod_stats.index_entries += static_cast<std::uint32_t>(m.entries.size());
+        s.lod_stats.bytes += bytes.size();
+        outbox_.push_back({id, Outgoing::Kind::kReliable, Channel::kLod, bytes});
+      }
+    }
+  }
+  for (auto& [id, s] : sessions_) {
+    if (s.phase != Phase::kJoined) continue;
+    s.lod_request_credit = std::min(s.lod_request_credit + kLodRequestsPerTick,
+                                    static_cast<double>(kLodRequestsPerSecond));
+    ServeLod(id, s);
+  }
+}
+
+void Server::SendLodIndex(SessionId id, Session& s) {
+  std::vector<LodIndexEntry> entries;
+  for (const auto& [c, section] : lod_.sections()) {
+    if (c.level == kLodIndexLevel) entries.push_back({c.i, c.k, section.revision});
+  }
+  std::size_t from = 0;
+  do {
+    LodIndex m;
+    const std::size_t to = std::min(entries.size(), from + kMaxLodIndexEntries);
+    m.entries.assign(entries.begin() + static_cast<std::ptrdiff_t>(from),
+                     entries.begin() + static_cast<std::ptrdiff_t>(to));
+    m.last = to == entries.size();
+    const auto bytes = Encode(m);
+    s.lod_stats.index_entries += static_cast<std::uint32_t>(m.entries.size());
+    s.lod_stats.bytes += bytes.size();
+    outbox_.push_back({id, Outgoing::Kind::kReliable, Channel::kLod, bytes});
+    from = to;
+  } while (from < entries.size());
+  s.lod_index_sent = true;
+}
+
+void Server::ServeLod(SessionId id, Session& s) {
+  const double per_tick = static_cast<double>(config_.lod_bytes_per_second) / kSimHz;
+  s.lod_credit = std::min(s.lod_credit + per_tick, per_tick);
+  while (!s.lod_requests.empty() && s.lod_credit > 0) {
+    const LodSectionRequest& r = s.lod_requests.front();
+    const LodCoord c{r.level, r.section[0], r.section[1], r.section[2]};
+    LodData m;
+    m.level = r.level;
+    m.section = r.section;
+    m.form = LodForm::kGenerated;
+    if (!LodInWorld(c)) {
+      // Nothing there: the client's generator says so too.
+    } else if (const LodSection* section = lod_.Find(c)) {
+      m.revision = section->revision;
+      if (r.known_revision == section->revision) {
+        m.form = LodForm::kUnchanged;
+      } else {
+        m.form = LodForm::kExplicit;
+        m.cells = lod_.CellsForClient(c);
+      }
+    } else if (s.chunk_mode == ChunkMode::kFull) {
+      // Unmodified (or not written yet), and the client cannot generate: send it generated.
+      const auto* encoded = lod_.Generated(c);
+      if (!encoded) break;  // generating; answered on a later tick, in order
+      m.form = LodForm::kExplicit;
+      m.cells = *DecodeLodCells(*encoded);
+    }
+    const auto bytes = Encode(m);
+    s.lod_credit -= static_cast<double>(bytes.size());
+    s.lod_stats.bytes += bytes.size();
+    ++(m.form == LodForm::kGenerated  ? s.lod_stats.generated_sent
+       : m.form == LodForm::kExplicit ? s.lod_stats.explicit_sent
+                                      : s.lod_stats.unchanged_sent);
+    outbox_.push_back({id, Outgoing::Kind::kReliable, Channel::kLod, std::move(bytes)});
+    s.lod_requests.pop_front();
+  }
+}
+
 bool Server::IsAir(const ChunkCoord& c) const { return air_test_ && !IsSaved(c) && air_test_(c); }
 
 ServerConfig Server::WithSavedWorld(ServerConfig config) {
@@ -813,6 +967,17 @@ void Server::InitStorage() {
   const bool fresh = !db.LoadMeta();
   if (const auto meta = db.LoadMeta()) tick_ = meta->world_tick;
   for (const auto& [coord, revision] : db.ChunkIndex()) saved_[coord] = revision;
+  // The LOD cache (§6.6): restored as saved, rebuilt from the chunks when it belongs to another
+  // generator version, and derived for saved chunks it does not cover (older worlds).
+  bool stale = false;
+  for (auto& row : db.LodSections(config_.generator_version, stale)) {
+    if (!row.encoded.empty()) lod_.Restore(row.coord, {row.revision, std::move(row.encoded)});
+    if (row.dirty || !lod_.Find(row.coord)) lod_.MarkDirty(row.coord);
+  }
+  lod_rebuild_ = stale;
+  for (const auto& [coord, revision] : saved_) {
+    if (!lod_.Modified(LodParent(LodOfChunk(coord)))) lod_.MarkChunk(coord);
+  }
   world_.SetSaved({[this](const ChunkCoord& c) { return IsSaved(c); },
                    [this](const ChunkCoord& c) -> std::unique_ptr<Chunk> {
                      const auto saved = config_.store->db().LoadChunk(c);
@@ -857,10 +1022,34 @@ void Server::SaveNow() {
   }
   dirty_.clear();
   batch.players = std::exchange(departed_, {});
+  // LOD sections written since the last save, and those still to compute (saved dirty).
+  std::vector<LodCoord> lod_saved;
+  for (const LodCoord& c : lod_unsaved_) {
+    const LodSection* section = lod_.Find(c);
+    if (!section) continue;
+    batch.lod_sections.push_back(
+        {c, section->revision, lod_.dirty().count(c) != 0, section->encoded});
+    lod_saved.push_back(c);
+  }
+  // Sections still to compute (dirty, or computing now) are saved dirty, to recompute on load.
+  for (const auto* pending : {&lod_.dirty(), &lod_.in_flight()}) {
+    for (const LodCoord& c : *pending) {
+      const LodSection* section = lod_.Find(c);
+      if (lod_unsaved_.count(c) && section) {
+        continue;  // saved above, flagged dirty
+      }
+      batch.lod_sections.push_back({c, section ? section->revision : 0, true,
+                                    section ? section->encoded : std::vector<std::uint8_t>{}});
+    }
+  }
+  lod_unsaved_.clear();
+  batch.clear_lod = std::exchange(lod_rebuild_, false);
   for (const auto& [id, s] : sessions_) {
     if (s.phase == Phase::kJoined) batch.players.push_back(RecordOf(s));
   }
-  in_flight_[config_.store->Save(std::move(batch))] = std::move(revisions);
+  const std::uint64_t save_id = config_.store->Save(std::move(batch));
+  in_flight_[save_id] = std::move(revisions);
+  lod_in_flight_[save_id] = std::move(lod_saved);
   CollectSaves();  // saves commit inline without an I/O thread
 }
 
@@ -869,6 +1058,10 @@ void Server::CollectSaves() {
   for (const auto& result : config_.store->TakeCompleted()) {
     const auto it = in_flight_.find(result.id);
     if (it == in_flight_.end()) continue;
+    if (const auto lod = lod_in_flight_.find(result.id); lod != lod_in_flight_.end()) {
+      if (!result.ok) lod_unsaved_.insert(lod->second.begin(), lod->second.end());
+      lod_in_flight_.erase(lod);
+    }
     if (result.ok) {
       ++save_stats_.saves;
       for (const auto& [coord, revision] : it->second) {
@@ -931,6 +1124,11 @@ std::optional<PlayerHandle> Server::PlayerHandleOf(std::uint16_t player_id) cons
 std::optional<SessionStats> Server::StatsOf(std::uint16_t player_id) const {
   const Session* s = SessionOfPlayer(player_id);
   return s ? std::optional<SessionStats>(s->stats) : std::nullopt;
+}
+
+std::optional<LodStats> Server::LodStatsOf(std::uint16_t player_id) const {
+  const Session* s = SessionOfPlayer(player_id);
+  return s ? std::optional<LodStats>(s->lod_stats) : std::nullopt;
 }
 
 std::optional<StreamStats> Server::StreamStatsOf(std::uint16_t player_id) const {

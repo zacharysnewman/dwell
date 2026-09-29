@@ -68,6 +68,7 @@ cppEnum('GroundKind', 'std::uint8_t', c.groundKinds);
 cppEnum('PlayerEventKind', 'std::uint8_t', c.playerEventKinds);
 cppEnum('DamageCause', 'std::uint8_t', c.damageCauses);
 cppEnum('ChunkForm', 'std::uint8_t', c.chunkForms);
+cppEnum('LodForm', 'std::uint8_t', c.lodForms);
 cppEnum('BlockEditAction', 'std::uint8_t', c.blockEditActions);
 cppEnum('VoxelModificationReason', 'std::uint8_t', c.voxelModificationReasons);
 const maxOf = (obj) => Math.max(...Object.values(obj));
@@ -77,6 +78,7 @@ cpp.push(`inline constexpr std::uint8_t kMaxGroundKind = ${maxOf(c.groundKinds)}
 cpp.push(`inline constexpr std::uint8_t kMaxPlayerEventKind = ${maxOf(c.playerEventKinds)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxDamageCause = ${maxOf(c.damageCauses)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxChunkForm = ${maxOf(c.chunkForms)};`);
+cpp.push(`inline constexpr std::uint8_t kMaxLodForm = ${maxOf(c.lodForms)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxBlockEditAction = ${maxOf(c.blockEditActions)};`);
 cpp.push(
   `inline constexpr std::uint8_t kMaxVoxelModificationReason = ${maxOf(c.voxelModificationReasons)};`,
@@ -146,6 +148,7 @@ tsEnum('GroundKind', c.groundKinds);
 tsEnum('PlayerEventKind', c.playerEventKinds);
 tsEnum('DamageCause', c.damageCauses);
 tsEnum('ChunkForm', c.chunkForms);
+tsEnum('LodForm', c.lodForms);
 tsEnum('BlockEditAction', c.blockEditActions);
 tsEnum('VoxelModificationReason', c.voxelModificationReasons);
 const tsFlags = (name, obj) => {

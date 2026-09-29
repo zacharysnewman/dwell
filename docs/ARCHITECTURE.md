@@ -559,7 +559,7 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   are loaded ("Loading terrain…"). The client sim treats missing chunks as air, and its terrain
   collision rebuilds a chunk when it or a neighbour arrives.
 
-### 6.4 World Persistence **[built, Phase 3e]** (bodies, LOD cache, backups, export UI: later)
+### 6.4 World Persistence **[built, Phase 3e; LOD cache Phase 4b]** (bodies, backups, export UI: later)
 
 Decision: [ADR 0006](./adr/0006-world-persistence-sqlite.md). Each world is **one SQLite database
 file** holding **all** of its data; nothing about a world lives in side files.
@@ -569,7 +569,7 @@ file** holding **all** of its data; nothing about a world lives in side files.
 | `meta` | Format version, world seed, generator version, spawn, world time, timestamps, preview image |
 | `settings` | Name, MOTD, icon, max players, visibility, password hash, online/offline mode, physics/view caps, autosave and backup policy |
 | `chunks` | Modified chunks only: `(cx, cy, cz)`, revision, generator version, zstd-compressed palette + RLE blob (same encoding as `ChunkData Explicit`) |
-| `lod_sections` | **[Phase 4]** Cache of modified LOD sections (§6.6): `(level, i, j, k)`, `lodRevision`, dirty flag, zstd-compressed palette + RLE blob; derivable from `chunks`, rebuilt on a generator version change |
+| `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)`, `lodRevision`, dirty flag, generator version, zstd-compressed palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks`, rebuilt on a generator version change |
 | `players` | Keyed by device public key: display name, state blob (position, health, later inventory), first/last seen |
 | `bodies` | In-flight Tier 1 clusters (voxel layout, transform, velocities) |
 | `permissions` | Ops, bans, allow-list by public key, with reason/by/when |
@@ -577,8 +577,12 @@ file** holding **all** of its data; nothing about a world lives in side files.
 **Built (schema v1):** `meta` (key/value: `format_version`, `world_seed`, `generator_version`,
 `spawn_x/y/z`, `world_tick`, `created_at`, `saved_at`), `settings` (key/value text), `chunks`
 (`WITHOUT ROWID`, keyed by coordinate), `players` (state blob v1: feet `f64×3`, health) and
-`permissions` (`op` / `ban` / `allow`, reason, granted by, when). `bodies` (Phase 5) and
-`lod_sections` (Phase 4) arrive as migrations.
+`permissions` (`op` / `ban` / `allow`, reason, granted by, when). **Schema v2 (Phase 4b)** adds
+`lod_sections` (a migration from v1, tested). The server restores it at startup (dirty rows are
+recomputed), drops and rebuilds it from the chunks when its rows belong to another generator
+version, and derives it for saved chunks it does not cover (worlds saved before Phase 4); each
+autosave writes the sections written since the last save and those still to compute (flagged
+dirty) in the same transaction as the chunks. `bodies` (Phase 5) arrives as a migration.
 
 - **Same code everywhere:** SQLite and zstd are compiled into `server/core` (`core/storage`:
   `WorldDb`, the file's schema and records; `WorldStore`, the server's handle on it).
@@ -727,21 +731,34 @@ order (`EncodeLodCells`; `writeLodCells` in TypeScript); a terrain section near 
   every cell is air or sea and below which every cell is solid; `GenerateLod` classifies by the
   same bounds, so it returns `Empty` or `Buried` exactly when the bounds say so.
 
-**Server.** A chunk edit (any source: edits, collapses, re-bakes) marks its level-1 section dirty.
-Off the tick, a budgeted job (`LOD_PROPAGATION_SECTIONS_PER_TICK`) re-downsamples dirty sections
-nearest to players first, marking each parent dirty, up to the root (≤ 19 sections per edited
-chunk). Each write takes a `lodRevision` from a server-wide counter. Sections are cached in
-`lod_sections` (§6.4); the cache is derivable from chunks and rebuilt on a generator version change.
+**Server** **[built, Phase 4b]** (`core/lod_propagation.h`, `Server::UpdateLod`). A chunk edit (any
+source: edits now; collapses and re-bakes later) marks its level-1 section dirty. Each tick at most
+`LOD_PROPAGATION_SECTIONS_PER_TICK` dirty sections — lowest level first (children before parents),
+then nearest to a player — are snapshotted on the tick (the content of their modified children:
+chunks for level 1, cached sections above) and computed off it: `GenerateLod` of the section with
+the octant of each *modified* child replaced by that child's downsample (unmodified octants keep
+the generated cells, so a build changes only the octants above it). Writing a section gives it the
+next `lodRevision` from a server-wide counter and marks its parent dirty, up to the root (19
+sections per edited chunk; a section dirtied again while being computed is recomputed after).
+The dedicated server computes on one thread; the browser's local mode on its tick within 2 ms.
+A modified section's stored apron is generated; the server fills it from its modified same-level
+neighbours' borders when it sends the section. Sections are cached in `lod_sections` (§6.4). In a
+test, an edit reaches the root within 19 ticks and a far client's index 8 ticks after the edit.
 
-**Streaming** (§8.3). After `WorldgenCheck`, the server sends the **LOD index**: every modified
+**Streaming** (§8.3) **[built on the server, Phase 4b; client 4c]**. After `WorldgenCheck`, the server sends the **LOD index**: every modified
 section at `LOD_INDEX_LEVEL` = 8 with its revision (`LodIndex`), then changes as propagation writes
 them (`LodIndexUpdate`, coalesced to at most one per `LOD_INDEX_UPDATE_MS`). From the index the
 client knows exactly which sections at level ≥ 8 are modified, and that any section below an
 unindexed level-8 section is not; it generates all unmodified sections itself. For the rest it
 sends `LodRequest(L, coord, knownRevision)` and receives `LodData` — `Generated`, `Explicit`, or
-`Unchanged` — on the `lod` stream within `LOD_BYTES_PER_SECOND`. When an index entry's revision
+`Unchanged` — on the `lod` stream within `LOD_BYTES_PER_SECOND` (a byte credit per tick, like
+chunks). `Generated` means nothing under the section is modified *yet*: a section still being
+computed answers `Generated`, and the index update that follows its level-8 ancestor's write makes
+the client ask again. Requests are limited to `LOD_REQUESTS_PER_SECOND` per client (a token
+bucket; the rest are dropped and counted) and at most 256 queued. When an index entry's revision
 changes, the client re-requests the sections it holds below it. In full-chunk mode (§6.3) every
-request is answered `Explicit`. Every player's builds are therefore visible from anywhere.
+request is answered `Explicit` (unmodified sections generated by the server's LOD thread, 256 kept).
+Every player's builds are therefore visible from anywhere.
 
 **Client** (`lod/`). Each frame the octree is walked from the root around the **camera**:
 - A node is refined while its cells project larger than `LOD_PIXEL_ERROR` pixels (screen-space
@@ -868,6 +885,8 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `REACH_DISTANCE` | 5 m | Block break/place reach from the eye (§6.5; the server allows 1 m more for latency) |
 | `BLOCK_EDIT_INTERVAL_MS` | 100 ms | Minimum time between a player's block edits (§6.5; server: token bucket, bursts of 3) |
 | `MAX_RESYNC_CHUNKS` | 64 | Chunks per `ChunkResync` request |
+| `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~192 KB, under SCTP's 256 KiB) |
+| `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
 | **Terrain (§6.3)** | | |
 | `WORLD_MIN_Y` / `WORLD_MAX_Y` | −2 048 / 6 144 | Vertical world bounds (8,192 m, ¾ above sea level) |
 | `WORLD_RADIUS` | 8 192 000 m | Radius of the world disc; beyond it, the void |
@@ -918,7 +937,7 @@ Implementations:
 | `control` | client-opened bidi stream | data channel id 0, reliable, ordered | worker message |
 | `world` | server-opened uni stream | data channel id 1, reliable, ordered | worker message |
 | datagrams | QUIC datagrams | data channel id 2, unordered, `maxRetransmits: 0` | worker message |
-| `lod` **[planned, Phase 4]** | second server-opened uni stream | data channel id 3, reliable, ordered | worker message |
+| `lod` **[built, Phase 4b]** | second server-opened uni stream (first byte 2) | data channel id 3, reliable, ordered | worker message |
 | framing | first byte = channel id, then `u32 LE length ‖ payload` per message | none (SCTP keeps message boundaries) | none |
 | transport binding | SHA-256 of the server certificate | same (DTLS uses that certificate) | 32 zero bytes |
 
@@ -927,9 +946,9 @@ Implementations:
 | Channel | Kind | Content |
 |---|---|---|
 | Datagrams | Unreliable | Player input (C→S), physics snapshots (S→C) |
-| Stream `control` | Reliable, bidi | Status query, handshake + identity challenge, ping/clock sync, chat, block edit requests, chunk resync requests |
+| Stream `control` | Reliable, bidi | Status query, handshake + identity challenge, ping/clock sync, chat, block edit requests, chunk resync requests, LOD requests |
 | Stream `world` | Reliable, uni S→C | Chunk data, `VoxelModification`, `PhysicsEvent`, `PlayerEvent`, entity spawn/despawn |
-| Stream `lod` **[planned, Phase 4]** | Reliable, uni S→C | `LodIndex`, `LodIndexUpdate`, `LodData` (§6.6); requests go on `control` |
+| Stream `lod` **[built, Phase 4b]** | Reliable, uni S→C | `LodIndex`, `LodIndexUpdate`, `LodData` (§6.6); requests go on `control` |
 
 All world-affecting reliable messages go on **one** ordered stream so a voxel removal and the
 event/entity that depends on it can never be reordered. Bulk chunk streaming may move to
@@ -945,17 +964,18 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v5):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v6):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
 (Phase 2); `WorldgenCheck` 0x49, `ChunkData` 0x11, `ChunkUnload` 0x12, and the verification chunk
 in `Welcome` (Phase 3b; protocol v3); planet-scale positions and the `Air` chunk form (Phase 3c;
 protocol v4); `BlockEditRequest` 0x4A, `ChunkResync` 0x4B and `VoxelModification` 0x10 (Phase 3d;
-protocol v5) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
+protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodRequest` 0x4C and the
+`lod` channel (Phase 4b; protocol v6) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
 reference encoder, including half floats). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
-`controllerFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`,
+`controllerFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
 `blockEditActions`, `voxelModificationReasons`) are generated from
 `constants.json`; decoders reject unknown values.
 
@@ -1095,17 +1115,18 @@ Damage:  u8 amount, u8 cause    // cause: Fall 1 | Crush 2 | Explosion 3
 Death:   u8 cause
 ```
 
-**LOD messages [planned, Phase 4]** (§6.6; type ids assigned when built). Section coordinates are
+**LOD messages [built, Phase 4b; protocol v6]** (§6.6). Section coordinates are
 `u8 level, i32×3 (i, j, k)` counted from the LOD grid's corner.
 ```
-S→C LodIndex        (lod)     u32 count, repeat: i32 i, i32 k, u32 lodRevision
+S→C LodIndex 0x13       (lod) u8 flags (1 = last), u32 count (≤ 16384),
+                              repeat: i32 i, i32 k, u32 lodRevision
                               // modified sections at LOD_INDEX_LEVEL (one row, so no j);
-                              // may span several messages, the last flagged
-S→C LodIndexUpdate  (lod)     u16 count, repeat: i32 i, i32 k, u32 lodRevision
+                              // may span several messages, the last flagged; count 0 allowed
+S→C LodIndexUpdate 0x14 (lod) u16 count (1..16384), repeat: i32 i, i32 k, u32 lodRevision
                               // coalesced, at most one per LOD_INDEX_UPDATE_MS
-C→S LodRequest      (control) u8 count (1..32), repeat: u8 level, i32×3 section,
+C→S LodRequest 0x4C (control) u8 count (1..32), repeat: u8 level (1..19), i32×3 section,
                               u32 knownRevision (0 = none)
-S→C LodData         (lod)     u8 form (Generated 0 | Explicit 1 | Unchanged 2),
+S→C LodData 0x15        (lod) u8 form (Generated 0 | Explicit 1 | Unchanged 2),
                               u8 level, i32×3 section, u32 lodRevision,
                               Explicit only: palette + RLE as ChunkData Explicit over the
                               34³ cells of the section and its one-cell apron
@@ -1329,8 +1350,10 @@ No platform needs a trusted certificate to join any server (ADR 0008).
   rejected (§6.5). At most 8 requests per session queue per tick; `ChunkResync` answers only chunks
   the client is streamed, at most `MAX_RESYNC_CHUNKS` per request.
 - Message decoders bounds-check every length field; malformed messages drop the connection.
-- **[planned, Phase 4]** `LodRequest`s are rate-limited (`LOD_REQUESTS_PER_SECOND`) and bounded
-  (levels, coordinates inside the disc); LOD replies share the `LOD_BYTES_PER_SECOND` budget.
+- **[built, Phase 4b]** `LodRequest`s are rate-limited (`LOD_REQUESTS_PER_SECOND`, a token
+  bucket; at most 256 queued, the rest dropped and counted in `LodStats`) and bounded (levels
+  1–19 in the decoder; sections outside the world are answered `Generated` without work); LOD
+  replies share the `LOD_BYTES_PER_SECOND` budget.
   By design, LOD data shows every player's builds from anywhere, including the coarse layout of
   enclosed rooms (2 m cells at level 1) — an accepted trade-off (ADR 0012); sealing enclosed voids
   server-side is a possible later mitigation. The dev camera is client-side and reveals nothing

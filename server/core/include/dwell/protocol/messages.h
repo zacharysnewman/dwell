@@ -139,6 +139,51 @@ struct ChunkResync {
   std::vector<ChunkCoordNet> coords;
 };
 
+// --- Level of detail (Phase 4b, §6.6, §8.3) ---
+
+// A section at LOD_INDEX_LEVEL (one row, so no j) holding modified chunks, and its lodRevision.
+struct LodIndexEntry {
+  std::int32_t i = 0, k = 0;
+  std::uint32_t revision = 0;
+  bool operator==(const LodIndexEntry&) const = default;
+};
+
+// S→C reliable (`lod`), after WorldgenCheck: the modified sections at LOD_INDEX_LEVEL, over one or
+// more messages (≤ kMaxLodIndexEntries each), the last one flagged.
+struct LodIndex {
+  bool last = true;
+  std::vector<LodIndexEntry> entries;
+};
+
+// S→C reliable (`lod`): index entries written since the last update (coalesced, at most one per
+// LOD_INDEX_UPDATE_MS). 1..kMaxLodIndexEntries entries.
+struct LodIndexUpdate {
+  std::vector<LodIndexEntry> entries;
+};
+
+struct LodSectionRequest {
+  std::uint8_t level = 1;  // 1..LOD_MAX_LEVEL
+  std::array<std::int32_t, 3> section{};
+  std::uint32_t known_revision = 0;  // the revision the client holds (0 = none)
+  bool operator==(const LodSectionRequest&) const = default;
+};
+
+// C→S reliable (`control`): sections whose content the client needs (1..LOD_MAX_REQUEST_SECTIONS).
+struct LodRequest {
+  std::vector<LodSectionRequest> sections;
+};
+
+// S→C reliable (`lod`): the answer to one requested section. Generated: nothing below it is
+// modified (the client generates it and everything under it). Explicit: its content, 34³ cells
+// with the apron (`cells`, core::LodCell order). Unchanged: the client's revision is current.
+struct LodData {
+  LodForm form = LodForm::kGenerated;
+  std::uint8_t level = 1;
+  std::array<std::int32_t, 3> section{};
+  std::uint32_t revision = 0;
+  std::vector<std::uint16_t> cells;
+};
+
 // --- Players (Phase 2, PLAYER_CONTROLLER.md §8.4) ---
 
 // One tick of quantized input: move ∈ [−127, 127]² (|move| ≤ 127), buttons (InputButtons), yaw as
@@ -230,10 +275,11 @@ inline double FromFixedPosition(std::int32_t v) {
   return v / static_cast<double>(kPositionFixedScale);
 }
 
-using Message = std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello,
-                             Challenge, ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput,
-                             PhysicsSnapshot, PlayerEvent, WorldgenCheck, ChunkData, ChunkUnload,
-                             BlockEditRequest, VoxelModification, ChunkResync>;
+using Message =
+    std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello, Challenge,
+                 ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput, PhysicsSnapshot, PlayerEvent,
+                 WorldgenCheck, ChunkData, ChunkUnload, BlockEditRequest, VoxelModification,
+                 ChunkResync, LodIndex, LodIndexUpdate, LodRequest, LodData>;
 
 // Appends the encoded message to `out`. Strings longer than their limit are truncated at a UTF-8
 // boundary, so encoding never produces a message the peer would reject.

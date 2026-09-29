@@ -165,6 +165,57 @@ VOXEL_MOD = voxel_modification(VR["Edit"], 4242, [
     ((5, -64, -3), 1, [(1 | (2 << 5) | (3 << 10), 16)]),
 ])
 
+LF = c["lodForms"]
+LOD_PAD = c["lod"]["sectionCells"] + 2
+
+
+def lod_cell(x, y, z):
+    """Test LOD section "strata" (cells −1..32 with the apron): bedrock under the section, stone,
+    a grass layer, water in one corner above it, an apron column of leaves at x = −1."""
+    if y == -1:
+        return 1
+    if x == -1 and z == 5:
+        return 17
+    return 2 if y < 12 else 4 if y == 12 else 10 if y < 16 and x > 20 else 0
+
+
+def lod_cells(cell):
+    """Palette + RLE over the 34³ cells, already in layer order (x fastest, then z, then y)."""
+    r = range(-1, LOD_PAD - 1)
+    wire = [cell(x, y, z) for y in r for z in r for x in r]
+    palette = list(dict.fromkeys(wire))
+    out = struct.pack("<H", len(palette)) + b"".join(struct.pack("<H", m) for m in palette)
+    i = 0
+    while i < len(wire):
+        j = i
+        while j < len(wire) and wire[j] == wire[i]:
+            j += 1
+        out += varint(j - i) + bytes([palette.index(wire[i])])
+        i = j
+    return out
+
+
+def lod_index(flags, entries):
+    out = struct.pack("<BBI", T["LodIndex"], flags, len(entries))
+    return out + b"".join(struct.pack("<iiI", *e) for e in entries)
+
+
+def lod_update(entries):
+    out = struct.pack("<BH", T["LodIndexUpdate"], len(entries))
+    return out + b"".join(struct.pack("<iiI", *e) for e in entries)
+
+
+def lod_request(sections):
+    out = struct.pack("<BB", T["LodRequest"], len(sections))
+    return out + b"".join(struct.pack("<BiiiI", level, *s, known) for level, s, known in sections)
+
+
+def lod_head(form, level, section, revision):
+    return struct.pack("<BBBiiiI", T["LodData"], form, level, *section, revision)
+
+
+LOD_EXPLICIT = lod_head(LF["Explicit"], 1, (131072, 32, 131071), 42) + lod_cells(lod_cell)
+
 PK = bytes(range(32))
 NONCE = bytes(range(0xA0, 0xC0))
 SIG = bytes((i * 3) & 0xFF for i in range(64))
@@ -209,6 +260,14 @@ vectors = {
     "voxel_modification": VOXEL_MOD,
     "chunk_resync": struct.pack("<BH", T["ChunkResync"], 2)
     + struct.pack("<iiiiii", 0, -1, 2, 256000, 191, -256000),
+    "lod_index": lod_index(1, [(1024, 1023, 7), (0, 2047, 4000000000)]),
+    "lod_index_empty": lod_index(1, []),
+    "lod_index_part": lod_index(0, [(-5, 3, 1)]),
+    "lod_index_update": lod_update([(5, 6, 9)]),
+    "lod_request": lod_request([(3, (-4, 17, 8), 0), (19, (0, 0, 0), 12)]),
+    "lod_data_generated": lod_head(LF["Generated"], 5, (100, 3, -2), 0),
+    "lod_data_unchanged": lod_head(LF["Unchanged"], 12, (1, 0, 2), 77),
+    "lod_data_explicit": LOD_EXPLICIT,
 }
 
 malformed = {
@@ -253,6 +312,17 @@ malformed = {
     "!voxel_mod_no_changes": voxel_modification(VR["Edit"], 1, [((0, 0, 0), 1, [])]),
     "!voxel_mod_bad_index": voxel_modification(VR["Edit"], 1, [((0, 0, 0), 1, [(32768, 1)])]),
     "!voxel_mod_truncated": VOXEL_MOD[:-1],
+    "!lod_index_bad_flags": lod_index(2, []),
+    "!lod_index_truncated": lod_index(1, [(1, 2, 3)])[:-1],
+    "!lod_update_empty": lod_update([]),
+    "!lod_request_empty": lod_request([]),
+    "!lod_request_too_many": lod_request([(1, (0, 0, 0), 0)] * (c["lod"]["maxRequestSections"] + 1)),
+    "!lod_request_level_zero": lod_request([(0, (0, 0, 0), 0)]),
+    "!lod_request_level_too_high": lod_request([(c["lod"]["maxLevel"] + 1, (0, 0, 0), 0)]),
+    "!lod_data_bad_form": lod_head(3, 1, (0, 0, 0), 0),
+    "!lod_data_bad_level": lod_head(LF["Generated"], c["lod"]["maxLevel"] + 1, (0, 0, 0), 0),
+    "!lod_data_unchanged_payload": lod_head(LF["Unchanged"], 1, (0, 0, 0), 1) + b"\x00",
+    "!lod_data_truncated": LOD_EXPLICIT[:-1],
     "!resync_empty": struct.pack("<BH", T["ChunkResync"], 0),
     "!resync_too_many": struct.pack("<BH", T["ChunkResync"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),

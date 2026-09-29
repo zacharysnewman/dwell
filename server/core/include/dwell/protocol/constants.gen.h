@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 5;
+inline constexpr std::uint16_t kProtocolVersion = 6;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -55,10 +55,12 @@ inline constexpr std::size_t kServerNameMaxBytes = 64;
 inline constexpr std::size_t kMotdMaxBytes = 256;
 inline constexpr std::size_t kRejectMessageMaxBytes = 256;
 inline constexpr std::size_t kMaxResyncChunks = 64;
+inline constexpr std::size_t kMaxLodIndexEntries = 16384;
 
 enum class Channel : std::uint8_t {
   kControl = 0,
   kWorld = 1,
+  kLod = 2,
 };
 
 enum class MessageType : std::uint8_t {
@@ -82,6 +84,10 @@ enum class MessageType : std::uint8_t {
   kVoxelModification = 16,
   kBlockEditRequest = 74,
   kChunkResync = 75,
+  kLodIndex = 19,
+  kLodIndexUpdate = 20,
+  kLodData = 21,
+  kLodRequest = 76,
 };
 
 enum class RejectReason : std::uint8_t {
@@ -139,6 +145,12 @@ enum class ChunkForm : std::uint8_t {
   kAir = 2,
 };
 
+enum class LodForm : std::uint8_t {
+  kGenerated = 0,
+  kExplicit = 1,
+  kUnchanged = 2,
+};
+
 enum class BlockEditAction : std::uint8_t {
   kBreak = 1,
   kPlace = 2,
@@ -156,6 +168,7 @@ inline constexpr std::uint8_t kMaxGroundKind = 3;
 inline constexpr std::uint8_t kMaxPlayerEventKind = 4;
 inline constexpr std::uint8_t kMaxDamageCause = 3;
 inline constexpr std::uint8_t kMaxChunkForm = 2;
+inline constexpr std::uint8_t kMaxLodForm = 2;
 inline constexpr std::uint8_t kMaxBlockEditAction = 2;
 inline constexpr std::uint8_t kMaxVoxelModificationReason = 4;
 

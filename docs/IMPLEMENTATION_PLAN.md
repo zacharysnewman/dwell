@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a (LOD data and generation) done; next 4b (propagation and streaming), then 4c (rendering, dev camera) | — |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a (LOD data and generation) and 4b (propagation and streaming, server side) done; next 4c (the client's LOD system, rendering, dev camera) | — |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -513,8 +513,10 @@ Exit criteria
 
 ## Phase 4 — World LOD & Whole-World View
 
-**Status:** in progress — 4a built (grid, `Downsample`, `GenerateLod`, golden hashes); 4b and 4c
-outstanding. Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
+**Status:** in progress — 4a built (grid, `Downsample`, `GenerateLod`, golden hashes); 4b built
+(propagation, `lod_sections`, the index, `LodRequest` / `LodData` on the `lod` stream; protocol
+v6); 4c outstanding, and with it the client half of 4b's exit criterion (requesting only what the
+index says is modified). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
 propagation and streaming**; **4c — rendering and the dev camera**. Depends on Phase 3c (planet
 scale) and 3d (meshing worker pool); 4b's propagation cache lands in the database from 3e.
@@ -537,13 +539,13 @@ Deliverables
   - [x] Golden hashes of `GenerateLod` sections at several levels (surface, mountains, ocean, the
     rim, the root), checked natively and under WASM in CI.
 - **Propagation and streaming** *(4b)*:
-  - [ ] Server propagation: chunk changes (every `VoxelModification` source) mark level-1 sections
+  - [x] Server propagation: chunk changes (every `VoxelModification` source) mark level-1 sections
     dirty; a budgeted off-tick job (`LOD_PROPAGATION_SECTIONS_PER_TICK`) downsamples dirty
     sections nearest to players first up to the root, assigning `lodRevision`s; the
     `lod_sections` cache table and its migration (§6.4); rebuilt on a generator version change.
-  - [ ] The LOD index at `LOD_INDEX_LEVEL`: `LodIndex` after `WorldgenCheck`, coalesced
+  - [x] The LOD index at `LOD_INDEX_LEVEL`: `LodIndex` after `WorldgenCheck`, coalesced
     `LodIndexUpdate` broadcasts.
-  - [ ] `LodRequest` / `LodData` (`Generated` | `Explicit` | `Unchanged`); the `lod` stream on
+  - [x] `LodRequest` / `LodData` (`Generated` | `Explicit` | `Unchanged`); the `lod` stream on
     WebTransport, WebRTC (data channel 3) and loopback; `LOD_BYTES_PER_SECOND` budget and
     `LOD_REQUESTS_PER_SECOND` limit; full-chunk mode answers `Explicit`. Golden vectors for every
     new message in C++, TS and the Python reference encoder.
@@ -586,6 +588,29 @@ Deviations and additions (4a):
 - Section content round-trips the codec in C++ (`lod: encoding`) and TypeScript
   (`chunkVoxels.test.ts`); golden *wire* vectors come with the `LodData` message in 4b.
 
+Deviations and additions (4b):
+- **Modified sections keep generated octants.** A modified section is `GenerateLod` of itself with
+  only the octants of *modified* children replaced by their downsample, rather than the downsample
+  of all 8 children with unmodified ones generated at the level below: one generation instead of
+  up to eight per write, and a build changes only the octants above it (less popping when a
+  section turns from generated to modified). The two agree within 4a's tolerance.
+- **Apron.** Stored sections keep their generated apron; the server fills it from modified
+  same-level neighbours' borders when sending (`CellsForClient`).
+- **`Generated` means "nothing modified yet".** A section dirty but not yet written answers
+  `Generated`; the index update after its level-8 ancestor is written (propagation goes bottom-up)
+  makes the client ask again. So a client may treat a `Generated` answer as covering the whole
+  subtree.
+- **Wire details:** `LodIndex` has a flags byte (1 = last message) and may be empty; index messages
+  carry at most 16 384 entries (`limits.maxLodIndexEntries`, under SCTP's 256 KiB); `LodRequest`
+  levels are 1–19. Type ids: `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodRequest`
+  0x4C; the `lod` channel is id 2 (its WebTransport stream's first byte; WebRTC data channel 3).
+- **Threads.** Propagation (and full-chunk-mode generation) runs on one thread when the server has
+  worldgen threads, else on the tick within `lod_budget_us` = 2 ms (the browser's local mode).
+- **Storage format 2** adds `lod_sections` with a generator version column; empty blobs bind as
+  empty, not NULL (found by the persistence test).
+- Requests beyond the bucket or a 256-deep queue are dropped (counted in `LodStats`); the client
+  retries what goes unanswered (4c).
+
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section
   generated at level L agrees with the downsample of generated level-0 chunks within a stated
@@ -598,7 +623,11 @@ Exit criteria
 - [ ] *(4b)* A block placed by one client changes the LOD sections above it on the server within
   a bounded time, and another client far away receives the change (index update → request →
   `Explicit`) without re-downloading unchanged sections; a client with no modifications in view
-  receives no `LodData` beyond the index.
+  receives no `LodData` beyond the index. *Server side verified: `lod: streaming` — an edit reaches
+  the root within 19 ticks and a client 50 km away gets the index update 8 ticks after it; its
+  re-requests come back `Explicit` on the changed path, `Generated` beside it, and `Unchanged` for
+  a held section a second edit did not touch; a client 60 km the other way receives only the index
+  and its updates. Outstanding (4c): the client's own request logic.*
 - [ ] *(4c)* From the ground, the view reaches the horizon with no holes: automated check that the
   selected node set covers the view frustum at every frame while moving, and that swaps never
   leave a region without a drawn node.

@@ -19,6 +19,11 @@
 
 #define CHANNEL_WORLD 1
 
+/**
+ * Level-of-detail data (ARCHITECTURE.md §6.6): its own stream, so it never delays `world`.
+ */
+#define CHANNEL_LOD 2
+
 #define TRANSPORT_WEBTRANSPORT 1
 
 typedef enum DwellNetEventKind {
@@ -60,7 +65,7 @@ typedef struct DwellNetEvent {
    */
   uint8_t transport;
   /**
-   * Reliable: channel id (0 = control, 1 = world).
+   * Reliable: channel id (0 = control, 1 = world, 2 = lod).
    */
   uint8_t channel;
   /**
@@ -161,7 +166,8 @@ const char *dwell_net_ice_pwd(const struct DwellNet *net);
 bool dwell_net_poll(struct DwellNet *net, struct DwellNetEvent *out);
 
 /**
- * Queues a reliable message on `channel` (0 = control, 1 = world). False if the session is gone.
+ * Queues a reliable message on `channel` (0 = control, 1 = world, 2 = lod). False if the session
+ * is gone.
  *
  * # Safety
  * `net` must be a live handle; `data` must point to `len` readable bytes.

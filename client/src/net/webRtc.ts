@@ -5,6 +5,7 @@ import type { Transport, TransportHandlers } from './Transport';
 const CONNECT_TIMEOUT_MS = 8000;
 /** Data-channel ids pre-negotiated with the server (ADR 0008). */
 const DATAGRAM_CHANNEL_ID = 2;
+const LOD_CHANNEL_ID = 3;
 
 export function isWebRtcSupported(): boolean {
   return typeof globalThis.RTCPeerConnection === 'function';
@@ -44,7 +45,7 @@ export function buildServerAnswer(invite: WebRtcInvite, certHash: Uint8Array, mi
 /**
  * WebRTC connection to a dedicated server's ICE-lite endpoint (ARCHITECTURE.md §8.1, ADR 0008).
  * Channels: 0 = control and 1 = world (reliable, ordered), 2 = datagrams (unordered, no
- * retransmits). SCTP keeps message boundaries, so messages are sent unframed.
+ * retransmits), 3 = lod (reliable, ordered; the `lod` channel, §6.6). SCTP keeps message boundaries, so messages are sent unframed.
  */
 export class WebRtcTransport implements Transport {
   readonly kind = TransportKind.WebRtc;
@@ -68,7 +69,8 @@ export class WebRtcTransport implements Transport {
       ordered: false,
       maxRetransmits: 0,
     });
-    const channels = [control, world, datagrams];
+    const lod = pc.createDataChannel('lod', { negotiated: true, id: LOD_CHANNEL_ID });
+    const channels = [control, world, datagrams, lod];
     for (const c of channels) c.binaryType = 'arraybuffer';
 
     try {
@@ -111,6 +113,7 @@ export class WebRtcTransport implements Transport {
     };
     control.onmessage = deliver(Channel.control);
     world.onmessage = deliver(Channel.world);
+    lod.onmessage = deliver(Channel.lod);
     datagrams.onmessage = (e: MessageEvent<ArrayBuffer>) => {
       transport.handlers?.onDatagram(new Uint8Array(e.data));
     };

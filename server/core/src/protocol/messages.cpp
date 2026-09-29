@@ -23,6 +23,22 @@ std::string_view Clamp(std::string_view s, std::size_t max_bytes) {
 template <typename T>
 constexpr MessageType TypeOf();
 template <>
+constexpr MessageType TypeOf<LodIndex>() {
+  return MessageType::kLodIndex;
+}
+template <>
+constexpr MessageType TypeOf<LodIndexUpdate>() {
+  return MessageType::kLodIndexUpdate;
+}
+template <>
+constexpr MessageType TypeOf<LodRequest>() {
+  return MessageType::kLodRequest;
+}
+template <>
+constexpr MessageType TypeOf<LodData>() {
+  return MessageType::kLodData;
+}
+template <>
 constexpr MessageType TypeOf<DatagramPing>() {
   return MessageType::kDatagramPing;
 }
@@ -407,6 +423,60 @@ void Write(ByteWriter& w, const ChunkResync& m) {
   for (std::size_t i = 0; i < count; ++i) WriteCoord(w, m.coords[i]);
 }
 
+void WriteIndexEntries(ByteWriter& w, const std::vector<LodIndexEntry>& entries,
+                       std::size_t count) {
+  for (std::size_t i = 0; i < count; ++i) {
+    w.I32(entries[i].i);
+    w.I32(entries[i].k);
+    w.U32(entries[i].revision);
+  }
+}
+
+void Write(ByteWriter& w, const LodIndex& m) {
+  const std::size_t count = std::min(m.entries.size(), kMaxLodIndexEntries);
+  w.U8(m.last ? 1 : 0);
+  w.U32(static_cast<std::uint32_t>(count));
+  WriteIndexEntries(w, m.entries, count);
+}
+
+void Write(ByteWriter& w, const LodIndexUpdate& m) {
+  const std::size_t count = std::min(m.entries.size(), kMaxLodIndexEntries);
+  w.U16(static_cast<std::uint16_t>(count));
+  WriteIndexEntries(w, m.entries, count);
+}
+
+void Write(ByteWriter& w, const LodRequest& m) {
+  const std::size_t count =
+      std::min(m.sections.size(), static_cast<std::size_t>(kLodMaxRequestSections));
+  w.U8(static_cast<std::uint8_t>(count));
+  for (std::size_t i = 0; i < count; ++i) {
+    const LodSectionRequest& s = m.sections[i];
+    w.U8(s.level);
+    for (std::int32_t v : s.section) w.I32(v);
+    w.U32(s.known_revision);
+  }
+}
+
+void Write(ByteWriter& w, const LodData& m) {
+  w.U8(static_cast<std::uint8_t>(m.form));
+  w.U8(m.level);
+  for (std::int32_t v : m.section) w.I32(v);
+  w.U32(m.revision);
+  if (m.form == LodForm::kExplicit) WriteLodCells(w, m.cells);
+}
+
+std::vector<LodIndexEntry> ReadIndexEntries(ByteReader& r, std::uint32_t count) {
+  std::vector<LodIndexEntry> out;
+  for (std::uint32_t i = 0; i < count && r.ok(); ++i) {
+    LodIndexEntry e;
+    e.i = r.I32();
+    e.k = r.I32();
+    e.revision = r.U32();
+    out.push_back(e);
+  }
+  return out;
+}
+
 bool IsRejectReason(std::uint8_t v) { return v >= 1 && v <= kMaxRejectReason; }
 
 void Read3(ByteReader& r, float (&v)[3]) {
@@ -711,6 +781,53 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       const std::uint16_t count = r.U16();
       r.Check(count >= 1 && count <= kMaxResyncChunks);
       for (int i = 0; i < count && r.ok(); ++i) m.coords.push_back(ReadCoord(r));
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kLodIndex: {
+      LodIndex m;
+      const auto flags = r.U8();
+      r.Check(flags <= 1);
+      m.last = flags == 1;
+      const std::uint32_t count = r.U32();
+      r.Check(count <= kMaxLodIndexEntries);
+      if (r.ok()) m.entries = ReadIndexEntries(r, count);
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kLodIndexUpdate: {
+      LodIndexUpdate m;
+      const std::uint16_t count = r.U16();
+      r.Check(count >= 1 && count <= kMaxLodIndexEntries);
+      if (r.ok()) m.entries = ReadIndexEntries(r, count);
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kLodRequest: {
+      LodRequest m;
+      const auto count = r.U8();
+      r.Check(count >= 1 && count <= kLodMaxRequestSections);
+      for (int i = 0; i < count && r.ok(); ++i) {
+        LodSectionRequest s;
+        s.level = r.U8();
+        r.Check(s.level >= 1 && s.level <= kLodMaxLevel);
+        for (std::int32_t& v : s.section) v = r.I32();
+        s.known_revision = r.U32();
+        m.sections.push_back(s);
+      }
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kLodData: {
+      LodData m;
+      const auto form = r.U8();
+      r.Check(form <= kMaxLodForm);
+      m.form = static_cast<LodForm>(form);
+      m.level = r.U8();
+      r.Check(m.level <= kLodMaxLevel);
+      for (std::int32_t& v : m.section) v = r.I32();
+      m.revision = r.U32();
+      if (r.ok() && m.form == LodForm::kExplicit) m.cells = ReadLodCells(r);
       out = std::move(m);
       break;
     }

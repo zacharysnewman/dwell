@@ -37,15 +37,28 @@ export interface SessionStats {
   serverTick: number;
 }
 
-/** Gameplay messages from the server (datagram snapshots, world-channel messages), with raw bytes. */
-export type GameMessage = Extract<
+/** Level-of-detail messages (the `lod` channel, §6.6). */
+export type LodMessage = Extract<
   Message,
-  | { type: typeof MessageType.PhysicsSnapshot }
-  | { type: typeof MessageType.PlayerEvent }
-  | { type: typeof MessageType.ChunkData }
-  | { type: typeof MessageType.ChunkUnload }
-  | { type: typeof MessageType.VoxelModification }
+  | { type: typeof MessageType.LodIndex }
+  | { type: typeof MessageType.LodIndexUpdate }
+  | { type: typeof MessageType.LodData }
 >;
+
+/**
+ * Gameplay messages from the server (datagram snapshots, world- and lod-channel messages), with raw
+ * bytes.
+ */
+export type GameMessage =
+  | Extract<
+      Message,
+      | { type: typeof MessageType.PhysicsSnapshot }
+      | { type: typeof MessageType.PlayerEvent }
+      | { type: typeof MessageType.ChunkData }
+      | { type: typeof MessageType.ChunkUnload }
+      | { type: typeof MessageType.VoxelModification }
+    >
+  | LodMessage;
 export type GameListener = (message: GameMessage, bytes: Uint8Array) => void;
 
 export interface SessionOptions {
@@ -125,7 +138,7 @@ export class ClientSession {
     return () => this.gameListeners.delete(listener);
   }
 
-  /** Sends a reliable control message while joined (WorldgenCheck, block edits, resyncs). */
+  /** Sends a reliable control message while joined (WorldgenCheck, edits, resyncs, LodRequest). */
   sendControl(m: Message): void {
     if (this.state.phase === 'joined') this.send(m);
   }
@@ -219,7 +232,10 @@ export class ClientSession {
       m.type === MessageType.PlayerEvent ||
       m.type === MessageType.ChunkData ||
       m.type === MessageType.ChunkUnload ||
-      m.type === MessageType.VoxelModification
+      m.type === MessageType.VoxelModification ||
+      m.type === MessageType.LodIndex ||
+      m.type === MessageType.LodIndexUpdate ||
+      m.type === MessageType.LodData
     ) {
       // Reliable world messages must not be lost while the game loads: hold them until then.
       if (this.state.phase === 'joined' && this.gameListeners.size === 0) {
