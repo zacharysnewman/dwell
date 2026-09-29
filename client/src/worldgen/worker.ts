@@ -22,7 +22,11 @@ function generate(msg: ToWorldgen, g: ChunkGenerator): void {
     scope.postMessage({ t: 'map', id: msg.id, bytes }, bytes ? [bytes.buffer] : []);
   } else if (msg.t === 'lod') {
     const s = g.lod(msg.coord);
-    scope.postMessage({ t: 'lod', id: msg.id, kind: s.kind, cells: s.cells }, [s.cells.buffer]);
+    const surface = s.surface ?? null;
+    scope.postMessage(
+      { t: 'lod', id: msg.id, kind: s.kind, cells: s.cells, surface },
+      surface ? [s.cells.buffer, surface.buffer] : [s.cells.buffer],
+    );
   } else if (msg.t === 'bounds') {
     scope.postMessage({ t: 'bounds', id: msg.id, ...g.lodBounds(msg.level, msg.i, msg.k) });
   }

@@ -71,6 +71,18 @@ bool LodInWorld(const LodCoord& c);
 
 using LodCells = std::vector<MaterialId>;  // kLodVolume, LodCell order
 
+// The surface of each column of a generated section (kLodPad² columns, index
+// (z + 1) · kLodPad + (x + 1)), at full vertical precision: a cell is kLodCellSize tall, which far
+// away is kilometres, so drawing a column's top at its top cell's top would lift distant land and
+// seas by up to a cell. The client draws the top at `height` instead (ARCHITECTURE.md §6.6).
+struct LodSurface {
+  bool valid = false;  // the column's topmost filled cell in the section holds its surface
+  bool wet = false;    // under water: `height` is the floor, `material` the floor's
+  float height = 0;    // metres
+  MaterialId material = 0;
+};
+using LodSurfaces = std::vector<LodSurface>;  // kLodPad²
+
 // What a generated section turned out to be: all air (nothing to draw), buried (solid with no
 // exposed face: nothing to draw), or content to mesh.
 enum class LodKind : std::uint8_t { kEmpty, kBuried, kContent };

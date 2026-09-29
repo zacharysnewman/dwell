@@ -694,6 +694,13 @@ Deviations and additions (4c):
   server's close failed first and dropped the pending `Reject(Replaced)`; the WebTransport client
   now reads the control stream to its end before reporting the close (`webTransport.test.ts`
   failed before; the e2e passed 15/15 after).
+- **Distant terrain at its true height** (playtest: the horizon, oceans included, looked too
+  tall, with a solid edge): cells fill from their bottom voxel, so cell tops lifted land by up to
+  a cell (+220 m at level 8, +2 km at 12) and seas to +2,048 / +6,144 m at levels 12 / 13.
+  `GenerateLod` now also returns each column's exact surface, and the client draws column tops at
+  it in half-cell steps (1.2–2× the triangles; exact per-column tops measured 10–70×). `lod:
+  column surfaces` (unbiased within a few metres at every level) and the `lodMesher.test.ts`
+  surface tests failed before. Cells, server, protocol and golden hashes are unchanged.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.
 

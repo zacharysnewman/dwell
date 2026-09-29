@@ -2,13 +2,14 @@
 // one worldgen worker (§5.1, §6.3). Also used directly by tests under Node.
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import type { ChunkCoord } from '../protocol/messages';
-import { LOD_VOLUME, type LodBounds, type LodCoord, type LodKind } from '../lod/grid';
+import { LOD_PAD, LOD_VOLUME, type LodBounds, type LodCoord, type LodKind } from '../lod/grid';
 
 /** Module surface of dwell_worldgen.js (-sMODULARIZE -sEXPORT_ES6). */
 export interface DwellWorldgenModule {
   HEAPU8: Uint8Array;
   HEAPU16: Uint16Array;
   HEAPU32: Uint32Array;
+  HEAPF32: Float32Array;
   HEAPF64: Float64Array;
   _malloc(size: number): number;
   _free(ptr: number): void;
@@ -18,6 +19,7 @@ export interface DwellWorldgenModule {
   _dwell_worldgen_map(x0: number, z0: number, step: number, n: number): number;
   _dwell_worldgen_lod(level: number, i: number, j: number, k: number): number;
   _dwell_worldgen_lod_cells(): number;
+  _dwell_worldgen_lod_surface(): number;
   _dwell_worldgen_lod_bounds(level: number, i: number, k: number, outPtr: number): void;
 }
 
@@ -25,6 +27,11 @@ export interface DwellWorldgenModule {
 export interface GeneratedSection {
   kind: LodKind;
   cells: Uint16Array<ArrayBuffer>;
+  /**
+   * Each column's exact surface (C++ core::LodSurface), 34² × 3 floats in (z + 1) · 34 + (x + 1)
+   * order: height (m), material, flags (1 valid, 2 wet). Null when the generator has none.
+   */
+  surface?: Float32Array<ArrayBuffer> | null;
 }
 
 export type DwellWorldgenFactory = () => Promise<DwellWorldgenModule>;
@@ -70,7 +77,10 @@ export class ChunkGenerator {
   lod(c: LodCoord): GeneratedSection {
     const kind = this.m._dwell_worldgen_lod(c[0], c[1], c[2], c[3]) as LodKind;
     const ptr = this.m._dwell_worldgen_lod_cells();
-    return { kind, cells: this.m.HEAPU16.slice(ptr >> 1, (ptr >> 1) + LOD_VOLUME) };
+    const cells = this.m.HEAPU16.slice(ptr >> 1, (ptr >> 1) + LOD_VOLUME);
+    const sp = this.m._dwell_worldgen_lod_surface();
+    const surface = sp ? this.m.HEAPF32.slice(sp >> 2, (sp >> 2) + LOD_PAD * LOD_PAD * 3) : null;
+    return { kind, cells, surface };
   }
 
   /** Height bounds of the column of sections (level, i, ·, k). */

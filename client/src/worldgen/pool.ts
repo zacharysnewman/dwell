@@ -192,7 +192,7 @@ export class WorldgenPool implements ChunkSource, SectionSource {
           : msg.t === 'map'
             ? msg.bytes
             : msg.t === 'lod'
-              ? { kind: msg.kind, cells: msg.cells }
+              ? { kind: msg.kind, cells: msg.cells, surface: msg.surface }
               : { lo: msg.lo, hi: msg.hi, anyInside: msg.anyInside },
       );
     }

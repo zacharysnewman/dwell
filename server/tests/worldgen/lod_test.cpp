@@ -468,3 +468,53 @@ TEST_SUITE("lod: encoding") {
     CHECK_FALSE(protocol::DecodeLodCells(extra));
   }
 }
+
+TEST_CASE("lod: column surfaces put distant land and seas at their true height") {
+  // Regression (playtest: the horizon, oceans included, looked too tall): a cell counts as filled
+  // from its bottom voxel, so the top cell's top lifts the surface by up to a cell — hundreds of
+  // metres to kilometres far away, and seas to +2,048 m (level 12) and +6,144 m (level 13). The
+  // column surfaces give the exact height to draw instead.
+  const TerrainGenerator gen(5);
+  for (int level = 1; level <= 13; ++level) {
+    CAPTURE(level);
+    const std::int64_t cell = core::LodCellSize(level);
+    double error_cells = 0, error_surface = 0;
+    int columns = 0, valid = 0;
+    for (int s = 0; s < 6; ++s) {
+      const LodCoord c = SectionAt(level, 4000 + s * 37000, 0, 3000 + s * 23000);
+      LodCells cells;
+      core::LodSurfaces surface;
+      if (gen.GenerateLod(c, cells, &surface) != LodKind::kContent) continue;
+      REQUIRE(surface.size() == static_cast<std::size_t>(core::kLodPad * core::kLodPad));
+      const auto o = core::LodSectionOrigin(c);
+      for (int z = 0; z < N; ++z)
+        for (int x = 0; x < N; ++x) {
+          int top = -1;
+          for (int y = N - 1; y >= 0; --y)
+            if (cells[core::LodCell(x, y, z)] != core::Materials::kAir) {
+              top = y;
+              break;
+            }
+          if (top < 0 || top == N - 1) continue;  // the surface is in another section
+          const double truth = gen.ColumnAt(static_cast<std::int32_t>(o.x + x * cell + cell / 2),
+                                            static_cast<std::int32_t>(o.z + z * cell + cell / 2))
+                                   .height;
+          const auto& sf = surface[static_cast<std::size_t>((z + 1) * core::kLodPad + x + 1)];
+          ++columns;
+          error_cells += static_cast<double>(o.y + (top + 1) * cell) - std::max(truth, 0.0);
+          if (!sf.valid) continue;
+          ++valid;
+          CHECK(sf.wet == (sf.height < 0));  // its own (coarse) column's shore, not full detail's
+          error_surface += sf.height - truth;
+        }
+    }
+    REQUIRE(columns > 0);
+    MESSAGE("level " << level << ": cell tops " << error_cells / columns << " m above the surface, "
+                     << "column surfaces " << (valid ? error_surface / valid : 0) << " m (" << valid
+                     << "/" << columns << " columns)");
+    // Levels 1–2 keep a whole cell where 3D noise raised the ground above the column's height.
+    CHECK(valid >= columns * (level <= 2 ? 75 : 95) / 100);
+    // Unbiased within a few metres (coarse columns drop octaves finer than the cell).
+    CHECK(std::abs(error_surface / std::max(valid, 1)) < 8.0 + 0.002 * static_cast<double>(cell));
+  }
+}

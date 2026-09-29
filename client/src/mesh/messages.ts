@@ -10,7 +10,14 @@ export type ToMesher =
       voxels: Uint16Array<ArrayBuffer>;
     }
   /** A LOD section's 34³ cells (lodMesher.ts), transferred. */
-  | { t: 'lod'; id: number; cells: Uint16Array<ArrayBuffer>; liquids: LiquidMode };
+  | {
+      t: 'lod';
+      id: number;
+      cells: Uint16Array<ArrayBuffer>;
+      liquids: LiquidMode;
+      /** Column surfaces in cells (lodMesher.ts `meshSection`), transferred; null: none. */
+      surface: Float32Array<ArrayBuffer> | null;
+    };
 
 /** `meshes` buffers are transferred. */
 export type FromMesher =

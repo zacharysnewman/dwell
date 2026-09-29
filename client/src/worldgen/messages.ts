@@ -18,5 +18,11 @@ export type FromWorldgen =
   /** `bytes` (transferred) is the terrain map, or null for generators without one. */
   | { t: 'map'; id: number; bytes: Uint8Array<ArrayBuffer> | null }
   /** `cells` (transferred): the section's 34³ cells. */
-  | { t: 'lod'; id: number; kind: LodKind; cells: Uint16Array<ArrayBuffer> }
+  | {
+      t: 'lod';
+      id: number;
+      kind: LodKind;
+      cells: Uint16Array<ArrayBuffer>;
+      surface: Float32Array<ArrayBuffer> | null;
+    }
   | { t: 'bounds'; id: number; lo: number; hi: number; anyInside: boolean };

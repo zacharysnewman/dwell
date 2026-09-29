@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { LOD_VOLUME, lodCell } from '../lod/grid';
+import { LOD_PAD, LOD_VOLUME, lodCell } from '../lod/grid';
 import { averageTileColor, srgbToLinear } from '../render/textures';
-import { lodColor, meshSection, tintedColor } from './lodMesher';
+import { lodColor, meshSection, SURFACE_STRIDE, tintedColor } from './lodMesher';
 
 const quads = (m: { indices: Uint32Array }): number => m.indices.length / 6;
 
@@ -91,5 +91,59 @@ describe('LOD section mesher (§6.6)', () => {
     expect(expected).not.toBe(lodColor(12, 0));
     expect(expected & 0xff).toBeGreaterThan(lodColor(12, 0) & 0xff);
     expect(expected).not.toBe(lodColor(10, 0));
+  });
+
+  it('draws a column top at its surface height, not at its cell top', () => {
+    // Regression (playtest: distant land and seas looked too tall): cells fill from their bottom
+    // voxel, so cell tops lift the ground by up to a cell — kilometres at the horizon.
+    const cells = new Uint16Array(LOD_VOLUME);
+    const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+    const col = (x: number, z: number) => (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
+    for (let z = -1; z <= 32; z++) {
+      for (let x = -1; x <= 32; x++) {
+        cells[lodCell(x, 0, z)] = 4; // grass, one cell thick
+        surface[col(x, z)] = x < 16 ? 0.5 : 1; // a terrace at half height, then the full cell
+        surface[col(x, z) + 1] = 4;
+        surface[col(x, z) + 2] = 1; // valid
+      }
+    }
+    const m = meshSection(cells, 'translucent', surface);
+    const tops = new Set<number>();
+    let wallUp = 0;
+    const p = m.opaque.positions;
+    const n = m.opaque.normals;
+    for (let v = 0; v < p.length / 3; v++) {
+      if (n[v * 3 + 1] === 1) tops.add(Math.round((p[v * 3 + 1] ?? 0) * 100) / 100);
+      // The wall between the terraces faces −X at x = 16, from 0.5 to 1.
+      if (n[v * 3] === -1 && p[v * 3] === 16) wallUp = Math.max(wallUp, p[v * 3 + 1] ?? 0);
+    }
+    expect([...tops].sort()).toEqual([0.5, 1]);
+    expect(wallUp).toBeCloseTo(1, 5);
+  });
+
+  it('tint mode draws a sea floor inside a water cell at its depth, tinted', () => {
+    // At coarse levels a cell can be taller than the sea is deep: it samples the floor and is
+    // written as water. The floor is drawn at its height, as seen through the water.
+    const cells = new Uint16Array(LOD_VOLUME);
+    const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+    for (let z = -1; z <= 32; z++) {
+      for (let x = -1; x <= 32; x++) {
+        cells[lodCell(x, 0, z)] = 10; // water (the cell holds the whole sea)
+        const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
+        surface[c] = 0.4;
+        surface[c + 1] = 12; // a sand floor
+        surface[c + 2] = 1 | 2; // valid, wet
+      }
+    }
+    const m = meshSection(cells, 'tint', surface);
+    expect(quads(m.water)).toBe(0);
+    const p = m.opaque.positions;
+    const n = m.opaque.normals;
+    let top = -1;
+    for (let v = 0; v < p.length / 3; v++) if (n[v * 3 + 1] === 1) top = v;
+    // Drawn in half cells: at most 1/4 cell off.
+    expect(Math.abs((p[top * 3 + 1] ?? 0) - 0.4)).toBeLessThanOrEqual(0.25);
+    const expected = tintedColor(12, 0, 10);
+    expect(m.opaque.colors[top * 3 + 1]).toBeCloseTo(srgbToLinear((expected >> 8) & 0xff), 4);
   });
 });
