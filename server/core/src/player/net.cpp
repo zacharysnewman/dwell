@@ -121,11 +121,13 @@ void FromNet(const protocol::ControllerState& s, const GroundFromNet& ground, Pl
 }
 
 std::uint8_t PlayerFlagsOf(const PlayerController& c, bool dead) {
-  using namespace protocol::PlayerFlags;
+  // Qualified: the ControllerFlags names used above (same spellings, other bits) would win over a
+  // using-directive here.
+  namespace F = protocol::PlayerFlags;
   return static_cast<std::uint8_t>(
-      (c.ground.grounded ? kGrounded : 0) | (c.crouch.crouching ? kCrouched : 0) |
-      (c.climb.climbing ? kClimbing : 0) | (c.swim.swimming ? kSwimming : 0) |
-      (c.fly.flying ? kFlying : 0) | (dead ? kDead : 0));
+      (c.ground.grounded ? F::kGrounded : 0) | (c.crouch.crouching ? F::kCrouched : 0) |
+      (c.climb.climbing ? F::kClimbing : 0) | (c.swim.swimming ? F::kSwimming : 0) |
+      (c.fly.flying ? F::kFlying : 0) | (dead ? F::kDead : 0));
 }
 
 }  // namespace dwell::player
