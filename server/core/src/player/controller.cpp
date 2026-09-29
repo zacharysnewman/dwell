@@ -127,6 +127,9 @@ struct Players::Player {
   // Push-out normals (towards the player) of this body's contacts in the last physics step.
   std::array<Vec3, kMaxContacts> contact_normals;
   int contact_count = 0;
+  // Upward velocity the contacts gave the body by deflecting last tick's horizontal drive (set by
+  // StepHorizontal, read by StepVertical in the same tick).
+  float drive_lift = 0.0f;
 };
 
 // Records, for every player body, the normals of its contacts during PhysicsSystem::Update (which
@@ -865,6 +868,7 @@ void Players::StepHorizontal(Player& p) {
   const auto& m = cfg.movement;
   HorizontalLayer& h = c.horizontal;
   const bool grounded = c.ground.grounded;
+  p.drive_lift = 0.0f;
   if (c.Exclusive()) return;
 
   // External forces: whatever moved the body away from what it was driven to last tick.
@@ -878,6 +882,13 @@ void Players::StepHorizontal(Player& p) {
   const Vec3 driven = h.contribution + Vec3(0.0f, c.vertical.target_y, 0.0f);
   for (int i = 0; i < p.contact_count; ++i) {
     const Vec3 normal = p.contact_normals[i];
+    // Driving forward into a contact that faces partly up (a block's top edge under the rounded
+    // bottom of the capsule) deflects part of that drive upwards; StepVertical must not take it
+    // for an external force either.
+    const float into_horizontal = -h.contribution.Dot(normal);
+    if (into_horizontal > 0.0f && normal.GetY() > 0.0f) {
+      p.drive_lift += into_horizontal * normal.GetY();
+    }
     Vec3 n = Flat(normal);
     const float length = n.Length();
     if (length < 0.1f) continue;  // floors and ceilings: the vertical layer's business
@@ -969,8 +980,12 @@ void Players::StepVertical(Player& p) {
       v.accumulated_y = v.platform_y + along_slope - std::max(0.0f, c.ground.gap) / kDt;
     }
   } else {
-    // Airborne: absorb external vertical forces, then integrate gravity.
-    const float external = body_y - v.target_y;
+    // Airborne: absorb external vertical forces, then integrate gravity. Dwell: the lift from
+    // driving into a block's top edge is not one (as for the horizontal layer's contacts):
+    // absorbed, it turned the forward drive into a second jump while clearing a block, and carried
+    // the player up a staircase of full blocks on a single jump.
+    float external = body_y - v.target_y;
+    if (external > 0.0f) external -= std::min(external, p.drive_lift);
     if (std::abs(external) > kAbsorbThreshold && !c.jump.jumped_this_tick) {
       v.accumulated_y += external;
     }

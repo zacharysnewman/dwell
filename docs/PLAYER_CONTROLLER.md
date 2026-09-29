@@ -170,6 +170,13 @@ passes, `Tick` makes sure terrain collision exists around every player and syncs
   capsule down into the edge of the step it is leaving, and that edge's sideways push-out would
   otherwise become momentum that carries the player down several steps. Pushes by moving bodies
   are still absorbed.
+- **Edge lift is not absorbed.** The same holds vertically. Driving forward into a contact whose
+  normal faces partly up (a block's top edge under the capsule's rounded bottom, while jumping
+  over it) deflects the drive upwards by `into_h × normal.y` per contact, where `into_h` is last
+  tick's horizontal contribution into the normal. In the air, the vertical layer takes that lift
+  (summed over contacts, at most the upward deviation) out of the deviation before absorbing it.
+  Absorbed, it acted as a second jump while clearing a block (apex 2.1 m for a 1.25 m jump, landing
+  far past a lone block) and floated the player up a staircase of full blocks on a single jump.
 - **Step-up nudge.** After lifting onto a step, the capsule also moves forward by
   `radius + stepProbeDistance − ringRadius + 1 cm`, so the probe ring (inside the slimmer voxel
   capsule) is over the step and the ground snap doesn't pull the player back down. The nudge is
