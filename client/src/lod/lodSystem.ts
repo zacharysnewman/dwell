@@ -6,7 +6,7 @@
 // (LodRequest), and a `Generated` answer covers the section's whole subtree. Jobs go coarsest first,
 // then nearest; content and meshes live in a cache bounded by LOD_CACHE_MB.
 import type { SectionMeshes } from '../mesh/lodMesher';
-import { sectionBytes } from '../mesh/lodMesher';
+import { sectionBytes, SURFACE_STRIDE } from '../mesh/lodMesher';
 import type { SectionMesher } from '../mesh/pool';
 import type { LodMessage } from '../net/session';
 import { Lod, LodForm, MessageType } from '../protocol/constants.gen';
@@ -56,8 +56,6 @@ export interface LodOptions {
   /** LodRequest pacing (sections per second, under the server's limit) and unanswered retry. */
   requestsPerSecond?: number;
   requestTimeoutMs?: number;
-  /** Liquids from OPAQUE_LIQUID_LEVEL up: opaque (default), or tinting the floor (`?lodwater=tint`). */
-  coarseLiquids?: 'opaque' | 'tint';
 }
 
 export interface LodStats {
@@ -105,6 +103,8 @@ interface Node {
   meshing: boolean;
   /** Content to mesh (dropped once meshed unless modified: neighbours' aprons read it). */
   cells: Uint16Array<ArrayBuffer> | null;
+  /** Generated sections: each column's exact surface (worldgen GeneratedSection.surface). */
+  surface: Float32Array<ArrayBuffer> | null;
   meshed: boolean;
   /** Needs a (new) mesh: its content or a neighbour's border changed. */
   remesh: boolean;
@@ -120,8 +120,11 @@ const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
 const OFF_VIEW_PRIORITY = 1 / 8;
 /** Drawable chunks wait at most this long (ms) for the LOD levels above them (see findCovered). */
 export const FORCE_CHUNKS_AFTER_MS = 1000;
-/** From this level up liquids are drawn opaque (a coarse sea has no floor to see through to). */
-export const OPAQUE_LIQUID_LEVEL = 3;
+/**
+ * From this level up liquids are not drawn: the floor under them is tinted as seen through the
+ * near water (lodMesher LiquidMode `tint`); below it they are see-through like the chunks'.
+ */
+export const TINTED_WATER_LEVEL = 3;
 const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
   [1, 0, 0],
   [-1, 0, 0],
@@ -452,6 +455,7 @@ export class LodSystem {
         generating: false,
         meshing: false,
         cells: null,
+        surface: null,
         meshed: false,
         remesh: false,
         bytes: 0,
@@ -622,6 +626,7 @@ export class LodSystem {
         n.generating = false;
         if (n.token !== token || n.modified || this.nodes.get(n.id) !== n) return;
         this.setCells(n, s.cells);
+        n.surface = s.surface ?? null;
         n.remesh = true;
       },
       () => {
@@ -640,9 +645,8 @@ export class LodSystem {
     this.meshing++;
     const token = ++this.token;
     n.token = token;
-    const liquids =
-      n.coord[0] >= OPAQUE_LIQUID_LEVEL ? (this.options.coarseLiquids ?? 'opaque') : 'translucent';
-    void this.mesher.meshSection(cells, liquids).then((meshes) => {
+    const liquids = n.coord[0] >= TINTED_WATER_LEVEL ? 'tint' : 'translucent';
+    void this.mesher.meshSection(cells, liquids, this.surfaceInCells(n)).then((meshes) => {
       this.meshing--;
       n.meshing = false;
       if (n.token !== token || this.nodes.get(n.id) !== n) return;
@@ -658,6 +662,17 @@ export class LodSystem {
   private setCells(n: Node, cells: Uint16Array<ArrayBuffer> | null): void {
     this.cacheBytes += (cells?.byteLength ?? 0) - (n.cells?.byteLength ?? 0);
     n.cells = cells;
+    if (!cells) n.surface = null;
+  }
+
+  /** The section's column surfaces with heights in cells from its bottom (the mesher's units). */
+  private surfaceInCells(n: Node): Float32Array<ArrayBuffer> | null {
+    if (!n.surface || n.modified) return null;
+    const out = new Float32Array(n.surface);
+    const y0 = sectionOrigin(n.coord)[1];
+    const size = cellSize(n.coord[0]);
+    for (let i = 0; i < out.length; i += SURFACE_STRIDE) out[i] = ((out[i] ?? 0) - y0) / size;
+    return out;
   }
 
   /** Borders of modified same-level neighbours replace a generated apron (it assumed generation). */

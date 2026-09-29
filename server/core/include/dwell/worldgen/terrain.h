@@ -101,7 +101,9 @@ class TerrainGenerator {
   // boulders up to 2 m). Caves carve only within three cells of the surface (deeper cave air is
   // never seen from afar); ores and the stability pass are below a cell. The apron below the
   // world reads as bedrock, so the world's floor is not drawn.
-  core::LodKind GenerateLod(const core::LodCoord& c, core::LodCells& cells) const;
+  // With `surface`, also each column's exact surface (core::LodSurface).
+  core::LodKind GenerateLod(const core::LodCoord& c, core::LodCells& cells,
+                            core::LodSurfaces* surface = nullptr) const;
   // The column bounds GenerateLod classifies sections by (core::LodKindFromBounds).
   core::LodBounds LodBoundsAt(int level, std::int32_t i, std::int32_t k) const;
 

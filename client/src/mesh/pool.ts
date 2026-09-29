@@ -17,16 +17,21 @@ export interface Mesher {
 /** Anything that meshes LOD sections asynchronously (§6.6). */
 export interface SectionMesher {
   /**
-   * Meshes a section's 34³ cells (transferred: the caller gives up `cells`); liquids opaque at
-   * coarse levels (lodMesher.ts).
+   * Meshes a section's 34³ cells (transferred: the caller gives up `cells` and `surface`), with
+   * its liquids and optional column surfaces as in lodMesher.ts `meshSection`.
    */
-  meshSection(cells: Uint16Array<ArrayBuffer>, liquids?: LiquidMode): Promise<SectionMeshes>;
+  meshSection(
+    cells: Uint16Array<ArrayBuffer>,
+    liquids?: LiquidMode,
+    surface?: Float32Array<ArrayBuffer> | null,
+  ): Promise<SectionMeshes>;
 }
 
 interface Job {
   id: number;
   lod: boolean;
   liquids?: LiquidMode;
+  surface?: Float32Array<ArrayBuffer> | null;
   voxels: Uint16Array<ArrayBuffer>;
   resolve: (m: unknown) => void;
 }
@@ -83,12 +88,14 @@ export class MeshPool implements Mesher, SectionMesher {
   meshSection(
     cells: Uint16Array<ArrayBuffer>,
     liquids: LiquidMode = 'translucent',
+    surface: Float32Array<ArrayBuffer> | null = null,
   ): Promise<SectionMeshes> {
     return new Promise((resolve) => {
       this.queue.push({
         id: this.nextId++,
         lod: true,
         liquids,
+        surface,
         voxels: cells,
         resolve: (m) => {
           resolve(m as SectionMeshes);
@@ -125,11 +132,18 @@ export class MeshPool implements Mesher, SectionMesher {
       if (!best || !job) return;
       this.running.get(best)?.push(job);
       this.runningCount++;
+      const surface = job.surface ?? null;
       best.postMessage(
         job.lod
-          ? { t: 'lod', id: job.id, cells: job.voxels, liquids: job.liquids ?? 'translucent' }
+          ? {
+              t: 'lod',
+              id: job.id,
+              cells: job.voxels,
+              liquids: job.liquids ?? 'translucent',
+              surface,
+            }
           : { t: 'mesh', id: job.id, voxels: job.voxels },
-        [job.voxels.buffer],
+        surface ? [job.voxels.buffer, surface.buffer] : [job.voxels.buffer],
       );
     }
   }
@@ -144,7 +158,8 @@ export class InlineMesher implements Mesher, SectionMesher {
   meshSection(
     cells: Uint16Array<ArrayBuffer>,
     liquids: LiquidMode = 'translucent',
+    surface: Float32Array<ArrayBuffer> | null = null,
   ): Promise<SectionMeshes> {
-    return Promise.resolve(meshSection(cells, liquids));
+    return Promise.resolve(meshSection(cells, liquids, surface));
   }
 }

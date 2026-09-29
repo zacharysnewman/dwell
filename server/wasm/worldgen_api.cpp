@@ -21,6 +21,8 @@ std::vector<std::uint8_t> g_map;
 dwell::core::LodGenerator g_lod;
 dwell::core::LodBoundsFn g_lod_bounds;
 dwell::core::LodCells g_lod_cells;
+dwell::core::LodSurfaces g_lod_surface;
+std::vector<float> g_lod_surface_out;
 
 }  // namespace
 
@@ -83,7 +85,24 @@ EMSCRIPTEN_KEEPALIVE void dwell_worldgen_hash(std::uint32_t* out) {
 // (0 empty, 1 buried, 2 content). The 34³ cells (LodCell order) are at dwell_worldgen_lod_cells()
 // until the next call.
 EMSCRIPTEN_KEEPALIVE int dwell_worldgen_lod(int level, int i, int j, int k) {
+  g_lod_surface.clear();
+  if (g_terrain) {
+    return static_cast<int>(g_terrain->GenerateLod({level, i, j, k}, g_lod_cells, &g_lod_surface));
+  }
   return static_cast<int>(g_lod({level, i, j, k}, g_lod_cells));
+}
+// The last section's column surfaces (core::LodSurface), 34² × 3 floats: height (m), material,
+// flags (1 valid, 2 wet). Null when the generator has none (flat worlds: their cells are exact).
+EMSCRIPTEN_KEEPALIVE const float* dwell_worldgen_lod_surface() {
+  if (g_lod_surface.empty()) return nullptr;
+  g_lod_surface_out.resize(g_lod_surface.size() * 3);
+  for (std::size_t n = 0; n < g_lod_surface.size(); ++n) {
+    const auto& s = g_lod_surface[n];
+    g_lod_surface_out[n * 3] = s.height;
+    g_lod_surface_out[n * 3 + 1] = static_cast<float>(s.material);
+    g_lod_surface_out[n * 3 + 2] = static_cast<float>((s.valid ? 1 : 0) | (s.wet ? 2 : 0));
+  }
+  return g_lod_surface_out.data();
 }
 EMSCRIPTEN_KEEPALIVE const std::uint16_t* dwell_worldgen_lod_cells() { return g_lod_cells.data(); }
 

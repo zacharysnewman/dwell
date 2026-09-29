@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), a distant-water comparison switch (#18); outstanding: the frame-rate check on a desktop and a mobile device | #14, #15, #16, #17, #18 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); outstanding: the frame-rate check on a desktop and a mobile device | #14–#19 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -641,7 +641,8 @@ Deviations and additions (4c):
 - **Liquids count as filled** in `Downsample` (≥ 4 of 8 non-air, material from the columns' top
   filled cells) and a coarse `GenerateLod` cell over the sea is water: with solids and liquids
   counted apart, oceans showed their floor from afar (playtest feedback; `lod: sea` failed before
-  the change). From level 3 liquids mesh opaque. LOD golden hashes regenerated.
+  the change). From level 3 liquids meshed opaque (since replaced by a tinted floor, below). LOD
+  golden hashes regenerated.
 - **Creative flight replaces the dev camera** (playtest feedback: the "dev camera" was meant as a
   creative flying mode for the player). A new exclusive controller layer (PLAYER_CONTROLLER.md
   §6.7) driven by a held `fly` input bit: no gravity, move along the view's yaw, jump up / crouch
@@ -672,9 +673,11 @@ Deviations and additions (4c):
   sRGB bytes used as linear, while the chunks' sRGB texture is decoded before lighting. They are
   now linear, and a tile's average is taken in linear light. `lodMesher.test.ts` "writes linear
   vertex colours" failed before the fix.
-- **Distant water, under comparison** (playtest request): `?lodwater=tint` draws coarse liquids
-  (level 3 up) as the floor under them, recoloured as seen through the near water, instead of
-  opaque blocks; off by default until chosen. `lodMesher.test.ts` "tint mode" covers it.
+- **Distant water as a tinted floor** (playtest): compared side by side with opaque water blocks
+  (via a temporary `?lodwater=tint` switch), the tinted floor was chosen: coarse liquids (level 3
+  up) are left out and the floor under them is recoloured as seen through the near water. The
+  opaque mode and the switch are gone. `lodSystem.test.ts` "draws coarse water as the floor under
+  it, tinted" failed while opaque was the default.
 - **Snapshots dropped while flying (and swimming)** (phone playtest: terrain never finished
   loading after fast flight): `PlayerFlagsOf` resolved `kClimbing`/`kSwimming`/`kFlying` to the
   *ControllerFlags* constants of the same names, so a flying player's snapshot carried an
@@ -691,8 +694,15 @@ Deviations and additions (4c):
   server's close failed first and dropped the pending `Reject(Replaced)`; the WebTransport client
   now reads the control stream to its end before reporting the close (`webTransport.test.ts`
   failed before; the e2e passed 15/15 after).
+- **Distant terrain at its true height** (playtest: the horizon, oceans included, looked too
+  tall, with a solid edge): cells fill from their bottom voxel, so cell tops lifted land by up to
+  a cell (+220 m at level 8, +2 km at 12) and seas to +2,048 / +6,144 m at levels 12 / 13.
+  `GenerateLod` now also returns each column's exact surface, and the client draws column tops at
+  it in half-cell steps (1.2–2× the triangles; exact per-column tops measured 10–70×). `lod:
+  column surfaces` (unbiased within a few metres at every level) and the `lodMesher.test.ts`
+  surface tests failed before. Cells, server, protocol and golden hashes are unchanged.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
-  level, `?lodwater=tint` for the distant-water comparison.
+  level.
 
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section

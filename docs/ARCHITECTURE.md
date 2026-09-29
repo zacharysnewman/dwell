@@ -822,15 +822,27 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
   material of the column's surface (not the bedrock its bottom voxel samples; a regression test
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
-  top, as `Downsample` keeps it (`lod: sea`). From level 3 (`OPAQUE_LIQUID_LEVEL`, 8 m cells)
-  liquids mesh opaque, culled and culling like solids and with skirts — a coarse sea has no floor
-  beneath its surface to see through to; levels 1–2 keep the chunks' see-through water. Under
-  comparison (`?lodwater=tint`, off by default): from level 3, liquids are left out and the floor
-  faces they cover take the colour seen through the near water (its colour blended over the floor
-  at its opacity, in linear light).
+  top, as `Downsample` keeps it (`lod: sea`). Levels 1–2 keep the chunks' see-through water. From
+  level 3 (`TINTED_WATER_LEVEL`, 8 m cells) liquids are not drawn: the floor faces they cover take
+  the colour seen through the near water (its colour blended over the floor at its opacity, in
+  linear light), so distant seas continue the near water's look — chosen over opaque water blocks
+  in a side-by-side playtest comparison.
+- **Column surfaces** (true heights at a distance): a cell counts as filled from its bottom voxel,
+  so drawing each column's top cell to its top lifted the ground by up to a cell — ~220 m at level
+  8, ~2 km at level 12 — and seas to +2,048 m (level 12) and +6,144 m (level 13): the horizon
+  stood too tall, with steps where levels met (playtest). `GenerateLod` therefore also returns
+  each column's exact surface (`core::LodSurface`: height, material, wet — a sea's floor), unbiased
+  to a few metres at every level (`lod: column surfaces`); the client's worldgen worker passes it
+  on, and the mesher draws the top of the column's surface cell at that height, in half-cell
+  steps (at most 1/4 cell — a pixel or two — off; finer steps cost several times the triangles),
+  with walls to lower neighbours, tops of equal height merged into rectangles and walls into
+  strips (1.2–2× the triangles of plain cell tops). A sea floor inside a water cell (a cell
+  taller than the sea is deep) is drawn at its depth, tinted. The cells themselves — and so the
+  server, `Downsample`, the protocol and the golden hashes — are unchanged; modified sections
+  (`Explicit` from the server) carry no surfaces and keep cell tops.
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use and LOD bytes/s; `?lodcolors=1` tints sections
-  by level, `?lod=0` turns the LOD off, `?lodwater=tint` draws distant water as a tinted floor. Measured under Node with a fake worker pool, one frame's update
+  by level, `?lod=0` turns the LOD off. Measured under Node with a fake worker pool, one frame's update
   (selection, skirts, jobs) costs ~2–4 ms for ~2,800 drawn sections.
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).

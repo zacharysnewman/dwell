@@ -814,10 +814,12 @@ core::LodBounds TerrainGenerator::LodBoundsAt(int level, std::int32_t i, std::in
       [&](int x, int z) -> const Column& { return cols[(z + 1) * core::kLodPad + x + 1]; }, cell);
 }
 
-core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCells& cells) const {
+core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCells& cells,
+                                            core::LodSurfaces* surface) const {
   using core::kLodSectionCells;
   using core::LodCell;
   cells.assign(core::kLodVolume, M::kAir);
+  if (surface) surface->assign(static_cast<std::size_t>(core::kLodPad * core::kLodPad), {});
   if (!core::LodInWorld(c)) return core::LodKind::kEmpty;
   const core::LodOrigin o = core::LodSectionOrigin(c);
   const std::int64_t cell = core::LodCellSize(c.level);
@@ -861,6 +863,10 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
           col.height - col.overhang * 1.1f - static_cast<float>(kLodCaveCells * cell);
       int run = 1000;  // solid above the padded top: treat as deep
       bool under_water = false;
+      core::LodSurface* surf =
+          surface ? &(*surface)[static_cast<std::size_t>((z + 1) * core::kLodPad + x + 1)]
+                  : nullptr;
+      bool surfaced = false;  // the column's topmost filled cell has been seen
       for (int y = kLodSectionCells + pad_rows; y >= -1; --y) {
         const std::int64_t a = o.y + y * cell;
         const std::size_t idx =
@@ -878,6 +884,9 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
           run = k == kCaveAir ? 1000 : 0;
           under_water = k == kWater;
           if (idx < core::kLodVolume) cells[idx] = k == kWater ? M::kWater : M::kAir;
+          if (k == kWater && !surfaced && idx < core::kLodVolume) {
+            surfaced = true;  // the sea's cells top the column; its floor lies below them
+          }
           continue;
         }
         if (idx < core::kLodVolume) {
@@ -890,10 +899,23 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
             // sampled (the cell is deeper than the sea) shows its water, as Downsample keeps it.
             const auto top = static_cast<std::int32_t>(
                 std::clamp<std::int64_t>(FloorToInt(col.height), a, a + cell - 1));
+            const bool sea = col.height < static_cast<float>(kSeaLevel);
             cells[idx] = a + cell <= kWorldMinY + kBedrockLayers ? M::kBedrock
-                         : !under_water && col.height < static_cast<float>(kSeaLevel)
-                             ? M::kWater
-                             : SurfaceMaterial(col, 0, under_water, top, slope);
+                         : !under_water && sea                   ? M::kWater
+                                               : SurfaceMaterial(col, 0, under_water, top, slope);
+            // The column's surface, exactly: the ground's height (a sea's floor, whose cell may
+            // have been drawn as water), if it lies in this cell — or above it, where 3D noise
+            // cut the ground lower (then the cell's top). Below it (noise raised the ground),
+            // the whole cell stands.
+            const float h = col.height;
+            if (surf && (!surfaced || under_water) && h >= static_cast<float>(a) &&
+                a + cell > kWorldMinY + kBedrockLayers) {
+              surf->valid = true;
+              surf->wet = sea;
+              surf->height = std::min(h, static_cast<float>(a + cell));
+              surf->material = SurfaceMaterial(col, 0, sea, top, slope);
+            }
+            surfaced = true;
           } else {
             cells[idx] = ay < kWorldMinY + kBedrockLayers
                              ? M::kBedrock
