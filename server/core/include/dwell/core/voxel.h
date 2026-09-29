@@ -14,8 +14,8 @@
 namespace dwell::core {
 
 // World bounds and terrain constants (§6.3, §7.4).
-inline constexpr int kWorldMinY = -128;  // below this: the void
-inline constexpr int kWorldMaxY = 384;   // generated terrain stays below this
+inline constexpr int kWorldMinY = protocol::kWorldMinY;  // below this: the void
+inline constexpr int kWorldMaxY = protocol::kWorldMaxY;  // generated terrain stays below this
 inline constexpr int kBedrockLayers = 4;
 inline constexpr int kSeaLevel = 64;  // procedural terrain: water fills open space below this
 
@@ -103,6 +103,8 @@ class Chunk {
   std::uint32_t revision() const { return revision_; }
   // Called once after generation: an unmodified generated chunk is revision 0 (§6.1, §6.3).
   void ResetRevision() { revision_ = 0; }
+  // Streamed chunks take the revision the server sent.
+  void SetRevision(std::uint32_t revision) { revision_ = revision; }
   const std::array<MaterialId, kChunkVolume>& voxels() const { return voxels_; }
   // Generators write here directly (no revision bumps).
   std::array<MaterialId, kChunkVolume>& generation_voxels() { return voxels_; }
@@ -138,21 +140,58 @@ ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world
 // Feet position players spawn at for a generator: near the origin, on open level ground.
 std::array<float, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64_t world_seed);
 
-// Master voxel grid: chunks generated on first access.
+// FNV-1a 64 over a chunk's voxel ids (u16 little-endian, chunk index order): the worldgen golden
+// test and the WorldgenCheck verification hash (§6.3).
+std::uint64_t ChunkHash(const Chunk& chunk);
+
+// Chunk rows the world can hold anything in (kWorldMinY..kWorldMaxY); outside is air.
+inline constexpr int kMinChunkY = kWorldMinY / kChunkSize;
+inline constexpr int kMaxChunkY = kWorldMaxY / kChunkSize - 1;
+
+// Chebyshev distance between chunk coordinates.
+inline int ChunkDistance(const ChunkCoord& a, const ChunkCoord& b) {
+  const int dx = a.x > b.x ? a.x - b.x : b.x - a.x;
+  const int dy = a.y > b.y ? a.y - b.y : b.y - a.y;
+  const int dz = a.z > b.z ? a.z - b.z : b.z - a.z;
+  return dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
+}
+
+// Voxel grid. With a generator (the server; tests) missing chunks are generated on first access,
+// and unmodified ones can be evicted and regenerated later (§6.3). Without one (a *streamed* world:
+// the client) chunks arrive through Put() and missing chunks read as air.
 class VoxelWorld {
  public:
   explicit VoxelWorld(ChunkGenerator generator = GenerateFlatChunk)
       : generator_(std::move(generator)) {}
 
+  bool streamed() const { return !generator_; }
+
+  // Generates a missing chunk (streamed worlds: creates an all-air one).
   Chunk& GetOrCreate(const ChunkCoord& coord);
   const Chunk* Find(const ChunkCoord& coord) const;
+  // A chunk to read: generated on demand, or (streamed worlds) all air while missing.
+  const Chunk& Read(const ChunkCoord& coord);
   MaterialId GetVoxel(std::int32_t x, std::int32_t y, std::int32_t z);
   void SetVoxel(std::int32_t x, std::int32_t y, std::int32_t z, MaterialId m);
+
+  // Inserts or replaces a chunk (streamed chunks; chunks generated off-thread).
+  void Put(const ChunkCoord& coord, std::unique_ptr<Chunk> chunk);
+  void Remove(const ChunkCoord& coord);
+  // Drops unmodified (revision 0) chunks that `keep` rejects; returns how many.
+  std::size_t EvictUnmodified(const std::function<bool(const ChunkCoord&)>& keep);
+
+  // Changes whenever a chunk is replaced or removed (or appears in a streamed world): pointers
+  // and references to chunks obtained before a change may be stale.
+  std::uint64_t epoch() const { return epoch_; }
   std::size_t loaded_chunks() const { return chunks_.size(); }
+  // Chunks generated synchronously on access (the tick waited for them).
+  std::uint64_t generated_on_access() const { return generated_on_access_; }
 
  private:
   ChunkGenerator generator_;
   std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash> chunks_;
+  std::uint64_t epoch_ = 0;
+  std::uint64_t generated_on_access_ = 0;
 };
 
 }  // namespace dwell::core

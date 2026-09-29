@@ -135,14 +135,55 @@ std::array<float, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64_
   return {0.5f, 0.0f, 0.5f};
 }
 
+std::uint64_t ChunkHash(const Chunk& chunk) {
+  std::uint64_t h = 0xcbf29ce484222325ull;
+  for (const MaterialId m : chunk.voxels()) {
+    for (int b = 0; b < 2; ++b) {
+      h ^= static_cast<std::uint8_t>(m >> (8 * b));
+      h *= 0x100000001b3ull;
+    }
+  }
+  return h;
+}
+
 Chunk& VoxelWorld::GetOrCreate(const ChunkCoord& coord) {
   auto [it, inserted] = chunks_.try_emplace(coord);
   if (inserted) {
     it->second = std::make_unique<Chunk>();
-    generator_(coord, *it->second);
+    if (generator_) {
+      generator_(coord, *it->second);
+      ++generated_on_access_;
+    } else {
+      ++epoch_;  // readers may hold the shared air chunk for this coordinate
+    }
     it->second->ResetRevision();
   }
   return *it->second;
+}
+
+const Chunk& VoxelWorld::Read(const ChunkCoord& coord) {
+  if (generator_) return GetOrCreate(coord);
+  static const Chunk kAir;
+  const Chunk* chunk = Find(coord);
+  return chunk ? *chunk : kAir;
+}
+
+void VoxelWorld::Put(const ChunkCoord& coord, std::unique_ptr<Chunk> chunk) {
+  chunks_[coord] = std::move(chunk);
+  ++epoch_;
+}
+
+void VoxelWorld::Remove(const ChunkCoord& coord) {
+  if (chunks_.erase(coord)) ++epoch_;
+}
+
+std::size_t VoxelWorld::EvictUnmodified(const std::function<bool(const ChunkCoord&)>& keep) {
+  const std::size_t before = chunks_.size();
+  std::erase_if(chunks_,
+                [&](const auto& kv) { return kv.second->revision() == 0 && !keep(kv.first); });
+  const std::size_t evicted = before - chunks_.size();
+  if (evicted) ++epoch_;
+  return evicted;
 }
 
 const Chunk* VoxelWorld::Find(const ChunkCoord& coord) const {
@@ -152,7 +193,7 @@ const Chunk* VoxelWorld::Find(const ChunkCoord& coord) const {
 
 MaterialId VoxelWorld::GetVoxel(std::int32_t x, std::int32_t y, std::int32_t z) {
   const auto c = ChunkOf(x, y, z);
-  return GetOrCreate(c).Get(x - c.x * kChunkSize, y - c.y * kChunkSize, z - c.z * kChunkSize);
+  return Read(c).Get(x - c.x * kChunkSize, y - c.y * kChunkSize, z - c.z * kChunkSize);
 }
 
 void VoxelWorld::SetVoxel(std::int32_t x, std::int32_t y, std::int32_t z, MaterialId m) {

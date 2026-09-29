@@ -39,6 +39,11 @@ for (const [k, v] of enumEntries(c.players)) {
   cpp.push(`inline constexpr ${isFloat ? 'float' : 'int'} k${k[0].toUpperCase()}${k.slice(1)} = ${value};`);
 }
 cpp.push('');
+// Chunk streaming (ARCHITECTURE.md §6.3, §7.4).
+for (const [k, v] of enumEntries(c.world)) {
+  cpp.push(`inline constexpr int k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
+}
+cpp.push('');
 for (const [k, v] of enumEntries(c.limits)) {
   cpp.push(`inline constexpr std::size_t k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
 }
@@ -57,12 +62,14 @@ cppEnum('PlayerState', 'std::uint8_t', c.playerStates);
 cppEnum('GroundKind', 'std::uint8_t', c.groundKinds);
 cppEnum('PlayerEventKind', 'std::uint8_t', c.playerEventKinds);
 cppEnum('DamageCause', 'std::uint8_t', c.damageCauses);
+cppEnum('ChunkForm', 'std::uint8_t', c.chunkForms);
 const maxOf = (obj) => Math.max(...Object.values(obj));
 cpp.push('');
 cpp.push(`inline constexpr std::uint8_t kMaxPlayerState = ${maxOf(c.playerStates)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxGroundKind = ${maxOf(c.groundKinds)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxPlayerEventKind = ${maxOf(c.playerEventKinds)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxDamageCause = ${maxOf(c.damageCauses)};`);
+cpp.push(`inline constexpr std::uint8_t kMaxChunkForm = ${maxOf(c.chunkForms)};`);
 const cppFlags = (name, type, obj) => {
   cpp.push('');
   cpp.push(`namespace ${name} {`);
@@ -99,6 +106,10 @@ ts.push('export const Players = {');
 for (const [k, v] of enumEntries(c.players)) ts.push(`  ${k}: ${v},`);
 ts.push('} as const;');
 ts.push('');
+ts.push('export const World = {');
+for (const [k, v] of enumEntries(c.world)) ts.push(`  ${k}: ${v},`);
+ts.push('} as const;');
+ts.push('');
 ts.push('export const Limits = {');
 for (const [k, v] of enumEntries(c.limits)) ts.push(`  ${k}: ${v},`);
 ts.push('} as const;');
@@ -117,6 +128,7 @@ tsEnum('PlayerState', c.playerStates);
 tsEnum('GroundKind', c.groundKinds);
 tsEnum('PlayerEventKind', c.playerEventKinds);
 tsEnum('DamageCause', c.damageCauses);
+tsEnum('ChunkForm', c.chunkForms);
 const tsFlags = (name, obj) => {
   ts.push('');
   ts.push(`export const ${name} = {`);

@@ -8,12 +8,14 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "dwell/core/entropy.h"
 #include "dwell/core/physics_world.h"
 #include "dwell/core/terrain_collision.h"
 #include "dwell/core/voxel.h"
+#include "dwell/core/worldgen_pool.h"
 #include "dwell/player/controller.h"
 #include "dwell/protocol/messages.h"
 
@@ -34,6 +36,22 @@ struct ServerConfig {
   std::string client_version_note = "";
   // Feet position; players spread out around it. Unset: the generator's spawn point.
   std::optional<std::array<float, 3>> spawn = std::nullopt;
+
+  // Terrain generation and streaming (§6.3).
+  int worldgen_threads = 0;       // 0: generate on the tick thread within worldgen_budget_us
+  int worldgen_budget_us = 4000;  // per tick, without threads
+  int pregen_radius_chunks = 2;   // around the spawn, generated at startup
+  int view_radius_chunks = protocol::kViewRadiusChunks;  // horizontal, streamed to each client
+  int view_height_chunks = protocol::kViewHeightChunks;  // above and below the player's chunk
+  int chunk_bytes_per_second = protocol::kChunkBytesPerSecond;  // per client
+};
+
+// Terrain streaming counters, for tests and diagnostics.
+struct StreamStats {
+  std::uint32_t generated_sent = 0;
+  std::uint32_t explicit_sent = 0;
+  std::uint32_t unloaded = 0;
+  std::size_t streamed = 0;  // chunks the client currently has
 };
 
 struct Outgoing {
@@ -80,6 +98,7 @@ class Server {
   double time_ms() const { return tick_ * (1000.0 / protocol::kSimHz); }
   std::size_t joined_players() const;
   VoxelWorld& world() { return world_; }
+  const TerrainCollision& terrain() const { return terrain_; }
   PhysicsWorld& physics() { return physics_; }
   player::Players& players() { return players_; }
   const player::PlayerControllerConfig& player_config() const { return player_config_; }
@@ -87,10 +106,15 @@ class Server {
   // Test and diagnostics access by player id.
   std::optional<player::PlayerHandle> PlayerHandleOf(std::uint16_t player_id) const;
   std::optional<SessionStats> StatsOf(std::uint16_t player_id) const;
+  std::optional<StreamStats> StreamStatsOf(std::uint16_t player_id) const;
+  const ChunkCoord& verification_chunk() const { return verification_chunk_; }
   int HealthOf(std::uint16_t player_id) const;  // −1 when unknown
 
  private:
   enum class Phase : std::uint8_t { kAwaitingHello, kAwaitingAuth, kJoined };
+  // How a client receives chunks (§6.3): nothing until its WorldgenCheck arrives, then Generated
+  // messages for unmodified chunks when its generator matched, otherwise every chunk explicitly.
+  enum class ChunkMode : std::uint8_t { kAwaitingCheck, kGenerated, kFull };
   struct QueuedInput {
     std::uint32_t seq;
     player::Input input;
@@ -117,6 +141,13 @@ class Server {
     std::uint32_t rate_window_tick = 0;
     std::uint32_t rate_window_count = 0;
     SessionStats stats;
+    // Terrain streaming.
+    ChunkMode chunk_mode = ChunkMode::kAwaitingCheck;
+    std::unordered_set<ChunkCoord, ChunkCoordHash> streamed;  // sent and not unloaded
+    std::optional<ChunkCoord> stream_center;
+    bool stream_complete = false;  // everything in view sent (until the center moves)
+    double chunk_credit = 0;       // bytes the client may still receive this tick
+    StreamStats stream_stats;
   };
 
   void HandleControl(SessionId id, Session& s, const protocol::Message& m);
@@ -134,6 +165,10 @@ class Server {
   void Damage(Session& s, int amount, protocol::DamageCause cause);
   void AfterControllerTick(Session& s);
   void SendSnapshots();
+  // Terrain: generation around players, eviction, and per-client streaming (§6.3).
+  std::optional<ChunkCoord> ViewCenter(const Session& s) const;
+  void UpdateWorldgen();
+  void StreamChunks(SessionId id, Session& s);
   Session* SessionOfPlayer(std::uint16_t player_id);
   const Session* SessionOfPlayer(std::uint16_t player_id) const;
   std::uint16_t PlayerIdOfBody(std::uint32_t body_id) const;
@@ -150,6 +185,11 @@ class Server {
   std::vector<std::pair<std::uint16_t, JPH::Vec3>> knockbacks_;  // applied in the next Step
   std::uint32_t tick_ = 0;
   std::uint16_t next_player_id_ = 1;
+  WorldgenPool worldgen_;
+  ChunkCoord verification_chunk_;
+  std::optional<std::uint64_t> verification_hash_;
+  std::vector<ChunkCoord> view_offsets_;     // chunks in view relative to the center, nearest first
+  std::vector<ChunkCoord> explicit_wanted_;  // full-mode chunks to generate for streaming
 };
 
 }  // namespace dwell::core

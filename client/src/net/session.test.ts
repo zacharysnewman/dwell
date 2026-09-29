@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { loadOrCreateDeviceKey, MemoryKeyStore } from '../identity/deviceKey';
-import { Channel, MessageType, RejectReason, TransportKind } from '../protocol/constants.gen';
+import {
+  Channel,
+  ChunkForm,
+  MessageType,
+  RejectReason,
+  TransportKind,
+} from '../protocol/constants.gen';
 import { authTranscript, decode, encode, type Message } from '../protocol/messages';
 import { ClientSession, type SessionState } from './session';
 import type { Transport, TransportHandlers } from './Transport';
@@ -25,6 +31,9 @@ class FakeTransport implements Transport {
   }
   deliver(m: Message): void {
     this.handlers?.onReliable(Channel.control, encode(m));
+  }
+  deliverWorld(m: Message): void {
+    this.handlers?.onReliable(Channel.world, encode(m));
   }
 }
 
@@ -77,6 +86,7 @@ describe('ClientSession', () => {
       worldSeed: 5n,
       generatorVersion: 0,
       serverTick: 10,
+      verificationChunk: [0, 2, 0],
     });
     await flush();
     expect(states.at(-1)).toEqual({
@@ -84,7 +94,23 @@ describe('ClientSession', () => {
       playerId: 3,
       worldSeed: 5n,
       generatorVersion: 0,
+      verificationChunk: [0, 2, 0],
     });
+
+    // Chunks that arrive before the game subscribes are held for it, in order.
+    transport.deliverWorld({ type: MessageType.ChunkUnload, coords: [[1, 2, 3]] });
+    transport.deliverWorld({
+      type: MessageType.ChunkData,
+      form: ChunkForm.Generated,
+      coord: [4, 5, 6],
+      revision: 0,
+      voxels: null,
+    });
+    const got: number[] = [];
+    session.onGame((m) => got.push(m.type));
+    expect(got).toEqual([MessageType.ChunkUnload, MessageType.ChunkData]);
+    session.sendControl({ type: MessageType.WorldgenCheck, hash: 7n });
+    expect(transport.sent.at(-1)).toEqual({ type: MessageType.WorldgenCheck, hash: 7n });
     session.close();
   });
 

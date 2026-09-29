@@ -16,19 +16,17 @@ import { quantizeInput } from '../predict/input';
 import type { PlayerView, Renderer } from '../render';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
+import type { ChunkStreamer, StreamStats } from '../world/chunkStream';
 import { EyeCamera } from './eye';
 import { isCrouched, isDead, RemotePlayers } from './remotes';
 
 const TICK_MS = 1000 / SIM_HZ;
 const MAX_TICKS_PER_FRAME = 5;
-/** Terrain drawn within this many chunks of the player (horizontally), one chunk up and down. */
-const VIEW_CHUNKS = 2;
-const CHUNK = 32;
 /**
- * Main-thread time per frame for generating and meshing terrain chunks (at least one per frame).
- * A procedural chunk costs a few milliseconds in WASM; Phase 3b moves this to worker pools.
+ * Main-thread time per frame for meshing streamed chunks (at least one per frame). Generation runs
+ * in the worldgen workers; meshing moves to a worker pool in Phase 3c.
  */
-const STREAM_BUDGET_MS = 4;
+const MESH_BUDGET_MS = 4;
 /** Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE. */
 const BUFFER_LOW = 1;
 const BUFFER_HIGH = 4;
@@ -57,13 +55,16 @@ export interface GameDebugState {
   dead: boolean;
   remotes: { playerId: number; feet: Vec3; dead: boolean }[];
   stats: ClientState['stats'];
+  /** Streamed terrain (§6.3). */
+  terrain: StreamStats;
+  /** The chunks around the player are loaded, so prediction runs. */
+  terrainReady: boolean;
 }
 
 export class Game {
   private readonly remotes = new RemotePlayers();
   private readonly proxies = new Set<number>();
   private readonly recent: InputFrame[] = [];
-  private readonly chunks = new Set<string>();
   private accumulator = 0;
   private lastFrameMs: number | null = null;
   private lastSnapshotTick = 0;
@@ -83,13 +84,22 @@ export class Game {
     private readonly input: InputSource,
     private readonly hud: Hud,
     private readonly host: GameHost,
+    private readonly terrain: ChunkStreamer,
   ) {
     this.current = core.state();
     this.eye.tick(this.current, 1 / SIM_HZ);
   }
 
-  /** Handles a snapshot or player event from the session. */
+  /** Handles a snapshot, player event, or chunk message from the session. */
   onGameMessage(m: GameMessage, bytes: Uint8Array, nowMs: number): void {
+    if (m.type === MessageType.ChunkData) {
+      this.terrain.onChunkData(m);
+      return;
+    }
+    if (m.type === MessageType.ChunkUnload) {
+      this.terrain.onChunkUnload(m.coords);
+      return;
+    }
     if (m.type === MessageType.PhysicsSnapshot) {
       if (m.serverTick <= this.lastSnapshotTick) return; // reordered datagram
       this.lastSnapshotTick = m.serverTick;
@@ -156,11 +166,18 @@ export class Game {
         .latest()
         .map((r) => ({ playerId: r.playerId, feet: r.feet, dead: isDead(r) })),
       stats: c.stats,
+      terrain: this.terrain.stats(),
+      terrainReady: this.terrainReady(),
     };
   }
 
+  /** Prediction waits until the terrain around the player has arrived (collision needs it). */
+  private terrainReady(): boolean {
+    return this.current.active && this.terrain.readyAround(this.current.position);
+  }
+
   private tick(): void {
-    if (!this.current.active) return;
+    if (!this.terrainReady()) return;
     const input = this.input.sample();
     const frame = quantizeInput(input, this.core.nextSeq());
     this.core.tick(frame);
@@ -188,7 +205,7 @@ export class Game {
       lerp(p.position[1] + p.renderOffset[1], c.position[1] + c.renderOffset[1]),
       lerp(p.position[2] + p.renderOffset[2], c.position[2] + c.renderOffset[2]),
     ];
-    this.streamTerrain(c.active ? center : [0.5, 1, 0.5]);
+    this.terrain.meshDirty(c.active ? center : [0.5, 64, 0.5], MESH_BUDGET_MS);
 
     // Remote players, interpolated.
     const views = this.remotes.sample(nowMs);
@@ -218,7 +235,15 @@ export class Game {
       this.hud.setMessage('You died — respawning…');
     } else {
       this.renderer.setPlayer(this.playerId, null);
-      this.hud.setMessage(c.active ? '' : 'Joining…');
+      this.hud.setMessage(
+        this.terrain.error
+          ? `Terrain unavailable: ${this.terrain.error.message}`
+          : !c.active
+            ? 'Joining…'
+            : this.terrainReady()
+              ? ''
+              : 'Loading terrain…',
+      );
       // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
       this.renderer.setCamera(
         [center[0], this.eye.draw(alpha), center[2]],
@@ -301,37 +326,5 @@ export class Game {
       color: 0x3cc8ff,
     });
     return lines;
-  }
-
-  /** Builds render meshes for chunks near `center` (within a time budget) and drops far ones. */
-  private streamTerrain(center: Vec3): void {
-    const [cx, cy, cz] = center.map((v) => Math.floor(v / CHUNK)) as [number, number, number];
-    const deadline = performance.now() + STREAM_BUDGET_MS;
-    let more = true;
-    for (let r = 0; r <= VIEW_CHUNKS && more; r++) {
-      for (let x = cx - r; x <= cx + r && more; x++) {
-        for (let z = cz - r; z <= cz + r && more; z++) {
-          if (Math.max(Math.abs(x - cx), Math.abs(z - cz)) !== r) continue;
-          for (let y = cy - 1; y <= cy + 1 && more; y++) {
-            const key = `${String(x)},${String(y)},${String(z)}`;
-            if (this.chunks.has(key)) continue;
-            this.chunks.add(key);
-            this.renderer.setTerrainChunk(
-              key,
-              [x * CHUNK, y * CHUNK, z * CHUNK],
-              this.core.chunkFaces(x, y, z),
-            );
-            more = performance.now() < deadline;
-          }
-        }
-      }
-    }
-    for (const key of this.chunks) {
-      const [x = 0, y = 0, z = 0] = key.split(',').map(Number);
-      if (Math.max(Math.abs(x - cx), Math.abs(z - cz)) > VIEW_CHUNKS + 1 || Math.abs(y - cy) > 2) {
-        this.renderer.setTerrainChunk(key, [0, 0, 0], null);
-        this.chunks.delete(key);
-      }
-    }
   }
 }

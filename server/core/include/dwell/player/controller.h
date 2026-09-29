@@ -218,6 +218,7 @@ class Players {
   VoxelQuery query_;
   std::vector<Player*> players_;  // indexed by handle; null when free
   std::unique_ptr<Contacts> contacts_;
+  std::uint32_t ticks_ = 0;
 };
 
 }  // namespace dwell::player

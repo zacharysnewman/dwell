@@ -89,9 +89,11 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    (generator version 2, §6.3) by default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
-5. **One WASM build, three uses.** The same Emscripten build of `server/core` provides local mode,
-   the client's prediction/debris physics, and the client terrain generator, so every piece of
-   simulation logic (player controller, worldgen, physics setup) has exactly one implementation.
+5. **One C++ core, compiled for the browser twice.** The Emscripten build of `server/core`
+   (`dwell_core.wasm`) provides local mode and the client's prediction/debris physics; its
+   generator sources alone form `dwell_worldgen.wasm` (~30 KB, no Jolt) for the client's worldgen
+   workers. Every piece of simulation logic (player controller, worldgen, physics setup) has
+   exactly one implementation.
 
 Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds the WASM core
 (Emscripten) and `client/`, and publishes them with `actions/deploy-pages` on pushes to `main`
@@ -216,14 +218,18 @@ steps), and sleeps until the next step or at most 2 ms. Physics steps with Jolt'
 queue (§9.3), runs the player controller pipeline, applies its server-side consequences (fall
 damage, the void below `WORLD_MIN_Y`, debug launch pads → knockback), steps physics, respawns dead
 players after `RESPAWN_SECONDS`, and every 3rd tick sends each client a `PhysicsSnapshot`.
-**Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3), synchronously
-on first access to a chunk; players spawn at the generator's spawn point. Voxel edits, the
-worldgen thread pool, integrity, and re-bake arrive with later phases.
+**Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3); players
+spawn at the generator's spawn point. **Built (Phase 3b):** each step first integrates the chunks
+the worldgen pool finished, and ends by streaming chunks to each client (interest-managed, within
+its bandwidth budget), telling the pool what to generate next, and (every 64 ticks) evicting
+unmodified chunks far from players (§6.3). Voxel edits, integrity, and re-bake arrive with later
+phases.
 
 ### 4.3 Simulation core vs. network front-end
-`server/core` has no sockets, OS calls, or threads of its own (parallel work such as worldgen is
-exposed as jobs the host schedules; the host also supplies the Jolt job system and an `Entropy`
-source for nonces); it consumes decoded messages and emits encoded messages through an
+`server/core` has no sockets or OS calls, and its only threads are the optional worldgen pool's
+(`ServerConfig::worldgen_threads`; the dedicated server enables `cores − 2`, the browser's
+single-threaded local mode none, §6.3); the host supplies the Jolt job system and an `Entropy`
+source for nonces; it consumes decoded messages and emits encoded messages through an
 interface. **[built]** `dwell::core::Server`: `OnConnected(session, transportKind, binding)`,
 `OnReliable`, `OnDatagram`, `OnDisconnected`, `Step()`, and `TakeOutbox()` returning
 `{session, Reliable | Datagram | Close, channel, bytes}`. This lets the identical core run natively, in the browser's local mode, and
@@ -260,16 +266,16 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | Module | Responsibility |
 |---|---|
 | `game/` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with the client sim, sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the sim, nudges its tick rate from the server's input buffer, streams terrain meshes around the player, drives the first-person camera (per-tick eye height with crouch and step-up/down smoothing, `eye.ts`) and the HUD. `RemotePlayers`: snapshot buffer, interpolation `INTERP_DELAY_MS` in the past. |
-| `sim/` **[built]** | `ClientCore`: the client's own instance of the sim-core WASM on the main thread (`dwell_client_*` exports), created for the world in `Welcome` (generator version and seed): the C++ `Predictor` (prediction world with the local player, dead-reckoned remote proxies, terrain), and visible chunk faces for rendering. Chunks are generated and meshed on the main thread within a 4 ms per-frame budget until the worker pools arrive (Phase 3b). |
+| `sim/` **[built]** | `ClientCore`: the client's own instance of the sim-core WASM on the main thread (`dwell_client_*` exports): a streamed world holding the chunks the server sent (`setChunk` / `removeChunk`), the C++ `Predictor` (prediction world with the local player, dead-reckoned remote proxies, terrain), and visible chunk faces for rendering (meshed on the main thread within a 4 ms per-frame budget until the meshing worker, Phase 3c). |
 | `predict/` **[built]** | Keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3); touch controls for phones and tablets (`touch.ts`: floating left-half joystick, drag-to-look right half, held Jump and Crouch buttons and a latching Run button, one captured Pointer Events pointer per control, merged into the same sampled input); and input quantization mirroring the C++ `QuantizeInput`. |
 | `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). |
-| `protocol/` **[built]** | Codecs mirroring the C++ ones, constants generated from `shared/protocol`. |
+| `protocol/` **[built]** | Codecs mirroring the C++ ones (including the chunk palette + RLE, `chunkVoxels.ts`), constants generated from `shared/protocol`. |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
 | `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. |
 | `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message) and the F3 debug overlay (PLAYER_CONTROLLER.md §9). **[planned, Phase 3c]** the block hotbar (§6.5). |
 | `interact/` **[planned, Phase 3c]** | Block targeting (voxel ray cast from the eye), break/place input on desktop and touch, the infinite block palette and selection, and `BlockEditRequest` sending (§6.5). |
-| `world/` **[in progress]** | Material ids and render styles (mirroring `voxel.h`, checked by a test). Chunk store mirrored from the server, applying voxel deltas in order, arrives in Phase 3b (until then clients generate the world from its seed and generator version inside the sim core). |
-| `worldgen/` | Worldgen worker pool running the server's C++ terrain generator (WASM) for `Generated` chunks. |
+| `world/` **[in progress]** | Material ids and render styles (mirroring `voxel.h`, checked by a test). **[built]** `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, re-meshes changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). **[planned, Phase 3c]** voxel deltas applied in revision order. |
+| `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3). |
 | `mesh/` | Greedy-mesher worker pool; produces render meshes and collision triangles. |
 | `render/` **[built: terrain chunks, player capsules, camera, debug lines]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry, own shader materials, and a block texture array; rendering is camera-relative. Game code never touches Three.js objects directly. Phase 2: chunk meshes built from the sim core's visible faces (`chunkMesh.ts`: one quad per face, water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), and debug line segments. **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close). Faces get UVs within their tile; vertex colours carry face shading (and the flat colour of untextured materials). |
 | `physics/` | Debris world (Phase 5) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
@@ -288,7 +294,7 @@ Per [ADR 0007](./adr/0007-threading-model.md):
 |---|---|---|---|
 | Main thread | Input, render, UI, networking, client sim (prediction) | same | Main loop (tick) |
 | Sim core | Single-threaded WASM in a worker (integrated server) + the client's own instance on the main thread (prediction; debris later) | Multithreaded WASM (COOP/COEP) | Native, Jolt `JobSystemThreadPool` |
-| Worldgen | Worker pool (≈ cores − 2) | Worker pool or threads | Thread pool |
+| Worldgen | **[built]** Worker pool (cores − 2, 1–4) for the client; the local-mode server generates on its tick within a budget | Worker pool or threads | **[built]** Thread pool (cores − 2) |
 | Meshing (lighting later) | Worker pool | Worker pool | — (server does not mesh for rendering) |
 | Storage (SQLite) | Inside the sim-core worker (OPFS) | Same | I/O thread |
 
@@ -306,19 +312,25 @@ stone, dirt, grass, stone slab, ladders (`ladder_n/e/s/w`), water, a debug launc
 terrain generator's sand, sandstone, gravel, snow, log, leaves, and coal/iron/gold ores — where
 each material has a collision **shape** (`Empty`, `Full`, `SlabBottom`), `climbable` + facing,
 `liquid`, and `launch_speed` (PLAYER_CONTROLLER.md §6); 32³ chunks with revisions (generated chunks
-start at revision 0); generate-on-access `VoxelWorld`; a flat test world (grass top face at y = 0,
+start at revision 0); `VoxelWorld`, generate-on-access with eviction of unmodified chunks on the
+server, and *streamed* (no generator; missing chunks read as air) in the client sim; a flat test world (grass top face at y = 0,
 bedrock at the bottom); and a **playground** generator (flat world plus slab stairs, a block step,
 a 1×2 doorway, a crawlspace, a ladder to a ledge, a pool, and a launch pad near the spawn) for
 movement testing. **Terrain collision** (`terrain_collision.h`, Phase 2): one static Jolt body with
 a `MutableCompoundShape` of per-chunk `MeshShape`s (unit quads per exposed face, no greedy merge),
-built around players and rebuilt in the same tick as an edit (PLAYER_CONTROLLER.md §5). The
-procedural terrain generator is built (§6.3); encoding and streaming come in Phase 3b.
+built around players, rebuilt in the same tick as an edit (PLAYER_CONTROLLER.md §5), and unloaded
+far from players. The procedural terrain generator and streaming are built (§6.3).
 
 - Voxel = 1 m cube; `uint16` material ID (0 = air). Material table defines density,
   strength, and render properties and is shared by server and client.
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`.
-- Wire / storage encoding: per-chunk **palette + run-length encoding**, then optional
-  general-purpose compression for large transfers.
+- Wire / storage encoding **[built for the wire]**: per-chunk **palette + run-length encoding**
+  (`ChunkData Explicit`, §8.3). Voxels are taken in layer order (x fastest, then z, then y) so
+  horizontal strata make long runs; the palette lists materials in order of first appearance; each
+  run is a LEB128 length and a palette index (u8, or u16 above 256 entries). The encoding is
+  canonical, so C++ and TypeScript round-trip each other's bytes exactly (golden vectors).
+  General-purpose compression (zstd) is added for storage in Phase 3d; the wire does without it
+  for now (QUIC and SCTP do not compress, but Explicit chunks are rare in generated mode).
 - Each chunk carries a monotonically increasing `revision` so clients can detect and
   discard stale or out-of-order updates and request resync.
 
@@ -344,13 +356,12 @@ generated baseline.
 
 **Built (Phase 3a):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
 `src/worldgen/`) is **generator version 2** and the default for dedicated servers and local mode.
-Versions 0 (flat) and 1 (playground) remain for tests and movement work. `Welcome` carries the
-seed and version; the client sim builds the same world from them. Players spawn at the
+Versions 0 (flat) and 1 (playground) remain for tests and movement work. Players spawn at the
 generator's spawn point: the first level, open, tree-free land found in an 8 m spiral from the
-origin. Generation runs synchronously on first access to a chunk (~1.2 ms per chunk natively and
-in WASM, `dwell_worldgen_inspect`); the thread and worker pools, streaming, and the verification
-chunk are Phase 3b. Debug tooling: `dwell_worldgen_inspect [seed] [x] [z] [m/char] [slice]` prints
-an ASCII biome/height map (with biome shares, timings, and the spawn) or a 1:1 vertical section.
+origin. A chunk takes ~1.2 ms to generate natively and ~1.5 ms in WASM (`dwell_worldgen_inspect`).
+Debug tooling: `dwell_worldgen_inspect [seed] [x] [z] [m/char] [slice]` prints an ASCII
+biome/height map (with biome shares, timings, and the spawn) or a 1:1 vertical section.
+**Built (Phase 3b):** streaming, the verification chunk, and the generation pools (below).
 
 #### World bounds
 - Vertical: `WORLD_MIN_Y` = −128 to `WORLD_MAX_Y` = 384 (16 chunks tall). The generator leaves
@@ -412,17 +423,46 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
 
-#### Authority, storage, and streaming **[planned]**
-- The server keeps only **modified** chunks in memory and in the world database (§6.4);
-  unmodified chunks are regenerated on demand and evicted freely.
-- Handshake sends `worldSeed` and `generatorVersion` **[built]**. The client generates a
-  verification chunk and reports its hash; on mismatch (or on low-power devices by choice) the
-  client uses **full-chunk mode** and the server sends every chunk explicitly.
-- `ChunkData` has two forms: `Generated(coord, revision)` — "generate this yourself, no
-  changes" — and `Explicit(coord, revision, palette+RLE)` for modified chunks. This cuts
-  terrain bandwidth for unexplored or untouched areas to a few bytes per chunk.
-- Server generation runs on a worker thread pool with a per-tick budget; the spawn region is
-  pre-generated at startup. Client generation runs in the worldgen worker pool (§5.1).
+#### Authority, storage, and streaming **[built]** (persistence: Phase 3d)
+- **Server storage.** The server's `VoxelWorld` holds generated chunks only while they are
+  needed: every 64 ticks, unmodified chunks (revision 0) more than 3 chunks (Chebyshev) from every
+  player are evicted and regenerated if needed again; modified chunks stay (and go to the world
+  database, §6.4, in Phase 3d). Terrain collision likewise unloads chunks more than 2 chunks from
+  every player (`TerrainCollision::Retain`, reusing compound slots), so memory stays bounded while
+  players move.
+- **Server generation** (`core/worldgen_pool.h`). Each tick the server asks a `WorldgenPool` for
+  the missing chunks within 2 chunks of each player (nearest first; collision reaches 1 chunk and
+  meshing reads its neighbours), then those full-mode clients wait for; results are collected at
+  the start of the next tick. The dedicated server runs `cores − 2` generation threads; the
+  browser's local mode has no threads and generates on the tick within a 4 ms budget. A chunk
+  still missing when collision needs it is generated on the spot (counted as
+  `generated_on_access`; a test checks walking never needs it). The spawn region (radius 2
+  chunks) and the verification chunk are generated at startup.
+- **Verification.** `Welcome` carries `worldSeed`, `generatorVersion`, and the **verification
+  chunk** (the chunk under the spawn). The client generates it in a worldgen worker and replies
+  `WorldgenCheck(hash)` (FNV-1a 64 of its voxels, `ChunkHash`). A matching hash puts the session in
+  **generated mode**; a mismatch, or 0 (`?chunks=full`, or no working worker), puts it in
+  **full-chunk mode**, where every chunk is sent explicitly. Nothing is streamed before the check.
+- **`ChunkData`** has two forms: `Generated(coord, revision)` — "generate this yourself, no
+  changes" (18 bytes) — and `Explicit(coord, revision, palette+RLE)` for modified chunks and for
+  full-chunk mode (§6.1 encoding; for terrain chunks near the surface, median ~2 KB, up to ~8 KB;
+  all-air or all-stone ones 26 bytes). `ChunkUnload(coords)` tells the
+  client to drop chunks.
+- **Interest management** (per client, `Server::StreamChunks`). The view is a cylinder of
+  `VIEW_RADIUS_CHUNKS` around the player's chunk (`x² + z² ≤ r² + r`), `VIEW_HEIGHT_CHUNKS` rows
+  up and down, clipped to the world's rows. Chunks the client lacks are sent nearest first, at most
+  `MAX_CHUNKS_PER_TICK` per tick and within `CHUNK_BYTES_PER_SECOND` (a byte credit refilled each
+  tick; one chunk may overdraw it). When the player's chunk changes, chunks beyond the view plus
+  `UNLOAD_MARGIN_CHUNKS` (hysteresis) are unloaded. Dead players stream around their body.
+- **Client** (`world/chunkStream.ts`, `worldgen/`). Generated chunks go to the worldgen worker
+  pool (`cores − 2` module workers, 1–4, each with its own `dwell_worldgen.wasm` — the generator
+  alone, ~30 KB; up to 4 jobs queued per worker; voxels come back as transferred buffers) and then
+  into the client sim's streamed world; Explicit chunks are decoded on the main thread. Pending
+  generations are cancelled on unload. Render meshes are rebuilt nearest first within a 4 ms frame
+  budget; a chunk arriving marks its loaded neighbours for re-meshing, and a chunk waits while a
+  neighbour is still being generated. Prediction starts once the chunks within 1 of the player
+  are loaded ("Loading terrain…"). The client sim treats missing chunks as air, and its terrain
+  collision rebuilds a chunk when it or a neighbour arrives.
 
 ### 6.4 World Persistence **[planned]**
 
@@ -579,6 +619,11 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `WORLD_HALF_EXTENT` | 65 536 m | Horizontal world bound |
 | `BEDROCK_LAYERS` | 4 | Indestructible anchor layers at the bottom |
 | `SEA_LEVEL` | 64 | Water fill height |
+| `VIEW_RADIUS_CHUNKS` | 3 | Horizontal streaming radius around each player (chunks) |
+| `VIEW_HEIGHT_CHUNKS` | 1 | Chunk rows streamed above and below the player's |
+| `UNLOAD_MARGIN_CHUNKS` | 1 | Hysteresis before chunks leaving the view are unloaded |
+| `CHUNK_BYTES_PER_SECOND` | 1 MiB/s | Terrain bandwidth budget per client |
+| `MAX_CHUNKS_PER_TICK` | 32 | Chunk messages per client per tick |
 
 ---
 
@@ -630,14 +675,15 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v2):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v3):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
-(Phase 2) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
+(Phase 2); `WorldgenCheck` 0x49, `ChunkData` 0x11, `ChunkUnload` 0x12, and the verification chunk
+in `Welcome` (Phase 3b; protocol v3) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
 reference encoder, including half floats). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
-`controllerFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`) are generated from
+`controllerFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`) are generated from
 `constants.json`; decoders reject unknown values.
 
 **Client → Server: `PlayerInput` (datagram) [built]**
@@ -702,10 +748,13 @@ C→S  ClientHello   u16 protocolVersion, str clientVersion, u8[32] publicKey (E
 S→C  Challenge     u8[32] nonce
 C→S  ClientAuth    u8[64] signature over (nonce ‖ transport binding ‖ publicKey)
                    [optional: account attestation — online mode, §10.4]
-S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick
+S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick,
+                   i32×3 verificationChunk
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
                    Malformed, Replaced), str message — followed by closing the session
-C→S  WorldgenCheck hash of a generated verification chunk → generated vs. full-chunk mode (§6.3)
+C→S  WorldgenCheck u64 hash — FNV-1a 64 of the client-generated verification chunk (u16 LE
+                   voxels in chunk index order); 0 asks for full-chunk mode. Once, after
+                   Welcome; the server streams nothing before it (§6.3)
 C→S  BlockEditRequest [planned, Phase 3c] u8 action (Break | Place), i32×3 cell, u8 face,
                    u16 material (Place) — reliable on `control` (§6.5)
 ```
@@ -714,14 +763,23 @@ The signature covers `"dwell-auth-v1" ‖ nonce ‖ transport binding ‖ public
 server. **[built]** A successful login for a key that already has a joined session replaces it:
 the old session receives `Reject(Replaced)` and is closed (so a dropped connection can rejoin
 immediately). `Ping`/`Pong` (reliable) and `DatagramPing`/`DatagramPong` carry the client time and
-server tick for RTT and clock sync. `WorldgenCheck` arrives in Phase 3.
+server tick for RTT and clock sync.
 
-**Server → Client: `ChunkData` (reliable, `world`)**
+**Server → Client: `ChunkData` (reliable, `world`) [built]**
 ```
 u8   type = 0x11
 u8   form                       // Generated = 0 (client generates; no payload) | Explicit = 1
-ChunkCoord, u32 revision
-[Explicit only: palette + RLE runs]
+i32×3 chunkCoord, u32 revision
+Explicit only (§6.1): u16 paletteCount (1..32768), u16 × paletteCount materials,
+     then runs in layer order until 32768 voxels: LEB128 length (1..32768, minimal),
+     palette index (u8, or u16 when paletteCount > 256)
+```
+
+**Server → Client: `ChunkUnload` (reliable, `world`) [built]**
+```
+u8   type = 0x12
+u16  count                      // 1..65535
+repeat count: i32×3 chunkCoord
 ```
 
 **Server → Client: `PlayerEvent` (reliable, `world`) [built]** — to every joined client

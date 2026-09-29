@@ -37,7 +37,9 @@ WebTransport, so use local mode or a WebRTC invite there.
 The default world is procedural terrain (oceans, beaches, plains, forests, deserts, snowy land,
 mountains, caves); `?seed=N` picks the seed. `?world=playground` loads the movement playground
 instead (slab stairs, a block step, a doorway, a crawlspace, a ladder, a pool, and an orange launch
-pad just behind the spawn), and `?world=flat` a flat world.
+pad just behind the spawn), and `?world=flat` a flat world. Terrain streams in around the player;
+the client generates untouched chunks itself in worker threads, and `?chunks=full` asks the server
+to send every chunk instead (full-chunk mode).
 
 ### Server (`server/`)
 

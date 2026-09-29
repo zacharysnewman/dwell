@@ -8,7 +8,13 @@ describe('formatStatus', () => {
       formatStatus(
         'localhost:4433',
         TransportKind.WebRtc,
-        { phase: 'joined', playerId: 2, worldSeed: 0n, generatorVersion: 1 },
+        {
+          phase: 'joined',
+          playerId: 2,
+          worldSeed: 0n,
+          generatorVersion: 1,
+          verificationChunk: [0, 0, 0],
+        },
         { rttMs: 12.4, datagramRttMs: null, serverTick: 99 },
       ),
     ).toBe('localhost:4433 (WebRTC) · player 2 · RTT 12 ms (datagram –) · tick 99');

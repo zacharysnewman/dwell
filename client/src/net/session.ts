@@ -7,12 +7,24 @@ import {
   type RejectReason,
   type TransportKind,
 } from '../protocol/constants.gen';
-import { authTranscript, decode, encode, type Message } from '../protocol/messages';
+import {
+  authTranscript,
+  decode,
+  encode,
+  type ChunkCoord,
+  type Message,
+} from '../protocol/messages';
 import type { Transport } from './Transport';
 
 export type SessionState =
   | { phase: 'handshaking' }
-  | { phase: 'joined'; playerId: number; worldSeed: bigint; generatorVersion: number }
+  | {
+      phase: 'joined';
+      playerId: number;
+      worldSeed: bigint;
+      generatorVersion: number;
+      verificationChunk: ChunkCoord;
+    }
   | { phase: 'rejected'; reason: RejectReason; message: string }
   | { phase: 'closed'; message: string };
 
@@ -25,10 +37,13 @@ export interface SessionStats {
   serverTick: number;
 }
 
-/** Gameplay messages from the server (datagram snapshots, world-channel events), with raw bytes. */
+/** Gameplay messages from the server (datagram snapshots, world-channel messages), with raw bytes. */
 export type GameMessage = Extract<
   Message,
-  { type: typeof MessageType.PhysicsSnapshot } | { type: typeof MessageType.PlayerEvent }
+  | { type: typeof MessageType.PhysicsSnapshot }
+  | { type: typeof MessageType.PlayerEvent }
+  | { type: typeof MessageType.ChunkData }
+  | { type: typeof MessageType.ChunkUnload }
 >;
 export type GameListener = (message: GameMessage, bytes: Uint8Array) => void;
 
@@ -50,6 +65,8 @@ export class ClientSession {
   private readonly stats: SessionStats = { rttMs: null, datagramRttMs: null, serverTick: 0 };
   private readonly listeners = new Set<(s: SessionState, stats: SessionStats) => void>();
   private readonly gameListeners = new Set<GameListener>();
+  /** World-channel messages that arrived before any game listener (the game is still loading). */
+  private readonly heldWorld: [GameMessage, Uint8Array][] = [];
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private pingSeq = 0;
   private readonly now: () => number;
@@ -103,7 +120,13 @@ export class ClientSession {
   /** Gameplay messages (snapshots, player events) while joined. */
   onGame(listener: GameListener): () => void {
     this.gameListeners.add(listener);
+    for (const [m, bytes] of this.heldWorld.splice(0)) listener(m, bytes);
     return () => this.gameListeners.delete(listener);
+  }
+
+  /** Sends a reliable control message while joined (WorldgenCheck). */
+  sendControl(m: Message): void {
+    if (this.state.phase === 'joined') this.send(m);
   }
 
   /** Sends a gameplay datagram (player input); dropped unless joined. */
@@ -165,6 +188,7 @@ export class ClientSession {
           playerId: m.playerId,
           worldSeed: m.worldSeed,
           generatorVersion: m.generatorVersion,
+          verificationChunk: m.verificationChunk,
         });
         break;
       case MessageType.Reject:
@@ -190,7 +214,18 @@ export class ClientSession {
       this.close();
       return;
     }
-    if (m.type === MessageType.PlayerEvent) this.emitGame(m, bytes);
+    if (
+      m.type === MessageType.PlayerEvent ||
+      m.type === MessageType.ChunkData ||
+      m.type === MessageType.ChunkUnload
+    ) {
+      // Reliable world messages must not be lost while the game loads: hold them until then.
+      if (this.state.phase === 'joined' && this.gameListeners.size === 0) {
+        this.heldWorld.push([m, bytes]);
+        return;
+      }
+      this.emitGame(m, bytes);
+    }
   }
 
   private emitGame(m: GameMessage, bytes: Uint8Array): void {

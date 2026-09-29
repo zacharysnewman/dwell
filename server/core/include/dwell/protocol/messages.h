@@ -49,11 +49,15 @@ struct Challenge {
 struct ClientAuth {
   Signature signature{};
 };
+using ChunkCoordNet = std::array<std::int32_t, 3>;
+
 struct Welcome {
   std::uint16_t player_id = 0;
   std::uint64_t world_seed = 0;
   std::uint32_t generator_version = 0;
   std::uint32_t server_tick = 0;
+  // Chunk the client generates and hashes for WorldgenCheck (§6.3).
+  ChunkCoordNet verification_chunk{};
 };
 struct Reject {
   RejectReason reason = RejectReason::kMalformed;
@@ -68,6 +72,31 @@ struct Pong {
   double client_time_ms = 0;
   std::uint32_t server_tick = 0;
   double server_time_ms = 0;
+};
+
+// C→S reliable (`control`), once after Welcome: FNV-1a 64 hash of the client-generated
+// verification chunk (ChunkHash in dwell/core/chunk_codec.h). 0 asks for full-chunk mode.
+struct WorldgenCheck {
+  std::uint64_t hash = 0;
+};
+
+// --- Terrain streaming (Phase 3b, §6.3, §8.3) ---
+
+inline constexpr int kChunkVolume = kChunkSize * kChunkSize * kChunkSize;
+
+// S→C reliable (`world`). Generated: the client generates the chunk itself (no payload). Explicit:
+// the voxels travel as palette + RLE. `voxels` holds kChunkVolume materials in chunk index order
+// (x | y << 5 | z << 10) for Explicit and is empty for Generated.
+struct ChunkData {
+  ChunkForm form = ChunkForm::kGenerated;
+  ChunkCoordNet coord{};
+  std::uint32_t revision = 0;
+  std::vector<std::uint16_t> voxels;
+};
+
+// S→C reliable (`world`): chunks that left the client's view; it drops them.
+struct ChunkUnload {
+  std::vector<ChunkCoordNet> coords;  // 1..65535
 };
 
 // --- Players (Phase 2, PLAYER_CONTROLLER.md §8.4) ---
@@ -142,7 +171,7 @@ struct PlayerEvent {
 
 using Message = std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello,
                              Challenge, ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput,
-                             PhysicsSnapshot, PlayerEvent>;
+                             PhysicsSnapshot, PlayerEvent, WorldgenCheck, ChunkData, ChunkUnload>;
 
 // Appends the encoded message to `out`. Strings longer than their limit are truncated at a UTF-8
 // boundary, so encoding never produces a message the peer would reject.

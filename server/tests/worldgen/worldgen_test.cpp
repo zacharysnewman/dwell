@@ -37,18 +37,6 @@ Chunk Generated(const TerrainGenerator& gen, ChunkCoord c,
   return chunk;
 }
 
-// FNV-1a over the voxel ids (little-endian u16).
-std::uint64_t HashChunk(const Chunk& chunk) {
-  std::uint64_t h = 0xcbf29ce484222325ull;
-  for (const MaterialId m : chunk.voxels()) {
-    for (int b = 0; b < 2; ++b) {
-      h ^= static_cast<std::uint8_t>(m >> (8 * b));
-      h *= 0x100000001b3ull;
-    }
-  }
-  return h;
-}
-
 // A point of each biome near the origin (seed 0), found on a coarse grid.
 std::optional<std::pair<int, int>> FindBiome(const TerrainGenerator& gen, Biome biome) {
   for (int r = 0; r < 4000; r += 48)
@@ -332,7 +320,7 @@ TEST_SUITE("worldgen: golden") {
       const TerrainGenerator gen(k.seed);
       std::ostringstream line;
       line << k.seed << ' ' << k.c.x << ' ' << k.c.y << ' ' << k.c.z << ' ' << std::hex
-           << HashChunk(Generated(gen, k.c));
+           << ChunkHash(Generated(gen, k.c));
       actual.push_back(line.str());
     }
     const std::string path = DWELL_WORLDGEN_GOLDEN;

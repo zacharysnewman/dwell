@@ -19,8 +19,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 |---|---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7; step-up speed-burst fix in review in #8) | #4, #5, #6, #7, #8 |
-| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b streaming next | #7 (3a) |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7 and #8) | #4, #5, #6, #7, #8 |
+| 3 — Terrain generation & streaming | 🚧 In progress — 3a (generator) merged; 3b (streaming) in review; 3c block edits next | #7 (3a), #9 (3b) |
 | 4 — Voxel awakening | ⏳ Not started | — |
 | 5 — Tiered physics | ⏳ Not started | — |
 | 6 — Sleep / re-bake | ⏳ Not started | — |
@@ -242,12 +242,11 @@ Exit criteria
 
 ## Phase 3 — Static Terrain Streaming
 
-**Status:** in progress. Sub-phases: **3a — generator** (done: deliverables ticked below);
-**3b — streaming** (chunk encoding, `Generated`/`Explicit`, interest management, worker pools);
-**3c — block edits** (edit loop, block interaction and infinite inventory, resync, client
-meshing worker); **3d — persistence and debug
-tooling**. Outstanding in 3a's area: the client worldgen worker and the verification chunk move
-to 3b with the pools and the wire format they depend on.
+**Status:** in progress. Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done, in
+review in #9: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
+server and client worldgen pools; the walking-without-hitches exit criterion awaits a playtest);
+**3c — block edits** (edit loop, block interaction and infinite inventory, resync, client meshing
+worker); **3d — persistence and debug tooling**.
 
 **Goal:** Spec Phase 3. Generate a real procedural world, stream it reliably, and keep client
 and server collision identical (§6).
@@ -260,16 +259,19 @@ Deliverables
   3. [x] Caves (spaghetti + cheese), surface/strata materials, water to `SEA_LEVEL`, bedrock.
   4. [x] Ores and features (trees, boulders) using order-independent hashed placement.
   5. [x] Stability pass removing small floating components.
-- [ ] Server worldgen thread pool with per-tick budget; spawn region pre-generated. Client worldgen
-  and meshing worker pools with transferable buffers (ADR 0007). *(3b)*
+- [x] Server worldgen thread pool with per-tick budget; spawn region pre-generated. Client worldgen
+  worker pool with transferable buffers (ADR 0007). *(3b)*
+- [ ] Client meshing worker pool. *(3c)*
 - **Cross-platform determinism:**
   - [x] The generator compiled to WASM for local mode and the client sim; CI golden test comparing
     chunk hashes between native and WASM builds (`dwell_tests`, `dwell_worldgen_tests.js`).
-  - [ ] The generator in the client worldgen worker. *(3b)*
-- [ ] Handshake carries `worldSeed` + `generatorVersion` *(done: the client sim builds the world
-  from them)*; client verification-chunk hash selects generated vs. full-chunk mode. *(3b)*
-- [ ] Chunk encoding: palette + RLE (+ optional compression), with `revision` per chunk;
-  `ChunkData` `Generated` / `Explicit` forms (§8.3). Server stores only modified chunks. *(3b)*
+  - [x] The generator in the client worldgen worker (`dwell_worldgen.wasm`; the client test
+    reproduces the golden hashes). *(3b)*
+- [x] Handshake carries `worldSeed` + `generatorVersion` + the verification chunk; the client's
+  `WorldgenCheck` hash selects generated vs. full-chunk mode. *(3b)*
+- [x] Chunk encoding: palette + RLE, with `revision` per chunk; `ChunkData` `Generated` /
+  `Explicit` forms and `ChunkUnload` (§8.3). The server keeps modified chunks and evicts unmodified
+  ones far from players. *(3b; zstd compression comes with storage in 3d)*
 - [ ] **World persistence** (§6.4, ADR 0006): SQLite + zstd in `core/storage`; schema v1 (`meta`,
   `settings`, `chunks`, `players`, `permissions`); native VFS (WAL) and OPFS VFS in the worker;
   transactional autosave of dirty data off the tick; load on start; migrations framework.
@@ -279,7 +281,7 @@ Deliverables
   - [x] Biome/heightmap overview: `dwell_worldgen_inspect` (ASCII map, biome shares, timings,
     spawn, vertical sections). An in-game overlay is still to come. *(3d)*
   - [ ] "Regenerate chunk and diff" check. *(3d)*
-- [ ] Interest management: per-client view radius; stream nearest-first; unload far chunks;
+- [x] Interest management: per-client view radius; stream nearest-first; unload far chunks;
   bandwidth budget per client. *(3b)*
 - [ ] Greedy mesher shared in spirit by both sides:
   - [x] Server: per-chunk Jolt `MeshShape`s, rebuilt on change (built in Phase 2b, as sub-shapes
@@ -309,25 +311,51 @@ Deviations and additions (3a):
   configured one; `ServerConfig.spawn` still overrides it.
 - The stability pass works within the chunk (components touching a chunk face are kept), so it
   stays a pure function of the chunk coordinate; small pieces crossing a chunk border survive.
-- Until the worker pools (3b), the client generates and meshes chunks on the main thread within a
+- Until the worker pools (3b), the client generated and meshed chunks on the main thread within a
   4 ms per-frame budget (it was two chunks per frame; procedural chunks cost ~1.5–4 ms each).
+  3b moved generation to the worldgen workers; meshing stays budgeted on the main thread until 3c.
 - Found along the way: WebTransport datagram writes queued behind a slow main thread, so on slow
   frames the server received inputs seconds late; datagrams now coalesce (newest per type).
 - The e2e two-client test walks 2 s instead of 1 s: two pages rendering terrain on CI's software
   renderer can run below 60 ticks/s, and the test checks visibility, not speed.
 
+Deviations and additions (3b):
+- The default view is `VIEW_RADIUS_CHUNKS` = 3 and `VIEW_HEIGHT_CHUNKS` = 1 (about 110 chunks;
+  3a drew 5 × 5 × 3). A radius of 5 and ±2 rows (~485 chunks) streamed fine, but CI's software
+  renderer drew the one-quad-per-face meshes at 2–6 fps, starving prediction. Raise the view once
+  render meshes are greedy-merged and meshed in a worker (3c).
+- The wire carries palette + RLE without general-purpose compression: generated mode sends 18-byte
+  `Generated` messages for untouched chunks. zstd comes with storage (3d).
+- `server/core` now owns threads: the worldgen pool (`ServerConfig::worldgen_threads`; 0 in the
+  browser, where local mode generates on its tick within a 4 ms budget) rather than exposing jobs
+  for the host to schedule.
+- The client worldgen workers run a separate, generator-only WASM build (`dwell_worldgen.wasm`,
+  ~30 KB) instead of the full sim core, so each worker stays small.
+- The client sim's world is streamed: missing chunks read as air, and prediction waits until the
+  chunks around the player have arrived ("Loading terrain…").
+- `WorldgenCheck` with hash 0 requests full-chunk mode; `?chunks=full` does that for testing.
+- The e2e walks count predicted ticks instead of wall time, and wait for the terrain to finish
+  loading: two pages on CI's few cores run well below 60 ticks/s otherwise.
+
 Exit criteria
 - [ ] Walking across the world streams chunks without hitches; memory stays bounded when moving.
+  *Automated for the server (`streaming_test.cpp`: chunks are generated ahead of a moving player,
+  never on the tick; world, collision and per-client chunk sets stay bounded) and the client
+  (`chunkStream.test.ts`: unloads drop chunks and meshes; e2e: the view streams in and the player
+  walks). Outstanding: a playtest walking a long distance.*
 - [ ] A player can break and place every placeable block type (desktop and touch), picking it from
   the hotbar; invalid edits (out of reach, into a player, bedrock) are rejected.
 - [ ] A block placed/removed by one client appears for all clients, and the player collides with
   it immediately after the update on both server and client.
-- [ ] Chunk serialization round-trips byte-for-byte between C++ and TS (golden tests).
+- [x] Chunk serialization round-trips byte-for-byte between C++ and TS (golden tests:
+  `chunk_data_*` in `shared/protocol/vectors.txt`, from the Python reference encoder).
 - [ ] A world edited on a native server and one edited in local mode both survive restarts/reloads;
   a crash mid-save leaves the previous save intact; a world file saved natively opens in the
   browser build and vice versa.
-- [ ] The same seed produces bit-identical chunks natively, in local mode, and in the client
-  worker (CI golden test); untouched chunks cost only a `Generated` message on the wire.
+- [x] The same seed produces bit-identical chunks natively, in local mode, and in the client
+  worker (CI golden test: `dwell_tests`, `dwell_worldgen_tests.js`, and
+  `worldgen/generator.test.ts`); untouched chunks cost only a `Generated` message on the wire
+  (`streaming_test.cpp`).
 - [ ] Generated terrain shows distinct biomes, caves, and overhangs, and the player can walk,
   jump, and swim through it with no collision mismatches.
 

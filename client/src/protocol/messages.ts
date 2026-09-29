@@ -1,8 +1,10 @@
 // Protocol messages (ARCHITECTURE.md §8.3). Mirrors server/core/include/dwell/protocol/messages.h;
 // layouts are pinned by shared golden vectors.
 import { ByteReader, ByteWriter, DecodeError } from './bytes';
+import { readVoxels, writeVoxels } from './chunkVoxels';
 import {
   AUTH_DOMAIN_TAG,
+  ChunkForm,
   ControllerFlags,
   DamageCause,
   GroundKind,
@@ -19,6 +21,8 @@ import {
 export const STATUS_FLAG_ONLINE_MODE = 1 << 0;
 
 export type Vec3 = [number, number, number];
+/** Chunk coordinate (i32 × 3). */
+export type ChunkCoord = [number, number, number];
 
 /** One tick of quantized input (see quantizeInput in predict/input.ts). */
 export interface InputFrame {
@@ -103,7 +107,23 @@ export type Message =
       worldSeed: bigint;
       generatorVersion: number;
       serverTick: number;
+      /** Chunk the client generates and hashes for WorldgenCheck (§6.3). */
+      verificationChunk: ChunkCoord;
     }
+  | {
+      type: typeof MessageType.WorldgenCheck;
+      /** FNV-1a 64 of the client-generated verification chunk; 0n asks for full-chunk mode. */
+      hash: bigint;
+    }
+  | {
+      type: typeof MessageType.ChunkData;
+      form: ChunkForm;
+      coord: ChunkCoord;
+      revision: number;
+      /** Explicit: CHUNK_VOLUME materials in chunk index order (x | y << 5 | z << 10); else null. */
+      voxels: Uint16Array | null;
+    }
+  | { type: typeof MessageType.ChunkUnload; coords: ChunkCoord[] }
   | { type: typeof MessageType.Reject; reason: RejectReason; message: string }
   | { type: typeof MessageType.Ping; seq: number; clientTimeMs: number }
   | {
@@ -181,6 +201,24 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u64(m.worldSeed);
       w.u32(m.generatorVersion);
       w.u32(m.serverTick);
+      for (const v of m.verificationChunk) w.i32(v);
+      break;
+    case MessageType.WorldgenCheck:
+      w.u64(m.hash);
+      break;
+    case MessageType.ChunkData:
+      w.u8(m.form);
+      for (const v of m.coord) w.i32(v);
+      w.u32(m.revision);
+      if (m.form === ChunkForm.Explicit) {
+        if (!m.voxels) throw new RangeError('Explicit ChunkData needs voxels');
+        writeVoxels(w, m.voxels);
+      }
+      break;
+    case MessageType.ChunkUnload:
+      if (m.coords.length < 1 || m.coords.length > 0xffff) throw new RangeError('unload count');
+      w.u16(m.coords.length);
+      for (const c of m.coords) for (const v of c) w.i32(v);
       break;
     case MessageType.Reject:
       w.u8(m.reason);
@@ -339,6 +377,11 @@ function readController(r: ByteReader): ControllerState {
 }
 
 const rejectReasons = new Set<number>(Object.values(RejectReason));
+const chunkForms = new Set<number>(Object.values(ChunkForm));
+
+function coord(r: ByteReader): ChunkCoord {
+  return [r.i32(), r.i32(), r.i32()];
+}
 
 function decodeBody(r: ByteReader, type: number): Message {
   switch (type) {
@@ -377,7 +420,25 @@ function decodeBody(r: ByteReader, type: number): Message {
         worldSeed: r.u64(),
         generatorVersion: r.u32(),
         serverTick: r.u32(),
+        verificationChunk: coord(r),
       };
+    case MessageType.WorldgenCheck:
+      return { type, hash: r.u64() };
+    case MessageType.ChunkData: {
+      const form = r.u8();
+      r.check(chunkForms.has(form), 'chunk form');
+      const at = coord(r);
+      const revision = r.u32();
+      const voxels = form === ChunkForm.Explicit ? readVoxels(r) : null;
+      return { type, form: form as ChunkForm, coord: at, revision, voxels };
+    }
+    case MessageType.ChunkUnload: {
+      const count = r.u16();
+      r.check(count >= 1, 'unload count');
+      const coords: ChunkCoord[] = [];
+      for (let i = 0; i < count; i++) coords.push(coord(r));
+      return { type, coords };
+    }
     case MessageType.Reject: {
       const reason = r.u8();
       if (!rejectReasons.has(reason)) throw new DecodeError('unknown reject reason');

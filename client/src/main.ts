@@ -4,14 +4,17 @@ import { connectLocal, connectToInvite, type ConnectOptions } from './net/connec
 import { parseInvite } from './net/invite';
 import { parseLocalWorld } from './local/world';
 import { parseNetConditions } from './net/netsim';
-import type { ClientSession, SessionStats } from './net/session';
+import type { ClientSession, SessionState, SessionStats } from './net/session';
 import { KeyboardMouseInput } from './predict/input';
 import { prefersTouch, TouchControls } from './predict/touch';
 import { createRenderer, RendererUnavailableError, type Renderer } from './render';
 import { ClientCore } from './sim/clientCore';
 import { importDwellCore } from './sim/module';
+import { MessageType } from './protocol/constants.gen';
 import { Hud } from './ui/hud';
 import { formatStatus } from './ui/statusOverlay';
+import { ChunkStreamer } from './world/chunkStream';
+import { WorldgenPool } from './worldgen/pool';
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
 interface DwellDebug {
@@ -113,18 +116,22 @@ function displayName(): string {
   return fromUrl?.trim() ?? 'Player';
 }
 
-/** Starts the game once the session has joined: the client's own sim core runs prediction. */
+/**
+ * Starts the game once the session has joined: the client's own sim core runs prediction, and the
+ * worldgen workers generate the chunks the server streams as Generated (§6.3).
+ */
 function play(
   app: App,
   session: ClientSession,
-  playerId: number,
-  generatorVersion: number,
-  worldSeed: bigint,
-): void {
+  joined: Extract<SessionState, { phase: 'joined' }>,
+) {
   void (async () => {
+    // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
+    const fullChunks = new URLSearchParams(location.search).get('chunks') === 'full';
+    const pool = WorldgenPool.create(joined.generatorVersion, joined.worldSeed);
     let core: ClientCore;
     try {
-      core = await ClientCore.load(await importDwellCore(), generatorVersion, worldSeed);
+      core = await ClientCore.load(await importDwellCore());
     } catch (err) {
       app.hud.setMessage(
         `Simulation unavailable: ${err instanceof Error ? err.message : String(err)}`,
@@ -135,16 +142,37 @@ function play(
     session.subscribe((_state, s) => {
       stats = s;
     });
-    const game = new Game(playerId, core, app.renderer, app.input, app.hud, {
-      send: (m) => {
-        session.sendGameDatagram(m);
+    const terrain = new ChunkStreamer(core, pool, app.renderer);
+    const game = new Game(
+      joined.playerId,
+      core,
+      app.renderer,
+      app.input,
+      app.hud,
+      {
+        send: (m) => {
+          session.sendGameDatagram(m);
+        },
+        rttMs: () => stats?.datagramRttMs ?? stats?.rttMs ?? null,
       },
-      rttMs: () => stats?.datagramRttMs ?? stats?.rttMs ?? null,
-    });
+      terrain,
+    );
     session.onGame((m, bytes) => {
       game.onGameMessage(m, bytes, performance.now());
     });
     app.game = game;
+
+    // Verification (§6.3): the server streams Generated chunks only if our generator reproduces
+    // its verification chunk bit for bit; a hash of 0 (or a failed worker) selects full-chunk mode.
+    let hash = 0n;
+    if (!fullChunks) {
+      try {
+        hash = (await pool.generate(joined.verificationChunk)).hash;
+      } catch {
+        hash = 0n;
+      }
+    }
+    session.sendControl({ type: MessageType.WorldgenCheck, hash });
   })();
 }
 
@@ -169,7 +197,7 @@ async function connect(app: App): Promise<void> {
       status.textContent = formatStatus(target, session.transportKind, state, stats);
       if (state.phase === 'joined' && !started) {
         started = true;
-        play(app, session, state.playerId, state.generatorVersion, state.worldSeed);
+        play(app, session, state);
       }
     });
   } catch (err) {
