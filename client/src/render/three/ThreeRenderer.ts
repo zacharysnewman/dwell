@@ -25,14 +25,44 @@ import {
   WebGLRenderer,
   type MeshLambertMaterialParameters,
 } from 'three';
-import type { Vec3 } from '../../protocol/messages';
+import type { ChunkCoord, Vec3 } from '../../protocol/messages';
+import type { FlatMesh, SectionMeshes } from '../../mesh/lodMesher';
 import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
+import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { VERTICAL_FOV, verticalFov } from '../fov';
 import { sharedAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
 
 const SKY = 0x87b5e0;
+/** Near/far depth split (§6.6): LOD beyond it in a far pass, then a depth clear and a near pass. */
+const NEAR_SPLIT = Lod.nearSplitM;
+const FAR_PLANE = 5e7;
+
+function flatGeometry(m: FlatMesh): BufferGeometry | null {
+  if (m.indices.length === 0) return null;
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(m.positions, 3));
+  g.setAttribute('normal', new BufferAttribute(m.normals, 3));
+  g.setAttribute('color', new BufferAttribute(m.colors, 3));
+  g.setIndex(new BufferAttribute(m.indices, 1));
+  g.computeBoundingSphere();
+  return g;
+}
+
+interface LodGroup {
+  group: Group;
+  level: number;
+  /** Per face index; null where the section has no skirt faces on that side. */
+  skirts: (Mesh | null)[];
+}
+
+/** Level tints for the debug per-level colouring (?lodcolors=1). */
+const LEVEL_TINTS = [
+  0xffffff, 0xff6060, 0xffb060, 0xffff60, 0x80ff60, 0x60ffd0, 0x60a0ff, 0x9060ff, 0xff60e0,
+  0xff8080, 0xffd080, 0xffff90, 0xa0ff90, 0x90ffe0, 0x90c0ff, 0xb090ff, 0xff90f0, 0xc0c0c0,
+  0x808080, 0x404040,
+];
 
 function geometryOf(arrays: MeshArrays): BufferGeometry | null {
   if (arrays.indices.length === 0) return null;
@@ -85,7 +115,7 @@ interface PlayerMesh {
 export class ThreeRenderer implements Renderer {
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
-  private readonly camera = new PerspectiveCamera(VERTICAL_FOV, 1, 0.05, 400);
+  private readonly camera = new PerspectiveCamera(VERTICAL_FOV, 1, 0.05, NEAR_SPLIT);
   /** Block textures: tiled-noise atlas (render/textures.ts), crisp up close, mipmapped far away. */
   private readonly atlas = ThreeRenderer.createAtlasTexture();
   private readonly opaqueMaterial = chunkMaterial({
@@ -101,6 +131,21 @@ export class ThreeRenderer implements Renderer {
     side: DoubleSide,
   });
   private readonly chunks = new Map<string, Group>();
+  /** Chunk groups' coordinates, for the LOD system's visibility (§6.6). */
+  private readonly chunkCoords = new Map<string, ChunkCoord>();
+  private chunkVisible: ((coord: ChunkCoord) => boolean) | null = null;
+  private readonly lod = new Map<number, LodGroup>();
+  private lodShown: ReadonlyMap<number, number> = new Map();
+  private readonly lodMaterial = new MeshLambertMaterial({ vertexColors: true });
+  private readonly lodWaterMaterial = new MeshLambertMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.6,
+    depthWrite: false,
+  });
+  private lodLevelMaterials: MeshLambertMaterial[] | null = null;
+  /** The far pass's camera (the main camera is the near pass's). */
+  private readonly farCamera = new PerspectiveCamera(VERTICAL_FOV, 1, NEAR_SPLIT, FAR_PLANE);
   private readonly players = new Map<number, PlayerMesh>();
   private debug: LineSegments | null = null;
   /** Outline of the targeted block (§6.5): a unit box's edges, scaled for slabs. */
@@ -114,9 +159,9 @@ export class ThreeRenderer implements Renderer {
       throw new RendererUnavailableError('WebGL2 is not available on this device.');
     }
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
+    this.renderer.autoClear = false;
     this.renderer.setClearColor(SKY);
-    this.scene.background = new Color(SKY);
-    this.scene.fog = new Fog(SKY, 60, 140);
+    this.scene.fog = new Fog(SKY, 20000, 400000);
     this.scene.add(new HemisphereLight(0xdfefff, 0x4a3b2a, 1.4));
     const sun = new DirectionalLight(0xffffff, 1.6);
     sun.position.set(0.4, 1, 0.25);
@@ -148,7 +193,94 @@ export class ThreeRenderer implements Renderer {
   }
 
   renderFrame(): void {
+    // Chunks the LOD draws instead are hidden; LOD sections show as listed, with their skirts.
+    for (const [key, group] of this.chunks) {
+      const c = this.chunkCoords.get(key);
+      group.visible = !this.chunkVisible || !c || this.chunkVisible(c);
+    }
+    for (const [id, l] of this.lod) {
+      const mask = this.lodShown.get(id);
+      l.group.visible = mask !== undefined;
+      if (mask === undefined) continue;
+      l.skirts.forEach((s, face) => {
+        if (s) s.visible = (mask & (1 << face)) !== 0;
+      });
+    }
+    // Two passes (§6.6): the far one for everything beyond the split (its near plane pushed out
+    // with altitude, where nothing is closer), then a depth clear and the near one.
+    const altitude = this.camera.position.y - World.worldMaxY;
+    const far = this.farCamera;
+    far.position.copy(this.camera.position);
+    far.quaternion.copy(this.camera.quaternion);
+    far.fov = this.camera.fov;
+    far.aspect = this.camera.aspect;
+    far.near = Math.max(NEAR_SPLIT * 0.95, altitude * 0.8);
+    far.updateProjectionMatrix();
+    const fog = this.scene.fog as Fog;
+    const height = Math.max(0, this.camera.position.y);
+    fog.near = Math.max(20000, height * 2);
+    fog.far = Math.max(400000, height * 40);
+    this.renderer.clear();
+    this.renderer.render(this.scene, far);
+    this.renderer.clearDepth();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  setLodSection(id: number, origin: Vec3, cellSize: number, meshes: SectionMeshes | null): void {
+    const old = this.lod.get(id);
+    if (old) {
+      for (const child of old.group.children) {
+        if (child instanceof Mesh) (child.geometry as BufferGeometry).dispose();
+      }
+      this.scene.remove(old.group);
+      this.lod.delete(id);
+    }
+    if (!meshes) return;
+    const level = Math.round(Math.log2(cellSize));
+    const group = new Group();
+    group.position.set(...origin);
+    group.scale.setScalar(cellSize);
+    group.visible = false;
+    const material = this.lodLevelMaterials?.[level] ?? this.lodMaterial;
+    const opaque = flatGeometry(meshes.opaque);
+    if (opaque) group.add(new Mesh(opaque, material));
+    const water = flatGeometry(meshes.water);
+    if (water) {
+      const w = new Mesh(water, this.lodWaterMaterial);
+      w.renderOrder = 1;
+      group.add(w);
+    }
+    const skirts = meshes.skirts.map((s) => {
+      const g = flatGeometry(s);
+      if (!g) return null;
+      const m = new Mesh(g, material);
+      group.add(m);
+      return m;
+    });
+    this.scene.add(group);
+    this.lod.set(id, { group, level, skirts });
+  }
+
+  showLodSections(visible: ReadonlyMap<number, number>): void {
+    this.lodShown = visible;
+  }
+
+  setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void {
+    this.chunkVisible = visible;
+  }
+
+  setLodLevelColors(on: boolean): void {
+    this.lodLevelMaterials = on
+      ? LEVEL_TINTS.map((c) => new MeshLambertMaterial({ vertexColors: true, color: c }))
+      : null;
+    for (const l of this.lod.values()) {
+      const material = this.lodLevelMaterials?.[l.level] ?? this.lodMaterial;
+      for (const child of l.group.children) {
+        if (child instanceof Mesh && child.material !== this.lodWaterMaterial) {
+          child.material = material;
+        }
+      }
+    }
   }
 
   setTerrainChunk(key: string, origin: Vec3, meshes: ChunkMeshes | null): void {
@@ -159,6 +291,7 @@ export class ThreeRenderer implements Renderer {
       }
       this.scene.remove(old);
       this.chunks.delete(key);
+      this.chunkCoords.delete(key);
     }
     if (!meshes) return;
     const group = new Group();
@@ -174,6 +307,11 @@ export class ThreeRenderer implements Renderer {
     }
     this.scene.add(group);
     this.chunks.set(key, group);
+    this.chunkCoords.set(key, [
+      Math.floor(origin[0] / CHUNK_SIZE),
+      Math.floor(origin[1] / CHUNK_SIZE),
+      Math.floor(origin[2] / CHUNK_SIZE),
+    ]);
   }
 
   setPlayer(id: number, view: PlayerView | null): void {
@@ -234,6 +372,7 @@ export class ThreeRenderer implements Renderer {
     const yaw = (yawDeg * Math.PI) / 180;
     const pitch = (pitchDeg * Math.PI) / 180;
     this.camera.position.set(...eye);
+    this.camera.updateMatrixWorld();
     const forward = new Vector3(
       Math.sin(yaw) * Math.cos(pitch),
       Math.sin(pitch),

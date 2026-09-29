@@ -880,9 +880,21 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
         if (idx < core::kLodVolume) {
           const int depth =
               run >= 1000 ? 1000 : static_cast<int>(std::min<std::int64_t>(run * cell, 1000));
-          cells[idx] = ay < kWorldMinY + kBedrockLayers
-                           ? M::kBedrock
-                           : SurfaceMaterial(col, depth, under_water, ay, slope);
+          if (run == 0) {
+            // The top of the column: the material of its surface as seen from above, taken where
+            // the surface lies within the cell (cells taller than the relief sample the world's
+            // floor, but should look like the ground on top of them). Under the sea: its floor.
+            const auto top = static_cast<std::int32_t>(
+                std::clamp<std::int64_t>(FloorToInt(col.height), a, a + cell - 1));
+            cells[idx] =
+                a + cell <= kWorldMinY + kBedrockLayers
+                    ? M::kBedrock
+                    : SurfaceMaterial(col, 0, under_water || col.height < kSeaLevel, top, slope);
+          } else {
+            cells[idx] = ay < kWorldMinY + kBedrockLayers
+                             ? M::kBedrock
+                             : SurfaceMaterial(col, depth, under_water, ay, slope);
+          }
         }
         if (run < 1000) ++run;
       }

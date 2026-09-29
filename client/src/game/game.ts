@@ -13,11 +13,13 @@ import {
 } from '../protocol/constants.gen';
 import type { InputFrame, Message, Vec3 } from '../protocol/messages';
 import type { PlayerInputState } from '../predict/input';
-import { quantizeInput } from '../predict/input';
+import { IDLE_INPUT, quantizeInput } from '../predict/input';
 import type { PlayerView, Renderer } from '../render';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
 import type { ChunkStreamer, StreamStats } from '../world/chunkStream';
+import { DevCamera } from '../devcam/devCamera';
+import { formatLodStats, type LodStats, type LodSystem } from '../lod/lodSystem';
 import { materialStyle } from '../world/materials';
 import { EyeCamera } from './eye';
 import { isCrouched, isDead, RemotePlayers } from './remotes';
@@ -63,7 +65,14 @@ export interface GameDebugState {
   terrainReady: boolean;
   /** The targeted block (§6.5), if any. */
   target: { cell: Vec3; face: number } | null;
+  /** The whole-world view (§6.6), when running. */
+  lod: LodStats | null;
+  /** The dev camera's position while it is on. */
+  devcam: Vec3 | null;
 }
+
+/** The drawing's vertical field of view (degrees), aspect and height (px), for LOD selection. */
+export type ViewportInfo = () => { fovYDeg: number; aspect: number; heightPx: number };
 
 export class Game {
   private readonly remotes = new RemotePlayers();
@@ -82,6 +91,11 @@ export class Game {
   private readonly eye = new EyeCamera();
   /** Extra line for the debug overlay (the regenerate-and-diff check, main.ts). */
   debugNote = '';
+  /** The free-fly dev camera (§6.6). */
+  readonly devcam = new DevCamera();
+  /** The whole-world view, once the session has verified its generator (main.ts). */
+  lod: LodSystem | null = null;
+  viewport: ViewportInfo = () => ({ fovYDeg: 75, aspect: 16 / 9, heightPx: 1080 });
 
   constructor(
     readonly playerId: number,
@@ -118,7 +132,8 @@ export class Game {
       m.type === MessageType.LodIndexUpdate ||
       m.type === MessageType.LodData
     ) {
-      return; // the LOD system (§6.6, Phase 4c)
+      this.lod?.onMessage(m, bytes.length, nowMs);
+      return;
     }
     if (m.type === MessageType.PhysicsSnapshot) {
       if (m.serverTick <= this.lastSnapshotTick) return; // reordered datagram
@@ -171,7 +186,7 @@ export class Game {
       this.accumulator -= TICK_MS;
       this.tick();
     }
-    this.draw(nowMs);
+    this.draw(nowMs, Math.min(elapsed, 250) / 1000);
   }
 
   debugState(): GameDebugState {
@@ -189,7 +204,19 @@ export class Game {
       terrain: this.terrain.stats(),
       terrainReady: this.terrainReady(),
       target: this.interaction?.target ?? null,
+      lod: this.lod?.debugStats() ?? null,
+      devcam: this.devcam.active ? [...this.devcam.position] : null,
     };
+  }
+
+  /** Dev camera on (at the player's eye) or off. */
+  toggleDevCamera(): void {
+    const c = this.current;
+    this.devcam.toggle([
+      c.position[0],
+      c.position[1] - c.halfHeight + c.standingHeight * 0.9,
+      c.position[2],
+    ]);
   }
 
   /** Breaks or places at the crosshair (§6.5): only while alive and playing. */
@@ -205,7 +232,10 @@ export class Game {
 
   private tick(): void {
     if (!this.terrainReady()) return;
-    const input = this.input.sample();
+    // While the dev camera flies, the body stands still (it gets no movement input).
+    const input = this.devcam.active
+      ? { ...IDLE_INPUT, yaw: this.input.yaw, pitch: this.input.pitch }
+      : this.input.sample();
     const frame = quantizeInput(input, this.core.nextSeq());
     this.core.tick(frame);
     this.recent.push(frame);
@@ -222,7 +252,7 @@ export class Game {
     this.input.yaw += this.current.platformYawDelta;
   }
 
-  private draw(nowMs: number): void {
+  private draw(nowMs: number, dtSeconds = 0): void {
     const c = this.current;
     const p = this.previous ?? c;
     const alpha = this.accumulator / TICK_MS;
@@ -273,10 +303,17 @@ export class Game {
       );
       // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
       const eye: Vec3 = [center[0], this.eye.draw(alpha), center[2]];
-      this.renderer.setCamera(eye, this.input.yaw, this.input.pitch);
-      this.target(this.terrainReady() ? eye : null);
+      if (this.devcam.active) {
+        this.devcam.update(dtSeconds, this.input.sample(), this.input.yaw, this.input.pitch);
+        this.renderer.setCamera(this.devcam.position, this.input.yaw, this.input.pitch);
+        this.target(null);
+      } else {
+        this.renderer.setCamera(eye, this.input.yaw, this.input.pitch);
+        this.target(this.terrainReady() ? eye : null);
+      }
     }
     if (this.dead) this.target(null);
+    this.updateLod(c, nowMs);
 
     this.hud.setHealth(this.health, nowMs);
     if (this.hud.debugVisible) {
@@ -288,11 +325,31 @@ export class Game {
         remotes: views.length,
         rttMs: this.host.rttMs(),
       });
-      this.hud.setDebug(this.debugNote ? `${text}\n${this.debugNote}` : text);
+      const lines = [text];
+      if (this.lod) lines.push(formatLodStats(this.lod.debugStats()));
+      if (this.devcam.active) {
+        lines.push(`dev camera: ${this.devcam.position.map((v) => v.toFixed(0)).join(', ')}`);
+      }
+      if (this.debugNote) lines.push(this.debugNote);
+      this.hud.setDebug(lines.join('\n'));
       this.renderer.setDebugLines(this.probeLines(center, c));
     } else {
       this.renderer.setDebugLines(null);
     }
+  }
+
+  /** The whole-world view around the camera (the dev camera's, or the eye's). */
+  private updateLod(c: ClientState, nowMs: number): void {
+    if (!this.lod || !c.active) return;
+    const position: Vec3 = this.devcam.active
+      ? this.devcam.position
+      : this.dead
+        ? this.deathFeet
+        : [c.position[0], c.position[1], c.position[2]];
+    this.lod.update(
+      { position, yawDeg: this.input.yaw, pitchDeg: this.input.pitch, ...this.viewport() },
+      nowMs,
+    );
   }
 
   /** Targets the block under the crosshair from `eye` and outlines it (none while not playing). */

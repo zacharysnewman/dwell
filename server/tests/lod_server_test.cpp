@@ -4,7 +4,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <map>
+#include <memory>
 #include <thread>
+#include <tuple>
 
 #include "dwell/core/lod.h"
 #include "dwell/core/lod_propagation.h"
@@ -316,5 +320,59 @@ TEST_SUITE("lod: streaming") {
     LodCells generated;
     GenerateFlatLod(Above(right, 1), generated);
     CHECK(generated[static_cast<std::size_t>(LodCell(-1, y, 0))] == M::kAir);
+  }
+}
+
+TEST_SUITE("lod: builds from afar") {
+  TEST_CASE("a large build is in the sections drawn from 50 km away and from altitude") {
+    // The level the client draws at distance d (LOD_PIXEL_ERROR 4 px, 1080 px at 75°: ~703 px
+    // per radian): the coarsest whose cells still project within 4 px.
+    const auto drawn_level = [](double d) {
+      int level = 1;
+      while ((std::ldexp(1.0, level + 1) / d) * 703.0 <= 4.0) ++level;
+      return level;
+    };
+    const int at_50km = drawn_level(50'000), at_100km = drawn_level(100'000);
+    CHECK(at_50km == 8);
+    CHECK(at_100km == 9);
+    // A wall 512 m wide, 512 m tall and 1 m thick on the flat ground (x = 1000, z 0..511).
+    constexpr int kX = 1000;
+    std::map<std::tuple<int, int, int>, std::unique_ptr<Chunk>> built;
+    for (int cy = 0; cy < 16; ++cy)
+      for (int cz = 0; cz < 16; ++cz) {
+        auto chunk = std::make_unique<Chunk>();
+        GenerateFlatChunk({kX / 32, cy, cz}, *chunk);
+        for (int y = 0; y < 32; ++y)
+          for (int z = 0; z < 32; ++z) chunk->Set(kX % 32, y, z, Materials::kStone);
+        built[{kX / 32, cy, cz}] = std::move(chunk);
+      }
+    LodPropagation lod(GenerateFlatLod, 0);
+    for (const auto& [c, chunk] : built)
+      lod.MarkChunk({std::get<0>(c), std::get<1>(c), std::get<2>(c)});
+    lod.Drain({}, [&](const ChunkCoord& c) -> const Chunk* {
+      const auto it = built.find({c.x, c.y, c.z});
+      return it == built.end() ? nullptr : it->second.get();
+    });
+    for (const int level : {at_50km, at_100km}) {
+      CAPTURE(level);
+      // The section holding the wall's middle, 256 m up.
+      const std::int64_t s = LodSectionSize(level), cell = LodCellSize(level);
+      const LodCoord c{level, static_cast<std::int32_t>((kX - kLodOriginX) / s),
+                       static_cast<std::int32_t>((256 - kLodOriginY) / s),
+                       static_cast<std::int32_t>((256 - kLodOriginZ) / s)};
+      const auto cells = lod.CellsForClient(c);
+      REQUIRE(cells.size() == static_cast<std::size_t>(kLodVolume));
+      LodCells generated;
+      GenerateFlatLod(c, generated);
+      const LodOrigin o = LodSectionOrigin(c);
+      const auto at = [&](std::int64_t x, std::int64_t y, std::int64_t z) {
+        return static_cast<std::size_t>(LodCell(static_cast<int>((x - o.x) / cell),
+                                                static_cast<int>((y - o.y) / cell),
+                                                static_cast<int>((z - o.z) / cell)));
+      };
+      CHECK(generated[at(kX, 256, 256)] == Materials::kAir);
+      CHECK(cells[at(kX, 256, 256)] == Materials::kStone);  // the wall, in mid air above ground
+      CHECK(cells[at(kX + 4 * cell, 256, 256)] == Materials::kAir);
+    }
   }
 }

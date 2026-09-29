@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a (LOD data and generation) and 4b (propagation and streaming, server side) done; next 4c (the client's LOD system, rendering, dev camera) | — |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built (draft PR #14); outstanding: the frame-rate check on a desktop and a mobile device | #14 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -513,10 +513,10 @@ Exit criteria
 
 ## Phase 4 — World LOD & Whole-World View
 
-**Status:** in progress — 4a built (grid, `Downsample`, `GenerateLod`, golden hashes); 4b built
-(propagation, `lod_sections`, the index, `LodRequest` / `LodData` on the `lod` stream; protocol
-v6); 4c outstanding, and with it the client half of 4b's exit criterion (requesting only what the
-index says is modified). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
+**Status:** in progress — every deliverable built (4a grid and generation, 4b propagation and
+streaming, protocol v6, 4c the client's LOD system, rendering and the dev camera), in draft PR #14.
+Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
+phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
 propagation and streaming**; **4c — rendering and the dev camera**. Depends on Phase 3c (planet
 scale) and 3d (meshing worker pool); 4b's propagation cache lands in the database from 3e.
@@ -550,17 +550,17 @@ Deliverables
     `LOD_REQUESTS_PER_SECOND` limit; full-chunk mode answers `Explicit`. Golden vectors for every
     new message in C++, TS and the Python reference encoder.
 - **Rendering and the dev camera** *(4c)*:
-  - [ ] `lod/`: octree walk around the camera by screen-space error (`LOD_PIXEL_ERROR`, lower
+  - [x] `lod/`: octree walk around the camera by screen-space error (`LOD_PIXEL_ERROR`, lower
     quality on mobile), parent-until-all-children-ready swaps with level-0 nodes backed by the
     streamed chunks, coarsest-then-nearest job scheduling to the worldgen and meshing pools,
     bounded cache (`LOD_CACHE_MB`).
-  - [ ] LOD section meshing in the meshing worker pool: greedy-merged, flat colour per material,
+  - [x] LOD section meshing in the meshing worker pool: greedy-merged, flat colour per material,
     border faces culled only against same-level neighbours.
-  - [ ] Two-pass depth split at `LOD_NEAR_SPLIT_M` (far LOD pass, depth clear, near pass).
-  - [ ] `devcam/`: free-fly dev camera (toggle key and `?devcam`), speed scaled with altitude,
+  - [x] Two-pass depth split at `LOD_NEAR_SPLIT_M` (far LOD pass, depth clear, near pass).
+  - [x] `devcam/`: free-fly dev camera (toggle key and `?devcam`), speed scaled with altitude,
     able to rise until the whole disc is in view; the player's body and full-detail streaming
     stay where they are.
-  - [ ] Debug: F3 overlay shows LOD node counts per level, pending jobs, cache use and LOD bytes/s;
+  - [x] Debug: F3 overlay shows LOD node counts per level, pending jobs, cache use and LOD bytes/s;
     optional per-level colouring of LOD sections.
 
 Deviations and additions (4a):
@@ -611,6 +611,34 @@ Deviations and additions (4b):
 - Requests beyond the bucket or a 256-deep queue are dropped (counted in `LodStats`); the client
   retries what goes unanswered (4c).
 
+Deviations and additions (4c):
+- **`LOD_PIXEL_ERROR` 4 px desktop / 8 px mobile** (was 2 / 4): at 2 px a view from the ground
+  draws ~8,200 sections (one or more draw calls each), at 4 px ~2,800; the level table in §6.6
+  moves accordingly (level L from ~176 × 2^L m).
+- **Job order by projected cell size** instead of "coarsest first, then nearest" globally: with
+  the latter the camera's own ground stayed at 1 km cells (and the chunks under the player hidden)
+  until every coarse section to the horizon was done — seen in the browser. Parents still come
+  before children and coarse before fine.
+- **Near sections refine off-frustum:** a coarse section beside or behind the camera has its
+  surface rounded up to its cells and showed as a wall at the edge of the view; nodes closer than
+  their own size refine regardless of the frustum.
+- **Chunks as level 0:** a level-1 section refines into its chunks when all 8 are drawable; other
+  chunks are hidden while LOD is active (all show until the root is ready). The refine test
+  includes the chunk regions in its coverage check.
+- **Requests:** `Generated` covers a subtree, re-asks go top down after an index change, level ≥ 8
+  children are re-asked only when indexed; pacing 60/s with a 5 s retry.
+- **Skirts** are separate meshes per side (only non-empty ones are created), shown per frame.
+- **Renderer:** the scene lost its background colour (three.js clears with it in every `render()`,
+  wiping the far pass — found in the browser); the far pass's near plane follows altitude; fog
+  scales with altitude.
+- **Coarse surfaces:** a column's top cell takes its surface's material, not the bedrock a cell
+  taller than the relief samples at its bottom (found in the browser: the disc was grey from
+  orbit; `lod: surface` failed before the fix, and the LOD golden hashes were regenerated).
+  Oceans at levels whose cells are deeper than the sea draw as their floor (a limitation of the
+  ≥ 4-of-8 rule, noted in §6.6).
+- Debug hooks: `window.__dwell.devcam(position | null)`; `?lod=0` disables LOD, `?lodcolors=1`
+  tints sections by level; F8 (not a letter key) toggles the dev camera.
+
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section
   generated at level L agrees with the downsample of generated level-0 chunks within a stated
@@ -620,22 +648,34 @@ Exit criteria
   at the spawn and a site of each biome (levels 1–2, 3 in the mountains) ≥ 95% of cells agree in
   class and ≥ 95% of column surfaces are within one cell, mean difference under half a cell
   (measured: ≥ 96.2%, ≥ 97.7%, 0.2 cells).*
-- [ ] *(4b)* A block placed by one client changes the LOD sections above it on the server within
+- [x] *(4b)* A block placed by one client changes the LOD sections above it on the server within
   a bounded time, and another client far away receives the change (index update → request →
   `Explicit`) without re-downloading unchanged sections; a client with no modifications in view
   receives no `LodData` beyond the index. *Server side verified: `lod: streaming` — an edit reaches
   the root within 19 ticks and a client 50 km away gets the index update 8 ticks after it; its
   re-requests come back `Explicit` on the changed path, `Generated` beside it, and `Unchanged` for
   a held section a second edit did not touch; a client 60 km the other way receives only the index
-  and its updates. Outstanding (4c): the client's own request logic.*
-- [ ] *(4c)* From the ground, the view reaches the horizon with no holes: automated check that the
+  and its updates. Client side: `lodSystem.test.ts` — no requests while the index has no
+  modification in view; under an entry, requests go top down and only to the modified path and
+  its children (`Generated` covers the rest); an index change re-asks with the held revision and
+  nothing more.*
+- [x] *(4c)* From the ground, the view reaches the horizon with no holes: automated check that the
   selected node set covers the view frustum at every frame while moving, and that swaps never
-  leave a region without a drawn node.
+  leave a region without a drawn node. *`lodSystem.test.ts` "covers the view with no holes or
+  overlaps": walking, turning and rising to 2,000 km with jobs finishing in random order, every
+  frame's sampled view points lie in exactly one drawn, empty, buried or chunk-refined section,
+  and every drawn section has a mesh.*
 - [ ] *(4c)* With the dev camera, the whole disc becomes visible within 30 s of reaching altitude
   on a desktop build, and the frame rate stays above 60 fps (desktop) / 30 fps (mobile) with
-  memory within `LOD_CACHE_MB`.
-- [ ] *(4c)* A structure built by another player is visible in LOD from 50 km away and from
-  altitude.
+  memory within `LOD_CACHE_MB`. *Verified: e2e `lod.spec.ts` (local mode, Chromium with
+  SwiftShader) — the disc is covered by drawn sections at 24,000 km within the 30 s (at once: the
+  coarse sections are already cached from the ground's horizon), with the cache under
+  `LOD_CACHE_MB`. Outstanding: the frame rates, on a desktop GPU and a phone.*
+- [x] *(4c)* A structure built by another player is visible in LOD from 50 km away and from
+  altitude. *`lod: builds from afar`: a 512 m × 512 m wall (1 m thick) is solid in the sections
+  drawn from 50 km (level 8) and 100 km up (level 9) — a wall or floor survives every level once
+  it spans a cell in two dimensions, so what a build needs to be seen from distance d is ~d / 90 m
+  across (4 px at 1080p); `lod: streaming` carries it to another client.*
 
 ---
 

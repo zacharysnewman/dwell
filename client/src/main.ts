@@ -21,6 +21,9 @@ import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
 import { ChunkStreamer } from './world/chunkStream';
 import { WorldgenPool } from './worldgen/pool';
+import { LodSystem } from './lod/lodSystem';
+import { Lod } from './protocol/constants.gen';
+import { verticalFov } from './render/fov';
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
 interface DwellDebug {
@@ -34,6 +37,8 @@ interface DwellDebug {
   select(slot: number): void;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
+  /** Puts the dev camera at a position (turning it on), or turns it off (null). */
+  devcam(position: [number, number, number] | null): void;
 }
 
 declare global {
@@ -109,6 +114,7 @@ function start(): App {
   app.input.onToggle = (key) => {
     if (key === 'F3') app.hud.toggleDebug();
     if (key === 'F4') app.map.toggle();
+    if (key === 'F8') app.game?.toggleDevCamera();
   };
   window.__dwell = {
     state: () => app.game?.debugState() ?? null,
@@ -123,6 +129,12 @@ function start(): App {
     edit: (action) => app.game?.edit(action, performance.now()) ?? false,
     select: (slot) => app.interaction?.select(slot),
     voxel: (x, y, z) => app.core?.voxel(x, y, z) ?? 0,
+    devcam: (position) => {
+      const game = app.game;
+      if (!game) return;
+      if ((position !== null) !== game.devcam.active) game.toggleDevCamera();
+      if (position) game.devcam.position = [...position];
+    },
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
   app.input.onAction = (action) => app.game?.edit(action, performance.now());
@@ -181,7 +193,8 @@ function play(
     session.subscribe((_state, s) => {
       stats = s;
     });
-    const terrain = new ChunkStreamer(core, pool, MeshPool.create(), app.renderer, (coords) => {
+    const meshPool = MeshPool.create();
+    const terrain = new ChunkStreamer(core, pool, meshPool, app.renderer, (coords) => {
       session.sendControl({ type: MessageType.ChunkResync, coords });
     });
     const interaction = new BlockInteraction(core, (m) => {
@@ -229,6 +242,47 @@ function play(
       }
     }
     session.sendControl({ type: MessageType.WorldgenCheck, hash });
+
+    // The whole-world view (§6.6): generated here unless in full-chunk mode (?lod=0 turns it off).
+    const params = new URLSearchParams(location.search);
+    if (params.get('lod') !== '0') {
+      const mobile = prefersTouch();
+      const lod = new LodSystem(
+        pool,
+        meshPool,
+        app.renderer,
+        terrain,
+        (sections) => {
+          session.sendControl({ type: MessageType.LodRequest, sections });
+        },
+        {
+          pixelError: mobile ? Lod.pixelErrorMobile : Lod.pixelErrorDesktop,
+          cacheBytes: (mobile ? Lod.cacheMbMobile : Lod.cacheMbDesktop) * 1048576,
+          maxGenerationJobs: pool.capacity,
+          maxMeshJobs: meshPool.capacity,
+        },
+      );
+      lod.setFullMode(hash === 0n);
+      app.renderer.setChunkVisibility((c) => lod.chunkVisible(c));
+      app.renderer.setLodLevelColors(params.get('lodcolors') === '1');
+      game.viewport = () => {
+        const aspect = app.canvas.clientWidth / Math.max(1, app.canvas.clientHeight);
+        return {
+          fovYDeg: verticalFov(aspect),
+          aspect,
+          heightPx: app.canvas.clientHeight * Math.min(window.devicePixelRatio, 2),
+        };
+      };
+      game.lod = lod;
+    }
+    if (params.get('devcam') === '1') {
+      // At the player's eye once it has spawned.
+      const wait = setInterval(() => {
+        if (!game.debugState().active) return;
+        clearInterval(wait);
+        if (!game.devcam.active) game.toggleDevCamera();
+      }, 100);
+    }
   })();
 }
 

@@ -344,6 +344,33 @@ export function sharedAtlas(): Atlas {
   return shared;
 }
 
+const averages = new Map<TileName, number>();
+/**
+ * A tile's average colour (0xRRGGBB, the mean of its texels): the flat colour of LOD faces
+ * (ARCHITECTURE.md §6.6). Computed from the painters, without building the atlas.
+ */
+export function averageTileColor(name: TileName): number {
+  let c = averages.get(name);
+  if (c === undefined) {
+    const paint = PAINTERS[name];
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (let y = 0; y < TILE; y++) {
+      for (let x = 0; x < TILE; x++) {
+        const [pr, pg, pb] = paint(x, y);
+        r += Math.min(255, Math.max(0, pr));
+        g += Math.min(255, Math.max(0, pg));
+        b += Math.min(255, Math.max(0, pb));
+      }
+    }
+    const n = TILE * TILE;
+    c = (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
+    averages.set(name, c);
+  }
+  return c;
+}
+
 /** One tile's TILE × TILE texels, top row first (for a 2D canvas). */
 export function tilePixels(atlas: Atlas, name: TileName): Uint8ClampedArray<ArrayBuffer> {
   const out = new Uint8ClampedArray(TILE * TILE * 4);

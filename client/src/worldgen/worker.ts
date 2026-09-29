@@ -20,6 +20,11 @@ function generate(msg: ToWorldgen, g: ChunkGenerator): void {
   } else if (msg.t === 'map') {
     const bytes = g.map(msg.x0, msg.z0, msg.step, msg.n);
     scope.postMessage({ t: 'map', id: msg.id, bytes }, bytes ? [bytes.buffer] : []);
+  } else if (msg.t === 'lod') {
+    const s = g.lod(msg.coord);
+    scope.postMessage({ t: 'lod', id: msg.id, kind: s.kind, cells: s.cells }, [s.cells.buffer]);
+  } else if (msg.t === 'bounds') {
+    scope.postMessage({ t: 'bounds', id: msg.id, ...g.lodBounds(msg.level, msg.i, msg.k) });
   }
 }
 

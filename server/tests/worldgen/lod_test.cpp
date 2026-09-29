@@ -314,6 +314,35 @@ TEST_SUITE("lod: generation") {
   }
 }
 
+TEST_SUITE("lod: surface") {
+  TEST_CASE("coarse cells taller than the relief show the ground's surface, not the world's floor") {
+    // Regression: from level ~12 a cell spans from the world's floor past the terrain, so its
+    // bottom-voxel sample is bedrock; the column's top cell must still look like its surface.
+    const TerrainGenerator gen(0);
+    for (const int level : {12, 13, 15}) {
+      CAPTURE(level);
+      const LodCoord c = SectionAt(level, 0, 0, 0);
+      LodCells cells;
+      REQUIRE(gen.GenerateLod(c, cells) == LodKind::kContent);
+      int tops = 0, bedrock = 0, grassy = 0;
+      for (int z = 0; z < N; ++z)
+        for (int x = 0; x < N; ++x) {
+          for (int y = N - 1; y >= 0; --y) {
+            const MaterialId m = cells[static_cast<std::size_t>(LodCell(x, y, z))];
+            if (m == M::kAir || m == M::kWater) continue;
+            ++tops;
+            bedrock += m == M::kBedrock;
+            grassy += m == M::kGrass || m == M::kSand || m == M::kSnow || m == M::kGravel;
+            break;
+          }
+        }
+      CHECK(tops > 0);
+      CHECK(bedrock == 0);
+      CHECK(grassy > tops / 2);
+    }
+  }
+}
+
 TEST_SUITE("lod: golden") {
   // GenerateLod sections across levels: the surface near the spawn, mountains, ocean, the rim,
   // terrain ~8,000 km out, a level-8 (index level) section and the root. The same hashes must come

@@ -23,6 +23,17 @@ export type LodKind = (typeof LodKind)[keyof typeof LodKind];
 export const lodKey = (c: LodCoord): string =>
   `${String(c[0])}:${String(c[1])},${String(c[2])},${String(c[3])}`;
 
+/**
+ * A section as one number (exact in a double: 5 + 19 + 8 + 19 bits), for maps on hot paths.
+ * Coordinates outside the octree (a neighbour past its edge) map to −1.
+ */
+const ACROSS = Array.from({ length: MAX_LEVEL + 1 }, (_, level) => 2 ** (MAX_LEVEL - level));
+export function lodId(level: number, i: number, j: number, k: number): number {
+  const across = ACROSS[level] ?? 0;
+  if (i < 0 || k < 0 || j < 0 || i >= across || k >= across || j >= 256) return -1;
+  return ((level * 524288 + i) * 256 + j) * 524288 + k;
+}
+
 /** Index of cell (x, y, z), each −1..32, in a section's content. */
 export const lodCell = (x: number, y: number, z: number): number =>
   x + 1 + LOD_PAD * (z + 1 + LOD_PAD * (y + 1));

@@ -2,7 +2,9 @@
 // Jobs run in request order (the server streams nearest first); jobs not yet handed to a worker
 // can be cancelled when their chunk leaves the view. Each worker holds a few jobs at once, so it
 // keeps generating while the main thread is busy with a long frame.
+import type { LodBounds, LodCoord } from '../lod/grid';
 import type { ChunkCoord } from '../protocol/messages';
+import type { GeneratedSection } from './generator';
 import type { FromWorldgen, ToWorldgen } from './messages';
 
 export interface GeneratedChunk {
@@ -27,6 +29,12 @@ export interface WorkerLike {
   terminate(): void;
 }
 
+/** Anything that generates LOD sections and their column bounds asynchronously (§6.6). */
+export interface SectionSource {
+  lod(coord: LodCoord): Promise<GeneratedSection>;
+  lodBounds(level: number, i: number, k: number): Promise<LodBounds>;
+}
+
 /** Arguments of a terrain map job (the debug map overlay). */
 export interface MapRequest {
   x0: number;
@@ -37,12 +45,14 @@ export interface MapRequest {
 
 interface Job {
   id: number;
-  /** A chunk to generate, or a terrain map to sample. */
+  /** What the worker runs: a chunk to generate, or one of the other requests. */
   coord: ChunkCoord | null;
-  map?: MapRequest;
+  message?: DistributiveOmit<ToWorldgen, 'id'>;
   resolve: (result: unknown) => void;
   reject: (e: Error) => void;
 }
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 /** Jobs handed to one worker at a time. */
 const JOBS_PER_WORKER = 4;
@@ -55,9 +65,11 @@ export function defaultWorkerCount(): number {
   return Math.max(1, Math.min(4, cores - 2));
 }
 
-export class WorldgenPool implements ChunkSource {
+export class WorldgenPool implements ChunkSource, SectionSource {
   private readonly ready: WorkerLike[] = [];
   private readonly queue: Job[] = [];
+  /** LOD jobs: handed out only when no chunk job waits (chunks are the player's terrain). */
+  private readonly lodQueue: Job[] = [];
   /** Jobs handed to each worker, in order (workers answer in order). */
   private readonly running = new Map<WorkerLike, Job[]>();
   private runningCount = 0;
@@ -87,7 +99,12 @@ export class WorldgenPool implements ChunkSource {
   }
 
   get pending(): number {
-    return this.queue.length + this.runningCount;
+    return this.queue.length + this.lodQueue.length + this.runningCount;
+  }
+
+  /** Jobs the pool runs at once. */
+  get capacity(): number {
+    return this.workers.length * JOBS_PER_WORKER;
   }
 
   generate(coord: ChunkCoord): Promise<GeneratedChunk> {
@@ -113,17 +130,31 @@ export class WorldgenPool implements ChunkSource {
    * generators without one.
    */
   map(request: MapRequest): Promise<Uint8Array<ArrayBuffer> | null> {
+    return this.submit<Uint8Array<ArrayBuffer> | null>(this.queue, { t: 'map', ...request });
+  }
+
+  /** GenerateLod of a section (§6.6). */
+  lod(coord: LodCoord): Promise<GeneratedSection> {
+    return this.submit<GeneratedSection>(this.lodQueue, { t: 'lod', coord });
+  }
+
+  /** Height bounds of the column of sections (level, i, ·, k). */
+  lodBounds(level: number, i: number, k: number): Promise<LodBounds> {
+    return this.submit<LodBounds>(this.lodQueue, { t: 'bounds', level, i, k });
+  }
+
+  private submit<T>(queue: Job[], message: DistributiveOmit<ToWorldgen, 'id'>): Promise<T> {
     return new Promise((resolve, reject) => {
       if (this.failure) {
         reject(this.failure);
         return;
       }
-      this.queue.push({
+      queue.push({
         id: this.nextId++,
         coord: null,
-        map: request,
+        message,
         resolve: (r) => {
-          resolve(r as Uint8Array<ArrayBuffer> | null);
+          resolve(r as T);
         },
         reject,
       });
@@ -149,20 +180,28 @@ export class WorldgenPool implements ChunkSource {
       this.running.set(w, []);
     } else if (msg.t === 'error') {
       this.failure = new Error(msg.message);
-      for (const j of this.queue.splice(0)) j.reject(this.failure);
+      for (const j of [...this.queue.splice(0), ...this.lodQueue.splice(0)]) j.reject(this.failure);
       return;
     } else {
       // Workers answer their jobs in order.
       const job = this.running.get(w)?.shift();
       if (job) this.runningCount--;
-      job?.resolve(msg.t === 'chunk' ? { voxels: msg.voxels, hash: msg.hash } : msg.bytes);
+      job?.resolve(
+        msg.t === 'chunk'
+          ? { voxels: msg.voxels, hash: msg.hash }
+          : msg.t === 'map'
+            ? msg.bytes
+            : msg.t === 'lod'
+              ? { kind: msg.kind, cells: msg.cells }
+              : { lo: msg.lo, hi: msg.hi, anyInside: msg.anyInside },
+      );
     }
     this.dispatch();
   }
 
   /** Hands queued jobs to the least busy workers, up to JOBS_PER_WORKER each. */
   private dispatch(): void {
-    while (this.queue.length > 0) {
+    while (this.queue.length > 0 || this.lodQueue.length > 0) {
       let best: WorkerLike | null = null;
       let fewest = JOBS_PER_WORKER;
       for (const w of this.ready) {
@@ -172,19 +211,14 @@ export class WorldgenPool implements ChunkSource {
           fewest = n;
         }
       }
-      const job = best ? this.queue.shift() : undefined;
+      const job = best ? (this.queue.shift() ?? this.lodQueue.shift()) : undefined;
       if (!best || !job) return;
       this.running.get(best)?.push(job);
       this.runningCount++;
-      best.postMessage(
-        job.coord
-          ? ({ t: 'generate', id: job.id, coord: job.coord } satisfies ToWorldgen)
-          : ({
-              t: 'map',
-              id: job.id,
-              ...(job.map ?? { x0: 0, z0: 0, step: 1, n: 1 }),
-            } satisfies ToWorldgen),
-      );
+      const message: ToWorldgen = job.coord
+        ? { t: 'generate', id: job.id, coord: job.coord }
+        : ({ ...job.message, id: job.id } as ToWorldgen);
+      best.postMessage(message);
     }
   }
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkerLike } from '../worldgen/pool';
+import { LOD_VOLUME, lodCell } from '../lod/grid';
+import { meshSection } from './lodMesher';
 import { meshBuffers, meshChunk, PADDED_VOLUME, paddedIndex } from './mesher';
 import type { ToMesher } from './messages';
 import { MeshPool } from './pool';
@@ -17,6 +19,12 @@ class FakeWorker implements WorkerLike {
   answer(): void {
     const job = this.inbox.shift();
     if (!job) throw new Error('no job');
+    if (job.t === 'lod') {
+      this.onmessage?.({
+        data: { t: 'lod', id: job.id, meshes: meshSection(job.cells) },
+      } as MessageEvent);
+      return;
+    }
     const meshes = meshChunk(job.voxels);
     meshBuffers(meshes);
     this.onmessage?.({ data: { t: 'mesh', id: job.id, meshes } } as MessageEvent);
@@ -43,5 +51,19 @@ describe('MeshPool', () => {
     const meshes = await Promise.all(results);
     expect(meshes.every((m) => m.opaque.indices.length === 36)).toBe(true);
     expect(pool.pending).toBe(0);
+  });
+
+  it('meshes LOD sections in the same workers', async () => {
+    const workers = [new FakeWorker()];
+    const pool = new MeshPool(workers);
+    const cells = new Uint16Array(LOD_VOLUME);
+    cells[lodCell(3, 3, 3)] = 2;
+    const chunk = pool.mesh(block());
+    const section = pool.meshSection(cells);
+    expect(workers[0]?.inbox.map((j) => j.t)).toEqual(['mesh', 'lod']);
+    workers[0]?.answer();
+    workers[0]?.answer();
+    expect((await chunk).opaque.indices.length).toBe(36);
+    expect((await section).opaque.indices.length).toBe(36);
   });
 });
