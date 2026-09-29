@@ -35,21 +35,27 @@ struct ServerConfig {
   std::uint32_t generator_version = kGeneratorTerrain;  // §6.3; 1 = movement playground
   std::string client_version_note = "";
   // Feet position; players spread out around it. Unset: the generator's spawn point.
-  std::optional<std::array<float, 3>> spawn = std::nullopt;
+  std::optional<std::array<double, 3>> spawn = std::nullopt;
 
   // Terrain generation and streaming (§6.3).
   int worldgen_threads = 0;       // 0: generate on the tick thread within worldgen_budget_us
   int worldgen_budget_us = 4000;  // per tick, without threads
   int pregen_radius_chunks = 2;   // around the spawn, generated at startup
-  int view_radius_chunks = protocol::kViewRadiusChunks;  // horizontal, streamed to each client
-  int view_height_chunks = protocol::kViewHeightChunks;  // above and below the player's chunk
+  int view_radius_chunks = protocol::kViewRadiusChunks;         // sphere streamed to each client
   int chunk_bytes_per_second = protocol::kChunkBytesPerSecond;  // per client
+
+  // Tests and tools: replaces GeneratorFor(generator_version, world_seed), e.g. to move a test
+  // world far from the origin (clients must generate the same chunks). Without an air test to
+  // match, every chunk is generated and streamed.
+  ChunkGenerator generator_override = nullptr;
+  AirChunkTest air_test_override = nullptr;
 };
 
 // Terrain streaming counters, for tests and diagnostics.
 struct StreamStats {
   std::uint32_t generated_sent = 0;
   std::uint32_t explicit_sent = 0;
+  std::uint32_t air_sent = 0;
   std::uint32_t unloaded = 0;
   std::size_t streamed = 0;  // chunks the client currently has
 };
@@ -135,7 +141,7 @@ class Server {
     player::Input last_input;
     int health = protocol::kMaxHealth;
     std::uint32_t respawn_tick = 0;  // while dead
-    float death_position[3] = {0, 0, 0};
+    double death_position[3] = {0, 0, 0};
     std::uint32_t launch_ready_tick = 0;
     std::uint32_t last_knockback_seq = 0;
     std::uint32_t rate_window_tick = 0;
@@ -168,6 +174,7 @@ class Server {
   // Terrain: generation around players, eviction, and per-client streaming (§6.3).
   std::optional<ChunkCoord> ViewCenter(const Session& s) const;
   void UpdateWorldgen();
+  bool IsAir(const ChunkCoord& c) const;
   void StreamChunks(SessionId id, Session& s);
   Session* SessionOfPlayer(std::uint16_t player_id);
   const Session* SessionOfPlayer(std::uint16_t player_id) const;
@@ -176,6 +183,7 @@ class Server {
   ServerConfig config_;
   Entropy& entropy_;
   PhysicsWorld physics_;
+  AirChunkTest air_test_;  // main thread only (caches)
   VoxelWorld world_;
   TerrainCollision terrain_;
   player::PlayerControllerConfig player_config_;

@@ -4,6 +4,7 @@
 #include <Jolt/Physics/Collision/Shape/EmptyShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace dwell::core {
@@ -145,52 +146,144 @@ std::vector<RenderFace> BuildRenderFaces(VoxelWorld& world, const ChunkCoord& co
   return faces;
 }
 
-TerrainCollision::~TerrainCollision() {
-  if (!body_.IsInvalid()) {
-    physics_.bodies().RemoveBody(body_);
-    physics_.bodies().DestroyBody(body_);
+// Terrain bodies are sub-group kTerrain of their region's group; characters sub-group kCharacter of
+// their anchor's. A terrain body and a character collide only within the same group; every other
+// pair (Tier 1 bodies carry no group) collides as usual.
+class TerrainCollision::Groups final : public JPH::GroupFilter {
+ public:
+  static constexpr JPH::CollisionGroup::SubGroupID kTerrain = 0;
+  static constexpr JPH::CollisionGroup::SubGroupID kCharacter = 1;
+
+  bool CanCollide(const JPH::CollisionGroup& a, const JPH::CollisionGroup& b) const override {
+    const bool terrain_character =
+        (a.GetSubGroupID() == kTerrain && b.GetSubGroupID() == kCharacter) ||
+        (a.GetSubGroupID() == kCharacter && b.GetSubGroupID() == kTerrain);
+    return !terrain_character || a.GetGroupID() == b.GetGroupID();
   }
+};
+
+TerrainCollision::TerrainCollision(VoxelWorld& world, PhysicsWorld& physics)
+    : world_(world), physics_(physics), groups_(new Groups) {}
+
+TerrainCollision::~TerrainCollision() {
+  for (auto& [key, region] : regions_) DestroyBody(region);
 }
 
-void TerrainCollision::EnsureBox(JPH::Vec3 min, JPH::Vec3 max) {
+void TerrainCollision::DestroyBody(Region& region) {
+  if (region.body.IsInvalid()) return;
+  physics_.bodies().RemoveBody(region.body);
+  physics_.bodies().DestroyBody(region.body);
+  region.body = {};
+}
+
+TerrainCollision::Anchor TerrainCollision::RegionOf(const ChunkCoord& c) {
+  constexpr int kHalf = kRegionChunks / 2;
+  const auto axis = [](std::int32_t v) {
+    const std::int32_t shifted = v + kHalf;
+    return shifted / kRegionChunks - (shifted % kRegionChunks < 0 ? 1 : 0);
+  };
+  return {axis(c.x), axis(c.y), axis(c.z)};
+}
+
+JPH::RVec3 TerrainCollision::RegionCenter(const Anchor& r) {
+  constexpr double kSpan = static_cast<double>(kRegionChunks) * kChunkSize;
+  return JPH::RVec3(r.x * kSpan, r.y * kSpan, r.z * kSpan);
+}
+
+TerrainCollision::Anchor TerrainCollision::AnchorFor(JPH::RVec3 p,
+                                                     const std::optional<Anchor>& current) {
+  const ChunkCoord chunk = ChunkOf(static_cast<std::int32_t>(std::floor(p.GetX())),
+                                   static_cast<std::int32_t>(std::floor(p.GetY())),
+                                   static_cast<std::int32_t>(std::floor(p.GetZ())));
+  if (current) {
+    constexpr int kReach = kRegionChunks / 2 + kAnchorHysteresisChunks;
+    const auto within = [&](std::int32_t c, std::int32_t r) {
+      const std::int32_t d = c - r * kRegionChunks;
+      return d >= -kReach && d < kReach;
+    };
+    if (within(chunk.x, current->x) && within(chunk.y, current->y) && within(chunk.z, current->z)) {
+      return *current;
+    }
+  }
+  return RegionOf(chunk);
+}
+
+JPH::CollisionGroup TerrainCollision::CharacterGroup(const Anchor& anchor) {
+  return JPH::CollisionGroup(groups_, RegionAt(anchor).group, Groups::kCharacter);
+}
+
+TerrainCollision::Region& TerrainCollision::RegionAt(const Anchor& anchor) {
+  auto [it, inserted] = regions_.try_emplace(anchor);
+  if (inserted) it->second.group = next_group_++;
+  return it->second;
+}
+
+void TerrainCollision::EnsureBox(JPH::RVec3 min, JPH::RVec3 max, const Anchor& anchor) {
   const auto lo = ChunkOf(static_cast<std::int32_t>(std::floor(min.GetX())),
                           static_cast<std::int32_t>(std::floor(min.GetY())),
                           static_cast<std::int32_t>(std::floor(min.GetZ())));
   const auto hi = ChunkOf(static_cast<std::int32_t>(std::floor(max.GetX())),
                           static_cast<std::int32_t>(std::floor(max.GetY())),
                           static_cast<std::int32_t>(std::floor(max.GetZ())));
+  Region& region = RegionAt(anchor);
   for (int z = lo.z; z <= hi.z; ++z) {
     for (int y = lo.y; y <= hi.y; ++y) {
       for (int x = lo.x; x <= hi.x; ++x) {
         const ChunkCoord coord{x, y, z};
         auto [it, inserted] = chunks_.try_emplace(coord);
         if (inserted) Build(coord, it->second);
+        if (!region.members.count(coord)) Place(region, anchor, coord, it->second);
       }
     }
   }
 }
 
-void TerrainCollision::Retain(const std::function<bool(const ChunkCoord&)>& keep) {
-  for (auto it = chunks_.begin(); it != chunks_.end();) {
-    if (keep(it->first)) {
-      ++it;
+void TerrainCollision::Retain(const std::function<bool(const Anchor&, const ChunkCoord&)>& keep) {
+  for (auto region_it = regions_.begin(); region_it != regions_.end();) {
+    Region& region = region_it->second;
+    const Anchor& anchor = region_it->first;
+    bool changed = false;
+    const JPH::Vec3 previous_com =
+        region.compound ? region.compound->GetCenterOfMass() : JPH::Vec3::sZero();
+    for (auto it = region.members.begin(); it != region.members.end();) {
+      if (keep(anchor, it->first)) {
+        ++it;
+        continue;
+      }
+      if (it->second != kNoShape) {
+        region.compound->ModifyShape(it->second, JPH::Vec3::sZero(), JPH::Quat::sIdentity(),
+                                     new JPH::EmptyShape);
+        region.free_sub_shapes.push_back(it->second);
+        changed = true;
+      }
+      it = region.members.erase(it);
+    }
+    if (region.members.empty()) {
+      DestroyBody(region);
+      region_it = regions_.erase(region_it);
       continue;
     }
-    if (it->second.sub_shape != kNoShape) {
-      const JPH::Vec3 previous_com = compound_->GetCenterOfMass();
-      compound_->ModifyShape(it->second.sub_shape, JPH::Vec3::sZero(), JPH::Quat::sIdentity(),
-                             new JPH::EmptyShape);
-      physics_.bodies().NotifyShapeChanged(body_, previous_com, /*updateMassProperties=*/false,
+    if (changed) {
+      physics_.bodies().NotifyShapeChanged(region.body, previous_com,
+                                           /*updateMassProperties=*/false,
                                            JPH::EActivation::DontActivate);
-      free_sub_shapes_.push_back(it->second.sub_shape);
     }
-    it = chunks_.erase(it);
+    ++region_it;
   }
+  // Chunks no region holds any more.
+  std::erase_if(chunks_, [&](const auto& kv) {
+    return std::none_of(regions_.begin(), regions_.end(),
+                        [&](const auto& r) { return r.second.members.count(kv.first) != 0; });
+  });
 }
 
 void TerrainCollision::Sync() {
   for (auto& [coord, built] : chunks_) {
-    if (Revisions(coord) != built.revisions) Build(coord, built);
+    if (Revisions(coord) == built.revisions) continue;
+    Build(coord, built);
+    for (auto& [anchor, region] : regions_) {
+      if (region.members.count(coord)) Place(region, anchor, coord, built);
+    }
   }
 }
 
@@ -211,45 +304,60 @@ std::array<std::uint32_t, 7> TerrainCollision::Revisions(const ChunkCoord& c) {
 void TerrainCollision::Build(const ChunkCoord& coord, Built& built) {
   ChunkMesh mesh = BuildChunkMesh(world_, coord);
   built.revisions = Revisions(coord);
-  JPH::RefConst<JPH::Shape> shape;
+  built.shape = nullptr;
   if (!mesh.triangles.empty()) {
     JPH::MeshShapeSettings settings(std::move(mesh.vertices), std::move(mesh.triangles));
     auto result = settings.Create();
-    if (!result.HasError()) shape = result.Get();
+    if (!result.HasError()) built.shape = result.Get();
   }
+}
+
+void TerrainCollision::Place(Region& region, const Anchor& anchor, const ChunkCoord& coord,
+                             const Built& built) {
+  auto [member, inserted] = region.members.try_emplace(coord, kNoShape);
+  JPH::uint& sub_shape = member->second;
+  JPH::RefConst<JPH::Shape> shape = built.shape;
   if (!shape) {
-    if (built.sub_shape == kNoShape) return;
+    if (sub_shape == kNoShape) return;
     shape = new JPH::EmptyShape;  // keeps the other sub-shapes' indices
   }
-  const JPH::Vec3 origin(static_cast<float>(coord.x * kChunkSize),
-                         static_cast<float>(coord.y * kChunkSize),
-                         static_cast<float>(coord.z * kChunkSize));
+  // Chunk origin relative to the region's centre: an integer offset, exact in float (players
+  // anchored here stay within a few hundred metres of the region, so offsets stay small).
+  const JPH::Vec3 origin(
+      static_cast<float>((std::int64_t{coord.x} - std::int64_t{anchor.x} * kRegionChunks) *
+                         kChunkSize),
+      static_cast<float>((std::int64_t{coord.y} - std::int64_t{anchor.y} * kRegionChunks) *
+                         kChunkSize),
+      static_cast<float>((std::int64_t{coord.z} - std::int64_t{anchor.z} * kRegionChunks) *
+                         kChunkSize));
   auto& bodies = physics_.bodies();
-  if (body_.IsInvalid()) {
+  if (region.body.IsInvalid()) {
     JPH::MutableCompoundShapeSettings settings;
     settings.AddShape(origin, JPH::Quat::sIdentity(), shape);
     auto result = settings.Create();
     if (result.HasError()) return;
-    compound_ =
+    region.compound =
         static_cast<JPH::MutableCompoundShape*>(const_cast<JPH::Shape*>(result.Get().GetPtr()));
-    built.sub_shape = 0;
-    JPH::BodyCreationSettings body(compound_, JPH::RVec3::sZero(), JPH::Quat::sIdentity(),
+    sub_shape = 0;
+    region.free_sub_shapes.clear();
+    JPH::BodyCreationSettings body(region.compound, RegionCenter(anchor), JPH::Quat::sIdentity(),
                                    JPH::EMotionType::Static, ObjectLayers::kTerrain);
     body.mFriction = 0.5f;
-    body_ = bodies.CreateAndAddBody(body, JPH::EActivation::DontActivate);
+    body.mCollisionGroup = JPH::CollisionGroup(groups_, region.group, Groups::kTerrain);
+    region.body = bodies.CreateAndAddBody(body, JPH::EActivation::DontActivate);
     return;
   }
-  const JPH::Vec3 previous_com = compound_->GetCenterOfMass();
-  if (built.sub_shape == kNoShape && !free_sub_shapes_.empty()) {
-    built.sub_shape = free_sub_shapes_.back();
-    free_sub_shapes_.pop_back();
+  const JPH::Vec3 previous_com = region.compound->GetCenterOfMass();
+  if (sub_shape == kNoShape && !region.free_sub_shapes.empty()) {
+    sub_shape = region.free_sub_shapes.back();
+    region.free_sub_shapes.pop_back();
   }
-  if (built.sub_shape == kNoShape) {
-    built.sub_shape = compound_->AddShape(origin - previous_com, JPH::Quat::sIdentity(), shape);
+  if (sub_shape == kNoShape) {
+    sub_shape = region.compound->AddShape(origin - previous_com, JPH::Quat::sIdentity(), shape);
   } else {
-    compound_->ModifyShape(built.sub_shape, origin - previous_com, JPH::Quat::sIdentity(), shape);
+    region.compound->ModifyShape(sub_shape, origin - previous_com, JPH::Quat::sIdentity(), shape);
   }
-  bodies.NotifyShapeChanged(body_, previous_com, /*updateMassProperties=*/false,
+  bodies.NotifyShapeChanged(region.body, previous_com, /*updateMassProperties=*/false,
                             JPH::EActivation::DontActivate);
 }
 

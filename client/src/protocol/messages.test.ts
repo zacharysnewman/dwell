@@ -21,6 +21,7 @@ import {
   decode,
   encode,
   STATUS_FLAG_ONLINE_MODE,
+  toFixedPosition,
   type ControllerState,
   type LocalPlayerState,
   type Message,
@@ -72,7 +73,7 @@ const local = (
   state: PlayerState,
   c: ControllerState,
 ): LocalPlayerState => ({
-  position: [10.5, Math.fround(0.9), -3.25],
+  position: [8191999.125, 0.9, -3.25], // pos64: exact near the rim of the world
   velocity: [5, -0.5, 0],
   flags,
   health,
@@ -89,6 +90,7 @@ const event = (kind: PlayerEventKind) => ({
   serverTick: 1200,
   inputSeq: 77,
   vector: [0, 0, 0] as [number, number, number],
+  position: [0, 0, 0] as [number, number, number],
   amount: 0,
   cause: DamageCause.Fall as DamageCause,
 });
@@ -145,7 +147,7 @@ const expected: Record<string, Message> = {
       },
       {
         playerId: 9,
-        position: [-1, 0, 65504],
+        position: [-1, 0.00390625, 8192000.5], // posfix: multiples of 1/256 m
         velocity: [65504, -0, 1],
         yaw: 0,
         pitch: 0,
@@ -164,7 +166,10 @@ const expected: Record<string, Message> = {
   player_event_knockback: { ...event(PlayerEventKind.Knockback), vector: [0, 14, -0.5] },
   player_event_damage: { ...event(PlayerEventKind.Damage), amount: 17, cause: DamageCause.Fall },
   player_event_death: { ...event(PlayerEventKind.Death), cause: DamageCause.Crush },
-  player_event_respawn: { ...event(PlayerEventKind.Respawn), vector: [0.5, 0, 0.5] },
+  player_event_respawn: {
+    ...event(PlayerEventKind.Respawn),
+    position: [7999488.5, 12, -0.25],
+  },
   datagram_ping: { type: MessageType.DatagramPing, seq: 0x01020304, clientTimeMs: 1234.5 },
   datagram_pong: { type: MessageType.DatagramPong, seq: 7, clientTimeMs: 0.25, serverTick: 600 },
   status_request: { type: MessageType.StatusRequest },
@@ -199,6 +204,13 @@ const expected: Record<string, Message> = {
     type: MessageType.ChunkData,
     form: ChunkForm.Generated,
     coord: [4, -2, -9],
+    revision: 0,
+    voxels: null,
+  },
+  chunk_data_air: {
+    type: MessageType.ChunkData,
+    form: ChunkForm.Air,
+    coord: [256000, 191, -3],
     revision: 0,
     voxels: null,
   },
@@ -292,5 +304,18 @@ describe('half floats', () => {
     let mismatches = 0;
     for (let h = 0; h < 0x7c00; h++) if (floatToHalf(halfToFloat(h)) !== h) mismatches++;
     expect(mismatches).toBe(0);
+  });
+});
+
+describe('posfix positions', () => {
+  it('round to the nearest 1/256 m (halves up, as in C++) and clamp', () => {
+    expect(toFixedPosition(1)).toBe(256);
+    expect(toFixedPosition(-1)).toBe(-256);
+    expect(toFixedPosition(0.5 / 256)).toBe(1);
+    expect(toFixedPosition(-0.5 / 256)).toBe(0);
+    expect(toFixedPosition(8192000.3)).toBe(2097152077);
+    expect(toFixedPosition(1e10)).toBe(2147483647);
+    expect(toFixedPosition(-1e10)).toBe(-2147483648);
+    expect(toFixedPosition(NaN)).toBe(-2147483648);
   });
 });

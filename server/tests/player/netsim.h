@@ -17,6 +17,7 @@
 #include <random>
 #include <vector>
 
+#include "../test_origin.h"
 #include "dwell/core/jolt_runtime.h"
 #include "dwell/core/server.h"
 #include "dwell/player/net.h"
@@ -88,7 +89,7 @@ using Script = std::function<player::Input(int tick, const SimClient& self)>;
 struct SimClient {
   core::SessionId session = 0;
   std::uint16_t player_id = 0;
-  core::VoxelWorld world{core::GeneratorFor(core::kGeneratorPlayground)};
+  core::VoxelWorld world{Shifted(core::GeneratorFor(core::kGeneratorPlayground))};
   std::unique_ptr<player::Predictor> predictor;
   Link up, down;
   Script script;
@@ -109,15 +110,28 @@ struct SimClient {
     predictor = std::make_unique<player::Predictor>(world, jobs, config);
   }
 
-  JPH::Vec3 Render() const { return predictor->Position() + predictor->RenderOffset(); }
+  // Positions in the test's local frame (test_origin.h).
+  JPH::Vec3 Position() const { return ToLocal(predictor->Position()); }
+  JPH::Vec3 Render() const { return Position() + predictor->RenderOffset(); }
 };
 
 class NetSim {
  public:
-  // The client side builds the playground (below), so the server defaults to it too.
+  // The client side builds the playground (below), so the server defaults to it too; both are
+  // moved to the test origin.
   explicit NetSim(LinkConditions conditions,
                   core::ServerConfig config = {.generator_version = core::kGeneratorPlayground})
-      : conditions_(conditions), server_(std::move(config), entropy_, jobs_) {}
+      : conditions_(conditions), server_(AtTestOrigin(std::move(config)), entropy_, jobs_) {}
+
+  static core::ServerConfig AtTestOrigin(core::ServerConfig config) {
+    config.generator_override =
+        Shifted(core::GeneratorFor(config.generator_version, config.world_seed));
+    auto spawn =
+        config.spawn.value_or(core::SpawnPointFor(config.generator_version, config.world_seed));
+    spawn[0] += OriginX();
+    config.spawn = spawn;
+    return config;
+  }
 
   SimClient& Join(Script script) {
     const core::SessionId id = static_cast<core::SessionId>(clients_.size() + 1);
@@ -182,7 +196,7 @@ class NetSim {
             // extrapolated to the predicted present; measured).
             const float lead = 0.0f;
             c.predictor->SetRemote(r.player_id,
-                                   JPH::Vec3(r.position[0], r.position[1], r.position[2]),
+                                   JPH::RVec3(r.position[0], r.position[1], r.position[2]),
                                    JPH::Vec3(r.velocity[0], r.velocity[1], r.velocity[2]),
                                    (r.flags & protocol::PlayerFlags::kCrouched) != 0, lead);
           }
@@ -268,7 +282,7 @@ class NetSim {
 
 // Steers towards `target` (x, z) at walking pace; stops within 0.3 m.
 inline player::Input SteerTo(const SimClient& c, float x, float z, bool run = false) {
-  const JPH::Vec3 p = c.predictor->Position();
+  const JPH::Vec3 p = c.Position();
   const float dx = x - p.GetX(), dz = z - p.GetZ();
   player::Input input;
   if (dx * dx + dz * dz < 0.09f) return input;

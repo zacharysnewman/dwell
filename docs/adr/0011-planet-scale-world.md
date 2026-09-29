@@ -77,3 +77,26 @@ For the wire:
   content (ARCHITECTURE.md §6.1), and its numbers are generator tunables, not architecture.
 - Reversal: dropping back to single precision would require re-capping the world or moving to
   per-region physics worlds; the wire format would not need to change again.
+
+## Implementation notes (2026-09-29, Phase 3c)
+
+Built as decided, with two refinements found while implementing:
+
+- **Terrain collision regions with anchors.** Point 2's double-precision bodies still hold terrain
+  as float sub-shape offsets, so terrain collision is split into region bodies (2 048 m), each at
+  its region's centre. Splitting chunks between bodies by position put a seam at every region
+  border that bumped a running capsule 5.6 cm (Jolt's internal edge removal works within one body).
+  Instead, each region's body holds the chunks around the players *anchored* to it, wherever they
+  lie (chunk meshes are shared); a Jolt group filter lets a character collide only with its
+  anchor's body, and a player re-anchors, with 8 chunks of hysteresis, well inside the next region,
+  where both bodies hold the ground. There is no seam under a player (PLAYER_CONTROLLER.md §5).
+  Jolt is built with RTTI (`CPP_RTTI_ENABLED`) so Dwell can subclass its `GroupFilter`.
+- **Air chunks are sent, without payload.** Point 5 said unmodified all-air chunks would be neither
+  generated nor sent. The client, though, waits for the chunks around the player before it
+  predicts, so it must know which ones exist and are empty. They travel as a payload-free `Air`
+  form of `ChunkData` (18 bytes, like `Generated`); neither side generates, stores or meshes them.
+- **Measured.** 64 players' controller passes: 0.43 ms/tick before, 0.42 ms with double precision,
+  0.48 ms ~8,000 km from the origin (Release). Chunk generation: ~1.2 ms native (Release), ~1.5 ms
+  in WASM, the same anywhere in the world. The player, netcode and golden-trace suites pass at the
+  origin and ~8,000 km out, natively and in WASM; the golden trace was regenerated once, for a
+  borderline crouch fit that double precision resolves the other way.

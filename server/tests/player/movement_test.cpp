@@ -356,7 +356,7 @@ TEST_SUITE("player: steps and air") {
     for (int z = 0; z < 30; ++z) {
       for (int x = 0; x < 30; ++x) {
         const int height = std::min(x, z) - 2;  // step k: min(x, z) >= k + 2
-        for (int y = 0; y < height; ++y) w.world.SetVoxel(x, y, z, core::Materials::kStone);
+        for (int y = 0; y < height; ++y) w.Set(x, y, z, core::Materials::kStone);
       }
     }
     const auto e = w.Spawn(Vec3(0.5f, 0, 0.5f), 45.0f);

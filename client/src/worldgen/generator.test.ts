@@ -3,13 +3,14 @@
 // Skipped until `npm run build:wasm` has been run, unless DWELL_REQUIRE_WASM is set (CI).
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { GENERATORS } from '../local/world';
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import type { ChunkCoord } from '../protocol/messages';
 import { ChunkGenerator, type DwellWorldgenFactory } from './generator';
 
 const wasmJs = new URL('../../public/wasm/dwell_worldgen.js', import.meta.url);
 const skip = !existsSync(wasmJs) && !process.env.DWELL_REQUIRE_WASM;
-const GENERATOR_TERRAIN = 2;
+const GENERATOR_TERRAIN = GENERATORS.terrain;
 
 async function loadGenerator(version: number, seed: bigint): Promise<ChunkGenerator> {
   const mod = (await import(/* @vite-ignore */ wasmJs.href)) as { default: DwellWorldgenFactory };

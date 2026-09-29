@@ -32,6 +32,16 @@ def f32s(*values: float) -> bytes:
     return struct.pack("<" + "f" * len(values), *values)
 
 
+def f64s(*values: float) -> bytes:
+    return struct.pack("<" + "d" * len(values), *values)
+
+
+def posfix(*values: float) -> bytes:
+    # i32 in 1/positionFixedScale m, nearest (halves up); these test values are exact.
+    scale = c["world"]["positionFixedScale"]
+    return struct.pack("<" + "i" * len(values), *(int(v * scale) for v in values))
+
+
 def f16s(*values: float) -> bytes:
     return struct.pack("<" + "e" * len(values), *values)
 
@@ -52,7 +62,8 @@ def controller(flags, ladder=None, released=None):
 
 
 def snapshot_local(flags, health, state, ctrl, input_buffer=0, knockback=0):
-    return (f32s(10.5, 0.9, -3.25) + f32s(5.0, -0.5, 0.0)
+    # pos64: a position near the rim of the 8,192 km world keeps its millimetres.
+    return (f64s(8191999.125, 0.9, -3.25) + f32s(5.0, -0.5, 0.0)
             + struct.pack("<BBBBI", flags, health, state, input_buffer, knockback) + ctrl)
 
 
@@ -69,9 +80,9 @@ SNAPSHOT = (
         input_buffer=3, knockback=40,
     )
     + struct.pack("<B", 2)
-    + struct.pack("<H", 3) + f32s(1.0, 2.0, 3.0) + f16s(0.5, -8.0, 0.000061035156)
+    + struct.pack("<H", 3) + posfix(1.0, 2.0, 3.0) + f16s(0.5, -8.0, 0.000061035156)
     + struct.pack("<hhBB", 16384, -8192, PS["Running"], PF["grounded"])
-    + struct.pack("<H", 9) + f32s(-1.0, 0.0, 65504.0) + f16s(65504.0, -0.0, 1.0)
+    + struct.pack("<H", 9) + posfix(-1.0, 0.00390625, 8192000.5) + f16s(65504.0, -0.0, 1.0)
     + struct.pack("<hhBB", 0, 0, PS["Swimming"], PF["swimming"] | PF["dead"])
 )
 SNAPSHOT_MIN = (
@@ -160,9 +171,10 @@ vectors = {
     "player_event_knockback": EVENT_HEAD(EK["Knockback"]) + f32s(0.0, 14.0, -0.5),
     "player_event_damage": EVENT_HEAD(EK["Damage"]) + struct.pack("<BB", 17, DC["Fall"]),
     "player_event_death": EVENT_HEAD(EK["Death"]) + struct.pack("<B", DC["Crush"]),
-    "player_event_respawn": EVENT_HEAD(EK["Respawn"]) + f32s(0.5, 0.0, 0.5),
+    "player_event_respawn": EVENT_HEAD(EK["Respawn"]) + f64s(7999488.5, 12.0, -0.25),
     "worldgen_check": struct.pack("<BQ", T["WorldgenCheck"], 0xFEDCBA9876543210),
     "chunk_data_generated": chunk_head(CF_["Generated"], (4, -2, -9), 0),
+    "chunk_data_air": chunk_head(CF_["Air"], (256000, 191, -3), 0),
     "chunk_data_explicit": EXPLICIT,
     "chunk_data_explicit_wide": chunk_head(CF_["Explicit"], (1, 1, 1), 3)
     + chunk_voxels(chunk_wide),
@@ -186,12 +198,15 @@ malformed = {
     + input_frame(1, 0, 0, 0, 0, 0) * 5,
     "!input_unknown_button": struct.pack("<BIB", T["PlayerInput"], 0, 1)
     + input_frame(1, 0, 0, 0x80, 0, 0),
-    "!snapshot_bad_state": SNAPSHOT_MIN[:9 + 26] + b"\x63" + SNAPSHOT_MIN[9 + 27:],
+    "!snapshot_bad_state": SNAPSHOT_MIN[:9 + 38] + b"\x63" + SNAPSHOT_MIN[9 + 39:],
     "!snapshot_truncated_remote": SNAPSHOT[:-1],
-    "!snapshot_missing_ladder": SNAPSHOT_MIN[:9 + 32] + bytes([CF["climbing"]]) + SNAPSHOT_MIN[9 + 33:],
+    "!snapshot_missing_ladder": SNAPSHOT_MIN[:9 + 44] + bytes([CF["climbing"]]) + SNAPSHOT_MIN[9 + 45:],
+    "!snapshot_position_nan": SNAPSHOT_MIN[:9] + f64s(float("nan")) + SNAPSHOT_MIN[9 + 8:],
+    "!respawn_out_of_range": EVENT_HEAD(EK["Respawn"]) + f64s(9e6, 0.0, 0.0),
     "!event_bad_kind": EVENT_HEAD(0) + f32s(0, 0, 0),
     "!event_bad_cause": EVENT_HEAD(EK["Damage"]) + struct.pack("<BB", 1, 0),
-    "!chunk_bad_form": chunk_head(2, (0, 0, 0), 0),
+    "!chunk_bad_form": chunk_head(3, (0, 0, 0), 0),
+    "!chunk_air_payload": chunk_head(CF_["Air"], (0, 0, 0), 0) + b"\x00",
     "!chunk_generated_payload": chunk_head(CF_["Generated"], (0, 0, 0), 0) + b"\x00",
     "!chunk_empty_palette": chunk_head(CF_["Explicit"], (0, 0, 0), 0) + struct.pack("<H", 0),
     "!chunk_short": PAL1 + varint(N ** 3 - 1) + b"\x00",

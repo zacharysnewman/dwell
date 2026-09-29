@@ -75,6 +75,23 @@ std::int32_t FloorDiv(std::int32_t a, std::int32_t b) {
 
 }  // namespace
 
+DiscOverlap ChunkDiscOverlap(std::int32_t cx, std::int32_t cz) {
+  // Nearest and farthest voxel columns of the chunk from the origin, per axis.
+  const auto nearest = [](std::int32_t c) -> std::int64_t {
+    const std::int64_t lo = std::int64_t{c} * kChunkSize, hi = lo + kChunkSize - 1;
+    return lo > 0 ? lo : hi < 0 ? hi : 0;
+  };
+  const auto farthest = [](std::int32_t c) -> std::int64_t {
+    const std::int64_t lo = std::int64_t{c} * kChunkSize, hi = lo + kChunkSize - 1;
+    return -lo > hi ? lo : hi;
+  };
+  const std::int64_t r2 = std::int64_t{kWorldRadius} * kWorldRadius;
+  const std::int64_t nx = nearest(cx), nz = nearest(cz);
+  if (nx * nx + nz * nz >= r2) return DiscOverlap::kOutside;
+  const std::int64_t fx = farthest(cx), fz = farthest(cz);
+  return fx * fx + fz * fz < r2 ? DiscOverlap::kInside : DiscOverlap::kPartial;
+}
+
 const MaterialInfo& GetMaterial(MaterialId id) {
   return id < kMaterials.size() ? kMaterials[id] : kMaterials[Materials::kAir];
 }
@@ -91,14 +108,30 @@ ChunkCoord ChunkOf(std::int32_t x, std::int32_t y, std::int32_t z) {
 }
 
 void GenerateFlatChunk(const ChunkCoord& coord, Chunk& chunk) {
+  const DiscOverlap disc = ChunkDiscOverlap(coord.x, coord.z);
+  if (disc == DiscOverlap::kOutside) return;  // the void beyond the rim
   for (int ly = 0; ly < kChunkSize; ++ly) {
     const MaterialId m = FlatMaterial(coord.y * kChunkSize + ly);
     if (m == Materials::kAir) continue;
     for (int lz = 0; lz < kChunkSize; ++lz) {
-      for (int lx = 0; lx < kChunkSize; ++lx) chunk.Set(lx, ly, lz, m);
+      for (int lx = 0; lx < kChunkSize; ++lx) {
+        if (disc == DiscOverlap::kPartial &&
+            !InsideWorldDisc(coord.x * kChunkSize + lx, coord.z * kChunkSize + lz)) {
+          continue;
+        }
+        chunk.Set(lx, ly, lz, m);
+      }
     }
   }
 }
+
+namespace {
+bool FlatIsAir(const ChunkCoord& c) {
+  const int y0 = c.y * kChunkSize;
+  return y0 >= 0 || y0 + kChunkSize <= kWorldMinY ||
+         ChunkDiscOverlap(c.x, c.z) == DiscOverlap::kOutside;
+}
+}  // namespace
 
 void GenerateEmptyChunk(const ChunkCoord&, Chunk&) {}
 
@@ -128,11 +161,45 @@ ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world
                                                    : ChunkGenerator(GenerateFlatChunk);
 }
 
-std::array<float, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64_t world_seed) {
+AirChunkTest AirTestFor(std::uint32_t generator_version, std::uint64_t world_seed) {
+  if (generator_version == kGeneratorTerrain) {
+    // Sky floors are cached per chunk column (bounded: cleared when large).
+    struct Cache {
+      worldgen::TerrainGenerator terrain;
+      std::unordered_map<ChunkCoord, float, ChunkCoordHash> sky_floor;
+    };
+    auto cache = std::make_shared<Cache>(Cache{worldgen::TerrainGenerator(world_seed), {}});
+    return [cache](const ChunkCoord& coord) {
+      const std::int32_t y0 = coord.y * kChunkSize;
+      if (y0 < kSeaLevel || y0 >= kWorldMaxY ||
+          ChunkDiscOverlap(coord.x, coord.z) == DiscOverlap::kOutside) {
+        return cache->terrain.IsAirChunk(coord);
+      }
+      const ChunkCoord column{coord.x, 0, coord.z};
+      auto it = cache->sky_floor.find(column);
+      if (it == cache->sky_floor.end()) {
+        if (cache->sky_floor.size() >= 4096) cache->sky_floor.clear();
+        it = cache->sky_floor.emplace(column, cache->terrain.SkyFloorAt(coord.x, coord.z)).first;
+      }
+      return worldgen::TerrainGenerator::IsAirChunk(coord, it->second);
+    };
+  }
+  if (generator_version == kGeneratorPlayground) {
+    // The playground's chunks (x, y, z in −1..0) hold features above y = 0.
+    return [](const ChunkCoord& c) {
+      const bool playground =
+          c.x >= -1 && c.x <= 0 && c.y >= -1 && c.y <= 0 && c.z >= -1 && c.z <= 0;
+      return !playground && FlatIsAir(c);
+    };
+  }
+  return FlatIsAir;
+}
+
+std::array<double, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64_t world_seed) {
   if (generator_version == kGeneratorTerrain) {
     return worldgen::TerrainGenerator(world_seed).SpawnPoint();
   }
-  return {0.5f, 0.0f, 0.5f};
+  return {0.5, 0.0, 0.5};
 }
 
 std::uint64_t ChunkHash(const Chunk& chunk) {
@@ -162,8 +229,11 @@ Chunk& VoxelWorld::GetOrCreate(const ChunkCoord& coord) {
 }
 
 const Chunk& VoxelWorld::Read(const ChunkCoord& coord) {
-  if (generator_) return GetOrCreate(coord);
   static const Chunk kAir;
+  if (generator_) {
+    if (air_ && !Find(coord) && air_(coord)) return kAir;
+    return GetOrCreate(coord);
+  }
   const Chunk* chunk = Find(coord);
   return chunk ? *chunk : kAir;
 }

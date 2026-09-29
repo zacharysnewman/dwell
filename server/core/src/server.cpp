@@ -10,6 +10,7 @@
 namespace dwell::core {
 
 using namespace protocol;
+using JPH::RVec3;
 using JPH::Vec3;
 using player::PlayerHandle;
 
@@ -27,7 +28,7 @@ constexpr int kKeepChunks = 3;      // unmodified chunks kept around players; fa
 constexpr std::uint32_t kEvictEveryTicks = 64;
 constexpr std::size_t kMaxExplicitWanted = 64;  // full-mode chunks queued for generation per tick
 
-ChunkCoord ChunkAt(float x, float y, float z) {
+ChunkCoord ChunkAt(double x, double y, double z) {
   return ChunkOf(static_cast<std::int32_t>(std::floor(x)), static_cast<std::int32_t>(std::floor(y)),
                  static_cast<std::int32_t>(std::floor(z)));
 }
@@ -65,20 +66,28 @@ Server::Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs)
     : config_(std::move(config)),
       entropy_(entropy),
       physics_(jobs),
-      world_(GeneratorFor(config_.generator_version, config_.world_seed)),
+      air_test_(config_.generator_override
+                    ? config_.air_test_override
+                    : AirTestFor(config_.generator_version, config_.world_seed)),
+      world_(config_.generator_override
+                 ? config_.generator_override
+                 : GeneratorFor(config_.generator_version, config_.world_seed),
+             air_test_),
       terrain_(world_, physics_),
       players_(world_, physics_, &terrain_),
-      worldgen_(GeneratorFor(config_.generator_version, config_.world_seed),
+      worldgen_(config_.generator_override
+                    ? config_.generator_override
+                    : GeneratorFor(config_.generator_version, config_.world_seed),
                 config_.worldgen_threads) {
   if (!config_.spawn) config_.spawn = SpawnPointFor(config_.generator_version, config_.world_seed);
   const auto& at = *config_.spawn;
   const ChunkCoord spawn_chunk = ChunkAt(at[0], at[1], at[2]);
-  verification_chunk_ = ChunkAt(at[0], at[1] - 1.0f, at[2]);
+  verification_chunk_ = ChunkAt(at[0], at[1] - 1.0, at[2]);
 
   // Pre-generate the spawn region, so the first players never wait for terrain.
   std::vector<ChunkCoord> region;
   for (const ChunkCoord& o : CubeOffsets(config_.pregen_radius_chunks)) {
-    region.push_back(Add(spawn_chunk, o));
+    if (const ChunkCoord c = Add(spawn_chunk, o); !IsAir(c)) region.push_back(c);
   }
   region.push_back(verification_chunk_);
   worldgen_.SetWanted(region);
@@ -87,12 +96,12 @@ Server::Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs)
   for (auto& [coord, chunk] : ready) world_.Put(coord, std::move(chunk));
   verification_hash_ = ChunkHash(world_.Read(verification_chunk_));
 
-  // The view: a cylinder of view_radius_chunks around the center, view_height_chunks up and down.
-  const int r = config_.view_radius_chunks, h = config_.view_height_chunks;
-  for (int y = -h; y <= h; ++y)
+  // The view: a sphere of view_radius_chunks around the center (§6.3).
+  const int r = config_.view_radius_chunks;
+  for (int y = -r; y <= r; ++y)
     for (int z = -r; z <= r; ++z)
       for (int x = -r; x <= r; ++x)
-        if (x * x + z * z <= r * r + r) view_offsets_.push_back({x, y, z});
+        if (x * x + y * y + z * z <= r * r + r) view_offsets_.push_back({x, y, z});
   std::stable_sort(view_offsets_.begin(), view_offsets_.end(),
                    [](const ChunkCoord& a, const ChunkCoord& b) {
                      return a.x * a.x + a.y * a.y + a.z * a.z < b.x * b.x + b.y * b.y + b.z * b.z;
@@ -251,8 +260,7 @@ void Server::SpawnPlayer(Session& s) {
   // Spread players around the spawn point so they don't start inside each other.
   const int slot = (s.player_id - 1) % 8;
   const auto& at = *config_.spawn;
-  const Vec3 spawn(at[0] + static_cast<float>(slot % 4) - 1.5f, at[1],
-                   at[2] + static_cast<float>(slot / 4) * 1.5f - 0.75f);
+  const RVec3 spawn(at[0] + (slot % 4) - 1.5, at[1], at[2] + (slot / 4) * 1.5 - 0.75);
   s.handle = players_.Spawn(player_config_, spawn);
   s.health = kMaxHealth;
   s.inputs.clear();
@@ -280,7 +288,7 @@ void Server::Damage(Session& s, int amount, DamageCause cause) {
 
 void Server::Kill(Session& s, DamageCause cause) {
   if (!s.handle) return;
-  const Vec3 p = players_.Position(*s.handle);
+  const RVec3 p = players_.Position(*s.handle);
   s.death_position[0] = p.GetX();
   s.death_position[1] = p.GetY() - players_.HalfHeight(*s.handle);
   s.death_position[2] = p.GetZ();
@@ -313,8 +321,8 @@ void Server::AfterControllerTick(Session& s) {
       if (!s.handle) return;
     }
   }
-  const Vec3 p = players_.Position(h);
-  const float feet = p.GetY() - players_.HalfHeight(h);
+  const RVec3 p = players_.Position(h);
+  const float feet = players_.Feet(h);
   if (feet < static_cast<float>(kWorldMinY - 16)) {
     Kill(s, DamageCause::kFall);
     return;
@@ -394,15 +402,15 @@ void Server::Step() {
   for (auto& [id, s] : sessions_) {
     if (s.phase != Phase::kJoined || s.handle || tick_ < s.respawn_tick) continue;
     SpawnPlayer(s);
-    const Vec3 p = players_.Position(*s.handle);
+    const RVec3 p = players_.Position(*s.handle);
     PlayerEvent e;
     e.kind = PlayerEventKind::kRespawn;
     e.player_id = s.player_id;
     e.server_tick = tick_;
     e.input_seq = s.last_processed_seq;
-    e.vector[0] = p.GetX();
-    e.vector[1] = p.GetY() - players_.HalfHeight(*s.handle);
-    e.vector[2] = p.GetZ();
+    e.position[0] = p.GetX();
+    e.position[1] = p.GetY() - players_.HalfHeight(*s.handle);
+    e.position[2] = p.GetZ();
     BroadcastWorld(e);
   }
   if (tick_ % kSnapshotEvery == 0) SendSnapshots();
@@ -416,7 +424,7 @@ void Server::Step() {
 std::optional<ChunkCoord> Server::ViewCenter(const Session& s) const {
   if (s.phase != Phase::kJoined) return std::nullopt;
   if (s.handle) {
-    const Vec3 p = players_.Position(*s.handle);
+    const RVec3 p = players_.Position(*s.handle);
     return ChunkAt(p.GetX(), p.GetY(), p.GetZ());
   }
   return ChunkAt(s.death_position[0], s.death_position[1], s.death_position[2]);
@@ -432,7 +440,9 @@ void Server::UpdateWorldgen() {
   for (const ChunkCoord& o : PrefetchOffsets()) {
     for (const ChunkCoord& center : centers) {
       const ChunkCoord c = Add(center, o);
-      if (c.y >= kMinChunkY && c.y <= kMaxChunkY && !world_.Find(c)) wanted.push_back(c);
+      if (c.y >= kMinChunkY && c.y <= kMaxChunkY && !world_.Find(c) && !IsAir(c)) {
+        wanted.push_back(c);
+      }
     }
   }
   wanted.insert(wanted.end(), explicit_wanted_.begin(), explicit_wanted_.end());
@@ -460,11 +470,10 @@ void Server::StreamChunks(SessionId id, Session& s) {
     s.stream_complete = false;
     // Chunks beyond the view plus a margin (hysteresis) leave the client.
     const int r = config_.view_radius_chunks + kUnloadMarginChunks;
-    const int h = config_.view_height_chunks + kUnloadMarginChunks;
     ChunkUnload unload;
     for (auto it = s.streamed.begin(); it != s.streamed.end();) {
       const int dx = it->x - center->x, dy = it->y - center->y, dz = it->z - center->z;
-      if (dx * dx + dz * dz > r * r + r || dy > h || -dy > h) {
+      if (dx * dx + dy * dy + dz * dz > r * r + r) {
         unload.coords.push_back({it->x, it->y, it->z});
         it = s.streamed.erase(it);
       } else {
@@ -493,7 +502,10 @@ void Server::StreamChunks(SessionId id, Session& s) {
     const Chunk* chunk = world_.Find(c);
     ChunkData m;
     m.coord = {c.x, c.y, c.z};
-    if (s.chunk_mode == ChunkMode::kGenerated && !(chunk && chunk->revision() > 0)) {
+    const bool modified = chunk && chunk->revision() > 0;
+    if (!modified && IsAir(c)) {
+      m.form = ChunkForm::kAir;  // nothing to generate or store, in either mode
+    } else if (s.chunk_mode == ChunkMode::kGenerated && !modified) {
       m.form = ChunkForm::kGenerated;
     } else if (chunk) {
       m.form = ChunkForm::kExplicit;
@@ -510,6 +522,7 @@ void Server::StreamChunks(SessionId id, Session& s) {
     s.streamed.insert(c);
     ++sent;
     ++(m.form == ChunkForm::kGenerated ? s.stream_stats.generated_sent
+       : m.form == ChunkForm::kAir     ? s.stream_stats.air_sent
                                        : s.stream_stats.explicit_sent);
   }
   s.stream_complete = complete;
@@ -524,7 +537,8 @@ void Server::SendSnapshots() {
     r.player_id = s.player_id;
     if (s.handle) {
       const player::PlayerController& c = players_.controller(*s.handle);
-      const Vec3 p = players_.Position(*s.handle), v = players_.Velocity(*s.handle);
+      const RVec3 p = players_.Position(*s.handle);
+      const Vec3 v = players_.Velocity(*s.handle);
       r.position[0] = p.GetX();
       r.position[1] = p.GetY() - players_.HalfHeight(*s.handle);  // feet
       r.position[2] = p.GetZ();
@@ -556,7 +570,8 @@ void Server::SendSnapshots() {
     l.last_knockback_seq = s.last_knockback_seq;
     if (s.handle) {
       const player::PlayerController& c = players_.controller(*s.handle);
-      const Vec3 p = players_.Position(*s.handle), v = players_.Velocity(*s.handle);
+      const RVec3 p = players_.Position(*s.handle);
+      const Vec3 v = players_.Velocity(*s.handle);
       l.position[0] = p.GetX();
       l.position[1] = p.GetY();  // capsule centre (resumes the body exactly)
       l.position[2] = p.GetZ();
@@ -571,7 +586,7 @@ void Server::SendSnapshots() {
       l.flags = PlayerFlags::kDead;
     }
     // Remote players, nearest first, as many as fit in one datagram.
-    constexpr std::size_t kLocalBytes = 9 + 32 + 47 + 20 + 1;
+    constexpr std::size_t kLocalBytes = 9 + 44 + 47 + 20 + 1;  // position f64×3 (v4)
     constexpr std::size_t kRemoteBytes = 26;
     const std::size_t room = (kMaxDatagramBytes - kLocalBytes) / kRemoteBytes;
     std::vector<RemotePlayerState> remotes;
@@ -579,7 +594,7 @@ void Server::SendSnapshots() {
       if (player_id != s.player_id) remotes.push_back(view);
     }
     auto distance = [&](const RemotePlayerState& r) {
-      float d = 0;
+      double d = 0;
       for (int i = 0; i < 3; ++i)
         d += (r.position[i] - l.position[i]) * (r.position[i] - l.position[i]);
       return d;
@@ -591,6 +606,8 @@ void Server::SendSnapshots() {
     SendDatagram(id, snap);
   }
 }
+
+bool Server::IsAir(const ChunkCoord& c) const { return air_test_ && air_test_(c); }
 
 std::vector<Outgoing> Server::TakeOutbox() { return std::exchange(outbox_, {}); }
 

@@ -1,6 +1,8 @@
 #include "dwell/protocol/messages.h"
 
 #include <algorithm>
+#include <climits>
+#include <cmath>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -156,6 +158,14 @@ void Write3(ByteWriter& w, const float (&v)[3]) {
   for (float x : v) w.F32(x);
 }
 
+void WritePos64(ByteWriter& w, const double (&v)[3]) {
+  for (double x : v) w.F64(x);
+}
+
+void WritePosFix(ByteWriter& w, const double (&v)[3]) {
+  for (double x : v) w.I32(ToFixedPosition(x));
+}
+
 void Write(ByteWriter& w, const ControllerState& c) {
   w.U8(c.flags);
   for (float v :
@@ -182,7 +192,7 @@ void Write(ByteWriter& w, const ControllerState& c) {
 void Write(ByteWriter& w, const PhysicsSnapshot& m) {
   w.U32(m.server_tick);
   w.U32(m.ack_input_seq);
-  Write3(w, m.local.position);
+  WritePos64(w, m.local.position);
   Write3(w, m.local.velocity);
   w.U8(m.local.flags);
   w.U8(m.local.health);
@@ -194,7 +204,7 @@ void Write(ByteWriter& w, const PhysicsSnapshot& m) {
   for (std::size_t i = 0; i < m.remotes.size() && i < 255; ++i) {
     const RemotePlayerState& r = m.remotes[i];
     w.U16(r.player_id);
-    Write3(w, r.position);
+    WritePosFix(w, r.position);
     for (float v : r.velocity) w.F16(v);
     w.I16(r.yaw);
     w.I16(r.pitch);
@@ -210,8 +220,10 @@ void Write(ByteWriter& w, const PlayerEvent& m) {
   w.U32(m.input_seq);
   switch (m.kind) {
     case PlayerEventKind::kKnockback:
-    case PlayerEventKind::kRespawn:
       Write3(w, m.vector);
+      break;
+    case PlayerEventKind::kRespawn:
+      WritePos64(w, m.position);
       break;
     case PlayerEventKind::kDamage:
       w.U8(m.amount);
@@ -329,6 +341,20 @@ bool IsRejectReason(std::uint8_t v) { return v >= 1 && v <= kMaxRejectReason; }
 
 void Read3(ByteReader& r, float (&v)[3]) {
   for (float& x : v) x = r.F32();
+}
+
+// Positions must be finite and inside the i32 posfix range (±8 388 km), like every other world
+// position a peer may send.
+void ReadPos64(ByteReader& r, double (&v)[3]) {
+  constexpr double kLimit = 2147483647.0 / kPositionFixedScale;
+  for (double& x : v) {
+    x = r.F64();
+    r.Check(x >= -kLimit && x <= kLimit);  // also rejects NaN
+  }
+}
+
+void ReadPosFix(ByteReader& r, double (&v)[3]) {
+  for (double& x : v) x = FromFixedPosition(r.I32());
 }
 
 PlayerState ReadState(ByteReader& r) {
@@ -498,7 +524,7 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       PhysicsSnapshot m;
       m.server_tick = r.U32();
       m.ack_input_seq = r.U32();
-      Read3(r, m.local.position);
+      ReadPos64(r, m.local.position);
       Read3(r, m.local.velocity);
       m.local.flags = r.U8();
       r.Check((m.local.flags & ~PlayerFlags::kAll) == 0);
@@ -511,7 +537,7 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       for (int i = 0; i < count && r.ok(); ++i) {
         RemotePlayerState p;
         p.player_id = r.U16();
-        Read3(r, p.position);
+        ReadPosFix(r, p.position);
         for (float& v : p.velocity) v = r.F16();
         p.yaw = r.I16();
         p.pitch = r.I16();
@@ -534,8 +560,10 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       if (!r.ok()) return std::nullopt;
       switch (m.kind) {
         case PlayerEventKind::kKnockback:
-        case PlayerEventKind::kRespawn:
           Read3(r, m.vector);
+          break;
+        case PlayerEventKind::kRespawn:
+          ReadPos64(r, m.position);
           break;
         case PlayerEventKind::kDamage:
           m.amount = r.U8();
@@ -575,6 +603,13 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
   }
   if (!r.AtEnd()) return std::nullopt;
   return out;
+}
+
+std::int32_t ToFixedPosition(double v) {
+  const double scaled = std::floor(v * kPositionFixedScale + 0.5);
+  if (!(scaled > -2147483648.0)) return INT32_MIN;  // also NaN
+  if (scaled > 2147483647.0) return INT32_MAX;
+  return static_cast<std::int32_t>(scaled);
 }
 
 std::vector<std::uint8_t> AuthTranscript(const Nonce& nonce,

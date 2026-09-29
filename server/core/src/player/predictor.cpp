@@ -11,6 +11,7 @@
 namespace dwell::player {
 namespace {
 
+using JPH::RVec3;
 using JPH::Vec3;
 constexpr float kDt = PlayerControllerConfig::Dt();
 // Knockback corrections are smoothed up to this multiple of the snap distance: they are expected
@@ -18,6 +19,7 @@ constexpr float kDt = PlayerControllerConfig::Dt();
 constexpr float kKnockbackSnapFactor = 4.0f;
 
 Vec3 ToVec3(const float (&v)[3]) { return Vec3(v[0], v[1], v[2]); }
+RVec3 ToRVec3(const double (&v)[3]) { return RVec3(v[0], v[1], v[2]); }
 
 }  // namespace
 
@@ -47,7 +49,9 @@ Predictor::~Predictor() {
   terrain_.reset();
 }
 
-Vec3 Predictor::Position() const { return handle_ ? players_->Position(*handle_) : Vec3::sZero(); }
+RVec3 Predictor::Position() const {
+  return handle_ ? players_->Position(*handle_) : RVec3::sZero();
+}
 Vec3 Predictor::Velocity() const { return handle_ ? players_->Velocity(*handle_) : Vec3::sZero(); }
 float Predictor::HalfHeight() const {
   return handle_ ? players_->HalfHeight(*handle_) : config_.HalfHeight(false);
@@ -79,7 +83,7 @@ void Predictor::Simulate(const protocol::InputFrame& input, bool forward) {
     constexpr int kMaxTicks = static_cast<int>(kMaxDeadReckoning / kDt);
     for (auto& [id, remote] : remotes_) {
       if (remote.dead_reckoning_ticks++ < kMaxTicks) remote.target += remote.velocity * kDt;
-      bodies.MoveKinematic(remote.body, JPH::RVec3(remote.target), JPH::Quat::sIdentity(), kDt);
+      bodies.MoveKinematic(remote.body, remote.target, JPH::Quat::sIdentity(), kDt);
     }
   }
   players_->SetInput(*handle_, DequantizeInput(input));
@@ -129,7 +133,7 @@ void Predictor::Replay(std::uint32_t from_seq) {
 
 void Predictor::Reset(const protocol::PhysicsSnapshot& snapshot) {
   const auto& l = snapshot.local;
-  const Vec3 center = ToVec3(l.position);
+  const RVec3 center = ToRVec3(l.position);
   if (!handle_) {
     handle_ = players_->Spawn(config_, center - Vec3(0, config_.HalfHeight(false), 0));
   }
@@ -169,9 +173,10 @@ void Predictor::OnSnapshot(const protocol::PhysicsSnapshot& snapshot) {
 
   const Entry& e = history_[ack % kHistory];
   const bool known = e.seq == ack && ack <= latest_seq_;
-  const Vec3 server_position = ToVec3(l.position), server_velocity = ToVec3(l.velocity);
+  const RVec3 server_position = ToRVec3(l.position);
+  const Vec3 server_velocity = ToVec3(l.velocity);
   if (known) {
-    stats_.last_error = (e.position - server_position).Length();
+    stats_.last_error = Vec3(e.position - server_position).Length();
     const auto predicted = ToNet(e.controller, {});
     const bool match =
         stats_.last_error <= kPositionTolerance &&
@@ -184,7 +189,7 @@ void Predictor::OnSnapshot(const protocol::PhysicsSnapshot& snapshot) {
 
   // Mispredicted (or history lost): restart from the server's state at `ack` and replay.
   ++stats_.replays;
-  const Vec3 before = Position();
+  const RVec3 before = Position();
   PlayerController c = known ? e.controller : players_->controller(*handle_);
   FromNet(l.controller, [this](auto kind, auto id) { return GroundFromNet(kind, id); }, c);
   players_->Restore(*handle_, c, server_position, server_velocity);
@@ -193,7 +198,7 @@ void Predictor::OnSnapshot(const protocol::PhysicsSnapshot& snapshot) {
   Record(at_ack);
   if (ack >= latest_seq_) latest_seq_ = ack;
   Replay(ack + 1);
-  const Vec3 correction = before - Position();
+  const Vec3 correction(before - Position());
   stats_.last_correction = correction.Length();
   const float snap = protocol::kReconcileSnapDistance * (knockback ? kKnockbackSnapFactor : 1.0f);
   if (stats_.last_correction > snap) {
@@ -211,11 +216,11 @@ void Predictor::OnKnockback(std::uint32_t input_seq, Vec3 delta_v) {
   if (input_seq > latest_seq_) return;  // applied when that input is predicted
   const Entry& previous = history_[(input_seq - 1) % kHistory];
   if (previous.seq != input_seq - 1) return;  // too old to replay; the next snapshot corrects
-  const Vec3 before = Position();
+  const RVec3 before = Position();
   players_->Restore(*handle_, previous.controller, previous.position, previous.velocity);
   Replay(input_seq);
   ++stats_.knockback_replays;
-  const Vec3 correction = before - Position();
+  const Vec3 correction(before - Position());
   if (correction.Length() > protocol::kReconcileSnapDistance * kKnockbackSnapFactor) {
     offset_ = Vec3::sZero();
     ++stats_.snaps;
@@ -224,15 +229,15 @@ void Predictor::OnKnockback(std::uint32_t input_seq, Vec3 delta_v) {
   }
 }
 
-void Predictor::SetRemote(std::uint16_t player_id, Vec3 feet, Vec3 velocity, bool crouched,
+void Predictor::SetRemote(std::uint16_t player_id, RVec3 feet, Vec3 velocity, bool crouched,
                           float lead_seconds) {
   auto& bodies = physics_->bodies();
   const float half = config_.HalfHeight(crouched);
   const float lead = std::clamp(lead_seconds, 0.0f, kMaxDeadReckoning);
-  const Vec3 center = feet + Vec3(0, half, 0) + velocity * lead;
+  const RVec3 center = feet + Vec3(0, half, 0) + velocity * lead;
   auto it = remotes_.find(player_id);
   if (it == remotes_.end()) {
-    JPH::BodyCreationSettings s(crouched ? remote_crouched_ : remote_standing_, JPH::RVec3(center),
+    JPH::BodyCreationSettings s(crouched ? remote_crouched_ : remote_standing_, center,
                                 JPH::Quat::sIdentity(), JPH::EMotionType::Kinematic,
                                 core::ObjectLayers::kCharacter);
     Remote remote;

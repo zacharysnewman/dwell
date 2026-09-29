@@ -74,11 +74,52 @@ TEST_SUITE("worldgen: noise") {
     CHECK(worldgen::Perlin3(3, 1.25f, 2.5f, -3.75f) != worldgen::Perlin3(4, 1.25f, 2.5f, -3.75f));
   }
 
+  TEST_CASE("noise is as detailed ~8,000 km from the origin as at it") {
+    // Regression for ADR 0011. Generator version 2 converted world coordinates to float and
+    // scaled them per octave; ~8,000 km out that loses most of a fine octave's lattice offset
+    // (float coordinates, first loop: large errors against the exact split value). The generator's
+    // split coordinates (integer lattice cell + float offset) are exact everywhere.
+    constexpr std::int64_t kFar = 7999488;
+    const auto float_error = [](std::int64_t origin) {
+      float worst = 0.0f;
+      for (int i = 0; i < 256; ++i) {
+        const std::int64_t x = origin + i * 4;  // the 2D lattice's sample spacing
+        // The finest hills octave: a 12 m lattice (96 m / 2³).
+        const float by_float =
+            worldgen::Perlin2(9, static_cast<float>(x) * (1.0f / 96.0f) * 8.0f, 0.3f);
+        const float exact = worldgen::Perlin2(9, worldgen::Lattice(x, 96, 3), {0, 0.3f});
+        worst = std::max(worst, std::abs(by_float - exact));
+      }
+      return worst;
+    };
+    CHECK(float_error(0) < 1e-3f);
+    CHECK(float_error(kFar) > 0.05f);  // why the generator no longer does this
+    for (const std::int64_t origin : {std::int64_t{0}, kFar, -kFar}) {
+      CAPTURE(origin);
+      int repeats = 0;
+      float largest_step = 0.0f;
+      for (int i = 0; i < 1024; ++i) {
+        const float a = worldgen::Fbm2(9, origin + i, 17, 28, 3);
+        const float b = worldgen::Fbm2(9, origin + i + 1, 17, 28, 3);
+        repeats += a == b;
+        largest_step = std::max(largest_step, std::abs(b - a));
+      }
+      CHECK(repeats == 0);
+      CHECK(largest_step < 0.2f);  // smooth at 1 m steps
+      // The lattice split is exact: cell and offset of x equal those of x's offset in its cell.
+      const auto l = worldgen::Lattice(origin + 13, 28, 2);
+      CHECK(l.frac ==
+            worldgen::Lattice(worldgen::FloorMod(static_cast<std::int32_t>((origin + 13) % 28), 28),
+                              28, 2)
+                .frac);
+    }
+  }
+
   TEST_CASE("fractal sums stay in range") {
     for (int i = 0; i < 5000; ++i) {
-      const float x = static_cast<float>(i) * 0.37f, z = static_cast<float>(i) * -0.21f;
-      const float f = worldgen::Fbm2(11, x, z, 5);
-      const float r = worldgen::Ridged2(11, x, z, 5);
+      const std::int64_t x = i * 37, z = i * -21;
+      const float f = worldgen::Fbm2(11, x, z, 100, 5);
+      const float r = worldgen::Ridged2(11, x, z, 100, 5);
       CHECK(std::abs(f) <= 1.1f);
       CHECK(r >= 0.0f);
       CHECK(r <= 1.0f);
@@ -89,14 +130,14 @@ TEST_SUITE("worldgen: noise") {
 TEST_SUITE("worldgen: terrain") {
   TEST_CASE("a chunk is a pure function of seed and coordinate") {
     const TerrainGenerator a(123), b(123), c(124);
-    const ChunkCoord coord{1, 2, -1};
+    const ChunkCoord coord{1, 0, -1};  // at the surface (sea level is y = 0)
     CHECK(Generated(a, coord).voxels() == Generated(b, coord).voxels());
     CHECK(Generated(a, coord).voxels() != Generated(c, coord).voxels());
     CHECK(Generated(a, coord).revision() == 0);
     // Order of generation within a world does not matter.
     core::VoxelWorld w1(core::GeneratorFor(core::kGeneratorTerrain, 123));
     core::VoxelWorld w2(core::GeneratorFor(core::kGeneratorTerrain, 123));
-    const ChunkCoord n{2, 2, -1};
+    const ChunkCoord n{2, 0, -1};
     w1.GetOrCreate(coord);
     w1.GetOrCreate(n);
     w2.GetOrCreate(n);
@@ -109,7 +150,7 @@ TEST_SUITE("worldgen: terrain") {
     const TerrainGenerator gen(0);
     const auto mountain = FindBiome(gen, Biome::kMountains);
     REQUIRE(mountain);
-    std::vector<ChunkCoord> coords = {{0, 2, 0}, {0, 1, 0}, {-1, -1, 3}};
+    std::vector<ChunkCoord> coords = {{0, 0, 0}, {0, -1, 0}, {-1, -3, 3}};
     const auto m = *mountain;
     const auto h = static_cast<int>(gen.ColumnAt(m.first, m.second).height);
     coords.push_back(core::ChunkOf(m.first, h, m.second));
@@ -143,6 +184,90 @@ TEST_SUITE("worldgen: terrain") {
     for (const int cy : {bottom - 1, core::kWorldMaxY / S}) {
       const Chunk empty = Generated(gen, {0, cy, 0});
       for (const MaterialId v : empty.voxels()) CHECK(v == M::kAir);
+    }
+  }
+
+  TEST_CASE("beyond the rim of the disc nothing is generated, not even bedrock") {
+    const TerrainGenerator gen(5);
+    // A chunk column straddling the rim on the diagonal (x = z ≈ 5 792 km).
+    const ChunkCoord column{181019, 0, 181019};
+    REQUIRE(core::ChunkDiscOverlap(column.x, column.z) == core::DiscOverlap::kPartial);
+    const int bottom = core::kWorldMinY / S;
+    int inside = 0, outside = 0;
+    for (const int cy : {bottom, 0}) {
+      const Chunk chunk = Generated(gen, {column.x, cy, column.z});
+      for (int z = 0; z < S; ++z)
+        for (int x = 0; x < S; ++x) {
+          const bool in = core::InsideWorldDisc(column.x * S + x, column.z * S + z);
+          (in ? inside : outside) += cy == bottom;
+          for (int y = 0; y < S; ++y) {
+            if (!in) {
+              CHECK(chunk.Get(x, y, z) == M::kAir);
+            } else if (cy == bottom && y < core::kBedrockLayers) {
+              CHECK(chunk.Get(x, y, z) == M::kBedrock);
+            }
+          }
+        }
+    }
+    CHECK(inside > 0);
+    CHECK(outside > 0);
+    // Wholly outside: all air at every height, and the air test knows it without generating.
+    const auto air = core::AirTestFor(core::kGeneratorTerrain, 5);
+    for (const int cy : {bottom, -1, 0, 3}) {
+      const ChunkCoord c{256001, cy, 0};
+      CHECK(core::ChunkDiscOverlap(c.x, c.z) == core::DiscOverlap::kOutside);
+      const Chunk chunk = Generated(gen, c);
+      for (const MaterialId v : chunk.voxels()) CHECK(v == M::kAir);
+      CHECK(air(c));
+      CHECK(gen.IsAirChunk(c));
+    }
+    // Point queries agree.
+    CHECK(gen.ColumnAt(256001 * S, 0).outside);
+    CHECK_FALSE(gen.SolidAt(256001 * S, core::kWorldMinY, 0));
+    CHECK(gen.SolidAt(255990 * S, core::kWorldMinY, 0));  // bedrock just inside the rim
+  }
+
+  TEST_CASE("chunks the air test reports as air generate as all air, and sky is skipped") {
+    // Every chunk the air test calls air must be generated as all air (streaming never sends it);
+    // above the terrain most chunks are air.
+    for (const std::uint64_t seed : {0ull, 20260925ull}) {
+      CAPTURE(seed);
+      const TerrainGenerator gen(seed);
+      const auto air = core::AirTestFor(core::kGeneratorTerrain, seed);
+      int sky = 0, checked = 0;
+      for (const auto& [cx, cz] :
+           {std::pair{0, 0}, {5, -3}, {-14, -36}, {40, -12}, {249990, 10}, {-3, 249000}}) {
+        const int surface = static_cast<int>(gen.ColumnAt(cx * S, cz * S).height) / S;
+        for (int cy = surface - 2; cy <= surface + 6; ++cy) {
+          const ChunkCoord c{cx, cy, cz};
+          CAPTURE(c.x);
+          CAPTURE(c.y);
+          CAPTURE(c.z);
+          const bool is_air = air(c);
+          CHECK(is_air == gen.IsAirChunk(c));
+          ++checked;
+          if (!is_air) continue;
+          ++sky;
+          const Chunk chunk = Generated(gen, c);
+          for (const MaterialId v : chunk.voxels()) REQUIRE(v == M::kAir);
+        }
+      }
+      CHECK(sky > checked / 4);
+    }
+    // Flat and playground worlds: the same guarantee.
+    for (const std::uint32_t version : {core::kGeneratorFlat, core::kGeneratorPlayground}) {
+      const auto generate = core::GeneratorFor(version);
+      const auto air = core::AirTestFor(version);
+      for (int cy = -3; cy <= 2; ++cy)
+        for (int cx = -2; cx <= 1; ++cx) {
+          const ChunkCoord c{cx, cy, 0};
+          if (!air(c)) continue;
+          Chunk chunk;
+          generate(c, chunk);
+          for (const MaterialId v : chunk.voxels()) REQUIRE(v == M::kAir);
+        }
+      CHECK(air({0, 1, 0}));
+      CHECK_FALSE(air({0, -1, 0}));
     }
   }
 
@@ -270,9 +395,9 @@ TEST_SUITE("worldgen: terrain") {
       for (int i = 0; i < core::kChunkVolume; ++i) {
         const MaterialId m = chunk.voxels()[i];
         const int y = cy * S + ((i >> 5) & 31);
-        if (m == M::kCoalOre) CHECK(y <= 202);
-        if (m == M::kIronOre) CHECK(y <= 73);
-        if (m == M::kGoldOre) CHECK(y <= 17);
+        if (m == M::kCoalOre) CHECK(y <= 138);
+        if (m == M::kIronOre) CHECK(y <= 9);
+        if (m == M::kGoldOre) CHECK(y <= -47);
         ores += m == M::kCoalOre || m == M::kIronOre || m == M::kGoldOre;
       }
     }
@@ -310,14 +435,36 @@ TEST_SUITE("worldgen: golden") {
       std::uint64_t seed;
       ChunkCoord c;
     };
-    const std::vector<Case> cases = {
-        {0, {0, 2, 0}},   {0, {0, 1, 0}},        {0, {0, -1, 0}},        {0, {0, -4, 0}},
-        {0, {0, 8, 0}},   {0, {-14, 5, -36}},    {0, {-14, 4, -36}},     {0, {40, 1, -12}},
-        {0, {-7, 2, 19}}, {20260925, {0, 2, 0}}, {20260925, {5, 1, -3}}, {20260925, {-2, 0, 9}},
+    // Surface, caves, deep rock, bedrock, sky and the top of the world, ocean, mountains; the
+    // rim of the disc; and terrain ~8,000 km out (its surface chunk found from the column).
+    constexpr int kSurface = 1 << 20;  // y placeholder: the chunk holding the column's surface
+    std::vector<Case> cases = {
+        {0, {0, 0, 0}},
+        {0, {0, -1, 0}},
+        {0, {0, -3, 0}},
+        {0, {0, -6, 0}},
+        {0, {0, -40, 0}},
+        {0, {0, -64, 0}},
+        {0, {0, 6, 0}},
+        {0, {0, 191, 0}},
+        {0, {-14, 3, -36}},
+        {0, {-14, 2, -36}},
+        {0, {40, -1, -12}},
+        {0, {-7, -1, 19}},
+        {20260925, {0, 0, 0}},
+        {20260925, {5, -1, -3}},
+        {20260925, {-2, -2, 9}},
+        {0, {181019, -64, 181019}},
+        {0, {249990, kSurface, 10}},
+        {20260925, {-3, kSurface, 249000}},
+        {0, {-249990, kSurface, -5}},
     };
     std::vector<std::string> actual;
-    for (const auto& k : cases) {
+    for (auto& k : cases) {
       const TerrainGenerator gen(k.seed);
+      if (k.c.y == kSurface) {
+        k.c.y = worldgen::FloorDiv(static_cast<int>(gen.ColumnAt(k.c.x * S, k.c.z * S).height), S);
+      }
       std::ostringstream line;
       line << k.seed << ' ' << k.c.x << ' ' << k.c.y << ' ' << k.c.z << ' ' << std::hex
            << ChunkHash(Generated(gen, k.c));
@@ -327,7 +474,7 @@ TEST_SUITE("worldgen: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 2\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 3\n";
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);
       return;

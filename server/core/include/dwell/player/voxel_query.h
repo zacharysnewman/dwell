@@ -15,6 +15,9 @@
 namespace dwell::player {
 
 using JPH::Vec3;
+// World positions are double precision (ADR 0011: the 8,192 km world); offsets, directions and
+// velocities stay float.
+using JPH::RVec3;
 
 struct GroundRef {
   enum Kind : std::uint8_t { kNone, kTerrain, kTier1Body, kPlayer };
@@ -25,14 +28,14 @@ struct GroundRef {
 
 struct ProbeHit {
   float distance = 0.0f;
-  Vec3 point = Vec3::sZero();
+  RVec3 point = RVec3::sZero();
   Vec3 normal = Vec3::sAxisY();
   GroundRef ground;
 };
 
 // A vertical capsule: centre, radius, and half the cylinder's height.
 struct Capsule {
-  Vec3 center;
+  RVec3 center;
   float radius;
   float half_cylinder;
 };
@@ -45,12 +48,13 @@ class VoxelQuery {
   // Nearest solid along the ray (unit `dir`), ignoring the body `self`. A ray that starts inside
   // solid terrain only hits once it has left it (as against a surface mesh).
   // `bodies` = false skips the Jolt part (the caller knows no moving body is in reach).
-  bool CastRay(Vec3 origin, Vec3 dir, float max_distance, JPH::BodyID self, ProbeHit& hit,
+  bool CastRay(RVec3 origin, Vec3 dir, float max_distance, JPH::BodyID self, ProbeHit& hit,
                bool bodies = true) const;
   // Is any moving body other than `self` within the box? (Lets a batch of probes skip Jolt.)
-  bool BodiesNear(Vec3 min, Vec3 max, JPH::BodyID self) const;
-  bool CastVoxels(Vec3 origin, Vec3 dir, float max_distance, ProbeHit& hit) const;
-  bool CastBodies(Vec3 origin, Vec3 dir, float max_distance, JPH::BodyID self, ProbeHit& hit) const;
+  bool BodiesNear(RVec3 min, RVec3 max, JPH::BodyID self) const;
+  bool CastVoxels(RVec3 origin, Vec3 dir, float max_distance, ProbeHit& hit) const;
+  bool CastBodies(RVec3 origin, Vec3 dir, float max_distance, JPH::BodyID self,
+                  ProbeHit& hit) const;
 
   // Does the capsule overlap solid terrain or a moving body other than `self`?
   bool OverlapsSolid(const Capsule& capsule, JPH::BodyID self) const;
@@ -61,14 +65,14 @@ class VoxelQuery {
   void ForEachOverlappingCell(const Capsule& capsule, Fn&& fn) const;
 
   // Fraction [0, 1] of the capsule's height inside liquid cells, sampled at its centre column.
-  float SubmergedFraction(Vec3 center, float half_height) const;
+  float SubmergedFraction(RVec3 center, float half_height) const;
 
   // Voxel lookup with a one-chunk cache (probes walk neighbouring cells).
   core::MaterialId Material(std::int32_t x, std::int32_t y, std::int32_t z) const;
   JPH::PhysicsSystem& physics() const { return physics_; }
 
   // Distance between a vertical capsule's axis segment and an axis-aligned box.
-  static float SegmentBoxDistance(const Capsule& capsule, Vec3 box_min, Vec3 box_max);
+  static float SegmentBoxDistance(const Capsule& capsule, RVec3 box_min, RVec3 box_max);
 
  private:
   core::VoxelWorld& world_;
@@ -92,7 +96,7 @@ void VoxelQuery::ForEachOverlappingCell(const Capsule& c, Fn&& fn) const {
       for (std::int32_t x = x0; x <= x1; ++x) {
         const core::MaterialId m = Material(x, y, z);
         if (m == core::Materials::kAir) continue;
-        const Vec3 lo(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+        const RVec3 lo(x, y, z);
         if (SegmentBoxDistance(c, lo, lo + Vec3::sReplicate(1.0f)) < c.radius) fn(x, y, z, m);
       }
     }

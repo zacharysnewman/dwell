@@ -73,9 +73,9 @@ constexpr std::uint32_t OctaveSeed(std::uint32_t seed, int octave) {
 
 }  // namespace
 
-float Perlin2(std::uint32_t seed, float x, float z) {
-  const std::int32_t x0 = FloorToInt(x), z0 = FloorToInt(z);
-  const float fx = x - static_cast<float>(x0), fz = z - static_cast<float>(z0);
+float Perlin2(std::uint32_t seed, LatticeCoord x, LatticeCoord z) {
+  const std::int32_t x0 = x.cell, z0 = z.cell;
+  const float fx = x.frac, fz = z.frac;
   const float u = Fade(fx), v = Fade(fz);
   const float n00 = Grad2(Hash2(seed, x0, z0), fx, fz);
   const float n10 = Grad2(Hash2(seed, x0 + 1, z0), fx - 1.0f, fz);
@@ -84,10 +84,9 @@ float Perlin2(std::uint32_t seed, float x, float z) {
   return Lerp(Lerp(n00, n10, u), Lerp(n01, n11, u), v);
 }
 
-float Perlin3(std::uint32_t seed, float x, float y, float z) {
-  const std::int32_t x0 = FloorToInt(x), y0 = FloorToInt(y), z0 = FloorToInt(z);
-  const float fx = x - static_cast<float>(x0), fy = y - static_cast<float>(y0),
-              fz = z - static_cast<float>(z0);
+float Perlin3(std::uint32_t seed, LatticeCoord x, LatticeCoord y, LatticeCoord z) {
+  const std::int32_t x0 = x.cell, y0 = y.cell, z0 = z.cell;
+  const float fx = x.frac, fy = y.frac, fz = z.frac;
   const float u = Fade(fx), v = Fade(fy), w = Fade(fz);
   const auto g = [&](std::int32_t i, std::int32_t j, std::int32_t k) {
     return Grad3(Hash3(seed, x0 + i, y0 + j, z0 + k), fx - static_cast<float>(i),
@@ -100,39 +99,55 @@ float Perlin3(std::uint32_t seed, float x, float y, float z) {
   return Lerp(Lerp(x00, x10, v), Lerp(x01, x11, v), w);
 }
 
-float Fbm2(std::uint32_t seed, float x, float z, int octaves) {
-  float sum = 0.0f, norm = 0.0f, amplitude = 1.0f, frequency = 1.0f;
+namespace {
+LatticeCoord Split(float v) {
+  const std::int32_t cell = FloorToInt(v);
+  return {cell, v - static_cast<float>(cell)};
+}
+}  // namespace
+
+float Perlin2(std::uint32_t seed, float x, float z) { return Perlin2(seed, Split(x), Split(z)); }
+
+float Perlin3(std::uint32_t seed, float x, float y, float z) {
+  return Perlin3(seed, Split(x), Split(y), Split(z));
+}
+
+float Fbm2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
+           int octaves) {
+  float sum = 0.0f, norm = 0.0f, amplitude = 1.0f;
   for (int o = 0; o < octaves; ++o) {
-    sum += Perlin2(OctaveSeed(seed, o), x * frequency, z * frequency) * amplitude;
+    sum += Perlin2(OctaveSeed(seed, o), Lattice(x, wavelength, o), Lattice(z, wavelength, o)) *
+           amplitude;
     norm += amplitude;
     amplitude *= 0.5f;
-    frequency *= 2.0f;
   }
   return sum / norm;
 }
 
-float Fbm3(std::uint32_t seed, float x, float y, float z, int octaves) {
-  float sum = 0.0f, norm = 0.0f, amplitude = 1.0f, frequency = 1.0f;
+float Fbm3(std::uint32_t seed, std::int64_t x, std::int64_t y, std::int64_t z, std::int32_t wx,
+           std::int32_t wy, std::int32_t wz, int octaves) {
+  float sum = 0.0f, norm = 0.0f, amplitude = 1.0f;
   for (int o = 0; o < octaves; ++o) {
-    sum += Perlin3(OctaveSeed(seed, o), x * frequency, y * frequency, z * frequency) * amplitude;
+    sum += Perlin3(OctaveSeed(seed, o), Lattice(x, wx, o), Lattice(y, wy, o), Lattice(z, wz, o)) *
+           amplitude;
     norm += amplitude;
     amplitude *= 0.5f;
-    frequency *= 2.0f;
   }
   return sum / norm;
 }
 
-float Ridged2(std::uint32_t seed, float x, float z, int octaves) {
-  float sum = 0.0f, norm = 0.0f, amplitude = 1.0f, frequency = 1.0f, weight = 1.0f;
+float Ridged2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
+              int octaves) {
+  float sum = 0.0f, norm = 0.0f, amplitude = 1.0f, weight = 1.0f;
   for (int o = 0; o < octaves; ++o) {
-    const float n = Perlin2(OctaveSeed(seed, o), x * frequency, z * frequency);
+    const float n =
+        Perlin2(OctaveSeed(seed, o), Lattice(x, wavelength, o), Lattice(z, wavelength, o));
     float r = 1.0f - (n < 0.0f ? -n : n);
     r = r * r * weight;
     weight = Clamp01(r * 2.0f);
     sum += r * amplitude;
     norm += amplitude;
     amplitude *= 0.5f;
-    frequency *= 2.0f;
   }
   return sum / norm;
 }

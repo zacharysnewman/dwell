@@ -148,8 +148,8 @@ export class ClientCore {
   }
 
   state(): ClientState {
-    const base = this.m._dwell_client_state() >> 2;
-    const f = this.m.HEAPF32.subarray(base, base + 64);
+    const base = this.m._dwell_client_state() >> 3;
+    const f = this.m.HEAPF64.subarray(base, base + 64);
     const at = (i: number): number => f[i] ?? 0;
     const v3 = (i: number): Vec3 => [at(i), at(i + 1), at(i + 2)];
     return {

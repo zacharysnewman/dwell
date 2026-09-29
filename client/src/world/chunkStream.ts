@@ -48,6 +48,8 @@ const NEIGHBOURS: ChunkCoord[] = [
 
 export class ChunkStreamer {
   private readonly loaded = new Map<string, ChunkCoord>();
+  /** Loaded chunks the server sent as Air: known empty, never generated or stored. */
+  private readonly air = new Set<string>();
   /** Generated chunks announced by the server and not yet generated, by key → request token. */
   private readonly generating = new Map<string, number>();
   private readonly dirty = new Map<string, ChunkCoord>();
@@ -65,6 +67,10 @@ export class ChunkStreamer {
   onChunkData(m: ChunkMessage): void {
     const key = chunkKey(m.coord);
     this.forget(key, m.coord);
+    if (m.form === ChunkForm.Air) {
+      this.putAir(key, m.coord);
+      return;
+    }
     if (m.form === ChunkForm.Explicit) {
       if (m.voxels) this.put(key, m.coord, m.revision, m.voxels);
       return;
@@ -88,7 +94,7 @@ export class ChunkStreamer {
     for (const coord of coords) {
       const key = chunkKey(coord);
       this.forget(key, coord);
-      if (this.loaded.delete(key)) this.store.removeChunk(coord);
+      if (this.loaded.delete(key) && !this.air.delete(key)) this.store.removeChunk(coord);
       this.dirty.delete(key);
       if (this.meshed.delete(key)) this.view.setTerrainChunk(key, [0, 0, 0], null);
     }
@@ -149,13 +155,29 @@ export class ChunkStreamer {
 
   private put(key: string, coord: ChunkCoord, revision: number, voxels: Uint16Array): void {
     this.store.setChunk(coord, revision, voxels);
+    this.air.delete(key);
     this.loaded.set(key, coord);
     this.dirty.set(key, coord);
-    // Neighbours' border faces may now be hidden by this chunk.
+    this.neighboursChanged(coord);
+  }
+
+  /** An all-air chunk: the client sim reads a missing chunk as air, so nothing is stored. */
+  private putAir(key: string, coord: ChunkCoord): void {
+    const replaced = this.loaded.has(key) && !this.air.has(key);
+    if (replaced) this.store.removeChunk(coord);
+    this.loaded.set(key, coord);
+    this.air.add(key);
+    this.dirty.delete(key);
+    if (this.meshed.delete(key)) this.view.setTerrainChunk(key, [0, 0, 0], null);
+    if (replaced) this.neighboursChanged(coord);
+  }
+
+  /** Neighbours' border faces may now be hidden (or exposed) by this chunk. */
+  private neighboursChanged(coord: ChunkCoord): void {
     for (const d of NEIGHBOURS) {
       const n = add(coord, d);
       const nk = chunkKey(n);
-      if (this.loaded.has(nk)) this.dirty.set(nk, n);
+      if (this.loaded.has(nk) && !this.air.has(nk)) this.dirty.set(nk, n);
     }
   }
 

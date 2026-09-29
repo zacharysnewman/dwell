@@ -57,12 +57,12 @@ class Predictor {
   // snapshot `lead_seconds` older than the local player's predicted present; the proxy is
   // extrapolated to the present and dead-reckoned until the next update (at most
   // kMaxDeadReckoning).
-  void SetRemote(std::uint16_t player_id, JPH::Vec3 feet, JPH::Vec3 velocity, bool crouched,
+  void SetRemote(std::uint16_t player_id, JPH::RVec3 feet, JPH::Vec3 velocity, bool crouched,
                  float lead_seconds);
   void RemoveRemote(std::uint16_t player_id);
 
   // --- outputs ---
-  JPH::Vec3 Position() const;  // predicted capsule centre
+  JPH::RVec3 Position() const;  // predicted capsule centre
   JPH::Vec3 Velocity() const;
   // Visual correction still being smoothed out: render at Position() + RenderOffset().
   JPH::Vec3 RenderOffset() const { return offset_; }
@@ -84,11 +84,12 @@ class Predictor {
     std::uint32_t seq = 0;  // 0 = empty
     protocol::InputFrame input;
     PlayerController controller;
-    JPH::Vec3 position, velocity;
+    JPH::RVec3 position;
+    JPH::Vec3 velocity;
   };
   struct Remote {
     JPH::BodyID body;
-    JPH::Vec3 target;
+    JPH::RVec3 target;
     JPH::Vec3 velocity;
     int dead_reckoning_ticks = 0;
     bool crouched = false;

@@ -2,12 +2,14 @@
 // shares, generation timings, and the spawn point.
 //   dwell_worldgen_inspect [seed] [centre_x] [centre_z] [metres per character] [slice]
 // With "slice", prints a 1:1 vertical section along x through the centre instead of the map.
+// Coordinates may be anywhere in the 8,192 km world (e.g. 7999488 0 for ~8,000 km east).
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <string_view>
 
+#include "dwell/worldgen/noise.h"
 #include "dwell/worldgen/terrain.h"
 
 using namespace dwell;
@@ -77,37 +79,44 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  // Map: biome letter, upper case above 100 m.
+  // Map: biome letter, M for the upper slopes of ranges, blank beyond the rim.
   std::map<worldgen::Biome, int> counts;
   float lo = 1e9f, hi = -1e9f;
   for (int row = -24; row < 24; ++row) {
     for (int col = -48; col < 48; ++col) {
       const auto c = gen.ColumnAt(cx + col * step, cz + row * step);
+      if (c.outside) {
+        std::putchar(' ');
+        continue;
+      }
       ++counts[c.biome];
       lo = std::min(lo, c.height);
       hi = std::max(hi, c.height);
       char ch = "~bpfdsm"[static_cast<int>(c.biome)];
-      if (c.height > 130.0f) ch = 'M';
+      if (c.height > 500.0f) ch = 'M';
       std::putchar(ch);
     }
     std::putchar('\n');
   }
-  std::printf("~ ocean  b beach  p plains  f forest  d desert  s snowy  m mountains  M > 130 m\n");
+  std::printf(
+      "~ ocean  b beach  p plains  f forest  d desert  s snowy  m mountains  M > 500 m  (blank: "
+      "beyond the rim)\n");
   std::printf("height %.1f .. %.1f\n", lo, hi);
   for (const auto& [b, n] : counts)
     std::printf("%-10s %5.1f%%\n", worldgen::BiomeName(b), 100.0 * n / (48 * 96));
 
-  // Timings: a 5×5 column of chunks from y −4..6 around the centre.
+  // Timings: a 5×5 column of chunks from 4 below to 6 above the centre's surface.
   core::Chunk chunk;
   int chunks = 0;
   std::map<core::MaterialId, long> materials;
   std::chrono::steady_clock::duration elapsed{};
+  const int surface = worldgen::FloorDiv(static_cast<int>(gen.ColumnAt(cx, cz).height), 32);
   for (int x = -2; x <= 2; ++x)
     for (int z = -2; z <= 2; ++z)
-      for (int y = -4; y <= 6; ++y) {
+      for (int y = surface - 4; y <= surface + 6; ++y) {
         core::Chunk c;
         const auto start = std::chrono::steady_clock::now();
-        gen.Generate({cx / 32 + x, y, cz / 32 + z}, c);
+        gen.Generate({worldgen::FloorDiv(cx, 32) + x, y, worldgen::FloorDiv(cz, 32) + z}, c);
         elapsed += std::chrono::steady_clock::now() - start;
         for (const auto m : c.voxels()) ++materials[m];
         ++chunks;

@@ -1,6 +1,6 @@
-// Terrain streaming (ARCHITECTURE.md §6.3, Phase 3b): the verification check, Generated vs.
-// Explicit chunks, nearest-first order, the bandwidth budget, unloading, eviction, and the
-// worldgen pool.
+// Terrain streaming (ARCHITECTURE.md §6.3, Phases 3b–3c): the verification check, Generated vs.
+// Explicit vs. Air chunks, the spherical view, nearest-first order, the bandwidth budget,
+// unloading, eviction, and the worldgen pool.
 #include <doctest/doctest.h>
 
 #include <Jolt/Jolt.h>
@@ -13,6 +13,7 @@
 #include "dwell/core/jolt_runtime.h"
 #include "dwell/core/server.h"
 #include "dwell/core/worldgen_pool.h"
+#include "dwell/player/net.h"
 
 using namespace dwell::core;
 using namespace dwell::protocol;
@@ -90,12 +91,12 @@ struct Fixture {
   void MoveTo(std::uint16_t player_id, float x, float feet_y, float z) {
     const auto h = *server.PlayerHandleOf(player_id);
     auto& players = server.players();
-    players.Teleport(h, JPH::Vec3(x, feet_y + players.HalfHeight(h), z), JPH::Vec3::sZero());
+    players.Teleport(h, JPH::RVec3(x, feet_y + players.HalfHeight(h), z), JPH::Vec3::sZero());
   }
 };
 
 ServerConfig Flat() {
-  return {.generator_version = kGeneratorFlat, .spawn = std::array<float, 3>{0.5f, 0.0f, 0.5f}};
+  return {.generator_version = kGeneratorFlat, .spawn = std::array<double, 3>{0.5, 0.0, 0.5}};
 }
 
 ChunkCoord CoordOf(const ChunkData& m) { return {m.coord[0], m.coord[1], m.coord[2]}; }
@@ -122,26 +123,32 @@ TEST_CASE("streaming: a matching verification hash gets Generated chunks, neares
   REQUIRE(!chunks.empty());
   const auto feet = SpawnPointFor(kGeneratorTerrain, 99);
   const ChunkCoord spawn = ChunkOf(static_cast<std::int32_t>(std::floor(feet[0])),
-                                   static_cast<std::int32_t>(std::floor(feet[1] + 0.9f)),
+                                   static_cast<std::int32_t>(std::floor(feet[1] + 0.9)),
                                    static_cast<std::int32_t>(std::floor(feet[2])));
   CHECK(CoordOf(chunks[0]) == spawn);
   int previous = 0;
   bool ordered = true;
+  const auto air = AirTestFor(kGeneratorTerrain, 99);
+  int air_chunks = 0;
   for (const ChunkData& c : chunks) {
-    CHECK(c.form == ChunkForm::kGenerated);
+    // Chunks the generator leaves empty travel as Air; the rest as Generated.
+    CHECK(c.form == (air(CoordOf(c)) ? ChunkForm::kAir : ChunkForm::kGenerated));
+    air_chunks += c.form == ChunkForm::kAir;
     const int dx = c.coord[0] - spawn.x, dy = c.coord[1] - spawn.y, dz = c.coord[2] - spawn.z;
     const int d = dx * dx + dy * dy + dz * dz;
     ordered = ordered && d >= previous;
     previous = d;
   }
   CHECK(ordered);
-  // The whole view: a cylinder of kViewRadiusChunks, kViewHeightChunks up and down.
+  CHECK(air_chunks > 0);  // the sky above the spawn
+  // The whole view: a sphere of kViewRadiusChunks.
+  constexpr int r = kViewRadiusChunks;
   int expected = 0;
-  for (int y = -kViewHeightChunks; y <= kViewHeightChunks; ++y)
-    for (int z = -kViewRadiusChunks; z <= kViewRadiusChunks; ++z)
-      for (int x = -kViewRadiusChunks; x <= kViewRadiusChunks; ++x)
-        if (x * x + z * z <= kViewRadiusChunks * kViewRadiusChunks + kViewRadiusChunks &&
-            spawn.y + y >= kMinChunkY && spawn.y + y <= kMaxChunkY)
+  for (int y = -r; y <= r; ++y)
+    for (int z = -r; z <= r; ++z)
+      for (int x = -r; x <= r; ++x)
+        if (x * x + y * y + z * z <= r * r + r && spawn.y + y >= kMinChunkY &&
+            spawn.y + y <= kMaxChunkY)
           ++expected;
   CHECK(chunks.size() == static_cast<std::size_t>(expected));
   CHECK(f.server.StreamStatsOf(1)->streamed == static_cast<std::size_t>(expected));
@@ -154,20 +161,50 @@ TEST_CASE("streaming: a matching verification hash gets Generated chunks, neares
 TEST_CASE("streaming: a mismatched hash (or 0) gets every chunk explicitly, as generated") {
   for (const std::uint64_t hash : {std::uint64_t{0}, std::uint64_t{12345}}) {
     CAPTURE(hash);
-    Fixture f(ServerConfig{.world_seed = 7, .view_radius_chunks = 2, .view_height_chunks = 1});
+    Fixture f(ServerConfig{.world_seed = 7, .view_radius_chunks = 2});
     f.Join(1, Client(1));
     f.Send(1, WorldgenCheck{hash});
     const auto chunks = f.Chunks(1, 120);
     REQUIRE(chunks.size() > 20);
     const auto generate = GeneratorFor(kGeneratorTerrain, 7);
+    int explicit_chunks = 0;
     for (const ChunkData& c : chunks) {
-      REQUIRE(c.form == ChunkForm::kExplicit);
       CHECK(c.revision == 0);
       Chunk expected;
       generate(CoordOf(c), expected);
+      if (c.form == ChunkForm::kAir) {  // empty sky needs no payload in either mode
+        for (const auto v : expected.voxels()) REQUIRE(v == Materials::kAir);
+        continue;
+      }
+      REQUIRE(c.form == ChunkForm::kExplicit);
+      ++explicit_chunks;
       CHECK(std::equal(c.voxels.begin(), c.voxels.end(), expected.voxels().begin()));
     }
+    CHECK(explicit_chunks > 10);
   }
+}
+
+TEST_CASE("streaming: open sky costs nothing; the view is a sphere across the world's rows") {
+  // A player high in the sky (the world is 256 chunk rows tall): the view is all Air chunks, and
+  // the server neither generates nor stores them.
+  Fixture f(ServerConfig{.world_seed = 99,
+                         .spawn = std::array<double, 3>{0.5, 3000.0, 0.5},
+                         .worldgen_budget_us = 1'000'000});
+  f.Join(1, Client(1));
+  f.Send(1, WorldgenCheck{0});  // full mode: still no payload for air
+  const std::size_t stored_before = f.server.world().loaded_chunks();
+  const auto chunks = f.Chunks(1, 60);
+  constexpr int r = kViewRadiusChunks;
+  int sphere = 0;
+  for (int y = -r; y <= r; ++y)
+    for (int z = -r; z <= r; ++z)
+      for (int x = -r; x <= r; ++x) sphere += x * x + y * y + z * z <= r * r + r;
+  REQUIRE(chunks.size() == static_cast<std::size_t>(sphere));
+  for (const ChunkData& c : chunks) CHECK(c.form == ChunkForm::kAir);
+  CHECK(f.server.StreamStatsOf(1)->air_sent == static_cast<std::uint32_t>(sphere));
+  // Falling through the sky generates nothing either (the player keeps falling for a while).
+  CHECK(f.server.world().loaded_chunks() <= stored_before);
+  CHECK(f.server.world().generated_on_access() == 0);
 }
 
 TEST_CASE("streaming: chunks per tick and bytes per tick stay within the budget") {
@@ -232,7 +269,7 @@ TEST_CASE("streaming: chunks are generated ahead of a moving player, never on th
   // No threads, unlimited budget: the pool generates the prefetch region in Step, so the player's
   // collision never has to generate synchronously (walking streams without hitches).
   Fixture f(ServerConfig{.generator_version = kGeneratorFlat,
-                         .spawn = std::array<float, 3>{0.5f, 0.0f, 0.5f},
+                         .spawn = std::array<double, 3>{0.5, 0.0, 0.5},
                          .worldgen_budget_us = 1'000'000});
   f.Join(1, Client(1));
   const auto before = f.server.world().generated_on_access();
@@ -263,11 +300,41 @@ TEST_CASE("streaming: the worldgen pool generates on threads the same chunks") {
 }
 
 TEST_CASE("streaming: a server with worldgen threads streams to a full-mode client") {
-  Fixture f(ServerConfig{
-      .world_seed = 11, .worldgen_threads = 2, .view_radius_chunks = 2, .view_height_chunks = 1});
+  Fixture f(ServerConfig{.world_seed = 11, .worldgen_threads = 2, .view_radius_chunks = 2});
   f.Join(1, Client(1));
   f.Send(1, WorldgenCheck{0});
   std::size_t count = 0;
   for (int i = 0; i < 600 && count < 30; ++i) count += f.Chunks(1, 1).size();
   CHECK(count >= 30);
+}
+
+TEST_CASE("world rim: walking off the edge of the disc falls into the void and kills") {
+  // The flat world near the rim, east of the origin: the last solid column is x = 8 191 999.
+  constexpr double kSpawnX = dwell::core::kWorldRadius - 9.5;
+  Fixture f(ServerConfig{.generator_version = kGeneratorFlat,
+                         .spawn = std::array<double, 3>{kSpawnX, 0.0, 0.5},
+                         .worldgen_budget_us = 1'000'000});
+  const Welcome welcome = f.Join(1, Client(1));
+  f.Send(1, WorldgenCheck{0});
+  dwell::player::Input walk_east;
+  walk_east.move_y = 1.0f;
+  walk_east.look_yaw = 90.0f;  // +X
+  std::uint32_t seq = 0;
+  double last_x = 0, lowest_feet = 1e9;
+  bool died = false;
+  for (int tick = 0; tick < 60 * 60 && !died; ++tick) {
+    PlayerInput input;
+    input.inputs.push_back(dwell::player::QuantizeInput(walk_east, ++seq));
+    f.server.OnDatagram(1, Encode(input));
+    f.server.Step();
+    f.server.TakeOutbox();
+    if (const auto h = f.server.PlayerHandleOf(welcome.player_id)) {
+      last_x = f.server.players().Position(*h).GetX();
+      lowest_feet = std::min<double>(lowest_feet, f.server.players().Feet(*h));
+    }
+    died = f.server.HealthOf(welcome.player_id) == 0;
+  }
+  CHECK(died);
+  CHECK(last_x > dwell::core::kWorldRadius);     // it went over the edge …
+  CHECK(lowest_feet < dwell::core::kWorldMinY);  // … and fell past the bottom of the world
 }

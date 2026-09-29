@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
-import { ChunkForm } from '../protocol/constants.gen';
+import { CHUNK_SIZE, ChunkForm } from '../protocol/constants.gen';
 import type { ChunkCoord, Vec3 } from '../protocol/messages';
 import type { ChunkSource, GeneratedChunk } from '../worldgen/pool';
-import { chunkKey, ChunkStreamer, type ChunkStore, type TerrainView } from './chunkStream';
+import {
+  chunkKey,
+  ChunkStreamer,
+  MIN_CHUNK_Y,
+  type ChunkStore,
+  type TerrainView,
+} from './chunkStream';
 
 /** Chunk source whose jobs the test completes by hand. */
 class ManualSource implements ChunkSource {
@@ -68,6 +74,40 @@ const generated = (coord: ChunkCoord) => ({
 });
 
 describe('ChunkStreamer', () => {
+  it('treats Air chunks as loaded without generating, storing, or meshing them', () => {
+    const { source, store, view, streamer } = setup();
+    for (let y = -1; y <= 1; y++)
+      for (let z = -1; z <= 1; z++)
+        for (let x = -1; x <= 1; x++)
+          streamer.onChunkData({
+            form: ChunkForm.Air,
+            coord: [x, y, z],
+            revision: 0,
+            voxels: null,
+          });
+    expect(source.pending).toBe(0);
+    expect(store.chunks.size).toBe(0);
+    expect(streamer.readyAround([16, 16, 16])).toBe(true);
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(0);
+    expect(view.chunks.size).toBe(0);
+    // Unloading an Air chunk removes nothing from the store; a stored chunk replaced by Air is
+    // dropped from the store and the view.
+    streamer.onChunkData({
+      form: ChunkForm.Explicit,
+      coord: [5, 0, 0],
+      revision: 1,
+      voxels: new Uint16Array(CHUNK_VOLUME).fill(2),
+    });
+    streamer.meshDirty([0, 0, 0], 100);
+    expect(view.chunks.has('5,0,0')).toBe(true);
+    streamer.onChunkData({ form: ChunkForm.Air, coord: [5, 0, 0], revision: 0, voxels: null });
+    expect(store.chunks.has('5,0,0')).toBe(false);
+    expect(view.chunks.has('5,0,0')).toBe(false);
+    streamer.onChunkUnload([[0, 0, 0]]);
+    expect(streamer.isLoaded([0, 0, 0])).toBe(false);
+    expect(streamer.readyAround([16, 16, 16])).toBe(false);
+  });
+
   it('stores Explicit chunks directly and Generated ones once generated', async () => {
     const { source, store, streamer } = setup();
     streamer.onChunkData({
@@ -174,8 +214,8 @@ describe('ChunkStreamer', () => {
 
   it('only needs rows inside the world at its bottom', () => {
     const { streamer } = setup();
-    const at: Vec3 = [0, -120, 0]; // chunk row −4, the lowest
-    for (let y = -4; y <= -3; y++)
+    const at: Vec3 = [0, MIN_CHUNK_Y * CHUNK_SIZE + 8, 0]; // the lowest chunk row
+    for (let y = MIN_CHUNK_Y; y <= MIN_CHUNK_Y + 1; y++)
       for (let z = -1; z <= 1; z++)
         for (let x = -1; x <= 1; x++)
           streamer.onChunkData({

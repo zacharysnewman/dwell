@@ -16,6 +16,7 @@ import {
   PlayerFlags,
   PlayerState,
   RejectReason,
+  World,
 } from './constants.gen';
 
 export const STATUS_FLAG_ONLINE_MODE = 1 << 0;
@@ -56,8 +57,10 @@ export interface ControllerState {
   released: [number, number]; // x, z; only when hasReleased
 }
 
+// World positions (protocol v4, ADR 0011): `pos64` (f64 × 3) where prediction must match the
+// server exactly, `posfix` (i32 × 3 in 1/positionFixedScale m) elsewhere.
 export interface LocalPlayerState {
-  position: Vec3; // capsule centre
+  position: Vec3; // capsule centre (pos64)
   velocity: Vec3;
   flags: number;
   health: number;
@@ -71,7 +74,7 @@ export interface LocalPlayerState {
 
 export interface RemotePlayerState {
   playerId: number;
-  position: Vec3;
+  position: Vec3; // feet (posfix)
   velocity: Vec3; // f16 on the wire
   yaw: number;
   pitch: number;
@@ -147,8 +150,10 @@ export type Message =
       playerId: number;
       serverTick: number;
       inputSeq: number;
-      /** Knockback: velocity change; Respawn: position. */
+      /** Knockback: velocity change. */
       vector: Vec3;
+      /** Respawn: feet position (pos64). */
+      position: Vec3;
       /** Damage only. */
       amount: number;
       /** Damage and Death. */
@@ -247,7 +252,7 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
     case MessageType.PhysicsSnapshot:
       w.u32(m.serverTick);
       w.u32(m.ackInputSeq);
-      writeVec3(w, m.local.position);
+      writePos64(w, m.local.position);
       writeVec3(w, m.local.velocity);
       w.u8(m.local.flags);
       w.u8(m.local.health);
@@ -258,7 +263,7 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u8(Math.min(m.remotes.length, 255));
       for (const r of m.remotes.slice(0, 255)) {
         w.u16(r.playerId);
-        writeVec3(w, r.position);
+        writePosFix(w, r.position);
         for (const v of r.velocity) w.f16(v);
         w.i16(r.yaw);
         w.i16(r.pitch);
@@ -273,8 +278,10 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u32(m.inputSeq);
       switch (m.kind) {
         case PlayerEventKind.Knockback:
-        case PlayerEventKind.Respawn:
           writeVec3(w, m.vector);
+          break;
+        case PlayerEventKind.Respawn:
+          writePos64(w, m.position);
           break;
         case PlayerEventKind.Damage:
           w.u8(m.amount);
@@ -291,6 +298,21 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
 
 function writeVec3(w: ByteWriter, v: Vec3): void {
   for (const x of v) w.f32(x);
+}
+
+function writePos64(w: ByteWriter, v: Vec3): void {
+  for (const x of v) w.f64(x);
+}
+
+/** posfix: the nearest multiple of 1/positionFixedScale m (halves round up), clamped to i32. */
+export function toFixedPosition(v: number): number {
+  const scaled = Math.floor(v * World.positionFixedScale + 0.5);
+  if (!(scaled > -2147483648)) return -2147483648; // also NaN
+  return Math.min(scaled, 2147483647);
+}
+
+function writePosFix(w: ByteWriter, v: Vec3): void {
+  for (const x of v) w.i32(toFixedPosition(x));
 }
 
 function writeController(w: ByteWriter, c: ControllerState): void {
@@ -331,6 +353,18 @@ const MAX_CAUSE = maxOf(DamageCause);
 
 function readVec3(r: ByteReader): Vec3 {
   return [r.f32(), r.f32(), r.f32()];
+}
+
+const POS64_LIMIT = 2147483647 / World.positionFixedScale;
+
+function readPos64(r: ByteReader): Vec3 {
+  const v: Vec3 = [r.f64(), r.f64(), r.f64()];
+  for (const x of v) r.check(x >= -POS64_LIMIT && x <= POS64_LIMIT, 'position out of range');
+  return v;
+}
+
+function readPosFix(r: ByteReader): Vec3 {
+  return [r.i32(), r.i32(), r.i32()].map((x) => x / World.positionFixedScale) as Vec3;
 }
 
 function readState(r: ByteReader): PlayerState {
@@ -476,7 +510,7 @@ function decodeBody(r: ByteReader, type: number): Message {
     case MessageType.PhysicsSnapshot: {
       const serverTick = r.u32();
       const ackInputSeq = r.u32();
-      const position = readVec3(r);
+      const position = readPos64(r);
       const velocity = readVec3(r);
       const flags = r.u8();
       r.check((flags & ~PLAYER_FLAGS) === 0, 'unknown player flags');
@@ -490,7 +524,7 @@ function decodeBody(r: ByteReader, type: number): Message {
       for (let i = 0; i < count; i++) {
         const remote: RemotePlayerState = {
           playerId: r.u16(),
-          position: readVec3(r),
+          position: readPosFix(r),
           velocity: [r.f16(), r.f16(), r.f16()],
           yaw: r.i16(),
           pitch: r.i16(),
@@ -527,13 +561,16 @@ function decodeBody(r: ByteReader, type: number): Message {
         serverTick: r.u32(),
         inputSeq: r.u32(),
         vector: [0, 0, 0] as Vec3,
+        position: [0, 0, 0] as Vec3,
         amount: 0,
         cause: DamageCause.Fall as DamageCause,
       };
       switch (event.kind) {
         case PlayerEventKind.Knockback:
-        case PlayerEventKind.Respawn:
           event.vector = readVec3(r);
+          break;
+        case PlayerEventKind.Respawn:
+          event.position = readPos64(r);
           break;
         case PlayerEventKind.Damage:
           event.amount = r.u8();
