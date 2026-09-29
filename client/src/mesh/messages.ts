@@ -10,7 +10,7 @@ export type ToMesher =
       voxels: Uint16Array<ArrayBuffer>;
     }
   /** A LOD section's 34³ cells (lodMesher.ts), transferred. */
-  | { t: 'lod'; id: number; cells: Uint16Array<ArrayBuffer> };
+  | { t: 'lod'; id: number; cells: Uint16Array<ArrayBuffer>; opaqueLiquids: boolean };
 
 /** `meshes` buffers are transferred. */
 export type FromMesher =

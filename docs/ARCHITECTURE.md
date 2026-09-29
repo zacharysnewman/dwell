@@ -721,9 +721,10 @@ order (`EncodeLodCells`; `writeLodCells` in TypeScript); a terrain section near 
   (`lod: generation` tests the tolerance: 95%, 95%, mean under half a cell).
 - *Modified* sections (any modified chunk below them) are the downsample of their 8 children,
   recursively; unmodified children come from `GenerateLod`, level-0 children are chunks. A 2×2×2
-  block becomes solid if ≥ 4 cells are solid (a one-voxel wall or floor survives a level; a 1 × 1
-  pillar does not), else liquid if ≥ 4 are liquid, else air. The material is the most common one
-  among the qualifying **top cell of each of the block's four columns** (the surface seen from
+  block becomes filled if ≥ 4 cells are not air — solids and liquids alike (a one-voxel wall or
+  floor survives a level; a 1 × 1 pillar does not; a sea keeps its surface at levels whose cells
+  are deeper than the sea instead of showing its floor). The material is the most common one
+  among the **top filled cell of each of the block's four columns** (the surface seen from
   above), ties to the upper cells — so surface materials survive to the coarsest levels instead
   of the rock beneath them (`DownsampleBlock`, tested on crafted layouts). The flat world's
   generated sections equal the downsample of its chunks exactly (levels 1–3, tested).
@@ -805,8 +806,10 @@ Each frame the octree is walked from the root around the **camera** (the eye, or
   clear colour is the sky.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
   material of the column's surface (not the bedrock its bottom voxel samples; a regression test
-  covers it). Oceans at levels whose cells are deeper than the sea draw as their floor (the
-  ≥ 4-of-8 rule keeps the floor, not the water) — a known limitation of the rule.
+  covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
+  top, as `Downsample` keeps it (`lod: sea`). From level 3 (`OPAQUE_LIQUID_LEVEL`, 8 m cells)
+  liquids mesh opaque, culled and culling like solids and with skirts — a coarse sea has no floor
+  beneath its surface to see through to; levels 1–2 keep the chunks' see-through water.
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use and LOD bytes/s; `?lodcolors=1` tints sections
   by level, `?lod=0` turns the LOD off. Measured under Node with a fake worker pool, one frame's update

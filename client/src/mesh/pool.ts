@@ -16,13 +16,17 @@ export interface Mesher {
 
 /** Anything that meshes LOD sections asynchronously (§6.6). */
 export interface SectionMesher {
-  /** Meshes a section's 34³ cells (transferred: the caller gives up `cells`). */
-  meshSection(cells: Uint16Array<ArrayBuffer>): Promise<SectionMeshes>;
+  /**
+   * Meshes a section's 34³ cells (transferred: the caller gives up `cells`); liquids opaque at
+   * coarse levels (lodMesher.ts).
+   */
+  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids?: boolean): Promise<SectionMeshes>;
 }
 
 interface Job {
   id: number;
   lod: boolean;
+  opaqueLiquids?: boolean;
   voxels: Uint16Array<ArrayBuffer>;
   resolve: (m: unknown) => void;
 }
@@ -76,11 +80,12 @@ export class MeshPool implements Mesher, SectionMesher {
     });
   }
 
-  meshSection(cells: Uint16Array<ArrayBuffer>): Promise<SectionMeshes> {
+  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids = false): Promise<SectionMeshes> {
     return new Promise((resolve) => {
       this.queue.push({
         id: this.nextId++,
         lod: true,
+        opaqueLiquids,
         voxels: cells,
         resolve: (m) => {
           resolve(m as SectionMeshes);
@@ -119,7 +124,7 @@ export class MeshPool implements Mesher, SectionMesher {
       this.runningCount++;
       best.postMessage(
         job.lod
-          ? { t: 'lod', id: job.id, cells: job.voxels }
+          ? { t: 'lod', id: job.id, cells: job.voxels, opaqueLiquids: job.opaqueLiquids ?? false }
           : { t: 'mesh', id: job.id, voxels: job.voxels },
         [job.voxels.buffer],
       );
@@ -133,7 +138,7 @@ export class InlineMesher implements Mesher, SectionMesher {
   mesh(voxels: Uint16Array<ArrayBuffer>): Promise<ChunkMeshes> {
     return Promise.resolve(meshChunk(voxels));
   }
-  meshSection(cells: Uint16Array<ArrayBuffer>): Promise<SectionMeshes> {
-    return Promise.resolve(meshSection(cells));
+  meshSection(cells: Uint16Array<ArrayBuffer>, opaqueLiquids = false): Promise<SectionMeshes> {
+    return Promise.resolve(meshSection(cells, opaqueLiquids));
   }
 }

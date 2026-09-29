@@ -569,7 +569,7 @@ Deviations and additions (4a):
   bottom voxel is solid, so this is what makes generated and downsampled sections agree (and a
   centre sample would drop terrain that fills less than half of the cells above level ~12, where
   cells are taller than the world's relief).
-- **Downsample material.** The most common material among the top qualifying cell of each of the
+- **Downsample material.** The most common material among the top filled cell of each of the
   block's four columns (ties to the upper cells), not among all qualifying cells: with the
   latter, rock beneath the surface outvotes it on uneven ground and coarse levels turn grey.
 - **What `GenerateLod` drops:** fractal octaves finer than a cell (fBm still normalised by the
@@ -634,8 +634,10 @@ Deviations and additions (4c):
 - **Coarse surfaces:** a column's top cell takes its surface's material, not the bedrock a cell
   taller than the relief samples at its bottom (found in the browser: the disc was grey from
   orbit; `lod: surface` failed before the fix, and the LOD golden hashes were regenerated).
-  Oceans at levels whose cells are deeper than the sea draw as their floor (a limitation of the
-  ≥ 4-of-8 rule, noted in §6.6).
+- **Liquids count as filled** in `Downsample` (≥ 4 of 8 non-air, material from the columns' top
+  filled cells) and a coarse `GenerateLod` cell over the sea is water: with solids and liquids
+  counted apart, oceans showed their floor from afar (playtest feedback; `lod: sea` failed before
+  the change). From level 3 liquids mesh opaque. LOD golden hashes regenerated.
 - Debug hooks: `window.__dwell.devcam(position | null)`; `?lod=0` disables LOD, `?lodcolors=1`
   tints sections by level; F8 (not a letter key) toggles the dev camera.
 

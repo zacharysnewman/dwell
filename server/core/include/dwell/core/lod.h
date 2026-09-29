@@ -75,10 +75,10 @@ using LodCells = std::vector<MaterialId>;  // kLodVolume, LodCell order
 // exposed face: nothing to draw), or content to mesh.
 enum class LodKind : std::uint8_t { kEmpty, kBuried, kContent };
 
-// A 2×2×2 block of cells → one cell of the next level (§6.6): solid if at least 4 of 8 are solid,
-// else liquid if at least 4 are liquid, else air. The material is the most common one among the
-// qualifying top cell of each of the block's four columns (the surface seen from above), ties to
-// the upper cells. `cells` index: dx | dy << 1 | dz << 2.
+// A 2×2×2 block of cells → one cell of the next level (§6.6): filled if at least 4 of 8 are not
+// air (solid or liquid alike, so seas keep their surface at coarse levels), else air. The material
+// is the most common one among the top filled cell of each of the block's four columns (the
+// surface seen from above), ties to the upper cells. `cells` index: dx | dy << 1 | dz << 2.
 MaterialId DownsampleBlock(const MaterialId (&cells)[8]);
 bool LodSolid(MaterialId m);  // not air, not liquid
 

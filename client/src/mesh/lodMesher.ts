@@ -112,8 +112,12 @@ class Builder {
   }
 }
 
-/** Meshes a section's cells (LOD_VOLUME, `lodCell` order); positions in cells, 0..32. */
-export function meshSection(cells: Uint16Array): SectionMeshes {
+/**
+ * Meshes a section's cells (LOD_VOLUME, `lodCell` order); positions in cells, 0..32. With
+ * `opaqueLiquids` (coarse levels) liquids are drawn like solids — opaque, culling and culled,
+ * with skirts — since a coarse sea has no floor under its surface to see through to.
+ */
+export function meshSection(cells: Uint16Array, opaqueLiquids = false): SectionMeshes {
   if (cells.length !== LOD_VOLUME) throw new RangeError('section cells must be LOD_VOLUME');
   const N = SECTION_CELLS;
   const opaque = new Builder();
@@ -141,8 +145,8 @@ export function meshSection(cells: Uint16Array): SectionMeshes {
           if (m === 0) continue;
           cell[axis] = d + sign;
           const n = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
-          const liquid = isLiquid(m);
-          const nSolid = n !== 0 && !isLiquid(n);
+          const liquid = !opaqueLiquids && isLiquid(m);
+          const nSolid = n !== 0 && (opaqueLiquids || !isLiquid(n));
           const hidden = nSolid || (liquid && n !== 0);
           if (hidden && (!border || liquid)) continue;
           mask[i + N * j] = (m + 1) * 2 + (hidden ? 1 : 0);
@@ -167,7 +171,7 @@ export function meshSection(cells: Uint16Array): SectionMeshes {
           for (let dv = 0; dv < h; dv++) mask.fill(0, i + N * (j + dv), i + w + N * (j + dv));
           const m = (key >> 1) - 1;
           const skirt = (key & 1) === 1;
-          const target = skirt ? skirts[face] : isLiquid(m) ? water : opaque;
+          const target = skirt ? skirts[face] : !opaqueLiquids && isLiquid(m) ? water : opaque;
           target?.quad(axis, sign, sign > 0 ? d + 1 : d, i, i + w, j, j + h, lodColor(m, group));
           i += w;
         }

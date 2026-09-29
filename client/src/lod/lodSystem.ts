@@ -113,6 +113,8 @@ interface Node {
 }
 
 const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
+/** From this level up liquids are drawn opaque (a coarse sea has no floor to see through to). */
+export const OPAQUE_LIQUID_LEVEL = 3;
 const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
   [1, 0, 0],
   [-1, 0, 0],
@@ -551,7 +553,7 @@ export class LodSystem {
     this.meshing++;
     const token = ++this.token;
     n.token = token;
-    void this.mesher.meshSection(cells).then((meshes) => {
+    void this.mesher.meshSection(cells, n.coord[0] >= OPAQUE_LIQUID_LEVEL).then((meshes) => {
       this.meshing--;
       n.meshing = false;
       if (n.token !== token || this.nodes.get(n.id) !== n) return;

@@ -66,29 +66,21 @@ bool LodInWorld(const LodCoord& c) {
 bool LodSolid(MaterialId m) { return m != M::kAir && !GetMaterial(m).liquid; }
 
 MaterialId DownsampleBlock(const MaterialId (&cells)[8]) {
-  int solid = 0, liquid = 0;
-  for (const MaterialId m : cells) {
-    if (LodSolid(m)) {
-      ++solid;
-    } else if (m != M::kAir) {
-      ++liquid;
-    }
-  }
-  const bool want_solid = solid >= 4;
-  if (!want_solid && liquid < 4) return M::kAir;
-  const auto qualifies = [&](MaterialId m) {
-    return want_solid ? LodSolid(m) : (m != M::kAir && !LodSolid(m));
-  };
-  // The top qualifying cell of each column; upper candidates first (ties go to them).
+  // Filled (solid or liquid) at 4 of 8: liquids count, so a sea keeps its surface at levels
+  // whose cells are deeper than the sea, instead of showing its floor.
+  int filled = 0;
+  for (const MaterialId m : cells) filled += m != M::kAir;
+  if (filled < 4) return M::kAir;
+  // The top filled cell of each column; upper candidates first (ties go to them).
   MaterialId candidates[4];
   int n = 0;
   for (int pass = 0; pass < 2; ++pass) {
     for (int col = 0; col < 4; ++col) {
       const int dx = col & 1, dz = col >> 1;
       const MaterialId top = cells[dx | 2 | dz << 2], bottom = cells[dx | dz << 2];
-      const bool from_upper = qualifies(top);
+      const bool from_upper = top != M::kAir;
       if (from_upper != (pass == 0)) continue;
-      if (!from_upper && !qualifies(bottom)) continue;
+      if (!from_upper && bottom == M::kAir) continue;
       candidates[n++] = from_upper ? top : bottom;
     }
   }

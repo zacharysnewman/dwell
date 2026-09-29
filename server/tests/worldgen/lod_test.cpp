@@ -190,11 +190,16 @@ TEST_SUITE("lod: downsample") {
           }) == M::kSand);
   }
 
-  TEST_CASE("liquid when at least four are liquid and fewer than four are solid") {
-    CHECK(block([](int, int y, int) { return y == 1 ? M::kWater : M::kSand; }) == M::kSand);
+  TEST_CASE("liquids count as filled: a sea keeps its surface, a floor under water hides") {
+    // Water over sand: the water on top is what shows from above.
+    CHECK(block([](int, int y, int) { return y == 1 ? M::kWater : M::kSand; }) == M::kWater);
     CHECK(block([](int x, int y, int z) {
             return y == 0 && x == 0 && z == 0 ? M::kSand : M::kWater;
           }) == M::kWater);
+    // Two water and two sand cells, the rest air: filled, the top of each column counts.
+    CHECK(block([](int x, int y, int) {
+            return y == 1 ? M::kAir : x == 0 ? M::kWater : M::kSand;
+          }) != M::kAir);
     CHECK(block([](int x, int y, int) { return y == 0 && x == 0 ? M::kWater : M::kAir; }) ==
           M::kAir);
   }
@@ -340,6 +345,46 @@ TEST_SUITE("lod: surface") {
       CHECK(tops > 0);
       CHECK(bedrock == 0);
       CHECK(grassy > tops / 2);
+    }
+  }
+}
+
+TEST_SUITE("lod: sea") {
+  TEST_CASE("a sea shows its surface, not its floor, at levels deeper than the sea") {
+    // Regression: at coarse levels a cell spans the sea floor and the sea; with liquids counted
+    // apart from solids the floor won and oceans looked like dry land from afar.
+    const TerrainGenerator gen(0);
+    // A deep ocean (a planet-scale basin), found on a coarse grid.
+    std::optional<std::pair<std::int32_t, std::int32_t>> ocean;
+    for (std::int32_t r = 0; !ocean && r < 600'000; r += 8192)
+      for (std::int32_t x = -r; !ocean && x <= r; x += 8192)
+        if (gen.ColumnAt(x, r).height < -200.0f) ocean = std::pair{x, r};
+    REQUIRE(ocean);
+    for (const int level : {6, 8, 10}) {
+      CAPTURE(level);
+      const LodCoord c = SectionAt(level, ocean->first, -1, ocean->second);
+      LodCells cells;
+      REQUIRE(gen.GenerateLod(c, cells) == LodKind::kContent);
+      int tops = 0, water = 0;
+      for (int z = 0; z < N; ++z)
+        for (int x = 0; x < N; ++x) {
+          if (gen.ColumnAt(static_cast<std::int32_t>(core::LodSectionOrigin(c).x +
+                                                     x * core::LodCellSize(level)),
+                           static_cast<std::int32_t>(core::LodSectionOrigin(c).z +
+                                                     z * core::LodCellSize(level)))
+                  .height >= -30.0f) {
+            continue;  // land, shore or shallows (coarse columns are smoothed)
+          }
+          for (int y = N - 1; y >= 0; --y) {
+            const MaterialId m = cells[static_cast<std::size_t>(LodCell(x, y, z))];
+            if (m == M::kAir) continue;
+            ++tops;
+            water += m == M::kWater;
+            break;
+          }
+        }
+      REQUIRE(tops > 0);
+      CHECK(water >= tops * 9 / 10);
     }
   }
 }
