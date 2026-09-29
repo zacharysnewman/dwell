@@ -32,6 +32,22 @@ export const World = {
   autosaveSeconds: 30,
 } as const;
 
+export const Lod = {
+  sectionCells: 32,
+  maxLevel: 19,
+  indexLevel: 8,
+  pixelErrorDesktop: 2,
+  pixelErrorMobile: 4,
+  nearSplitM: 1024,
+  cacheMbDesktop: 256,
+  cacheMbMobile: 96,
+  bytesPerSecond: 262144,
+  requestsPerSecond: 64,
+  indexUpdateMs: 1000,
+  propagationSectionsPerTick: 8,
+  maxRequestSections: 32,
+} as const;
+
 export const Limits = {
   displayNameMaxBytes: 64,
   clientVersionMaxBytes: 64,

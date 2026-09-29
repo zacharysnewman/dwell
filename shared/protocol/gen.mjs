@@ -44,6 +44,11 @@ for (const [k, v] of enumEntries(c.world)) {
   cpp.push(`inline constexpr int k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
 }
 cpp.push('');
+// Level of detail (ARCHITECTURE.md §6.6, §7.4).
+for (const [k, v] of enumEntries(c.lod)) {
+  cpp.push(`inline constexpr int kLod${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
+}
+cpp.push('');
 for (const [k, v] of enumEntries(c.limits)) {
   cpp.push(`inline constexpr std::size_t k${k[0].toUpperCase()}${k.slice(1)} = ${v};`);
 }
@@ -114,6 +119,10 @@ ts.push('} as const;');
 ts.push('');
 ts.push('export const World = {');
 for (const [k, v] of enumEntries(c.world)) ts.push(`  ${k}: ${v},`);
+ts.push('} as const;');
+ts.push('');
+ts.push('export const Lod = {');
+for (const [k, v] of enumEntries(c.lod)) ts.push(`  ${k}: ${v},`);
 ts.push('} as const;');
 ts.push('');
 ts.push('export const Limits = {');

@@ -2,18 +2,29 @@
 // one worldgen worker (§5.1, §6.3). Also used directly by tests under Node.
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import type { ChunkCoord } from '../protocol/messages';
+import { LOD_VOLUME, type LodBounds, type LodCoord, type LodKind } from '../lod/grid';
 
 /** Module surface of dwell_worldgen.js (-sMODULARIZE -sEXPORT_ES6). */
 export interface DwellWorldgenModule {
   HEAPU8: Uint8Array;
   HEAPU16: Uint16Array;
   HEAPU32: Uint32Array;
+  HEAPF64: Float64Array;
   _malloc(size: number): number;
   _free(ptr: number): void;
   _dwell_worldgen_create(generatorVersion: number, seedLo: number, seedHi: number): number;
   _dwell_worldgen_generate(cx: number, cy: number, cz: number): number;
   _dwell_worldgen_hash(outPtr: number): void;
   _dwell_worldgen_map(x0: number, z0: number, step: number, n: number): number;
+  _dwell_worldgen_lod(level: number, i: number, j: number, k: number): number;
+  _dwell_worldgen_lod_cells(): number;
+  _dwell_worldgen_lod_bounds(level: number, i: number, k: number, outPtr: number): void;
+}
+
+/** A generated LOD section (§6.6): its kind and 34³ cells (lod/grid.ts `lodCell` order). */
+export interface GeneratedSection {
+  kind: LodKind;
+  cells: Uint16Array<ArrayBuffer>;
 }
 
 export type DwellWorldgenFactory = () => Promise<DwellWorldgenModule>;
@@ -53,6 +64,29 @@ export class ChunkGenerator {
   map(x0: number, z0: number, step: number, n: number): Uint8Array<ArrayBuffer> | null {
     const ptr = this.m._dwell_worldgen_map(x0, z0, step, n);
     return ptr ? this.m.HEAPU8.slice(ptr, ptr + n * n * 4) : null;
+  }
+
+  /** GenerateLod (§6.6): the section as the generator leaves it, at its level's resolution. */
+  lod(c: LodCoord): GeneratedSection {
+    const kind = this.m._dwell_worldgen_lod(c[0], c[1], c[2], c[3]) as LodKind;
+    const ptr = this.m._dwell_worldgen_lod_cells();
+    return { kind, cells: this.m.HEAPU16.slice(ptr >> 1, (ptr >> 1) + LOD_VOLUME) };
+  }
+
+  /** Height bounds of the column of sections (level, i, ·, k). */
+  lodBounds(level: number, i: number, k: number): LodBounds {
+    const out = this.m._malloc(24);
+    try {
+      this.m._dwell_worldgen_lod_bounds(level, i, k, out);
+      const f = this.m.HEAPF64;
+      return {
+        lo: f[out >> 3] ?? 0,
+        hi: f[(out >> 3) + 1] ?? 0,
+        anyInside: (f[(out >> 3) + 2] ?? 0) !== 0,
+      };
+    } finally {
+      this.m._free(out);
+    }
   }
 
   /** ChunkHash (FNV-1a 64) of the chunk generated last: the WorldgenCheck value. */

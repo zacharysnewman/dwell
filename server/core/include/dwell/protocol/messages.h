@@ -83,6 +83,9 @@ struct WorldgenCheck {
 // --- Terrain streaming (Phase 3b, §6.3, §8.3) ---
 
 inline constexpr int kChunkVolume = kChunkSize * kChunkSize * kChunkSize;
+// Cells of a LOD section with its one-cell apron (§6.6): 34³.
+inline constexpr int kLodCellCount =
+    (kLodSectionCells + 2) * (kLodSectionCells + 2) * (kLodSectionCells + 2);
 
 // S→C reliable (`world`). Generated: the client generates the chunk itself (no payload). Explicit:
 // the voxels travel as palette + RLE. Air: an unmodified chunk the generator leaves all air (no
@@ -214,6 +217,12 @@ struct PlayerEvent {
 std::vector<std::uint8_t> EncodeChunkVoxels(const std::vector<std::uint16_t>& voxels);
 // nullopt unless `bytes` is exactly one canonical-length payload.
 std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std::uint8_t> bytes);
+
+// LOD section content as palette + RLE (the LodData Explicit payload, §6.6; before zstd, the
+// lod_sections encoding): kLodCellCount materials, already in layer order (core::LodCell), so
+// taken as they are.
+std::vector<std::uint8_t> EncodeLodCells(const std::vector<std::uint16_t>& cells);
+std::optional<std::vector<std::uint16_t>> DecodeLodCells(std::span<const std::uint8_t> bytes);
 
 // posfix: nearest multiple of 1/kPositionFixedScale m (halves round up), clamped to i32.
 std::int32_t ToFixedPosition(double v);

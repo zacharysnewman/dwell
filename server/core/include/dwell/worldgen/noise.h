@@ -83,14 +83,25 @@ float Perlin3(std::uint32_t seed, float x, float y, float z);
 
 // Fractal sums, normalised by the total amplitude (so roughly in [−1, 1]). Each octave doubles the
 // frequency, halves the amplitude, and uses its own seed. World coordinates are integers (m) and
-// `wavelength` the first octave's lattice spacing (m), per axis for 3D.
-float Fbm2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
-           int octaves);
+// `wavelength` the first octave's lattice spacing (m), per axis for 3D. `kept` (level of detail,
+// §6.6) evaluates only the first `kept` octaves, still normalised by the total amplitude, so the
+// dropped fine octaves count as their mean (zero); −1 keeps all.
+float Fbm2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength, int octaves,
+           int kept = -1);
 float Fbm3(std::uint32_t seed, std::int64_t x, std::int64_t y, std::int64_t z, std::int32_t wx,
-           std::int32_t wy, std::int32_t wz, int octaves);
+           std::int32_t wy, std::int32_t wz, int octaves, int kept = -1);
 // Ridged fractal: (1 − |noise|)² per octave, weighted by the previous octave; in [0, 1]. Sharp
-// crests for mountain ranges.
+// crests for mountain ranges. With `kept`, normalised by the kept octaves' amplitude (ridged
+// octaves are never negative, so dropping them must not lower the mean).
 float Ridged2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
-              int octaves);
+              int octaves, int kept = -1);
+
+// Octaves of a fractal sum whose lattice spacing (wavelength / 2^octave) is at least `cell` m:
+// the ones a level-of-detail cell of that size can resolve (§6.6).
+constexpr int OctavesResolved(std::int32_t wavelength, int octaves, std::int64_t cell) {
+  int n = 0;
+  while (n < octaves && (std::int64_t{wavelength} >> n) >= cell) ++n;
+  return n;
+}
 
 }  // namespace dwell::worldgen

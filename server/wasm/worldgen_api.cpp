@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
 #include "dwell/worldgen/terrain.h"
 
@@ -17,6 +18,9 @@ dwell::core::ChunkGenerator g_generator;
 std::unique_ptr<dwell::core::Chunk> g_chunk;
 std::unique_ptr<dwell::worldgen::TerrainGenerator> g_terrain;  // generator version 3 only
 std::vector<std::uint8_t> g_map;
+dwell::core::LodGenerator g_lod;
+dwell::core::LodBoundsFn g_lod_bounds;
+dwell::core::LodCells g_lod_cells;
 
 }  // namespace
 
@@ -29,6 +33,9 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_create(std::uint32_t generator_version,
                                           (static_cast<std::uint64_t>(seed_hi) << 32) | seed_lo);
   g_chunk = std::make_unique<dwell::core::Chunk>();
   g_terrain.reset();
+  const std::uint64_t seed = (static_cast<std::uint64_t>(seed_hi) << 32) | seed_lo;
+  g_lod = dwell::core::LodGeneratorFor(generator_version, seed);
+  g_lod_bounds = dwell::core::LodBoundsFor(generator_version, seed);
   if (generator_version == dwell::core::kGeneratorTerrain) {
     g_terrain = std::make_unique<dwell::worldgen::TerrainGenerator>(
         (static_cast<std::uint64_t>(seed_hi) << 32) | seed_lo);
@@ -70,6 +77,23 @@ EMSCRIPTEN_KEEPALIVE void dwell_worldgen_hash(std::uint32_t* out) {
   const std::uint64_t h = dwell::core::ChunkHash(*g_chunk);
   out[0] = static_cast<std::uint32_t>(h);
   out[1] = static_cast<std::uint32_t>(h >> 32);
+}
+
+// Level of detail (§6.6): generates section (level, i, j, k) — GenerateLod — and returns its kind
+// (0 empty, 1 buried, 2 content). The 34³ cells (LodCell order) are at dwell_worldgen_lod_cells()
+// until the next call.
+EMSCRIPTEN_KEEPALIVE int dwell_worldgen_lod(int level, int i, int j, int k) {
+  return static_cast<int>(g_lod({level, i, j, k}, g_lod_cells));
+}
+EMSCRIPTEN_KEEPALIVE const std::uint16_t* dwell_worldgen_lod_cells() { return g_lod_cells.data(); }
+
+// Height bounds of the column of sections (level, i, ·, k): f64 lo, hi, and 1.0 when any of its
+// columns is inside the world's disc, written at `out`.
+EMSCRIPTEN_KEEPALIVE void dwell_worldgen_lod_bounds(int level, int i, int k, double* out) {
+  const dwell::core::LodBounds b = g_lod_bounds(level, i, k);
+  out[0] = b.lo;
+  out[1] = b.hi;
+  out[2] = b.any_inside ? 1.0 : 0.0;
 }
 
 }  // extern "C"

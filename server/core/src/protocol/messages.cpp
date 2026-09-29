@@ -260,14 +260,13 @@ constexpr int WireToIndex(int i) {
   return (i & 31) | (((i >> 10) & 31) << 5) | (((i >> 5) & 31) << 10);
 }
 
-void WriteVoxels(ByteWriter& w, const std::vector<std::uint16_t>& voxels) {
-  auto at = [&](int wire) -> std::uint16_t {
-    const auto i = static_cast<std::size_t>(WireToIndex(wire));
-    return i < voxels.size() ? voxels[i] : std::uint16_t{0};
-  };
+// Palette + RLE over `count` cells taken in wire order through `at` (chunks: layer order; LOD
+// sections: their own cell order, already layered).
+template <class At>
+void WriteCells(ByteWriter& w, int count, At&& at) {
   // Runs first; the palette (first-appearance order) then needs one lookup per run.
   std::vector<std::pair<std::uint16_t, std::uint32_t>> runs;
-  for (int i = 0; i < kChunkVolume; ++i) {
+  for (int i = 0; i < count; ++i) {
     const auto m = at(i);
     if (!runs.empty() && runs.back().first == m) {
       ++runs.back().second;
@@ -302,6 +301,13 @@ void WriteVoxels(ByteWriter& w, const std::vector<std::uint16_t>& voxels) {
   }
 }
 
+void WriteVoxels(ByteWriter& w, const std::vector<std::uint16_t>& voxels) {
+  WriteCells(w, kChunkVolume, [&](int wire) -> std::uint16_t {
+    const auto i = static_cast<std::size_t>(WireToIndex(wire));
+    return i < voxels.size() ? voxels[i] : std::uint16_t{0};
+  });
+}
+
 std::uint32_t ReadVarint(ByteReader& r) {
   std::uint32_t v = 0;
   for (int shift = 0; shift < 21; shift += 7) {
@@ -314,22 +320,42 @@ std::uint32_t ReadVarint(ByteReader& r) {
   return 0;
 }
 
-std::vector<std::uint16_t> ReadVoxels(ByteReader& r) {
+template <class Put>
+void ReadCells(ByteReader& r, int volume, Put&& put) {
   const std::uint16_t count = r.U16();
-  r.Check(count >= 1 && count <= kChunkVolume);
-  if (!r.ok()) return {};
+  r.Check(count >= 1 && count <= std::min(volume, 0xFFFF));
+  if (!r.ok()) return;
   std::vector<std::uint16_t> palette(count);
   for (auto& m : palette) m = r.U16();
   const bool wide = count > 256;
-  std::vector<std::uint16_t> voxels(kChunkVolume);
-  for (int filled = 0; filled < kChunkVolume && r.ok();) {
+  for (int filled = 0; filled < volume && r.ok();) {
     const std::uint32_t run = ReadVarint(r);
     const std::uint16_t i = wide ? r.U16() : r.U8();
-    r.Check(run >= 1 && run <= static_cast<std::uint32_t>(kChunkVolume - filled) && i < count);
+    r.Check(run >= 1 && run <= static_cast<std::uint32_t>(volume - filled) && i < count);
     if (!r.ok()) break;
-    for (std::uint32_t k = 0; k < run; ++k) voxels[WireToIndex(filled++)] = palette[i];
+    for (std::uint32_t k = 0; k < run; ++k) put(filled++, palette[i]);
   }
+}
+
+std::vector<std::uint16_t> ReadVoxels(ByteReader& r) {
+  std::vector<std::uint16_t> voxels(kChunkVolume);
+  ReadCells(r, kChunkVolume, [&](int wire, std::uint16_t m) { voxels[WireToIndex(wire)] = m; });
+  if (!r.ok()) return {};
   return voxels;
+}
+
+std::vector<std::uint16_t> ReadLodCells(ByteReader& r) {
+  std::vector<std::uint16_t> cells(kLodCellCount);
+  ReadCells(r, kLodCellCount,
+            [&](int i, std::uint16_t m) { cells[static_cast<std::size_t>(i)] = m; });
+  if (!r.ok()) return {};
+  return cells;
+}
+
+void WriteLodCells(ByteWriter& w, const std::vector<std::uint16_t>& cells) {
+  WriteCells(w, kLodCellCount, [&](int i) -> std::uint16_t {
+    return static_cast<std::size_t>(i) < cells.size() ? cells[static_cast<std::size_t>(i)] : 0;
+  });
 }
 
 void WriteCoord(ByteWriter& w, const ChunkCoordNet& c) {
@@ -707,6 +733,20 @@ std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std:
   auto voxels = ReadVoxels(r);
   if (!r.ok() || !r.AtEnd()) return std::nullopt;
   return voxels;
+}
+
+std::vector<std::uint8_t> EncodeLodCells(const std::vector<std::uint16_t>& cells) {
+  std::vector<std::uint8_t> out;
+  ByteWriter w(out);
+  WriteLodCells(w, cells);
+  return out;
+}
+
+std::optional<std::vector<std::uint16_t>> DecodeLodCells(std::span<const std::uint8_t> bytes) {
+  ByteReader r(bytes);
+  auto cells = ReadLodCells(r);
+  if (!r.ok() || !r.AtEnd()) return std::nullopt;
+  return cells;
 }
 
 std::int32_t ToFixedPosition(double v) {

@@ -25,7 +25,8 @@ if(EMSCRIPTEN)
   add_executable(dwell_worldgen_tests ${CMAKE_CURRENT_SOURCE_DIR}/../tests/main.cpp ${WORLDGEN_TESTS})
   target_link_libraries(dwell_worldgen_tests PRIVATE dwell_core dwell_options doctest::doctest)
   target_compile_definitions(dwell_worldgen_tests PRIVATE
-    DWELL_WORLDGEN_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/../tests/worldgen/golden/chunk-hashes.txt")
+    DWELL_WORLDGEN_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/../tests/worldgen/golden/chunk-hashes.txt"
+    DWELL_LOD_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/../tests/worldgen/golden/lod-hashes.txt")
   target_link_options(dwell_worldgen_tests PRIVATE -sENVIRONMENT=node -sNODERAWFS=1
                       -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=128MB -sSTACK_SIZE=4MB)
 

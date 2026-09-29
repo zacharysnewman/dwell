@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 
+#include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
 
 // Procedural terrain, generator version 3 (ARCHITECTURE.md §6.3). A chunk is a pure function of
@@ -93,6 +94,17 @@ class TerrainGenerator {
   // Feet position for players: near the origin, on land, on level ground with no tree nearby.
   std::array<double, 3> SpawnPoint() const;
 
+  // Level of detail (ARCHITECTURE.md §6.6): a section evaluated at its cells' resolution. Each
+  // cell samples the pipeline at its centre column and bottom voxel (the voxel whose solidity
+  // decides a floor under Downsample), with noise octaves whose lattice is finer than a cell
+  // dropped and features only where they are at least a cell wide (trees up to 4 m cells,
+  // boulders up to 2 m). Caves carve only within three cells of the surface (deeper cave air is
+  // never seen from afar); ores and the stability pass are below a cell. The apron below the
+  // world reads as bedrock, so the world's floor is not drawn.
+  core::LodKind GenerateLod(const core::LodCoord& c, core::LodCells& cells) const;
+  // The column bounds GenerateLod classifies sections by (core::LodKindFromBounds).
+  core::LodBounds LodBoundsAt(int level, std::int32_t i, std::int32_t k) const;
+
   static constexpr int kTreeCell = 7;
   static constexpr int kBoulderCell = 24;
 
@@ -115,6 +127,9 @@ class TerrainGenerator {
   static float SkyFloor(const std::vector<Column>& cols);
   Corner3 SampleCorner3(std::int32_t lx, std::int32_t ly, std::int32_t lz) const;
   static Column Finish(const Corner2& c);
+  // Level of detail: a column's fields and a point's 3D noise at a cell size (octaves dropped).
+  Column ColumnLod(std::int64_t x, std::int64_t z, std::int64_t cell) const;
+  Corner3 NoiseLod(std::int64_t x, std::int64_t y, std::int64_t z, std::int64_t cell) const;
   static Column Interp2(const Corner2 (&c)[4], int fx, int fz);
   // 3D noise interpolation: bilinear in (x, z) within a lattice layer, then linear in y.
   static Corner3 Bilerp(const Corner3 (&c)[4], int fx, int fz);

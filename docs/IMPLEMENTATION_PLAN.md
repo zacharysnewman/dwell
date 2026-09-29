@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | ⏳ Not started (added 2026-09-29; ADR 0012) | — |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a (LOD data and generation) done; next 4b (propagation and streaming), then 4c (rendering, dev camera) | — |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -513,7 +513,8 @@ Exit criteria
 
 ## Phase 4 — World LOD & Whole-World View
 
-**Status:** not started. Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
+**Status:** in progress — 4a built (grid, `Downsample`, `GenerateLod`, golden hashes); 4b and 4c
+outstanding. Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
 propagation and streaming**; **4c — rendering and the dev camera**. Depends on Phase 3c (planet
 scale) and 3d (meshing worker pool); 4b's propagation cache lands in the database from 3e.
@@ -524,16 +525,16 @@ with distance — from the ground, a mountain top, or a dev camera high enough t
 
 Deliverables
 - **LOD data and generation** *(4a)*:
-  - [ ] LOD grid and coordinates (`(L, i, j, k)` from the corner (−2²³, `WORLD_MIN_Y`, −2²³);
+  - [x] LOD grid and coordinates (`(L, i, j, k)` from the corner (−2²³, `WORLD_MIN_Y`, −2²³);
     levels 0–`LOD_MAX_LEVEL`), shared C++/TS; section content as 32³ materials plus a one-cell
     apron, encoded with the chunk palette + RLE codec.
-  - [ ] `GenerateLod(seed, generatorVersion, L, i, j, k)` in `server/core/worldgen`: generator
+  - [x] `GenerateLod(seed, generatorVersion, L, i, j, k)` in `server/core/worldgen`: generator
     evaluated at cell centres, octaves and features smaller than a cell dropped; all-air and
     buried sections skipped from column height bounds. Built into `dwell_worldgen.wasm`.
-  - [ ] `Downsample` of 8 children (≥ 4 of 8 solid → solid; else ≥ 4 liquid → liquid; most common
+  - [x] `Downsample` of 8 children (≥ 4 of 8 solid → solid; else ≥ 4 liquid → liquid; most common
     material, ties to the upper cells), with unit tests on crafted layouts (one-voxel walls and
     floors survive a level; pillars thinner than a cell do not).
-  - [ ] Golden hashes of `GenerateLod` sections at several levels (surface, mountains, ocean, the
+  - [x] Golden hashes of `GenerateLod` sections at several levels (surface, mountains, ocean, the
     rim, the root), checked natively and under WASM in CI.
 - **Propagation and streaming** *(4b)*:
   - [ ] Server propagation: chunk changes (every `VoxelModification` source) mark level-1 sections
@@ -560,10 +561,40 @@ Deliverables
   - [ ] Debug: F3 overlay shows LOD node counts per level, pending jobs, cache use and LOD bytes/s;
     optional per-level colouring of LOD sections.
 
+Deviations and additions (4a):
+- **Where a cell samples.** A cell samples the pipeline at its centre column and *bottom voxel*,
+  not its centre: under the ≥ 4-of-8 rule a floor keeps a cell solid exactly when the cell's
+  bottom voxel is solid, so this is what makes generated and downsampled sections agree (and a
+  centre sample would drop terrain that fills less than half of the cells above level ~12, where
+  cells are taller than the world's relief).
+- **Downsample material.** The most common material among the top qualifying cell of each of the
+  block's four columns (ties to the upper cells), not among all qualifying cells: with the
+  latter, rock beneath the surface outvotes it on uneven ground and coarse levels turn grey.
+- **What `GenerateLod` drops:** fractal octaves finer than a cell (fBm still normalised by the
+  full amplitude, ridged sums by the kept one so ranges do not sink), tunnels outside 2 m cells,
+  caves deeper than three cells below the surface, trees above 4 m cells and boulders above 2 m,
+  ores and the stability pass. The apron below the world reads as bedrock (the floor is never
+  drawn).
+- **Bounds.** `LodBoundsAt(L, i, k)` classifies a whole column of sections from its 2D fields
+  (`Empty` above, `Buried` below), so the client needs one cheap job per column rather than one
+  per section to skip sky and rock; `GenerateLod` uses the same bounds.
+- **Content layout.** Section content is stored in layer order (the mesher's padded layout), so
+  the palette + RLE codec takes cells as they are (`EncodeLodCells`, 34³ cells, palettes up to
+  65 535); the chunk codec now shares the implementation.
+- The flat and playground generators share a flat `GenerateLod` (the playground's features are
+  below a cell), which equals the downsample of their chunks exactly.
+- Section content round-trips the codec in C++ (`lod: encoding`) and TypeScript
+  (`chunkVoxels.test.ts`); golden *wire* vectors come with the `LodData` message in 4b.
+
 Exit criteria
-- [ ] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section
+- [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section
   generated at level L agrees with the downsample of generated level-0 chunks within a stated
-  tolerance on crafted and sampled terrain.
+  tolerance on crafted and sampled terrain. *`lod: golden` (`lod-hashes.txt`, 11 sections from
+  level 1 to the root, natively and in `dwell_worldgen_tests.js`) and `worldgen module (WASM)`
+  in the client; crafted: the flat world equals its downsample exactly at levels 1–3; sampled:
+  at the spawn and a site of each biome (levels 1–2, 3 in the mountains) ≥ 95% of cells agree in
+  class and ≥ 95% of column surfaces are within one cell, mean difference under half a cell
+  (measured: ≥ 96.2%, ≥ 97.7%, 0.2 cells).*
 - [ ] *(4b)* A block placed by one client changes the LOD sections above it on the server within
   a bounded time, and another client far away receives the change (index update → request →
   `Explicit`) without re-downloading unchanged sections; a client with no modifications in view

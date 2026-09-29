@@ -13,7 +13,8 @@ add_executable(dwell_tests
   player/platform_climb_swim_test.cpp
   player/scenario_test.cpp
   player/netcode_test.cpp
-  worldgen/worldgen_test.cpp)
+  worldgen/worldgen_test.cpp
+  worldgen/lod_test.cpp)
 target_link_libraries(dwell_tests PRIVATE dwell_core dwell_net dwell_options doctest::doctest monocypher
                       dwell_sqlite)
 add_test(NAME dwell_tests COMMAND dwell_tests)
@@ -21,4 +22,5 @@ target_compile_definitions(dwell_tests PRIVATE
   DWELL_PROTOCOL_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../../shared/protocol/vectors.txt"
   DWELL_PLAYER_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/player/golden/scenario-trace.txt"
   DWELL_WORLDGEN_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/worldgen/golden/chunk-hashes.txt"
+  DWELL_LOD_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/worldgen/golden/lod-hashes.txt"
   DWELL_STORAGE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/storage/golden")

@@ -35,6 +35,20 @@ inline constexpr int kChunkBytesPerSecond = 1048576;
 inline constexpr int kMaxChunksPerTick = 32;
 inline constexpr int kAutosaveSeconds = 30;
 
+inline constexpr int kLodSectionCells = 32;
+inline constexpr int kLodMaxLevel = 19;
+inline constexpr int kLodIndexLevel = 8;
+inline constexpr int kLodPixelErrorDesktop = 2;
+inline constexpr int kLodPixelErrorMobile = 4;
+inline constexpr int kLodNearSplitM = 1024;
+inline constexpr int kLodCacheMbDesktop = 256;
+inline constexpr int kLodCacheMbMobile = 96;
+inline constexpr int kLodBytesPerSecond = 262144;
+inline constexpr int kLodRequestsPerSecond = 64;
+inline constexpr int kLodIndexUpdateMs = 1000;
+inline constexpr int kLodPropagationSectionsPerTick = 8;
+inline constexpr int kLodMaxRequestSections = 32;
+
 inline constexpr std::size_t kDisplayNameMaxBytes = 64;
 inline constexpr std::size_t kClientVersionMaxBytes = 64;
 inline constexpr std::size_t kServerNameMaxBytes = 64;

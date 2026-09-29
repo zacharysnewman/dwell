@@ -150,6 +150,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      players, replication.
                      Platform-free; compiled natively AND to WASM (local mode + client physics).
     /player          Physics player controller (PLAYER_CONTROLLER.md).
+    (lod.h)          Level of detail (§6.6): the section grid, Downsample, GenerateLod's interface.
     /storage         World persistence: SQLite + zstd; the native file VFS and the browser's OPFS VFS
                      (ADR 0006).
   /wasm              Emscripten build of the core (C exports): local mode (§2.1) and the client sim.
@@ -289,8 +290,8 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message) and the F3 debug overlay (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it). |
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
-| `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[planned, Phase 4]** also runs `GenerateLod` for LOD sections (§6.6). |
-| `lod/` **[planned, Phase 4]** | The LOD octree around the camera (§6.6, ADR 0012): screen-space-error selection, parent-until-children-ready swaps, the LOD index and `LodRequest`s for modified sections, job scheduling (coarsest first, then nearest) to the worldgen and meshing pools, and a bounded cache of section content and meshes. |
+| `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4a]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`); **[planned, Phase 4c]** the pool runs them for LOD sections (§6.6). |
+| `lod/` **[in progress, Phase 4]** | **[built, 4a]** The grid and coordinates (`grid.ts`, mirroring `lod.h`). **[planned]** The LOD octree around the camera (§6.6, ADR 0012): screen-space-error selection, parent-until-children-ready swaps, the LOD index and `LodRequest`s for modified sections, job scheduling (coarsest first, then nearest) to the worldgen and meshing pools, and a bounded cache of section content and meshes. |
 | `devcam/` **[planned, Phase 4]** | Dev camera: a client-side free-fly camera detached from the player's body (speed scaled with altitude) that can rise high enough to see the whole disc; it drives LOD selection and rendering only. |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4, two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[planned, Phase 4]** LOD section meshes. |
 | `render/` **[built: terrain chunks, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[planned, Phase 4]** LOD section meshes (flat colour per material) and a two-pass depth split — a far pass for LOD, then a depth clear and a near pass for chunks and entities (§6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry face shading (and the flat colour of untextured materials). |
@@ -495,8 +496,10 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   within it, `remainder / wavelength` — one correctly rounded float division (`Lattice`,
   `noise.h`). A test shows float coordinates losing a fine octave's detail ~8,000 km out and the
   split ones not.
-- **[planned, Phase 4]** `GenerateLod` (§6.6) follows the same rules and has its own golden
-  hashes, checked natively and under WASM.
+- **[built, Phase 4a]** `GenerateLod` (§6.6) follows the same rules and has its own golden
+  hashes (`server/tests/worldgen/golden/lod-hashes.txt`: the surface near the spawn, mountains,
+  ocean, the rim, terrain ~8,000 km out, the index level and the root), checked natively, under
+  WASM (Node) and in the client's worldgen module.
 
 #### Authority, storage, and streaming **[built]**
 - **Server storage.** The server's `VoxelWorld` holds chunks only while they are needed: every 64
@@ -657,7 +660,7 @@ Players break and place blocks. Server-authoritative like every voxel change
   UI state and travels in each `BlockEditRequest`. Collected, finite inventories are out of scope
   for now.
 
-### 6.6 Level of Detail: the Whole-World View **[planned, Phase 4]**
+### 6.6 Level of Detail: the Whole-World View **[in progress, Phase 4]** (4a built: grid, generation, downsampling)
 
 Decision: [ADR 0012](./adr/0012-lod-octree.md) (concepts from the Distant Horizons mod, adapted
 to 3D). Everything that should be visible from the camera — on a mountain, in the air, or from the
@@ -680,18 +683,49 @@ row and the octree behaves as a quadtree.
 (Level L is drawn from about 350 × 2^L m under those settings; the world is flat, so from the
 ground the view reaches the rim wherever terrain does not block it.)
 
-**Content.** A section is 32³ `u16` materials, encoded like `ChunkData Explicit` (palette + RLE),
-with a one-cell apron from its neighbours for culling border faces.
+**[built, Phase 4a]** The grid and coordinates (`server/core/include/dwell/core/lod.h`, mirrored by
+`client/src/lod/grid.ts` and tested on both sides), `Downsample`, `GenerateLod` for every
+generator (the terrain's in `worldgen/terrain.cpp`; the flat and playground worlds share a flat
+one, the playground's features being far below a cell) and the column bounds that classify
+sections without generating them (`LodBoundsAt`, `LodKindFromBounds`), exported by
+`dwell_worldgen.wasm` (`dwell_worldgen_lod`, `dwell_worldgen_lod_bounds`; `ChunkGenerator.lod`
+and `.lodBounds` in `worldgen/generator.ts`). A section takes 1–9 ms to generate in WASM, its
+bounds ~1.5 ms.
+
+**Content.** A section is 34³ `u16` materials: its 32³ cells and a one-cell apron from its
+neighbours for culling border faces, in layer order (x fastest, then z, then y — the chunk
+mesher's padded layout), encoded with the chunk palette + RLE codec taking the cells in that
+order (`EncodeLodCells`; `writeLodCells` in TypeScript); a terrain section near the surface is
+~1.5–6 KB.
 - *Unmodified* sections come from `GenerateLod(seed, generatorVersion, L, i, j, k)` in
-  `server/core/worldgen`: the generator evaluated at cell centres, with noise octaves and features
+  `server/core/worldgen`: the generator evaluated per cell, with noise octaves and features
   smaller than a cell dropped (no aliasing). Deterministic native vs WASM (§6.3 Determinism), so
-  the client generates them itself.
+  the client generates them itself. Each cell samples the pipeline at its **centre column and
+  bottom voxel** — the voxel whose solidity decides a floor under `Downsample` (below) — so
+  generated and downsampled sections agree: fractal octaves whose lattice is finer than a cell
+  are dropped (still normalised by the full amplitude; ridged sums by the kept one), tunnels
+  (~4 m wide) are carved only in 2 m cells, caves only within three cells of the surface (deeper
+  cave air is never seen from afar, and leaving it solid keeps LOD meshes free of enclosed
+  faces), trees only in cells up to 4 m and boulders up to 2 m (a cell takes a feature's
+  material when the feature fills at least half of it), ores and the stability pass not at all;
+  surface materials follow the column's depth in metres. The apron below the world reads as
+  bedrock, so the world's floor is never drawn. Measured against the downsample of generated
+  chunks at the spawn and a site of each biome (levels 1–2, 3 in the mountains): ≥ 96% of cells
+  agree in class (air, liquid, solid) and ≥ 97% of columns' surfaces are within one cell
+  (`lod: generation` tests the tolerance: 95%, 95%, mean under half a cell).
 - *Modified* sections (any modified chunk below them) are the downsample of their 8 children,
   recursively; unmodified children come from `GenerateLod`, level-0 children are chunks. A 2×2×2
-  block becomes solid if ≥ 4 cells are solid (a one-voxel wall survives a level), else liquid if
-  ≥ 4 are liquid, else air; the material is the most common qualifying one, ties to the upper cells.
+  block becomes solid if ≥ 4 cells are solid (a one-voxel wall or floor survives a level; a 1 × 1
+  pillar does not), else liquid if ≥ 4 are liquid, else air. The material is the most common one
+  among the qualifying **top cell of each of the block's four columns** (the surface seen from
+  above), ties to the upper cells — so surface materials survive to the coarsest levels instead
+  of the rock beneath them (`DownsampleBlock`, tested on crafted layouts). The flat world's
+  generated sections equal the downsample of its chunks exactly (levels 1–3, tested).
 - Sections that the generator's column height bounds prove all air, or buried with no exposed
-  face, are skipped without generating anything.
+  face, are skipped without generating anything: the bounds of a column of sections
+  (`LodBoundsAt(L, i, k)`, from the 34 × 34 columns' 2D fields) give the heights above which
+  every cell is air or sea and below which every cell is solid; `GenerateLod` classifies by the
+  same bounds, so it returns `Empty` or `Buried` exactly when the bounds say so.
 
 **Server.** A chunk edit (any source: edits, collapses, re-bakes) marks its level-1 section dirty.
 Off the tick, a budgeted job (`LOD_PROPAGATION_SECTIONS_PER_TICK`) re-downsamples dirty sections
