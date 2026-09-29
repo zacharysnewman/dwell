@@ -12,7 +12,7 @@ target_link_options(dwell_core_wasm PRIVATE
   -sINITIAL_MEMORY=64MB
   -sSTACK_SIZE=1MB
   -sEXPORTED_FUNCTIONS=_malloc,_free
-  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64
+  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU16,HEAP32,HEAPU32,HEAPF64
   -sFILESYSTEM=0)
 
 # Copy into the client so Vite serves it at <base>/wasm/.

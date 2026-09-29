@@ -1,5 +1,7 @@
 import { buildInfo, formatBuildInfo } from './buildInfo';
 import { Game, type GameDebugState } from './game/game';
+import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInteraction';
+import { MeshPool } from './mesh/pool';
 import { connectLocal, connectToInvite, type ConnectOptions } from './net/connect';
 import { parseInvite } from './net/invite';
 import { parseLocalWorld } from './local/world';
@@ -11,6 +13,7 @@ import { createRenderer, RendererUnavailableError, type Renderer } from './rende
 import { ClientCore } from './sim/clientCore';
 import { importDwellCore } from './sim/module';
 import { MessageType } from './protocol/constants.gen';
+import { Hotbar, slotForKey } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { formatStatus } from './ui/statusOverlay';
 import { ChunkStreamer } from './world/chunkStream';
@@ -22,6 +25,12 @@ interface DwellDebug {
   press(code: string, down: boolean): void;
   look(yaw: number, pitch: number): void;
   view(): { yaw: number; pitch: number };
+  /** Breaks or places at the crosshair, as a click does (§6.5). */
+  edit(action: EditAction): boolean;
+  /** Selects a hotbar slot, as a number key does. */
+  select(slot: number): void;
+  /** Material at a voxel in the client's world. */
+  voxel(x: number, y: number, z: number): number;
 }
 
 declare global {
@@ -46,8 +55,11 @@ interface App {
   canvas: HTMLCanvasElement;
   renderer: Renderer;
   input: KeyboardMouseInput;
+  touch: TouchControls;
   hud: Hud;
   game: Game | null;
+  interaction: BlockInteraction | null;
+  core: ClientCore | null;
 }
 
 function start(): App {
@@ -68,15 +80,19 @@ function start(): App {
   new ResizeObserver(resize).observe(canvas);
   resize();
 
+  const input = new KeyboardMouseInput(canvas);
+  // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
+  const touch = new TouchControls(document.body, input);
   const app: App = {
     canvas,
     renderer,
-    input: new KeyboardMouseInput(canvas),
+    input,
+    touch,
     hud: new Hud(document.body),
     game: null,
+    interaction: null,
+    core: null,
   };
-  // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
-  const touch = new TouchControls(document.body, app.input);
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
   window.addEventListener('touchstart', () => (touch.visible = true), {
@@ -98,6 +114,23 @@ function start(): App {
       app.input.pitch = pitch;
     },
     view: () => ({ yaw: app.input.yaw, pitch: app.input.pitch }),
+    edit: (action) => app.game?.edit(action, performance.now()) ?? false,
+    select: (slot) => app.interaction?.select(slot),
+    voxel: (x, y, z) => app.core?.voxel(x, y, z) ?? 0,
+  };
+  // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
+  app.input.onAction = (action) => app.game?.edit(action, performance.now());
+  app.input.onDigit = (code) => {
+    const slot = slotForKey(code);
+    if (slot !== null && slot < PALETTE.length) app.interaction?.select(slot);
+  };
+  app.input.onScroll = (delta) => app.interaction?.scroll(delta);
+  touch.onTap = () => {
+    const action = app.interaction?.touchAction;
+    if (action) app.game?.edit(action, performance.now());
+  };
+  touch.onPlaceMode = (place) => {
+    if (app.interaction) app.interaction.touchAction = place ? 'place' : 'break';
   };
 
   let last = performance.now();
@@ -142,7 +175,21 @@ function play(
     session.subscribe((_state, s) => {
       stats = s;
     });
-    const terrain = new ChunkStreamer(core, pool, app.renderer);
+    const terrain = new ChunkStreamer(core, pool, MeshPool.create(), app.renderer, (coords) => {
+      session.sendControl({ type: MessageType.ChunkResync, coords });
+    });
+    const interaction = new BlockInteraction(core, (m) => {
+      session.sendControl(m);
+    });
+    const hotbar = new Hotbar(document.body, PALETTE, (slot) => {
+      interaction.select(slot);
+    });
+    interaction.onSelect = (slot) => {
+      hotbar.setSelected(slot);
+    };
+    interaction.select(0);
+    app.interaction = interaction;
+    app.core = core;
     const game = new Game(
       joined.playerId,
       core,
@@ -156,6 +203,8 @@ function play(
         rttMs: () => stats?.datagramRttMs ?? stats?.rttMs ?? null,
       },
       terrain,
+      interaction,
+      (x, y, z) => core.voxel(x, y, z),
     );
     session.onGame((m, bytes) => {
       game.onGameMessage(m, bytes, performance.now());

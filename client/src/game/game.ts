@@ -1,6 +1,7 @@
 // The in-game loop (PLAYER_CONTROLLER.md §8, §9): fixed 60 Hz ticks of local prediction with the
 // client's sim core, input datagrams, snapshot reconciliation, interpolated remote players, and
 // the first-person camera.
+import type { BlockInteraction, EditAction } from '../interact/blockInteraction';
 import type { GameMessage } from '../net/session';
 import {
   ControllerFlags,
@@ -17,14 +18,15 @@ import type { PlayerView, Renderer } from '../render';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
 import type { ChunkStreamer, StreamStats } from '../world/chunkStream';
+import { materialStyle } from '../world/materials';
 import { EyeCamera } from './eye';
 import { isCrouched, isDead, RemotePlayers } from './remotes';
 
 const TICK_MS = 1000 / SIM_HZ;
 const MAX_TICKS_PER_FRAME = 5;
 /**
- * Main-thread time per frame for meshing streamed chunks (at least one per frame). Generation runs
- * in the worldgen workers; meshing moves to a worker pool in Phase 3d.
+ * Main-thread time per frame for starting mesh jobs (copying each chunk's voxels out of the sim;
+ * at least one per frame). Generation and meshing run in worker pools.
  */
 const MESH_BUDGET_MS = 4;
 /** Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE. */
@@ -59,6 +61,8 @@ export interface GameDebugState {
   terrain: StreamStats;
   /** The chunks around the player are loaded, so prediction runs. */
   terrainReady: boolean;
+  /** The targeted block (§6.5), if any. */
+  target: { cell: Vec3; face: number } | null;
 }
 
 export class Game {
@@ -85,6 +89,9 @@ export class Game {
     private readonly hud: Hud,
     private readonly host: GameHost,
     private readonly terrain: ChunkStreamer,
+    private readonly interaction: BlockInteraction | null = null,
+    /** Material at a voxel (the outline is half height on slabs). */
+    private readonly voxel: (x: number, y: number, z: number) => number = () => 0,
   ) {
     this.current = core.state();
     this.eye.tick(this.current, 1 / SIM_HZ);
@@ -98,6 +105,10 @@ export class Game {
     }
     if (m.type === MessageType.ChunkUnload) {
       this.terrain.onChunkUnload(m.coords);
+      return;
+    }
+    if (m.type === MessageType.VoxelModification) {
+      this.terrain.onVoxelModification(m.chunks);
       return;
     }
     if (m.type === MessageType.PhysicsSnapshot) {
@@ -168,7 +179,14 @@ export class Game {
       stats: c.stats,
       terrain: this.terrain.stats(),
       terrainReady: this.terrainReady(),
+      target: this.interaction?.target ?? null,
     };
+  }
+
+  /** Breaks or places at the crosshair (§6.5): only while alive and playing. */
+  edit(action: EditAction, nowMs: number): boolean {
+    if (this.dead || !this.terrainReady()) return false;
+    return this.interaction?.act(action, nowMs) ?? false;
   }
 
   /** Prediction waits until the terrain around the player has arrived (collision needs it). */
@@ -245,12 +263,11 @@ export class Game {
               : 'Loading terrain…',
       );
       // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
-      this.renderer.setCamera(
-        [center[0], this.eye.draw(alpha), center[2]],
-        this.input.yaw,
-        this.input.pitch,
-      );
+      const eye: Vec3 = [center[0], this.eye.draw(alpha), center[2]];
+      this.renderer.setCamera(eye, this.input.yaw, this.input.pitch);
+      this.target(this.terrainReady() ? eye : null);
     }
+    if (this.dead) this.target(null);
 
     this.hud.setHealth(this.health, nowMs);
     if (this.hud.debugVisible) {
@@ -268,6 +285,17 @@ export class Game {
     } else {
       this.renderer.setDebugLines(null);
     }
+  }
+
+  /** Targets the block under the crosshair from `eye` and outlines it (none while not playing). */
+  private target(eye: Vec3 | null): void {
+    const t = this.interaction?.update(eye, this.input.yaw, this.input.pitch) ?? null;
+    if (!t) {
+      this.renderer.setBlockOutline(null);
+      return;
+    }
+    const slab = materialStyle(this.voxel(...t.cell)).look === 'slab';
+    this.renderer.setBlockOutline(t.cell, slab ? 0.5 : 1);
   }
 
   private playerView(

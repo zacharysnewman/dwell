@@ -336,3 +336,23 @@ export function buildAtlas(): Atlas {
   });
   return { size: ATLAS_SIZE, data, rect: tileRect };
 }
+
+let shared: Atlas | null = null;
+/** The atlas, built once per page (the renderer and the hotbar's swatches share it). */
+export function sharedAtlas(): Atlas {
+  shared ??= buildAtlas();
+  return shared;
+}
+
+/** One tile's TILE × TILE texels, top row first (for a 2D canvas). */
+export function tilePixels(atlas: Atlas, name: TileName): Uint8ClampedArray<ArrayBuffer> {
+  const out = new Uint8ClampedArray(TILE * TILE * 4);
+  const index = TILE_ORDER.indexOf(name);
+  const ox = (index % ATLAS_CELLS) * CELL + GUTTER;
+  const oy = Math.floor(index / ATLAS_CELLS) * CELL + GUTTER;
+  for (let y = 0; y < TILE; y++) {
+    const from = ((oy + TILE - 1 - y) * atlas.size + ox) * 4;
+    out.set(atlas.data.subarray(from, from + TILE * 4), y * TILE * 4);
+  }
+  return out;
+}

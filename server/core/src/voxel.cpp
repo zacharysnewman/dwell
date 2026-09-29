@@ -220,9 +220,8 @@ Chunk& VoxelWorld::GetOrCreate(const ChunkCoord& coord) {
     if (generator_) {
       generator_(coord, *it->second);
       ++generated_on_access_;
-    } else {
-      ++epoch_;  // readers may hold the shared air chunk for this coordinate
     }
+    ++epoch_;  // readers may hold the shared air chunk for this coordinate
     it->second->ResetRevision();
   }
   return *it->second;

@@ -1,5 +1,6 @@
 # Simulation core: platform-free; compiled natively and (from Phase 1) to WASM. ARCHITECTURE.md §4.3.
 add_library(dwell_core
+  src/block_edit.cpp
   src/crypto.cpp
   src/entropy.cpp
   src/jolt_runtime.cpp

@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "dwell/core/block_edit.h"
 #include "dwell/core/entropy.h"
 #include "dwell/core/physics_world.h"
 #include "dwell/core/terrain_collision.h"
@@ -26,6 +27,9 @@ namespace dwell::core {
 
 using SessionId = std::uint32_t;
 using TransportBinding = std::array<std::uint8_t, 32>;
+
+// Who may break and place blocks (§6.5, §11).
+enum class EditPolicy : std::uint8_t { kEveryone, kOps, kNobody };
 
 struct ServerConfig {
   std::string name = "Dwell Server";
@@ -43,6 +47,10 @@ struct ServerConfig {
   int pregen_radius_chunks = 2;   // around the spawn, generated at startup
   int view_radius_chunks = protocol::kViewRadiusChunks;         // sphere streamed to each client
   int chunk_bytes_per_second = protocol::kChunkBytesPerSecond;  // per client
+
+  // Block edits (§6.5): who may edit, and the players (device public keys) who are ops.
+  EditPolicy edits = EditPolicy::kEveryone;
+  std::vector<protocol::PublicKey> ops = {};
 
   // Tests and tools: replaces GeneratorFor(generator_version, world_seed), e.g. to move a test
   // world far from the origin (clients must generate the same chunks). Without an air test to
@@ -75,6 +83,10 @@ struct SessionStats {
   std::uint32_t datagrams_dropped = 0;  // over the rate limit
   std::uint32_t inputs_skipped = 0;     // dropped to bound input latency
   std::uint32_t ticks_starved = 0;      // no input queued: the last one repeated
+  std::uint32_t edits_applied = 0;      // block edits (§6.5)
+  std::uint32_t edits_rejected = 0;     // failed validation, cooldown, or permission
+  EditCheck last_edit_check = EditCheck::kOk;
+  std::uint32_t resyncs = 0;  // chunks re-sent on the client's request (§6.3)
 };
 
 class Server {
@@ -146,6 +158,8 @@ class Server {
     std::uint32_t last_knockback_seq = 0;
     std::uint32_t rate_window_tick = 0;
     std::uint32_t rate_window_count = 0;
+    std::vector<protocol::BlockEditRequest> edits;  // applied at the start of the next Step
+    double edit_credit = 0;                         // rate limit (token bucket)
     SessionStats stats;
     // Terrain streaming.
     ChunkMode chunk_mode = ChunkMode::kAwaitingCheck;
@@ -171,11 +185,21 @@ class Server {
   void Damage(Session& s, int amount, protocol::DamageCause cause);
   void AfterControllerTick(Session& s);
   void SendSnapshots();
+  // Block edits (§6.5): validation, then one VoxelModification per tick to the clients streaming
+  // the changed chunks.
+  void ApplyEdits();
+  bool MayEdit(const Session& s) const;
+  std::array<double, 3> EyeOf(const Session& s) const;
   // Terrain: generation around players, eviction, and per-client streaming (§6.3).
   std::optional<ChunkCoord> ViewCenter(const Session& s) const;
   void UpdateWorldgen();
   bool IsAir(const ChunkCoord& c) const;
   void StreamChunks(SessionId id, Session& s);
+  // The message streaming chunk `c` to a client: Air, Generated or Explicit. Empty while a
+  // full-mode client's chunk is not generated yet (unless `generate`).
+  std::optional<protocol::ChunkData> ChunkMessage(const Session& s, const ChunkCoord& c,
+                                                  bool generate);
+  void Resync(SessionId id, Session& s, const protocol::ChunkResync& m);
   Session* SessionOfPlayer(std::uint16_t player_id);
   const Session* SessionOfPlayer(std::uint16_t player_id) const;
   std::uint16_t PlayerIdOfBody(std::uint32_t body_id) const;

@@ -258,7 +258,13 @@ at a region border. Instead:
 Rules that keep the grid and the physics world consistent:
 - A voxel edit rebuilds the affected chunk's collision `MeshShape` **in the same tick** on the
   server: `TerrainCollision::Sync` (run at the start of every `Players::Tick`) rebuilds chunks
-  whose own or neighbours' revisions changed.
+  whose own or neighbours' revisions changed. Block edits (ARCHITECTURE.md §6.5) apply at the start
+  of the server step, before that pass; the client applies a `VoxelModification` to its streamed
+  world and its prediction world rebuilds the same way before its next predicted tick (tested
+  natively in `netcode: block edits` and in WASM in `clientCore.test.ts`). Probes read voxels
+  through a cached chunk pointer tied to the world's epoch, which advances whenever a chunk is
+  created, replaced or removed — including a chunk first created by an edit where the air test had
+  read open sky.
 - The player body enables Jolt's `mEnhancedInternalEdgeRemoval` so the capsule slides over mesh
   and chunk seams without catching on internal edges.
 - Non-cube voxel shapes extend the DDA with a per-material sub-cell shape box; slabs

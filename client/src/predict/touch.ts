@@ -10,6 +10,14 @@ const STICK_DEADZONE = 0.12;
 const STICK_RUN = 1.3;
 /** Degrees of view rotation per pixel of drag. */
 export const TOUCH_LOOK_SENSITIVITY = 0.3;
+/** A touch on the view that moves less than this (px) and lifts within TAP_MS is a tap (§6.5). */
+export const TAP_SLOP = 12;
+export const TAP_MS = 500;
+
+/** Is a touch that moved (dx, dy) px in total and lasted `ms` a tap rather than a look drag? */
+export function isTap(dx: number, dy: number, ms: number): boolean {
+  return Math.hypot(dx, dy) <= TAP_SLOP && ms <= TAP_MS;
+}
 
 export interface StickOutput {
   moveX: number; // right
@@ -33,6 +41,8 @@ export type TouchButtonMode = 'hold' | 'toggle';
 
 /** The on-screen buttons, left to right. */
 export const TOUCH_BUTTONS = {
+  // What a tap on the view does: Break, or (latched) Place (§6.5).
+  edit: { label: 'Break', id: 'touch-edit', mode: 'toggle' },
   run: { label: 'Run', id: 'touch-run', mode: 'toggle' },
   crouch: { label: 'Crouch', id: 'touch-crouch', mode: 'hold' },
   jump: { label: 'Jump', id: 'touch-jump', mode: 'hold' },
@@ -83,6 +93,11 @@ export class TouchControls {
   private stickOrigin = { x: 0, y: 0 };
   private lookPointer: number | null = null;
   private lookLast = { x: 0, y: 0 };
+  private lookStart = { x: 0, y: 0, t: 0 };
+  /** A tap on the view: break or place at the crosshair (§6.5). */
+  onTap: (() => void) | null = null;
+  /** The Break/Place toggle changed: true = place. */
+  onPlaceMode: ((place: boolean) => void) | null = null;
   private runLatched = false;
   private stickRun = false;
 
@@ -114,7 +129,11 @@ export class TouchControls {
     const jump = touchButton(TOUCH_BUTTONS.jump, (on) => {
       this.state.jump = on;
     });
-    buttons.append(run, crouch, jump);
+    const edit = touchButton(TOUCH_BUTTONS.edit, (place) => {
+      edit.textContent = place ? 'Place' : 'Break';
+      this.onPlaceMode?.(place);
+    });
+    buttons.append(edit, run, crouch, jump);
 
     this.root.append(moveZone, lookZone, this.stickBase, buttons);
     parent.append(this.root);
@@ -183,6 +202,7 @@ export class TouchControls {
     this.lookPointer = e.pointerId;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     this.lookLast = { x: e.clientX, y: e.clientY };
+    this.lookStart = { x: e.clientX, y: e.clientY, t: e.timeStamp };
   };
 
   private readonly onLookMove = (e: PointerEvent): void => {
@@ -196,7 +216,14 @@ export class TouchControls {
   };
 
   private readonly onLookUp = (e: PointerEvent): void => {
-    if (e.pointerId === this.lookPointer) this.lookPointer = null;
+    if (e.pointerId !== this.lookPointer) return;
+    this.lookPointer = null;
+    const s = this.lookStart;
+    // Travel up to the last move (a lifted touch may not report where it ended).
+    const l = this.lookLast;
+    if (e.type === 'pointerup' && isTap(l.x - s.x, l.y - s.y, e.timeStamp - s.t)) {
+      this.onTap?.();
+    }
   };
 }
 

@@ -63,6 +63,8 @@ cppEnum('GroundKind', 'std::uint8_t', c.groundKinds);
 cppEnum('PlayerEventKind', 'std::uint8_t', c.playerEventKinds);
 cppEnum('DamageCause', 'std::uint8_t', c.damageCauses);
 cppEnum('ChunkForm', 'std::uint8_t', c.chunkForms);
+cppEnum('BlockEditAction', 'std::uint8_t', c.blockEditActions);
+cppEnum('VoxelModificationReason', 'std::uint8_t', c.voxelModificationReasons);
 const maxOf = (obj) => Math.max(...Object.values(obj));
 cpp.push('');
 cpp.push(`inline constexpr std::uint8_t kMaxPlayerState = ${maxOf(c.playerStates)};`);
@@ -70,6 +72,10 @@ cpp.push(`inline constexpr std::uint8_t kMaxGroundKind = ${maxOf(c.groundKinds)}
 cpp.push(`inline constexpr std::uint8_t kMaxPlayerEventKind = ${maxOf(c.playerEventKinds)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxDamageCause = ${maxOf(c.damageCauses)};`);
 cpp.push(`inline constexpr std::uint8_t kMaxChunkForm = ${maxOf(c.chunkForms)};`);
+cpp.push(`inline constexpr std::uint8_t kMaxBlockEditAction = ${maxOf(c.blockEditActions)};`);
+cpp.push(
+  `inline constexpr std::uint8_t kMaxVoxelModificationReason = ${maxOf(c.voxelModificationReasons)};`,
+);
 const cppFlags = (name, type, obj) => {
   cpp.push('');
   cpp.push(`namespace ${name} {`);
@@ -118,7 +124,9 @@ const tsEnum = (name, obj) => {
   ts.push(`export const ${name} = {`);
   for (const [k, v] of enumEntries(obj)) ts.push(`  ${k}: ${v},`);
   ts.push('} as const;');
-  ts.push(`export type ${name} = (typeof ${name})[keyof typeof ${name}];`);
+  const alias = `export type ${name} = (typeof ${name})[keyof typeof ${name}];`;
+  // Prettier's layout for aliases longer than the 100-column print width.
+  ts.push(alias.length <= 100 ? alias : `export type ${name} =\n  (typeof ${name})[keyof typeof ${name}];`);
 };
 tsEnum('Channel', c.channels);
 tsEnum('MessageType', c.messageTypes);
@@ -129,6 +137,8 @@ tsEnum('GroundKind', c.groundKinds);
 tsEnum('PlayerEventKind', c.playerEventKinds);
 tsEnum('DamageCause', c.damageCauses);
 tsEnum('ChunkForm', c.chunkForms);
+tsEnum('BlockEditAction', c.blockEditActions);
+tsEnum('VoxelModificationReason', c.voxelModificationReasons);
 const tsFlags = (name, obj) => {
   ts.push('');
   ts.push(`export const ${name} = {`);

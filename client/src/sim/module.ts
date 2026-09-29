@@ -4,6 +4,8 @@
 /** Module surface (factory created with -sMODULARIZE -sEXPORT_ES6). */
 export interface DwellCoreModule {
   HEAPU8: Uint8Array;
+  HEAPU16: Uint16Array;
+  HEAP32: Int32Array;
   HEAPU32: Uint32Array;
   HEAPF64: Float64Array;
   _malloc(size: number): number;
@@ -45,7 +47,26 @@ export interface DwellCoreModule {
   ): void;
   _dwell_client_remove_remote(playerId: number): void;
   _dwell_client_state(): number;
-  _dwell_client_chunk_faces(cx: number, cy: number, cz: number, outCountPtr: number): number;
+  _dwell_client_chunk_padded(cx: number, cy: number, cz: number): number;
+  _dwell_client_chunk_edit(
+    cx: number,
+    cy: number,
+    cz: number,
+    revision: number,
+    pairsPtr: number,
+    count: number,
+  ): void;
+  _dwell_client_target(
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    maxDistance: number,
+    outPtr: number,
+  ): number;
+  _dwell_client_voxel(x: number, y: number, z: number): number;
 }
 
 export type DwellCoreFactory = () => Promise<DwellCoreModule>;

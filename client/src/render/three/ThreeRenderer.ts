@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   CapsuleGeometry,
@@ -6,6 +7,7 @@ import {
   DataTexture,
   DirectionalLight,
   DoubleSide,
+  EdgesGeometry,
   Fog,
   Group,
   HemisphereLight,
@@ -21,12 +23,13 @@ import {
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
+  type MeshLambertMaterialParameters,
 } from 'three';
 import type { Vec3 } from '../../protocol/messages';
-import { buildChunkMeshes, type MeshArrays } from '../chunkMesh';
+import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { VERTICAL_FOV, verticalFov } from '../fov';
-import { buildAtlas } from '../textures';
+import { sharedAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
 
 const SKY = 0x87b5e0;
@@ -38,9 +41,38 @@ function geometryOf(arrays: MeshArrays): BufferGeometry | null {
   g.setAttribute('normal', new BufferAttribute(arrays.normals, 3));
   g.setAttribute('color', new BufferAttribute(arrays.colors, 3));
   g.setAttribute('uv', new BufferAttribute(arrays.uvs, 2));
+  g.setAttribute('tile', new BufferAttribute(arrays.tiles, 4));
   g.setIndex(new BufferAttribute(arrays.indices, 1));
   g.computeBoundingSphere();
   return g;
+}
+
+/**
+ * A Lambert material for chunk meshes whose texture repeats once per block across greedy-merged
+ * quads (mesh/mesher.ts): `uv` is in blocks and the `tile` attribute is the atlas rectangle, so the
+ * shader samples tile.xy + fract(uv) × tile.zw. Gradients come from the unwrapped uv, so mip level
+ * selection is continuous across block edges (no seams where fract wraps).
+ */
+function chunkMaterial(params: MeshLambertMaterialParameters): MeshLambertMaterial {
+  const material = new MeshLambertMaterial(params);
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 tile;\nvarying vec4 vTile;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvTile = tile;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec4 vTile;')
+      .replace(
+        '#include <map_fragment>',
+        [
+          '#ifdef USE_MAP',
+          '\tvec2 atlasUv = vTile.xy + fract(vMapUv) * vTile.zw;',
+          '\tdiffuseColor *= textureGrad(map, atlasUv, dFdx(vMapUv) * vTile.zw, dFdy(vMapUv) * vTile.zw);',
+          '#endif',
+        ].join('\n'),
+      );
+  };
+  material.customProgramCacheKey = () => 'dwell-chunk';
+  return material;
 }
 
 interface PlayerMesh {
@@ -56,11 +88,11 @@ export class ThreeRenderer implements Renderer {
   private readonly camera = new PerspectiveCamera(VERTICAL_FOV, 1, 0.05, 400);
   /** Block textures: tiled-noise atlas (render/textures.ts), crisp up close, mipmapped far away. */
   private readonly atlas = ThreeRenderer.createAtlasTexture();
-  private readonly opaqueMaterial = new MeshLambertMaterial({
+  private readonly opaqueMaterial = chunkMaterial({
     vertexColors: true,
     map: this.atlas,
   });
-  private readonly waterMaterial = new MeshLambertMaterial({
+  private readonly waterMaterial = chunkMaterial({
     vertexColors: true,
     map: this.atlas,
     transparent: true,
@@ -71,6 +103,11 @@ export class ThreeRenderer implements Renderer {
   private readonly chunks = new Map<string, Group>();
   private readonly players = new Map<number, PlayerMesh>();
   private debug: LineSegments | null = null;
+  /** Outline of the targeted block (§6.5): a unit box's edges, scaled for slabs. */
+  private readonly outline = new LineSegments(
+    new EdgesGeometry(new BoxGeometry(1.004, 1.004, 1.004).translate(0.5, 0.5, 0.5)),
+    new LineBasicMaterial({ color: 0x101418, transparent: true, opacity: 0.8 }),
+  );
 
   constructor(canvas: HTMLCanvasElement) {
     if (!canvas.getContext('webgl2')) {
@@ -84,12 +121,14 @@ export class ThreeRenderer implements Renderer {
     const sun = new DirectionalLight(0xffffff, 1.6);
     sun.position.set(0.4, 1, 0.25);
     this.scene.add(sun);
+    this.outline.visible = false;
+    this.scene.add(this.outline);
     this.camera.position.set(0, 6, 14);
     this.camera.lookAt(0, 0, 0);
   }
 
   private static createAtlasTexture(): DataTexture {
-    const atlas = buildAtlas();
+    const atlas = sharedAtlas();
     const texture = new DataTexture(atlas.data, atlas.size, atlas.size, RGBAFormat);
     texture.colorSpace = SRGBColorSpace;
     texture.magFilter = NearestFilter;
@@ -112,7 +151,7 @@ export class ThreeRenderer implements Renderer {
     this.renderer.render(this.scene, this.camera);
   }
 
-  setTerrainChunk(key: string, origin: Vec3, faces: Uint8Array | null): void {
+  setTerrainChunk(key: string, origin: Vec3, meshes: ChunkMeshes | null): void {
     const old = this.chunks.get(key);
     if (old) {
       for (const child of old.children) {
@@ -121,13 +160,13 @@ export class ThreeRenderer implements Renderer {
       this.scene.remove(old);
       this.chunks.delete(key);
     }
-    if (!faces || faces.length === 0) return;
-    const meshes = buildChunkMeshes(faces);
+    if (!meshes) return;
     const group = new Group();
     group.position.set(...origin);
     const opaque = geometryOf(meshes.opaque);
-    if (opaque) group.add(new Mesh(opaque, this.opaqueMaterial));
     const water = geometryOf(meshes.transparent);
+    if (!opaque && !water) return;
+    if (opaque) group.add(new Mesh(opaque, this.opaqueMaterial));
     if (water) {
       const mesh = new Mesh(water, this.waterMaterial);
       mesh.renderOrder = 1;
@@ -201,6 +240,13 @@ export class ThreeRenderer implements Renderer {
       Math.cos(yaw) * Math.cos(pitch),
     );
     this.camera.lookAt(this.camera.position.clone().add(forward));
+  }
+
+  setBlockOutline(cell: Vec3 | null, height = 1): void {
+    this.outline.visible = cell !== null;
+    if (!cell) return;
+    this.outline.position.set(cell[0] - 0.002, cell[1] - 0.002, cell[2] - 0.002);
+    this.outline.scale.set(1, height, 1);
   }
 
   setDebugLines(segments: readonly DebugSegment[] | null): void {

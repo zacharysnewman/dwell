@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "../test_origin.h"
+#include "dwell/core/block_edit.h"
 #include "dwell/core/jolt_runtime.h"
 #include "dwell/core/server.h"
 #include "dwell/player/net.h"
@@ -103,6 +104,7 @@ struct SimClient {
   JPH::Vec3 last_render = JPH::Vec3::sZero();
   float max_render_step = 0;
   std::uint32_t replays_seen = 0;
+  std::vector<protocol::VoxelModification> modifications;
 
   SimClient(LinkConditions c, std::uint32_t seed, JPH::JobSystem& jobs,
             const player::PlayerControllerConfig& config)
@@ -133,7 +135,9 @@ class NetSim {
     return config;
   }
 
-  SimClient& Join(Script script) {
+  // `stream`: the client passes the worldgen check, so the server streams it chunks and voxel
+  // modifications (its own world is generated, so only Explicit chunks and edits are applied).
+  SimClient& Join(Script script, bool stream = false) {
     const core::SessionId id = static_cast<core::SessionId>(clients_.size() + 1);
     auto client = std::make_unique<SimClient>(conditions_, id, jobs_, server_.player_config());
     client->session = id;
@@ -162,8 +166,17 @@ class NetSim {
         if (auto* w = std::get_if<protocol::Welcome>(&*m)) client->player_id = w->player_id;
       }
     }
+    if (stream) {
+      const auto& v = server_.verification_chunk();
+      Control(id, protocol::WorldgenCheck{core::ChunkHash(client->world.Read(v))});
+    }
     clients_.push_back(std::move(client));
     return *clients_.back();
+  }
+
+  // A reliable control message from a client (e.g. a BlockEditRequest), over its link.
+  void Send(SimClient& c, const protocol::Message& m) {
+    c.up.Send(Now(), true, protocol::Channel::kControl, protocol::Encode(m));
   }
 
   void Step(int ticks = 1) {
@@ -210,6 +223,16 @@ class NetSim {
         if (c.predictor->stats().replays > replays) {
           c.corrections.push_back(c.predictor->stats().last_correction);
         }
+      } else if (const auto* chunk = std::get_if<protocol::ChunkData>(&*m)) {
+        if (chunk->form == protocol::ChunkForm::kExplicit) {
+          auto put = std::make_unique<core::Chunk>();
+          std::copy(chunk->voxels.begin(), chunk->voxels.end(), put->generation_voxels().begin());
+          put->SetRevision(chunk->revision);
+          c.world.Put({chunk->coord[0], chunk->coord[1], chunk->coord[2]}, std::move(put));
+        }
+      } else if (const auto* mod = std::get_if<protocol::VoxelModification>(&*m)) {
+        for (const auto& changes : mod->chunks) core::ApplyChunkChanges(c.world, changes);
+        c.modifications.push_back(*mod);
       } else if (const auto* e = std::get_if<protocol::PlayerEvent>(&*m)) {
         c.events.push_back(*e);
         if (e->kind == protocol::PlayerEventKind::kKnockback && e->player_id == c.player_id) {

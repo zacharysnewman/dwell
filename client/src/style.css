@@ -125,6 +125,86 @@ body {
   white-space: pre;
 }
 
+/* Block hotbar (ui/hotbar.ts): above the health bar; at the top on touch screens. */
+#hotbar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 20px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+#hotbar[hidden] {
+  display: none;
+}
+
+#hotbar-label {
+  font:
+    600 13px system-ui,
+    sans-serif;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 80%);
+  text-transform: capitalize;
+}
+
+.hotbar-slots {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.hotbar-slot {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 8%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.hotbar-slot.selected {
+  border-color: #fff;
+  background: rgb(255 255 255 / 25%);
+}
+
+.hotbar-slot canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.hotbar-key {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  color: #fff;
+  font:
+    600 10px system-ui,
+    sans-serif;
+  text-shadow: 0 1px 2px #000;
+}
+
+@media (pointer: coarse) {
+  #hotbar {
+    top: max(8px, env(safe-area-inset-top));
+    bottom: auto;
+    flex-direction: column-reverse;
+  }
+
+  .hotbar-key {
+    display: none;
+  }
+}
+
 /* Touch controls (predict/touch.ts). Left half: floating stick; right half: look; buttons right. */
 #touch-controls {
   position: fixed;

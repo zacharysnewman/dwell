@@ -1,0 +1,117 @@
+// Phase 3d: breaking and placing blocks (ARCHITECTURE.md §6.5) — every block of the palette picked
+// from the hotbar in local mode, and an edit by one client showing up for another on a native
+// server.
+import { readFileSync } from 'node:fs';
+import { expect, test, type Page } from '@playwright/test';
+import { INVITE_FILE } from './global-setup';
+
+type Vec3 = [number, number, number];
+interface Target {
+  cell: Vec3;
+  face: number;
+}
+interface DebugState {
+  terrainReady: boolean;
+  terrain: { loaded: number; generating: number };
+  target: Target | null;
+}
+
+const FACE_DIRS: Vec3[] = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
+
+/** Runs a call on the page's test hooks (window.__dwell, see src/main.ts). */
+function call<T>(page: Page, expr: string): Promise<T> {
+  return page.evaluate<T>(`(() => { const d = globalThis.__dwell; return d ? ${expr} : null; })()`);
+}
+const state = (page: Page) => call<DebugState | null>(page, 'd.state()');
+const voxel = (page: Page, c: Vec3) => call<number>(page, `d.voxel(${c.join(',')})`);
+
+async function ready(page: Page): Promise<void> {
+  await expect
+    .poll(async () => (await state(page))?.terrainReady ?? false, { timeout: 20_000 })
+    .toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const t = (await state(page))?.terrain;
+        return t && t.generating === 0 ? t.loaded : 0;
+      },
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(100);
+}
+
+/** Looks down ahead and waits for a block to be targeted. */
+async function aim(page: Page, pitch = -45): Promise<Target> {
+  await call(page, `d.look(0, ${String(pitch)})`);
+  await expect.poll(async () => (await state(page))?.target ?? null).not.toBeNull();
+  const t = (await state(page))?.target;
+  if (!t) throw new Error('nothing targeted');
+  return t;
+}
+
+const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+
+test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('./?world=flat');
+  await ready(page);
+  const slots = await page.locator('.hotbar-slot').count();
+  expect(slots).toBe(14);
+  const ground = await aim(page);
+  expect(ground.face).toBe(2);
+  const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);
+  expect(await voxel(page, cell)).toBe(0);
+
+  for (let slot = 0; slot < slots; slot++) {
+    // Number keys pick the first ten slots, a tap on the hotbar the rest.
+    if (slot < 10) await page.keyboard.press(`Digit${String((slot + 1) % 10)}`);
+    else await page.locator(`.hotbar-slot[data-slot="${String(slot)}"]`).click();
+    await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('data-slot', String(slot));
+
+    await aim(page);
+    expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
+    await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).not.toBe(0);
+    const placed = await voxel(page, cell);
+    // Breaking targets the new block itself.
+    await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(cell.join());
+    await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
+    expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
+    await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
+    await page.waitForTimeout(120);
+    expect(placed, `slot ${String(slot)}`).toBeGreaterThan(1);
+  }
+});
+
+test('an edit by one client appears for another on a native server', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const invite = readFileSync(INVITE_FILE, 'utf8');
+  const contexts = [await browser.newContext(), await browser.newContext()];
+  const [a, b] = await Promise.all(contexts.map((c) => c.newPage()));
+  await a.goto(`./${invite}`);
+  await b.goto(`./${invite}`);
+  await ready(a);
+  await ready(b);
+
+  const target = await aim(a);
+  const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
+  await a.keyboard.press('Digit1'); // stone
+  expect(await call<boolean>(a, `d.edit('place')`)).toBe(true);
+  await expect.poll(() => voxel(a, cell), { timeout: 5_000 }).toBe(2);
+  await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(2);
+
+  await a.waitForTimeout(120);
+  await aim(a);
+  expect(await call<boolean>(a, `d.edit('break')`)).toBe(true);
+  await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(0);
+  // Closed so the pages stop rendering before later tests run.
+  await Promise.all(contexts.map((c) => c.close()));
+});

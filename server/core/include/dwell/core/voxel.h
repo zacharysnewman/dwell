@@ -102,6 +102,10 @@ class Chunk {
     ++revision_;
   }
   std::uint32_t revision() const { return revision_; }
+  // Edits (§6.5): voxels changed without per-voxel revision bumps, then one bump for the batch, so
+  // a chunk's revision advances by one per VoxelModification that touches it.
+  void SetAt(int index, MaterialId m) { voxels_[static_cast<std::size_t>(index)] = m; }
+  void BumpRevision() { ++revision_; }
   // Called once after generation: an unmodified generated chunk is revision 0 (§6.1, §6.3).
   void ResetRevision() { revision_ = 0; }
   // Streamed chunks take the revision the server sent.

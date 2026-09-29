@@ -6,6 +6,7 @@ add_executable(dwell_tests
   core_test.cpp
   server_test.cpp
   streaming_test.cpp
+  block_edit_test.cpp
   player/movement_test.cpp
   player/vertical_crouch_test.cpp
   player/platform_climb_swim_test.cpp
