@@ -81,7 +81,7 @@ export class KeyboardMouseInput {
   pitch = 0;
   /** Degrees per pixel of mouse movement. */
   sensitivity = 0.12;
-  /** Debug toggles: F3 overlay. */
+  /** Debug toggles: F3 overlay, F4 terrain map. */
   onToggle: ((key: string) => void) | null = null;
   /** On-screen touch controls, merged into every sample (predict/touch.ts). */
   touch: TouchState | null = null;
@@ -139,7 +139,7 @@ export class KeyboardMouseInput {
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (e.code === 'F3') {
+    if (e.code === 'F3' || e.code === 'F4') {
       e.preventDefault();
       this.onToggle?.(e.code);
       return;

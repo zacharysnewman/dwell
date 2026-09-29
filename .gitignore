@@ -1,0 +1,4 @@
+# World files written by local runs of dwell_server (default world.dwellworld) and tests.
+*.dwellworld
+*.dwellworld-*
+!server/tests/storage/golden/*.dwellworld

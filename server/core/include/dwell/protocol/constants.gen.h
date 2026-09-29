@@ -33,6 +33,7 @@ inline constexpr int kViewRadiusChunks = 3;
 inline constexpr int kUnloadMarginChunks = 1;
 inline constexpr int kChunkBytesPerSecond = 1048576;
 inline constexpr int kMaxChunksPerTick = 32;
+inline constexpr int kAutosaveSeconds = 30;
 
 inline constexpr std::size_t kDisplayNameMaxBytes = 64;
 inline constexpr std::size_t kClientVersionMaxBytes = 64;

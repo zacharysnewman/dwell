@@ -71,7 +71,16 @@ export async function connectLocal(options: ConnectOptions): Promise<ClientSessi
   const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
   const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
   const world = options.localWorld ?? { worldSeed: 0, generatorVersion: GENERATORS.terrain };
-  const transport = simulate(await LoopbackTransport.start(worker, world), options);
+  const loopback = await LoopbackTransport.start(worker, world);
+  // The world saves every few seconds, and at once when the page is hidden or closed (§6.4).
+  const save = () => {
+    loopback.save();
+  };
+  window.addEventListener('pagehide', save);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') save();
+  });
+  const transport = simulate(loopback, options);
   const session = new ClientSession(transport, key, options);
   session.start();
   return session;

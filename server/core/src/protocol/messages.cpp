@@ -695,6 +695,20 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
   return out;
 }
 
+std::vector<std::uint8_t> EncodeChunkVoxels(const std::vector<std::uint16_t>& voxels) {
+  std::vector<std::uint8_t> out;
+  ByteWriter w(out);
+  WriteVoxels(w, voxels);
+  return out;
+}
+
+std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std::uint8_t> bytes) {
+  ByteReader r(bytes);
+  auto voxels = ReadVoxels(r);
+  if (!r.ok() || !r.AtEnd()) return std::nullopt;
+  return voxels;
+}
+
 std::int32_t ToFixedPosition(double v) {
   const double scaled = std::floor(v * kPositionFixedScale + 0.5);
   if (!(scaled > -2147483648.0)) return INT32_MIN;  // also NaN

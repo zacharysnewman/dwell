@@ -63,3 +63,56 @@ if(DWELL_BUILD_TESTS OR EMSCRIPTEN)
   set(DOCTEST_NO_INSTALL ON CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(doctest)
 endif()
+
+# --- SQLite (world persistence, ADR 0006) -------------------------------------------------------
+# The official amalgamation, compiled into the core natively and to WASM. Offline builds can point
+# FETCHCONTENT_SOURCE_DIR_SQLITE3 at a directory holding sqlite3.c / sqlite3.h of this version.
+FetchContent_Declare(
+  sqlite3
+  URL https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(sqlite3)
+add_library(dwell_sqlite STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+target_include_directories(dwell_sqlite SYSTEM PUBLIC ${sqlite3_SOURCE_DIR})
+target_compile_definitions(dwell_sqlite PUBLIC
+  SQLITE_DQS=0
+  SQLITE_DEFAULT_MEMSTATUS=0
+  SQLITE_LIKE_DOESNT_MATCH_BLOBS
+  SQLITE_OMIT_DEPRECATED
+  SQLITE_OMIT_LOAD_EXTENSION
+  SQLITE_OMIT_SHARED_CACHE)
+if(EMSCRIPTEN)
+  # Single-threaded (ADR 0007), no built-in OS layer: the core registers its own VFS over OPFS
+  # (server/wasm/opfs_vfs.cpp) from sqlite3_os_init.
+  target_compile_definitions(dwell_sqlite PUBLIC SQLITE_THREADSAFE=0 SQLITE_OS_OTHER=1
+                             SQLITE_TEMP_STORE=3)
+else()
+  # One connection per thread (the tick's reads, the I/O thread's saves).
+  target_compile_definitions(dwell_sqlite PUBLIC SQLITE_THREADSAFE=2)
+  find_package(Threads REQUIRED)
+  target_link_libraries(dwell_sqlite PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+endif()
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(dwell_sqlite PRIVATE -w)
+endif()
+
+# --- zstd (world file chunk compression, §6.4) ---------------------------------------------------
+FetchContent_Declare(
+  zstd
+  GIT_REPOSITORY https://github.com/facebook/zstd.git
+  GIT_TAG v1.5.7
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR build/does-not-exist)  # sources only: built below without zstd's own CMake
+FetchContent_MakeAvailable(zstd)
+file(GLOB DWELL_ZSTD_SOURCES
+  ${zstd_SOURCE_DIR}/lib/common/*.c
+  ${zstd_SOURCE_DIR}/lib/compress/*.c
+  ${zstd_SOURCE_DIR}/lib/decompress/*.c)
+add_library(dwell_zstd STATIC ${DWELL_ZSTD_SOURCES})
+target_include_directories(dwell_zstd SYSTEM PUBLIC ${zstd_SOURCE_DIR}/lib)
+# Portable C only (no x86 assembly), single-threaded (ZSTD_MULTITHREAD undefined): the same code
+# natively and in WASM.
+target_compile_definitions(dwell_zstd PRIVATE ZSTD_DISABLE_ASM)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(dwell_zstd PRIVATE -w)
+endif()

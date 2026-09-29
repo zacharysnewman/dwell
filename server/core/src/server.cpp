@@ -32,6 +32,7 @@ constexpr std::size_t kMaxQueuedEdits = 8;      // per session per tick; more ar
 // small burst so edits bunched by the network are not rejected.
 constexpr double kEditsPerTick = 1000.0 / (kBlockEditIntervalMs * kSimHz);
 constexpr double kEditBurst = 3.0;
+constexpr int kMaxSavedLoadsPerTick = 16;  // saved chunks read from the world file per tick
 
 ChunkCoord ChunkAt(double x, double y, double z) {
   return ChunkOf(static_cast<std::int32_t>(std::floor(x)), static_cast<std::int32_t>(std::floor(y)),
@@ -68,7 +69,7 @@ bool InputInRange(const InputFrame& f) {
 }  // namespace
 
 Server::Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs)
-    : config_(std::move(config)),
+    : config_(WithSavedWorld(std::move(config))),
       entropy_(entropy),
       physics_(jobs),
       air_test_(config_.generator_override
@@ -89,17 +90,29 @@ Server::Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs)
   const ChunkCoord spawn_chunk = ChunkAt(at[0], at[1], at[2]);
   verification_chunk_ = ChunkAt(at[0], at[1] - 1.0, at[2]);
 
-  // Pre-generate the spawn region, so the first players never wait for terrain.
+  InitStorage();
+
+  // Pre-generate the spawn region, so the first players never wait for terrain. The verification
+  // chunk is always generated: clients check their generator against it, edited or not.
   std::vector<ChunkCoord> region;
   for (const ChunkCoord& o : CubeOffsets(config_.pregen_radius_chunks)) {
-    if (const ChunkCoord c = Add(spawn_chunk, o); !IsAir(c)) region.push_back(c);
+    if (const ChunkCoord c = Add(spawn_chunk, o); !IsAir(c) && !IsSaved(c)) region.push_back(c);
   }
   region.push_back(verification_chunk_);
   worldgen_.SetWanted(region);
   std::vector<WorldgenPool::Result> ready;
   worldgen_.Drain(ready);
-  for (auto& [coord, chunk] : ready) world_.Put(coord, std::move(chunk));
-  verification_hash_ = ChunkHash(world_.Read(verification_chunk_));
+  for (auto& [coord, chunk] : ready) {
+    if (coord == verification_chunk_) verification_hash_ = ChunkHash(*chunk);
+    if (!IsSaved(coord)) world_.Put(coord, std::move(chunk));
+  }
+  if (!verification_hash_) {
+    Chunk generated;
+    (config_.generator_override ? config_.generator_override
+                                : GeneratorFor(config_.generator_version, config_.world_seed))(
+        verification_chunk_, generated);
+    verification_hash_ = ChunkHash(generated);
+  }
 
   // The view: a sphere of view_radius_chunks around the center (§6.3).
   const int r = config_.view_radius_chunks;
@@ -127,6 +140,8 @@ void Server::OnDisconnected(SessionId id) { RemoveSession(id); }
 void Server::RemoveSession(SessionId id) {
   const auto it = sessions_.find(id);
   if (it == sessions_.end()) return;
+  if (config_.store && it->second.phase == Phase::kJoined)
+    departed_.push_back(RecordOf(it->second));
   if (it->second.handle) players_.Despawn(*it->second.handle);
   sessions_.erase(it);
 }
@@ -225,6 +240,17 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
         Reject(id, RejectReason::kAuthFailed, "Identity check failed.");
         return;
       }
+      const auto listed = [&](const std::vector<PublicKey>& keys) {
+        return std::find(keys.begin(), keys.end(), s.public_key) != keys.end();
+      };
+      if (listed(config_.banned)) {
+        Reject(id, RejectReason::kBanned, "You are banned from this server.");
+        return;
+      }
+      if (config_.allow_list && !listed(*config_.allow_list)) {
+        Reject(id, RejectReason::kNotAllowListed, "This server only admits listed players.");
+        return;
+      }
       // The signature proves key ownership, so a new login replaces any older session for the
       // same player (e.g. one whose connection dropped but hasn't timed out yet).
       std::vector<SessionId> replaced;
@@ -246,7 +272,15 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
                            config_.generator_version,
                            tick_,
                            {verification_chunk_.x, verification_chunk_.y, verification_chunk_.z}});
-      SpawnPlayer(joined);
+      // A returning player continues where it left the world (§6.4), unless it was dead.
+      std::optional<storage::PlayerRecord> saved;
+      if (config_.store) saved = config_.store->db().LoadPlayer(joined.public_key);
+      if (saved && saved->health > 0) {
+        SpawnPlayer(joined, saved->feet);
+        joined.health = saved->health;
+      } else {
+        SpawnPlayer(joined);
+      }
       return;
     }
     case Phase::kJoined:
@@ -271,11 +305,13 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
   Reject(id, RejectReason::kMalformed, "Unexpected message.");
 }
 
-void Server::SpawnPlayer(Session& s) {
+void Server::SpawnPlayer(Session& s, std::optional<std::array<double, 3>> feet) {
   // Spread players around the spawn point so they don't start inside each other.
   const int slot = (s.player_id - 1) % 8;
   const auto& at = *config_.spawn;
-  const RVec3 spawn(at[0] + (slot % 4) - 1.5, at[1], at[2] + (slot / 4) * 1.5 - 0.75);
+  const RVec3 spawn = feet
+                          ? RVec3((*feet)[0], (*feet)[1], (*feet)[2])
+                          : RVec3(at[0] + (slot % 4) - 1.5, at[1], at[2] + (slot / 4) * 1.5 - 0.75);
   s.handle = players_.Spawn(player_config_, spawn);
   s.health = kMaxHealth;
   s.inputs.clear();
@@ -357,14 +393,16 @@ void Server::AfterControllerTick(Session& s) {
 }
 
 void Server::Step() {
-  // 0. Chunks generated since the last tick (off-thread, or here within the budget).
+  // 0. Chunks generated since the last tick (off-thread, or here within the budget), and saves
+  // the I/O thread finished.
   {
     std::vector<WorldgenPool::Result> ready;
     worldgen_.Collect(ready, std::chrono::microseconds(config_.worldgen_budget_us));
     for (auto& [coord, chunk] : ready) {
-      if (!world_.Find(coord)) world_.Put(coord, std::move(chunk));
+      if (!world_.Find(coord) && !IsSaved(coord)) world_.Put(coord, std::move(chunk));
     }
   }
+  CollectSaves();
 
   // 1. Block edits queued since the last tick (§6.5); collision rebuilds in the controller pass.
   ApplyEdits();
@@ -437,6 +475,9 @@ void Server::Step() {
   explicit_wanted_.clear();
   for (auto& [id, s] : sessions_) StreamChunks(id, s);
   UpdateWorldgen();
+
+  // 7. Autosave (§6.4): prepared here, committed off the tick.
+  if (config_.store && tick_ >= next_save_tick_) SaveNow();
 }
 
 std::optional<ChunkCoord> Server::ViewCenter(const Session& s) const {
@@ -454,11 +495,16 @@ void Server::UpdateWorldgen() {
     if (const auto c = ViewCenter(s)) centers.push_back(*c);
   }
   // Around players first (collision needs them), then chunks full-mode clients are waiting for.
+  // Saved chunks are read from the world file instead (a few per tick).
   std::vector<ChunkCoord> wanted;
+  int loads = 0;
   for (const ChunkCoord& o : PrefetchOffsets()) {
     for (const ChunkCoord& center : centers) {
       const ChunkCoord c = Add(center, o);
-      if (c.y >= kMinChunkY && c.y <= kMaxChunkY && !world_.Find(c) && !IsAir(c)) {
+      if (c.y < kMinChunkY || c.y > kMaxChunkY || world_.Find(c)) continue;
+      if (IsSaved(c)) {
+        if (loads++ < kMaxSavedLoadsPerTick) world_.GetOrCreate(c);
+      } else if (!IsAir(c)) {
         wanted.push_back(c);
       }
     }
@@ -467,9 +513,14 @@ void Server::UpdateWorldgen() {
   worldgen_.SetWanted(wanted);
 
   if (tick_ % kEvictEveryTicks == 0) {
-    world_.EvictUnmodified([&](const ChunkCoord& c) {
-      return c == verification_chunk_ ||
-             std::any_of(centers.begin(), centers.end(), [&](const ChunkCoord& center) {
+    // Unmodified chunks can be generated again, and saved ones read again; modified chunks not
+    // yet saved stay.
+    world_.Evict([&](const ChunkCoord& c, const Chunk& chunk) {
+      if (c == verification_chunk_ || dirty_.count(c)) return false;
+      const auto saved = saved_.find(c);
+      const bool clean =
+          chunk.revision() == 0 || (saved != saved_.end() && saved->second == chunk.revision());
+      return clean && std::none_of(centers.begin(), centers.end(), [&](const ChunkCoord& center) {
                return ChunkDistance(c, center) <= kKeepChunks;
              });
     });
@@ -541,6 +592,7 @@ std::optional<ChunkData> Server::ChunkMessage(const Session& s, const ChunkCoord
   const Chunk* chunk = world_.Find(c);
   ChunkData m;
   m.coord = {c.x, c.y, c.z};
+  if (!chunk && IsSaved(c)) chunk = &world_.GetOrCreate(c);  // read from the world file
   const bool modified = chunk && chunk->revision() > 0;
   if (!modified && IsAir(c)) {
     m.form = ChunkForm::kAir;  // nothing to generate or store, in either mode
@@ -629,6 +681,7 @@ void Server::ApplyEdits() {
       const int local = LocalIndex(cell[0] - coord.x * kChunkSize, cell[1] - coord.y * kChunkSize,
                                    cell[2] - coord.z * kChunkSize);
       world_.GetOrCreate(coord).SetAt(local, outcome.material);
+      dirty_.insert(coord);
       auto [at, inserted] = index.try_emplace(coord, changed.size());
       if (inserted) changed.push_back({{coord.x, coord.y, coord.z}, 0, {}});
       auto& changes = changed[at->second].changes;
@@ -741,7 +794,103 @@ void Server::SendSnapshots() {
   }
 }
 
-bool Server::IsAir(const ChunkCoord& c) const { return air_test_ && air_test_(c); }
+bool Server::IsAir(const ChunkCoord& c) const { return air_test_ && !IsSaved(c) && air_test_(c); }
+
+ServerConfig Server::WithSavedWorld(ServerConfig config) {
+  if (!config.store) return config;
+  if (const auto meta = config.store->db().LoadMeta()) {
+    // A saved world keeps its own seed, generator and spawn (launch options apply to new worlds).
+    config.world_seed = meta->world_seed;
+    config.generator_version = meta->generator_version;
+    if (meta->spawn) config.spawn = meta->spawn;
+  }
+  return config;
+}
+
+void Server::InitStorage() {
+  if (!config_.store) return;
+  storage::WorldDb& db = config_.store->db();
+  const bool fresh = !db.LoadMeta();
+  if (const auto meta = db.LoadMeta()) tick_ = meta->world_tick;
+  for (const auto& [coord, revision] : db.ChunkIndex()) saved_[coord] = revision;
+  world_.SetSaved({[this](const ChunkCoord& c) { return IsSaved(c); },
+                   [this](const ChunkCoord& c) -> std::unique_ptr<Chunk> {
+                     const auto saved = config_.store->db().LoadChunk(c);
+                     if (!saved) return nullptr;
+                     auto chunk = std::make_unique<Chunk>();
+                     std::copy(saved->voxels.begin(), saved->voxels.end(),
+                               chunk->generation_voxels().begin());
+                     chunk->SetRevision(saved->revision);
+                     return chunk;
+                   }});
+  next_save_tick_ = tick_ + static_cast<std::uint32_t>(config_.autosave_seconds * kSimHz);
+  if (fresh) SaveNow();  // record the new world's seed, generator and spawn right away
+}
+
+storage::PlayerRecord Server::RecordOf(const Session& s) const {
+  storage::PlayerRecord p;
+  p.key = s.public_key;
+  p.display_name = s.display_name;
+  p.health = s.handle ? s.health : 0;
+  if (s.handle) {
+    const RVec3 at = players_.Position(*s.handle);
+    p.feet = {at.GetX(), at.GetY() - players_.HalfHeight(*s.handle), at.GetZ()};
+  } else {
+    p.feet = {s.death_position[0], s.death_position[1], s.death_position[2]};
+  }
+  return p;
+}
+
+void Server::SaveNow() {
+  if (!config_.store) return;
+  next_save_tick_ = tick_ + static_cast<std::uint32_t>(config_.autosave_seconds * kSimHz);
+  storage::SaveBatch batch;
+  batch.meta =
+      storage::WorldMeta{config_.world_seed, config_.generator_version, config_.spawn, tick_};
+  std::vector<std::pair<ChunkCoord, std::uint32_t>> revisions;
+  for (const ChunkCoord& c : dirty_) {
+    const Chunk* chunk = world_.Find(c);
+    if (!chunk) continue;
+    batch.chunks.push_back(
+        {c, chunk->revision(), {chunk->voxels().begin(), chunk->voxels().end()}});
+    revisions.emplace_back(c, chunk->revision());
+  }
+  dirty_.clear();
+  batch.players = std::exchange(departed_, {});
+  for (const auto& [id, s] : sessions_) {
+    if (s.phase == Phase::kJoined) batch.players.push_back(RecordOf(s));
+  }
+  in_flight_[config_.store->Save(std::move(batch))] = std::move(revisions);
+  CollectSaves();  // saves commit inline without an I/O thread
+}
+
+void Server::CollectSaves() {
+  if (!config_.store) return;
+  for (const auto& result : config_.store->TakeCompleted()) {
+    const auto it = in_flight_.find(result.id);
+    if (it == in_flight_.end()) continue;
+    if (result.ok) {
+      ++save_stats_.saves;
+      for (const auto& [coord, revision] : it->second) {
+        auto& saved = saved_[coord];
+        saved = std::max(saved, revision);
+      }
+    } else {
+      ++save_stats_.failed;
+      save_stats_.last_error = result.error;
+      for (const auto& [coord, revision] : it->second) dirty_.insert(coord);  // try again
+    }
+    in_flight_.erase(it);
+  }
+}
+
+SaveStats Server::save_stats() const {
+  SaveStats out = save_stats_;
+  out.dirty = dirty_.size();
+  out.saved_chunks = saved_.size();
+  out.loaded = world_.loaded_saved();
+  return out;
+}
 
 std::vector<Outgoing> Server::TakeOutbox() { return std::exchange(outbox_, {}); }
 

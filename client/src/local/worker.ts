@@ -4,6 +4,7 @@ import { TransportKind } from '../protocol/constants.gen';
 import type { FromWorker, ToWorker } from './messages';
 import { importDwellCore } from '../sim/module';
 import { LocalCore, OutgoingKind } from './wasmCore';
+import { localWorldName, openWorldFiles } from './worldFiles';
 
 interface WorkerScope {
   postMessage(message: FromWorker, transfer?: Transferable[]): void;
@@ -56,13 +57,25 @@ function handle(msg: ToWorker): void {
     case 'disconnect':
       core.disconnected(msg.session);
       break;
+    case 'save':
+      core.save();
+      break;
   }
   flush();
 }
 
 async function start(worldSeed: number, generatorVersion: number): Promise<void> {
+  // The world file (§6.4): one per generator and seed, in OPFS. Without it the world lives in
+  // memory only (no OPFS, or the world is open in another tab).
+  const files = await openWorldFiles(localWorldName(generatorVersion, worldSeed));
+  if (!files) console.warn('Dwell: this local world will not be saved (no OPFS access).');
   try {
-    core = await LocalCore.load(await importDwellCore(), worldSeed, generatorVersion);
+    core = await LocalCore.load(
+      await importDwellCore(),
+      worldSeed,
+      generatorVersion,
+      files?.files ?? null,
+    );
   } catch (err) {
     scope.postMessage({
       t: 'error',
@@ -70,7 +83,10 @@ async function start(worldSeed: number, generatorVersion: number): Promise<void>
     });
     return;
   }
-  scope.postMessage({ t: 'ready' });
+  if (files && !core.persisted) {
+    console.warn(`Dwell: the local world file could not be opened (${core.storageError}).`);
+  }
+  scope.postMessage({ t: 'ready', persisted: core.persisted });
   for (const msg of queued.splice(0)) handle(msg);
 
   // Fixed-step simulation clock (the core accumulates real time into 60 Hz steps).

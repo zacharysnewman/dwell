@@ -1,6 +1,7 @@
 // Typed wrapper around the local-mode WASM build of the server core (server/wasm/wasm_api.cpp).
 import type { Channel, TransportKind } from '../protocol/constants.gen';
 import { withHeapBytes, type DwellCoreFactory, type DwellCoreModule } from '../sim/module';
+import type { DwellFiles } from './worldFiles';
 
 export type { DwellCoreFactory } from '../sim/module';
 
@@ -16,16 +17,35 @@ export interface Outgoing {
 
 /** The authoritative server core running in this JS context (a worker in the browser). */
 export class LocalCore {
-  private constructor(private readonly m: DwellCoreModule) {}
+  private constructor(
+    private readonly m: DwellCoreModule,
+    /** The world is saved to `files` (§6.4). */
+    readonly persisted: boolean,
+    /** Why it is not, when files were given. */
+    readonly storageError: string,
+  ) {}
 
+  /**
+   * Starts the local server. With `files` (the world file's handles) the world is loaded from and
+   * saved to it, and a saved world's seed and generator win over the arguments.
+   */
   static async load(
     factory: DwellCoreFactory,
     worldSeed = 0,
-    generatorVersion = 2,
+    generatorVersion = 3,
+    files: DwellFiles | null = null,
   ): Promise<LocalCore> {
-    const m = await factory();
-    m._dwell_local_create(worldSeed, generatorVersion);
-    return new LocalCore(m);
+    const m = await factory(files ? { dwellFiles: files } : {});
+    const persisted = m._dwell_local_create(worldSeed, generatorVersion, files ? 1 : 0) === 2;
+    let error = '';
+    const ptr = m._dwell_local_storage_error();
+    for (let i = ptr; m.HEAPU8[i]; i++) error += String.fromCharCode(m.HEAPU8[i] ?? 0);
+    return new LocalCore(m, persisted, error);
+  }
+
+  /** Saves the world now (the page is closing). True if the save committed. */
+  save(): boolean {
+    return this.m._dwell_local_save() === 1;
   }
 
   private withBytes(bytes: Uint8Array, fn: (ptr: number) => void): void {

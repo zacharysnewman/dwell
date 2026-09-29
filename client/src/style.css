@@ -314,3 +314,28 @@ body {
     z-index: 10;
   }
 }
+
+/* Terrain map overlay (F4, ui/mapOverlay.ts). */
+#map-overlay {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  top: 40px;
+  padding: 4px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 60%);
+  font:
+    11px ui-monospace,
+    monospace;
+  pointer-events: none;
+}
+
+#map-overlay[hidden] {
+  display: none;
+}
+
+#map-overlay canvas {
+  display: block;
+  width: 256px;
+  height: 256px;
+  image-rendering: pixelated;
+}

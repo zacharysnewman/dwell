@@ -13,8 +13,11 @@ import { createRenderer, RendererUnavailableError, type Renderer } from './rende
 import { ClientCore } from './sim/clientCore';
 import { importDwellCore } from './sim/module';
 import { MessageType } from './protocol/constants.gen';
+import type { ChunkCoord } from './protocol/messages';
 import { Hotbar, slotForKey } from './ui/hotbar';
 import { Hud } from './ui/hud';
+import { MAP_SIZE, MAP_STEP, MapOverlay } from './ui/mapOverlay';
+import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
 import { ChunkStreamer } from './world/chunkStream';
 import { WorldgenPool } from './worldgen/pool';
@@ -57,6 +60,7 @@ interface App {
   input: KeyboardMouseInput;
   touch: TouchControls;
   hud: Hud;
+  map: MapOverlay;
   game: Game | null;
   interaction: BlockInteraction | null;
   core: ClientCore | null;
@@ -89,6 +93,7 @@ function start(): App {
     input,
     touch,
     hud: new Hud(document.body),
+    map: new MapOverlay(document.body),
     game: null,
     interaction: null,
     core: null,
@@ -103,6 +108,7 @@ function start(): App {
   if (new URLSearchParams(location.search).get('debug') === '1') app.hud.toggleDebug();
   app.input.onToggle = (key) => {
     if (key === 'F3') app.hud.toggleDebug();
+    if (key === 'F4') app.map.toggle();
   };
   window.__dwell = {
     state: () => app.game?.debugState() ?? null,
@@ -206,6 +212,7 @@ function play(
       interaction,
       (x, y, z) => core.voxel(x, y, z),
     );
+    startDebugTools(app, pool, core, terrain, game);
     session.onGame((m, bytes) => {
       game.onGameMessage(m, bytes, performance.now());
     });
@@ -223,6 +230,52 @@ function play(
     }
     session.sendControl({ type: MessageType.WorldgenCheck, hash });
   })();
+}
+
+/**
+ * Debug tooling (Phase 3e): the F4 terrain map around the player, and in the F3 overlay the
+ * player's chunk regenerated and diffed against the one the world holds.
+ */
+function startDebugTools(
+  app: App,
+  pool: WorldgenPool,
+  core: ClientCore,
+  terrain: ChunkStreamer,
+  game: Game,
+): void {
+  let busy = false;
+  setInterval(() => {
+    const s = game.debugState();
+    if (busy || !s.active) return;
+    const [x, y, z] = s.feet.map(Math.floor) as [number, number, number];
+    const jobs: Promise<void>[] = [];
+    if (app.map.visible) {
+      const half = (MAP_SIZE / 2) * MAP_STEP;
+      jobs.push(
+        pool.map({ x0: x - half, z0: z - half, step: MAP_STEP, n: MAP_SIZE }).then((bytes) => {
+          app.map.draw(bytes, app.input.yaw);
+        }),
+      );
+    }
+    if (app.hud.debugVisible) {
+      const c: ChunkCoord = [x >> 5, y >> 5, z >> 5];
+      const revision = terrain.revision(c);
+      if (revision === null) {
+        game.debugNote = '';
+      } else {
+        jobs.push(
+          pool.generate(c).then((generated) => {
+            const changed = countChanged(core.paddedChunk(...c), generated.voxels);
+            game.debugNote = `chunk (${c.join(', ')}) rev ${String(revision)} · ${String(changed)} voxels differ from generation`;
+          }),
+        );
+      }
+    }
+    busy = true;
+    void Promise.allSettled(jobs).then(() => {
+      busy = false;
+    });
+  }, 1000);
 }
 
 async function connect(app: App): Promise<void> {

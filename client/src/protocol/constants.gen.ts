@@ -29,6 +29,7 @@ export const World = {
   unloadMarginChunks: 1,
   chunkBytesPerSecond: 1048576,
   maxChunksPerTick: 32,
+  autosaveSeconds: 30,
 } as const;
 
 export const Limits = {

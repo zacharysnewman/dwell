@@ -52,6 +52,11 @@ export class LoopbackTransport implements Transport {
     if (!this.closed) this.post({ t: 'datagram', session: SESSION, bytes });
   }
 
+  /** Asks the local server to save the world now (§6.4). */
+  save(): void {
+    if (!this.closed) this.post({ t: 'save' });
+  }
+
   close(): void {
     if (this.closed) return;
     this.post({ t: 'disconnect', session: SESSION });

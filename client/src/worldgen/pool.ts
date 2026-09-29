@@ -3,6 +3,7 @@
 // can be cancelled when their chunk leaves the view. Each worker holds a few jobs at once, so it
 // keeps generating while the main thread is busy with a long frame.
 import type { ChunkCoord } from '../protocol/messages';
+import type { FromWorldgen, ToWorldgen } from './messages';
 
 export interface GeneratedChunk {
   voxels: Uint16Array<ArrayBuffer>;
@@ -26,10 +27,20 @@ export interface WorkerLike {
   terminate(): void;
 }
 
+/** Arguments of a terrain map job (the debug map overlay). */
+export interface MapRequest {
+  x0: number;
+  z0: number;
+  step: number;
+  n: number;
+}
+
 interface Job {
   id: number;
-  coord: ChunkCoord;
-  resolve: (c: GeneratedChunk) => void;
+  /** A chunk to generate, or a terrain map to sample. */
+  coord: ChunkCoord | null;
+  map?: MapRequest;
+  resolve: (result: unknown) => void;
   reject: (e: Error) => void;
 }
 
@@ -60,7 +71,7 @@ export class WorldgenPool implements ChunkSource {
   ) {
     for (const w of workers) {
       w.onmessage = (e: MessageEvent) => {
-        this.onMessage(w, e.data as { t: string; message?: string } & Partial<GeneratedChunk>);
+        this.onMessage(w, e.data as FromWorldgen);
       };
       w.postMessage({ t: 'init', generatorVersion, worldSeed });
     }
@@ -85,14 +96,44 @@ export class WorldgenPool implements ChunkSource {
         reject(this.failure);
         return;
       }
-      this.queue.push({ id: this.nextId++, coord, resolve, reject });
+      this.queue.push({
+        id: this.nextId++,
+        coord,
+        resolve: (r) => {
+          resolve(r as GeneratedChunk);
+        },
+        reject,
+      });
+      this.dispatch();
+    });
+  }
+
+  /**
+   * Samples the terrain's biome/height map (worldgen/generator.ts `map`) in a worker; null for
+   * generators without one.
+   */
+  map(request: MapRequest): Promise<Uint8Array<ArrayBuffer> | null> {
+    return new Promise((resolve, reject) => {
+      if (this.failure) {
+        reject(this.failure);
+        return;
+      }
+      this.queue.push({
+        id: this.nextId++,
+        coord: null,
+        map: request,
+        resolve: (r) => {
+          resolve(r as Uint8Array<ArrayBuffer> | null);
+        },
+        reject,
+      });
       this.dispatch();
     });
   }
 
   cancel(coord: ChunkCoord): boolean {
     const k = key(coord);
-    const i = this.queue.findIndex((j) => key(j.coord) === k);
+    const i = this.queue.findIndex((j) => j.coord !== null && key(j.coord) === k);
     if (i < 0) return false;
     this.queue.splice(i, 1);
     return true;
@@ -102,18 +143,19 @@ export class WorldgenPool implements ChunkSource {
     for (const w of this.workers) w.terminate();
   }
 
-  private onMessage(w: WorkerLike, msg: { t: string; message?: string } & Partial<GeneratedChunk>) {
+  private onMessage(w: WorkerLike, msg: FromWorldgen) {
     if (msg.t === 'ready') {
       this.ready.push(w);
       this.running.set(w, []);
     } else if (msg.t === 'error') {
-      this.failure = new Error(msg.message ?? 'worldgen failed');
+      this.failure = new Error(msg.message);
       for (const j of this.queue.splice(0)) j.reject(this.failure);
       return;
-    } else if (msg.t === 'chunk' && msg.voxels && msg.hash !== undefined) {
+    } else {
+      // Workers answer their jobs in order.
       const job = this.running.get(w)?.shift();
       if (job) this.runningCount--;
-      job?.resolve({ voxels: msg.voxels, hash: msg.hash });
+      job?.resolve(msg.t === 'chunk' ? { voxels: msg.voxels, hash: msg.hash } : msg.bytes);
     }
     this.dispatch();
   }
@@ -134,7 +176,15 @@ export class WorldgenPool implements ChunkSource {
       if (!best || !job) return;
       this.running.get(best)?.push(job);
       this.runningCount++;
-      best.postMessage({ t: 'generate', id: job.id, coord: job.coord });
+      best.postMessage(
+        job.coord
+          ? ({ t: 'generate', id: job.id, coord: job.coord } satisfies ToWorldgen)
+          : ({
+              t: 'map',
+              id: job.id,
+              ...(job.map ?? { x0: 0, z0: 0, step: 1, n: 1 }),
+            } satisfies ToWorldgen),
+      );
     }
   }
 }

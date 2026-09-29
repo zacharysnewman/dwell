@@ -1,3 +1,5 @@
+import type { DwellFiles } from '../local/worldFiles';
+
 // The Emscripten build of the sim core (server/wasm/wasm_api.cpp): one ES-module factory, one
 // instance per use (the local-mode server in its worker; the client sim on the main thread).
 
@@ -11,7 +13,9 @@ export interface DwellCoreModule {
   _malloc(size: number): number;
   _free(ptr: number): void;
   // Local-mode server.
-  _dwell_local_create(worldSeed: number, generatorVersion: number): number;
+  _dwell_local_create(worldSeed: number, generatorVersion: number, persist: number): number;
+  _dwell_local_storage_error(): number;
+  _dwell_local_save(): number;
   _dwell_local_connected(session: number, kind: number, bindingPtr: number): void;
   _dwell_local_disconnected(session: number): void;
   _dwell_local_reliable(session: number, channel: number, ptr: number, len: number): void;
@@ -69,7 +73,8 @@ export interface DwellCoreModule {
   _dwell_client_voxel(x: number, y: number, z: number): number;
 }
 
-export type DwellCoreFactory = () => Promise<DwellCoreModule>;
+/** Module options: `dwellFiles` gives the local server its world file (local/worldFiles.ts). */
+export type DwellCoreFactory = (options?: { dwellFiles?: DwellFiles }) => Promise<DwellCoreModule>;
 
 /** URL of the WASM core's JS loader, served from `public/wasm` at the site base. */
 export function dwellCoreUrl(): string {

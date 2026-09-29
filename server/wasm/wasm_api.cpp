@@ -26,6 +26,7 @@
 #include "dwell/core/terrain_collision.h"
 #include "dwell/player/net.h"
 #include "dwell/player/predictor.h"
+#include "dwell/storage/world_store.h"
 
 namespace {
 
@@ -45,6 +46,12 @@ struct LocalServer {
 };
 
 std::unique_ptr<LocalServer> g_server;
+
+// Local-mode worlds save often: a browser tab can close at any moment (§6.4).
+constexpr int kLocalAutosaveSeconds = 5;
+// The world file's name as the page's `dwellFiles` knows it (client/src/local/worldFiles.ts).
+constexpr const char* kLocalWorldFile = "world.dwellworld";
+std::string g_storage_error;
 
 struct ClientSim {
   int jolt = (EnsureJolt(), 0);
@@ -72,16 +79,39 @@ void Put32(std::vector<std::uint8_t>& out, std::uint32_t v) {
 
 extern "C" {
 
-// Creates (or recreates) the local server. Returns 1 on success.
-EMSCRIPTEN_KEEPALIVE int dwell_local_create(double world_seed, std::uint32_t generator_version) {
+// Creates (or recreates) the local server. With `persist`, the world is the world file the page
+// opened (Module.dwellFiles, OPFS): a saved world's seed and generator win over the arguments.
+// Returns 2 with a persisted world, 1 without one (see dwell_local_storage_error).
+EMSCRIPTEN_KEEPALIVE int dwell_local_create(double world_seed, std::uint32_t generator_version,
+                                            int persist) {
   dwell::core::ServerConfig config;
   config.name = "Local world";
   config.max_players = 1;
   config.world_seed = static_cast<std::uint64_t>(world_seed);
   config.generator_version = generator_version;
+  g_storage_error.clear();
+  if (persist) {
+    auto db = dwell::storage::WorldDb::Open(kLocalWorldFile, g_storage_error, {nullptr, false});
+    if (db) {
+      config.store = std::make_shared<dwell::storage::WorldStore>(std::move(db));
+      config.autosave_seconds = kLocalAutosaveSeconds;
+    }
+  }
   g_server.reset();
+  const bool persisted = config.store != nullptr;
   g_server = std::make_unique<LocalServer>(std::move(config));
-  return 1;
+  return persisted ? 2 : 1;
+}
+
+// Why the world could not be persisted (empty if it was, or was not asked to be).
+EMSCRIPTEN_KEEPALIVE const char* dwell_local_storage_error() { return g_storage_error.c_str(); }
+
+// Saves now (the page is being hidden or closed). Returns 1 if the save committed.
+EMSCRIPTEN_KEEPALIVE int dwell_local_save() {
+  if (!g_server) return 0;
+  const auto before = g_server->server.save_stats().saves;
+  g_server->server.SaveNow();
+  return g_server->server.save_stats().saves > before ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE void dwell_local_connected(std::uint32_t session, std::uint8_t kind,
@@ -269,8 +299,7 @@ EMSCRIPTEN_KEEPALIVE const std::uint16_t* dwell_client_chunk_padded(int cx, int 
   for (int dy = -1; dy <= 1; ++dy)
     for (int dz = -1; dz <= 1; ++dz)
       for (int dx = -1; dx <= 1; ++dx)
-        around[(dx + 1) + 3 * ((dz + 1) + 3 * (dy + 1))] =
-            &world.Read({cx + dx, cy + dy, cz + dz});
+        around[(dx + 1) + 3 * ((dz + 1) + 3 * (dy + 1))] = &world.Read({cx + dx, cy + dy, cz + dz});
   auto& out = g_client->padded;
   out.resize(static_cast<std::size_t>(kPad) * kPad * kPad);
   // Which neighbour a padded coordinate falls in (0, 1, 2) and where inside it.
@@ -303,7 +332,8 @@ EMSCRIPTEN_KEEPALIVE void dwell_client_chunk_edit(int cx, int cy, int cz, std::u
   dwell::protocol::ChunkChanges changes;
   changes.coord = {cx, cy, cz};
   changes.revision = revision;
-  for (std::uint32_t i = 0; i < count; ++i) changes.changes.push_back({pairs[2 * i], pairs[2 * i + 1]});
+  for (std::uint32_t i = 0; i < count; ++i)
+    changes.changes.push_back({pairs[2 * i], pairs[2 * i + 1]});
   dwell::core::ApplyChunkChanges(g_client->world, changes);
 }
 

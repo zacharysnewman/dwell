@@ -209,6 +209,12 @@ struct PlayerEvent {
   DamageCause cause = DamageCause::kFall;  // Damage, Death
 };
 
+// Chunk voxels as palette + RLE (the ChunkData Explicit payload, §6.1): kChunkVolume materials in
+// chunk index order. Also the world file's chunk encoding (before zstd, §6.4).
+std::vector<std::uint8_t> EncodeChunkVoxels(const std::vector<std::uint16_t>& voxels);
+// nullopt unless `bytes` is exactly one canonical-length payload.
+std::optional<std::vector<std::uint16_t>> DecodeChunkVoxels(std::span<const std::uint8_t> bytes);
+
 // posfix: nearest multiple of 1/kPositionFixedScale m (halves round up), clamped to i32.
 std::int32_t ToFixedPosition(double v);
 inline double FromFixedPosition(std::int32_t v) {

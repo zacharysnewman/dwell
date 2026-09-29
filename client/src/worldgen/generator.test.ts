@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { GENERATORS } from '../local/world';
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
+import { World } from '../protocol/constants.gen';
+import { mapColumn } from '../ui/mapOverlay';
 import type { ChunkCoord } from '../protocol/messages';
 import { ChunkGenerator, type DwellWorldgenFactory } from './generator';
 
@@ -59,5 +61,16 @@ describe.skipIf(skip)('worldgen module (WASM)', () => {
       // The copied-out voxels are the hashed ones.
       expect(fnv1a64(voxels)).toBe(g.hash);
     }
+  });
+
+  it('samples the terrain map (debug overlay): land at the spawn, the void beyond the rim', async () => {
+    const gen = await loadGenerator(GENERATOR_TERRAIN, 0n);
+    const bytes = gen.map(-16, -16, 8, 4);
+    expect(bytes?.length).toBe(64);
+    expect(mapColumn(bytes ?? new Uint8Array(64), 4, 2, 2).biome).not.toBe(0); // not ocean
+    const rim = gen.map(World.worldRadius + 100, 0, 8, 2);
+    expect(mapColumn(rim ?? new Uint8Array(16), 2, 0, 0).outside).toBe(true);
+    // Generators without a terrain map (flat, playground) have none.
+    expect((await loadGenerator(GENERATORS.flat, 0n)).map(0, 0, 8, 4)).toBeNull();
   });
 });

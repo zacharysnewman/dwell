@@ -213,9 +213,27 @@ std::uint64_t ChunkHash(const Chunk& chunk) {
   return h;
 }
 
+std::vector<VoxelDiff> DiffChunk(const Chunk& generated, const Chunk& current) {
+  std::vector<VoxelDiff> out;
+  const auto& a = generated.voxels();
+  const auto& b = current.voxels();
+  for (int i = 0; i < kChunkVolume; ++i) {
+    const auto k = static_cast<std::size_t>(i);
+    if (a[k] != b[k]) out.push_back({i, a[k], b[k]});
+  }
+  return out;
+}
+
 Chunk& VoxelWorld::GetOrCreate(const ChunkCoord& coord) {
   auto [it, inserted] = chunks_.try_emplace(coord);
   if (inserted) {
+    if (saved_.has && saved_.has(coord)) {
+      if ((it->second = saved_.load(coord))) {
+        ++loaded_saved_;
+        ++epoch_;
+        return *it->second;
+      }
+    }
     it->second = std::make_unique<Chunk>();
     if (generator_) {
       generator_(coord, *it->second);
@@ -230,7 +248,7 @@ Chunk& VoxelWorld::GetOrCreate(const ChunkCoord& coord) {
 const Chunk& VoxelWorld::Read(const ChunkCoord& coord) {
   static const Chunk kAir;
   if (generator_) {
-    if (air_ && !Find(coord) && air_(coord)) return kAir;
+    if (air_ && !Find(coord) && !(saved_.has && saved_.has(coord)) && air_(coord)) return kAir;
     return GetOrCreate(coord);
   }
   const Chunk* chunk = Find(coord);
@@ -247,9 +265,13 @@ void VoxelWorld::Remove(const ChunkCoord& coord) {
 }
 
 std::size_t VoxelWorld::EvictUnmodified(const std::function<bool(const ChunkCoord&)>& keep) {
+  return Evict(
+      [&](const ChunkCoord& c, const Chunk& chunk) { return chunk.revision() == 0 && !keep(c); });
+}
+
+std::size_t VoxelWorld::Evict(const std::function<bool(const ChunkCoord&, const Chunk&)>& evict) {
   const std::size_t before = chunks_.size();
-  std::erase_if(chunks_,
-                [&](const auto& kv) { return kv.second->revision() == 0 && !keep(kv.first); });
+  std::erase_if(chunks_, [&](const auto& kv) { return evict(kv.first, *kv.second); });
   const std::size_t evicted = before - chunks_.size();
   if (evicted) ++epoch_;
   return evicted;

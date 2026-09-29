@@ -115,3 +115,25 @@ test('an edit by one client appears for another on a native server', async ({ br
   // Closed so the pages stop rendering before later tests run.
   await Promise.all(contexts.map((c) => c.close()));
 });
+
+test('local mode: an edited world is saved in the browser and survives a reload', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto('./?world=flat&seed=7');
+  await ready(page);
+  const target = await aim(page);
+  const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
+  await page.keyboard.press('Digit7'); // sandstone
+  expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
+  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(13);
+  // Local worlds save every few seconds (and when the page is hidden).
+  await page.waitForTimeout(6_000);
+  await page.reload();
+  await ready(page);
+  await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(13);
+  // A different seed is a different world file: untouched there.
+  await page.goto('./?world=flat&seed=8');
+  await ready(page);
+  expect(await voxel(page, cell)).toBe(0);
+});

@@ -80,6 +80,8 @@ export class Game {
   private previous: ClientState | null = null;
   private current: ClientState;
   private readonly eye = new EyeCamera();
+  /** Extra line for the debug overlay (the regenerate-and-diff check, main.ts). */
+  debugNote = '';
 
   constructor(
     readonly playerId: number,
@@ -271,16 +273,15 @@ export class Game {
 
     this.hud.setHealth(this.health, nowMs);
     if (this.hud.debugVisible) {
-      this.hud.setDebug(
-        formatDebug({
-          core: c,
-          health: this.health,
-          inputBuffer: this.inputBuffer,
-          tickRate: this.tickRate,
-          remotes: views.length,
-          rttMs: this.host.rttMs(),
-        }),
-      );
+      const text = formatDebug({
+        core: c,
+        health: this.health,
+        inputBuffer: this.inputBuffer,
+        tickRate: this.tickRate,
+        remotes: views.length,
+        rttMs: this.host.rttMs(),
+      });
+      this.hud.setDebug(this.debugNote ? `${text}\n${this.debugNote}` : text);
       this.renderer.setDebugLines(this.probeLines(center, c));
     } else {
       this.renderer.setDebugLines(null);

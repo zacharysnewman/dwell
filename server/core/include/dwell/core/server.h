@@ -19,6 +19,7 @@
 #include "dwell/core/worldgen_pool.h"
 #include "dwell/player/controller.h"
 #include "dwell/protocol/messages.h"
+#include "dwell/storage/world_store.h"
 
 // The authoritative server core (ARCHITECTURE.md §4). It has no sockets, threads, or OS calls: the
 // host feeds it transport events, calls Step() at SIM_HZ, and drains the outbox (§4.3). The same
@@ -51,6 +52,15 @@ struct ServerConfig {
   // Block edits (§6.5): who may edit, and the players (device public keys) who are ops.
   EditPolicy edits = EditPolicy::kEveryone;
   std::vector<protocol::PublicKey> ops = {};
+  // Access (§10.1): banned keys are refused; with an allow-list, only its keys may join.
+  std::vector<protocol::PublicKey> banned = {};
+  std::optional<std::vector<protocol::PublicKey>> allow_list = std::nullopt;
+
+  // World persistence (§6.4). With a store, a saved world's seed, generator and spawn replace the
+  // ones above, modified chunks and players load from it, and dirty data saves every
+  // autosave_seconds. Without one the world lives in memory only.
+  std::shared_ptr<storage::WorldStore> store = nullptr;
+  int autosave_seconds = protocol::kAutosaveSeconds;
 
   // Tests and tools: replaces GeneratorFor(generator_version, world_seed), e.g. to move a test
   // world far from the origin (clients must generate the same chunks). Without an air test to
@@ -89,6 +99,16 @@ struct SessionStats {
   std::uint32_t resyncs = 0;  // chunks re-sent on the client's request (§6.3)
 };
 
+// World persistence counters, for tests and diagnostics.
+struct SaveStats {
+  std::uint32_t saves = 0;       // batches committed
+  std::uint32_t failed = 0;      // batches that failed (their chunks stay dirty)
+  std::size_t dirty = 0;         // modified chunks not yet committed
+  std::size_t saved_chunks = 0;  // chunks in the world file
+  std::uint64_t loaded = 0;      // chunks read back from the file
+  std::string last_error;
+};
+
 class Server {
  public:
   Server(ServerConfig config, Entropy& entropy, JPH::JobSystem& jobs);
@@ -111,6 +131,11 @@ class Server {
   // Server-originated velocity change for a player (knockback), applied before this tick's physics
   // step and announced to its client as PlayerEvent(Knockback) for predicted replay (§9.3).
   void Knockback(std::uint16_t player_id, JPH::Vec3 delta_v);
+
+  // Saves dirty chunks, players and meta now (committed off the tick natively). No-op without a
+  // store. Hosts call it before shutting down, then WorldStore::Flush.
+  void SaveNow();
+  SaveStats save_stats() const;
 
   std::uint32_t tick() const { return tick_; }
   double time_ms() const { return tick_ * (1000.0 / protocol::kSimHz); }
@@ -180,7 +205,8 @@ class Server {
   void RemoveSession(SessionId id);
   std::uint16_t AllocatePlayerId();
 
-  void SpawnPlayer(Session& s);
+  // At the spawn point, or at `feet` (a saved position).
+  void SpawnPlayer(Session& s, std::optional<std::array<double, 3>> feet = std::nullopt);
   void Kill(Session& s, protocol::DamageCause cause);
   void Damage(Session& s, int amount, protocol::DamageCause cause);
   void AfterControllerTick(Session& s);
@@ -203,6 +229,12 @@ class Server {
   Session* SessionOfPlayer(std::uint16_t player_id);
   const Session* SessionOfPlayer(std::uint16_t player_id) const;
   std::uint16_t PlayerIdOfBody(std::uint32_t body_id) const;
+  // Persistence (§6.4).
+  static ServerConfig WithSavedWorld(ServerConfig config);
+  void InitStorage();
+  void CollectSaves();
+  storage::PlayerRecord RecordOf(const Session& s) const;
+  bool IsSaved(const ChunkCoord& c) const { return saved_.count(c) != 0; }
 
   ServerConfig config_;
   Entropy& entropy_;
@@ -222,6 +254,14 @@ class Server {
   std::optional<std::uint64_t> verification_hash_;
   std::vector<ChunkCoord> view_offsets_;     // chunks in view relative to the center, nearest first
   std::vector<ChunkCoord> explicit_wanted_;  // full-mode chunks to generate for streaming
+  // Persistence: chunks in the world file (revision saved), modified chunks not saved yet, saves in
+  // flight (their chunk revisions), and players who left since the last save.
+  std::unordered_map<ChunkCoord, std::uint32_t, ChunkCoordHash> saved_;
+  std::unordered_set<ChunkCoord, ChunkCoordHash> dirty_;
+  std::unordered_map<std::uint64_t, std::vector<std::pair<ChunkCoord, std::uint32_t>>> in_flight_;
+  std::vector<storage::PlayerRecord> departed_;
+  std::uint32_t next_save_tick_ = 0;
+  SaveStats save_stats_;
 };
 
 }  // namespace dwell::core
