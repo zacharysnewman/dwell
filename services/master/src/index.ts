@@ -41,7 +41,9 @@ async function signed(
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const path = url.pathname.replace(/\/+$/, '');
+  // Repeated and trailing slashes don't matter (a base URL ending in "/" plus "/v1/…"). Signatures
+  // still cover the path exactly as sent.
+  const path = url.pathname.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
   if (path === '/v1/health') {
     if (request.method !== 'GET') return problem(405, 'method', 'Use GET.');
     return json({ ok: true, service: 'dwell-master', api: API_VERSION, time: Date.now() });

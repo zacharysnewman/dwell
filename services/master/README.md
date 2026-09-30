@@ -40,6 +40,6 @@ Phase 5): repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`,
 repository variable `VITE_MASTER_URL` (also read by the Pages build). Without the secrets the
 workflow skips the deploy with a notice.
 
-- Worker URL: `https://dwell-master.<workers.dev subdomain>.workers.dev` — record it here once
-  chosen.
+- Worker URL: `https://dwell-master.dropkick.workers.dev` (the account's `workers.dev`
+  subdomain is `dropkick`); `GET /v1/health` checks it.
 - Free TURN allowance: record it here when the TURN key is created (Phase 5c).
