@@ -47,7 +47,9 @@ struct ServerConfig {
   int worldgen_threads = 0;       // 0: generate on the tick thread within worldgen_budget_us
   int worldgen_budget_us = 4000;  // per tick, without threads
   int pregen_radius_chunks = 2;   // around the spawn, generated at startup
-  int view_radius_chunks = protocol::kViewRadiusChunks;         // sphere streamed to each client
+  int view_radius_chunks = protocol::kViewRadiusChunks;  // sphere streamed to each client
+  // Beyond the view, chunks a client asks for (ChunkRequest, §6.6) are streamed within this.
+  int render_radius_chunks = protocol::kRenderRadiusChunks;
   int chunk_bytes_per_second = protocol::kChunkBytesPerSecond;  // per client
 
   // Level of detail (§6.6): propagation threads (−1: one when worldgen has threads, else none —
@@ -83,7 +85,9 @@ struct StreamStats {
   std::uint32_t explicit_sent = 0;
   std::uint32_t air_sent = 0;
   std::uint32_t unloaded = 0;
-  std::size_t streamed = 0;  // chunks the client currently has
+  std::uint32_t requested_sent = 0;    // of the above, sent for a ChunkRequest (§6.6)
+  std::uint32_t requests_dropped = 0;  // over the rate or queue limit, or out of range
+  std::size_t streamed = 0;            // chunks the client currently has
 };
 
 struct Outgoing {
@@ -217,6 +221,11 @@ class Server {
     bool stream_complete = false;  // everything in view sent (until the center moves)
     double chunk_credit = 0;       // bytes the client may still receive this tick
     StreamStats stream_stats;
+    // Chunks beyond the view the client asked for (§6.6): queued, then streamed (and kept until
+    // they leave the render radius) after the view's own chunks.
+    std::deque<ChunkCoord> chunk_requests;
+    std::unordered_set<ChunkCoord, ChunkCoordHash> requested;         // queued or streamed
+    double chunk_request_credit = protocol::kChunkRequestsPerSecond;  // token bucket
     // Level of detail (§6.6).
     bool lod_index_sent = false;
     std::deque<protocol::LodSectionRequest> lod_requests;
@@ -253,6 +262,9 @@ class Server {
   void UpdateWorldgen();
   bool IsAir(const ChunkCoord& c) const;
   void StreamChunks(SessionId id, Session& s);
+  void StreamView(SessionId id, Session& s, const ChunkCoord& center, int& sent);
+  void StreamRequested(SessionId id, Session& s, const ChunkCoord& center, int& sent);
+  void RequestChunks(Session& s, const protocol::ChunkRequest& m);
   // The message streaming chunk `c` to a client: Air, Generated or Explicit. Empty while a
   // full-mode client's chunk is not generated yet (unless `generate`).
   std::optional<protocol::ChunkData> ChunkMessage(const Session& s, const ChunkCoord& c,

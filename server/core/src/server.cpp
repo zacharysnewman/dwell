@@ -38,6 +38,14 @@ constexpr std::uint32_t kIndexUpdateEveryTicks =
     static_cast<std::uint32_t>(kLodIndexUpdateMs * kSimHz / 1000);
 constexpr std::size_t kMaxQueuedLodRequests = 256;  // per session; more are dropped
 constexpr double kLodRequestsPerTick = static_cast<double>(kLodRequestsPerSecond) / kSimHz;
+// Chunk requests (§6.6): a token bucket of CHUNK_REQUESTS_PER_SECOND, and a bounded queue.
+constexpr std::size_t kMaxQueuedChunkRequests = 1024;
+constexpr double kChunkRequestsPerTick = static_cast<double>(kChunkRequestsPerSecond) / kSimHz;
+
+bool WithinRadius(const ChunkCoord& a, const ChunkCoord& b, int r) {
+  const std::int64_t dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+  return dx * dx + dy * dy + dz * dz <= std::int64_t{r} * r + r;
+}
 
 std::uint64_t IndexKey(std::int32_t i, std::int32_t k) {
   return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(i)) << 32) |
@@ -317,6 +325,8 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
         }
       } else if (const auto* resync = std::get_if<ChunkResync>(&m)) {
         Resync(id, s, *resync);
+      } else if (const auto* request = std::get_if<ChunkRequest>(&m)) {
+        RequestChunks(s, *request);
       } else if (const auto* lod = std::get_if<LodRequest>(&m)) {
         // Rate-limited (LOD_REQUESTS_PER_SECOND, a token bucket); answered within the lod budget.
         for (const LodSectionRequest& r : lod->sections) {
@@ -560,7 +570,30 @@ void Server::UpdateWorldgen() {
   }
 }
 
+void Server::RequestChunks(Session& s, const ChunkRequest& m) {
+  const auto center = ViewCenter(s);
+  for (const ChunkCoordNet& at : m.coords) {
+    const ChunkCoord c{at[0], at[1], at[2]};
+    if (s.requested.count(c)) continue;  // already on its way or there
+    if (s.streamed.count(c)) {
+      s.requested.insert(c);  // streamed by the view: kept, now, while within the render radius
+      continue;
+    }
+    if (s.chunk_mode == ChunkMode::kAwaitingCheck || !center || c.y < kMinChunkY ||
+        c.y > kMaxChunkY || !WithinRadius(c, *center, config_.render_radius_chunks) ||
+        s.chunk_request_credit < 1.0 || s.chunk_requests.size() >= kMaxQueuedChunkRequests) {
+      ++s.stream_stats.requests_dropped;
+      continue;
+    }
+    s.chunk_request_credit -= 1.0;
+    s.chunk_requests.push_back(c);
+    s.requested.insert(c);
+  }
+}
+
 void Server::StreamChunks(SessionId id, Session& s) {
+  s.chunk_request_credit = std::min(s.chunk_request_credit + kChunkRequestsPerTick,
+                                    static_cast<double>(kChunkRequestsPerSecond));
   if (s.chunk_mode == ChunkMode::kAwaitingCheck) return;
   const auto center = ViewCenter(s);
   if (!center) return;
@@ -570,13 +603,16 @@ void Server::StreamChunks(SessionId id, Session& s) {
   if (!s.stream_center || !(*s.stream_center == *center)) {
     s.stream_center = center;
     s.stream_complete = false;
-    // Chunks beyond the view plus a margin (hysteresis) leave the client.
+    // Chunks beyond the view plus a margin (hysteresis) leave the client; requested ones once
+    // beyond the render radius plus the margin.
     const int r = config_.view_radius_chunks + kUnloadMarginChunks;
+    const int rr = config_.render_radius_chunks + kUnloadMarginChunks;
     ChunkUnload unload;
     for (auto it = s.streamed.begin(); it != s.streamed.end();) {
-      const int dx = it->x - center->x, dy = it->y - center->y, dz = it->z - center->z;
-      if (dx * dx + dy * dy + dz * dz > r * r + r) {
+      const bool requested = s.requested.count(*it) > 0;
+      if (!WithinRadius(*it, *center, requested ? std::max(r, rr) : r)) {
         unload.coords.push_back({it->x, it->y, it->z});
+        if (requested) s.requested.erase(*it);
         it = s.streamed.erase(it);
       } else {
         ++it;
@@ -591,13 +627,17 @@ void Server::StreamChunks(SessionId id, Session& s) {
       SendReliable(id, part, Channel::kWorld);
     }
   }
-  if (s.stream_complete) return;
+  int sent = 0;
+  if (!s.stream_complete) StreamView(id, s, *center, sent);
+  if (!s.stream_complete) return;  // the view first (collision needs it)
+  StreamRequested(id, s, *center, sent);
+}
 
+void Server::StreamView(SessionId id, Session& s, const ChunkCoord& center, int& sent) {
   // Nearest first, within the bandwidth budget (§6.3).
   bool complete = true;
-  int sent = 0;
   for (const ChunkCoord& o : view_offsets_) {
-    const ChunkCoord c = Add(*center, o);
+    const ChunkCoord c = Add(center, o);
     if (c.y < kMinChunkY || c.y > kMaxChunkY || s.streamed.count(c)) continue;
     complete = false;
     if (s.chunk_credit <= 0 || sent >= kMaxChunksPerTick) break;
@@ -618,6 +658,35 @@ void Server::StreamChunks(SessionId id, Session& s) {
                                        : s.stream_stats.explicit_sent);
   }
   s.stream_complete = complete;
+}
+
+void Server::StreamRequested(SessionId id, Session& s, const ChunkCoord& center, int& sent) {
+  // In the order asked (the client asks nearest first, §6.6), within what the budget leaves.
+  for (std::size_t n = s.chunk_requests.size(); n > 0; --n) {
+    if (s.chunk_credit <= 0 || sent >= kMaxChunksPerTick) break;
+    const ChunkCoord c = s.chunk_requests.front();
+    s.chunk_requests.pop_front();
+    if (s.streamed.count(c)) continue;  // the view reached it first
+    std::optional<ChunkData> message;
+    if (WithinRadius(c, center, config_.render_radius_chunks)) {
+      // Full mode would generate on the server for rendering alone: only what is stored.
+      message = ChunkMessage(s, c, /*generate=*/false);
+    }
+    if (!message) {
+      s.requested.erase(c);
+      ++s.stream_stats.requests_dropped;
+      continue;
+    }
+    auto bytes = Encode(*message);
+    s.chunk_credit -= static_cast<double>(bytes.size());
+    outbox_.push_back({id, Outgoing::Kind::kReliable, Channel::kWorld, std::move(bytes)});
+    s.streamed.insert(c);
+    ++sent;
+    ++s.stream_stats.requested_sent;
+    ++(message->form == ChunkForm::kGenerated ? s.stream_stats.generated_sent
+       : message->form == ChunkForm::kAir     ? s.stream_stats.air_sent
+                                              : s.stream_stats.explicit_sent);
+  }
 }
 
 std::optional<ChunkData> Server::ChunkMessage(const Session& s, const ChunkCoord& c,

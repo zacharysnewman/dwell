@@ -213,6 +213,7 @@ std::map<std::string, Message> Expected() {
                          {{{-1, 2, 256000}, 7, {{0, 0}, {32767, 300}}},
                           {{5, -64, -3}, 1, {{1 | (2 << 5) | (3 << 10), 16}}}}}},
       {"chunk_resync", ChunkResync{{{0, -1, 2}, {256000, 191, -256000}}}},
+      {"chunk_request", ChunkRequest{{{3, 0, -4}, {-250000, -64, 250000}}}},
       {"lod_index", LodIndex{true, {{1024, 1023, 7}, {0, 2047, 4000000000u}}}},
       {"lod_index_empty", LodIndex{true, {}}},
       {"lod_index_part", LodIndex{false, {{-5, 3, 1}}}},

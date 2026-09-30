@@ -21,6 +21,7 @@ import type { PlayerView, Renderer } from '../render';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
 import type { ChunkStreamer, StreamStats } from '../world/chunkStream';
+import type { LodCamera } from '../lod/frustum';
 import { formatLodStats, type LodStats, type LodSystem } from '../lod/lodSystem';
 import { materialStyle } from '../world/materials';
 import { EyeCamera } from './eye';
@@ -325,10 +326,15 @@ export class Game {
     const position: Vec3 = this.dead
       ? this.deathFeet
       : [c.position[0], c.position[1], c.position[2]];
-    this.lod.update(
-      { position, yawDeg: this.input.yaw, pitchDeg: this.input.pitch, ...this.viewport() },
-      nowMs,
-    );
+    const camera: LodCamera = {
+      position,
+      yawDeg: this.input.yaw,
+      pitchDeg: this.input.pitch,
+      ...this.viewport(),
+    };
+    // Detail loads ahead of where the player is heading (§6.6).
+    if (!this.dead) camera.velocity = [c.velocity[0], c.velocity[1], c.velocity[2]];
+    this.lod.update(camera, nowMs);
   }
 
   /** Targets the block under the crosshair from `eye` and outlines it (none while not playing). */

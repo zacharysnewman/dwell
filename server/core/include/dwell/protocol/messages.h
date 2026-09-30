@@ -140,6 +140,13 @@ struct ChunkResync {
   std::vector<ChunkCoordNet> coords;
 };
 
+// C→S reliable (`control`): chunks beyond the view the client wants to draw at full detail
+// (§6.6), within RENDER_RADIUS_CHUNKS; 1..kMaxResyncChunks. The server streams them like the
+// view's chunks (and sends their edits) until they leave that radius.
+struct ChunkRequest {
+  std::vector<ChunkCoordNet> coords;
+};
+
 // --- Level of detail (Phase 4b, §6.6, §8.3) ---
 
 // A section at LOD_INDEX_LEVEL (one row, so no j) holding modified chunks, and its lodRevision.
@@ -280,7 +287,7 @@ using Message =
     std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello, Challenge,
                  ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput, PhysicsSnapshot, PlayerEvent,
                  WorldgenCheck, ChunkData, ChunkUnload, BlockEditRequest, VoxelModification,
-                 ChunkResync, LodIndex, LodIndexUpdate, LodRequest, LodData>;
+                 ChunkResync, LodIndex, LodIndexUpdate, LodRequest, LodData, ChunkRequest>;
 
 // Appends the encoded message to `out`. Strings longer than their limit are truncated at a UTF-8
 // boundary, so encoding never produces a message the peer would reject.

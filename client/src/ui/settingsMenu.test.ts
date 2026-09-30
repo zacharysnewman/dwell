@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { FOG_LIMITS, sanitizeFog } from '../render/fog';
-import { fogJson, formatMetres, SLIDER_STEPS, sliderToValue, valueToSlider } from './settingsMenu';
+import { DETAIL_LIMITS, defaultDetail, sanitizeDetail } from '../lod/detail';
+import {
+  formatMetres,
+  settingsJson,
+  SLIDER_STEPS,
+  sliderToValue,
+  valueToSlider,
+} from './settingsMenu';
 
 describe('settings menu sliders', () => {
   const { min, max } = FOG_LIMITS.distanceM;
@@ -33,9 +40,27 @@ describe('settings menu sliders', () => {
 
 describe('settings JSON', () => {
   it('rounds the settings for sharing, and reads back as the same settings', () => {
-    const json = fogJson({ distanceM: 11313.708, density: 0.6049, heightM: 1499.6 });
-    expect(JSON.parse(json)).toEqual({ fog: { distanceM: 11314, density: 0.6, heightM: 1500 } });
-    const { fog } = JSON.parse(json) as { fog: unknown };
-    expect(sanitizeFog(fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
+    const json = settingsJson({
+      fog: { distanceM: 11313.708, density: 0.6049, heightM: 1499.6 },
+      detail: { distanceM: 200.4 },
+    });
+    const parsed = JSON.parse(json) as { fog: unknown; detail: unknown };
+    expect(parsed).toEqual({
+      fog: { distanceM: 11314, density: 0.6, heightM: 1500 },
+      detail: { distanceM: 200 },
+    });
+    expect(sanitizeFog(parsed.fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
+    expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({ distanceM: 200 });
+  });
+});
+
+describe('full-detail distance', () => {
+  it('spans the streamed view to the request radius, defaulting by device', () => {
+    expect(DETAIL_LIMITS.distanceM).toEqual({ min: 96, max: 352 });
+    expect(defaultDetail(false)).toEqual({ distanceM: 256 });
+    expect(defaultDetail(true)).toEqual({ distanceM: 128 });
+    expect(sanitizeDetail({ distanceM: 5000 }, defaultDetail(true))).toEqual({ distanceM: 352 });
+    expect(sanitizeDetail({ distanceM: 'far' }, defaultDetail(true))).toEqual({ distanceM: 128 });
+    expect(sanitizeDetail(null, defaultDetail(false))).toEqual({ distanceM: 256 });
   });
 });
