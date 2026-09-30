@@ -22,7 +22,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) merged (#27); the Cloudflare manual setup is outstanding (needed for 5b's deploy check). 5c–5e not started | #25 (5a), #26 (fix), #27 (5b) |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c–5e not started; the TURN key is still to set up (5c) | #25 (5a), #26 (fix), #27, #29 (5b) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -827,8 +827,9 @@ physics phases (6–8); see *Deviations* below.
 
 **Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
 (passing in CI) and a manual phone check (outstanding). #25 broke one older e2e test that opened
-the bare page expecting a local world; fixed in #26. 5b merged (#27): its deploy exit
-criterion waits on the Cloudflare manual setup. 5c–5e not started.
+the bare page expecting a local world; fixed in #26. 5b complete (#27; deploy fix #29): the
+master runs at `https://dwell-master.dropkick.workers.dev`. 5c–5e not started; the TURN key (manual
+setup) is needed for 5c.
 
 ### 5a — Main menu & world management (client only)
 
@@ -889,7 +890,9 @@ Deliverables
   CSP already allows `https:`/`wss:`.
 
 Exit criteria
-- [ ] The deployed `GET /v1/health` answers; a push to `main` redeploys it.
+- [x] The deployed `GET /v1/health` answers; a push to `main` redeploys it. *`https://dwell-master.dropkick.workers.dev/v1/health`
+  answered `{"ok":true,…}` (checked in a browser, 2026-09-30); the push merging #29 redeployed it
+  ("Deploy master server" run 36729254518, health check included).*
 - [x] CI runs the master's tests against the local Workers runtime. *CI job `master` (19 tests in
   workerd), green on PR #27 (run 36685737412).*
 
@@ -978,25 +981,26 @@ Exit criteria
 These steps need an account owner's dashboard access and cannot be done from code. Do them before
 5b's deploy exit criterion; nothing here requires a paid plan.
 
-- [ ] Create (or pick) a Cloudflare account on the **Workers Free** plan; note the **Account ID**
+- [x] Create (or pick) a Cloudflare account on the **Workers Free** plan; note the **Account ID**
   (dashboard → Workers & Pages → right sidebar). Don't add a payment method, so the free limits
   can't turn into charges; over-limit requests fail instead.
-- [ ] Choose the account's `workers.dev` subdomain (Workers & Pages → Overview). The master's
+- [x] Choose the account's `workers.dev` subdomain (`dropkick`) (Workers & Pages → Overview). The master's
   default URL is `https://dwell-master.<subdomain>.workers.dev`; record it in
   `services/master/README.md` and as the client's `VITE_MASTER_URL`.
-- [ ] Create an **API token** (My Profile → API Tokens → "Edit Cloudflare Workers" template,
-  scoped to this account only). Add GitHub repository secrets `CLOUDFLARE_API_TOKEN` and
+- [x] Create an **API token** ("Edit Cloudflare Workers" template, scoped to this account only;
+  an Account API token — Manage Account → Account API Tokens — was used). Add GitHub repository secrets `CLOUDFLARE_API_TOKEN` and
   `CLOUDFLARE_ACCOUNT_ID` (Settings → Secrets and variables → Actions). Optionally put them in a
   `master` environment that only `main` may deploy from.
-- [ ] Add a GitHub repository variable `VITE_MASTER_URL` with the Worker URL (read by the Pages
+- [x] Add a GitHub repository variable `VITE_MASTER_URL` with the Worker URL (read by the Pages
   workflow).
 - [ ] Create a **TURN key** (dashboard → Realtime → TURN Server → Create). Store its key ID and
   API token as Worker secrets: `npx wrangler secret put TURN_KEY_ID` and
   `npx wrangler secret put TURN_KEY_API_TOKEN` from `services/master` (or Worker → Settings →
   Variables and Secrets). Check the current free TURN allowance on the pricing page and note it in
   `services/master/README.md`.
-- [ ] After the first deploy, confirm the Worker and its Durable Object classes (`Directory`,
-  `Room`) appear in the dashboard, and that `GET /v1/health` answers.
+- [x] After the first deploy, confirm the Worker and its Durable Object classes (`Directory`,
+  `Room`) exist, and that `GET /v1/health` answers. *The deploy output lists both Durable Object
+  bindings; the health check answers.*
 - [ ] Optional: enable Workers Logs (Worker → Settings → Observability) for debugging.
 - [ ] Optional, later: serve the master at `master.dropkickarcade.com` (Worker → Settings →
   Domains & Routes → Custom domain). This needs `dropkickarcade.com`'s DNS on Cloudflare; moving
