@@ -22,7 +22,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) built on `claude/phase-5a-menus`, PR pending; its exit criteria wait on CI's e2e run and a phone check. 5b–5e not started; Cloudflare manual setup outstanding | — |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) in PR #25; its exit criteria wait on CI's e2e run and a phone check. 5b–5e not started; Cloudflare manual setup outstanding | #25 (5a) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -816,7 +816,7 @@ TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloud
 §10). This phase takes the web parts of the former hosting phase (now Phase 9) ahead of the
 physics phases (6–8); see *Deviations* below.
 
-**Status:** In progress — 5a built (PR pending); its exit criteria are covered by `e2e/menu.spec.ts`
+**Status:** In progress — 5a built (PR #25); its exit criteria are covered by `e2e/menu.spec.ts`
 (to be confirmed by CI) and a manual phone check, both outstanding. 5b–5e not started.
 
 ### 5a — Main menu & world management (client only)
