@@ -11,18 +11,22 @@ function ms(v: number | null): string {
   return v === null ? '–' : `${String(Math.round(v))} ms`;
 }
 
-/** One-line connection status for the overlay (Phase 1 exit criterion: show RTT). */
+/**
+ * One-line connection status for the overlay (Phase 1 exit criterion: show RTT), with the frame
+ * rate once known.
+ */
 export function formatStatus(
   target: string,
   transport: TransportKind,
   state: SessionState,
   stats: SessionStats,
+  fps: number | null = null,
 ): string {
   switch (state.phase) {
     case 'handshaking':
       return `Joining ${target}…`;
     case 'joined':
-      return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport]}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}`;
+      return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport]}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}${fps === null ? '' : ` · ${String(Math.round(fps))} fps`}`;
     case 'rejected':
       return state.reason === RejectReason.Replaced || state.reason === RejectReason.ServerClosing
         ? `Disconnected from ${target}: ${state.message}`

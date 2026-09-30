@@ -596,6 +596,25 @@ describe('LOD chunk requests (§6.6)', { timeout: 120_000 }, () => {
     expect(lod.chunkVisible([30, -1, 0])).toBe(false); // beyond the radius: never full detail
   });
 
+  it('never asks for buried chunks: underground, only the streamed view is drawn', async () => {
+    // Regression (playtest: RTT and frame time climbing while standing still): drawing caves in
+    // buried sections (#33) also asked the server for every solid-rock chunk within the
+    // full-detail distance, loading and meshing hundreds of chunks with nothing to see. In the
+    // flat world everything below y = 0 is buried; at the surface, only chunks near it are asked.
+    const surface: Vec3 = [0.5, 1.6, 0.5];
+    const top = setup(surface);
+    await top.run(camera(surface, 0, -10), 300);
+    expect(top.requested.flat().length).toBeGreaterThan(20);
+    for (const c of top.requested.flat()) expect(c[1], c.join()).toBeGreaterThanOrEqual(-2);
+
+    const deep: Vec3 = [16.5, -12 * 32 + 16, 16.5];
+    const below = setup(deep);
+    await below.run(camera(deep, 30, 0), 300);
+    expect(below.requested.flat()).toEqual([]);
+    // The streamed chunks around the camera are still drawn (caves stay visible).
+    expect(below.lod.chunkVisible(chunkOf(deep))).toBe(true);
+  });
+
   it('looks ahead along the velocity: what the camera heads for is asked for first', async () => {
     const body: Vec3 = [0.5, 1.6, 0.5];
     const { requested, run } = setup(body);

@@ -37,6 +37,7 @@ import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
+import { FpsMeter } from './ui/fps';
 import { ChunkStreamer } from './world/chunkStream';
 import { WorldgenPool } from './worldgen/pool';
 import { LodSystem } from './lod/lodSystem';
@@ -90,6 +91,8 @@ interface App {
   interaction: BlockInteraction | null;
   core: ClientCore | null;
   settings: SettingsMenu | null;
+  /** Frames per second, shown in the status line. */
+  fps: FpsMeter;
 }
 
 function start(): App {
@@ -124,6 +127,7 @@ function start(): App {
     interaction: null,
     core: null,
     settings: null,
+    fps: new FpsMeter(),
   };
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
@@ -210,6 +214,7 @@ function start(): App {
 
   let last = performance.now();
   const frame = (now: number): void => {
+    app.fps.frame(now);
     app.game?.frame(now);
     renderer.renderFrame((now - last) / 1000);
     last = now;
@@ -551,8 +556,17 @@ async function connect(app: App): Promise<void> {
     // A local world can be opened to friends (Host…, Phase 5c).
     if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;
+    let latest: [SessionState, SessionStats] | null = null;
+    const showStatus = () => {
+      if (latest) {
+        status.textContent = formatStatus(target, session.transportKind, ...latest, app.fps.fps);
+      }
+    };
+    // The frame rate changes without session events: refresh the line every second too.
+    setInterval(showStatus, 1000);
     session.subscribe((state, stats) => {
-      status.textContent = formatStatus(target, session.transportKind, state, stats);
+      latest = [state, stats];
+      showStatus();
       if (state.phase === 'joined' && !started) {
         started = true;
         const joinedInvite = invite ? pastedInvite(location.search) : null;

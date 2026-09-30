@@ -401,12 +401,13 @@ export class LodSystem {
    * A buried section: its LOD cells are solid rock with nothing to draw (the distant view leaves
    * out deep caves, §6.6). Up close the streamed chunks are the truth, caves and all, so a buried
    * section the camera would refine descends to them; its children are buried too (finer cells
-   * only raise a column's lower bound). Where no chunks are drawable it stays undrawn.
+   * only raise a column's lower bound). Where no chunks are drawable it stays undrawn. Buried
+   * chunks are never asked for (wantChunks): only those the view streams anyway are drawn, as
+   * asking for all the rock within the full-detail distance loaded hundreds of chunks for nothing.
    */
   private visitBuried(node: Node, frustum: Frustum, selection: Selection): void {
     if (node.coord[0] === 1) {
       const refine = this.refineToChunks(node, frustum);
-      if (refine) this.wantChunks(node, frustum);
       if (refine && (this.covered.has(node.id) || this.allDrawable(node))) {
         selection.chunks.push(node.coord);
         this.refined.add(node.id);

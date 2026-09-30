@@ -41,3 +41,10 @@ describe('formatStatus', () => {
     ).toBe('Disconnected from KQ7-XM4: The host stopped hosting.');
   });
 });
+
+describe('the frame rate', () => {
+  it('is shown once measured', () => {
+    expect(formatStatus('Home', TransportKind.Loopback, joined, stats, 58.6)).toMatch(/ · 59 fps$/);
+    expect(formatStatus('Home', TransportKind.Loopback, joined, stats)).not.toMatch(/fps/);
+  });
+});
