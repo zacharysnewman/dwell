@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 8;
+inline constexpr std::uint16_t kProtocolVersion = 9;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -24,6 +24,8 @@ inline constexpr float kPredictProxyRadius = 16.0f;
 inline constexpr float kReachDistance = 5.0f;
 inline constexpr int kBlockEditIntervalMs = 100;
 inline constexpr int kFlightCeiling = 24000000;
+inline constexpr int kFlySpeedShift = 4;
+inline constexpr int kFlySpeedMaxLevel = 39;
 
 inline constexpr int kWorldMinY = -2048;
 inline constexpr int kWorldMaxY = 6144;
@@ -183,7 +185,8 @@ inline constexpr std::uint16_t kJump = 1;
 inline constexpr std::uint16_t kRun = 2;
 inline constexpr std::uint16_t kCrouch = 4;
 inline constexpr std::uint16_t kFly = 8;
-inline constexpr std::uint16_t kAll = 15;
+inline constexpr std::uint16_t kFlySpeed = 1008;
+inline constexpr std::uint16_t kAll = 1023;
 }  // namespace InputButtons
 
 namespace PlayerFlags {

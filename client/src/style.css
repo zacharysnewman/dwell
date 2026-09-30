@@ -692,3 +692,47 @@ body {
   display: inline-block;
   margin: 0 6px 6px 0;
 }
+
+/* Flight speed slider (ui/flightSpeedControl.ts), top right while flying, below the ⓘ button. */
+#flight-speed {
+  position: fixed;
+  right: max(8px, env(safe-area-inset-right));
+  top: calc(max(8px, env(safe-area-inset-top)) + 52px);
+  z-index: 3;
+  width: min(240px, calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 55%);
+  font-size: 12px;
+  touch-action: none;
+}
+
+#flight-speed[hidden] {
+  display: none;
+}
+
+#flight-speed label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+}
+
+.flight-speed-value {
+  justify-self: end;
+  font:
+    12px ui-monospace,
+    monospace;
+}
+
+#flight-speed input {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 2px 0;
+}
+
+.flight-speed-hint {
+  grid-column: 1 / -1;
+  color: rgb(230 232 238 / 60%);
+  font-size: 11px;
+}

@@ -1024,6 +1024,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
 | `FLIGHT_CEILING` | 24 000 000 m | Highest feet position in creative flight (§9.1; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
+| `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 39 / 4 | Flight speed slider: highest level (2^19.5 × `fly.speed`) and its bit position in `PlayerInput.buttons` (§9.1) |
 | `BEDROCK_LAYERS` | 4 | Indestructible anchor layers at the bottom |
 | `SEA_LEVEL` | 0 | Water fill height |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
@@ -1102,7 +1103,7 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v8):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v9):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
@@ -1112,7 +1113,8 @@ protocol v4); `BlockEditRequest` 0x4A, `ChunkResync` 0x4B and `VoxelModification
 protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodRequest` 0x4C and the
 `lod` channel (Phase 4b; protocol v6); `Welcome` flags, the `fly` input button, the `Flying`
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
-0x4D for full detail beyond the view (Phase 4; protocol v8) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
+0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
+`buttons` (Phase 4; protocol v9) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
 reference encoder, including half floats). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
 `controllerFlags`, `welcomeFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
@@ -1139,7 +1141,8 @@ u8   count                      // 1..MAX_INPUTS_PER_DATAGRAM (4): the newest in
 repeat count:
   u32  inputSeq
   i8   moveX, moveY             // analog move vector ×127, clamped to the unit circle
-  u16  buttons                  // jump 1 | run 2 | crouch 4
+  u16  buttons                  // jump 1 | run 2 | crouch 4 | fly 8; bits 4–9: flight speed level
+                                // (flySpeed 0x3F0, 0–63 on the wire, used up to 39; §9.1)
   i16  yaw                      // wrapped fraction of a turn (65536 per 360°); 0 = +Z
   i16  pitch                    // ±32767 for ±90°
 ```
@@ -1337,8 +1340,11 @@ architectural summary.
   `Players`) that records their contact normals.
 - **Creative flight** **[built, Phase 4]** (PLAYER_CONTROLLER.md §6.7): an exclusive layer while
   the input's `fly` mode bit is set — no gravity, move along the view's yaw, jump up, crouch down,
-  speed growing with height above the sea up to `FLIGHT_CEILING`. The client toggles it (double-tap
-  Space or Jump, or the touch Fly button); the server's flight policy (`--flight`, told to the
+  speed growing with height above the sea up to `FLIGHT_CEILING`. A **flight speed slider**
+  (top right while flying; the − / = keys; `ui/flightSpeedControl.ts`, kept in local storage) sets
+  a level carried in every input (protocol v9) that raises the speed to at least 11 m/s × 2^(L/2),
+  up to about the speed near the ceiling; the 400 m/s cap below `WORLD_MAX_Y` still applies. The
+  client toggles flight (double-tap Space or Jump, or the touch Fly button); the server's flight policy (`--flight`, told to the
   client in `Welcome`) decides who may, clearing the bit for anyone else. While flying the client
   keeps predicting even where the streamed terrain has not arrived yet.
 

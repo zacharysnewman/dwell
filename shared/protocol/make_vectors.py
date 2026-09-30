@@ -70,7 +70,8 @@ def snapshot_local(flags, health, state, ctrl, input_buffer=0, knockback=0):
 PLAYER_INPUT = (
     struct.pack("<BIB", T["PlayerInput"], 300, 2)
     + input_frame(41, 127, -127, B["jump"] | B["run"], -16384, 32767)
-    + input_frame(42, 0, 90, B["crouch"] | B["fly"], 12345, -100)
+    # Flight speed level 39 (the highest) in the buttons' flySpeed bits.
+    + input_frame(42, 0, 90, B["crouch"] | B["fly"] | (39 << c["players"]["flySpeedShift"]), 12345, -100)
 )
 SNAPSHOT = (
     struct.pack("<BII", T["PhysicsSnapshot"], 603, 42)
@@ -286,7 +287,7 @@ malformed = {
     "!input_count_five": struct.pack("<BIB", T["PlayerInput"], 0, 5)
     + input_frame(1, 0, 0, 0, 0, 0) * 5,
     "!input_unknown_button": struct.pack("<BIB", T["PlayerInput"], 0, 1)
-    + input_frame(1, 0, 0, 0x80, 0, 0),
+    + input_frame(1, 0, 0, 0x400, 0, 0),  # the first bit past flySpeed
     "!snapshot_bad_state": SNAPSHOT_MIN[:9 + 38] + b"\x63" + SNAPSHOT_MIN[9 + 39:],
     "!snapshot_truncated_remote": SNAPSHOT[:-1],
     "!snapshot_missing_ladder": SNAPSHOT_MIN[:9 + 44] + bytes([CF["climbing"]]) + SNAPSHOT_MIN[9 + 45:],

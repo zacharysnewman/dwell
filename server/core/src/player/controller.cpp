@@ -118,6 +118,11 @@ Vec3 MoveDirection(const Input& input) {
   return forward * input.move_y + CameraRight(input.look_yaw) * input.move_x;
 }
 
+float FlySpeedFactor(std::uint8_t level) {
+  const int l = std::min<int>(level, protocol::kFlySpeedMaxLevel);
+  return std::ldexp((l & 1) != 0 ? std::sqrt(2.0f) : 1.0f, l >> 1);
+}
+
 struct Players::Player {
   static constexpr int kMaxContacts = 8;
   PlayerController c;
@@ -860,8 +865,10 @@ void Players::StepFly(Player& p) {
   const RVec3 position = bodies.GetCenterOfMassPosition(p.body);
   const double feet = position.GetY() - cfg.HalfHeight(c.crouch.crouching);
   const float above_sea = static_cast<float>(std::max(0.0, feet - core::kSeaLevel));
-  float speed = cfg.fly.speed * (c.input.run ? cfg.fly.run_factor : 1.0f) *
-                (1.0f + above_sea / cfg.fly.boost_height);
+  // The speed slider sets a floor: at level 0 (factor 1) this is the height-based speed alone.
+  float speed =
+      cfg.fly.speed * (c.input.run ? cfg.fly.run_factor : 1.0f) *
+      std::max(1.0f + above_sea / cfg.fly.boost_height, FlySpeedFactor(c.input.fly_speed));
   if (feet < core::kWorldMaxY) speed = std::min(speed, cfg.fly.terrain_speed);
   Vec3 wish = MoveDirection(c.input) * speed;
   wish.SetY(((c.input.jump ? 1.0f : 0.0f) - (c.input.crouch ? 1.0f : 0.0f)) * speed);
