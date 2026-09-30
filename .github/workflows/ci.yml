@@ -22,7 +22,31 @@ jobs:
         run: |
           node shared/protocol/gen.mjs
           python3 shared/protocol/make_vectors.py
+          node shared/master/make_vectors.mjs
           git diff --exit-code
+
+  master:
+    name: Master server (lint, typecheck, test in the Workers runtime)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: services/master
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/master/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - name: Bundle as a deploy would (no upload)
+        run: npx wrangler deploy --dry-run --outdir dist
+        env:
+          WRANGLER_SEND_METRICS: 'false'
 
   client:
     name: Client (lint, typecheck, test, build)

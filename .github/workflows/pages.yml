@@ -46,6 +46,9 @@ jobs:
       - name: Build local-mode WASM core
         run: npm run build:wasm
       - run: npm run build
+        env:
+          # The master server's URL (repository variable, Phase 5 manual setup); empty until set.
+          VITE_MASTER_URL: ${{ vars.VITE_MASTER_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: client/dist

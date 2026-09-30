@@ -22,7 +22,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) in PR #25; its exit criteria wait on CI's e2e run and a phone check. 5b–5e not started; Cloudflare manual setup outstanding | #25 (5a) |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) in PR #27; the Cloudflare manual setup is outstanding (needed for 5b's deploy check). 5c–5e not started | #25 (5a), #26 (fix), #27 (5b) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -816,8 +816,10 @@ TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloud
 §10). This phase takes the web parts of the former hosting phase (now Phase 9) ahead of the
 physics phases (6–8); see *Deviations* below.
 
-**Status:** In progress — 5a built (PR #25); its exit criteria are covered by `e2e/menu.spec.ts`
-(to be confirmed by CI) and a manual phone check, both outstanding. 5b–5e not started.
+**Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
+(passing in CI) and a manual phone check (outstanding). #25 broke one older e2e test that opened
+the bare page expecting a local world; fixed in #26. 5b built (PR #27): its deploy exit
+criterion waits on the Cloudflare manual setup. 5c–5e not started.
 
 ### 5a — Main menu & world management (client only)
 
@@ -842,40 +844,51 @@ Deliverables
   addresses: 5d.)
 
 Exit criteria
-- [ ] E2E (Chromium): open the site → create a world with a given seed → play → quit to the menu
+- [x] E2E (Chromium): open the site → create a world with a given seed → play → quit to the menu
   → the world is listed with that seed → reopen it and see an earlier edit → regenerate it and
-  see the edit gone → delete it.
-- [ ] An existing local world from before 5a still opens, with its edits.
+  see the edit gone → delete it. *`e2e/menu.spec.ts`, passing in CI (run 36676901490).*
+- [x] An existing local world from before 5a still opens, with its edits. *`menu.spec.ts`: a world
+  saved per seed, its index entry removed, is adopted into the list and keeps its edit.*
 - [ ] Manual: the menus are usable on a phone in landscape (touch, iOS Safari and Android Chrome).
 
 ### 5b — Master server on Cloudflare (skeleton, dev loop, CI, deploy)
 
 Deliverables
-- [ ] ADR 0013 accepted; Open Decisions #10 and #11 resolved (§12).
-- [ ] `services/master`: a TypeScript Cloudflare Worker (Wrangler), routes under `/v1/`, with two
-  Durable Object classes on SQLite storage (the Workers Free plan): `Directory` (one instance:
-  registered servers, join codes, receipts, rate-limit state) and `Room` (one per hosted friend
-  world: its WebSocket signaling, using the WebSocket Hibernation API). `GET /v1/health`.
-- [ ] Request signing: Ed25519 (WebCrypto in the Worker) over
+- [x] ADR 0013 accepted; Open Decisions #10 and #11 resolved (§12).
+- [x] `services/master`: a TypeScript Cloudflare Worker (Wrangler), routes under `/v1/`, with two
+  Durable Object classes on SQLite storage (the Workers Free plan): `Directory` (one instance,
+  with schema migrations and the rate-limit state) and `Room` (one per hosted friend world; a stub
+  answering 501 until 5c). `GET /v1/health`, and `POST /v1/whoami` (signed: answers with the
+  signer's key, to check a client's signing and clock). The Directory's tables for join codes,
+  servers and receipts arrive with 5c–5e as migrations.
+- [x] Request signing: Ed25519 (WebCrypto in the Worker) over
   `"dwell-master-v1" ‖ method ‖ path ‖ timestamp ‖ SHA-256(body)`, ±60 s clock skew, with the
   player's device key (§10.4) or the dedicated server's key; per-key and per-IP rate limits.
-- [ ] Local development: `wrangler dev` runs the master (and its Durable Objects) locally; the
-  client's master URL comes from the build (`VITE_MASTER_URL`, the deployed Worker by default)
-  and `?master=<url>` overrides it; `dwell_server --master <url>` likewise.
-- [ ] Tests: Vitest with `@cloudflare/vitest-pool-workers` (routes, signatures, rate limits,
-  Durable Object state); CI job `master` (format, lint, typecheck, tests).
-- [ ] Deploy workflow (`.github/workflows/master.yml`): `wrangler deploy` on pushes to `main`
-  that touch `services/master`, using the repository secrets from the manual setup below.
-- [ ] The Pages build embeds the master URL; the client's CSP already allows `https:`/`wss:`.
+  Client side in `client/src/net/master.ts`; `shared/master/vectors.json` (made with Node's crypto,
+  checked in CI) pins the format for both.
+- [x] Local development: `wrangler dev` runs the master (and its Durable Objects) locally; the
+  client's master URL comes from the build (`VITE_MASTER_URL`) and `?master=<url>` overrides it
+  (the CSP allows `http://localhost:*` for this). `dwell_server --master <url>` moved to 5d, where
+  the server first talks to the master.
+- [x] Tests: Vitest with `@cloudflare/vitest-pool-workers` (routes, CORS, signatures, rate limits,
+  Durable Object state, and that the main module exports only what workerd accepts); CI job
+  `master` (format, lint, typecheck, tests, and a `wrangler deploy --dry-run` bundle).
+- [x] Deploy workflow (`.github/workflows/master.yml`): `wrangler deploy` on pushes to `main`
+  that touch `services/master`, using the repository secrets from the manual setup below
+  (skipped with a notice until they exist), then a health check.
+- [x] The Pages build embeds the master URL (repository variable `VITE_MASTER_URL`); the client's
+  CSP already allows `https:`/`wss:`.
 
 Exit criteria
 - [ ] The deployed `GET /v1/health` answers; a push to `main` redeploys it.
-- [ ] CI runs the master's tests against the local Workers runtime.
+- [x] CI runs the master's tests against the local Workers runtime. *CI job `master` (19 tests in
+  workerd), green on PR #27 (run 36685737412).*
 
 ### 5c — Friend worlds: one-click Host from the browser
 
 Deliverables
-- [ ] **Join codes and signaling:** Host opens a `Room` over WebSocket and gets a short code
+- [ ] **Join codes and signaling** (the `Room` Durable Object's protocol, over the WebSocket
+  Hibernation API; the Directory's join-code table): Host opens a `Room` over WebSocket and gets a short code
   (e.g. `KQ7-XM4`, unambiguous alphabet); guests join the room by code; the room relays SDP
   offers/answers and trickled ICE candidates between the host and each guest, and closes when
   the host leaves. Code guessing is rate-limited per IP.
@@ -911,7 +924,8 @@ Exit criteria
 ### 5d — Dedicated servers on the master; join by address
 
 Deliverables
-- [ ] `dwell_server` gets a persistent Ed25519 **server key** (world `settings`), and registers
+- [ ] `dwell_server --master <url>` (default: the deployed master) and a persistent Ed25519
+  **server key** (world `settings`); the server registers
   and heartbeats (~30 s, signed) with the master through an HTTPS client in the Rust `net/wt`
   crate: port, RTC port and ICE credentials, current cert SHA-256, name, MOTD, players,
   protocol version, visibility (`--visibility public|unlisted|none`, default unlisted; `none`
@@ -1000,6 +1014,13 @@ These steps need an account owner's dashboard access and cannot be done from cod
   returns to the menu. Links (`?join=`, `?local=1`, `?world=`, `?seed=`) open directly as before.
 - 5a: the game menu does not pause the world — the simulation is the (local or remote) server's.
 - 5a: Phases 6–8 were put on hold until Phase 5 is complete (2026-09-30).
+- 5b: the `Room` class is a stub (501) and the Directory holds only its schema version and the
+  rate limits; their real contents are 5c–5e deliverables, added as migrations. `POST /v1/whoami`
+  was added to check signing end to end. `dwell_server --master` moved to 5d.
+- 5b: rate limits are in the Directory's memory, not SQLite: an evicted object starts with full
+  buckets, which errs on allowing requests (acceptable for abuse limits; revisit if abused).
+- 5b: the master pins Vitest 4 (what `@cloudflare/vitest-pool-workers` supports) while the client
+  uses Vitest 5, and uses `legacy-peer-deps` (npm's resolver crashed on optional peers).
 
 ---
 
