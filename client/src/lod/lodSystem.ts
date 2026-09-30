@@ -340,8 +340,12 @@ export class LodSystem {
   private visit(node: Node, frustum: Frustum, selection: Selection): void {
     // A node that is not ready is only reached on the way down to the covered chunks.
     const ready = this.ready(node);
-    if (ready && (node.kind === LodKind.Empty || node.kind === LodKind.Buried)) {
+    if (ready && node.kind === LodKind.Empty) {
       selection.empty.push(node.coord);
+      return;
+    }
+    if (ready && node.kind === LodKind.Buried) {
+      this.visitBuried(node, frustum, selection);
       return;
     }
     if (node.coord[0] === 1) {
@@ -391,6 +395,50 @@ export class LodSystem {
       return;
     }
     for (const kid of node.kids) this.visit(kid, frustum, selection);
+  }
+
+  /**
+   * A buried section: its LOD cells are solid rock with nothing to draw (the distant view leaves
+   * out deep caves, §6.6). Up close the streamed chunks are the truth, caves and all, so a buried
+   * section the camera would refine descends to them; its children are buried too (finer cells
+   * only raise a column's lower bound). Where no chunks are drawable it stays undrawn.
+   */
+  private visitBuried(node: Node, frustum: Frustum, selection: Selection): void {
+    if (node.coord[0] === 1) {
+      const refine = this.refineToChunks(node, frustum);
+      if (refine) this.wantChunks(node, frustum);
+      if (refine && (this.covered.has(node.id) || this.allDrawable(node))) {
+        selection.chunks.push(node.coord);
+        this.refined.add(node.id);
+      } else {
+        selection.empty.push(node.coord);
+      }
+      return;
+    }
+    if (!this.refine(node, frustum)) {
+      selection.empty.push(node.coord);
+      return;
+    }
+    if (!node.kids) {
+      node.kids = [];
+      for (let o = 0; o < 8; o++) {
+        const c = lodChild(node.coord, o);
+        if (lodInWorld(c)) node.kids.push(this.node(c, node));
+      }
+    }
+    let allReady = true;
+    for (const kid of node.kids) {
+      this.touch(kid);
+      if (!this.ready(kid)) {
+        allReady = false;
+        this.wanted.push(kid);
+      }
+    }
+    if (allReady || this.coveredAncestors.has(node.id)) {
+      for (const kid of node.kids) this.visit(kid, frustum, selection);
+    } else {
+      selection.empty.push(node.coord); // undrawn as a whole until the children are known
+    }
   }
 
   /** Visits the children of a node that is not ready itself (on the way to covered chunks). */

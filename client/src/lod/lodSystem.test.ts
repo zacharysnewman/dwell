@@ -273,6 +273,35 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     expect(lod.chunkVisible([40, 0, 0])).toBe(false); // not streamed
   });
 
+  it('draws the streamed chunks inside buried sections: caves deep underground', async () => {
+    // Regression (phone playtest): the LOD treats rock well below the surface as buried (solid,
+    // nothing to draw; deep caves are left out of the distant view) and the walk stopped there,
+    // so the streamed chunks of a cave inside it were never drawn: invisible caves. In the flat
+    // world everything below y = 0 is buried.
+    const jobs = new Jobs();
+    const view = new View();
+    const at: ChunkCoord = [0, -12, 0]; // 384 m down
+    const near = (c: ChunkCoord) =>
+      Math.max(Math.abs(c[0] - at[0]), Math.abs(c[1] - at[1]), Math.abs(c[2] - at[2])) <= 3;
+    const lod = new LodSystem(jobs, jobs, view, { drawable: near }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 64 * 1048576,
+      maxGenerationJobs: 16,
+      maxMeshJobs: 8,
+    });
+    const cam = camera([16.5, at[1] * 32 + 16, 16.5], 30, 0);
+    for (let frame = 1; frame <= 40; frame++) {
+      lod.update(cam, frame * 50);
+      await jobs.finish(() => 0, 1);
+    }
+    expect(lod.active).toBe(true);
+    for (const c of [at, [1, -12, 2], [-2, -13, 1]] as ChunkCoord[]) {
+      expect(lod.chunkVisible(c)).toBe(true);
+    }
+    // Far from the camera buried rock stays undrawn (no chunks there, nothing to show).
+    expect(lod.chunkVisible([0, -60, 0])).toBe(false);
+  });
+
   it('turning around shows the detail already loaded: it does not depend on the view', async () => {
     // Regression (phone playtest): sections out of view were never refined, so turning showed
     // coarse sections popping to fine ones everywhere the view swept.

@@ -828,6 +828,12 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   first, while the cache is over `LOD_CACHE_MB` — the view never has holes. A test walks, turns
   and rises to 2,000 km with jobs finishing in random order, and checks every frame that sampled
   points of the view lie in exactly one drawn, empty, buried or chunk-refined section.
+- Buried says only that a section's **LOD cells** are rock: the bounds leave out caves more than
+  a few cells below the surface, which the distant view never shows. Up close the streamed
+  chunks are the truth, so a buried section the camera would refine descends to its chunks
+  (caves included) rather than ending the walk; one whose children are not yet classified stays
+  undrawn as a whole. *(Playtest fix: caves deep inside the world were streamed and collidable but
+  never drawn; only sections at the rim, whose bounds are open below, showed their caves.)*
 - Empty and buried sections come from their column's bounds (one `lodBounds` job per column of
   sections), the rest from `GenerateLod` in the worldgen pool (a queue behind chunk jobs) and
   meshing in the meshing pool, with at most the pools' capacities in flight. Jobs go in order of
