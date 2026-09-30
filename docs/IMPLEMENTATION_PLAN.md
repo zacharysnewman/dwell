@@ -21,8 +21,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33, in review); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) 🔍 in review — e2e to pass in CI; phone checks and the TURN key outstanding. 5d–5e not started | #25 (5a), #26 (fix), #27, #29 (5b), #31 (5c) |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33 |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d–5e not started | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -523,7 +523,7 @@ z-fighting on distant water in #21; height fog with a settings menu in #22; full
 beyond the view (`ChunkRequest`, protocol v8), a velocity lookahead and the playtested fog
 defaults in #23; a flight speed slider (protocol v9, #28); the slider as a true minimum near the
 ground (#32); caves deep underground drawn — the LOD walk no longer stops at buried sections
-before their streamed chunks (#33, in review). Also outstanding: z-fighting reported high up, not reproduced here (see
+before their streamed chunks (#33). Also outstanding: z-fighting reported high up, not reproduced here (see
 deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
@@ -832,8 +832,8 @@ physics phases (6–8); see *Deviations* below.
 **Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
 (passing in CI) and a manual phone check (outstanding). #25 broke one older e2e test that opened
 the bare page expecting a local world; fixed in #26. 5b complete (#27; deploy fix #29): the
-master runs at `https://dwell-master.dropkick.workers.dev`. 5c in review: deliverables built;
-outstanding are its e2e exit criterion (`e2e/friend.spec.ts`, to pass in CI), the manual phone
+master runs at `https://dwell-master.dropkick.workers.dev`. 5c merged (#31) with its e2e test
+failing on a race in the test itself; fixed in #34 (the same fix also merged with #33). Outstanding: the manual phone
 checks, and the TURN key (manual setup; without it the master hands out STUN only). 5d–5e not
 started.
 
@@ -935,8 +935,9 @@ Deliverables
   lost connection, "host left". Golden-byte tests in C++ and TS for the new message and reason.
 
 Exit criteria
-- [ ] E2E (Chromium, CI): two browser contexts against a local master — one hosts, the other joins
-  by code; each sees the other move and a block edit.
+- [x] E2E (Chromium, CI): two browser contexts against a local master — one hosts, the other joins
+  by code; each sees the other move and a block edit. *`e2e/friend.spec.ts` (#34): passing
+  locally three runs in a row, and in CI on #34 and #33.*
 - [ ] Manual: a desktop browser hosts; a phone on mobile data joins by code (through TURN).
 - [ ] Manual: iOS Safari hosts, an Android Chrome guest joins; locking the host phone pauses the
   world for the guest and unlocking resumes it; closing the host page shows "host left".
