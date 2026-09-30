@@ -16,6 +16,7 @@ import {
   Mesh,
   MeshLambertMaterial,
   NearestFilter,
+  Object3D,
   PerspectiveCamera,
   RGBAFormat,
   Scene,
@@ -34,6 +35,7 @@ import { VERTICAL_FOV, verticalFov } from '../fov';
 import { sharedAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
 import { setFogUniforms, withHeightFog } from './heightFog';
+import { LodSectionGeometry, releaseOnUpload } from './lodSection';
 import { WaterBatch, type WaterHandle } from './waterBatch';
 
 const SKY = 0x87b5e0;
@@ -52,13 +54,14 @@ function flatGeometry(m: FlatMesh): BufferGeometry | null {
   return g;
 }
 
-interface LodGroup {
-  group: Group;
+interface LodEntry {
+  /** The section's surface and skirts, one draw call (lodSection.ts); null if it has none. */
+  mesh: Mesh | null;
+  section: LodSectionGeometry | null;
   level: number;
   /** The section's water in the shared batch (lodWater), if it has any. */
   water: WaterHandle | null;
-  /** Per face index; null where the section has no skirt faces on that side. */
-  skirts: (Mesh | null)[];
+  shown: boolean;
 }
 
 /** Level tints for the debug per-level colouring (?lodcolors=1). */
@@ -78,6 +81,9 @@ function geometryOf(arrays: MeshArrays): BufferGeometry | null {
   g.setAttribute('tile', new BufferAttribute(arrays.tiles, 4));
   g.setIndex(new BufferAttribute(arrays.indices, 1));
   g.computeBoundingSphere();
+  // Static: the CPU copies go once uploaded (they were most of the page's memory as chunks loaded).
+  for (const a of Object.values(g.attributes)) releaseOnUpload(a as BufferAttribute);
+  releaseOnUpload(g.index as BufferAttribute);
   return g;
 }
 
@@ -141,7 +147,7 @@ export class ThreeRenderer implements Renderer {
   /** Chunk groups' coordinates, for the LOD system's visibility (§6.6). */
   private readonly chunkCoords = new Map<string, ChunkCoord>();
   private chunkVisible: ((coord: ChunkCoord) => boolean) | null = null;
-  private readonly lod = new Map<number, LodGroup>();
+  private readonly lod = new Map<number, LodEntry>();
   private lodShown: ReadonlyMap<number, number> = new Map();
   private readonly lodMaterial = withHeightFog(new MeshLambertMaterial({ vertexColors: true }));
   /** Like the chunks' water (see-through from both sides, at their opacity), untextured. */
@@ -159,7 +165,7 @@ export class ThreeRenderer implements Renderer {
   /** The far pass's camera (the main camera is the near pass's). */
   private readonly farCamera = new PerspectiveCamera(VERTICAL_FOV, 1, NEAR_SPLIT, FAR_PLANE);
   private readonly players = new Map<number, PlayerMesh>();
-  private debug: LineSegments | null = null;
+  private debug: LineSegments<BufferGeometry, LineBasicMaterial> | null = null;
   /** Outline of the targeted block (§6.5): a unit box's edges, scaled for slabs. */
   private readonly outline = new LineSegments(
     new EdgesGeometry(new BoxGeometry(1.004, 1.004, 1.004).translate(0.5, 0.5, 0.5)),
@@ -184,6 +190,17 @@ export class ThreeRenderer implements Renderer {
     this.scene.add(this.lodWater.mesh);
     this.camera.position.set(0, 6, 14);
     this.camera.lookAt(0, 0, 0);
+    // Nearly everything in the scene is static terrain: world matrices are computed when an object
+    // is placed (placed()), not for the whole scene in each of the frame's two passes — that was
+    // the frame's largest script cost once a few thousand meshes had loaded.
+    this.scene.matrixWorldAutoUpdate = false;
+    this.scene.updateMatrixWorld(true);
+  }
+
+  /** Computes a placed object's world matrices (the scene does not, see the constructor). */
+  private static placed<T extends Object3D>(object: T): T {
+    object.updateMatrixWorld(true);
+    return object;
   }
 
   private static createAtlasTexture(): DataTexture {
@@ -214,12 +231,11 @@ export class ThreeRenderer implements Renderer {
     }
     for (const [id, l] of this.lod) {
       const mask = this.lodShown.get(id);
-      l.group.visible = mask !== undefined;
-      if (l.water) this.lodWater.setVisible(l.water, mask !== undefined);
-      if (mask === undefined) continue;
-      l.skirts.forEach((s, face) => {
-        if (s) s.visible = (mask & (1 << face)) !== 0;
-      });
+      const shown = mask !== undefined;
+      if (l.mesh) l.mesh.visible = shown;
+      if (l.water && l.shown !== shown) this.lodWater.setVisible(l.water, shown);
+      l.shown = shown;
+      if (shown) l.section?.setSkirts(mask);
     }
     // Two passes (§6.6): the far one for everything beyond the split (its near plane pushed out
     // with altitude, where nothing is closer), then a depth clear and the near one.
@@ -240,34 +256,28 @@ export class ThreeRenderer implements Renderer {
   setLodSection(id: number, origin: Vec3, cellSize: number, meshes: SectionMeshes | null): void {
     const old = this.lod.get(id);
     if (old) {
-      for (const child of old.group.children) {
-        if (child instanceof Mesh) (child.geometry as BufferGeometry).dispose();
+      if (old.mesh) {
+        old.mesh.geometry.dispose();
+        this.scene.remove(old.mesh);
       }
-      this.scene.remove(old.group);
       if (old.water) this.lodWater.remove(old.water);
       this.lod.delete(id);
     }
     if (!meshes) return;
     const level = Math.round(Math.log2(cellSize));
-    const group = new Group();
-    group.position.set(...origin);
-    group.scale.setScalar(cellSize);
-    group.visible = false;
-    const material = this.lodLevelMaterials?.[level] ?? this.lodMaterial;
-    const opaque = flatGeometry(meshes.opaque);
-    if (opaque) group.add(new Mesh(opaque, material));
+    const section = LodSectionGeometry.from(meshes);
+    let mesh: Mesh | null = null;
+    if (section) {
+      mesh = new Mesh(section.geometry, this.lodLevelMaterials?.[level] ?? this.lodMaterial);
+      mesh.position.set(...origin);
+      mesh.scale.setScalar(cellSize);
+      mesh.visible = false;
+      this.scene.add(ThreeRenderer.placed(mesh));
+    }
     const waterGeometry = flatGeometry(meshes.water);
     const water = waterGeometry ? this.lodWater.add(waterGeometry, origin, cellSize) : null;
     waterGeometry?.dispose();
-    const skirts = meshes.skirts.map((s) => {
-      const g = flatGeometry(s);
-      if (!g) return null;
-      const m = new Mesh(g, material);
-      group.add(m);
-      return m;
-    });
-    this.scene.add(group);
-    this.lod.set(id, { group, level, water, skirts });
+    this.lod.set(id, { mesh, section, level, water, shown: false });
   }
 
   showLodSections(visible: ReadonlyMap<number, number>): void {
@@ -285,10 +295,7 @@ export class ThreeRenderer implements Renderer {
         )
       : null;
     for (const l of this.lod.values()) {
-      const material = this.lodLevelMaterials?.[l.level] ?? this.lodMaterial;
-      for (const child of l.group.children) {
-        if (child instanceof Mesh) child.material = material;
-      }
+      if (l.mesh) l.mesh.material = this.lodLevelMaterials?.[l.level] ?? this.lodMaterial;
     }
   }
 
@@ -314,7 +321,7 @@ export class ThreeRenderer implements Renderer {
       mesh.renderOrder = 1;
       group.add(mesh);
     }
-    this.scene.add(group);
+    this.scene.add(ThreeRenderer.placed(group));
     this.chunks.set(key, group);
     this.chunkCoords.set(key, [
       Math.floor(origin[0] / CHUNK_SIZE),
@@ -375,6 +382,7 @@ export class ThreeRenderer implements Renderer {
       p.body.rotation.set(0, 0, 0);
       p.body.position.set(0, height / 2, 0);
     }
+    ThreeRenderer.placed(p.group);
   }
 
   setCamera(eye: Vec3, yawDeg: number, pitchDeg: number): void {
@@ -399,11 +407,13 @@ export class ThreeRenderer implements Renderer {
     if (!cell) return;
     this.outline.position.set(cell[0] - 0.002, cell[1] - 0.002, cell[2] - 0.002);
     this.outline.scale.set(1, height, 1);
+    ThreeRenderer.placed(this.outline);
   }
 
   setDebugLines(segments: readonly DebugSegment[] | null): void {
     if (this.debug) {
       this.debug.geometry.dispose();
+      this.debug.material.dispose();
       this.scene.remove(this.debug);
       this.debug = null;
     }
@@ -424,7 +434,7 @@ export class ThreeRenderer implements Renderer {
     );
     this.debug.position.set(...lines.origin);
     this.debug.renderOrder = 2;
-    this.scene.add(this.debug);
+    this.scene.add(ThreeRenderer.placed(this.debug));
   }
 
   dispose(): void {

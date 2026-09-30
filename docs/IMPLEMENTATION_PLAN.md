@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37, in review); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (`claude/perf-lod-budget`, PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -523,8 +523,11 @@ z-fighting on distant water in #21; height fog with a settings menu in #22; full
 beyond the view (`ChunkRequest`, protocol v8), a velocity lookahead and the playtested fog
 defaults in #23; a flight speed slider (protocol v9, #28); the slider as a true minimum near the
 ground (#32); caves deep underground drawn — the LOD walk no longer stops at buried sections
-before their streamed chunks (#33). Also outstanding: z-fighting reported high up, not reproduced here (see
-deviations).
+before their streamed chunks (#33), without requesting buried chunks (#37); frame rate and memory
+(playtest: the frame rate fell for minutes, to 11–20 fps, and Chrome's memory kept growing): the
+LOD's view held within `LOD_CACHE_MB`, its pixel error in CSS pixels, one draw call per LOD
+section, static transforms and GPU-only vertex data (`claude/perf-lod-budget`, PR pending). Also
+outstanding: z-fighting reported high up, not reproduced here (see deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
@@ -624,6 +627,17 @@ Deviations and additions (4b):
   retries what goes unanswered (4c).
 
 Deviations and additions (4c):
+- **Frame rate and memory (playtest, after #37):** the frame rate fell for minutes on desktops and
+  phones (11 fps in desktop Safari) and Chrome's memory kept growing. Measured in headless
+  Chromium at a realistic 1440 × 900 at 2×: the LOD's sections grew without bound (8,700 drawn,
+  75,000 nodes, a 1.7 GB heap after 150 s; 70 ms of script per frame with drawing off), because
+  the pixel error was counted in device pixels (a 2× screen: 4× the sections) and the cache can
+  only evict what the view no longer uses. Now the pixel error is in CSS pixels and scaled up
+  while the view's sections exceed `LOD_CACHE_MB` (§6.6): ~1,000–1,500 sections within 256 MB,
+  ~4 ms of script. Also: a section's six skirts share its mesh (they were two thirds of the LOD's
+  draw calls: 942 → 535 per frame in a small window), world matrices are computed once rather
+  than for every object in both passes each frame (the largest script cost), and static vertex
+  data leaves the JS heap once uploaded. The frame rate on real GPUs is still to be checked.
 - **`LOD_PIXEL_ERROR` 4 px desktop / 8 px mobile** (was 2 / 4): at 2 px a view from the ground
   draws ~8,200 sections (one or more draw calls each), at 4 px ~2,800; the level table in §6.6
   moves accordingly (level L from ~176 × 2^L m).

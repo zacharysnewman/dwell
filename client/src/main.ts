@@ -44,7 +44,7 @@ import { ChunkStreamer } from './world/chunkStream';
 import { WorldgenPool } from './worldgen/pool';
 import { LodSystem } from './lod/lodSystem';
 import { Lod } from './protocol/constants.gen';
-import { verticalFov } from './render/fov';
+import { lodViewport } from './lod/frustum';
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
 interface DwellDebug {
@@ -337,14 +337,7 @@ function play(
       lod.setDetailDistance(app.settings?.current.detail.distanceM ?? null);
       app.renderer.setChunkVisibility((c) => lod.chunkVisible(c));
       app.renderer.setLodLevelColors(params.get('lodcolors') === '1');
-      game.viewport = () => {
-        const aspect = app.canvas.clientWidth / Math.max(1, app.canvas.clientHeight);
-        return {
-          fovYDeg: verticalFov(aspect),
-          aspect,
-          heightPx: app.canvas.clientHeight * Math.min(window.devicePixelRatio, 2),
-        };
-      };
+      game.viewport = () => lodViewport(app.canvas.clientWidth, app.canvas.clientHeight);
       game.lod = lod;
     }
   })();

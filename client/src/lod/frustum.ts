@@ -1,6 +1,7 @@
 // The view the LOD octree is walked for (§6.6): a camera anywhere in the world (the player's eye
 // or the dev camera), its view frustum as planes, and the screen-space size of a cell.
 import type { Vec3 } from '../protocol/messages';
+import { verticalFov } from '../render/fov';
 
 export interface LodCamera {
   position: Vec3;
@@ -13,6 +14,19 @@ export interface LodCamera {
   heightPx: number;
   /** Camera velocity (m/s): detail loads ahead along it (see LodSystem). */
   velocity?: Vec3;
+}
+
+/**
+ * The drawing's field of view, aspect and height for LOD selection, from its size in CSS pixels.
+ * The pixel error is in CSS pixels, whatever the screen's density: counted in device pixels, a 2×
+ * screen asked for four times the sections (and a phone's 3× screen, nine).
+ */
+export function lodViewport(
+  cssWidth: number,
+  cssHeight: number,
+): Pick<LodCamera, 'fovYDeg' | 'aspect' | 'heightPx'> {
+  const aspect = cssWidth / Math.max(1, cssHeight);
+  return { fovYDeg: verticalFov(aspect), aspect, heightPx: cssHeight };
 }
 
 /** Inward plane normals through the camera (sides) and the near plane, for AABB tests. */
