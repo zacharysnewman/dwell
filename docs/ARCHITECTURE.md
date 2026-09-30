@@ -1343,7 +1343,8 @@ architectural summary.
   speed growing with height above the sea up to `FLIGHT_CEILING`. A **flight speed slider**
   (top right while flying; the − / = keys; `ui/flightSpeedControl.ts`, kept in local storage) sets
   a level carried in every input (protocol v9) that raises the speed to at least 11 m/s × 2^(L/2),
-  up to about the speed near the ceiling; the 400 m/s cap below `WORLD_MAX_Y` still applies. The
+  up to about the speed near the ceiling — a true minimum: the 400 m/s cap below `WORLD_MAX_Y`
+  limits only the height-based speed. The
   client toggles flight (double-tap Space or Jump, or the touch Fly button); the server's flight policy (`--flight`, told to the
   client in `Welcome`) decides who may, clearing the bit for anyone else. While flying the client
   keeps predicting even where the streamed terrain has not arrived yet.

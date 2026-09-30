@@ -865,11 +865,12 @@ void Players::StepFly(Player& p) {
   const RVec3 position = bodies.GetCenterOfMassPosition(p.body);
   const double feet = position.GetY() - cfg.HalfHeight(c.crouch.crouching);
   const float above_sea = static_cast<float>(std::max(0.0, feet - core::kSeaLevel));
-  // The speed slider sets a floor: at level 0 (factor 1) this is the height-based speed alone.
-  float speed =
-      cfg.fly.speed * (c.input.run ? cfg.fly.run_factor : 1.0f) *
-      std::max(1.0f + above_sea / cfg.fly.boost_height, FlySpeedFactor(c.input.fly_speed));
+  const float base = cfg.fly.speed * (c.input.run ? cfg.fly.run_factor : 1.0f);
+  // The height-based speed, capped in the terrain band...
+  float speed = base * (1.0f + above_sea / cfg.fly.boost_height);
   if (feet < core::kWorldMaxY) speed = std::min(speed, cfg.fly.terrain_speed);
+  // ...and the speed slider's level is a true minimum, cap or not (level 0, factor 1, adds none).
+  speed = std::max(speed, base * FlySpeedFactor(c.input.fly_speed));
   Vec3 wish = MoveDirection(c.input) * speed;
   wish.SetY(((c.input.jump ? 1.0f : 0.0f) - (c.input.crouch ? 1.0f : 0.0f)) * speed);
   Vec3 velocity = body_velocity + (wish - body_velocity) * (1.0f - std::exp(-cfg.fly.drag * kDt));

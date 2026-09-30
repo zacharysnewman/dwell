@@ -1,13 +1,13 @@
 // The flight speed slider (PLAYER_CONTROLLER.md §6.7): a level carried in every input frame
 // (InputButtons.flySpeed). Level 0 flies at the height-based speed alone; level L flies at least
-// fly.speed × 2^(L/2), up to the speed the height gives near the flight ceiling. The server and the
+// fly.speed × 2^(L/2) — also below WORLD_MAX_Y, where only the height-based speed is capped. The server and the
 // client's WASM prediction apply it (C++ FlySpeedFactor); this file only mirrors it for display.
 import { Players } from '../protocol/constants.gen';
 
 export const MAX_FLY_SPEED_LEVEL = Players.flySpeedMaxLevel;
 /** fly.speed in PlayerControllerConfig (m/s), for showing speeds. */
 export const FLY_BASE_SPEED = 11;
-/** fly.terrainSpeed: the cap below WORLD_MAX_Y, where terrain has to stream in (m/s). */
+/** fly.terrainSpeed: the height-based speed's cap below WORLD_MAX_Y (m/s). */
 export const FLY_TERRAIN_SPEED = 400;
 
 export function clampFlySpeedLevel(level: number): number {

@@ -71,8 +71,9 @@ struct PlayerControllerConfig {
     float boost_height =
         32.0f;          // m above sea level per extra ×1 of speed (so ascent is exponential)
     float drag = 8.0f;  // 1/s: how quickly velocity follows the wish
-    // Speed limit below the top of the terrain band (WORLD_MAX_Y): collision around the player is
-    // built a few ticks ahead, and the server has to generate the chunks being flown through.
+    // Limit on the height-based speed below the top of the terrain band (WORLD_MAX_Y): collision
+    // around the player is built a few ticks ahead, and the server has to generate the chunks
+    // being flown through. The speed slider's minimum overrides it (a player's choice).
     float terrain_speed = 400.0f;
     float ceiling = static_cast<float>(protocol::kFlightCeiling);  // feet height (m)
     float horizontal_limit = 8'400'000.0f;  // |x|, |z| (m): just past the world's rim
