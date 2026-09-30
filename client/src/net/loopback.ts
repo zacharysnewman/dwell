@@ -3,7 +3,12 @@ import type { LocalWorld } from '../local/world';
 import { Channel, TransportKind } from '../protocol/constants.gen';
 import type { Transport, TransportHandlers } from './Transport';
 
-const SESSION = 1;
+/** The local player's session; friend-world guests get others (net/hosting.ts). */
+export const LOCAL_SESSION = 1;
+const SESSION = LOCAL_SESSION;
+
+/** Worker output for a session other than the local player's (a friend-world guest). */
+export type GuestOutput = Extract<FromWorker, { session: number }>;
 
 /**
  * Transport to the integrated server running in a local-mode worker (ARCHITECTURE.md §8.1).
@@ -14,6 +19,8 @@ export class LoopbackTransport implements Transport {
   readonly binding = new Uint8Array(32);
   private handlers: TransportHandlers | null = null;
   private closed = false;
+  /** Output for other sessions: the hosting relay's (§10.2). */
+  onGuestOutput: ((msg: GuestOutput) => void) | null = null;
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
 
@@ -29,7 +36,12 @@ export class LoopbackTransport implements Transport {
       worker.onmessage = (e: MessageEvent<FromWorker>) => {
         if (e.data.t === 'ready') {
           const transport = new LoopbackTransport(worker);
-          transport.post({ t: 'connect', session: SESSION, binding: transport.binding });
+          transport.post({
+            t: 'connect',
+            session: SESSION,
+            kind: TransportKind.Loopback,
+            binding: transport.binding,
+          });
           resolve(transport);
         } else if (e.data.t === 'error') {
           reject(new Error(e.data.message));
@@ -76,6 +88,11 @@ export class LoopbackTransport implements Transport {
     this.worker.postMessage(msg);
   }
 
+  /** Sends a message to the local server (the hosting relay: guests' sessions and controls). */
+  postToWorker(msg: ToWorker): void {
+    if (!this.closed) this.post(msg);
+  }
+
   private finish(message: string): void {
     this.closed = true;
     for (const resolve of this.saving.splice(0)) resolve(false);
@@ -84,6 +101,10 @@ export class LoopbackTransport implements Transport {
   }
 
   private onWorkerMessage(msg: FromWorker): void {
+    if ('session' in msg && msg.session !== SESSION) {
+      this.onGuestOutput?.(msg);
+      return;
+    }
     switch (msg.t) {
       case 'reliable':
         this.handlers?.onReliable(msg.channel, msg.bytes);

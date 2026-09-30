@@ -23,10 +23,11 @@ npm run build:wasm   # server core → public/wasm (local mode)
 npm run dev          # http://localhost:5173/dwell/ — the main menu (?local=1: straight into a local world)
 npm run lint && npm run typecheck && npm test
 npm run build        # outputs dist/
-npm run e2e          # Playwright against a native server (build the server first)
+npm run e2e          # Playwright against a native server and a local master (build the server
+                     # first; `npm ci` in services/master)
 ```
 
-**Playing:** the main menu lists your worlds (create one with a name and seed; regenerate or delete it) and joins a server from a pasted invite link. In a game, Esc (or ☰) opens the game menu: Resume, Quit to main menu, and the settings. Click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)
+**Playing:** the main menu lists your worlds (create one with a name and seed; regenerate or delete it) and joins a friend's world by its code (e.g. `KQ7-XM4`) or a server from a pasted invite link. In a game, Esc (or ☰) opens the game menu: Resume, Host… (in your own worlds: choose how many guests and who may build and fly, then share the code, link or QR code; keep the page open while hosting), Quit to main menu, and the settings. Click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)
 crouch, double-tap Space to fly (creative flight: Space/C up and down, Shift faster, the higher the
 faster — high enough to see the whole disc; while flying, the Flight speed slider (top right) or − / = sets a minimum speed; servers choose who may with `--flight`), F3 debug
 overlay (`?debug=1` opens it on load), F4 terrain map. The

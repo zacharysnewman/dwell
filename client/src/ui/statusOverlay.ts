@@ -22,9 +22,9 @@ export function formatStatus(
     case 'handshaking':
       return `Joining ${target}…`;
     case 'joined':
-      return `${target} (${TRANSPORT_NAMES[transport]}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}`;
+      return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport]}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}`;
     case 'rejected':
-      return state.reason === RejectReason.Replaced
+      return state.reason === RejectReason.Replaced || state.reason === RejectReason.ServerClosing
         ? `Disconnected from ${target}: ${state.message}`
         : `${target} refused the connection: ${state.message}`;
     case 'closed':

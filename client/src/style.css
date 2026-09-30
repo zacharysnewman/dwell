@@ -736,3 +736,72 @@ body {
   color: rgb(230 232 238 / 60%);
   font-size: 11px;
 }
+
+/* Host… in the game menu (ui/hostPanel.ts). */
+#host-panel {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgb(255 255 255 / 20%);
+}
+
+#host-panel[hidden] {
+  display: none;
+}
+
+.host-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#host-panel select,
+#host-panel input {
+  border: 1px solid rgb(255 255 255 / 40%);
+  border-radius: 4px;
+  background: rgb(0 0 0 / 40%);
+  color: inherit;
+  font: inherit;
+}
+
+#host-panel input {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#host-panel button {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid rgb(255 255 255 / 40%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 12%);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.host-code {
+  margin: 4px 0 8px;
+  font:
+    bold 28px ui-monospace,
+    monospace;
+  letter-spacing: 0.08em;
+  text-align: center;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.host-qr {
+  display: block;
+  width: 160px;
+  height: 160px;
+  margin: 8px auto;
+  image-rendering: pixelated;
+}

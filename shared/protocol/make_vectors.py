@@ -254,6 +254,10 @@ vectors = {
     "chunk_data_explicit_wide": chunk_head(CF_["Explicit"], (1, 1, 1), 3)
     + chunk_voxels(chunk_wide),
     "chunk_data_explicit_solid": PAL1 + varint(N ** 3) + b"\x00",
+    "host_status_paused": struct.pack("<BB", T["HostStatus"], c["hostStates"]["Paused"]),
+    "host_status_resumed": struct.pack("<BB", T["HostStatus"], c["hostStates"]["Resumed"]),
+    "reject_server_closing": struct.pack("<BB", T["Reject"], c["rejectReasons"]["ServerClosing"])
+    + s("The host stopped hosting."),
     "chunk_unload": struct.pack("<BH", T["ChunkUnload"], 2)
     + struct.pack("<iiiiii", 1, 2, 3, -4, -5, 2000000),
     "block_edit_break": block_edit(BA["Break"], (8191999, -2048, -12), 3),
@@ -306,6 +310,9 @@ malformed = {
     "!chunk_overlong_varint": PAL1 + b"\x81\x00" + b"\x00" + varint(N ** 3 - 1) + b"\x00",
     "!chunk_truncated": EXPLICIT[:-1],
     "!unload_empty": struct.pack("<BH", T["ChunkUnload"], 0),
+    "!host_status_zero": struct.pack("<BB", T["HostStatus"], 0),
+    "!host_status_unknown": struct.pack("<BB", T["HostStatus"], 3),
+    "!host_status_truncated": struct.pack("<B", T["HostStatus"]),
     "!block_edit_bad_action": block_edit(3, (0, 0, 0), 0),
     "!block_edit_bad_face": block_edit(BA["Break"], (0, 0, 0), 6),
     "!block_edit_break_material": block_edit(BA["Break"], (0, 0, 0), 0, 2),

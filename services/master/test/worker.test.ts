@@ -128,8 +128,8 @@ describe('Directory', () => {
     expect(await stub.admit('key-a', 'ip-y', now + 1000)).toEqual({ ok: true });
   });
 
-  it('has a Room class ready for signaling (Phase 5c)', async () => {
+  it('answers a room request that is not a WebSocket with 426', async () => {
     const room = env.ROOM.get(env.ROOM.idFromName('test'));
-    expect((await room.fetch(new Request(`${BASE}/`))).status).toBe(501);
+    expect((await room.fetch(new Request(`${BASE}/`))).status).toBe(426);
   });
 });

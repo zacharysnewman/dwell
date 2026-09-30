@@ -1,6 +1,7 @@
 // The main menu (ARCHITECTURE.md §2.1, Phase 5a), shown when the page opens without a world or
 // server in its address: the local worlds (create with a seed, play, regenerate, delete) and Join
-// (paste an invite link; recently joined servers). Choosing one navigates to it (ui/launch.ts).
+// (a friend world's join code or an invite link; recently joined servers). Choosing one navigates
+// to it (ui/launch.ts).
 import { GENERATORS } from '../local/world';
 import {
   cleanName,
@@ -11,7 +12,7 @@ import {
   type WorldMeta,
   type WorldType,
 } from '../local/worldIndex';
-import { pastedInvite } from './launch';
+import { pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 
 export interface MainMenuDeps {
@@ -186,7 +187,8 @@ export class MainMenu {
     form.className = 'menu-join-form';
     const input = document.createElement('input');
     input.id = 'join-input';
-    input.placeholder = 'Paste an invite link';
+    input.placeholder = 'Join code or invite link';
+    input.autocapitalize = 'characters';
     input.autocomplete = 'off';
     const submit = document.createElement('button');
     submit.type = 'submit';
@@ -196,8 +198,14 @@ export class MainMenu {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const invite = pastedInvite(input.value);
+      const code = invite ? null : pastedCode(input.value);
       if (invite) this.deps.go(invite);
-      else this.say('That is not an invite link. A server prints one when it starts.');
+      else if (code) this.deps.go({ code });
+      else {
+        this.say(
+          'That is not a join code or an invite link. A host shows its code (e.g. KQ7-XM4); a server prints a link when it starts.',
+        );
+      }
     });
     section.append(title, form);
     if (this.deps.recent.length > 0) {

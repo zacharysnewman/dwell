@@ -10,6 +10,7 @@ import {
   ControllerFlags,
   DamageCause,
   GroundKind,
+  HostState,
   InputButtons,
   LodForm,
   MessageType,
@@ -278,6 +279,13 @@ const expected: Record<string, Message> = {
     coord: [0, 0, 0],
     revision: 1,
     voxels: new Uint16Array(CHUNK_SIZE ** 3).fill(2),
+  },
+  host_status_paused: { type: MessageType.HostStatus, state: HostState.Paused },
+  host_status_resumed: { type: MessageType.HostStatus, state: HostState.Resumed },
+  reject_server_closing: {
+    type: MessageType.Reject,
+    reason: RejectReason.ServerClosing,
+    message: 'The host stopped hosting.',
   },
   chunk_unload: {
     type: MessageType.ChunkUnload,

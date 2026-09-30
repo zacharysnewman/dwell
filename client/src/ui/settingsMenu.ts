@@ -253,6 +253,27 @@ export class SettingsMenu {
     this.panel.prepend(actions);
   }
 
+  /**
+   * Adds Host… to the game menu (local worlds, Phase 5c): it shows `panel` (ui/hostPanel.ts) below
+   * the actions. Call after addGameActions.
+   */
+  addHostPanel(panel: HTMLElement): void {
+    const actions = this.panel.querySelector('.menu-actions');
+    if (!actions) return;
+    panel.hidden = true;
+    const host = document.createElement('button');
+    host.type = 'button';
+    host.id = 'menu-host';
+    host.textContent = 'Host…';
+    host.setAttribute('aria-expanded', 'false');
+    host.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      host.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+    actions.querySelector('#menu-quit')?.before(host);
+    actions.after(panel);
+  }
+
   private slider(spec: SliderSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row';

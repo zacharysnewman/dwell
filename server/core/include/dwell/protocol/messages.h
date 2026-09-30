@@ -99,6 +99,12 @@ struct ChunkData {
   std::vector<std::uint16_t> voxels;
 };
 
+// S→C reliable (`control`, Phase 5c, §10.2): a friend-world host's page was hidden (the world
+// paused) or shown again.
+struct HostStatus {
+  HostState state = HostState::kPaused;
+};
+
 // S→C reliable (`world`): chunks that left the client's view; it drops them.
 struct ChunkUnload {
   std::vector<ChunkCoordNet> coords;  // 1..65535
@@ -283,11 +289,11 @@ inline double FromFixedPosition(std::int32_t v) {
   return v / static_cast<double>(kPositionFixedScale);
 }
 
-using Message =
-    std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello, Challenge,
-                 ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput, PhysicsSnapshot, PlayerEvent,
-                 WorldgenCheck, ChunkData, ChunkUnload, BlockEditRequest, VoxelModification,
-                 ChunkResync, LodIndex, LodIndexUpdate, LodRequest, LodData, ChunkRequest>;
+using Message = std::variant<DatagramPing, DatagramPong, StatusRequest, StatusResponse, ClientHello,
+                             Challenge, ClientAuth, Welcome, Reject, Ping, Pong, PlayerInput,
+                             PhysicsSnapshot, PlayerEvent, WorldgenCheck, ChunkData, ChunkUnload,
+                             BlockEditRequest, VoxelModification, ChunkResync, LodIndex,
+                             LodIndexUpdate, LodRequest, LodData, ChunkRequest, HostStatus>;
 
 // Appends the encoded message to `out`. Strings longer than their limit are truncated at a UTF-8
 // boundary, so encoding never produces a message the peer would reject.

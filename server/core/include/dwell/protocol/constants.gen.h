@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 9;
+inline constexpr std::uint16_t kProtocolVersion = 10;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -95,6 +95,7 @@ enum class MessageType : std::uint8_t {
   kLodData = 21,
   kLodRequest = 76,
   kChunkRequest = 77,
+  kHostStatus = 78,
 };
 
 enum class RejectReason : std::uint8_t {
@@ -105,8 +106,9 @@ enum class RejectReason : std::uint8_t {
   kAuthFailed = 5,
   kMalformed = 6,
   kReplaced = 7,
+  kServerClosing = 8,
 };
-inline constexpr std::uint8_t kMaxRejectReason = 7;
+inline constexpr std::uint8_t kMaxRejectReason = 8;
 
 enum class TransportKind : std::uint8_t {
   kWebTransport = 1,
@@ -171,6 +173,11 @@ enum class VoxelModificationReason : std::uint8_t {
   kRebake = 4,
 };
 
+enum class HostState : std::uint8_t {
+  kPaused = 1,
+  kResumed = 2,
+};
+
 inline constexpr std::uint8_t kMaxPlayerState = 9;
 inline constexpr std::uint8_t kMaxGroundKind = 3;
 inline constexpr std::uint8_t kMaxPlayerEventKind = 4;
@@ -179,6 +186,7 @@ inline constexpr std::uint8_t kMaxChunkForm = 2;
 inline constexpr std::uint8_t kMaxLodForm = 2;
 inline constexpr std::uint8_t kMaxBlockEditAction = 2;
 inline constexpr std::uint8_t kMaxVoxelModificationReason = 4;
+inline constexpr std::uint8_t kMaxHostState = 2;
 
 namespace InputButtons {
 inline constexpr std::uint16_t kJump = 1;

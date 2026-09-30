@@ -322,6 +322,9 @@ int main(int argc, char** argv) {
   }
 
   std::puts("dwell_server: shutting down");
+  // Tell joined players why (Reject(ServerClosing)); best effort before the transport stops.
+  server.CloseSessions("The server is shutting down.", /*keep_loopback=*/false);
+  flush_outbox();
   dwell_net_stop(net);
   if (options.server.store) {
     server.SaveNow();

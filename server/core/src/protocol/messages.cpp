@@ -106,6 +106,10 @@ template <>
 constexpr MessageType TypeOf<ChunkUnload>() {
   return MessageType::kChunkUnload;
 }
+template <>
+constexpr MessageType TypeOf<HostStatus>() {
+  return MessageType::kHostStatus;
+}
 
 template <>
 constexpr MessageType TypeOf<BlockEditRequest>() {
@@ -390,6 +394,8 @@ void Write(ByteWriter& w, const ChunkData& m) {
   w.U32(m.revision);
   if (m.form == ChunkForm::kExplicit) WriteVoxels(w, m.voxels);
 }
+
+void Write(ByteWriter& w, const HostStatus& m) { w.U8(static_cast<std::uint8_t>(m.state)); }
 
 void Write(ByteWriter& w, const ChunkUnload& m) {
   const std::size_t count = std::min<std::size_t>(m.coords.size(), 0xFFFF);
@@ -740,6 +746,14 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       m.revision = r.U32();
       if (r.ok() && m.form == ChunkForm::kExplicit) m.voxels = ReadVoxels(r);
       out = std::move(m);
+      break;
+    }
+    case MessageType::kHostStatus: {
+      HostStatus m;
+      const auto state = r.U8();
+      r.Check(state >= 1 && state <= kMaxHostState);
+      m.state = static_cast<HostState>(state);
+      out = m;
       break;
     }
     case MessageType::kChunkUnload: {

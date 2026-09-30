@@ -7,6 +7,7 @@ import {
   type RejectReason,
   type TransportKind,
   WelcomeFlags,
+  HostState,
 } from '../protocol/constants.gen';
 import {
   authTranscript,
@@ -38,6 +39,8 @@ export interface SessionStats {
   datagramRttMs: number | null;
   /** Latest server tick seen. */
   serverTick: number;
+  /** A friend world's host has paused it (their page is hidden, HostStatus, §10.2). */
+  hostPaused: boolean;
 }
 
 /** Level-of-detail messages (the `lod` channel, §6.6). */
@@ -79,7 +82,12 @@ function smooth(prev: number | null, sample: number): number {
 
 export class ClientSession {
   private state: SessionState = { phase: 'handshaking' };
-  private readonly stats: SessionStats = { rttMs: null, datagramRttMs: null, serverTick: 0 };
+  private readonly stats: SessionStats = {
+    rttMs: null,
+    datagramRttMs: null,
+    serverTick: 0,
+    hostPaused: false,
+  };
   private readonly listeners = new Set<(s: SessionState, stats: SessionStats) => void>();
   private readonly gameListeners = new Set<GameListener>();
   /** World-channel messages that arrived before any game listener (the game is still loading). */
@@ -212,6 +220,10 @@ export class ClientSession {
       case MessageType.Reject:
         this.setState({ phase: 'rejected', reason: m.reason, message: m.message });
         this.stopPings();
+        break;
+      case MessageType.HostStatus:
+        this.stats.hostPaused = m.state === HostState.Paused;
+        this.emit();
         break;
       case MessageType.Pong:
         this.stats.rttMs = smooth(this.stats.rttMs, this.now() - m.clientTimeMs);

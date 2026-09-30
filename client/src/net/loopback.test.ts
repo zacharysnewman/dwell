@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FromWorker, ToWorker } from '../local/messages';
-import { LoopbackTransport } from './loopback';
+import { Channel, TransportKind } from '../protocol/constants.gen';
+import { LOCAL_SESSION, LoopbackTransport, type GuestOutput } from './loopback';
 
 /** Stands in for the local-mode worker: records what it's sent, answers on request. */
 class FakeWorker {
@@ -49,5 +50,34 @@ describe('loopback transport', () => {
     worker.reply({ t: 'close', session: 1 });
     expect(await pending).toBe(false);
     expect(await transport.save()).toBe(false);
+  });
+
+  it('joins as the local session and hands other sessions’ output to the hosting relay', async () => {
+    const { worker, transport } = await started();
+    expect(worker.sent[1]).toMatchObject({
+      t: 'connect',
+      session: LOCAL_SESSION,
+      kind: TransportKind.Loopback,
+    });
+    const mine: number[] = [];
+    const guests: GuestOutput[] = [];
+    transport.setHandlers({
+      onReliable: (_, bytes) => mine.push(bytes[0] ?? -1),
+      onDatagram: () => undefined,
+      onClose: () => undefined,
+    });
+    transport.onGuestOutput = (msg) => guests.push(msg);
+    worker.reply({
+      t: 'reliable',
+      session: LOCAL_SESSION,
+      channel: Channel.control,
+      bytes: Uint8Array.of(1),
+    });
+    worker.reply({ t: 'reliable', session: 5, channel: Channel.world, bytes: Uint8Array.of(2) });
+    // A guest's session closing doesn't close the host's transport.
+    worker.reply({ t: 'close', session: 5 });
+    expect(mine).toEqual([1]);
+    expect(guests.map((m) => m.t)).toEqual(['reliable', 'close']);
+    expect(await Promise.race([transport.save(), Promise.resolve('open')])).toBe('open');
   });
 });

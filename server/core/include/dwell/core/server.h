@@ -156,6 +156,17 @@ class Server {
   // step and announced to its client as PlayerEvent(Knockback) for predicted replay (§9.3).
   void Knockback(std::uint16_t player_id, JPH::Vec3 delta_v);
 
+  // Friend-world hosting (§10.2, Phase 5c): the integrated server's player limit and edit and
+  // flight policies change when its player starts hosting, and `host` (their device key) becomes
+  // an op. Not saved: they apply to this run, to players who join afterwards.
+  void SetHosting(std::uint16_t max_players, EditPolicy edits, EditPolicy flight,
+                  const protocol::PublicKey& host);
+  // Tells every joined client that a friend-world host's page was hidden (paused) or shown again.
+  void BroadcastHostStatus(protocol::HostState state);
+  // Ends sessions with Reject(ServerClosing, message): every session, or all but the loopback one
+  // (a host that stops hosting keeps playing).
+  void CloseSessions(const std::string& message, bool keep_loopback);
+
   // Saves dirty chunks, players and meta now (committed off the tick natively). No-op without a
   // store. Hosts call it before shutting down, then WorldStore::Flush.
   void SaveNow();

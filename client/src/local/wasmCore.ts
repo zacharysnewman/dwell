@@ -1,11 +1,15 @@
 // Typed wrapper around the local-mode WASM build of the server core (server/wasm/wasm_api.cpp).
-import type { Channel, TransportKind } from '../protocol/constants.gen';
+import type { Channel, HostState, TransportKind } from '../protocol/constants.gen';
 import { withHeapBytes, type DwellCoreFactory, type DwellCoreModule } from '../sim/module';
 import type { DwellFiles } from './worldFiles';
 
 export type { DwellCoreFactory } from '../sim/module';
 
 export const OutgoingKind = { Reliable: 0, Datagram: 1, Close: 2 } as const;
+
+/** Who may edit or fly in a hosted world (C++ core::EditPolicy). */
+export const HostPolicy = { Everyone: 0, Host: 1, Nobody: 2 } as const;
+export type HostPolicy = (typeof HostPolicy)[keyof typeof HostPolicy];
 export type OutgoingKind = (typeof OutgoingKind)[keyof typeof OutgoingKind];
 
 export interface Outgoing {
@@ -72,6 +76,26 @@ export class LocalCore {
     this.withBytes(bytes, (ptr) => {
       this.m._dwell_local_datagram(session, ptr, bytes.length);
     });
+  }
+
+  /**
+   * Starts hosting (§10.2): up to `maxPlayers` players (the host included), edit and flight
+   * policies (HostPolicy), and the host's device key as an op.
+   */
+  host(maxPlayers: number, edits: HostPolicy, flight: HostPolicy, hostKey: Uint8Array): void {
+    this.withBytes(hostKey, (ptr) => {
+      this.m._dwell_local_host(maxPlayers, edits, flight, ptr);
+    });
+  }
+
+  /** Tells the guests the host paused or resumed. */
+  hostStatus(state: HostState): void {
+    this.m._dwell_local_host_status(state);
+  }
+
+  /** Stops hosting: guests are sent Reject(ServerClosing); the host keeps playing. */
+  closeGuests(): void {
+    this.m._dwell_local_close_guests();
   }
 
   /** Runs the simulation steps due for `elapsedSeconds` of real time; returns the tick. */

@@ -21,8 +21,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32, in review); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c–5e not started; the TURN key is still to set up (5c) | #25 (5a), #26 (fix), #27, #29 (5b) |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32 |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) 🔍 in review — e2e to pass in CI; phone checks and the TURN key outstanding. 5d–5e not started | #25 (5a), #26 (fix), #27, #29 (5b), 5c PR pending |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -522,7 +522,7 @@ in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #1
 z-fighting on distant water in #21; height fog with a settings menu in #22; full-detail chunks
 beyond the view (`ChunkRequest`, protocol v8), a velocity lookahead and the playtested fog
 defaults in #23; a flight speed slider (protocol v9, #28); the slider as a true minimum near the
-ground (#32, in review). Also outstanding: z-fighting reported high up, not reproduced here (see
+ground (#32). Also outstanding: z-fighting reported high up, not reproduced here (see
 deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
@@ -831,8 +831,10 @@ physics phases (6–8); see *Deviations* below.
 **Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
 (passing in CI) and a manual phone check (outstanding). #25 broke one older e2e test that opened
 the bare page expecting a local world; fixed in #26. 5b complete (#27; deploy fix #29): the
-master runs at `https://dwell-master.dropkick.workers.dev`. 5c–5e not started; the TURN key (manual
-setup) is needed for 5c.
+master runs at `https://dwell-master.dropkick.workers.dev`. 5c in review: deliverables built;
+outstanding are its e2e exit criterion (`e2e/friend.spec.ts`, to pass in CI), the manual phone
+checks, and the TURN key (manual setup; without it the master hands out STUN only). 5d–5e not
+started.
 
 ### 5a — Main menu & world management (client only)
 
@@ -902,28 +904,30 @@ Exit criteria
 ### 5c — Friend worlds: one-click Host from the browser
 
 Deliverables
-- [ ] **Join codes and signaling** (the `Room` Durable Object's protocol, over the WebSocket
-  Hibernation API; the Directory's join-code table): Host opens a `Room` over WebSocket and gets a short code
+- [x] **Join codes and signaling** (the `Room` Durable Object's protocol, over the WebSocket
+  Hibernation API; the code names the `Room`, see *Deviations*): Host opens a `Room` over WebSocket and gets a short code
   (e.g. `KQ7-XM4`, unambiguous alphabet); guests join the room by code; the room relays SDP
   offers/answers and trickled ICE candidates between the host and each guest, and closes when
   the host leaves. Code guessing is rate-limited per IP.
-- [ ] **TURN credentials:** `POST /v1/turn` (signed by the player's key, rate-limited) returns
+- [x] **TURN credentials:** `POST /v1/turn` (signed by the player's key, rate-limited) returns
   short-lived ICE servers from Cloudflare's TURN service; STUN-only when TURN secrets are absent
   (local dev, CI).
-- [ ] **Client `PeerTransport`** (full WebRTC with signaling, unlike the ICE-lite
+- [x] **Client `PeerTransport`** (full WebRTC with signaling, unlike the ICE-lite
   `WebRtcTransport`): the same data channels 0–3 and mapping as §8.1; the transport binding is
   the SHA-256 of the host's DTLS certificate taken from the answer's fingerprint.
-- [ ] **Hosting:** the host page creates one `RTCCertificate` per hosting session and a peer
+- [x] **Hosting:** the host page creates one `RTCCertificate` per hosting session and a peer
   connection per guest on the main thread (peer connections are not available in workers),
   relaying each guest's channels to the local-mode worker as a separate session
   (`TransportKind` WebRTC, binding = the host certificate's SHA-256). The host keeps playing
   through `LoopbackTransport`.
-- [ ] **Host dialog:** visibility (code only / code + same network / public), who may edit and fly
-  (`--edits`/`--flight` policies), the host is op; shows the code, a copyable invite link and a
-  QR code; Stop hosting.
-- [ ] **Host profiles:** max players by platform (e.g. mobile 4, desktop browser 8) and the
-  corresponding caps.
-- [ ] **Backgrounding and leaving (ADR 0009):** Screen Wake Lock while hosting; when the host
+- [x] **Host dialog** (Host… in the game menu): who may edit and fly (`--edits`/`--flight`
+  policies), the host is op; shows the code, a copyable invite link and a QR code, and the guests
+  playing; Stop hosting. Visibility moved to 5d (code + same network) and 5e (public): in 5c every
+  friend world is code only.
+- [x] **Host profiles:** max players by platform (touch devices 4 guests, desktop browsers 8; the
+  host picks up to that), enforced by the local server and the room. (Physics caps: see
+  *Deviations*.)
+- [x] **Backgrounding and leaving (ADR 0009):** Screen Wake Lock while hosting; when the host
   page is hidden the world pauses and guests see "host paused" (new reliable message
   `HostStatus` paused/resumed); when the host stops or closes the page, guests get
   `Reject(ServerClosing)` (new reject reason, also sent by dedicated servers on shutdown) or, on a
@@ -1033,6 +1037,15 @@ These steps need an account owner's dashboard access and cannot be done from cod
 - 5b: the `Room` class is a stub (501) and the Directory holds only its schema version and the
   rate limits; their real contents are 5c–5e deliverables, added as migrations. `POST /v1/whoami`
   was added to check signing end to end. `dwell_server --master` moved to 5d.
+- 5c: join codes are the names of `Room` Durable Objects rather than rows in a Directory table:
+  `idFromName(code)` finds the room, which knows whether it is open, so no second store has to
+  be kept in step and an abandoned code frees itself (the room's alarm). Dedicated servers' codes
+  (5d) will need the Directory table.
+- 5c: host visibility moved to 5d/5e (see the Host dialog deliverable); the host's world is
+  paused by the worker not stepping the simulation while the page is hidden (the browser would
+  throttle it anyway).
+- 5c: guests keep the room socket open while playing, so the room counts them against the guest
+  limit and can tell them the host left even when the peer connection lingers.
 - 5b: rate limits are in the Directory's memory, not SQLite: an evicted object starts with full
   buckets, which errs on allowing requests (acceptable for abuse limits; revisit if abused).
 - 5b: the master pins Vitest 4 (what `@cloudflare/vitest-pool-workers` supports) while the client

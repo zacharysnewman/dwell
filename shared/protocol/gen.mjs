@@ -71,6 +71,7 @@ cppEnum('ChunkForm', 'std::uint8_t', c.chunkForms);
 cppEnum('LodForm', 'std::uint8_t', c.lodForms);
 cppEnum('BlockEditAction', 'std::uint8_t', c.blockEditActions);
 cppEnum('VoxelModificationReason', 'std::uint8_t', c.voxelModificationReasons);
+cppEnum('HostState', 'std::uint8_t', c.hostStates);
 const maxOf = (obj) => Math.max(...Object.values(obj));
 cpp.push('');
 cpp.push(`inline constexpr std::uint8_t kMaxPlayerState = ${maxOf(c.playerStates)};`);
@@ -83,6 +84,7 @@ cpp.push(`inline constexpr std::uint8_t kMaxBlockEditAction = ${maxOf(c.blockEdi
 cpp.push(
   `inline constexpr std::uint8_t kMaxVoxelModificationReason = ${maxOf(c.voxelModificationReasons)};`,
 );
+cpp.push(`inline constexpr std::uint8_t kMaxHostState = ${maxOf(c.hostStates)};`);
 const cppFlags = (name, type, obj) => {
   cpp.push('');
   cpp.push(`namespace ${name} {`);
@@ -152,6 +154,7 @@ tsEnum('ChunkForm', c.chunkForms);
 tsEnum('LodForm', c.lodForms);
 tsEnum('BlockEditAction', c.blockEditActions);
 tsEnum('VoxelModificationReason', c.voxelModificationReasons);
+tsEnum('HostState', c.hostStates);
 const tsFlags = (name, obj) => {
   ts.push('');
   ts.push(`export const ${name} = {`);

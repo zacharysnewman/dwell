@@ -4,7 +4,7 @@
 // added as schema migrations.
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
-import { RateLimiter, SIGNED_LIMITS } from './rateLimit';
+import { JOIN_LIMIT, RateLimiter, SIGNED_LIMITS } from './rateLimit';
 
 /** Schema migrations, applied in order; the index + 1 is the schema version. */
 export const MIGRATIONS: readonly string[] = [
@@ -46,6 +46,12 @@ export class Directory extends DurableObject<Env> {
       .exec<{ value: string }>(`SELECT value FROM meta WHERE key = 'schema'`)
       .one();
     return Number(row.value);
+  }
+
+  /** Admits a join-code lookup from `ip` (JOIN_LIMIT), or says how long to wait. */
+  admitJoin(ip: string, now: number): Admission {
+    if (this.limits.take(`j:${ip}`, JOIN_LIMIT, now)) return { ok: true };
+    return { ok: false, retryAfterS: Math.ceil(1 / JOIN_LIMIT.perSecond) };
   }
 
   /** Admits a signed request from `key` at `ip`, or says how long to wait. */

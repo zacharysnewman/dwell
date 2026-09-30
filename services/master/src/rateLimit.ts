@@ -8,6 +8,12 @@ export interface BucketSpec {
   perSecond: number;
 }
 
+/**
+ * Join-code lookups per IP (on top of the signed limits): a few mistyped codes are fine, guessing
+ * one of ~887 million codes is not.
+ */
+export const JOIN_LIMIT: BucketSpec = { burst: 20, perSecond: 0.5 };
+
 /** Limits for signed requests: a burst of 30, then 1 per second, per key and per IP. */
 export const SIGNED_LIMITS: { key: BucketSpec; ip: BucketSpec } = {
   key: { burst: 30, perSecond: 1 },

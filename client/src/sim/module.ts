@@ -16,6 +16,9 @@ export interface DwellCoreModule {
   _dwell_local_create(worldSeed: number, generatorVersion: number, persist: number): number;
   _dwell_local_storage_error(): number;
   _dwell_local_save(): number;
+  _dwell_local_host(maxPlayers: number, edits: number, flight: number, hostKeyPtr: number): void;
+  _dwell_local_host_status(state: number): void;
+  _dwell_local_close_guests(): void;
   _dwell_local_connected(session: number, kind: number, bindingPtr: number): void;
   _dwell_local_disconnected(session: number): void;
   _dwell_local_reliable(session: number, channel: number, ptr: number, len: number): void;
