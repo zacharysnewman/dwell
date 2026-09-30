@@ -113,10 +113,14 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
   await tap(600, 150, 6);
   await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(3);
 
-  // Back to Break: a tap removes it again.
+  // Back to Break: a tap removes it again, once the new block is the one targeted (on a slow
+  // runner the target could still be the ground below, which the tap would break instead).
   await tap(edit.x, edit.y, 7);
   await expect(page.locator('#touch-edit')).toHaveText('Break');
-  await page.waitForTimeout(150);
+  await expect
+    .poll(() => page.evaluate<string>('globalThis.__dwell.state()?.target?.cell.join() ?? ""'))
+    .toBe([x, y + 1, z].join());
+  await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS
   await tap(600, 150, 8);
   await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(0);
 });
