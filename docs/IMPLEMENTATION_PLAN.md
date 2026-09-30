@@ -735,7 +735,9 @@ Deviations and additions (4c):
   altitude, the whole disc clear from the ceiling) failed against the fog-off code;
   `settingsMenu.test.ts` covers the log-scaled sliders and the JSON, `settings.spec.ts` the menu
   and the clipboard. Checked in Chromium (SwiftShader): no shader errors, haze on the horizon,
-  a clear disc from the ceiling, sliders applied live and kept after a reload.
+  a clear disc from the ceiling, sliders applied live and kept after a reload. Defaults from
+  playtesting: distance 4 km, density 50%, height 1.5 km (`fog.test.ts` pins them; it failed on
+  the first guess of 100 km / 60%).
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.
 

@@ -16,7 +16,7 @@ export interface FogSettings {
   heightM: number;
 }
 
-export const DEFAULT_FOG: FogSettings = { distanceM: 100_000, density: 0.6, heightM: 1500 };
+export const DEFAULT_FOG: FogSettings = { distanceM: 4000, density: 0.5, heightM: 1500 };
 
 /** Slider ranges (the settings menu): distance up to the world's diameter. */
 export const FOG_LIMITS = {

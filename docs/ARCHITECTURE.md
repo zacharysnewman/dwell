@@ -820,7 +820,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   ray (closed form for a straight ray, written from its lower end so it stays finite from orbit),
   mixed toward the sky colour up to a maximum `density`, so nothing is ever fully hidden. The
   ground's horizon hazes, peaks stand clear of valleys, and the haze thins with altitude by itself:
-  from the flight ceiling the whole disc is clear (under 5% haze). Three settings, adjustable in
+  from the flight ceiling the whole disc shows (with the defaults, an even veil of ~12% haze; with
+  a 100 km distance, under 5%). Three settings, adjustable in
   the settings menu (§5, `ui/settingsMenu.ts`, kept in the browser's local storage): **distance**
   (at sea level, where the haze reaches half its maximum: σ₀ = ln 2 / distance; 1 km to the
   world's diameter), **density** (the maximum, 0–100%) and **height** (H, 50 m–50 km).
@@ -1003,7 +1004,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `LOD_REQUESTS_PER_SECOND` | 64 | Per-client `LodRequest` rate limit |
 | `LOD_INDEX_UPDATE_MS` | 1 000 ms | Coalescing interval for `LodIndexUpdate` broadcasts |
 | `LOD_PROPAGATION_SECTIONS_PER_TICK` | 8 | Server downsampling budget (off the tick) |
-| Height fog (client, `render/fog.ts` `DEFAULT_FOG`) | distance 100 km, density 60%, height 1.5 km | Defaults of the settings menu's sliders (§6.6); players tune them per browser |
+| Height fog (client, `render/fog.ts` `DEFAULT_FOG`) | distance 4 km, density 50%, height 1.5 km | Defaults of the settings menu's sliders (§6.6, from playtesting); players tune them per browser |
 
 ---
 
