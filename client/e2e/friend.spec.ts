@@ -100,8 +100,10 @@ test('friend world: host from the game menu, join by code, play together, stop h
   await seenMoving(host, guest);
   await seenMoving(guest, host);
 
-  // A block the guest places goes through the host's world and appears on both pages.
-  await call(guest, 'd.look(0, -45)');
+  // A block the guest places goes through the host's world and appears on both pages. Both
+  // players spawned at one point and walked the same way, so the host stands just ahead of the
+  // guest: place behind, where nobody is (the server refuses blocks inside a player).
+  await call(guest, 'd.look(180, -45)');
   await expect.poll(async () => (await state(guest))?.target ?? null).not.toBeNull();
   const target = (await state(guest))?.target;
   if (!target) throw new Error('nothing targeted');
