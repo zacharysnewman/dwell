@@ -3,6 +3,7 @@
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import type { ChunkCoord } from '../protocol/messages';
 import { LOD_PAD, LOD_VOLUME, type LodBounds, type LodCoord, type LodKind } from '../lod/grid';
+import { wasmUrl } from '../sim/wasmUrl';
 
 /** Module surface of dwell_worldgen.js (-sMODULARIZE -sEXPORT_ES6). */
 export interface DwellWorldgenModule {
@@ -34,11 +35,13 @@ export interface GeneratedSection {
   surface?: Float32Array<ArrayBuffer> | null;
 }
 
-export type DwellWorldgenFactory = () => Promise<DwellWorldgenModule>;
+export type DwellWorldgenFactory = (options?: {
+  locateFile?: (path: string, prefix: string) => string;
+}) => Promise<DwellWorldgenModule>;
 
-/** URL of the worldgen module's JS loader, served from `public/wasm` at the site base. */
+/** URL of the worldgen module's JS loader, served from `public/wasm` at the site base (versioned). */
 export function dwellWorldgenUrl(): string {
-  return `${import.meta.env.BASE_URL}wasm/dwell_worldgen.js`;
+  return wasmUrl('dwell_worldgen.js');
 }
 
 export class ChunkGenerator {
