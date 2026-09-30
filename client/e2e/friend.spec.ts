@@ -10,6 +10,7 @@ interface DebugState {
   terrainReady: boolean;
   terrain: { loaded: number; generating: number };
   target: { cell: Vec3; face: number } | null;
+  feet: Vec3;
   remotes: { playerId: number; feet: Vec3 }[];
 }
 
@@ -49,10 +50,27 @@ async function other(page: Page): Promise<Vec3 | null> {
   return (await state(page))?.remotes[0]?.feet ?? null;
 }
 
-/** Walks forward for a moment and checks the other page saw the player move. */
-async function seenMoving(walker: Page, watcher: Page): Promise<void> {
+/** Waits until the player has stopped moving (so the page and the server agree where it is). */
+async function atRest(page: Page): Promise<void> {
+  let last = '';
+  await expect
+    .poll(
+      async () => {
+        const feet = JSON.stringify((await state(page))?.feet ?? null);
+        const still = feet === last;
+        last = feet;
+        return still;
+      },
+      { timeout: 10_000, intervals: [300] },
+    )
+    .toBe(true);
+}
+
+/** Walks for a moment facing `yaw` and checks the other page saw the player move. */
+async function seenMoving(walker: Page, watcher: Page, yaw: number): Promise<void> {
   await expect.poll(() => other(watcher), { timeout: 15_000 }).not.toBeNull();
   const before = await other(watcher);
+  await call(walker, `d.look(${String(yaw)}, 0)`);
   await call(walker, `d.press('KeyW', true)`);
   await walker.waitForTimeout(800);
   await call(walker, `d.press('KeyW', false)`);
@@ -97,12 +115,14 @@ test('friend world: host from the game menu, join by code, play together, stop h
   await ready(guest);
   await expect(host.locator('#host-guests')).toHaveText('1 of 8 guests playing');
 
-  await seenMoving(host, guest);
-  await seenMoving(guest, host);
+  // Both players spawn at one point: they walk different ways so neither pushes the other.
+  await seenMoving(host, guest, 0);
+  await seenMoving(guest, host, 90);
 
-  // A block the guest places goes through the host's world and appears on both pages. Both
-  // players spawned at one point and walked the same way, so the host stands just ahead of the
-  // guest: place behind, where nobody is (the server refuses blocks inside a player).
+  // A block the guest places goes through the host's world and appears on both pages. The server
+  // aims from its own view of the guest, so aim once the guest stands still, behind itself (where
+  // nobody is: the server refuses blocks inside a player).
+  await atRest(guest);
   await call(guest, 'd.look(180, -45)');
   await expect.poll(async () => (await state(guest))?.target ?? null).not.toBeNull();
   const target = (await state(guest))?.target;
