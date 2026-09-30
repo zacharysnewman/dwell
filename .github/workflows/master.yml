@@ -54,4 +54,7 @@ jobs:
         run: npx wrangler deploy
       - name: Health check
         if: steps.creds.outputs.ready == 'true' && vars.VITE_MASTER_URL != ''
-        run: curl -fsS --retry 5 --retry-delay 3 "${{ vars.VITE_MASTER_URL }}/v1/health"
+        env:
+          MASTER_URL: ${{ vars.VITE_MASTER_URL }}
+        # The variable may end in "/": drop it before appending the path.
+        run: curl -fsS --retry 5 --retry-delay 3 "${MASTER_URL%/}/v1/health"

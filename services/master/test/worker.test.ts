@@ -29,6 +29,13 @@ describe('master worker', () => {
     );
   });
 
+  it('treats repeated slashes as one (a base URL ending in / plus /v1/…)', async () => {
+    for (const path of ['//v1/health', '/v1//health', '/v1/health/']) {
+      const res = await fetchWorker(new Request(`${BASE}${path}`));
+      expect(res.status, path).toBe(200);
+    }
+  });
+
   it('answers unknown paths with a JSON 404', async () => {
     const res = await fetchWorker(new Request(`${BASE}/nope`));
     expect(res.status).toBe(404);
