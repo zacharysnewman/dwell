@@ -11,6 +11,8 @@ export interface LodCamera {
   fovYDeg: number;
   aspect: number;
   heightPx: number;
+  /** Camera velocity (m/s): detail loads ahead along it (see LodSystem). */
+  velocity?: Vec3;
 }
 
 /** Inward plane normals through the camera (sides) and the near plane, for AABB tests. */

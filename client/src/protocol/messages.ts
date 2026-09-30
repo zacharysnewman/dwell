@@ -173,6 +173,7 @@ export type Message =
       chunks: ChunkChanges[];
     }
   | { type: typeof MessageType.ChunkResync; coords: ChunkCoord[] }
+  | { type: typeof MessageType.ChunkRequest; coords: ChunkCoord[] }
   | { type: typeof MessageType.LodIndex; last: boolean; entries: LodIndexEntry[] }
   | { type: typeof MessageType.LodIndexUpdate; entries: LodIndexEntry[] }
   | { type: typeof MessageType.LodRequest; sections: LodSectionRequest[] }
@@ -305,6 +306,7 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       }
       break;
     case MessageType.ChunkResync:
+    case MessageType.ChunkRequest:
       if (m.coords.length < 1 || m.coords.length > Limits.maxResyncChunks) {
         throw new RangeError('resync count');
       }
@@ -645,7 +647,8 @@ function decodeBody(r: ByteReader, type: number): Message {
       }
       return { type, reason: reason as VoxelModificationReason, serverTick, chunks };
     }
-    case MessageType.ChunkResync: {
+    case MessageType.ChunkResync:
+    case MessageType.ChunkRequest: {
       const count = r.u16();
       r.check(count >= 1 && count <= Limits.maxResyncChunks, 'resync count');
       const coords: ChunkCoord[] = [];

@@ -119,6 +119,10 @@ template <>
 constexpr MessageType TypeOf<ChunkResync>() {
   return MessageType::kChunkResync;
 }
+template <>
+constexpr MessageType TypeOf<ChunkRequest>() {
+  return MessageType::kChunkRequest;
+}
 
 void Write(ByteWriter& w, const DatagramPing& m) {
   w.U32(m.seq);
@@ -419,6 +423,12 @@ void Write(ByteWriter& w, const VoxelModification& m) {
 }
 
 void Write(ByteWriter& w, const ChunkResync& m) {
+  const std::size_t count = std::min(m.coords.size(), kMaxResyncChunks);
+  w.U16(static_cast<std::uint16_t>(count));
+  for (std::size_t i = 0; i < count; ++i) WriteCoord(w, m.coords[i]);
+}
+
+void Write(ByteWriter& w, const ChunkRequest& m) {
   const std::size_t count = std::min(m.coords.size(), kMaxResyncChunks);
   w.U16(static_cast<std::uint16_t>(count));
   for (std::size_t i = 0; i < count; ++i) WriteCoord(w, m.coords[i]);
@@ -780,6 +790,14 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
     }
     case MessageType::kChunkResync: {
       ChunkResync m;
+      const std::uint16_t count = r.U16();
+      r.Check(count >= 1 && count <= kMaxResyncChunks);
+      for (int i = 0; i < count && r.ok(); ++i) m.coords.push_back(ReadCoord(r));
+      out = std::move(m);
+      break;
+    }
+    case MessageType::kChunkRequest: {
+      ChunkRequest m;
       const std::uint16_t count = r.U16();
       r.Check(count >= 1 && count <= kMaxResyncChunks);
       for (int i = 0; i < count && r.ok(); ++i) m.coords.push_back(ReadCoord(r));

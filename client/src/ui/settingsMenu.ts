@@ -1,5 +1,7 @@
-// Settings menu: a button in the top-left corner opens a panel of sliders. For now it holds the
-// height fog (render/fog.ts, ARCHITECTURE.md §6.6); the settings are kept in this browser.
+// Settings menu: a button in the top-left corner opens a panel of sliders — the height fog
+// (render/fog.ts) and the full-detail distance (lod/detail.ts), ARCHITECTURE.md §6.6. The settings
+// are kept in this browser.
+import { DETAIL_LIMITS, defaultDetail, sanitizeDetail, type DetailSettings } from '../lod/detail';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from '../render/fog';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
@@ -26,81 +28,138 @@ export function formatMetres(m: number): string {
   return `${Math.round(km).toLocaleString('en-US')} km`;
 }
 
-/** The settings as JSON to copy and share (rounded: whole metres, density to 0.01). */
-export function fogJson(fog: FogSettings): string {
-  const rounded: FogSettings = {
-    distanceM: Math.round(fog.distanceM),
-    density: Math.round(fog.density * 100) / 100,
-    heightM: Math.round(fog.heightM),
-  };
-  return JSON.stringify({ fog: rounded }, null, 2);
+export interface Settings {
+  fog: FogSettings;
+  detail: DetailSettings;
 }
 
-const STORAGE_KEY = 'dwell.fog';
+export function defaultSettings(mobile: boolean): Settings {
+  return { fog: { ...DEFAULT_FOG }, detail: defaultDetail(mobile) };
+}
 
-/** The fog settings kept in this browser, or the defaults (storage can be missing or blocked). */
-export function loadFog(): FogSettings {
+/** The settings as JSON to copy and share (rounded: whole metres, density to 0.01). */
+export function settingsJson(s: Settings): string {
+  const rounded: Settings = {
+    fog: {
+      distanceM: Math.round(s.fog.distanceM),
+      density: Math.round(s.fog.density * 100) / 100,
+      heightM: Math.round(s.fog.heightM),
+    },
+    detail: { distanceM: Math.round(s.detail.distanceM) },
+  };
+  return JSON.stringify(rounded, null, 2);
+}
+
+const FOG_KEY = 'dwell.fog';
+const DETAIL_KEY = 'dwell.detail';
+
+function load(key: string): unknown {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? sanitizeFog(JSON.parse(raw)) : { ...DEFAULT_FOG };
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as unknown) : null;
   } catch {
-    return { ...DEFAULT_FOG };
+    return null; // storage missing or blocked
   }
 }
 
-function saveFog(fog: FogSettings): void {
+/** The settings kept in this browser, or the defaults. */
+export function loadSettings(mobile: boolean): Settings {
+  const defaults = defaultSettings(mobile);
+  const fog = load(FOG_KEY);
+  return {
+    fog: fog ? sanitizeFog(fog) : defaults.fog,
+    detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail),
+  };
+}
+
+function save(s: Settings): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(fog));
+    localStorage.setItem(FOG_KEY, JSON.stringify(s.fog));
+    localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
 }
 
 interface SliderSpec {
-  key: keyof FogSettings;
   label: string;
   hint: string;
+  min: number;
+  max: number;
   log: boolean;
   format: (v: number) => string;
+  get: (s: Settings) => number;
+  with: (s: Settings, v: number) => Settings;
 }
 
-const FOG_SLIDERS: SliderSpec[] = [
+const withFog = (key: keyof FogSettings) => (s: Settings, v: number) => ({
+  ...s,
+  fog: { ...s.fog, [key]: v },
+});
+
+const SECTIONS: { title: string; sliders: SliderSpec[] }[] = [
   {
-    key: 'distanceM',
-    label: 'Distance',
-    hint: 'How far the haze reaches half strength at sea level',
-    log: true,
-    format: formatMetres,
+    title: 'Fog',
+    sliders: [
+      {
+        label: 'Distance',
+        hint: 'How far the haze reaches half strength at sea level',
+        ...FOG_LIMITS.distanceM,
+        log: true,
+        format: formatMetres,
+        get: (s) => s.fog.distanceM,
+        with: withFog('distanceM'),
+      },
+      {
+        label: 'Density',
+        hint: 'The most the haze can hide the far distance (0: no fog)',
+        ...FOG_LIMITS.density,
+        log: false,
+        format: (v) => `${String(Math.round(v * 100))}%`,
+        get: (s) => s.fog.density,
+        with: withFog('density'),
+      },
+      {
+        label: 'Height',
+        hint: 'How high the haze reaches: the air thins above it',
+        ...FOG_LIMITS.heightM,
+        log: true,
+        format: formatMetres,
+        get: (s) => s.fog.heightM,
+        with: withFog('heightM'),
+      },
+    ],
   },
   {
-    key: 'density',
-    label: 'Density',
-    hint: 'The most the haze can hide the far distance (0: no fog)',
-    log: false,
-    format: (v) => `${String(Math.round(v * 100))}%`,
-  },
-  {
-    key: 'heightM',
-    label: 'Height',
-    hint: 'How high the haze reaches: the air thins above it',
-    log: true,
-    format: formatMetres,
+    title: 'Detail',
+    sliders: [
+      {
+        label: 'Full detail',
+        hint: 'How far every block is drawn; farther uses more memory',
+        ...DETAIL_LIMITS.distanceM,
+        log: false,
+        format: formatMetres,
+        get: (s) => s.detail.distanceM,
+        with: (s, v) => ({ ...s, detail: { distanceM: v } }),
+      },
+    ],
   },
 ];
 
 export class SettingsMenu {
   private readonly panel: HTMLDivElement;
-  private readonly inputs = new Map<keyof FogSettings, HTMLInputElement>();
-  private readonly values = new Map<keyof FogSettings, HTMLSpanElement>();
+  private readonly rows: { spec: SliderSpec; input: HTMLInputElement; value: HTMLSpanElement }[] =
+    [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
-  private fog: FogSettings;
+  private settings: Settings;
 
   constructor(
     parent: HTMLElement,
-    private readonly onFog: (fog: FogSettings) => void,
+    private readonly mobile: boolean,
+    private readonly onChange: (settings: Settings) => void,
   ) {
-    this.fog = loadFog();
+    this.settings = loadSettings(mobile);
     const button = document.createElement('button');
     button.type = 'button';
     button.id = 'menu-button';
@@ -112,16 +171,18 @@ export class SettingsMenu {
     this.panel = document.createElement('div');
     this.panel.id = 'settings-menu';
     this.panel.hidden = true;
-    const title = document.createElement('h2');
-    title.textContent = 'Fog';
-    this.panel.append(title);
-    for (const spec of FOG_SLIDERS) this.panel.append(this.slider(spec));
+    for (const section of SECTIONS) {
+      const title = document.createElement('h2');
+      title.textContent = section.title;
+      this.panel.append(title);
+      for (const spec of section.sliders) this.panel.append(this.slider(spec));
+    }
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'settings-reset';
     reset.textContent = 'Reset';
     reset.addEventListener('click', () => {
-      this.set({ ...DEFAULT_FOG });
+      this.set(defaultSettings(this.mobile));
     });
     const copy = document.createElement('button');
     copy.type = 'button';
@@ -135,7 +196,7 @@ export class SettingsMenu {
     actions.append(reset, copy);
     this.fallback.className = 'settings-json';
     this.fallback.readOnly = true;
-    this.fallback.rows = 7;
+    this.fallback.rows = 10;
     this.fallback.hidden = true;
     this.panel.append(actions, this.fallback);
 
@@ -146,11 +207,14 @@ export class SettingsMenu {
       button.blur();
     });
     parent.append(button, this.panel);
-    this.set(this.fog);
+    this.set(this.settings);
+  }
+
+  get current(): Settings {
+    return this.settings;
   }
 
   private slider(spec: SliderSpec): HTMLLabelElement {
-    const { min, max } = FOG_LIMITS[spec.key];
     const row = document.createElement('label');
     row.className = 'settings-row';
     const name = document.createElement('span');
@@ -165,8 +229,8 @@ export class SettingsMenu {
     input.step = '1';
     input.title = spec.hint;
     input.addEventListener('input', () => {
-      const v = sliderToValue(Number(input.value), min, max, spec.log);
-      this.fog = { ...this.fog, [spec.key]: v };
+      const v = sliderToValue(Number(input.value), spec.min, spec.max, spec.log);
+      this.settings = spec.with(this.settings, v);
       value.textContent = spec.format(v);
       this.apply();
     });
@@ -174,25 +238,22 @@ export class SettingsMenu {
     hint.className = 'settings-hint';
     hint.textContent = spec.hint;
     row.append(name, value, input, hint);
-    this.inputs.set(spec.key, input);
-    this.values.set(spec.key, value);
+    this.rows.push({ spec, input, value });
     return row;
   }
 
-  private set(fog: FogSettings): void {
-    this.fog = fog;
-    for (const spec of FOG_SLIDERS) {
-      const { min, max } = FOG_LIMITS[spec.key];
-      const input = this.inputs.get(spec.key);
-      if (input) input.value = String(valueToSlider(fog[spec.key], min, max, spec.log));
-      const value = this.values.get(spec.key);
-      if (value) value.textContent = spec.format(fog[spec.key]);
+  private set(settings: Settings): void {
+    this.settings = settings;
+    for (const { spec, input, value } of this.rows) {
+      const v = spec.get(settings);
+      input.value = String(valueToSlider(v, spec.min, spec.max, spec.log));
+      value.textContent = spec.format(v);
     }
     this.apply();
   }
 
   private async copy(button: HTMLButtonElement): Promise<void> {
-    const json = fogJson(this.fog);
+    const json = settingsJson(this.settings);
     try {
       await navigator.clipboard.writeText(json);
       this.fallback.hidden = true;
@@ -210,8 +271,8 @@ export class SettingsMenu {
   }
 
   private apply(): void {
-    if (!this.fallback.hidden) this.fallback.value = fogJson(this.fog);
-    this.onFog(this.fog);
-    saveFog(this.fog);
+    if (!this.fallback.hidden) this.fallback.value = settingsJson(this.settings);
+    this.onChange(this.settings);
+    save(this.settings);
   }
 }

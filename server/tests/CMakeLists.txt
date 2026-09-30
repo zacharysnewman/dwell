@@ -6,6 +6,7 @@ add_executable(dwell_tests
   core_test.cpp
   server_test.cpp
   streaming_test.cpp
+  chunk_request_test.cpp
   block_edit_test.cpp
   lod_server_test.cpp
   storage/storage_test.cpp

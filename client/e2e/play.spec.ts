@@ -1,6 +1,6 @@
 // Phase 2: players move with client prediction, and see each other (native server + local mode).
 import { readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { INVITE_FILE } from './global-setup';
 
 type Vec3 = [number, number, number];
@@ -107,50 +107,58 @@ test('local mode streams terrain: Generated chunks, or every chunk explicitly on
 test('two clients on a native server see each other move', async ({ browser }) => {
   // Two pages stream and generate their terrain side by side on CI's few cores.
   test.setTimeout(120_000);
-  // Separate contexts: separate device keys (a shared key would replace the first session).
-  const a = await (await browser.newContext()).newPage();
-  const b = await (await browser.newContext()).newPage();
-  for (const [n, p] of [
-    ['A', a],
-    ['B', b],
-  ] as const) {
-    p.on('console', (m) => {
-      if (m.type() === 'error') console.log(n, 'console', m.text());
-    });
-    p.on('pageerror', (e) => {
-      console.log(n, 'pageerror', e.message, e.stack);
-    });
+  // Separate contexts: separate device keys (a shared key would replace the first session). Closed
+  // at the end: left open, both pages keep generating and rendering, starving the tests after.
+  const contexts: BrowserContext[] = [await browser.newContext(), await browser.newContext()];
+  const [a, b] = await Promise.all(contexts.map((c) => c.newPage()));
+  try {
+    for (const [n, p] of [
+      ['A', a],
+      ['B', b],
+    ] as const) {
+      p.on('console', (m) => {
+        if (m.type() === 'error') console.log(n, 'console', m.text());
+      });
+      p.on('pageerror', (e) => {
+        console.log(n, 'pageerror', e.message, e.stack);
+      });
+    }
+    await a.goto(`./${invite()}`);
+    await b.goto(`./${invite()}&netsim=150,20,5`);
+    const sa = await waitActive(a);
+    await waitActive(b);
+    await waitTerrain(a);
+    await waitTerrain(b);
+    await expect
+      .poll(
+        async () => (await state(b))?.remotes.some((r) => r.playerId === sa.playerId) ?? false,
+        {
+          timeout: 10_000,
+        },
+      )
+      .toBe(true);
+    const before = (await state(b))?.remotes.find((r) => r.playerId === sa.playerId)?.feet ?? [
+      0, 0, 0,
+    ];
+    await walkForward(a, 90);
+    await expect
+      .poll(
+        async () => {
+          const seen = (await state(b))?.remotes.find((r) => r.playerId === sa.playerId)?.feet;
+          return (seen?.[2] ?? 0) - before[2];
+        },
+        { timeout: 10_000 },
+      )
+      .toBeGreaterThan(3);
+    // B's own prediction runs over the simulated 150 ms link without snapping. A short walk: CI's
+    // software renderer runs this page at well under 60 ticks/s, and the server repeats a starved
+    // client's last input, so a long walk would diverge whatever the prediction does.
+    await walkForward(b, 15);
+    const sb = await state(b);
+    expect(sb?.feet[2] ?? 0).toBeGreaterThan(0.5);
+    const stats = await b.evaluate(`(${hooks.toString()})()?.state()?.stats`);
+    expect((stats as { snaps?: number } | undefined)?.snaps, JSON.stringify(stats)).toBe(0);
+  } finally {
+    for (const c of contexts) await c.close();
   }
-  await a.goto(`./${invite()}`);
-  await b.goto(`./${invite()}&netsim=150,20,5`);
-  const sa = await waitActive(a);
-  await waitActive(b);
-  await waitTerrain(a);
-  await waitTerrain(b);
-  await expect
-    .poll(async () => (await state(b))?.remotes.some((r) => r.playerId === sa.playerId) ?? false, {
-      timeout: 10_000,
-    })
-    .toBe(true);
-  const before = (await state(b))?.remotes.find((r) => r.playerId === sa.playerId)?.feet ?? [
-    0, 0, 0,
-  ];
-  await walkForward(a, 90);
-  await expect
-    .poll(
-      async () => {
-        const seen = (await state(b))?.remotes.find((r) => r.playerId === sa.playerId)?.feet;
-        return (seen?.[2] ?? 0) - before[2];
-      },
-      { timeout: 10_000 },
-    )
-    .toBeGreaterThan(3);
-  // B's own prediction runs over the simulated 150 ms link without snapping. A short walk: CI's
-  // software renderer runs this page at well under 60 ticks/s, and the server repeats a starved
-  // client's last input, so a long walk would diverge whatever the prediction does.
-  await walkForward(b, 15);
-  const sb = await state(b);
-  expect(sb?.feet[2] ?? 0).toBeGreaterThan(0.5);
-  const stats = await b.evaluate(`(${hooks.toString()})()?.state()?.stats`);
-  expect((stats as { snaps?: number } | undefined)?.snaps, JSON.stringify(stats)).toBe(0);
 });

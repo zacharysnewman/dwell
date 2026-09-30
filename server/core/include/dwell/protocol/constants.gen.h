@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 7;
+inline constexpr std::uint16_t kProtocolVersion = 8;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -31,6 +31,8 @@ inline constexpr int kSeaLevel = 0;
 inline constexpr int kWorldRadius = 8192000;
 inline constexpr int kPositionFixedScale = 256;
 inline constexpr int kViewRadiusChunks = 3;
+inline constexpr int kRenderRadiusChunks = 12;
+inline constexpr int kChunkRequestsPerSecond = 256;
 inline constexpr int kUnloadMarginChunks = 1;
 inline constexpr int kChunkBytesPerSecond = 1048576;
 inline constexpr int kMaxChunksPerTick = 32;
@@ -90,6 +92,7 @@ enum class MessageType : std::uint8_t {
   kLodIndexUpdate = 20,
   kLodData = 21,
   kLodRequest = 76,
+  kChunkRequest = 77,
 };
 
 enum class RejectReason : std::uint8_t {
