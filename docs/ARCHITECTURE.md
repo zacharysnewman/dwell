@@ -839,7 +839,12 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   has moved 512 m, so it settles instead of swinging. The same view now holds at ~1,000–1,500
   sections within 256 MB (×2.3), ~4 ms of script per frame. A test runs a view several times the
   budget and checks it settles within it, holds, and grows finer again where the view needs
-  less. A test walks, turns
+  less. **Both are settings** (playtest: the coarser view looked worse, and it should be
+  tunable): *Distant detail* (the pixel error, 1–16 CSS px) and *Distant memory* (the cache
+  budget, 32–1,024 MB) sliders in the settings menu, next to Full detail (`lod/detail.ts`,
+  defaults `LOD_PIXEL_ERROR` and `LOD_CACHE_MB`); a change applies at once and restarts the error
+  scale from 1, so the view re-fits the new budget within seconds. (A 2× screen's view before the
+  cap was ~2 CSS px with no memory bound.) A test walks, turns
   and rises to 2,000 km with jobs finishing in random order, and checks every frame that sampled
   points of the view lie in exactly one drawn, empty, buried or chunk-refined section.
 - Buried says only that a section's **LOD cells** are rock: the bounds leave out caves more than
@@ -1065,12 +1070,12 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |
 | `LOD_MAX_LEVEL` | 19 | Root level; one section holds the whole disc |
 | `LOD_INDEX_LEVEL` | 8 | Level of the modified-section index sent to clients |
-| `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
+| `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels; a setting (1–16) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
 | LOD error scale (client, `lodSystem.ts`) | ×1.15 steps, 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
 | Full-detail distance (client, `lod/detail.ts`) | 256 m desktop / 128 m mobile (96–352 m) | Chunks are drawn out to it (a setting; §6.6) |
 | LOD lookahead (client, `lodSystem.ts`) | 1.5 s, at most 1 km | Distances are the nearer of the camera's and of its position this far ahead along its velocity (§6.6) |
 | `LOD_NEAR_SPLIT_M` | 1 024 m | Distance splitting the near and far depth passes |
-| `LOD_CACHE_MB` | 256 (desktop) / 96 (mobile) | Client cache of LOD section content and meshes; the view is held within it (error scale) |
+| `LOD_CACHE_MB` | 256 (desktop) / 96 (mobile); a setting (32–1,024) | Client cache of LOD section content and meshes; the view is held within it (error scale) |
 | `LOD_BYTES_PER_SECOND` | 256 KiB/s | LOD bandwidth budget per client (`lod` stream) |
 | `LOD_REQUESTS_PER_SECOND` | 64 | Per-client `LodRequest` rate limit |
 | `LOD_INDEX_UPDATE_MS` | 1 000 ms | Coalescing interval for `LodIndexUpdate` broadcasts |

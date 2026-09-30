@@ -418,6 +418,41 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     expect(lod.debugStats().cacheBytes).toBeLessThanOrEqual(budget);
   });
 
+  it('takes the pixel error and memory from the settings, re-fitting the view at once', async () => {
+    const jobs = new Jobs();
+    jobs.meshBytes = 64 * 1024;
+    const small = 80 * 1048576;
+    const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: small,
+      maxGenerationJobs: 64,
+      maxMeshJobs: 64,
+    });
+    let now = 0;
+    const run = async (ms: number): Promise<void> => {
+      for (const end = now + ms; now < end; now += 50) {
+        lod.update(camera([0, 40, 0], 0, -10), now);
+        await jobs.finish(() => 0, 1);
+      }
+    };
+    await run(60_000);
+    expect(lod.debugStats().errorScale).toBeGreaterThan(1);
+    const sections = lod.lastSelection().drawn.length;
+
+    // More memory: the view is no longer coarsened, and holds more than the old budget.
+    lod.setQuality(4, 1024 * 1048576);
+    await run(60_000);
+    expect(lod.debugStats().errorScale).toBe(1);
+    expect(lod.debugStats().cacheBytes).toBeGreaterThan(small);
+    expect(lod.lastSelection().drawn.length).toBeGreaterThan(sections);
+
+    // A finer pixel error refines further; a coarser one draws fewer sections.
+    const at4 = lod.lastSelection().drawn.length;
+    lod.setQuality(8, 1024 * 1048576);
+    await run(20_000);
+    expect(lod.lastSelection().drawn.length).toBeLessThan(at4);
+  });
+
   it('refines by screen-space error: coarser with distance and altitude', async () => {
     const jobs = new Jobs();
     const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {
