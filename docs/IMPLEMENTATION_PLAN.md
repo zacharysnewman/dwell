@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#20 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#21 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -516,7 +516,7 @@ Exit criteria
 **Status:** in progress — every deliverable built (4a grid and generation, 4b propagation and
 streaming, protocol v6, 4c the client's LOD system, rendering and creative flight — protocol v7),
 in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #15; a fix for
-z-fighting on distant water pending review.
+z-fighting on distant water in #21; height fog with a settings menu pending review.
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
@@ -635,7 +635,8 @@ Deviations and additions (4c):
 - **Renderer:** the scene lost its background colour (three.js clears with it in every `render()`,
   wiping the far pass — found in the browser); the far pass's near plane follows altitude; fog
   scales with altitude. Then, from playtest feedback, fog is off for now (after briefly reaching
-  512 km): the whole world is drawn without haze (`fog.test.ts` failed while fog was on).
+  512 km): the whole world is drawn without haze (`fog.test.ts` failed while fog was on); later
+  replaced by height fog (below).
 - **Coarse surfaces:** a column's top cell takes its surface's material, not the bedrock a cell
   taller than the relief samples at its bottom (found in the browser: the disc was grey from
   orbit; `lod: surface` failed before the fix, and the LOD golden hashes were regenerated).
@@ -725,6 +726,16 @@ Deviations and additions (4c):
   it in half-cell steps (1.2–2× the triangles; exact per-column tops measured 10–70×). `lod:
   column surfaces` (unbiased within a few metres at every level) and the `lodMesher.test.ts`
   surface tests failed before. Cells, server, protocol and golden hashes are unchanged.
+- **Height fog and a settings menu** (playtest request: a light atmospheric haze that fades out
+  higher up, so the whole map shows from the flight ceiling): fog was linear and scaled with
+  height, then off. It is now an exponential atmosphere's optical depth along each view ray,
+  capped at a maximum density (§6.6), with distance, density and height sliders (distance up to
+  the world's diameter), Reset and Copy JSON in a new ☰ settings menu, top left; the connection
+  status and the F4 map moved clear of the button. `fog.test.ts` (horizon hazed, clearer with
+  altitude, the whole disc clear from the ceiling) failed against the fog-off code;
+  `settingsMenu.test.ts` covers the log-scaled sliders and the JSON, `settings.spec.ts` the menu
+  and the clipboard. Checked in Chromium (SwiftShader): no shader errors, haze on the horizon,
+  a clear disc from the ceiling, sliders applied live and kept after a reload.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.
 

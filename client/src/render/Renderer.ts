@@ -1,6 +1,7 @@
 import type { SectionMeshes } from '../mesh/lodMesher';
 import type { ChunkMeshes } from '../mesh/mesher';
 import type { ChunkCoord, Vec3 } from '../protocol/messages';
+import type { FogSettings } from './fog';
 
 /** A player drawn by the renderer (remote players, and the local one when dead). */
 export interface PlayerView {
@@ -45,6 +46,8 @@ export interface Renderer {
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void;
   /** Debug: tint LOD sections by level. */
   setLodLevelColors(on: boolean): void;
+  /** Height fog (§6.6): the haze's distance, density and scale height (render/fog.ts). */
+  setFog(fog: FogSettings): void;
   /** Outlines the targeted block (§6.5): its min corner and box height (slabs 0.5), or none. */
   setBlockOutline(cell: Vec3 | null, height?: number): void;
   /** Adds, updates, or (null) removes a player. */
