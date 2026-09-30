@@ -308,9 +308,9 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
-| `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB`; `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
+| `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB` (the pixel error coarsens while the view's own sections exceed it); `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4, two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
-| `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material, skirts toggled per frame, chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry face shading (and the flat colour of untextured materials). |
+| `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material; a section's surface and skirts are one geometry and one draw call, `lodSection.ts`, its index rewritten when the sides whose skirts show change; chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Terrain is static: world matrices are computed when an object is placed rather than for the whole scene in each pass, and the CPU copies of chunk and LOD vertex data are dropped once uploaded to the GPU. Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry face shading (and the flat colour of untextured materials). |
 | `physics/` | Debris world (Phase 7) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
 | `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 6; player interpolation is in `game/remotes.ts`. |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
@@ -797,9 +797,11 @@ Every player's builds are therefore visible from anywhere.
 
 **Client** **[built, Phase 4c]** (`lod/lodSystem.ts`, `mesh/lodMesher.ts`, `render/three`).
 Each frame the octree is walked from the root around the **camera** (the eye):
-- A node is refined while its cells project larger than `LOD_PIXEL_ERROR` pixels (screen-space
-  error; equivalent to a log-distance rule at a fixed field of view, and right for altitude and
-  zoom) — in every direction: detail depends on distance only, not on where the camera looks,
+- A node is refined while its cells project larger than `LOD_PIXEL_ERROR` **CSS** pixels, times
+  the error scale that keeps the view within the cache (below) (screen-space error; equivalent to
+  a log-distance rule at a fixed field of view, and right for altitude and zoom). CSS pixels, not
+  device pixels: counted in device pixels, a 2× screen asked for four times the sections (a
+  phone's 3×, nine) — in every direction: detail depends on distance only, not on where the camera looks,
   so turning shows what is already loaded instead of popping in (playtest feedback). The view
   decides only the load order: work outside it (and not closer than its own size) ranks 8× lower,
   so what the camera faces loads first and the ring around it after. Level-0 nodes are the streamed chunks: a level-1 section refines into its 8
@@ -825,7 +827,19 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   one whose LOD generation is slow or stalled still shows the world around the player.
 - A parent stays drawn until **all its children** are ready (meshed, or known empty or buried),
   then they swap in; unused children are evicted only as whole sibling sets, least recently used
-  first, while the cache is over `LOD_CACHE_MB` — the view never has holes. A test walks, turns
+  first, while the cache is over `LOD_CACHE_MB` — the view never has holes. **The view itself
+  must fit the cache:** eviction can only drop what the view no longer uses, and on a large or
+  2× screen the sections it used filled several times the budget (measured in headless Chromium
+  at 1440 × 900 at 2×, standing still: 8,700 drawn sections and a 1.7 GB heap after 150 s, still
+  growing, and 70 ms of script per frame with drawing off — the playtest's falling frame rate and
+  growing memory). So while the bytes of the sections the walk reaches exceed `LOD_CACHE_MB`,
+  the pixel error is multiplied by 1.15 (at most once a second, up to ×16), and divided again
+  when they use under 60% of it (at most every 10 s); a finer step that overflows (the sections
+  needed change in jumps, a band of distance refining at once) is not retried until the camera
+  has moved 512 m, so it settles instead of swinging. The same view now holds at ~1,000–1,500
+  sections within 256 MB (×2.3), ~4 ms of script per frame. A test runs a view several times the
+  budget and checks it settles within it, holds, and grows finer again where the view needs
+  less. A test walks, turns
   and rises to 2,000 km with jobs finishing in random order, and checks every frame that sampled
   points of the view lie in exactly one drawn, empty, buried or chunk-refined section.
 - Buried says only that a section's **LOD cells** are rock: the bounds leave out caves more than
@@ -854,8 +868,11 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   linear light, per face group, as a mipmapped sRGB texture averages from afar) and face shading,
   written as linear vertex colours like the chunks' decoded texels (sRGB values used directly drew
   distant land paler than the chunks — playtest), in cell units (a group scaled by the cell size). Border faces
-  the apron hides go to a per-side **skirt** mesh, shown when the neighbour on that side is not
-  drawn at the same level (and not buried), closing cracks between levels. A generated section
+  the apron hides go to a per-side **skirt**, shown when the neighbour on that side is not
+  drawn at the same level (and not buried), closing cracks between levels. The surface and the
+  six skirts are one geometry (`render/three/lodSection.ts`) whose index lists the surface's
+  triangles and those of the sides shown, rewritten only when they change: one draw call per
+  section. (Six separate skirt meshes were two thirds of the LOD's draw calls.) A generated section
   next to a modified one takes that neighbour's border into its apron before meshing.
 - **Depth:** 5 cm to beyond 16 000 km does not fit one depth buffer, so the frame renders a far
   pass and then, after a depth clear, a near pass (0.05 m to `LOD_NEAR_SPLIT_M`); everything is in
@@ -911,7 +928,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   server, `Downsample`, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
-  flight (generation, meshing, requests), cache use and LOD bytes/s; `?lodcolors=1` tints sections
+  flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
+  error's scale and LOD bytes/s; `?lodcolors=1` tints sections
   by level, `?lod=0` turns the LOD off. Measured under Node with a fake worker pool, one frame's update
   (selection, skirts, jobs) costs ~2–4 ms for ~2,800 drawn sections.
 
@@ -1047,11 +1065,12 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |
 | `LOD_MAX_LEVEL` | 19 | Root level; one section holds the whole disc |
 | `LOD_INDEX_LEVEL` | 8 | Level of the modified-section index sent to clients |
-| `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6) |
+| `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
+| LOD error scale (client, `lodSystem.ts`) | ×1.15 steps, 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
 | Full-detail distance (client, `lod/detail.ts`) | 256 m desktop / 128 m mobile (96–352 m) | Chunks are drawn out to it (a setting; §6.6) |
 | LOD lookahead (client, `lodSystem.ts`) | 1.5 s, at most 1 km | Distances are the nearer of the camera's and of its position this far ahead along its velocity (§6.6) |
 | `LOD_NEAR_SPLIT_M` | 1 024 m | Distance splitting the near and far depth passes |
-| `LOD_CACHE_MB` | 256 (desktop) / 96 (mobile) | Client cache of LOD section content and meshes |
+| `LOD_CACHE_MB` | 256 (desktop) / 96 (mobile) | Client cache of LOD section content and meshes; the view is held within it (error scale) |
 | `LOD_BYTES_PER_SECOND` | 256 KiB/s | LOD bandwidth budget per client (`lod` stream) |
 | `LOD_REQUESTS_PER_SECOND` | 64 | Per-client `LodRequest` rate limit |
 | `LOD_INDEX_UPDATE_MS` | 1 000 ms | Coalescing interval for `LodIndexUpdate` broadcasts |

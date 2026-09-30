@@ -80,6 +80,10 @@ export interface LodStats {
   meshing: number;
   asking: number;
   cacheBytes: number;
+  /** Bytes of the sections the view uses (this frame's traversal): what must fit the cache. */
+  inUseBytes: number;
+  /** The pixel error's multiplier, raised while the view does not fit the cache (see adapt). */
+  errorScale: number;
   /** Bytes per second received on the lod stream (over the last second). */
   bytesPerSecond: number;
 }
@@ -139,6 +143,21 @@ export const MAX_LOOKAHEAD_M = 1024;
 export const CHUNK_REQUEST_RETRY_MS = 10_000;
 /** Chunks are asked for within this many chunks of the camera (the server's radius, less a margin). */
 export const CHUNK_REQUEST_RADIUS = World.renderRadiusChunks - 1;
+/**
+ * The view must fit the cache (LOD_CACHE_MB): while the sections it uses are over the budget, the
+ * pixel error is raised by ERROR_SCALE_STEP (at most once per COARSER_AFTER_MS), and lowered again
+ * when they use under ROOM of it (at most once per FINER_AFTER_MS). What the view needs changes in
+ * jumps (a whole band of distance refines at once), so a finer step can overflow: that scale is not
+ * tried again until the camera has moved RETRY_FINER_AFTER_M, or it would swing back and forth,
+ * reloading sections each time. Without it the cache grew without bound on large or 2× screens:
+ * over 1 GB and thousands of draw calls.
+ */
+export const ERROR_SCALE_STEP = 1.15;
+export const MAX_ERROR_SCALE = 16;
+const ROOM = 0.6;
+export const COARSER_AFTER_MS = 1000;
+export const FINER_AFTER_MS = 10_000;
+export const RETRY_FINER_AFTER_M = 512;
 /** The chunks draw water's surface 1/8 m below a full block (mesher.ts WATER_SURFACE). */
 const CHUNK_WATER_DROP_M = 0.125;
 const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
@@ -196,6 +215,13 @@ export class LodSystem {
   private due: Node[] = [];
   private remeshed: Node[] = [];
   private stats: LodStats | null = null;
+  /** Bytes of the sections this frame's traversal reached (see adapt). */
+  private inUse = 0;
+  private errorScale = 1;
+  private lastScaleMs: number | null = null;
+  private lastStepFiner = false;
+  /** A scale that overflowed right after a finer step, and where: not tried again nearby. */
+  private tooFine: { scale: number; at: Vec3 } | null = null;
   /** The root is ready: LOD draws, and chunks show only where their level-1 section is refined. */
   active = false;
 
@@ -284,6 +310,7 @@ export class LodSystem {
     this.wanted = [];
     this.due = [];
     this.remeshed = [];
+    this.inUse = 0;
     const selection: Selection = { drawn: [], empty: [], chunks: [] };
     this.refined.clear();
     this.findCovered(camera.position, nowMs);
@@ -311,6 +338,7 @@ export class LodSystem {
     this.sendRequests(nowMs);
     this.sendChunkRequests(nowMs);
     this.evict();
+    this.adapt(camera.position, nowMs);
     this.stats = this.computeStats(nowMs);
   }
 
@@ -324,6 +352,8 @@ export class LodSystem {
         meshing: 0,
         asking: 0,
         cacheBytes: 0,
+        inUseBytes: 0,
+        errorScale: 1,
         bytesPerSecond: 0,
       }
     );
@@ -332,6 +362,7 @@ export class LodSystem {
   // --- selection -------------------------------------------------------------------------------
 
   private touch(n: Node): void {
+    if (n.lastUsed !== this.frame) this.inUse += n.bytes + (n.cells?.byteLength ?? 0);
     n.lastUsed = this.frame;
     if ((n.needsAnswer || n.stale) && n.asked === null) this.due.push(n);
     if (n.remesh) this.remeshed.push(n);
@@ -509,7 +540,10 @@ export class LodSystem {
     const d = Math.max(1, this.distance(node.lo, node.hi, frustum));
     // Down to the full-detail distance whatever the pixel error (so level 1 is reached there).
     if (this.detailM !== null && d < this.detailM) return true;
-    return (cellSize(node.coord[0]) / d) * frustum.pixelsPerRadian > this.options.pixelError;
+    return (
+      (cellSize(node.coord[0]) / d) * frustum.pixelsPerRadian >
+      this.options.pixelError * this.errorScale
+    );
   }
 
   /** A level-1 section shows as its chunks: within the full-detail distance (if set). */
@@ -874,6 +908,31 @@ export class LodSystem {
 
   // --- cache ---------------------------------------------------------------------------------
 
+  /** Coarser while the view's sections do not fit the cache, finer again once well within it. */
+  private adapt(position: Vec3, nowMs: number): void {
+    if (
+      this.tooFine &&
+      boxDistance(position, this.tooFine.at, this.tooFine.at) > RETRY_FINER_AFTER_M
+    ) {
+      this.tooFine = null;
+    }
+    const since = this.lastScaleMs === null ? Infinity : nowMs - this.lastScaleMs;
+    const budget = this.options.cacheBytes;
+    if (this.inUse > budget && since >= COARSER_AFTER_MS) {
+      if (this.errorScale >= MAX_ERROR_SCALE) return;
+      if (this.lastStepFiner) this.tooFine = { scale: this.errorScale, at: [...position] };
+      this.errorScale = Math.min(MAX_ERROR_SCALE, this.errorScale * ERROR_SCALE_STEP);
+      this.lastScaleMs = nowMs;
+      this.lastStepFiner = false;
+    } else if (this.inUse < budget * ROOM && this.errorScale > 1 && since >= FINER_AFTER_MS) {
+      const finer = Math.max(1, this.errorScale / ERROR_SCALE_STEP);
+      if (this.tooFine && finer <= this.tooFine.scale * 1.001) return;
+      this.errorScale = finer;
+      this.lastScaleMs = nowMs;
+      this.lastStepFiner = true;
+    }
+  }
+
   /**
    * While over the cache budget, drops sets of children the traversal no longer visits, least
    * recently used first (from the leaves up: a node's children go before the node).
@@ -921,6 +980,8 @@ export class LodSystem {
       meshing: this.meshing,
       asking: this.asking.size,
       cacheBytes: this.cacheBytes,
+      inUseBytes: this.inUse,
+      errorScale: this.errorScale,
       bytesPerSecond: this.received.reduce((n, r) => n + r.bytes, 0),
     };
   }
@@ -935,7 +996,8 @@ export function formatLodStats(s: LodStats): string {
   return [
     `LOD ${levels || '—'} · chunks×${String(s.chunkSections)} · nodes ${String(s.nodes)}`,
     `LOD jobs gen ${String(s.generating)} mesh ${String(s.meshing)} ask ${String(s.asking)} · ` +
-      `cache ${(s.cacheBytes / 1048576).toFixed(1)} MB · ${(s.bytesPerSecond / 1024).toFixed(1)} KB/s`,
+      `cache ${(s.cacheBytes / 1048576).toFixed(1)} MB (view ${(s.inUseBytes / 1048576).toFixed(1)}) · ` +
+      `error ×${s.errorScale.toFixed(2)} · ${(s.bytesPerSecond / 1024).toFixed(1)} KB/s`,
   ].join('\n');
 }
 

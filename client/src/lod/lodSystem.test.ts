@@ -92,12 +92,21 @@ class Jobs implements SectionSource, SectionMesher {
   }
   /** Each meshing job's options. */
   options: MeshSectionOptions[] = [];
+  /** Bytes of each mesh (for the cache budget); 0: empty meshes. */
+  meshBytes = 0;
   meshSection(_cells: Uint16Array, options: MeshSectionOptions = {}): Promise<SectionMeshes> {
     // Selection only needs to know a mesh exists (lodMesher.test.ts tests meshing itself).
     this.options.push(options);
+    const meshes =
+      this.meshBytes === 0
+        ? EMPTY_MESHES
+        : {
+            ...EMPTY_MESHES,
+            opaque: { ...empty(), positions: new Float32Array(this.meshBytes / 4) },
+          };
     return new Promise((resolve) =>
       this.pending.push(() => {
-        resolve(EMPTY_MESHES);
+        resolve(meshes);
       }),
     );
   }
@@ -370,6 +379,43 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     }
     expect(Math.min(...cellSizes)).toBeLessThanOrEqual(2); // near levels...
     expect(Math.max(...cellSizes)).toBeGreaterThanOrEqual(256); // ...and coarse ones
+  });
+
+  it('keeps the sections the view uses within the cache budget: coarser rather than over it', async () => {
+    // Regression (playtest: the frame rate fell for minutes and Chrome's memory kept growing): on
+    // a large or 2× screen the sections the view used filled several times LOD_CACHE_MB, and the
+    // cache only evicts what the view no longer uses — over 1 GB and thousands of draw calls.
+    const jobs = new Jobs();
+    jobs.meshBytes = 64 * 1024;
+    const budget = 80 * 1048576;
+    const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: budget,
+      maxGenerationJobs: 64,
+      maxMeshJobs: 64,
+    });
+    let now = 0;
+    const run = async (cam: LodCamera, ms: number): Promise<void> => {
+      for (const end = now + ms; now < end; now += 50) {
+        lod.update(cam, now);
+        await jobs.finish(() => 0, 1);
+      }
+    };
+    const low = camera([0, 40, 0], 0, -10);
+    await run(low, 180_000);
+    const stats = lod.debugStats();
+    expect(stats.cacheBytes).toBeLessThanOrEqual(budget);
+    expect(stats.errorScale).toBeGreaterThan(1);
+    expect(stats.inUseBytes).toBeGreaterThan(budget * 0.5); // not needlessly coarse
+    expect(lod.lastSelection().drawn.length).toBeGreaterThan(0);
+    // Settled: neither coarser nor finer from here.
+    await run(low, 60_000);
+    expect(lod.debugStats().errorScale).toBe(stats.errorScale);
+
+    // Where the view needs less, it grows finer again.
+    await run(camera([0, 20_000, 0], 0, -90), 120_000);
+    expect(lod.debugStats().errorScale).toBeLessThan(stats.errorScale);
+    expect(lod.debugStats().cacheBytes).toBeLessThanOrEqual(budget);
   });
 
   it('refines by screen-space error: coarser with distance and altitude', async () => {
