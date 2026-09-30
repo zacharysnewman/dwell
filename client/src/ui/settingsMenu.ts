@@ -26,6 +26,16 @@ export function formatMetres(m: number): string {
   return `${Math.round(km).toLocaleString('en-US')} km`;
 }
 
+/** The settings as JSON to copy and share (rounded: whole metres, density to 0.01). */
+export function fogJson(fog: FogSettings): string {
+  const rounded: FogSettings = {
+    distanceM: Math.round(fog.distanceM),
+    density: Math.round(fog.density * 100) / 100,
+    heightM: Math.round(fog.heightM),
+  };
+  return JSON.stringify({ fog: rounded }, null, 2);
+}
+
 const STORAGE_KEY = 'dwell.fog';
 
 /** The fog settings kept in this browser, or the defaults (storage can be missing or blocked). */
@@ -82,6 +92,8 @@ export class SettingsMenu {
   private readonly panel: HTMLDivElement;
   private readonly inputs = new Map<keyof FogSettings, HTMLInputElement>();
   private readonly values = new Map<keyof FogSettings, HTMLSpanElement>();
+  /** Shows the JSON to copy by hand where the clipboard is unavailable. */
+  private readonly fallback = document.createElement('textarea');
   private fog: FogSettings;
 
   constructor(
@@ -111,7 +123,21 @@ export class SettingsMenu {
     reset.addEventListener('click', () => {
       this.set({ ...DEFAULT_FOG });
     });
-    this.panel.append(reset);
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'settings-copy';
+    copy.textContent = 'Copy JSON';
+    copy.addEventListener('click', () => {
+      void this.copy(copy);
+    });
+    const actions = document.createElement('div');
+    actions.className = 'settings-actions';
+    actions.append(reset, copy);
+    this.fallback.className = 'settings-json';
+    this.fallback.readOnly = true;
+    this.fallback.rows = 7;
+    this.fallback.hidden = true;
+    this.panel.append(actions, this.fallback);
 
     button.addEventListener('click', () => {
       this.panel.hidden = !this.panel.hidden;
@@ -165,7 +191,26 @@ export class SettingsMenu {
     this.apply();
   }
 
+  private async copy(button: HTMLButtonElement): Promise<void> {
+    const json = fogJson(this.fog);
+    try {
+      await navigator.clipboard.writeText(json);
+      this.fallback.hidden = true;
+      button.textContent = 'Copied';
+    } catch {
+      // No clipboard (an insecure page, or permission denied): select the JSON to copy by hand.
+      this.fallback.value = json;
+      this.fallback.hidden = false;
+      this.fallback.select();
+      button.textContent = 'Select and copy';
+    }
+    setTimeout(() => {
+      button.textContent = 'Copy JSON';
+    }, 1500);
+  }
+
   private apply(): void {
+    if (!this.fallback.hidden) this.fallback.value = fogJson(this.fog);
     this.onFog(this.fog);
     saveFog(this.fog);
   }

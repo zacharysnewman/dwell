@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FOG_LIMITS } from '../render/fog';
-import { formatMetres, SLIDER_STEPS, sliderToValue, valueToSlider } from './settingsMenu';
+import { FOG_LIMITS, sanitizeFog } from '../render/fog';
+import { fogJson, formatMetres, SLIDER_STEPS, sliderToValue, valueToSlider } from './settingsMenu';
 
 describe('settings menu sliders', () => {
   const { min, max } = FOG_LIMITS.distanceM;
@@ -28,5 +28,14 @@ describe('settings menu sliders', () => {
     expect(formatMetres(1500)).toBe('1.5 km');
     expect(formatMetres(120_400)).toBe('120 km');
     expect(formatMetres(16_384_000)).toBe('16,384 km');
+  });
+});
+
+describe('settings JSON', () => {
+  it('rounds the settings for sharing, and reads back as the same settings', () => {
+    const json = fogJson({ distanceM: 11313.708, density: 0.6049, heightM: 1499.6 });
+    expect(JSON.parse(json)).toEqual({ fog: { distanceM: 11314, density: 0.6, heightM: 1500 } });
+    const { fog } = JSON.parse(json) as { fog: unknown };
+    expect(sanitizeFog(fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
   });
 });

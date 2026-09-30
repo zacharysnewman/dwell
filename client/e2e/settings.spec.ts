@@ -1,5 +1,6 @@
 // The settings menu (ui/settingsMenu.ts, local mode): the top-left button opens the fog sliders,
-// clear of the connection status, and a moved slider applies and is kept after a reload.
+// clear of the connection status; a moved slider applies and is kept after a reload, and the
+// settings copy to the clipboard as JSON.
 import { expect, test } from '@playwright/test';
 
 test('settings menu: fog sliders open from the corner and are kept', async ({ page }) => {
@@ -27,4 +28,11 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   await expect(page.locator('#settings-menu .settings-value').nth(1)).toHaveText('0%');
   await page.locator('#settings-menu .settings-reset').click();
   await expect(page.locator('#settings-menu .settings-value').nth(1)).toHaveText('60%');
+
+  // Copy JSON puts the settings on the clipboard, to paste elsewhere.
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.locator('#settings-menu .settings-copy').click();
+  await expect(page.locator('#settings-menu .settings-copy')).toHaveText('Copied');
+  const copied = await page.evaluate<string>('navigator.clipboard.readText()');
+  expect(JSON.parse(copied)).toEqual({ fog: { distanceM: 100000, density: 0.6, heightM: 1500 } });
 });

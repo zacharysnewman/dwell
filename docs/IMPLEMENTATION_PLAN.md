@@ -730,10 +730,11 @@ Deviations and additions (4c):
   higher up, so the whole map shows from the flight ceiling): fog was linear and scaled with
   height, then off. It is now an exponential atmosphere's optical depth along each view ray,
   capped at a maximum density (§6.6), with distance, density and height sliders (distance up to
-  the world's diameter) in a new ☰ settings menu, top left; the connection status and the F4 map
-  moved clear of the button. `fog.test.ts` (horizon hazed, clearer with altitude, the whole disc
-  clear from the ceiling) failed against the fog-off code; `settingsMenu.test.ts` covers the
-  log-scaled sliders. Checked in Chromium (SwiftShader): no shader errors, haze on the horizon,
+  the world's diameter), Reset and Copy JSON in a new ☰ settings menu, top left; the connection
+  status and the F4 map moved clear of the button. `fog.test.ts` (horizon hazed, clearer with
+  altitude, the whole disc clear from the ceiling) failed against the fog-off code;
+  `settingsMenu.test.ts` covers the log-scaled sliders and the JSON, `settings.spec.ts` the menu
+  and the clipboard. Checked in Chromium (SwiftShader): no shader errors, haze on the horizon,
   a clear disc from the ceiling, sliders applied live and kept after a reload.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.

@@ -470,7 +470,33 @@ body {
   font-size: 11px;
 }
 
-.settings-reset {
+.settings-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-json {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 4px;
+  background: rgb(0 0 0 / 40%);
+  color: inherit;
+  font:
+    11px ui-monospace,
+    monospace;
+  resize: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.settings-json[hidden] {
+  display: none;
+}
+
+.settings-reset,
+.settings-copy {
   padding: 4px 12px;
   border: 1px solid rgb(255 255 255 / 40%);
   border-radius: 4px;
