@@ -23,7 +23,7 @@ export interface PlayerView {
  *
  * Phase 2 adds terrain chunk meshes (greedy-meshed in workers since Phase 3d), player capsules, the
  * first-person camera, and debug lines; Phase 3d the targeted-block outline; Phase 4c LOD sections
- * and a two-pass depth split (far pass for LOD beyond LOD_NEAR_SPLIT_M, then a near pass). Dynamic body meshes arrive with Tier 1 bodies (Phase 5).
+ * and a two-pass depth split (far pass for LOD beyond LOD_NEAR_SPLIT_M, then a near pass). Dynamic body meshes arrive with Tier 1 bodies (Phase 6).
  */
 export interface Renderer {
   /** Resize the drawing buffer to CSS pixels × device pixel ratio. */

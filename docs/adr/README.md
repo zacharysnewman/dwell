@@ -18,9 +18,11 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0010](0010-worldgen-noise-numerics.md) | Worldgen noise numerics: strict IEEE float with integer-hash gradients | Accepted (coordinates at planet scale: 0011) |
 | [0011](0011-planet-scale-world.md) | Planet-scale world: an 8,192 km disc, 8,192 m tall, with double-precision physics | Accepted |
 | [0012](0012-lod-octree.md) | Whole-world view: a 3D level-of-detail octree, generated on the client | Accepted |
+| [0013](0013-master-server-on-cloudflare.md) | Master server on Cloudflare Workers + Durable Objects; Cloudflare TURN | Accepted |
 
-Phase numbers in ADRs 0001–0010 follow the implementation plan as it was then: its Phases 4–7
-became Phases 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29.
+Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
+4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
+multiplayer-ready phase (Phase 5) was added on 2026-09-30.
 
 ## Template
 
