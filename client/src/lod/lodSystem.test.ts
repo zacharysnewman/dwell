@@ -509,7 +509,7 @@ describe('LOD chunk requests (§6.6)', { timeout: 120_000 }, () => {
   const chunkOf = (p: Vec3): ChunkCoord => p.map((v) => Math.floor(v / 32)) as ChunkCoord;
 
   /** A LOD system whose view streams chunks within 3 of `body`; requests arrive a frame later. */
-  function setup(body: Vec3) {
+  function setup(body: Vec3, pixelError = 4) {
     const jobs = new Jobs();
     const held = new Set<string>();
     const arriving: ChunkCoord[] = [];
@@ -521,7 +521,7 @@ describe('LOD chunk requests (§6.6)', { timeout: 120_000 }, () => {
       isLoaded: (c: ChunkCoord) => inView(c) || held.has(key(c)),
     };
     const lod = new LodSystem(jobs, jobs, new View(), chunks, () => undefined, {
-      pixelError: 4,
+      pixelError,
       cacheBytes: 64 * 1048576,
       maxGenerationJobs: 16,
       maxMeshJobs: 8,
@@ -583,5 +583,20 @@ describe('LOD chunk requests (§6.6)', { timeout: 120_000 }, () => {
     // Fast flight looks at most MAX_LOOKAHEAD_M ahead.
     const fast = lookahead({ ...moving, velocity: [0, 10_000, 0] });
     expect(fast?.[1]).toBeCloseTo(1.6 + MAX_LOOKAHEAD_M);
+  });
+
+  it('draws full detail out to the chosen distance, whatever the pixel error, and not beyond', async () => {
+    const body: Vec3 = [0.5, 1.6, 0.5];
+    // A pixel error so coarse it alone would never ask for chunks.
+    const { lod, requested, run } = setup(body, 10_000);
+    lod.setDetailDistance(200);
+    await run(camera(body, 0, -10), 400);
+    const all = requested.flat();
+    const far = (c: ChunkCoord) => Math.hypot(c[0] * 32 + 16, c[2] * 32 + 16);
+    expect(all.some((c) => far(c) > 150)).toBe(true);
+    // Level-1 sections within 200 m (their nearest point): nothing requested past ~200 m + 64 m.
+    for (const c of all) expect(far(c)).toBeLessThan(200 + 64 + 32);
+    expect(lod.chunkVisible([5, -1, 0])).toBe(true); // ~176 m: full detail
+    expect(lod.chunkVisible([9, -1, 0])).toBe(false); // ~300 m: level 1
   });
 });

@@ -181,6 +181,8 @@ export class LodSystem {
   private readonly coveredAncestors = new Set<number>();
   /** When each level-1 section around the camera first had all its chunks drawable (ms). */
   private readonly drawableSince = new Map<number, number>();
+  /** Full-detail distance (m, the settings menu): chunks within it, never beyond; null: by pixel error. */
+  private detailM: number | null = null;
   /** Where the camera will be (LOOKAHEAD_S along its velocity), if it moves. */
   private ahead: Vec3 | null = null;
   private cameraChunk: ChunkCoord = [0, 0, 0];
@@ -206,6 +208,14 @@ export class LodSystem {
     private readonly options: LodOptions,
   ) {
     this.requestCredit = this.rate();
+  }
+
+  /**
+   * Draws chunks (every block) out to `m` from the camera, and level 1 at most beyond it (lod/detail.ts);
+   * null goes back to the pixel error alone.
+   */
+  setDetailDistance(m: number | null): void {
+    this.detailM = m;
   }
 
   /** Full-chunk mode (§6.3): nothing is generated here; every section comes from the server. */
@@ -337,7 +347,7 @@ export class LodSystem {
     if (node.coord[0] === 1) {
       // Level 0 is the streamed chunks: all 8 must be drawable. Those the view does not stream are
       // asked for; the section stays drawn until they arrive (no wait once they have).
-      const refine = ready && this.refine(node, frustum);
+      const refine = ready && this.refineToChunks(node, frustum);
       if (refine) this.wantChunks(node, frustum);
       if ((this.covered.has(node.id) && (!ready || refine)) || (refine && this.allDrawable(node))) {
         selection.chunks.push(node.coord);
@@ -448,7 +458,15 @@ export class LodSystem {
    */
   private refine(node: Node, frustum: Frustum): boolean {
     const d = Math.max(1, this.distance(node.lo, node.hi, frustum));
+    // Down to the full-detail distance whatever the pixel error (so level 1 is reached there).
+    if (this.detailM !== null && d < this.detailM) return true;
     return (cellSize(node.coord[0]) / d) * frustum.pixelsPerRadian > this.options.pixelError;
+  }
+
+  /** A level-1 section shows as its chunks: within the full-detail distance (if set). */
+  private refineToChunks(node: Node, frustum: Frustum): boolean {
+    if (this.detailM === null) return this.refine(node, frustum);
+    return this.distance(node.lo, node.hi, frustum) < this.detailM;
   }
 
   /** Distance to a box from the camera, or from where it is heading if that is nearer. */

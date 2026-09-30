@@ -751,7 +751,10 @@ Deviations and additions (4c):
   1.5 s ahead along the camera's velocity. `chunk_request_test.cpp` (sent after the view, range
   and rate limits, explicit modified chunks with their edits, kept and unloaded by radius) and
   `lodSystem.test.ts` "asks for the chunks beyond the view…" and "looks ahead along the velocity…"
-  failed before (no requests); the kept-view-chunk case failed before its fix.
+  failed before (no requests); the kept-view-chunk case failed before its fix. The full-detail
+  distance is then a setting (playtest request): a "Full detail" slider in the settings menu,
+  96–352 m (default 256 m desktop, 128 m phone), which decides where chunks are drawn instead of
+  the pixel error; "draws full detail out to the chosen distance…" failed on the pixel-error rule.
 - **Z-fighting high up** (playtest, "at various heights" while flying high): not reproduced in
   this sandbox. A detector rendering each view twice with different depth ranges (a depth tie
   changes pixels; nothing else does) found no ties at 30, 300 or 3,000 km, and the far pass's near

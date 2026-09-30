@@ -70,6 +70,7 @@ interface App {
   game: Game | null;
   interaction: BlockInteraction | null;
   core: ClientCore | null;
+  settings: SettingsMenu | null;
 }
 
 function start(): App {
@@ -103,12 +104,14 @@ function start(): App {
     game: null,
     interaction: null,
     core: null,
+    settings: null,
   };
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
-  // Settings (top left): the height fog's sliders, applied as they move.
-  new SettingsMenu(document.body, (fog) => {
-    renderer.setFog(fog);
+  // Settings (top left): fog and full-detail distance, applied as the sliders move.
+  app.settings = new SettingsMenu(document.body, prefersTouch(), (s) => {
+    renderer.setFog(s.fog);
+    app.game?.lod?.setDetailDistance(s.detail.distanceM);
   });
   window.addEventListener('touchstart', () => (touch.visible = true), {
     once: true,
@@ -284,6 +287,7 @@ function play(
         },
       );
       lod.setFullMode(hash === 0n);
+      lod.setDetailDistance(app.settings?.current.detail.distanceM ?? null);
       app.renderer.setChunkVisibility((c) => lod.chunkVisible(c));
       app.renderer.setLodLevelColors(params.get('lodcolors') === '1');
       game.viewport = () => {

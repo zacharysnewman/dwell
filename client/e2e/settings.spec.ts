@@ -18,7 +18,7 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   await expect(menu).toBeHidden();
   await button.click();
   await expect(menu).toBeVisible();
-  await expect(menu.locator('.settings-value')).toHaveText(['4.0 km', '50%', '1.5 km']);
+  await expect(menu.locator('.settings-value')).toHaveText(['4.0 km', '50%', '1.5 km', '256 m']);
 
   // Density to zero (no fog), as a drag would.
   await menu.locator('input').nth(1).fill('0');
@@ -34,5 +34,8 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   await page.locator('#settings-menu .settings-copy').click();
   await expect(page.locator('#settings-menu .settings-copy')).toHaveText('Copied');
   const copied = await page.evaluate<string>('navigator.clipboard.readText()');
-  expect(JSON.parse(copied)).toEqual({ fog: { distanceM: 4000, density: 0.5, heightM: 1500 } });
+  expect(JSON.parse(copied)).toEqual({
+    fog: { distanceM: 4000, density: 0.5, heightM: 1500 },
+    detail: { distanceM: 256 },
+  });
 });
