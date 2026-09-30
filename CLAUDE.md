@@ -86,3 +86,23 @@ When fixing a bug (reported, or found along the way):
 
 Behaviour changes that are tuning rather than bugs (e.g. a longer coyote time) follow the same
 pattern: a test that pins the new behaviour and fails on the old.
+
+## Building without sqlite.org
+
+The server and WASM builds fetch the SQLite amalgamation from `www.sqlite.org`
+(`server/cmake/Dependencies.cmake`). Some sandboxes (e.g. Claude Code on the web) block that host
+(HTTP 403). Take the amalgamation from npm instead, which the sandbox allows: `better-sqlite3`
+bundles `sqlite3.c` / `sqlite3.h`, and version 13.0.3 carries SQLite 3.53.4, the version the build
+pins. Point CMake at it with `FETCHCONTENT_SOURCE_DIR_SQLITE3`:
+
+```sh
+cd "$(mktemp -d)" && npm pack better-sqlite3@13.0.3 && tar xzf better-sqlite3-*.tgz
+grep -m1 'define SQLITE_VERSION ' package/deps/sqlite3/sqlite3.h   # must match Dependencies.cmake
+SQ="$PWD/package/deps/sqlite3"
+cd /path/to/dwell/server
+cmake --preset dev  -DFETCHCONTENT_SOURCE_DIR_SQLITE3="$SQ"   # native server (e2e)
+cmake --preset wasm -DFETCHCONTENT_SOURCE_DIR_SQLITE3="$SQ"   # WASM core (needs EMSDK, see CI)
+```
+
+If the pinned SQLite version changes, pick the `better-sqlite3` release that bundles it. This is
+for local builds only; CI downloads from sqlite.org as usual.
