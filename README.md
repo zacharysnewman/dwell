@@ -70,7 +70,8 @@ DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="worldgen: golden"   # a
 
 The server registers with the master server (unlisted by default), so players can join it by its
 **join code**, by typing its **address** in the Join box (e.g. `192.168.1.50` on the same
-network), or pick it under **On your network**. `--visibility none` keeps it off the master;
+network), or pick it under **On your network**. `--visibility public` also lists it in the
+server browser (`--tags pve,creative` to be found by search); `--visibility none` keeps it off the master;
 `--master <url>` points at another master (e.g. `http://localhost:8787` for a local `wrangler
 dev`). `--advertise <ip>` sets the address in the invite link and the one the master hands out
 (use your public IP or host name for players elsewhere; the WebRTC fallback needs an IP, not a

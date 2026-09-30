@@ -6,9 +6,11 @@ import {
   connectLocal,
   connectToInvite,
   connectToCode,
+  openTransport,
   type ConnectOptions,
   type LocalSession,
 } from './net/connect';
+import { pingServer } from './net/statusPing';
 import { enableHosting } from './hostWorld';
 import { formatCode } from './net/joinCode';
 import { configuredMasterUrl, MasterClient, serverInvite } from './net/master';
@@ -409,7 +411,10 @@ function go(route: Record<string, string>): void {
 }
 
 /** The main menu (Phase 5a): shown when the address names no world or server. */
-/** The master as the menu uses it (Phase 5d): server addresses and games on this network. */
+/**
+ * The master as the menu uses it: server addresses and games on this network (Phase 5d), and the
+ * lobby list with its pings (Phase 5e).
+ */
 function menuMaster(): MainMenuDeps['master'] {
   const base = configuredMasterUrl();
   if (!base) return undefined;
@@ -423,6 +428,12 @@ function menuMaster(): MainMenuDeps['master'] {
       return serverInvite(found.server);
     },
     nearby: async () => (await client).nearby(),
+    lobby: async (query) => (await client).lobby(query),
+    ping: async (server) => {
+      const invite = parseInvite(`?${new URLSearchParams(serverInvite(server)).toString()}`);
+      if (!invite) throw new Error('unusable server address');
+      return (await pingServer(() => openTransport(invite))).rttMs;
+    },
   };
 }
 

@@ -51,6 +51,7 @@ struct Options {
   std::string master = kDefaultMaster;
   std::string visibility = "unlisted";
   int heartbeat_s = 30;
+  std::vector<std::string> tags;              // --tags: lobby-list search tags (Phase 5e)
   std::array<std::uint8_t, 32> server_key{};  // Ed25519 seed, kept in the world's settings
   dwell::core::ServerConfig server;
   std::string client_url = "http://localhost:5173/dwell/";
@@ -66,6 +67,7 @@ void Usage() {
       "                    [--name NAME] [--motd TEXT] [--max-players N] [--edits POLICY]\n"
       "                    [--flight POLICY] [--seed N] [--generator N] [--op KEY] [--ban KEY]\n"
       "                    [--client-url URL] [--master URL] [--visibility public|unlisted|none]\n"
+      "                    [--tags A,B]\n"
       "  --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps\n"
       "                  the world in memory only)\n"
       "  --advertise IP  address players use to reach this server (invite links, WebRTC)\n"
@@ -78,7 +80,9 @@ void Usage() {
       "world\n"
       "  --master URL    the master server (default https://dwell-master.dropkick.workers.dev)\n"
       "  --visibility V  unlisted (default): players join by code or address and see it on its\n"
-      "                  own network; public: also listed; none: never contacts the master\n"
+      "                  own network; public: also in the lobby list; none: never contacts the\n"
+      "                  master\n"
+      "  --tags A,B      tags players can search the lobby list by (e.g. pve,creative)\n"
       "  --heartbeat S   seconds between master heartbeats (default 30; testing)");
 }
 
@@ -102,6 +106,18 @@ bool ParseOptions(int argc, char** argv, Options& o) {
       o.visibility = v;
       if (o.visibility != "public" && o.visibility != "unlisted" && o.visibility != "none") {
         return false;
+      }
+    } else if (arg == "--tags") {
+      o.tags.clear();
+      std::string tag;
+      for (const char* p = v;; ++p) {
+        if (*p == ',' || *p == '\0') {
+          if (!tag.empty()) o.tags.push_back(tag);
+          tag.clear();
+          if (*p == '\0') break;
+        } else if (*p != ' ') {
+          tag += *p;
+        }
       }
     } else if (arg == "--heartbeat") {
       o.heartbeat_s = std::clamp(std::atoi(v), 2, 60);
@@ -375,6 +391,8 @@ int main(int argc, char** argv) {
     if (!master) return;
     std::string lan_json;
     for (const auto& a : lan) lan_json += (lan_json.empty() ? "" : ",") + JsonString(a);
+    std::string tags_json;
+    for (const auto& t : options.tags) tags_json += (tags_json.empty() ? "" : ",") + JsonString(t);
     const auto& c = options.server;
     const std::string body =
         "{\"port\":" + std::to_string(port) + ",\"rtcPort\":" + std::to_string(rtc_port) +
@@ -387,7 +405,7 @@ int main(int argc, char** argv) {
         ",\"players\":" + std::to_string(server.joined_players()) +
         ",\"maxPlayers\":" + std::to_string(c.max_players) +
         ",\"protocol\":" + std::to_string(dwell::protocol::kProtocolVersion) +
-        ",\"visibility\":" + JsonString(options.visibility) +
+        ",\"visibility\":" + JsonString(options.visibility) + ",\"tags\":[" + tags_json + "]" +
         ",\"heartbeatS\":" + std::to_string(options.heartbeat_s) + "}";
     dwell_master_heartbeat(master, body.c_str());
   };

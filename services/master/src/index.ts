@@ -5,7 +5,13 @@ import type { Env } from './env';
 import { allowedOrigins, corsHeaders, json, problem, withHeaders } from './http';
 import { formatCode, newCode, normalizeCode } from './codes';
 import { API_VERSION, MAX_BODY_BYTES } from './limits';
-import { parseAddress, parseServerReport } from './servers';
+import {
+  byPlayersThenName,
+  matchesQuery,
+  parseAddress,
+  parseListQuery,
+  parseServerReport,
+} from './servers';
 import { iceServers } from './turn';
 
 export { Directory } from './directory';
@@ -79,8 +85,9 @@ async function signedPost(
 const clientIp = (request: Request) => request.headers.get('cf-connecting-ip') ?? 'unknown';
 
 /**
- * POST /v1/rooms {maxGuests, visibility?, name?}: a new friend-world room and its host token
- * (§10.2). Visibility "network" also lists it to players on the host's network (5d).
+ * POST /v1/rooms {maxGuests, visibility?, name?, protocol?}: a new friend-world room and its host
+ * token (§10.2). Visibility "network" also lists it to players on the host's network (5d);
+ * "public" lists it there and in the lobby list (5e).
  */
 async function createRoom(request: Request, env: Env): Promise<Response> {
   const req = await signedPost(request, env);
@@ -92,12 +99,23 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
     if (await directory(env).isServerCode(code)) continue; // a dedicated server's code
     const opened = await room(env, code).open(req.key, maxGuests, now);
     if (opened) {
-      if (req.body.visibility === 'network') {
+      const visibility = req.body.visibility;
+      if (visibility === 'network' || visibility === 'public') {
         const name =
           typeof req.body.name === 'string' && req.body.name.trim() !== ''
             ? req.body.name.replace(/\p{Cc}/gu, '').slice(0, 64)
             : 'Friend world';
-        await directory(env).addNearbyRoom(code, clientIp(request), name, now);
+        const protocol =
+          typeof req.body.protocol === 'number' && Number.isInteger(req.body.protocol)
+            ? req.body.protocol
+            : null;
+        await directory(env).addListedRoom(
+          code,
+          clientIp(request),
+          name,
+          { public: visibility === 'public', protocol },
+          now,
+        );
       }
       return json({ code, display: formatCode(code), hostToken: opened.hostToken }, 201);
     }
@@ -138,7 +156,10 @@ async function resolve(request: Request, env: Env): Promise<Response> {
     const code = normalizeCode(req.body.code);
     if (!code) return problem(404, 'not_found', 'That is not a join code.');
     const server = await directory(env).serverByCode(code, ip, now);
-    if (server) return json({ kind: 'server', server });
+    if (server) {
+      await directory(env).noteResolution(req.key, server.code, now);
+      return json({ kind: 'server', server });
+    }
     if (await room(env, code).isOpen()) {
       return json({ kind: 'room', code, display: formatCode(code) });
     }
@@ -148,7 +169,10 @@ async function resolve(request: Request, env: Env): Promise<Response> {
     const address = parseAddress(req.body.address);
     if (!address) return problem(400, 'bad_address', 'That is not a server address.');
     const server = await directory(env).serverByAddress(address.host, address.port, ip, now);
-    if (server) return json({ kind: 'server', server });
+    if (server) {
+      await directory(env).noteResolution(req.key, server.code, now);
+      return json({ kind: 'server', server });
+    }
     return problem(404, 'not_found', 'No server at that address is registered with the master.');
   }
   return problem(400, 'bad_request', 'Send a code or an address.');
@@ -168,9 +192,52 @@ async function nearby(request: Request, env: Env): Promise<Response> {
   const worlds = [];
   for (const w of await dir.nearbyRooms(ip, now)) {
     if (await room(env, w.code).isOpen()) worlds.push(w);
-    else await dir.removeNearbyRoom(w.code);
+    else await dir.removeListedRoom(w.code);
   }
   return json({ servers, worlds });
+}
+
+/**
+ * GET /v1/servers?q=&tag=&protocol=&notFull=1&hasPlayers=1&new=1&limit=: the lobby list (5e) —
+ * public dedicated servers (verified by players' receipts; unverified ones only with `new=1`) and
+ * public friend worlds, most players first. Unsigned; limited per IP.
+ */
+async function listServers(request: Request, env: Env): Promise<Response> {
+  const ip = clientIp(request);
+  const now = Date.now();
+  const dir = directory(env);
+  const admission = await dir.admitList(ip, now);
+  if (!admission.ok) return limited(admission.retryAfterS);
+  const query = parseListQuery(new URL(request.url).searchParams);
+  const servers = await dir.listServers(query, ip, now);
+  const worlds = [];
+  if (!query.fresh) {
+    for (const w of await dir.publicRooms(now)) {
+      const listing = await room(env, w.code).listing();
+      if (listing.state === 'closed') await dir.removeListedRoom(w.code);
+      if (listing.state !== 'open') continue;
+      const world = { ...w, players: listing.players, maxPlayers: listing.maxPlayers };
+      if (matchesQuery({ ...world, motd: '', tags: [] }, query)) worlds.push(world);
+    }
+    worlds.sort(byPlayersThenName);
+  }
+  return json({ servers, worlds: worlds.slice(0, query.limit) });
+}
+
+/**
+ * POST /v1/receipts {code}: a player joined the server with this code through the master (after
+ * resolving it) and says so (ADR 0013); enough distinct players verify a public server (5e).
+ */
+async function postReceipt(request: Request, env: Env): Promise<Response> {
+  const req = await signedPost(request, env);
+  if (req instanceof Response) return req;
+  const code = typeof req.body.code === 'string' ? normalizeCode(req.body.code) : null;
+  if (!code) return problem(400, 'bad_request', "Send the server's code.");
+  const receipt = await directory(env).addReceipt(req.key, code, Date.now());
+  if (!receipt.ok) {
+    return problem(404, 'not_found', 'No recent join of a server with that code to confirm.');
+  }
+  return json({ ok: true, verified: receipt.verified });
 }
 
 /** POST /v1/rooms/<code>/join: a guest's one-use token for the room's WebSocket. */
@@ -212,7 +279,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json({ iceServers: await iceServers(env.TURN_KEY_ID, env.TURN_KEY_API_TOKEN) });
   }
   if (path === '/v1/rooms') return createRoom(request, env);
-  if (path === '/v1/servers') return registerServer(request, env);
+  if (path === '/v1/servers') {
+    return request.method === 'GET' ? listServers(request, env) : registerServer(request, env);
+  }
+  if (path === '/v1/receipts') return postReceipt(request, env);
   if (path === '/v1/servers/leave') {
     const req = await signedPost(request, env);
     if (req instanceof Response) return req;

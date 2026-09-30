@@ -3,6 +3,7 @@ import vectors from '../../../shared/master/vectors.json';
 import type { DeviceKey } from '../identity/deviceKey';
 import { parseInvite } from './invite';
 import {
+  lobbyQueryString,
   MasterClient,
   MasterError,
   masterUrl,
@@ -190,5 +191,38 @@ describe('dedicated servers through the master (Phase 5d)', () => {
       'https://m.test/v1/nearby {}',
       'https://m.test/v1/rooms {"maxGuests":4,"visibility":"network","name":"Bravo"}',
     ]);
+  });
+
+  it('query the lobby list (unsigned GET) and post join receipts', async () => {
+    const key = await vectorKey();
+    const calls: string[] = [];
+    const replies: unknown[] = [
+      { servers: [{ ...entry, verified: true }], worlds: [] },
+      { ok: true, verified: false },
+    ];
+    const client = new MasterClient(
+      'https://m.test',
+      key,
+      () => 1790000000000,
+      (url, init) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const body = init?.body ? new TextDecoder().decode(init.body as Uint8Array) : '';
+        calls.push(
+          `${init?.method ?? ''} ${url as string} ${body} signed=${String('x-dwell-key' in headers)}`,
+        );
+        return Promise.resolve(new Response(JSON.stringify(replies.shift())));
+      },
+    );
+    const lobby = await client.lobby({ q: ' castle ', protocol: 10, fresh: true, notFull: true });
+    expect(lobby.servers[0]?.verified).toBe(true);
+    expect(await client.receipt('ABCDEF')).toEqual({ ok: true, verified: false });
+    expect(calls).toEqual([
+      'GET https://m.test/v1/servers?q=castle&protocol=10&notFull=1&new=1  signed=false',
+      'POST https://m.test/v1/receipts {"code":"ABCDEF"} signed=true',
+    ]);
+    expect(lobbyQueryString({})).toBe('');
+    expect(lobbyQueryString({ q: '  ', tag: 'pve', hasPlayers: true })).toBe(
+      '?tag=pve&hasPlayers=1',
+    );
   });
 });

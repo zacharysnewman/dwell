@@ -136,7 +136,19 @@ export async function connectToCode(
   if (found.kind === 'room') return connectToRoom(master, code, options);
   const invite = parseInvite(`?${new URLSearchParams(serverInvite(found.server)).toString()}`);
   if (!invite) throw new Error('The master gave an unusable address for that server.');
-  return connectToInvite(invite, options);
+  const session = await connectToInvite(invite, options);
+  // Once joined, confirm it to the master: players' receipts verify a public server (5e).
+  const serverCode = found.server.code;
+  let confirmed = false;
+  const unsubscribe = session.subscribe((state) => {
+    if (state.phase !== 'joined' || confirmed) return;
+    confirmed = true;
+    queueMicrotask(() => {
+      unsubscribe();
+    });
+    master.receipt(serverCode).catch(() => undefined);
+  });
+  return session;
 }
 
 /**

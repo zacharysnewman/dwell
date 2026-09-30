@@ -5,7 +5,7 @@
 // host's certificate). Peer connections live on the main thread because workers have none.
 import type { ToWorker } from '../local/messages';
 import { HostPolicy } from '../local/wasmCore';
-import { Channel, HostState, TransportKind } from '../protocol/constants.gen';
+import { Channel, HostState, PROTOCOL_VERSION, TransportKind } from '../protocol/constants.gen';
 import { LOCAL_SESSION, type GuestOutput } from './loopback';
 import type { MasterClient } from './master';
 import { certificateSha256, HostPeer, type HostPeerHandlers, type SignalData } from './peer';
@@ -13,14 +13,19 @@ import { RoomSocket, type RoomEvent, type RoomSocketHandlers } from './roomSocke
 
 export { HostPolicy };
 
+export type HostVisibility = 'code' | 'network' | 'public';
+
 export interface HostSettings {
   /** Guests at once (not counting the host). */
   maxGuests: number;
   /** Who may edit blocks, and who may fly (the host is always an op). */
   edits: HostPolicy;
   flight: HostPolicy;
-  /** Code only, or also listed to players on the host's network (Phase 5d). */
-  visibility: 'code' | 'network';
+  /**
+   * Code only, also listed to players on the host's network (Phase 5d), or public: also in the
+   * lobby list (Phase 5e).
+   */
+  visibility: HostVisibility;
   /** The world's name, as listed to the network. */
   name: string;
 }
@@ -261,7 +266,7 @@ export async function startHosting(
   if (!binding) throw new Error('This browser gave no certificate fingerprint.');
   const [iceServers, room] = await Promise.all([
     master.turn(),
-    master.createRoom(settings.maxGuests, settings.visibility, settings.name),
+    master.createRoom(settings.maxGuests, settings.visibility, settings.name, PROTOCOL_VERSION),
   ]);
   const socket = await RoomSocket.open(master.roomSocketUrl(room.code, room.hostToken));
   worker.postToWorker({
