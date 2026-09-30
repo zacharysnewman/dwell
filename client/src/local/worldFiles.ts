@@ -81,6 +81,50 @@ export function localWorldName(generatorVersion: number, worldSeed: number): str
   return `local-g${String(generatorVersion)}-s${String(worldSeed)}`;
 }
 
+/** `dwell/worlds/` in OPFS (created if missing). Throws where OPFS is unavailable. */
+async function worldsDirectory(): Promise<FileSystemDirectoryHandle> {
+  const root = await navigator.storage.getDirectory();
+  const dwell = await root.getDirectoryHandle('dwell', { create: true });
+  return dwell.getDirectoryHandle('worlds', { create: true });
+}
+
+/** The worlds saved in OPFS, by name (without `.dwellworld`); empty where OPFS is unavailable. */
+export async function listWorldFiles(): Promise<string[]> {
+  try {
+    const dir = (await worldsDirectory()) as FileSystemDirectoryHandle & {
+      keys(): AsyncIterable<string>;
+    };
+    const names: string[] = [];
+    for await (const file of dir.keys()) {
+      if (file.endsWith('.dwellworld')) names.push(file.slice(0, -'.dwellworld'.length));
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Deletes a world's files. True once none is left (including a world never saved); false if one
+ * could not be removed — typically because the world is open in another tab.
+ */
+export async function deleteWorldFiles(name: string): Promise<boolean> {
+  let dir: FileSystemDirectoryHandle;
+  try {
+    dir = await worldsDirectory();
+  } catch {
+    return true; // no OPFS: nothing was saved
+  }
+  for (const suffix of WORLD_FILE_SUFFIXES) {
+    try {
+      await dir.removeEntry(`${name}.dwellworld${suffix}`);
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'NotFoundError')) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Opens (creating) the world's files in OPFS. Null where OPFS or sync handles are unavailable, or
  * when another tab holds the world.
@@ -93,10 +137,7 @@ export async function openWorldFiles(
   };
   const opened: SyncHandle[] = [];
   try {
-    const root = await navigator.storage.getDirectory();
-    const dir = await (
-      await root.getDirectoryHandle('dwell', { create: true })
-    ).getDirectoryHandle('worlds', { create: true });
+    const dir = await worldsDirectory();
     const handles = new Map<string, SyncHandle>();
     for (const suffix of WORLD_FILE_SUFFIXES) {
       const file = (await dir.getFileHandle(`${name}.dwellworld${suffix}`, {

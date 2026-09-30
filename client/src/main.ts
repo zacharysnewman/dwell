@@ -4,7 +4,12 @@ import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInte
 import { MeshPool } from './mesh/pool';
 import { connectLocal, connectToInvite, type ConnectOptions } from './net/connect';
 import { parseInvite } from './net/invite';
-import { parseLocalWorld } from './local/world';
+import { parseLocalWorld, type LocalWorld } from './local/world';
+import { WorldIndex } from './local/worldIndex';
+import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
+import { launchOf, pastedInvite, withRoute } from './ui/launch';
+import { MainMenu } from './ui/mainMenu';
+import { loadRecent, rememberServer } from './ui/recentServers';
 import { parseNetConditions } from './net/netsim';
 import type { ClientSession, SessionState, SessionStats } from './net/session';
 import { KeyboardMouseInput } from './predict/input';
@@ -349,27 +354,144 @@ function startDebugTools(
   }, 1000);
 }
 
+/** Local storage, or null where it is blocked. */
+function storage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Opens a route (a world or server, or `{}` for the main menu), keeping debug parameters. */
+function go(route: Record<string, string>): void {
+  location.assign(`${location.pathname}${withRoute(location.search, route)}`);
+}
+
+/** The main menu (Phase 5a): shown when the address names no world or server. */
+function openMainMenu(app: App, message?: string): void {
+  app.touch.visible = false;
+  new MainMenu(document.body, {
+    index: new WorldIndex(storage()),
+    recent: loadRecent(storage()),
+    listFiles: listWorldFiles,
+    deleteFiles: deleteWorldFiles,
+    go,
+    now: () => Date.now(),
+    ...(message ? { message } : {}),
+  });
+}
+
+/**
+ * The game menu (the ☰ panel, Phase 5a): opens when the pointer is released (Esc) or on Esc,
+ * Resume locks the pointer again, and Quit to main menu saves a local world before leaving.
+ */
+function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
+  const settings = app.settings;
+  if (!settings) return;
+  settings.addGameActions(
+    () => {
+      if ('requestPointerLock' in app.canvas) {
+        Promise.resolve(app.canvas.requestPointerLock()).catch(() => undefined);
+      }
+    },
+    () => {
+      const saved = save ? save() : Promise.resolve(true);
+      // Leave even if the save hangs; the world also saved every few seconds.
+      const timeout = new Promise((resolve) => setTimeout(resolve, 5000));
+      void Promise.race([saved, timeout]).then(() => {
+        go({});
+      });
+    },
+  );
+  let locked = false;
+  let releasedAt = -Infinity;
+  document.addEventListener('pointerlockchange', () => {
+    const now = document.pointerLockElement === app.canvas;
+    if (locked && !now) {
+      settings.setOpen(true);
+      releasedAt = performance.now();
+    }
+    locked = now;
+  });
+  window.addEventListener('keydown', (e) => {
+    // The Esc that released the pointer (if a browser delivers it at all) doesn't close the menu.
+    if (e.code !== 'Escape' || locked || performance.now() - releasedAt < 300) return;
+    settings.setOpen(!settings.isOpen);
+  });
+}
+
 async function connect(app: App): Promise<void> {
   const status = element('net-status', HTMLDivElement);
   const params = new URLSearchParams(location.search);
-  const invite = params.get('local') === '1' ? null : parseInvite(location.search);
-  const target = invite ? `${invite.host}:${String(invite.port)}` : 'Local world';
+  const launch = launchOf(location.search);
+  if (launch.kind === 'menu') {
+    openMainMenu(app);
+    return;
+  }
+
+  // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1).
+  const index = new WorldIndex(storage());
+  let localWorld: LocalWorld | null = null;
+  let worldName = 'Local world';
+  if (launch.kind === 'play') {
+    const world = index.get(launch.id);
+    if (!world) {
+      openMainMenu(app, 'That world is not in this browser any more.');
+      return;
+    }
+    localWorld = {
+      worldSeed: world.seed,
+      generatorVersion: world.generatorVersion,
+      file: world.id,
+    };
+    worldName = world.name;
+    index.touch(world.id, Date.now());
+  } else if (launch.kind === 'link') {
+    localWorld = parseLocalWorld(location.search);
+    const world = index.adopt(
+      localWorldName(localWorld.generatorVersion, localWorld.worldSeed),
+      Date.now(),
+    );
+    if (world) {
+      worldName = world.name;
+      index.touch(world.id, Date.now());
+    }
+  }
+
+  const invite = localWorld ? null : parseInvite(location.search);
+  if (!localWorld && !invite) {
+    openMainMenu(app, 'That invite link is incomplete or damaged.');
+    return;
+  }
+  const target = invite ? `${invite.host}:${String(invite.port)}` : worldName;
   const forced = params.get('transport');
   const options: ConnectOptions = {
     displayName: displayName(),
     clientVersion: buildInfo.sha.slice(0, 12),
     transport: forced === 'webrtc' || forced === 'webtransport' ? forced : 'auto',
     netsim: parseNetConditions(params.get('netsim')),
-    localWorld: parseLocalWorld(location.search),
+    ...(localWorld ? { localWorld } : {}),
   };
-  status.textContent = invite ? `Connecting to ${target}…` : 'Starting local world…';
+  status.textContent = invite ? `Connecting to ${target}…` : `Starting ${target}…`;
   try {
-    const session = invite ? await connectToInvite(invite, options) : await connectLocal(options);
+    let session: ClientSession;
+    let save: (() => Promise<boolean>) | null = null;
+    if (invite) {
+      session = await connectToInvite(invite, options);
+    } else {
+      const local = await connectLocal(options);
+      session = local.session;
+      save = local.save;
+    }
+    enableGameMenu(app, save);
     let started = false;
     session.subscribe((state, stats) => {
       status.textContent = formatStatus(target, session.transportKind, state, stats);
       if (state.phase === 'joined' && !started) {
         started = true;
+        const joinedInvite = invite ? pastedInvite(location.search) : null;
+        if (joinedInvite) rememberServer(storage(), joinedInvite, Date.now());
         play(app, session, state);
       }
     });

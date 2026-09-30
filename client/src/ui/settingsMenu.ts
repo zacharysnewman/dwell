@@ -1,6 +1,7 @@
 // Settings menu: a button in the top-left corner opens a panel of sliders — the height fog
 // (render/fog.ts) and the full-detail distance (lod/detail.ts), ARCHITECTURE.md §6.6. The settings
-// are kept in this browser.
+// are kept in this browser. In a game the panel is also the game menu (Phase 5a): Resume and Quit
+// to main menu above the sliders; it opens when the pointer is released (Esc).
 import { DETAIL_LIMITS, defaultDetail, sanitizeDetail, type DetailSettings } from '../lod/detail';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from '../render/fog';
 
@@ -148,6 +149,7 @@ const SECTIONS: { title: string; sliders: SliderSpec[] }[] = [
 
 export class SettingsMenu {
   private readonly panel: HTMLDivElement;
+  private readonly button: HTMLButtonElement;
   private readonly rows: { spec: SliderSpec; input: HTMLInputElement; value: HTMLSpanElement }[] =
     [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
@@ -161,9 +163,10 @@ export class SettingsMenu {
   ) {
     this.settings = loadSettings(mobile);
     const button = document.createElement('button');
+    this.button = button;
     button.type = 'button';
     button.id = 'menu-button';
-    button.setAttribute('aria-label', 'Settings');
+    button.setAttribute('aria-label', 'Menu');
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', 'settings-menu');
     button.textContent = '☰';
@@ -201,8 +204,7 @@ export class SettingsMenu {
     this.panel.append(actions, this.fallback);
 
     button.addEventListener('click', () => {
-      this.panel.hidden = !this.panel.hidden;
-      button.setAttribute('aria-expanded', String(!this.panel.hidden));
+      this.setOpen(!this.isOpen);
       // Unfocused, so Space (jump) doesn't press it again.
       button.blur();
     });
@@ -212,6 +214,43 @@ export class SettingsMenu {
 
   get current(): Settings {
     return this.settings;
+  }
+
+  get isOpen(): boolean {
+    return !this.panel.hidden;
+  }
+
+  setOpen(open: boolean): void {
+    this.panel.hidden = !open;
+    this.button.setAttribute('aria-expanded', String(open));
+  }
+
+  /**
+   * Makes the panel the game menu: Resume (closes it, then `onResume`, e.g. to lock the pointer
+   * again) and Quit to main menu (`onQuit`, which saves and leaves).
+   */
+  addGameActions(onResume: () => void, onQuit: () => void): void {
+    const resume = document.createElement('button');
+    resume.type = 'button';
+    resume.id = 'menu-resume';
+    resume.textContent = 'Resume';
+    resume.addEventListener('click', () => {
+      this.setOpen(false);
+      onResume();
+    });
+    const quit = document.createElement('button');
+    quit.type = 'button';
+    quit.id = 'menu-quit';
+    quit.textContent = 'Quit to main menu';
+    quit.addEventListener('click', () => {
+      quit.disabled = true;
+      quit.textContent = 'Saving…';
+      onQuit();
+    });
+    const actions = document.createElement('div');
+    actions.className = 'menu-actions';
+    actions.append(resume, quit);
+    this.panel.prepend(actions);
   }
 
   private slider(spec: SliderSpec): HTMLLabelElement {

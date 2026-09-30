@@ -505,3 +505,190 @@ body {
   font: inherit;
   cursor: pointer;
 }
+
+/* Game menu actions at the top of the ☰ panel (ui/settingsMenu.ts, in a game). */
+.menu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.menu-actions button {
+  padding: 8px 12px;
+  border: 1px solid rgb(255 255 255 / 40%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 12%);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* Main menu (ui/mainMenu.ts): a centred panel over the empty view, scrolling on short screens. */
+#main-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  overflow-y: auto;
+  padding: max(56px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-sizing: border-box;
+  background: #0b0d12;
+  touch-action: pan-y;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.menu-panel {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.menu-panel h1 {
+  margin: 0 0 8px;
+  font-size: 32px;
+  letter-spacing: 0.04em;
+}
+
+.menu-panel h2 {
+  margin: 20px 0 8px;
+  font-size: 16px;
+}
+
+#menu-message:empty {
+  display: none;
+}
+
+#menu-message {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 10%);
+  font-size: 13px;
+}
+
+.menu-hint {
+  margin: 4px 0 8px;
+  color: rgb(230 232 238 / 60%);
+  font-size: 12px;
+}
+
+.menu-button-main,
+.menu-button-small {
+  padding: 8px 14px;
+  border: 1px solid rgb(255 255 255 / 40%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 12%);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.menu-button-small {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.menu-button-main {
+  background: rgb(120 170 255 / 30%);
+}
+
+.menu-confirm {
+  border-color: #ff8a80;
+  background: rgb(255 80 60 / 30%);
+}
+
+#create-world {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 6%);
+}
+
+#create-world[hidden] {
+  display: none;
+}
+
+.menu-field {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.menu-field input,
+.menu-field select,
+.menu-join-form input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 40%);
+  color: inherit;
+  font: inherit;
+  font-size: 16px; /* 16px: iOS Safari doesn't zoom into the field */
+}
+
+#world-list,
+#recent-servers {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.world-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.world-name {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-details {
+  color: rgb(230 232 238 / 60%);
+  font-size: 12px;
+}
+
+.world-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.menu-empty {
+  padding: 8px 0;
+  color: rgb(230 232 238 / 60%);
+}
+
+.menu-join-form {
+  display: flex;
+  gap: 8px;
+}
+
+#recent-servers li {
+  display: inline-block;
+  margin: 0 6px 6px 0;
+}

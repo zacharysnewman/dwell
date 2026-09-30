@@ -1,0 +1,288 @@
+// The main menu (ARCHITECTURE.md §2.1, Phase 5a), shown when the page opens without a world or
+// server in its address: the local worlds (create with a seed, play, regenerate, delete) and Join
+// (paste an invite link; recently joined servers). Choosing one navigates to it (ui/launch.ts).
+import { GENERATORS } from '../local/world';
+import {
+  cleanName,
+  parseSeed,
+  typeLabel,
+  WORLD_TYPES,
+  type WorldIndex,
+  type WorldMeta,
+  type WorldType,
+} from '../local/worldIndex';
+import { pastedInvite } from './launch';
+import type { RecentServer } from './recentServers';
+
+export interface MainMenuDeps {
+  index: WorldIndex;
+  recent: RecentServer[];
+  /** World files saved in the browser (names), to list worlds the index doesn't know yet. */
+  listFiles(): Promise<string[]>;
+  deleteFiles(id: string): Promise<boolean>;
+  /** Opens a route: `{ play: id }`, or invite parameters. */
+  go(route: Record<string, string>): void;
+  now(): number;
+  /** Shown on opening, e.g. why the menu came up instead of a world. */
+  message?: string;
+}
+
+/** "just now", "5 min ago", "3 h ago", "2 days ago", or "never". */
+export function formatPlayed(at: number, now: number): string {
+  if (at <= 0) return 'never played';
+  const min = Math.floor((now - at) / 60_000);
+  if (min < 1) return 'played just now';
+  if (min < 60) return `played ${String(min)} min ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `played ${String(h)} h ago`;
+  const days = Math.floor(h / 24);
+  return `played ${String(days)} day${days === 1 ? '' : 's'} ago`;
+}
+
+/** A world's details line: "Terrain · seed 42 · played 3 h ago". */
+export function worldDetails(world: WorldMeta, now: number): string {
+  return `${typeLabel(world.type)} · seed ${String(world.seed)} · ${formatPlayed(world.lastPlayedAt, now)}`;
+}
+
+function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = className;
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+/**
+ * A button that acts on a second click: the first asks to confirm (for delete and regenerate),
+ * reverting after a few seconds.
+ */
+function confirmButton(label: string, confirm: string, onConfirm: () => void): HTMLButtonElement {
+  let armed = false;
+  let timer = 0;
+  const b = button(label, 'menu-button-small', () => {
+    if (armed) {
+      window.clearTimeout(timer);
+      onConfirm();
+      return;
+    }
+    armed = true;
+    b.textContent = confirm;
+    b.classList.add('menu-confirm');
+    timer = window.setTimeout(() => {
+      armed = false;
+      b.textContent = label;
+      b.classList.remove('menu-confirm');
+    }, 4000);
+  });
+  return b;
+}
+
+export class MainMenu {
+  readonly root = document.createElement('div');
+  private readonly list = document.createElement('ul');
+  private readonly message = document.createElement('p');
+  private readonly form = document.createElement('form');
+
+  constructor(
+    parent: HTMLElement,
+    private readonly deps: MainMenuDeps,
+  ) {
+    this.root.id = 'main-menu';
+    const panel = document.createElement('div');
+    panel.className = 'menu-panel';
+    const title = document.createElement('h1');
+    title.textContent = 'Dwell';
+    this.message.id = 'menu-message';
+    this.message.setAttribute('aria-live', 'polite');
+    this.message.textContent = deps.message ?? '';
+
+    const worldsTitle = document.createElement('h2');
+    worldsTitle.textContent = 'Worlds';
+    const create = button('New world', 'menu-button-main', () => {
+      this.form.hidden = !this.form.hidden;
+      if (!this.form.hidden) this.form.querySelector('input')?.focus();
+    });
+    create.id = 'new-world';
+    this.list.id = 'world-list';
+    this.buildForm();
+
+    panel.append(
+      title,
+      this.message,
+      worldsTitle,
+      create,
+      this.form,
+      this.list,
+      this.joinSection(),
+    );
+    this.root.append(panel);
+    parent.append(this.root);
+    this.render();
+    void this.adoptSavedWorlds();
+  }
+
+  private say(text: string): void {
+    this.message.textContent = text;
+  }
+
+  private buildForm(): void {
+    const f = this.form;
+    f.id = 'create-world';
+    f.hidden = true;
+    const field = (label: string, control: HTMLElement): HTMLLabelElement => {
+      const l = document.createElement('label');
+      l.className = 'menu-field';
+      const span = document.createElement('span');
+      span.textContent = label;
+      l.append(span, control);
+      return l;
+    };
+    const name = document.createElement('input');
+    name.id = 'world-name';
+    name.maxLength = 40;
+    name.placeholder = 'New world';
+    name.autocomplete = 'off';
+    const seed = document.createElement('input');
+    seed.id = 'world-seed';
+    seed.placeholder = 'Random';
+    seed.autocomplete = 'off';
+    const type = document.createElement('select');
+    type.id = 'world-type';
+    for (const t of WORLD_TYPES) {
+      const option = document.createElement('option');
+      option.value = t;
+      option.textContent = typeLabel(t);
+      type.append(option);
+    }
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'menu-button-main';
+    submit.textContent = 'Create and play';
+    const hint = document.createElement('p');
+    hint.className = 'menu-hint';
+    hint.textContent = 'Seed: a number, or any text. The same seed makes the same world.';
+    f.append(field('Name', name), field('Seed', seed), field('Type', type), hint, submit);
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const world = this.deps.index.create(
+        {
+          name: cleanName(name.value, 'New world'),
+          type: type.value as WorldType,
+          seed: parseSeed(seed.value),
+        },
+        this.deps.now(),
+      );
+      this.deps.go({ play: world.id });
+    });
+  }
+
+  private joinSection(): HTMLElement {
+    const section = document.createElement('section');
+    section.className = 'menu-join';
+    const title = document.createElement('h2');
+    title.textContent = 'Join';
+    const form = document.createElement('form');
+    form.className = 'menu-join-form';
+    const input = document.createElement('input');
+    input.id = 'join-input';
+    input.placeholder = 'Paste an invite link';
+    input.autocomplete = 'off';
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'menu-button-main';
+    submit.textContent = 'Join';
+    form.append(input, submit);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const invite = pastedInvite(input.value);
+      if (invite) this.deps.go(invite);
+      else this.say('That is not an invite link. A server prints one when it starts.');
+    });
+    section.append(title, form);
+    if (this.deps.recent.length > 0) {
+      const recent = document.createElement('ul');
+      recent.id = 'recent-servers';
+      for (const server of this.deps.recent) {
+        const item = document.createElement('li');
+        item.append(
+          button(server.label, 'menu-button-small', () => {
+            this.deps.go(server.invite);
+          }),
+        );
+        recent.append(item);
+      }
+      const label = document.createElement('p');
+      label.className = 'menu-hint';
+      label.textContent = 'Recent servers (a restarted server needs a new link):';
+      section.append(label, recent);
+    }
+    return section;
+  }
+
+  /** Lists worlds saved before the index existed (or opened by link in another way). */
+  private async adoptSavedWorlds(): Promise<void> {
+    const before = this.deps.index.list().length;
+    for (const name of await this.deps.listFiles()) this.deps.index.adopt(name, this.deps.now());
+    if (this.deps.index.list().length !== before) this.render();
+  }
+
+  private render(): void {
+    const worlds = this.deps.index.list();
+    const now = this.deps.now();
+    this.list.replaceChildren();
+    if (worlds.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'menu-empty';
+      empty.textContent = 'No worlds yet. Create one to start playing.';
+      this.list.append(empty);
+      this.form.hidden = false;
+      return;
+    }
+    for (const world of worlds) {
+      const item = document.createElement('li');
+      item.className = 'world-item';
+      item.dataset.id = world.id;
+      const info = document.createElement('div');
+      info.className = 'world-info';
+      const name = document.createElement('span');
+      name.className = 'world-name';
+      name.textContent = world.name;
+      const details = document.createElement('span');
+      details.className = 'world-details';
+      details.textContent = worldDetails(world, now);
+      info.append(name, details);
+      const actions = document.createElement('div');
+      actions.className = 'world-actions';
+      actions.append(
+        button('Play', 'menu-button-main world-play', () => {
+          this.deps.go({ play: world.id });
+        }),
+        confirmButton('Regenerate', 'Lose all changes?', () => void this.regenerate(world)),
+        confirmButton('Delete', 'Delete forever?', () => void this.remove(world)),
+      );
+      item.append(info, actions);
+      this.list.append(item);
+    }
+  }
+
+  /** Recreates a world from its seed with its type's current generator, discarding changes. */
+  private async regenerate(world: WorldMeta): Promise<void> {
+    if (!(await this.deps.deleteFiles(world.id))) {
+      this.say(`"${world.name}" is open in another tab. Close it there first.`);
+      return;
+    }
+    this.deps.index.put({ ...world, generatorVersion: GENERATORS[world.type] });
+    this.deps.go({ play: world.id });
+  }
+
+  private async remove(world: WorldMeta): Promise<void> {
+    if (!(await this.deps.deleteFiles(world.id))) {
+      this.say(`"${world.name}" is open in another tab. Close it there first.`);
+      return;
+    }
+    this.deps.index.remove(world.id);
+    this.say(`Deleted "${world.name}".`);
+    this.render();
+  }
+}
