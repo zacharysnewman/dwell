@@ -108,7 +108,9 @@ jobs:
         working-directory: server
         run: build/dev/tests/dwell_tests --dwell-origin-x=far -ts="player*,netcode*"
       - name: Smoke-run server
-        run: server/build/dev/app/dwell_server --world ''
+        # The server runs until signalled: start it, then after 10 s ask it to stop (SIGINT) and
+        # require a clean shutdown (--preserve-status: its own exit code, not timeout's 124).
+        run: timeout --preserve-status --signal=INT 10s server/build/dev/app/dwell_server --world ''
       - name: Player controller performance gate and golden trace (Release)
         working-directory: server
         run: |
