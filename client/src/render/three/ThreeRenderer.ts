@@ -8,7 +8,6 @@ import {
   DirectionalLight,
   DoubleSide,
   EdgesGeometry,
-  Fog,
   Group,
   HemisphereLight,
   LinearMipmapLinearFilter,
@@ -30,10 +29,11 @@ import type { FlatMesh, SectionMeshes } from '../../mesh/lodMesher';
 import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
 import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
-import { FOG, fogRange } from '../fog';
+import { DEFAULT_FOG, type FogSettings } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
 import { sharedAtlas } from '../textures';
 import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
+import { setFogUniforms, withHeightFog } from './heightFog';
 import { WaterBatch, type WaterHandle } from './waterBatch';
 
 const SKY = 0x87b5e0;
@@ -122,33 +122,38 @@ export class ThreeRenderer implements Renderer {
   private readonly camera = new PerspectiveCamera(VERTICAL_FOV, 1, 0.05, NEAR_SPLIT);
   /** Block textures: tiled-noise atlas (render/textures.ts), crisp up close, mipmapped far away. */
   private readonly atlas = ThreeRenderer.createAtlasTexture();
-  private readonly opaqueMaterial = chunkMaterial({
-    vertexColors: true,
-    map: this.atlas,
-  });
-  private readonly waterMaterial = chunkMaterial({
-    vertexColors: true,
-    map: this.atlas,
-    transparent: true,
-    opacity: 0.55,
-    depthWrite: false,
-    side: DoubleSide,
-  });
+  private readonly opaqueMaterial = withHeightFog(
+    chunkMaterial({ vertexColors: true, map: this.atlas }),
+    'chunk',
+  );
+  private readonly waterMaterial = withHeightFog(
+    chunkMaterial({
+      vertexColors: true,
+      map: this.atlas,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      side: DoubleSide,
+    }),
+    'chunk',
+  );
   private readonly chunks = new Map<string, Group>();
   /** Chunk groups' coordinates, for the LOD system's visibility (§6.6). */
   private readonly chunkCoords = new Map<string, ChunkCoord>();
   private chunkVisible: ((coord: ChunkCoord) => boolean) | null = null;
   private readonly lod = new Map<number, LodGroup>();
   private lodShown: ReadonlyMap<number, number> = new Map();
-  private readonly lodMaterial = new MeshLambertMaterial({ vertexColors: true });
+  private readonly lodMaterial = withHeightFog(new MeshLambertMaterial({ vertexColors: true }));
   /** Like the chunks' water (see-through from both sides, at their opacity), untextured. */
-  private readonly lodWaterMaterial = new MeshLambertMaterial({
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.55,
-    depthWrite: false,
-    side: DoubleSide,
-  });
+  private readonly lodWaterMaterial = withHeightFog(
+    new MeshLambertMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      side: DoubleSide,
+    }),
+  );
   private readonly lodWater = new WaterBatch(this.lodWaterMaterial);
   private lodLevelMaterials: MeshLambertMaterial[] | null = null;
   /** The far pass's camera (the main camera is the near pass's). */
@@ -168,7 +173,7 @@ export class ThreeRenderer implements Renderer {
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
     this.renderer.autoClear = false;
     this.renderer.setClearColor(SKY);
-    this.scene.fog = FOG ? new Fog(SKY, FOG.startM, FOG.visibilityM) : null;
+    this.setFog(DEFAULT_FOG);
     this.scene.add(new HemisphereLight(0xdfefff, 0x4a3b2a, 1.4));
     const sun = new DirectionalLight(0xffffff, 1.6);
     sun.position.set(0.4, 1, 0.25);
@@ -226,11 +231,6 @@ export class ThreeRenderer implements Renderer {
     far.aspect = this.camera.aspect;
     far.near = Math.max(NEAR_SPLIT * 0.95, altitude * 0.8);
     far.updateProjectionMatrix();
-    const range = fogRange(this.camera.position.y);
-    if (range && this.scene.fog instanceof Fog) {
-      this.scene.fog.near = range.near;
-      this.scene.fog.far = range.far;
-    }
     this.renderer.clear();
     this.renderer.render(this.scene, far);
     this.renderer.clearDepth();
@@ -280,7 +280,9 @@ export class ThreeRenderer implements Renderer {
 
   setLodLevelColors(on: boolean): void {
     this.lodLevelMaterials = on
-      ? LEVEL_TINTS.map((c) => new MeshLambertMaterial({ vertexColors: true, color: c }))
+      ? LEVEL_TINTS.map((c) =>
+          withHeightFog(new MeshLambertMaterial({ vertexColors: true, color: c })),
+        )
       : null;
     for (const l of this.lod.values()) {
       const material = this.lodLevelMaterials?.[l.level] ?? this.lodMaterial;
@@ -337,14 +339,14 @@ export class ThreeRenderer implements Renderer {
     if (!p) {
       const body = new Mesh(
         new CapsuleGeometry(view.radius, Math.max(0.01, height - 2 * view.radius), 6, 12),
-        new MeshLambertMaterial({ color: view.color }),
+        withHeightFog(new MeshLambertMaterial({ color: view.color })),
       );
       const group = new Group();
       group.add(body);
       // A small "visor" so facing is visible.
       const visor = new Mesh(
         new CapsuleGeometry(view.radius * 0.35, view.radius * 0.6, 4, 8),
-        new MeshLambertMaterial({ color: 0x1b1f2a }),
+        withHeightFog(new MeshLambertMaterial({ color: 0x1b1f2a })),
       );
       visor.rotation.z = Math.PI / 2;
       visor.position.set(0, 0, view.radius * 0.8);
@@ -386,6 +388,10 @@ export class ThreeRenderer implements Renderer {
       Math.cos(yaw) * Math.cos(pitch),
     );
     this.camera.lookAt(this.camera.position.clone().add(forward));
+  }
+
+  setFog(fog: FogSettings): void {
+    setFogUniforms(fog, SKY);
   }
 
   setBlockOutline(cell: Vec3 | null, height = 1): void {

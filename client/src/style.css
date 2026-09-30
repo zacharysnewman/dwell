@@ -27,9 +27,9 @@ body {
 
 #net-status {
   position: fixed;
-  left: max(8px, env(safe-area-inset-left));
+  left: calc(max(8px, env(safe-area-inset-left)) + 48px);
   top: max(8px, env(safe-area-inset-top));
-  max-width: calc(100vw - 16px);
+  max-width: calc(100vw - 64px);
   padding: 4px 8px;
   border-radius: 4px;
   background: rgb(0 0 0 / 60%);
@@ -375,7 +375,7 @@ body {
 #map-overlay {
   position: fixed;
   left: max(8px, env(safe-area-inset-left));
-  top: 40px;
+  top: 56px;
   padding: 4px;
   border-radius: 4px;
   background: rgb(0 0 0 / 60%);
@@ -394,4 +394,88 @@ body {
   width: 256px;
   height: 256px;
   image-rendering: pixelated;
+}
+
+/* Settings menu (ui/settingsMenu.ts): a button in the top-left corner and its panel below. */
+#menu-button {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  top: max(8px, env(safe-area-inset-top));
+  z-index: 5;
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgb(255 255 255 / 45%);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 45%);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#menu-button[aria-expanded='true'] {
+  background: rgb(255 255 255 / 40%);
+  color: #111;
+}
+
+#settings-menu {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  top: calc(max(8px, env(safe-area-inset-top)) + 48px);
+  z-index: 5;
+  width: min(300px, calc(100vw - 16px));
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(11 13 18 / 85%);
+  font-size: 13px;
+  touch-action: pan-y;
+}
+
+#settings-menu[hidden] {
+  display: none;
+}
+
+#settings-menu h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  margin-bottom: 10px;
+}
+
+.settings-value {
+  font:
+    12px ui-monospace,
+    monospace;
+}
+
+.settings-row input {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 2px 0;
+  touch-action: none;
+}
+
+.settings-hint {
+  grid-column: 1 / -1;
+  color: rgb(230 232 238 / 60%);
+  font-size: 11px;
+}
+
+.settings-reset {
+  padding: 4px 12px;
+  border: 1px solid rgb(255 255 255 / 40%);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 10%);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }

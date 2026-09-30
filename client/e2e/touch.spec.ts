@@ -121,7 +121,7 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
   await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(0);
 });
 
-test('on a phone the hotbar, connection status and debug overlay do not overlap', async ({
+test('on a phone the hotbar, connection status, debug overlay and buttons do not overlap', async ({
   page,
 }) => {
   // Regression (phone playtest): the hotbar sat over both.
@@ -129,7 +129,7 @@ test('on a phone the hotbar, connection status and debug overlay do not overlap'
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
     .toBe(true);
-  const selectors = ['#hotbar', '#net-status', '#debug-overlay', '#touch-debug'];
+  const selectors = ['#hotbar', '#net-status', '#debug-overlay', '#touch-debug', '#menu-button'];
   const boxes: { x: number; y: number; width: number; height: number }[] = [];
   for (const selector of selectors) {
     await expect(page.locator(selector)).toBeVisible();

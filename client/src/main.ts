@@ -17,6 +17,7 @@ import type { ChunkCoord } from './protocol/messages';
 import { Hotbar, slotForKey } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MAP_STEP, MapOverlay } from './ui/mapOverlay';
+import { SettingsMenu } from './ui/settingsMenu';
 import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
 import { ChunkStreamer } from './world/chunkStream';
@@ -105,6 +106,10 @@ function start(): App {
   };
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
+  // Settings (top left): the height fog's sliders, applied as they move.
+  new SettingsMenu(document.body, (fog) => {
+    renderer.setFog(fog);
+  });
   window.addEventListener('touchstart', () => (touch.visible = true), {
     once: true,
     passive: true,
