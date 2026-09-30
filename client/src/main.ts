@@ -43,7 +43,7 @@ import { FpsMeter } from './ui/fps';
 import { ChunkStreamer } from './world/chunkStream';
 import { WorldgenPool } from './worldgen/pool';
 import { LodSystem } from './lod/lodSystem';
-import { Lod } from './protocol/constants.gen';
+import { defaultDetail } from './lod/detail';
 import { lodViewport } from './lod/frustum';
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
@@ -137,6 +137,7 @@ function start(): App {
   app.settings = new SettingsMenu(document.body, prefersTouch(), (s) => {
     renderer.setFog(s.fog);
     app.game?.lod?.setDetailDistance(s.detail.distanceM);
+    app.game?.lod?.setQuality(s.detail.pixelError, s.detail.memoryMb * 1048576);
   });
   window.addEventListener('touchstart', () => (touch.visible = true), {
     once: true,
@@ -313,7 +314,7 @@ function play(
     // The whole-world view (§6.6): generated here unless in full-chunk mode (?lod=0 turns it off).
     const params = new URLSearchParams(location.search);
     if (params.get('lod') !== '0') {
-      const mobile = prefersTouch();
+      const detail = app.settings?.current.detail ?? defaultDetail(prefersTouch());
       const lod = new LodSystem(
         pool,
         meshPool,
@@ -323,8 +324,8 @@ function play(
           session.sendControl({ type: MessageType.LodRequest, sections });
         },
         {
-          pixelError: mobile ? Lod.pixelErrorMobile : Lod.pixelErrorDesktop,
-          cacheBytes: (mobile ? Lod.cacheMbMobile : Lod.cacheMbDesktop) * 1048576,
+          pixelError: detail.pixelError,
+          cacheBytes: detail.memoryMb * 1048576,
           maxGenerationJobs: pool.capacity,
           maxMeshJobs: meshPool.capacity,
           // Full detail beyond the streamed view: chunks asked for by the LOD (§6.6).
@@ -334,7 +335,7 @@ function play(
         },
       );
       lod.setFullMode(hash === 0n);
-      lod.setDetailDistance(app.settings?.current.detail.distanceM ?? null);
+      lod.setDetailDistance(detail.distanceM);
       app.renderer.setChunkVisibility((c) => lod.chunkVisible(c));
       app.renderer.setLodLevelColors(params.get('lodcolors') === '1');
       game.viewport = () => lodViewport(app.canvas.clientWidth, app.canvas.clientHeight);

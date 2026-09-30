@@ -42,25 +42,50 @@ describe('settings JSON', () => {
   it('rounds the settings for sharing, and reads back as the same settings', () => {
     const json = settingsJson({
       fog: { distanceM: 11313.708, density: 0.6049, heightM: 1499.6 },
-      detail: { distanceM: 200.4 },
+      detail: { distanceM: 200.4, pixelError: 2.46, memoryMb: 511.7 },
     });
     const parsed = JSON.parse(json) as { fog: unknown; detail: unknown };
     expect(parsed).toEqual({
       fog: { distanceM: 11314, density: 0.6, heightM: 1500 },
-      detail: { distanceM: 200 },
+      detail: { distanceM: 200, pixelError: 2.5, memoryMb: 512 },
     });
     expect(sanitizeFog(parsed.fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
-    expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({ distanceM: 200 });
+    expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
+      distanceM: 200,
+      pixelError: 2.5,
+      memoryMb: 512,
+    });
   });
 });
 
-describe('full-detail distance', () => {
-  it('spans the streamed view to the request radius, defaulting by device', () => {
+describe('detail settings', () => {
+  it('span their ranges, defaulting by device', () => {
     expect(DETAIL_LIMITS.distanceM).toEqual({ min: 96, max: 352 });
-    expect(defaultDetail(false)).toEqual({ distanceM: 256 });
-    expect(defaultDetail(true)).toEqual({ distanceM: 128 });
-    expect(sanitizeDetail({ distanceM: 5000 }, defaultDetail(true))).toEqual({ distanceM: 352 });
-    expect(sanitizeDetail({ distanceM: 'far' }, defaultDetail(true))).toEqual({ distanceM: 128 });
-    expect(sanitizeDetail(null, defaultDetail(false))).toEqual({ distanceM: 256 });
+    expect(DETAIL_LIMITS.pixelError).toEqual({ min: 1, max: 16 });
+    expect(DETAIL_LIMITS.memoryMb).toEqual({ min: 32, max: 1024 });
+    // The LOD's defaults are the protocol constants (LOD_PIXEL_ERROR, LOD_CACHE_MB).
+    expect(defaultDetail(false)).toEqual({ distanceM: 256, pixelError: 4, memoryMb: 256 });
+    expect(defaultDetail(true)).toEqual({ distanceM: 128, pixelError: 8, memoryMb: 96 });
+  });
+
+  it('clamp stored values, and take the default for anything missing or not a number', () => {
+    const mobile = defaultDetail(true);
+    expect(sanitizeDetail({ distanceM: 5000, pixelError: 0.1, memoryMb: 1e6 }, mobile)).toEqual({
+      distanceM: 352,
+      pixelError: 1,
+      memoryMb: 1024,
+    });
+    expect(sanitizeDetail({ distanceM: 'far', pixelError: 3 }, mobile)).toEqual({
+      distanceM: 128,
+      pixelError: 3,
+      memoryMb: 96,
+    });
+    // Settings kept before the LOD sliders existed keep their distance.
+    expect(sanitizeDetail({ distanceM: 200 }, defaultDetail(false))).toEqual({
+      distanceM: 200,
+      pixelError: 4,
+      memoryMb: 256,
+    });
+    expect(sanitizeDetail(null, defaultDetail(false))).toEqual(defaultDetail(false));
   });
 });

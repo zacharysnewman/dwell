@@ -231,7 +231,7 @@ export class LodSystem {
     private readonly view: LodView,
     private readonly chunks: ChunkReadiness,
     private readonly request: (sections: LodSectionRequest[]) => void,
-    private readonly options: LodOptions,
+    private options: LodOptions,
   ) {
     this.requestCredit = this.rate();
   }
@@ -242,6 +242,19 @@ export class LodSystem {
    */
   setDetailDistance(m: number | null): void {
     this.detailM = m;
+  }
+
+  /**
+   * The pixel error (CSS pixels) and cache budget (bytes), from the settings menu. The error scale
+   * starts over from 1, so the view re-fits the new budget at once rather than a step per 10 s.
+   */
+  setQuality(pixelError: number, cacheBytes: number): void {
+    if (pixelError === this.options.pixelError && cacheBytes === this.options.cacheBytes) return;
+    this.options = { ...this.options, pixelError, cacheBytes };
+    this.errorScale = 1;
+    this.tooFine = null;
+    this.lastScaleMs = null;
+    this.lastStepFiner = false;
   }
 
   /** Full-chunk mode (§6.3): nothing is generated here; every section comes from the server. */

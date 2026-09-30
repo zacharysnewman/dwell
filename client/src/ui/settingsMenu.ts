@@ -1,5 +1,5 @@
 // Settings menu: a button in the top-left corner opens a panel of sliders — the height fog
-// (render/fog.ts) and the full-detail distance (lod/detail.ts), ARCHITECTURE.md §6.6. The settings
+// (render/fog.ts) and the detail settings (lod/detail.ts), ARCHITECTURE.md §6.6. The settings
 // are kept in this browser. In a game the panel is also the game menu (Phase 5a): Resume and Quit
 // to main menu above the sliders; it opens when the pointer is released (Esc).
 import { DETAIL_LIMITS, defaultDetail, sanitizeDetail, type DetailSettings } from '../lod/detail';
@@ -46,7 +46,11 @@ export function settingsJson(s: Settings): string {
       density: Math.round(s.fog.density * 100) / 100,
       heightM: Math.round(s.fog.heightM),
     },
-    detail: { distanceM: Math.round(s.detail.distanceM) },
+    detail: {
+      distanceM: Math.round(s.detail.distanceM),
+      pixelError: Math.round(s.detail.pixelError * 10) / 10,
+      memoryMb: Math.round(s.detail.memoryMb),
+    },
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -141,7 +145,25 @@ const SECTIONS: { title: string; sliders: SliderSpec[] }[] = [
         log: false,
         format: formatMetres,
         get: (s) => s.detail.distanceM,
-        with: (s, v) => ({ ...s, detail: { distanceM: v } }),
+        with: (s, v) => ({ ...s, detail: { ...s.detail, distanceM: v } }),
+      },
+      {
+        label: 'Distant detail',
+        hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
+        ...DETAIL_LIMITS.pixelError,
+        log: true,
+        format: (v) => `${v.toFixed(1)} px`,
+        get: (s) => s.detail.pixelError,
+        with: (s, v) => ({ ...s, detail: { ...s.detail, pixelError: v } }),
+      },
+      {
+        label: 'Distant memory',
+        hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
+        ...DETAIL_LIMITS.memoryMb,
+        log: true,
+        format: (v) => `${String(Math.round(v))} MB`,
+        get: (s) => s.detail.memoryMb,
+        with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
       },
     ],
   },
