@@ -881,7 +881,8 @@ Deliverables
 
 Exit criteria
 - [ ] The deployed `GET /v1/health` answers; a push to `main` redeploys it.
-- [ ] CI runs the master's tests against the local Workers runtime.
+- [x] CI runs the master's tests against the local Workers runtime. *CI job `master` (19 tests in
+  workerd), green on PR #27 (run 36685737412).*
 
 ### 5c — Friend worlds: one-click Host from the browser
 
