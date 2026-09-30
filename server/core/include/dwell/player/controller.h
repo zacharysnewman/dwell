@@ -46,7 +46,8 @@ struct Input {
   // for players who may not fly.
   bool fly = false;
   // Flight speed level (◆ Dwell, the speed slider): 0 flies at the height-based speed; level L
-  // flies at least fly.speed × FlySpeedFactor(L). Levels above kFlySpeedMaxLevel count as it.
+  // flies at least fly.speed × FlySpeedFactor(L), even below WORLD_MAX_Y. Levels above
+  // kFlySpeedMaxLevel count as it.
   std::uint8_t fly_speed = 0;
 };
 
