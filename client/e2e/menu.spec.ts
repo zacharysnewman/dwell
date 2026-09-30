@@ -122,10 +122,12 @@ test('main menu: a world saved before the menu existed is listed and keeps its e
   await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(0);
 });
 
-test('main menu: joining asks for a join code or an invite link', async ({ page }) => {
+test('main menu: joining asks for a join code, an address or an invite link', async ({ page }) => {
   await page.goto('./?debug=1');
   await page.locator('#join-input').fill('not a link');
   await page.locator('.menu-join-form button').click();
-  await expect(page.locator('#menu-message')).toContainText('not a join code or an invite link');
+  await expect(page.locator('#menu-message')).toContainText(
+    'not a join code, a server address or an invite link',
+  );
   await expect(page).toHaveURL(/\?debug=1$/);
 });

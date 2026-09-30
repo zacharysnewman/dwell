@@ -87,3 +87,15 @@ export function codeLink(pageUrl: string, code: string): string {
   url.hash = '';
   return url.href;
 }
+
+/**
+ * Whether something typed in the Join box is a server address ("192.168.1.50", "host:4433",
+ * "[::1]:4433"), to be looked up through the master (Phase 5d). Join codes and invite links are
+ * checked first.
+ */
+export function looksLikeAddress(text: string): boolean {
+  const t = text.trim();
+  if (/^\[[0-9a-f:.]+\](:\d{1,5})?$/i.test(t)) return true;
+  const m = /^([a-z0-9.-]+)(:\d{1,5})?$/i.exec(t);
+  return m !== null && (t.includes('.') || t.includes(':') || m[1]?.toLowerCase() === 'localhost');
+}

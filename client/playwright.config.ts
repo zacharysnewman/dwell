@@ -30,6 +30,9 @@ export default defineConfig({
         // Friend worlds (Phase 5c): two contexts on one machine connect by their real host
         // addresses, not mDNS names that the runner may not resolve.
         '--disable-features=WebRtcHideLocalIpsWithMdns',
+        // The suite only talks to local servers: never through a proxy from the environment (one
+        // can't carry WebTransport to a LAN address, Phase 5d).
+        '--no-proxy-server',
       ],
     },
   },

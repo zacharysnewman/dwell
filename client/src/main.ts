@@ -5,20 +5,20 @@ import { MeshPool } from './mesh/pool';
 import {
   connectLocal,
   connectToInvite,
-  connectToRoom,
+  connectToCode,
   type ConnectOptions,
   type LocalSession,
 } from './net/connect';
 import { enableHosting } from './hostWorld';
 import { formatCode } from './net/joinCode';
-import { configuredMasterUrl, MasterClient } from './net/master';
+import { configuredMasterUrl, MasterClient, serverInvite } from './net/master';
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from './identity/deviceKey';
 import { parseInvite } from './net/invite';
 import { parseLocalWorld, type LocalWorld } from './local/world';
 import { WorldIndex } from './local/worldIndex';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
 import { launchOf, pastedInvite, withRoute } from './ui/launch';
-import { MainMenu } from './ui/mainMenu';
+import { MainMenu, type MainMenuDeps } from './ui/mainMenu';
 import { loadRecent, rememberServer } from './ui/recentServers';
 import { parseNetConditions } from './net/netsim';
 import type { ClientSession, SessionState, SessionStats } from './net/session';
@@ -404,8 +404,26 @@ function go(route: Record<string, string>): void {
 }
 
 /** The main menu (Phase 5a): shown when the address names no world or server. */
+/** The master as the menu uses it (Phase 5d): server addresses and games on this network. */
+function menuMaster(): MainMenuDeps['master'] {
+  const base = configuredMasterUrl();
+  if (!base) return undefined;
+  const client = loadOrCreateDeviceKey(new IndexedDbKeyStore()).then(
+    (key) => new MasterClient(base, key),
+  );
+  return {
+    resolveAddress: async (address) => {
+      const found = await (await client).resolve({ address });
+      if (found.kind !== 'server') throw new Error('That is not a server address.');
+      return serverInvite(found.server);
+    },
+    nearby: async () => (await client).nearby(),
+  };
+}
+
 function openMainMenu(app: App, message?: string): void {
   app.touch.visible = false;
+  const master = menuMaster();
   new MainMenu(document.body, {
     index: new WorldIndex(storage()),
     recent: loadRecent(storage()),
@@ -414,6 +432,7 @@ function openMainMenu(app: App, message?: string): void {
     go,
     now: () => Date.now(),
     ...(message ? { message } : {}),
+    ...(master ? { master } : {}),
   });
 }
 
@@ -521,7 +540,7 @@ async function connect(app: App): Promise<void> {
       const base = configuredMasterUrl();
       if (!base) throw new Error('this build has no master server configured');
       const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
-      session = await connectToRoom(new MasterClient(base, key), code, options);
+      session = await connectToCode(new MasterClient(base, key), code, options);
     } else if (invite) {
       session = await connectToInvite(invite, options);
     } else {
@@ -530,7 +549,7 @@ async function connect(app: App): Promise<void> {
     }
     enableGameMenu(app, local?.save ?? null);
     // A local world can be opened to friends (Host…, Phase 5c).
-    if (local && app.settings) enableHosting(app.settings, local, prefersTouch());
+    if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;
     session.subscribe((state, stats) => {
       status.textContent = formatStatus(target, session.transportKind, state, stats);

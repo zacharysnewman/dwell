@@ -39,7 +39,12 @@ class WakeLock {
   }
 }
 
-export function enableHosting(settings: SettingsMenu, local: LocalSession, mobile: boolean): void {
+export function enableHosting(
+  settings: SettingsMenu,
+  local: LocalSession,
+  mobile: boolean,
+  worldName: string,
+): void {
   const base = configuredMasterUrl();
   let relay: HostRelay | null = null;
   const wake = new WakeLock();
@@ -50,6 +55,7 @@ export function enableHosting(settings: SettingsMenu, local: LocalSession, mobil
   };
   const panel: HostPanel = new HostPanel({
     mobile,
+    worldName,
     start: async (hostSettings) => {
       if (!base) throw new Error('this build has no master server configured');
       const master = new MasterClient(base, local.key);

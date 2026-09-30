@@ -1,7 +1,8 @@
 // Chooses how to reach a server and runs the session (ARCHITECTURE.md §8.1, §10).
 import { IndexedDbKeyStore, loadOrCreateDeviceKey, type DeviceKey } from '../identity/deviceKey';
 import type { Invite } from './invite';
-import { MasterClient, MasterError } from './master';
+import { MasterClient, MasterError, serverInvite } from './master';
+import { parseInvite } from './invite';
 import { PeerTransport, type SignalData, type Signaler } from './peer';
 import { RoomSocket } from './roomSocket';
 import { GENERATORS, type LocalWorld } from '../local/world';
@@ -111,6 +112,31 @@ function roomError(err: unknown): Error {
     if (err.status === 429) return new Error('Too many tries; wait a minute and try again.');
   }
   return err instanceof Error ? err : new Error(String(err));
+}
+
+/**
+ * Joins whatever a join code names (§10.3): a dedicated server (connected to directly, like an
+ * invite link: the master supplies its current address and certificate) or a browser-hosted
+ * friend world (connectToRoom).
+ */
+export async function connectToCode(
+  master: MasterClient,
+  code: string,
+  options: ConnectOptions,
+): Promise<ClientSession> {
+  let found;
+  try {
+    found = await master.resolve({ code });
+  } catch (err) {
+    if (err instanceof MasterError && err.code === 'not_found') {
+      throw new Error('Nothing is being hosted with that code.', { cause: err });
+    }
+    throw roomError(err);
+  }
+  if (found.kind === 'room') return connectToRoom(master, code, options);
+  const invite = parseInvite(`?${new URLSearchParams(serverInvite(found.server)).toString()}`);
+  if (!invite) throw new Error('The master gave an unusable address for that server.');
+  return connectToInvite(invite, options);
 }
 
 /**

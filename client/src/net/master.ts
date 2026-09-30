@@ -1,7 +1,8 @@
 // The master server's client side (ARCHITECTURE.md §10.3, ADR 0013): where it is, and signing
 // requests with the device key (§10.4). The message format matches the Worker's
 // (services/master/src/auth.ts); shared/master/vectors.json pins it for both. Friend worlds (5c) use
-// its rooms (join codes and signaling) and TURN credentials.
+// its rooms (join codes and signaling) and TURN credentials; dedicated servers (5d) are found by
+// code or typed address, and listed to players on their own network.
 import type { DeviceKey } from '../identity/deviceKey';
 
 export const SIGNATURE_CONTEXT = 'dwell-master-v1';
@@ -66,6 +67,43 @@ export async function signatureHeaders(
   };
 }
 
+/** A dedicated server registered with the master, as a player sees it (§10.3, Phase 5d). */
+export interface ServerEntry {
+  code: string;
+  display: string;
+  name: string;
+  motd: string;
+  players: number;
+  maxPlayers: number;
+  protocol: number;
+  host: string;
+  port: number;
+  cert: string;
+  rtcPort: number | null;
+  ice: string | null;
+}
+
+/** What a join code or typed address leads to. */
+export type Resolved =
+  { kind: 'server'; server: ServerEntry } | { kind: 'room'; code: string; display: string };
+
+/** Servers and friend worlds on the player's network (same public IP). */
+export interface Nearby {
+  servers: ServerEntry[];
+  worlds: { code: string; display: string; name: string }[];
+}
+
+/** Invite-link parameters (`?join=…&cert=…[&rtc=…&ice=…]`) for a resolved server. */
+export function serverInvite(s: ServerEntry): Record<string, string> {
+  const host = s.host.includes(':') ? `[${s.host}]` : s.host;
+  const route: Record<string, string> = { join: `${host}:${String(s.port)}`, cert: s.cert };
+  if (s.rtcPort !== null && s.ice) {
+    route.rtc = String(s.rtcPort);
+    route.ice = s.ice;
+  }
+  return route;
+}
+
 export class MasterError extends Error {
   override name = 'MasterError';
   constructor(
@@ -95,9 +133,16 @@ export class MasterClient {
     return this.request('POST', '/v1/whoami', {});
   }
 
-  /** Opens a room for a friend world: its join code, and the host's token for the room socket. */
-  createRoom(maxGuests: number): Promise<{ code: string; display: string; hostToken: string }> {
-    return this.request('POST', '/v1/rooms', { maxGuests });
+  /**
+   * Opens a room for a friend world: its join code, and the host's token for the room socket.
+   * Visibility "network" also lists it (by `name`) to players on the host's network.
+   */
+  createRoom(
+    maxGuests: number,
+    visibility: 'code' | 'network' = 'code',
+    name = '',
+  ): Promise<{ code: string; display: string; hostToken: string }> {
+    return this.request('POST', '/v1/rooms', { maxGuests, visibility, name });
   }
 
   /** Asks to join the room with this code: a one-use token for the room socket. */
@@ -113,6 +158,16 @@ export class MasterClient {
       {},
     );
     return iceServers;
+  }
+
+  /** What a join code (a friend world's or a server's) or a typed server address leads to. */
+  resolve(query: { code: string } | { address: string }): Promise<Resolved> {
+    return this.request('POST', '/v1/resolve', query);
+  }
+
+  /** Servers and friend worlds on this player's network. */
+  nearby(): Promise<Nearby> {
+    return this.request('POST', '/v1/nearby', {});
   }
 
   /** The room socket's URL for a host or guest token. */

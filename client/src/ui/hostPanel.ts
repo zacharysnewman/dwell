@@ -13,6 +13,8 @@ export interface Hosted {
 
 export interface HostPanelDeps {
   mobile: boolean;
+  /** The world's name, listed to the network with "Code + same network". */
+  worldName: string;
   /** Starts hosting; rejects with a message for the player. */
   start: (settings: HostSettings) => Promise<Hosted>;
   stop: () => void;
@@ -121,6 +123,14 @@ export class HostPanel {
     );
     const edits = select('host-edits', POLICIES, HostPolicy.Everyone);
     const flight = select('host-flight', POLICIES, HostPolicy.Everyone);
+    const visibility = select(
+      'host-visibility',
+      [
+        { value: 0, label: 'Code only' },
+        { value: 1, label: 'Code + same network' },
+      ],
+      1,
+    );
     this.status.className = 'menu-hint';
     this.status.id = 'host-status';
     this.status.textContent =
@@ -132,6 +142,8 @@ export class HostPanel {
         maxGuests: Number(guests.value),
         edits: Number(edits.value) as HostPolicy,
         flight: Number(flight.value) as HostPolicy,
+        visibility: visibility.value === '1' ? 'network' : 'code',
+        name: this.deps.worldName,
       };
       this.deps.start(settings).then(
         (hosted) => {
@@ -152,6 +164,7 @@ export class HostPanel {
       labelled('Guests', guests),
       labelled('Who can build', edits),
       labelled('Who can fly', flight),
+      labelled('Who can see it', visibility),
       this.status,
       start,
     );

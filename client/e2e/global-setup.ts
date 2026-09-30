@@ -1,11 +1,14 @@
-// Starts a native dwell_server for the suite and records its invite query for the tests, and a
-// local master server (`wrangler dev`, services/master) for friend worlds (Phase 5c).
+// Starts a local master server (`wrangler dev`, services/master) for friend worlds (Phase 5c) and
+// dedicated servers (5d), then a native dwell_server registered with it, and records the server's
+// invite query and join code for the tests.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const INVITE_FILE = fileURLToPath(new URL('../test-results/invite.txt', import.meta.url));
+/** The suite server's join code from the master (Phase 5d). */
+export const CODE_FILE = fileURLToPath(new URL('../test-results/code.txt', import.meta.url));
 /** The server's world file, fresh for every run (§6.4). */
 export const WORLD_FILE = fileURLToPath(new URL('../test-results/e2e.dwellworld', import.meta.url));
 
@@ -34,21 +37,63 @@ async function startMaster(): Promise<ChildProcess> {
   throw new Error('the local master did not start within 60 s');
 }
 
-export default async function globalSetup(): Promise<() => void> {
-  const bin =
+/** The dwell_server binary the suite runs. */
+export function serverBin(): string {
+  return (
     process.env.DWELL_SERVER_BIN ??
-    fileURLToPath(new URL('../../server/build/dev/app/dwell_server', import.meta.url));
-  mkdirSync(dirname(WORLD_FILE), { recursive: true });
-  for (const suffix of ['', '-wal', '-shm']) rmSync(WORLD_FILE + suffix, { force: true });
-  const server = spawn(bin, ['--port', '0', '--name', 'E2E', '--world', WORLD_FILE], {
+    fileURLToPath(new URL('../../server/build/dev/app/dwell_server', import.meta.url))
+  );
+}
+
+export interface StartedServer {
+  process: ChildProcess;
+  /** The invite link's query ("?join=…"). */
+  query: string;
+  /** Its join code from the master ("KQ7-XM4"). */
+  code: string;
+}
+
+/**
+ * Starts a dwell_server registered with the local master (2 s heartbeats, Phase 5d) and waits
+ * for its invite link and join code.
+ */
+export async function startServer(args: string[]): Promise<StartedServer> {
+  const server = spawn(serverBin(), [...args, '--master', MASTER_URL, '--heartbeat', '2'], {
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-
-  let master: ChildProcess | null = null;
-  const stop = () => {
+  try {
+    return await new Promise<StartedServer>((resolve, reject) => {
+      let out = '';
+      const timer = setTimeout(() => {
+        reject(new Error(`dwell_server did not print an invite link and a join code:\n${out}`));
+      }, 15_000);
+      server.stdout.on('data', (chunk: Buffer) => {
+        out += chunk.toString();
+        const invite = /invite link: \S+?(\?\S+)/.exec(out);
+        const code = /join code: (\S+)/.exec(out);
+        if (invite?.[1] && code?.[1]) {
+          clearTimeout(timer);
+          resolve({ process: server, query: invite[1], code: code[1] });
+        }
+      });
+      server.on('exit', (exit) => {
+        reject(new Error(`dwell_server exited (${String(exit)}):\n${out}`));
+      });
+    });
+  } catch (err) {
     server.kill();
+    throw err;
+  }
+}
+
+export default async function globalSetup(): Promise<() => void> {
+  mkdirSync(dirname(WORLD_FILE), { recursive: true });
+  for (const suffix of ['', '-wal', '-shm']) rmSync(WORLD_FILE + suffix, { force: true });
+  // The master first: the suite's server registers with it (Phase 5d).
+  const master = await startMaster();
+  const stopMaster = () => {
     // npx starts wrangler, which starts workerd: end the whole group.
-    if (master?.pid) {
+    if (master.pid) {
       try {
         process.kill(-master.pid);
       } catch {
@@ -56,33 +101,17 @@ export default async function globalSetup(): Promise<() => void> {
       }
     }
   };
-  const query = await new Promise<string>((resolve, reject) => {
-    let out = '';
-    const timer = setTimeout(() => {
-      reject(new Error(`dwell_server did not print an invite link:\n${out}`));
-    }, 10_000);
-    server.stdout.on('data', (chunk: Buffer) => {
-      out += chunk.toString();
-      const m = /invite link: \S+?(\?\S+)/.exec(out);
-      if (m?.[1]) {
-        clearTimeout(timer);
-        resolve(m[1]);
-      }
-    });
-    server.on('exit', (code) => {
-      reject(new Error(`dwell_server exited (${String(code)}):\n${out}`));
-    });
-  }).catch((err: unknown) => {
-    stop();
-    throw err;
-  });
-  mkdirSync(dirname(INVITE_FILE), { recursive: true });
-  writeFileSync(INVITE_FILE, query);
+  let server: StartedServer;
   try {
-    master = await startMaster();
+    server = await startServer(['--port', '0', '--name', 'E2E', '--world', WORLD_FILE]);
   } catch (err) {
-    stop();
+    stopMaster();
     throw err;
   }
-  return stop;
+  writeFileSync(INVITE_FILE, server.query);
+  writeFileSync(CODE_FILE, server.code);
+  return () => {
+    server.process.kill();
+    stopMaster();
+  };
 }

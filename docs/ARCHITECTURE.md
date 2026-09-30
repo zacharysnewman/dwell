@@ -149,7 +149,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   domain may use a publicly trusted certificate instead. Local development uses the same
   mechanism on `127.0.0.1`. **[built]** (rotation before expiry: Phase 9)
 - **Our infrastructure** is limited to the static site (GitHub Pages), the master server, and a
-  TURN relay — **[planned, Phase 5]** both on Cloudflare: a Worker with Durable Objects and
+  TURN relay — **[built, Phase 5b–5d; TURN key outstanding]** both on Cloudflare: a Worker with Durable Objects and
   Cloudflare's managed TURN, on the free plan (§10.3, ADR 0013).
 
 ---
@@ -300,11 +300,11 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `game/` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with the client sim, sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the sim, nudges its tick rate from the server's input buffer, streams terrain around the player (chunk data and voxel modifications to `world/`, mesh jobs within a per-frame budget), drives the first-person camera (per-tick eye height with crouch and step-up/down smoothing, `eye.ts`), block targeting and its outline, and the HUD. `RemotePlayers`: snapshot buffer, interpolation `INTERP_DELAY_MS` in the past. |
 | `sim/` **[built]** | `ClientCore`: the client's own instance of the sim-core WASM on the main thread (`dwell_client_*` exports): a streamed world holding the chunks the server sent (`setChunk` / `removeChunk`) and the voxel edits applied to them (`editChunk`), the C++ `Predictor` (prediction world with the local player, dead-reckoned remote proxies, terrain), its state block as 64 doubles (positions anywhere in the 8,192 km world), block targeting (`target`: the same `RaycastBlock` the server checks line of sight with, §6.5), and each chunk's voxels with a one-voxel apron for the meshing workers (`paddedChunk`). |
 | `predict/` **[built]** | Keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block); the creative-flight toggle (`flight.ts`, Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1); touch controls for phones and tablets (`touch.ts`: floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button top right toggling the F3 debug overlay, one captured Pointer Events pointer per control, merged into the same sampled input); and input quantization mirroring the C++ `QuantizeInput`. |
-| `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; a closing connection first reads the control stream to its end, up to 2 s, so the server's last message — a `Reject` such as `Replaced` — is not lost to a write racing the close; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). **[built, Phase 5b–5c]** The master client (`master.ts`: signed requests, rooms, TURN credentials, the room socket URL; `roomSocket.ts`: the signaling WebSocket); `peer.ts`: `PeerTransport`, full WebRTC to a browser-hosted friend world negotiated through the room, and `HostPeer`, the host's side of one guest; `hosting.ts`: the host's relay between the room, its guests' peer connections and the local-mode worker (§10.2); `connectToRoom` joins by code (`joinCode.ts`). **[planned, Phase 5d–5e]** Address resolution and listing. |
+| `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; a closing connection first reads the control stream to its end, up to 2 s, so the server's last message — a `Reject` such as `Replaced` — is not lost to a write racing the close; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). **[built, Phase 5b–5c]** The master client (`master.ts`: signed requests, rooms, TURN credentials, the room socket URL; `roomSocket.ts`: the signaling WebSocket); `peer.ts`: `PeerTransport`, full WebRTC to a browser-hosted friend world negotiated through the room, and `HostPeer`, the host's side of one guest; `hosting.ts`: the host's relay between the room, its guests' peer connections and the local-mode worker (§10.2); `connectToRoom` joins by code (`joinCode.ts`). **[built, Phase 5d]** `connectToCode` resolves a code first: a dedicated server is joined like an invite link (`serverInvite`), a friend world through its room; the master client also resolves typed addresses and lists games on the player's network. **[planned, Phase 5e]** The lobby listing. |
 | `protocol/` **[built]** | Codecs mirroring the C++ ones (including the chunk palette + RLE, `chunkVoxels.ts`), constants generated from `shared/protocol`. |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
 | `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handles (the database, its journal, and a WAL for opening a dedicated server's file), opened by the worker before the core starts and handed to its VFS as `dwellFiles`; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. |
-| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, and the full-detail distance, §6.6 — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[planned, Phase 5d–5e]** Addresses and "On your network" on the join screen, host visibility, and the server browser (§10). |
+| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, and the full-detail distance, §6.6 — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[planned, Phase 5e]** Public visibility and the server browser (§10). |
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
@@ -1457,12 +1457,23 @@ trusted certificates.
   autosave and backup schedule. Edited by admin commands or the server CLI.
 - Admin commands (ops, kick, ban by public key), UPnP/NAT-PMP port mapping with port-forwarding
   guidance when it fails.
-- **[planned, Phase 5]** Master registration: a persistent Ed25519 server key in the world's
-  `settings`; signed register/heartbeat (~30 s) through an HTTPS client in `net/wt`;
-  `--visibility public|unlisted|none` (default unlisted; `none` never contacts the master),
-  `--master <url>`. The master takes the public address from the request unless `--advertise` is
-  given; servers also report their LAN addresses. Players then join by **code** or by typing the
-  **address** (resolved to address + cert hash through the master).
+- **[built, Phase 5d]** Master registration: a persistent Ed25519 server key (its seed in the
+  world's `settings` as `server_key`; a new one each run for `--world ""`) signs a heartbeat to
+  `POST /v1/servers` at start and every `--heartbeat` seconds (default 30), sent by a background
+  thread in `net/wt` (`master.rs`: `ureq` over rustls, signatures with `ring`, the format of
+  `shared/master/vectors.json`, tested against it) behind the C ABI (`dwell_master_start`,
+  `_heartbeat`, `_code`, `_error`, `_stop`). The heartbeat carries the port, RTC port and ICE
+  credentials, the current certificate SHA-256, the LAN addresses (`getifaddrs`: IPv4 and
+  non-link-local IPv6, no loopback), name, MOTD, players and limit, protocol version,
+  visibility and heartbeat interval; `--advertise` is sent only when given. `--visibility
+  public|unlisted|none` (default unlisted; `none` never contacts the master; CI and the Electron
+  smoke test use it), `--master <url>` (default the deployed master). The server prints its join
+  code and a `?code=` link once the master answers, and on shutdown (after its players'
+  `Reject(ServerClosing)`) tells the master it is leaving, so it disappears at once. Players then
+  join by **code** or by typing the **address**, resolved to address + cert hash through the
+  master (§10.3); WebTransport's certificate-hash pinning works for any address the server is
+  reached at, and the ICE-lite WebRTC fallback answers on every interface, so LAN addresses need
+  no `--advertise`.
 - **[built, Phase 5c]** Shutdown (SIGINT/SIGTERM) sends `Reject(ServerClosing)` ("The server is
   shutting down.") to every session before the network stops.
 
@@ -1498,10 +1509,11 @@ trusted certificates.
   and guests receive `HostStatus(paused)`, then `resumed`. Stop hosting (or leaving the page)
   sends every guest `Reject(ServerClosing)` ("The host stopped hosting.") and closes their
   connections after 0.5 s, then the room; a guest whose host vanished sees "the host left" (the
-  room's `host-left`, or the connection dropping). **[planned, Phase 5d–5e]** Visibility: code
-  only (all there is in 5c), code + same network, or public.
+  room's `host-left`, or the connection dropping). Visibility **[built, Phase 5d]**: code only,
+  or code + same network (the default: the world is listed by its name under "On your network" to
+  players with the host's public IP); public **[planned, Phase 5e]**.
 
-### 10.3 Master server **[in progress]** (5b built: Worker, Durable Object classes, signing, rate limits, CI and deploy; 5c built: rooms, signaling, TURN credentials)
+### 10.3 Master server **[in progress]** (5b built: Worker, Durable Object classes, signing, rate limits, CI and deploy; 5c built: rooms, signaling, TURN credentials; 5d built: dedicated servers, codes, addresses, on your network)
 A small HTTPS JSON service (`services/master`) on **Cloudflare Workers** with **Durable Objects**
 (SQLite storage, Workers Free plan; [ADR 0013](./adr/0013-master-server-on-cloudflare.md)); no
 game traffic passes through it. Hostname: the account's `workers.dev` subdomain
@@ -1536,17 +1548,38 @@ per 10 s per socket. `POST /v1/turn` (signed) answers `{ iceServers }`: credenti
 hours from Cloudflare's TURN service (`TURN_KEY_ID`, `TURN_KEY_API_TOKEN` secrets), or
 `stun:stun.cloudflare.com:3478` alone when there is no key or the service fails.
 
+**Built (Phase 5d): dedicated servers.** The Directory's schema gains `server_codes` (a join code
+per server key, kept for good: a server's code is stable), `servers` (the latest report of each
+live server, its public IP and advertised host, and when it expires) and `nearby_rooms`.
+`POST /v1/servers` (signed by the server key) validates the report (`src/servers.ts`: ports,
+64-hex certificate, ICE credentials, IP-literal LAN addresses, at most 8; text trimmed; the
+heartbeat interval clamped to 2–60 s), stores it with the request's `CF-Connecting-IP` as the
+public address and an expiry of **two heartbeat intervals**, and answers `{ code, display,
+heartbeatS }`; the first registration picks a code no server or open room uses, and rooms avoid
+server codes in turn. Queries ignore expired records; a Directory alarm deletes them.
+`POST /v1/servers/leave` removes the record at once. `POST /v1/resolve` (signed by the player's
+key, limited per IP like room joins) takes `{ code }` — a live server's connection details, else
+an open room (`{ kind: 'room' }`), else 404 — or `{ address }` (`host`, `host:port`, `[v6]:port`),
+matched against servers' public IPs and advertised hosts from anywhere, and against their LAN
+addresses only when the requester has the server's public IP; without a port, 4433 is preferred.
+A server's entry gives the address to use: its first LAN address for a player on its network,
+else its advertised host or public IP. `POST /v1/nearby` lists the live servers and the "code +
+same network" friend worlds (`POST /v1/rooms` with `visibility: 'network'` and the world's name)
+with the requester's public IP; a listed world whose room has closed is dropped. Unlisted servers
+are found by code, by address and on their own network; public ones will also be in the lobby
+list (5e).
+
 | Durable Object | Holds |
 |---|---|
-| `Directory` (one) | Registered dedicated servers (expired by alarm after missed heartbeats), dedicated servers' join codes (5d), join receipts, rate-limit state |
+| `Directory` (one) | Registered dedicated servers (expired after two missed heartbeats, deleted by alarm) and their stable join codes, friend worlds listed to their network **[built, 5d]**, join receipts (5e), rate-limit state |
 | `Room` (one per hosted friend world, named by its join code) **[built, 5c]** | The host's and guests' signaling WebSockets (Hibernation API), guest tokens and the guest limit; closes when the host leaves |
 
 | Function | Detail |
 |---|---|
-| Registration & heartbeat | Dedicated servers register with their server key and heartbeat every ~30 s: port, RTC port and ICE credentials, current cert SHA-256, LAN addresses, name, MOTD, players, protocol version, tags, visibility. The public address is the request's (`CF-Connecting-IP`) unless advertised. Missed heartbeats delist. |
-| Join codes | Short codes (e.g. `KQ7-XM4`, unambiguous alphabet) resolve to the current address + cert hash (dedicated, stable per server key; 5d) or name a `Room` (friend world; built, 5c). Guessing is rate-limited per IP. |
-| Address resolution | `host[:port]` → address + cert hash (+ WebRTC parameters). LAN addresses resolve only among servers sharing the requester's public IP. |
-| On your network | Servers and friend worlds whose public IP matches the requester's — LAN discovery for browsers. |
+| Registration & heartbeat **[built, 5d]** | Dedicated servers register with their server key and heartbeat every ~30 s: port, RTC port and ICE credentials, current cert SHA-256, LAN addresses, name, MOTD, players, protocol version, visibility (tags: 5e). The public address is the request's (`CF-Connecting-IP`) unless advertised. Two missed heartbeats delist. |
+| Join codes | Short codes (e.g. `KQ7-XM4`, unambiguous alphabet) resolve to the current address + cert hash (dedicated, stable per server key; built, 5d) or name a `Room` (friend world; built, 5c). Guessing is rate-limited per IP. |
+| Address resolution **[built, 5d]** | `host[:port]` → address + cert hash (+ WebRTC parameters). LAN addresses resolve only among servers sharing the requester's public IP. |
+| On your network **[built, 5d]** | Servers and friend worlds whose public IP matches the requester's — LAN discovery for browsers. |
 | Server browser | Public servers and public friend worlds, with search/filter; clients ping dedicated servers themselves (`StatusRequest`). Reachability is **player-attested**: after joining through the master, clients post signed receipts, and a server is verified once distinct players have joined it recently (Workers cannot send UDP probes). Unverified servers appear only under a "new" filter. |
 | Signaling | WebRTC offer/answer and trickled ICE relayed through the friend world's `Room`. |
 | TURN credentials | Short-lived credentials for Cloudflare's managed TURN, for signed requests, rate-limited per player key; STUN only when no TURN key is configured (development, CI). |

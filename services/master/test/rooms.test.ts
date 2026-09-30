@@ -168,13 +168,22 @@ describe('rooms', () => {
   });
 
   it('limit join-code lookups per IP (guessing)', async () => {
-    const key = await newKey();
-    const statuses: number[] = [];
-    for (let i = 0; i <= JOIN_LIMIT.burst; i++) {
-      statuses.push((await join(key, newCode(), '203.0.113.77')).status);
-    }
-    expect(statuses.slice(0, -1).every((s) => s === 404)).toBe(true);
-    expect(statuses.at(-1)).toBe(429);
+    // All at once: sent one by one, a slow runner took long enough for the bucket to refill a
+    // token (one per 2 s) before the last request, which then got through.
+    const extra = 5;
+    const requests = await Promise.all(
+      Array.from({ length: JOIN_LIMIT.burst + extra }, async () =>
+        signedRequest(await newKey(), 'POST', `${BASE}/v1/rooms/${newCode()}/join`, '{}', {
+          headers: { 'cf-connecting-ip': '203.0.113.77' },
+        }),
+      ),
+    );
+    const statuses = await Promise.all(
+      requests.map((r) => fetchWorker(r).then((res) => res.status)),
+    );
+    expect(statuses.filter((s) => s === 404).length).toBeLessThanOrEqual(JOIN_LIMIT.burst + 1);
+    expect(statuses.filter((s) => s === 429).length).toBeGreaterThanOrEqual(extra - 1);
+    expect(statuses.every((s) => s === 404 || s === 429)).toBe(true);
   });
 });
 

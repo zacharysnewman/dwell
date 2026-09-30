@@ -5,6 +5,7 @@ import type { Env } from './env';
 import { allowedOrigins, corsHeaders, json, problem, withHeaders } from './http';
 import { formatCode, newCode, normalizeCode } from './codes';
 import { API_VERSION, MAX_BODY_BYTES } from './limits';
+import { parseAddress, parseServerReport } from './servers';
 import { iceServers } from './turn';
 
 export { Directory } from './directory';
@@ -75,19 +76,101 @@ async function signedPost(
   return { key: auth.key, body: body as Record<string, unknown> };
 }
 
-/** POST /v1/rooms {maxGuests}: a new friend-world room and its host token (§10.2). */
+const clientIp = (request: Request) => request.headers.get('cf-connecting-ip') ?? 'unknown';
+
+/**
+ * POST /v1/rooms {maxGuests, visibility?, name?}: a new friend-world room and its host token
+ * (§10.2). Visibility "network" also lists it to players on the host's network (5d).
+ */
 async function createRoom(request: Request, env: Env): Promise<Response> {
   const req = await signedPost(request, env);
   if (req instanceof Response) return req;
   const maxGuests = typeof req.body.maxGuests === 'number' ? req.body.maxGuests : 8;
+  const now = Date.now();
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = newCode();
-    const opened = await room(env, code).open(req.key, maxGuests, Date.now());
+    if (await directory(env).isServerCode(code)) continue; // a dedicated server's code
+    const opened = await room(env, code).open(req.key, maxGuests, now);
     if (opened) {
+      if (req.body.visibility === 'network') {
+        const name =
+          typeof req.body.name === 'string' && req.body.name.trim() !== ''
+            ? req.body.name.replace(/\p{Cc}/gu, '').slice(0, 64)
+            : 'Friend world';
+        await directory(env).addNearbyRoom(code, clientIp(request), name, now);
+      }
       return json({ code, display: formatCode(code), hostToken: opened.hostToken }, 201);
     }
   }
   return problem(503, 'busy', 'No free join code; try again.');
+}
+
+/**
+ * POST /v1/servers: a dedicated server registers or heartbeats (signed with its server key, §10.1).
+ * Its public address is the request's unless it advertises one. Answers with its join code.
+ */
+async function registerServer(request: Request, env: Env): Promise<Response> {
+  const req = await signedPost(request, env);
+  if (req instanceof Response) return req;
+  const report = parseServerReport(req.body);
+  if (typeof report === 'string') return problem(400, 'bad_report', report);
+  const { code, display } = await directory(env).registerServer(
+    req.key,
+    clientIp(request),
+    report,
+    Date.now(),
+  );
+  return json({ code, display, heartbeatS: report.heartbeatS });
+}
+
+/**
+ * POST /v1/resolve {code} or {address}: what a join code or typed address leads to — a dedicated
+ * server (how to connect) or a friend world's room. Limited per IP like room joins (guessing).
+ */
+async function resolve(request: Request, env: Env): Promise<Response> {
+  const req = await signedPost(request, env);
+  if (req instanceof Response) return req;
+  const ip = clientIp(request);
+  const now = Date.now();
+  const admission = await directory(env).admitJoin(ip, now);
+  if (!admission.ok) return limited(admission.retryAfterS);
+  if (typeof req.body.code === 'string') {
+    const code = normalizeCode(req.body.code);
+    if (!code) return problem(404, 'not_found', 'That is not a join code.');
+    const server = await directory(env).serverByCode(code, ip, now);
+    if (server) return json({ kind: 'server', server });
+    if (await room(env, code).isOpen()) {
+      return json({ kind: 'room', code, display: formatCode(code) });
+    }
+    return problem(404, 'not_found', 'Nothing is being hosted with that code.');
+  }
+  if (typeof req.body.address === 'string') {
+    const address = parseAddress(req.body.address);
+    if (!address) return problem(400, 'bad_address', 'That is not a server address.');
+    const server = await directory(env).serverByAddress(address.host, address.port, ip, now);
+    if (server) return json({ kind: 'server', server });
+    return problem(404, 'not_found', 'No server at that address is registered with the master.');
+  }
+  return problem(400, 'bad_request', 'Send a code or an address.');
+}
+
+/**
+ * POST /v1/nearby: dedicated servers and friend worlds on the player's network (the same public
+ * IP) — LAN discovery for browsers (5d). Friend-world listings whose room has closed are dropped.
+ */
+async function nearby(request: Request, env: Env): Promise<Response> {
+  const req = await signedPost(request, env);
+  if (req instanceof Response) return req;
+  const ip = clientIp(request);
+  const now = Date.now();
+  const dir = directory(env);
+  const servers = await dir.nearbyServers(ip, now);
+  const worlds = [];
+  for (const w of await dir.nearbyRooms(ip, now)) {
+    if (await room(env, w.code).isOpen()) worlds.push(w);
+    else await dir.removeNearbyRoom(w.code);
+  }
+  return json({ servers, worlds });
 }
 
 /** POST /v1/rooms/<code>/join: a guest's one-use token for the room's WebSocket. */
@@ -129,6 +212,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json({ iceServers: await iceServers(env.TURN_KEY_ID, env.TURN_KEY_API_TOKEN) });
   }
   if (path === '/v1/rooms') return createRoom(request, env);
+  if (path === '/v1/servers') return registerServer(request, env);
+  if (path === '/v1/servers/leave') {
+    const req = await signedPost(request, env);
+    if (req instanceof Response) return req;
+    await directory(env).leaveServer(req.key);
+    return json({ ok: true });
+  }
+  if (path === '/v1/resolve') return resolve(request, env);
+  if (path === '/v1/nearby') return nearby(request, env);
   const roomPath = /^\/v1\/rooms\/([^/]+)\/(join|ws)$/.exec(path);
   if (roomPath?.[1] && roomPath[2]) {
     const code = normalizeCode(decodeURIComponent(roomPath[1]));

@@ -60,7 +60,7 @@ ctest --preset dev
 DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="player: scenario"  # after intended controller changes
 DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="worldgen: golden"   # after a generator version bump
 ./build/dev/app/dwell_server --help
-./build/dev/app/dwell_server   # prints an invite link to open in the client
+./build/dev/app/dwell_server   # prints an invite link, and its join code once registered
 ./build/dev/tools/dwell_worldgen_inspect 0 0 0 32          # ASCII biome map of seed 0 (32 m per character)
 ./build/dev/tools/dwell_worldgen_inspect 0 0 0 1 slice     # vertical section through the origin
 ```
@@ -68,9 +68,14 @@ DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="worldgen: golden"   # a
 `--seed N` and `--generator N` (2 = procedural terrain, the default; 1 = movement playground;
 0 = flat) choose the world.
 
-`--advertise <ip>` sets the address in the invite link (use your LAN or public IP for other
-players; the WebRTC fallback needs an IP, not a hostname). WebTransport listens on UDP 4433 and
-WebRTC on the next port by default.
+The server registers with the master server (unlisted by default), so players can join it by its
+**join code**, by typing its **address** in the Join box (e.g. `192.168.1.50` on the same
+network), or pick it under **On your network**. `--visibility none` keeps it off the master;
+`--master <url>` points at another master (e.g. `http://localhost:8787` for a local `wrangler
+dev`). `--advertise <ip>` sets the address in the invite link and the one the master hands out
+(use your public IP or host name for players elsewhere; the WebRTC fallback needs an IP, not a
+hostname). WebTransport listens on UDP 4433 and WebRTC on the next port by default; forward both
+for players outside your network.
 
 After changing the Rust crate's C ABI (`server/net/wt/src/lib.rs`), regenerate the header with
 `server/net/wt/gen-header.sh` (needs `cargo install cbindgen --version 0.29.4 --locked`). After
