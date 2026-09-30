@@ -22,7 +22,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 | Renderer | Three.js, WebGL2 first, behind a thin render interface (ADR 0002) |
 | Client shells | Browser (GitHub Pages) → Electron (desktop) → Capacitor (iOS/Android) |
 | Transport | Dedicated servers: WebTransport (HTTP/3 / QUIC), WebRTC fallback. Friend worlds: WebRTC data channels (ADR 0008) |
-| Services | Master server: server listing, join codes, cert-hash distribution, WebRTC signaling, TURN credentials (§10) |
+| Services | **[planned, Phase 5]** Master server on Cloudflare Workers + Durable Objects: server listing, join codes, cert-hash distribution, WebRTC signaling, TURN credentials (Cloudflare TURN) (§10.3, ADR 0013) |
 | Identity | Device keys (Ed25519) now; optional accounts later (§10.4, ADR 0004) |
 | Simulation | 60 Hz internal physics step, 20 Hz network snapshots |
 | Players | Dynamic-body, velocity-layer controller ported from the Physics Player Controller, client-predicted (§9, [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)) |
@@ -89,13 +89,18 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    module Web Worker (`client/src/local/worker.ts`), connected through `LoopbackTransport`, which
    implements the same interface as the network transports. Same code, same protocol, same
    device-key handshake, no network. The page starts local mode when it has no invite link (or
-   with `?local=1`). Local mode and dedicated servers generate the **procedural terrain** world
+   with `?local=1`); **[planned, Phase 5]** without an invite it opens a main menu instead (world
+   list, Join, Settings), and `?local=1`, `?world=` and `?seed=` still go straight into a local
+   world. Local mode and dedicated servers generate the **procedural terrain** world
    (generator version 4, §6.3) by default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
    **[built, Phase 3e]** Local worlds are saved in the browser: one world file per generator and
    seed in OPFS (`dwell/worlds/local-g<generator>-s<seed>.dwellworld`, §6.4), every 5 s and when
-   the page is hidden or closed; a reload continues the same world.
+   the page is hidden or closed; a reload continues the same world. **[planned, Phase 5]** Worlds
+   become named and managed from the menu (create with a seed, delete, regenerate): id-based
+   files (`dwell/worlds/<id>.dwellworld`) with a metadata index in the `dwell` IndexedDB database
+   (`worlds` store); existing per-seed files are adopted.
 5. **One C++ core, compiled for the browser twice.** The Emscripten build of `server/core`
    (`dwell_core.wasm`) provides local mode and the client's prediction/debris physics; its
    generator sources alone form `dwell_worldgen.wasm` (~30 KB, no Jolt) for the client's worldgen
@@ -115,7 +120,7 @@ The same Vite build output is wrapped by:
   IndexedDB, and WebTransport work) with COOP/COEP headers, ready for the multithreaded sim-core
   build (ADR 0007; it currently loads the single-threaded one). Invite queries are passed with
   `--join=<query>`; `--smoke` exits 0 once joined (used by CI under Xvfb). Packaging and "Host
-  world" come in Phase 8.
+  world" come in Phase 9.
 - **Capacitor** (`platforms/capacitor`) — Android System WebView (Chromium) and iOS
   WKWebView. Where WebTransport is unavailable (possibly WKWebView), the client uses WebRTC. Single-threaded sim core unless
   `SharedArrayBuffer` is confirmed available on the app scheme (ADR 0007).
@@ -134,9 +139,10 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   publish its SHA-256 through the master server or the invite link; clients pass it as
   WebTransport `serverCertificateHashes` or pin it as the DTLS fingerprint. Hosts with their own
   domain may use a publicly trusted certificate instead. Local development uses the same
-  mechanism on `127.0.0.1`. **[built]** (rotation before expiry: Phase 8)
+  mechanism on `127.0.0.1`. **[built]** (rotation before expiry: Phase 9)
 - **Our infrastructure** is limited to the static site (GitHub Pages), the master server, and a
-  TURN relay.
+  TURN relay — **[planned, Phase 5]** both on Cloudflare: a Worker with Durable Objects and
+  Cloudflare's managed TURN, on the free plan (§10.3, ADR 0013).
 
 ---
 
@@ -162,7 +168,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/protocol     constants.json (single source of protocol constants) + gen.mjs (→ C++ and TS
                      headers), make_vectors.py (independent reference encoder) → vectors.txt
                      (golden bytes both codecs must match).
-/services/master     Master server (listing, join codes, signaling, TURN credentials).
+/services/master     Master server: Cloudflare Worker + Durable Objects, TypeScript, Wrangler
+                     (listing, join codes, signaling, TURN credentials; ADR 0013).
 /platforms/electron  Electron shell (incl. "Host world" launching the native server).
 /platforms/capacitor Capacitor shell.
 /docs                ARCHITECTURE.md, PLAYER_CONTROLLER.md, IMPLEMENTATION_PLAN.md, FUTURE.md.
@@ -283,19 +290,19 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `game/` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with the client sim, sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the sim, nudges its tick rate from the server's input buffer, streams terrain around the player (chunk data and voxel modifications to `world/`, mesh jobs within a per-frame budget), drives the first-person camera (per-tick eye height with crouch and step-up/down smoothing, `eye.ts`), block targeting and its outline, and the HUD. `RemotePlayers`: snapshot buffer, interpolation `INTERP_DELAY_MS` in the past. |
 | `sim/` **[built]** | `ClientCore`: the client's own instance of the sim-core WASM on the main thread (`dwell_client_*` exports): a streamed world holding the chunks the server sent (`setChunk` / `removeChunk`) and the voxel edits applied to them (`editChunk`), the C++ `Predictor` (prediction world with the local player, dead-reckoned remote proxies, terrain), its state block as 64 doubles (positions anywhere in the 8,192 km world), block targeting (`target`: the same `RaycastBlock` the server checks line of sight with, §6.5), and each chunk's voxels with a one-voxel apron for the meshing workers (`paddedChunk`). |
 | `predict/` **[built]** | Keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block); the creative-flight toggle (`flight.ts`, Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1); touch controls for phones and tablets (`touch.ts`: floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button top right toggling the F3 debug overlay, one captured Pointer Events pointer per control, merged into the same sampled input); and input quantization mirroring the C++ `QuantizeInput`. |
-| `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; a closing connection first reads the control stream to its end, up to 2 s, so the server's last message — a `Reject` such as `Replaced` — is not lost to a write racing the close; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). |
+| `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; a closing connection first reads the control stream to its end, up to 2 s, so the server's last message — a `Reject` such as `Replaced` — is not lost to a write racing the close; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). **[planned, Phase 5]** `PeerTransport`: full WebRTC to a browser-hosted friend world, negotiated through the master's signaling (§10.2); a master client (signed requests, join codes, address resolution, TURN credentials, listing). |
 | `protocol/` **[built]** | Codecs mirroring the C++ ones (including the chunk palette + RLE, `chunkVoxels.ts`), constants generated from `shared/protocol`. |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
 | `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handles (the database, its journal, and a WAL for opening a dedicated server's file), opened by the worker before the core starts and handed to its VFS as `dwellFiles`; the page asks for a save when hidden or closed. |
-| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — for now the height fog's distance, density and height, §6.6 — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). |
+| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — for now the height fog's distance, density and height, §6.6 — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[planned, Phase 5]** Main menu (world list with create / delete / regenerate, Join, Settings), pause menu (Resume, Settings, Host…, Quit to main menu), join screen (invite link, join code or address; recent servers; "On your network"), host dialog (code, link, QR code, visibility, edit and flight policies) and server browser (§10). |
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
 | `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB`. |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4, two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
 | `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material, skirts toggled per frame, chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry face shading (and the flat colour of untextured materials). |
-| `physics/` | Debris world (Phase 6) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
-| `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 5; player interpolation is in `game/remotes.ts`. |
+| `physics/` | Debris world (Phase 7) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
+| `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 6; player interpolation is in `game/remotes.ts`. |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
 
 The client never mutates the voxel grid on its own authority. Block edits are sent as
@@ -586,7 +593,7 @@ file** holding **all** of its data; nothing about a world lives in side files.
 recomputed), drops and rebuilds it from the chunks when its rows belong to another generator
 version, and derives it for saved chunks it does not cover (worlds saved before Phase 4); each
 autosave writes the sections written since the last save and those still to compute (flagged
-dirty) in the same transaction as the chunks. `bodies` (Phase 5) arrives as a migration.
+dirty) in the same transaction as the chunks. `bodies` (Phase 6) arrives as a migration.
 
 - **Same code everywhere:** SQLite and zstd are compiled into `server/core` (`core/storage`:
   `WorldDb`, the file's schema and records; `WorldStore`, the server's handle on it).
@@ -624,7 +631,7 @@ dirty) in the same transaction as the chunks. `bodies` (Phase 5) arrives as a mi
   flight, §9.1; default everyone) are saved into `settings`, and `--op KEY` /
   `--ban KEY` into `permissions`; stored settings and permissions apply at startup (ops may edit
   under `--edits ops` and fly under `--flight ops`, banned keys are refused with `Reject(Banned)`, and with `allow_list` set only
-  `allow` keys may join, else `Reject(NotAllowListed)`). **[planned, Phase 8]** Admin commands.
+  `allow` keys may join, else `Reject(NotAllowListed)`). **[planned, Phase 9]** Admin commands.
 - **Tooling:** `dwell_world FILE info` (format, meta, settings, permissions, integrity) and
   `dwell_world FILE diff [cx cy cz]` (regenerate saved chunks from the world's seed and generator
   and diff them: changed voxels per chunk, flagging saved chunks identical to generation).
@@ -1124,7 +1131,7 @@ repeat remotePlayerCount:
   u8   state                    // player::State (animation)
   u8   flags                    // PlayerFlags
 ```
-Phase 5 adds, for riding Tier 1 bodies (§9.4), a `u32 groundEntityId` to the local and remote
+Phase 6 adds, for riding Tier 1 bodies (§9.4), a `u32 groundEntityId` to the local and remote
 blocks (positions become body-local when it is non-zero), and the Tier 1 entity list:
 ```
 u8   entityCount
@@ -1143,6 +1150,10 @@ tick are allowed up to a per-client bandwidth budget.
 server name, MOTD, player count / max, icon, online/offline mode. Answered without joining; used
 by the server browser and by reachability verification (§10.3).
 
+**[planned, Phase 5] `HostStatus` (reliable, `control`, S→C)** — `u8 state` (paused 1, resumed
+2): a friend-world host's page was hidden or shown again (§10.2). Golden-byte tests in both
+codecs, like every message.
+
 **Join handshake (reliable, `control`)**
 ```
 C→S  ClientHello   u16 protocolVersion, str clientVersion, u8[32] publicKey (Ed25519),
@@ -1154,7 +1165,9 @@ S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serv
                    i32×3 verificationChunk, u8 flags (WelcomeFlags: 1 = flight — this
                    player may use creative flight)
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
-                   Malformed, Replaced), str message — followed by closing the session
+                   Malformed, Replaced; [planned, Phase 5] ServerClosing — the server or
+                   friend-world host is shutting down), str message — followed by closing
+                   the session
 C→S  WorldgenCheck u64 hash — FNV-1a 64 of the client-generated verification chunk (u16 LE
                    voxels in chunk index order); 0 asks for full-chunk mode. Once, after
                    Welcome; the server streams nothing before it (§6.3)
@@ -1252,7 +1265,7 @@ initial transform, and (spawn only) the cluster voxel layout (local offsets + ma
 
 ---
 
-## 9. Players: Physics-Based Characters **[built]** (Tier 1 interactions: Phase 5)
+## 9. Players: Physics-Based Characters **[built]** (Tier 1 interactions: Phase 6)
 
 Full specification: **[`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)** — a port of the
 [Physics Player Controller](https://github.com/zacharysnewman/physics-player-controller)
@@ -1345,12 +1358,12 @@ animated from `State` and flags in snapshots.
 ### 9.6 Health, death & respawn **[built: fall damage, death, respawn]**
 - Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are fall (built: from the
   `Landed` impact speed above 12 m/s, 8 points per m/s, and falling out of the world), crush
-  (Phase 5), explosion (Phase 6). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
+  (Phase 6), explosion (Phase 7). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
   client; a dead player's body leaves the physics world, and snapshots mark it `dead` where it
   died. The server respawns the player at the spawn point after `RESPAWN_SECONDS`.
 - On death clients currently draw the body lying down (a cosmetic pose). The **cosmetic ragdoll**
   (Jolt `Ragdoll`, Tier 2 rules — local, unsynchronized, despawned on respawn) arrives with the
-  client debris world in Phase 6.
+  client debris world in Phase 7.
 
 ### 9.7 Anti-cheat implications
 Clients only send inputs, never positions, so speed/teleport/fly hacks are structurally
@@ -1381,6 +1394,13 @@ trusted certificates.
   autosave and backup schedule. Edited by admin commands or the server CLI.
 - Admin commands (ops, kick, ban by public key), UPnP/NAT-PMP port mapping with port-forwarding
   guidance when it fails.
+- **[planned, Phase 5]** Master registration: a persistent Ed25519 server key in the world's
+  `settings`; signed register/heartbeat (~30 s) through an HTTPS client in `net/wt`;
+  `--visibility public|unlisted|none` (default unlisted; `none` never contacts the master),
+  `--master <url>`. The master takes the public address from the request unless `--advertise` is
+  given; servers also report their LAN addresses. Players then join by **code** or by typing the
+  **address** (resolved to address + cert hash through the master).
+- **[planned, Phase 5]** Shutdown sends `Reject(ServerClosing)` to joined players.
 
 ### 10.2 Friend worlds
 - Any client hosts its **integrated server** — the sim core already used for local
@@ -1394,26 +1414,51 @@ trusted certificates.
   the host quits, the session ends (no host migration — [ADR 0009](./adr/0009-friend-world-lifetime.md)).
 - Saves live on the host (browser: OPFS; apps: OPFS or app storage) as the same SQLite world
   file as dedicated servers (§6.4), so a friend world can be exported to a dedicated server.
+- **[planned, Phase 5] Browser hosting.** "Host…" in the pause menu opens a `Room` on the master
+  (§10.3) and shows a join code, invite link and QR code. Peer connections are not available in
+  workers, so the host page holds one `RTCPeerConnection` per guest on the main thread and relays
+  each guest's data channels (the §8.1 mapping, channels 0–3) to the local-mode worker as its own
+  session (`TransportKind` WebRTC). All of a hosting session's peer connections share one
+  `RTCCertificate`, whose SHA-256 is the transport binding (§8.3); guests take it from the
+  answer's DTLS fingerprint. The host keeps playing over `LoopbackTransport`. Visibility: code
+  only, code + same network, or public. While hosting, the page holds a Screen Wake Lock; when
+  it is hidden the world pauses and guests receive `HostStatus(paused)`, then `resumed`; stopping
+  sends `Reject(ServerClosing)`.
 
-### 10.3 Master server
-A small HTTPS JSON service (`services/master`; hostname chosen in Phase 8); no game
-traffic passes through it.
+### 10.3 Master server **[planned, Phase 5]**
+A small HTTPS JSON service (`services/master`) on **Cloudflare Workers** with **Durable Objects**
+(SQLite storage, Workers Free plan; [ADR 0013](./adr/0013-master-server-on-cloudflare.md)); no
+game traffic passes through it. Hostname: the account's `workers.dev` subdomain
+(`dwell-master.<subdomain>.workers.dev`), configured in the client build (`VITE_MASTER_URL`,
+`?master=` overrides) and in `dwell_server` (`--master`), so a custom domain can replace it later.
+
+| Durable Object | Holds |
+|---|---|
+| `Directory` (one) | Registered dedicated servers (expired by alarm after missed heartbeats), join codes, join receipts, rate-limit state |
+| `Room` (one per hosted friend world) | The host's and guests' signaling WebSockets (Hibernation API); closes when the host leaves |
 
 | Function | Detail |
 |---|---|
-| Registration & heartbeat | Dedicated servers register with a server key and heartbeat every ~30 s: address, port, current cert SHA-256, name, MOTD, players, protocol version, tags, visibility. Missed heartbeats delist. |
-| Server browser | Public listing with search/filter; clients ping candidates themselves. A server is marked verified only after reachability verification — either a master-side status probe or player-attested join receipts, depending on the platform chosen for Open Decision #10. |
-| Join codes | Short codes (e.g. `KQ7-XM4`) resolve to the current address + cert hash (dedicated) or to a signaling session (friend world). |
-| Signaling | WebRTC offer/answer/ICE relay for friend worlds. |
-| TURN credentials | Short-lived TURN credentials for the TURN relay, rate-limited per player key. |
+| Registration & heartbeat | Dedicated servers register with their server key and heartbeat every ~30 s: port, RTC port and ICE credentials, current cert SHA-256, LAN addresses, name, MOTD, players, protocol version, tags, visibility. The public address is the request's (`CF-Connecting-IP`) unless advertised. Missed heartbeats delist. |
+| Join codes | Short codes (e.g. `KQ7-XM4`, unambiguous alphabet) resolve to the current address + cert hash (dedicated, stable per server key) or to a `Room` (friend world). Guessing is rate-limited per IP. |
+| Address resolution | `host[:port]` → address + cert hash (+ WebRTC parameters). LAN addresses resolve only among servers sharing the requester's public IP. |
+| On your network | Servers and friend worlds whose public IP matches the requester's — LAN discovery for browsers. |
+| Server browser | Public servers and public friend worlds, with search/filter; clients ping dedicated servers themselves (`StatusRequest`). Reachability is **player-attested**: after joining through the master, clients post signed receipts, and a server is verified once distinct players have joined it recently (Workers cannot send UDP probes). Unverified servers appear only under a "new" filter. |
+| Signaling | WebRTC offer/answer and trickled ICE relayed through the friend world's `Room`. |
+| TURN credentials | Short-lived credentials for Cloudflare's managed TURN, for signed requests, rate-limited per player key; STUN only when no TURN key is configured (development, CI). |
 | Accounts (later) | Sign-in and account attestations (§10.4). |
+
+Every mutating request is signed with Ed25519 — a player's device key (§10.4) or a server's key —
+over `"dwell-master-v1" ‖ method ‖ path ‖ timestamp ‖ SHA-256(body)`, accepted within ±60 s.
+Development runs the master locally with `wrangler dev`; tests use the Workers runtime
+(`@cloudflare/vitest-pool-workers`); `.github/workflows/master.yml` deploys on pushes to `main`.
 
 Direct invite links (`?join=host:port&cert=<sha256>`) work without the master server.
 
 ### 10.4 Identity
 - **Device keys (now) [built on web]:** each install generates an Ed25519 key pair; the public
   key is the player ID. Web: non-extractable WebCrypto key in the `dwell` IndexedDB database
-  (`identity` store); apps: OS keychain/keystore (Phase 8). Because the key is non-extractable it
+  (`identity` store); apps: OS keychain/keystore (Phase 9). Because the key is non-extractable it
   cannot be exported; moving an identity between devices waits for accounts, which link several
   device keys (ADR 0004 amendment). Proven on every join by signing the server's challenge
   (§8.3), verified server-side with Monocypher. Servers key bans, allow-lists, ops, and player
@@ -1426,8 +1471,8 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 ### 10.5 Versioning
 - The handshake rejects incompatible `protocolVersion`s with a clear reason; the server browser
   marks incompatible servers.
-- The Pages site keeps older client builds at `/dwell/v/<version>/`; the browser can open the build
-  matching a server's version.
+- **[planned, Phase 9]** The Pages site keeps older client builds at `/dwell/v/<version>/`; the
+  browser can open the build matching a server's version.
 
 ### 10.6 Platform reachability
 
@@ -1476,8 +1521,10 @@ No platform needs a trusted certificate to join any server (ADR 0008).
 - The Electron shell uses context isolation, the renderer sandbox, and no Node integration.
 - WebRTC endpoint: half-open clients time out (10 s) and are capped (512) so STUN floods can't
   allocate unbounded state.
-- Master server: per-key and per-IP rate limits; verified listing requires successful reachability
-  check; server keys can be revoked.
+- Master server: Ed25519-signed requests with a timestamp window; per-key and per-IP rate limits
+  (join-code guessing included); verified listing requires player-attested reachability; server
+  keys can be revoked. It relays friend-world hosts' DTLS fingerprints, so it is trusted for
+  friend-world signaling (ADR 0013).
 
 ---
 
@@ -1493,12 +1540,12 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 3 | ~~Server hosting~~ | **Resolved:** player-hosted dedicated servers + friend worlds + master server — [ADR 0003](./adr/0003-multiplayer-hosting-model.md); identity [ADR 0004](./adr/0004-player-identity.md); domain [ADR 0005](./adr/0005-domain-and-origins.md) |
 | 4 | ~~Browser multithreading / cross-origin isolation~~ | **Resolved:** single-threaded web sim core + worker pools; threads natively and in Electron — [ADR 0007](./adr/0007-threading-model.md) |
 | 5 | ~~World persistence format~~ | **Resolved:** one SQLite database per world holding all data — [ADR 0006](./adr/0006-world-persistence-sqlite.md) |
-| 6 | Final values for §7.4 tunables | Tune in Phases 5–7 |
+| 6 | Final values for §7.4 tunables | Tune in Phases 6–8 |
 | 7 | ~~Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`)~~ | **Resolved:** an 8,192 km disc, 8,192 m tall, with double-precision Jolt and f64 / fixed-point wire positions — [ADR 0011](./adr/0011-planet-scale-world.md); whole-world view via a 3D LOD octree — [ADR 0012](./adr/0012-lod-octree.md) |
 | 8 | ~~Worldgen noise numerics~~ | **Resolved:** strict IEEE float with integer-hash gradients, enforced by a native-vs-WASM golden test — [ADR 0010](./adr/0010-worldgen-noise-numerics.md) |
 | 9 | Movement feel on voxels: PPC recommended feel (walk 5 / run 8 m/s) vs. slower voxel-genre speeds | Start with PPC feel; playtest in Phase 2 |
-| 10 | Master server platform, database, and hostname | **Deferred to Phase 8** (not needed before). Constraint: $0 during development. Candidates: Cloudflare Workers + Durable Objects + D1 (no UDP → player-attested reachability, managed TURN) or a free-tier VM with a Rust service (UDP → master probes, co-located `coturn`). Either way the service runs locally (Docker / Wrangler) for dev and CI |
-| 11 | TURN relay: managed vs. self-hosted `coturn` | **Deferred to Phase 8**, decided with #10; public Google STUN until then |
+| 10 | ~~Master server platform, database, and hostname~~ | **Resolved:** Cloudflare Workers + SQLite-backed Durable Objects on the free plan, `workers.dev` hostname first — [ADR 0013](./adr/0013-master-server-on-cloudflare.md) |
+| 11 | ~~TURN relay: managed vs. self-hosted `coturn`~~ | **Resolved:** Cloudflare's managed TURN, credentials minted by the master — [ADR 0013](./adr/0013-master-server-on-cloudflare.md) |
 | 12 | ~~Trusted hostnames for player servers~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) |
 | 13 | ~~Dedicated-server fallback transport~~ | **Resolved:** WebRTC (`str0m`), no WebSocket — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
 | 14 | ~~Own subdomain for the client~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) (ADR 0005) |

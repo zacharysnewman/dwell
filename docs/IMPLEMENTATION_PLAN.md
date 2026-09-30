@@ -21,14 +21,17 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#21 |
-| 5 — Voxel awakening | ⏳ Not started | — |
-| 6 — Tiered physics | ⏳ Not started | — |
-| 7 — Sleep / re-bake | ⏳ Not started | — |
-| 8 — Player hosting, master server & packaging | ⏳ Not started | — |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); outstanding: the frame-rate check on a desktop and a mobile device | #14–#22 |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | ⏳ Not started — planned (5a–5e); Cloudflare manual setup outstanding | — |
+| 6 — Voxel awakening | ⏳ Not started | — |
+| 7 — Tiered physics | ⏳ Not started | — |
+| 8 — Sleep / re-bake | ⏳ Not started | — |
+| 9 — Dedicated servers & packaging | ⏳ Not started | — |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
+Phase 5 (multiplayer ready) was inserted on 2026-09-30 (ADR 0013); the former Phases 5–8 are now
+6–9.
 
 ---
 
@@ -107,7 +110,7 @@ Deliverables
   - [x] WebRTC fallback endpoint (ADR 0008): ICE-lite `str0m` in the same crate, same channel
     mapping and framing. Spike includes the invite-link path (client synthesizes the remote
     description from address + fingerprint + ICE credentials); if it fails, invite-link
-    fallback joins require the master server (Phase 8).
+    fallback joins require the master server (Phase 9).
 - [x] **Client networking (`client/net`)**
   - [x] `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
@@ -137,7 +140,7 @@ Exit criteria
 
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
-ragdoll and animation from `State` (Phase 6, see below). Playtested by a human (Open Decision
+ragdoll and animation from `State` (Phase 7, see below). Playtested by a human (Open Decision
 #9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
@@ -179,9 +182,9 @@ Deviations from the deliverables below:
   gently (PLAYER_CONTROLLER.md §8.1).
 - Dwell uses right-handed axes: the controller's camera-right vector is the mirror of the PPC's
   (Unity, left-handed) so that strafing matches the screen.
-- The snapshot's `groundEntityId` fields are deferred to Phase 5, when Tier 1 bodies can be stood
+- The snapshot's `groundEntityId` fields are deferred to Phase 6, when Tier 1 bodies can be stood
   on (ARCHITECTURE §8.3).
-- Deferred to Phase 6: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
+- Deferred to Phase 7: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
   down until the client debris world exists — and animating players from `State` (players are
   capsules; there are no character models yet).
 
@@ -220,9 +223,9 @@ Deliverables
   - [x] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
-    interpolated kinematic capsules. (Animation from `State` moved to Phase 6.)
+    interpolated kinematic capsules. (Animation from `State` moved to Phase 7.)
   - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
-    to Phase 6; dead players are drawn lying down.)
+    to Phase 7; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
   divergence, checked against `externalAbsorbThreshold`. (Measured: positions bit-identical,
@@ -443,7 +446,7 @@ Deviations and additions (3e):
   can go away at any time. One world file per generator and seed; a second tab on the same world
   runs without persistence (sync access handles are exclusive).
 - Settings and permissions come from launch options saved into the world (`--name`, `--motd`,
-  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 8. Bans and an
+  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 9. Bans and an
   allow-list (`allow_list` setting) are enforced at join. `permissions` records who granted an
   entry (`granted_by`).
 - The wire stays without zstd: Explicit chunks are rare in generated mode, and QUIC/SCTP framing
@@ -516,7 +519,7 @@ Exit criteria
 **Status:** in progress — every deliverable built (4a grid and generation, 4b propagation and
 streaming, protocol v6, 4c the client's LOD system, rendering and creative flight — protocol v7),
 in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #15; a fix for
-z-fighting on distant water in #21; height fog with a settings menu pending review.
+z-fighting on distant water in #21; height fog with a settings menu in #22.
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
@@ -780,7 +783,193 @@ Exit criteria
 
 ---
 
-## Phase 5 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
+## Phase 5 — Multiplayer Ready (Web-First Hosting, Joining & Discovery)
+
+**Goal:** Anyone on the GitHub Pages site (desktop or mobile) can start, host and join a
+multiplayer world without typing certificates or forwarding ports: a main menu with world
+management, **one-click Host** from the browser (a join code), **join by code or address**, and
+a **lobby list**. The master server is built as a Cloudflare Worker with Durable Objects, and
+TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloudflare.md),
+§10). This phase takes the web parts of the former hosting phase (now Phase 9) ahead of the
+physics phases (6–8); see *Deviations* below.
+
+**Status:** Not started.
+
+### 5a — Main menu & world management (client only)
+
+Deliverables
+- [ ] **Main menu** when the page opens with no invite: Play (world list), Join, Settings (the
+  existing settings panel). Deep links keep working: `?join=…` goes straight into the game,
+  `?local=1` / `?world=` / `?seed=` straight into a local world (so existing e2e tests and shared
+  links are unaffected).
+- [ ] **World list** (local worlds in OPFS): name, world type, seed, last played. Worlds get
+  id-based file names (`dwell/worlds/<id>.dwellworld`) and a metadata index in the `dwell`
+  IndexedDB database (`worlds` store); the world file stays the source of truth for seed and
+  generator. Existing `local-g<generator>-s<seed>` files are adopted into the list on first run.
+- [ ] **Create world:** name, seed (blank = random, shown afterwards), type (terrain /
+  playground / flat). **Delete** (with confirmation). **Regenerate:** recreate from the same seed
+  with the current generator version, discarding edits (with confirmation).
+- [ ] **Pause menu** (Esc, or a button on touch screens): Resume, Settings, Host… (5c), Quit to
+  main menu. Quitting saves the world, stops the local worker and releases its OPFS handles, so a
+  world can be reopened (or deleted) without a reload.
+- [ ] **Join screen:** paste an invite link, a join code (5c) or an address (5d); a list of
+  recently joined servers.
+
+Exit criteria
+- [ ] E2E (Chromium): open the site → create a world with a given seed → play → quit to the menu
+  → the world is listed with that seed → reopen it and see an earlier edit → regenerate it and
+  see the edit gone → delete it.
+- [ ] An existing local world from before 5a still opens, with its edits.
+- [ ] Manual: the menus are usable on a phone in landscape (touch, iOS Safari and Android Chrome).
+
+### 5b — Master server on Cloudflare (skeleton, dev loop, CI, deploy)
+
+Deliverables
+- [ ] ADR 0013 accepted; Open Decisions #10 and #11 resolved (§12).
+- [ ] `services/master`: a TypeScript Cloudflare Worker (Wrangler), routes under `/v1/`, with two
+  Durable Object classes on SQLite storage (the Workers Free plan): `Directory` (one instance:
+  registered servers, join codes, receipts, rate-limit state) and `Room` (one per hosted friend
+  world: its WebSocket signaling, using the WebSocket Hibernation API). `GET /v1/health`.
+- [ ] Request signing: Ed25519 (WebCrypto in the Worker) over
+  `"dwell-master-v1" ‖ method ‖ path ‖ timestamp ‖ SHA-256(body)`, ±60 s clock skew, with the
+  player's device key (§10.4) or the dedicated server's key; per-key and per-IP rate limits.
+- [ ] Local development: `wrangler dev` runs the master (and its Durable Objects) locally; the
+  client's master URL comes from the build (`VITE_MASTER_URL`, the deployed Worker by default)
+  and `?master=<url>` overrides it; `dwell_server --master <url>` likewise.
+- [ ] Tests: Vitest with `@cloudflare/vitest-pool-workers` (routes, signatures, rate limits,
+  Durable Object state); CI job `master` (format, lint, typecheck, tests).
+- [ ] Deploy workflow (`.github/workflows/master.yml`): `wrangler deploy` on pushes to `main`
+  that touch `services/master`, using the repository secrets from the manual setup below.
+- [ ] The Pages build embeds the master URL; the client's CSP already allows `https:`/`wss:`.
+
+Exit criteria
+- [ ] The deployed `GET /v1/health` answers; a push to `main` redeploys it.
+- [ ] CI runs the master's tests against the local Workers runtime.
+
+### 5c — Friend worlds: one-click Host from the browser
+
+Deliverables
+- [ ] **Join codes and signaling:** Host opens a `Room` over WebSocket and gets a short code
+  (e.g. `KQ7-XM4`, unambiguous alphabet); guests join the room by code; the room relays SDP
+  offers/answers and trickled ICE candidates between the host and each guest, and closes when
+  the host leaves. Code guessing is rate-limited per IP.
+- [ ] **TURN credentials:** `POST /v1/turn` (signed by the player's key, rate-limited) returns
+  short-lived ICE servers from Cloudflare's TURN service; STUN-only when TURN secrets are absent
+  (local dev, CI).
+- [ ] **Client `PeerTransport`** (full WebRTC with signaling, unlike the ICE-lite
+  `WebRtcTransport`): the same data channels 0–3 and mapping as §8.1; the transport binding is
+  the SHA-256 of the host's DTLS certificate taken from the answer's fingerprint.
+- [ ] **Hosting:** the host page creates one `RTCCertificate` per hosting session and a peer
+  connection per guest on the main thread (peer connections are not available in workers),
+  relaying each guest's channels to the local-mode worker as a separate session
+  (`TransportKind` WebRTC, binding = the host certificate's SHA-256). The host keeps playing
+  through `LoopbackTransport`.
+- [ ] **Host dialog:** visibility (code only / code + same network / public), who may edit and fly
+  (`--edits`/`--flight` policies), the host is op; shows the code, a copyable invite link and a
+  QR code; Stop hosting.
+- [ ] **Host profiles:** max players by platform (e.g. mobile 4, desktop browser 8) and the
+  corresponding caps.
+- [ ] **Backgrounding and leaving (ADR 0009):** Screen Wake Lock while hosting; when the host
+  page is hidden the world pauses and guests see "host paused" (new reliable message
+  `HostStatus` paused/resumed); when the host stops or closes the page, guests get
+  `Reject(ServerClosing)` (new reject reason, also sent by dedicated servers on shutdown) or, on a
+  lost connection, "host left". Golden-byte tests in C++ and TS for the new message and reason.
+
+Exit criteria
+- [ ] E2E (Chromium, CI): two browser contexts against a local master — one hosts, the other joins
+  by code; each sees the other move and a block edit.
+- [ ] Manual: a desktop browser hosts; a phone on mobile data joins by code (through TURN).
+- [ ] Manual: iOS Safari hosts, an Android Chrome guest joins; locking the host phone pauses the
+  world for the guest and unlocking resumes it; closing the host page shows "host left".
+
+### 5d — Dedicated servers on the master; join by address
+
+Deliverables
+- [ ] `dwell_server` gets a persistent Ed25519 **server key** (world `settings`), and registers
+  and heartbeats (~30 s, signed) with the master through an HTTPS client in the Rust `net/wt`
+  crate: port, RTC port and ICE credentials, current cert SHA-256, name, MOTD, players,
+  protocol version, visibility (`--visibility public|unlisted|none`, default unlisted; `none`
+  never contacts the master). The master takes the public address from the request
+  (`CF-Connecting-IP`) unless `--advertise` is given; servers also report their LAN addresses.
+  Missed heartbeats expire the record (a `Directory` alarm).
+- [ ] **Join by address:** the Join box resolves `host[:port]` through the master to address +
+  cert hash (+ WebRTC parameters). LAN addresses resolve only among servers whose public IP
+  matches the requester's, so typing `192.168.1.50` works on the same network.
+- [ ] **Join codes for dedicated servers** (stable per server key) and invite links that carry a
+  code instead of a cert hash, so they survive certificate rotation.
+- [ ] **"On your network":** the Play/Join screens list friend worlds and servers whose public IP
+  matches the player's (visibility "code + same network" or public) — LAN discovery for the web.
+
+Exit criteria
+- [ ] E2E: a native server registers with a local master; a browser joins it by typing its
+  address and by its code; after the server stops, it disappears within two heartbeat periods.
+- [ ] Manual: a phone on the same Wi-Fi finds a dedicated server under "On your network" and joins
+  it (Safari over WebRTC, Chrome over WebTransport).
+
+### 5e — Lobby list
+
+Deliverables
+- [ ] `GET /v1/servers`: public servers and public friend worlds, with search and filter (name,
+  MOTD, tags, player count, compatible version).
+- [ ] **Reachability (player-attested, ADR 0013):** after a successful join through the master,
+  the client posts a signed receipt; a server is shown as verified once receipts from distinct
+  player keys arrive within a window. Unverified public servers appear only under a "new"
+  filter.
+- [ ] **Server browser** in the client: the list, client-side ping via `StatusRequest` for
+  dedicated servers (friend worlds show players only), incompatible servers marked with the
+  handshake's reason.
+
+Exit criteria
+- [ ] E2E: a public native server and a public hosted friend world both appear in the list on a
+  third client, and joining either from the list works.
+- [ ] Master tests: a server without receipts is not listed as verified; one with enough is.
+
+### Manual setup (Cloudflare and GitHub — done by the project owner)
+
+These steps need an account owner's dashboard access and cannot be done from code. Do them before
+5b's deploy exit criterion; nothing here requires a paid plan.
+
+- [ ] Create (or pick) a Cloudflare account on the **Workers Free** plan; note the **Account ID**
+  (dashboard → Workers & Pages → right sidebar). Don't add a payment method, so the free limits
+  can't turn into charges; over-limit requests fail instead.
+- [ ] Choose the account's `workers.dev` subdomain (Workers & Pages → Overview). The master's
+  default URL is `https://dwell-master.<subdomain>.workers.dev`; record it in
+  `services/master/README.md` and as the client's `VITE_MASTER_URL`.
+- [ ] Create an **API token** (My Profile → API Tokens → "Edit Cloudflare Workers" template,
+  scoped to this account only). Add GitHub repository secrets `CLOUDFLARE_API_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID` (Settings → Secrets and variables → Actions). Optionally put them in a
+  `master` environment that only `main` may deploy from.
+- [ ] Add a GitHub repository variable `VITE_MASTER_URL` with the Worker URL (read by the Pages
+  workflow).
+- [ ] Create a **TURN key** (dashboard → Realtime → TURN Server → Create). Store its key ID and
+  API token as Worker secrets: `npx wrangler secret put TURN_KEY_ID` and
+  `npx wrangler secret put TURN_KEY_API_TOKEN` from `services/master` (or Worker → Settings →
+  Variables and Secrets). Check the current free TURN allowance on the pricing page and note it in
+  `services/master/README.md`.
+- [ ] After the first deploy, confirm the Worker and its Durable Object classes (`Directory`,
+  `Room`) appear in the dashboard, and that `GET /v1/health` answers.
+- [ ] Optional: enable Workers Logs (Worker → Settings → Observability) for debugging.
+- [ ] Optional, later: serve the master at `master.dropkickarcade.com` (Worker → Settings →
+  Domains & Routes → Custom domain). This needs `dropkickarcade.com`'s DNS on Cloudflare; moving
+  the zone means recreating the GitHub Pages DNS records there first. Then update
+  `VITE_MASTER_URL` and the server default.
+
+### Deviations
+
+- **New phase, inserted 2026-09-30.** Multiplayer hosting was the last phase; playtesting multiplayer
+  needed an easy way to start, host and join worlds, so the web-first parts moved ahead of the
+  physics phases. The former Phases 5–8 are now 6–9. The master server, friend worlds and server
+  browser moved here from Phase 9; the dedicated-server distribution (binaries, Docker, admin
+  commands, UPnP, backups, certificate rotation), world export/import, versioned client builds,
+  and the Electron and Capacitor apps stay in Phase 9.
+- Physics caps in host profiles cover what exists (players, view distance); Tier 1/Tier 2 caps
+  are added with Phases 6–8.
+- LAN discovery on the web is "same public IP" through the master (5d); Electron's local-network
+  discovery stays in Phase 9.
+
+---
+
+## Phase 6 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
 
@@ -791,7 +980,7 @@ Deliverables
   (reason `Collapse`).
 - [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
 - [ ] `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
-- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 6); client
+- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 7); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
 - [ ] **Player ↔ Tier 1 interaction** (§9.2, §9.4):
   - [ ] Players push light clusters (contact mass scaling: `maxPushForce`, `pushableMassLimit`);
@@ -815,7 +1004,7 @@ Exit criteria
 
 ---
 
-## Phase 6 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
+## Phase 7 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
 
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
@@ -849,7 +1038,7 @@ Exit criteria
 
 ---
 
-## Phase 7 — Sleep / Re-bake Cycle
+## Phase 8 — Sleep / Re-bake Cycle
 
 **Goal:** Spec Phase 6. Long-running servers keep a bounded number of dynamic bodies (§7.3).
 
@@ -874,42 +1063,36 @@ Exit criteria
 
 ---
 
-## Phase 8 — Player Hosting, Master Server & Platform Packaging
+## Phase 9 — Dedicated Server Distribution & Platform Packaging
 
-**Goal:** Player-hosted multiplayer with no official game servers (ADR 0003): distributable
-dedicated servers, friend worlds hostable from any client, a master server for discovery, and
-packaged desktop/mobile apps (ARCHITECTURE §10).
+**Goal:** Complete player-hosted multiplayer with no official game servers (ADR 0003):
+distributable dedicated servers and packaged desktop/mobile apps (ARCHITECTURE §10), on top of the
+web hosting, master server and lobby list built in Phase 5.
 
 Deliverables
 - [ ] **Dedicated server distribution:** CI builds native binaries (Windows/macOS/Linux) and a
   Docker image per release; settings and permissions in the world database edited via admin
   commands and a server CLI (ADR 0006); ops, kick, ban by key; allow-list/password;
   UPnP/NAT-PMP with port-forward guidance; rotating SQLite online backups; host-configurable
-  physics and view caps. Certificate rotation with hash publication.
-- [ ] **Master server** (`services/master`; hostname and platform → Open Decision
-  #10): registration + heartbeat, reachability-verified public listing (method per #10), join codes, cert-hash
-  distribution, rate limiting per key/IP.
+  physics and view caps. Certificate rotation, publishing each new hash to the master (5d).
 - [ ] **World export/import** (`.dwellworld`) across dedicated servers, browsers, and apps; Capacitor
   storage VFS verified per platform.
-- [ ] **Server browser** in the client: listing, search/filter, client-side ping, status query,
-  incompatible-version marking; versioned client builds at `/dwell/v/<version>/`.
-- [ ] **Friend worlds:** WebRTC transport (§8.1) in the client; hosting the integrated server over
-  WebRTC; signaling via the master; STUN + TURN relay (Open Decision #11) with short-lived credentials; host profiles (player and physics caps);
-  host-backgrounded pause.
+- [ ] **Versioned client builds** at `/dwell/v/<version>/`; the server browser (5e) offers the build
+  matching an incompatible server.
 - [ ] **Electron:** packaging for Windows/macOS/Linux (electron-builder), custom protocol with
   COOP/COEP and the multithreaded sim-core build (ADR 0007),
-  "Host world" launching the native server; LAN discovery.
+  "Host world" launching the native server; local-network discovery.
 - [ ] **Capacitor:** Android and iOS projects; check `SharedArrayBuffer` availability on the app
   scheme (threaded build if available, ADR 0007); verify WebTransport per WebView (WebRTC
   where unavailable); touch
-  controls (auto-jump preset); mobile caps; friend-world hosting with backgrounding handling.
+  controls (auto-jump preset); mobile caps; friend-world hosting (5c) with the apps' backgrounding.
 - [ ] Dedicated-server WebRTC joins through master signaling and TURN (servers behind strict NAT).
 
 Exit criteria
 - [ ] A player hosts a dedicated server at home from the downloadable binary; players on the GitHub
   Pages site, Electron, and a phone find it in the server browser and see the same collapse.
-- [ ] A phone hosts a friend world; a browser player and an Electron player join by code, including
-  one on mobile data through the TURN relay.
+- [ ] The Capacitor app hosts a friend world; a browser player and an Electron player join by code,
+  including one on mobile data through the TURN relay.
 - [ ] Certificate rotation on a dedicated server is invisible to players joining through the master.
 - [ ] An iOS Safari player joins a self-signed dedicated server over WebRTC, including one behind
   strict NAT via TURN.
