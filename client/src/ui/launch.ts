@@ -2,25 +2,33 @@
 // choice — straight into a game. The menu starts a game by navigating, so a reload continues the
 // same world or server and Back returns to the menu.
 import { parseInvite } from '../net/invite';
+import { normalizeCode } from '../net/joinCode';
 
 export type Launch =
   /** No world or server in the address: the main menu. */
   | { kind: 'menu' }
   /** An invite link (`?join=…&cert=…`). */
   | { kind: 'join' }
+  /** A friend world's join code (`?code=KQ7XM4`, Phase 5c). */
+  | { kind: 'code'; code: string }
   /** A world from the menu (`?play=<world id>`). */
   | { kind: 'play'; id: string }
   /** A local world by link (`?local=1`, `?world=`, `?seed=`): one per generator and seed. */
   | { kind: 'link' };
 
 /** Parameters that choose what the page opens; every other one (debug flags) is kept. */
-const ROUTE_PARAMS = ['join', 'cert', 'rtc', 'ice', 'play', 'local', 'world', 'seed'];
+const ROUTE_PARAMS = ['join', 'cert', 'rtc', 'ice', 'code', 'play', 'local', 'world', 'seed'];
 const INVITE_PARAMS = ['join', 'cert', 'rtc', 'ice'];
 
 export function launchOf(search: string): Launch {
   const params = new URLSearchParams(search);
   if (params.get('local') === '1') return { kind: 'link' };
   if (params.has('join')) return { kind: 'join' };
+  const code = params.get('code');
+  if (code !== null) {
+    const normalized = normalizeCode(code);
+    return normalized ? { kind: 'code', code: normalized } : { kind: 'menu' };
+  }
   const play = params.get('play');
   if (play) return { kind: 'play', id: play };
   if (params.has('world') || params.has('seed')) return { kind: 'link' };
@@ -56,4 +64,26 @@ export function pastedInvite(text: string): Record<string, string> | null {
     if (value !== null) route[key] = value;
   }
   return route;
+}
+
+/**
+ * A join code in something a player typed or pasted — the code itself ("kq7-xm4") or a link
+ * carrying `?code=` — or null.
+ */
+export function pastedCode(text: string): string | null {
+  const trimmed = text.trim();
+  const direct = normalizeCode(trimmed);
+  if (direct) return direct;
+  const q = trimmed.indexOf('?');
+  if (q < 0) return null;
+  const code = new URLSearchParams(trimmed.slice(q + 1).replace(/#.*$/, '')).get('code');
+  return code === null ? null : normalizeCode(code);
+}
+
+/** The link that joins a friend world by its code: this page with `?code=`. */
+export function codeLink(pageUrl: string, code: string): string {
+  const url = new URL(pageUrl);
+  url.search = withRoute(url.search, { code });
+  url.hash = '';
+  return url.href;
 }

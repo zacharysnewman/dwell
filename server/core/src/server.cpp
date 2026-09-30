@@ -724,6 +724,32 @@ void Server::Resync(SessionId id, Session& s, const ChunkResync& m) {
   }
 }
 
+void Server::SetHosting(std::uint16_t max_players, EditPolicy edits, EditPolicy flight,
+                        const protocol::PublicKey& host) {
+  config_.max_players = std::max<std::uint16_t>(1, max_players);
+  config_.edits = edits;
+  config_.flight = flight;
+  if (std::find(config_.ops.begin(), config_.ops.end(), host) == config_.ops.end())
+    config_.ops.push_back(host);
+}
+
+void Server::BroadcastHostStatus(protocol::HostState state) {
+  const auto bytes = Encode(protocol::HostStatus{state});
+  for (const auto& [id, s] : sessions_) {
+    if (s.phase == Phase::kJoined)
+      outbox_.push_back({id, Outgoing::Kind::kReliable, Channel::kControl, bytes});
+  }
+}
+
+void Server::CloseSessions(const std::string& message, bool keep_loopback) {
+  std::vector<SessionId> ids;
+  for (const auto& [id, s] : sessions_) {
+    if (!(keep_loopback && s.kind == protocol::TransportKind::kLoopback)) ids.push_back(id);
+  }
+  std::sort(ids.begin(), ids.end());  // deterministic order
+  for (const SessionId id : ids) Reject(id, RejectReason::kServerClosing, message);
+}
+
 bool Server::MayEdit(const Session& s) const { return Allowed(config_.edits, s); }
 bool Server::MayFly(const Session& s) const { return Allowed(config_.flight, s); }
 

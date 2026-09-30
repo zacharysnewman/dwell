@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { launchOf, pastedInvite, withRoute } from './launch';
+import { codeLink, launchOf, pastedCode, pastedInvite, withRoute } from './launch';
 
 const CERT = 'ab'.repeat(32);
 const ICE = `ufrag:${'p'.repeat(22)}`;
@@ -50,5 +50,25 @@ describe('pasted invites', () => {
     expect(pastedInvite('KQ7-XM4')).toBeNull();
     expect(pastedInvite('192.168.1.50')).toBeNull();
     expect(pastedInvite(`?join=1.2.3.4:4433&cert=${CERT.slice(2)}`)).toBeNull();
+  });
+});
+
+describe('join codes', () => {
+  it('open a friend world from ?code=, and the menu for a malformed one', () => {
+    expect(launchOf('?code=kq7-xm4')).toEqual({ kind: 'code', code: 'KQ7XM4' });
+    expect(launchOf('?code=nope')).toEqual({ kind: 'menu' });
+  });
+
+  it('are read from a typed code or a pasted link', () => {
+    expect(pastedCode(' kq7 xm4 ')).toBe('KQ7XM4');
+    expect(pastedCode('https://dropkickarcade.com/dwell/?code=KQ7-XM4')).toBe('KQ7XM4');
+    expect(pastedCode('https://dropkickarcade.com/dwell/?join=a')).toBeNull();
+    expect(pastedCode('hello')).toBeNull();
+  });
+
+  it('make an invite link on this page, keeping its master and debug parameters', () => {
+    expect(
+      codeLink('http://localhost:5173/dwell/?play=wabc&master=http://localhost:8787#x', 'KQ7XM4'),
+    ).toBe('http://localhost:5173/dwell/?master=http%3A%2F%2Flocalhost%3A8787&code=KQ7XM4');
   });
 });

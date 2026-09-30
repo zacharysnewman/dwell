@@ -1,6 +1,6 @@
 // Local-mode host (ARCHITECTURE.md §2.1): runs the WASM server core in a worker and exchanges
 // protocol bytes with the main thread's LoopbackTransport.
-import { TransportKind } from '../protocol/constants.gen';
+import { HostState } from '../protocol/constants.gen';
 import type { FromWorker, ToWorker } from './messages';
 import { importDwellCore } from '../sim/module';
 import { LocalCore, OutgoingKind } from './wasmCore';
@@ -13,6 +13,8 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope;
 
 let core: LocalCore | null = null;
+/** The host paused the world (their page is hidden, §10.2): no simulation steps. */
+let paused = false;
 const queued: ToWorker[] = [];
 
 function flush(): void {
@@ -46,7 +48,18 @@ function handle(msg: ToWorker): void {
     case 'start':
       break;
     case 'connect':
-      core.connected(msg.session, TransportKind.Loopback, msg.binding);
+      core.connected(msg.session, msg.kind, msg.binding);
+      break;
+    case 'host':
+      core.host(msg.maxPlayers, msg.edits, msg.flight, msg.hostKey);
+      break;
+    case 'hostStatus':
+      // A hidden host page pauses the world (ADR 0009); guests hear why.
+      paused = msg.state === HostState.Paused;
+      core.hostStatus(msg.state);
+      break;
+    case 'closeGuests':
+      core.closeGuests();
       break;
     case 'reliable':
       core.reliable(msg.session, msg.channel, msg.bytes);
@@ -93,7 +106,7 @@ async function start(worldSeed: number, generatorVersion: number, file?: string)
   let last = performance.now();
   setInterval(() => {
     const now = performance.now();
-    core?.advance((now - last) / 1000);
+    if (!paused) core?.advance((now - last) / 1000);
     last = now;
     flush();
   }, 4);

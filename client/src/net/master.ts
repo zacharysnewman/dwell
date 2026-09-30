@@ -1,7 +1,7 @@
 // The master server's client side (ARCHITECTURE.md §10.3, ADR 0013): where it is, and signing
 // requests with the device key (§10.4). The message format matches the Worker's
-// (services/master/src/auth.ts); shared/master/vectors.json pins it for both. Phase 5c onwards adds
-// the calls that use it (join codes, signaling, TURN credentials).
+// (services/master/src/auth.ts); shared/master/vectors.json pins it for both. Friend worlds (5c) use
+// its rooms (join codes and signaling) and TURN credentials.
 import type { DeviceKey } from '../identity/deviceKey';
 
 export const SIGNATURE_CONTEXT = 'dwell-master-v1';
@@ -95,6 +95,31 @@ export class MasterClient {
     return this.request('POST', '/v1/whoami', {});
   }
 
+  /** Opens a room for a friend world: its join code, and the host's token for the room socket. */
+  createRoom(maxGuests: number): Promise<{ code: string; display: string; hostToken: string }> {
+    return this.request('POST', '/v1/rooms', { maxGuests });
+  }
+
+  /** Asks to join the room with this code: a one-use token for the room socket. */
+  joinRoom(code: string): Promise<{ token: string; peer: number }> {
+    return this.request('POST', `/v1/rooms/${encodeURIComponent(code)}/join`, {});
+  }
+
+  /** ICE servers for WebRTC: STUN, and TURN when the master has a TURN key. */
+  async turn(): Promise<RTCIceServer[]> {
+    const { iceServers } = await this.request<{ iceServers: RTCIceServer[] }>(
+      'POST',
+      '/v1/turn',
+      {},
+    );
+    return iceServers;
+  }
+
+  /** The room socket's URL for a host or guest token. */
+  roomSocketUrl(code: string, token: string): string {
+    return roomSocketUrl(this.baseUrl, code, token);
+  }
+
   private async request<T>(method: string, path: string, body: unknown): Promise<T> {
     const bytes = new TextEncoder().encode(body === null ? '' : JSON.stringify(body));
     const headers: Record<string, string> =
@@ -114,4 +139,12 @@ export class MasterClient {
     }
     return data as T;
   }
+}
+
+/** A room's WebSocket URL: the master's origin with ws(s), `/v1/rooms/<code>/ws?token=`. */
+export function roomSocketUrl(baseUrl: string, code: string, token: string): string {
+  const url = new URL(`${baseUrl}/v1/rooms/${encodeURIComponent(code)}/ws`);
+  url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
+  url.searchParams.set('token', token);
+  return url.href;
 }

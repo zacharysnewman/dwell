@@ -12,6 +12,7 @@
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <emscripten/emscripten.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -133,6 +134,31 @@ EMSCRIPTEN_KEEPALIVE void dwell_local_reliable(std::uint32_t session, std::uint8
 EMSCRIPTEN_KEEPALIVE void dwell_local_datagram(std::uint32_t session, const std::uint8_t* data,
                                                std::uint32_t len) {
   g_server->server.OnDatagram(session, {data, len});
+}
+
+// Friend-world hosting (§10.2, Phase 5c). Starts hosting: `max_players` counts the host too;
+// `edits` and `flight` are EditPolicy values (0 everyone, 1 ops, 2 nobody); `host_key32` is the
+// host's device public key, made an op.
+EMSCRIPTEN_KEEPALIVE void dwell_local_host(std::uint32_t max_players, std::uint32_t edits,
+                                           std::uint32_t flight, const std::uint8_t* host_key32) {
+  const auto policy = [](std::uint32_t v) {
+    return v <= 2 ? static_cast<dwell::core::EditPolicy>(v) : dwell::core::EditPolicy::kNobody;
+  };
+  dwell::protocol::PublicKey key;
+  std::memcpy(key.data(), host_key32, key.size());
+  g_server->server.SetHosting(static_cast<std::uint16_t>(std::min<std::uint32_t>(max_players, 64)),
+                              policy(edits), policy(flight), key);
+}
+
+// The host's page was hidden (1: paused) or shown again (2: resumed): tells the guests.
+EMSCRIPTEN_KEEPALIVE void dwell_local_host_status(std::uint32_t state) {
+  if (state < 1 || state > dwell::protocol::kMaxHostState) return;
+  g_server->server.BroadcastHostStatus(static_cast<dwell::protocol::HostState>(state));
+}
+
+// Stops hosting: every guest session ends with Reject(ServerClosing); the host keeps playing.
+EMSCRIPTEN_KEEPALIVE void dwell_local_close_guests() {
+  g_server->server.CloseSessions("The host stopped hosting.", /*keep_loopback=*/true);
 }
 
 // Adds real elapsed time and runs the due simulation steps; returns the current tick.

@@ -1,6 +1,7 @@
 // End-to-end tests (Phase 1 exit criteria): a real native server and the built client in Chromium.
-// Prerequisites: `npm run build:wasm && npm run build` here, and the server built with the `dev`
-// CMake preset (or DWELL_SERVER_BIN pointing at dwell_server).
+// Prerequisites: `npm run build:wasm && npm run build` here, the server built with the `dev`
+// CMake preset (or DWELL_SERVER_BIN pointing at dwell_server), and `npm ci` in services/master
+// (the local master for friend worlds).
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
@@ -26,6 +27,9 @@ export default defineConfig({
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
         '--disable-backgrounding-occluded-windows',
+        // Friend worlds (Phase 5c): two contexts on one machine connect by their real host
+        // addresses, not mDNS names that the runner may not resolve.
+        '--disable-features=WebRtcHideLocalIpsWithMdns',
       ],
     },
   },

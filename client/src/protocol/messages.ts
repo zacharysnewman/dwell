@@ -9,6 +9,7 @@ import {
   ControllerFlags,
   DamageCause,
   GroundKind,
+  HostState,
   InputButtons,
   Limits,
   Lod,
@@ -156,6 +157,8 @@ export type Message =
       voxels: Uint16Array | null;
     }
   | { type: typeof MessageType.ChunkUnload; coords: ChunkCoord[] }
+  /** A friend-world host's page was hidden (the world paused) or shown again (§10.2). */
+  | { type: typeof MessageType.HostStatus; state: HostState }
   | {
       type: typeof MessageType.BlockEditRequest;
       action: BlockEditAction;
@@ -279,6 +282,9 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
         if (!m.voxels) throw new RangeError('Explicit ChunkData needs voxels');
         writeVoxels(w, m.voxels);
       }
+      break;
+    case MessageType.HostStatus:
+      w.u8(m.state);
       break;
     case MessageType.ChunkUnload:
       if (m.coords.length < 1 || m.coords.length > 0xffff) throw new RangeError('unload count');
@@ -536,6 +542,7 @@ function readController(r: ByteReader): ControllerState {
 
 const rejectReasons = new Set<number>(Object.values(RejectReason));
 const editActions = new Set<number>(Object.values(BlockEditAction));
+const hostStates = new Set<number>(Object.values(HostState));
 const modificationReasons = new Set<number>(Object.values(VoxelModificationReason));
 const chunkForms = new Set<number>(Object.values(ChunkForm));
 const lodForms = new Set<number>(Object.values(LodForm));
@@ -607,6 +614,11 @@ function decodeBody(r: ByteReader, type: number): Message {
       const revision = r.u32();
       const voxels = form === ChunkForm.Explicit ? readVoxels(r) : null;
       return { type, form: form as ChunkForm, coord: at, revision, voxels };
+    }
+    case MessageType.HostStatus: {
+      const state = r.u8();
+      r.check(hostStates.has(state), 'host state');
+      return { type, state: state as HostState };
     }
     case MessageType.ChunkUnload: {
       const count = r.u16();

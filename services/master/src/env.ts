@@ -7,4 +7,7 @@ export interface Env {
   ROOM: DurableObjectNamespace<Room>;
   /** Comma-separated origins allowed to call the master from a browser. */
   ALLOWED_ORIGINS: string;
+  /** Cloudflare TURN key (Worker secrets, Phase 5c manual setup); absent: STUN only. */
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
 }

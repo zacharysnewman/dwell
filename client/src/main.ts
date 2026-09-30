@@ -2,7 +2,17 @@ import { buildInfo, formatBuildInfo } from './buildInfo';
 import { Game, type GameDebugState } from './game/game';
 import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInteraction';
 import { MeshPool } from './mesh/pool';
-import { connectLocal, connectToInvite, type ConnectOptions } from './net/connect';
+import {
+  connectLocal,
+  connectToInvite,
+  connectToRoom,
+  type ConnectOptions,
+  type LocalSession,
+} from './net/connect';
+import { enableHosting } from './hostWorld';
+import { formatCode } from './net/joinCode';
+import { configuredMasterUrl, MasterClient } from './net/master';
+import { IndexedDbKeyStore, loadOrCreateDeviceKey } from './identity/deviceKey';
 import { parseInvite } from './net/invite';
 import { parseLocalWorld, type LocalWorld } from './local/world';
 import { WorldIndex } from './local/worldIndex';
@@ -484,12 +494,17 @@ async function connect(app: App): Promise<void> {
     }
   }
 
-  const invite = localWorld ? null : parseInvite(location.search);
-  if (!localWorld && !invite) {
+  const code = launch.kind === 'code' ? launch.code : null;
+  const invite = localWorld || code ? null : parseInvite(location.search);
+  if (!localWorld && !invite && !code) {
     openMainMenu(app, 'That invite link is incomplete or damaged.');
     return;
   }
-  const target = invite ? `${invite.host}:${String(invite.port)}` : worldName;
+  const target = code
+    ? formatCode(code)
+    : invite
+      ? `${invite.host}:${String(invite.port)}`
+      : worldName;
   const forced = params.get('transport');
   const options: ConnectOptions = {
     displayName: displayName(),
@@ -498,18 +513,24 @@ async function connect(app: App): Promise<void> {
     netsim: parseNetConditions(params.get('netsim')),
     ...(localWorld ? { localWorld } : {}),
   };
-  status.textContent = invite ? `Connecting to ${target}…` : `Starting ${target}…`;
+  status.textContent = localWorld ? `Starting ${target}…` : `Connecting to ${target}…`;
   try {
     let session: ClientSession;
-    let save: (() => Promise<boolean>) | null = null;
-    if (invite) {
+    let local: LocalSession | null = null;
+    if (code) {
+      const base = configuredMasterUrl();
+      if (!base) throw new Error('this build has no master server configured');
+      const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
+      session = await connectToRoom(new MasterClient(base, key), code, options);
+    } else if (invite) {
       session = await connectToInvite(invite, options);
     } else {
-      const local = await connectLocal(options);
+      local = await connectLocal(options);
       session = local.session;
-      save = local.save;
     }
-    enableGameMenu(app, save);
+    enableGameMenu(app, local?.save ?? null);
+    // A local world can be opened to friends (Host…, Phase 5c).
+    if (local && app.settings) enableHosting(app.settings, local, prefersTouch());
     let started = false;
     session.subscribe((state, stats) => {
       status.textContent = formatStatus(target, session.transportKind, state, stats);
