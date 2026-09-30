@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldMeta } from '../local/worldIndex';
-import { formatPlayed, worldDetails } from './mainMenu';
+import { formatPlayed, nearbyLabel, worldDetails } from './mainMenu';
 
 const MIN = 60_000;
 
@@ -26,5 +26,14 @@ describe('main menu text', () => {
       lastPlayedAt: 0,
     };
     expect(worldDetails(world, 1)).toBe('Terrain · seed 42 · never played');
+  });
+});
+
+describe('games on your network', () => {
+  it('are labelled with players for servers, and as friend worlds', () => {
+    expect(nearbyLabel({ name: 'Home server', players: 2, maxPlayers: 16 })).toBe(
+      'Home server · 2/16 players',
+    );
+    expect(nearbyLabel({ name: 'Bravo' })).toBe('Bravo · friend world');
   });
 });

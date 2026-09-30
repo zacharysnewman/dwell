@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import vectors from '../../../shared/master/vectors.json';
 import type { DeviceKey } from '../identity/deviceKey';
+import { parseInvite } from './invite';
 import {
   MasterClient,
   MasterError,
   masterUrl,
   roomSocketUrl,
+  serverInvite,
   signatureHeaders,
   signingMessage,
 } from './master';
@@ -127,5 +129,66 @@ describe('friend-world rooms on the master', () => {
     expect(roomSocketUrl('http://localhost:8787', 'KQ7XM4', 't')).toBe(
       'ws://localhost:8787/v1/rooms/KQ7XM4/ws?token=t',
     );
+  });
+});
+
+describe('dedicated servers through the master (Phase 5d)', () => {
+  const entry = {
+    code: 'KQ7XM4',
+    display: 'KQ7-XM4',
+    name: 'Home',
+    motd: '',
+    players: 1,
+    maxPlayers: 16,
+    protocol: 10,
+    host: '192.168.1.50',
+    port: 4433,
+    cert: 'ab'.repeat(32),
+    rtcPort: 4434,
+    ice: `ufrag123:${'p'.repeat(24)}`,
+  };
+
+  it('turn a resolved server into invite-link parameters the invite parser accepts', () => {
+    const route = serverInvite(entry);
+    expect(route).toEqual({
+      join: '192.168.1.50:4433',
+      cert: 'ab'.repeat(32),
+      rtc: '4434',
+      ice: entry.ice,
+    });
+    const invite = parseInvite(`?${new URLSearchParams(route).toString()}`);
+    expect(invite?.webrtc).toMatchObject({ ip: '192.168.1.50', port: 4434 });
+    expect(serverInvite({ ...entry, host: 'fd00::5', rtcPort: null }).join).toBe('[fd00::5]:4433');
+    expect(serverInvite({ ...entry, ice: null })).not.toHaveProperty('rtc');
+  });
+
+  it('resolve codes and addresses, list nearby games, and send room visibility', async () => {
+    const key = await vectorKey();
+    const bodies: string[] = [];
+    const replies: unknown[] = [
+      { kind: 'server', server: entry },
+      { servers: [entry], worlds: [] },
+      { code: 'AAAAAA', display: 'AAA-AAA', hostToken: 't' },
+    ];
+    const client = new MasterClient(
+      'https://m.test',
+      key,
+      () => 1790000000000,
+      (url, init) => {
+        bodies.push(`${url as string} ${new TextDecoder().decode(init?.body as Uint8Array)}`);
+        return Promise.resolve(new Response(JSON.stringify(replies.shift())));
+      },
+    );
+    expect(await client.resolve({ address: '192.168.1.50' })).toEqual({
+      kind: 'server',
+      server: entry,
+    });
+    expect((await client.nearby()).servers).toHaveLength(1);
+    await client.createRoom(4, 'network', 'Bravo');
+    expect(bodies).toEqual([
+      'https://m.test/v1/resolve {"address":"192.168.1.50"}',
+      'https://m.test/v1/nearby {}',
+      'https://m.test/v1/rooms {"maxGuests":4,"visibility":"network","name":"Bravo"}',
+    ]);
   });
 });

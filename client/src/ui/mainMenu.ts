@@ -1,7 +1,7 @@
 // The main menu (ARCHITECTURE.md §2.1, Phase 5a), shown when the page opens without a world or
 // server in its address: the local worlds (create with a seed, play, regenerate, delete) and Join
-// (a friend world's join code or an invite link; recently joined servers). Choosing one navigates
-// to it (ui/launch.ts).
+// (a join code, a server address or an invite link; servers and friend worlds on this network;
+// recently joined servers). Choosing one navigates to it (ui/launch.ts).
 import { GENERATORS } from '../local/world';
 import {
   cleanName,
@@ -12,7 +12,8 @@ import {
   type WorldMeta,
   type WorldType,
 } from '../local/worldIndex';
-import { pastedCode, pastedInvite } from './launch';
+import type { Nearby } from '../net/master';
+import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 
 export interface MainMenuDeps {
@@ -26,6 +27,21 @@ export interface MainMenuDeps {
   now(): number;
   /** Shown on opening, e.g. why the menu came up instead of a world. */
   message?: string;
+  /** The master server (Phase 5d), when this build has one: addresses and nearby games. */
+  master?: {
+    /** Invite parameters for a server address, or a rejection with a message for the player. */
+    resolveAddress(address: string): Promise<Record<string, string>>;
+    nearby(): Promise<Nearby>;
+  };
+}
+
+/** A nearby game's label: "Home server · 2/16 players" or "Bravo · friend world". */
+export function nearbyLabel(
+  entry: { name: string } & ({ players: number; maxPlayers: number } | { players?: undefined }),
+): string {
+  return entry.players === undefined
+    ? `${entry.name} · friend world`
+    : `${entry.name} · ${String(entry.players)}/${String(entry.maxPlayers)} players`;
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 days ago", or "never". */
@@ -187,7 +203,7 @@ export class MainMenu {
     form.className = 'menu-join-form';
     const input = document.createElement('input');
     input.id = 'join-input';
-    input.placeholder = 'Join code or invite link';
+    input.placeholder = 'Join code, address or invite link';
     input.autocapitalize = 'characters';
     input.autocomplete = 'off';
     const submit = document.createElement('button');
@@ -199,15 +215,28 @@ export class MainMenu {
       e.preventDefault();
       const invite = pastedInvite(input.value);
       const code = invite ? null : pastedCode(input.value);
+      const master = this.deps.master;
       if (invite) this.deps.go(invite);
       else if (code) this.deps.go({ code });
-      else {
+      else if (looksLikeAddress(input.value) && master) {
+        const address = input.value.trim();
+        this.say(`Looking up ${address}…`);
+        master.resolveAddress(address).then(
+          (route) => {
+            this.deps.go(route);
+          },
+          (err: unknown) => {
+            this.say(err instanceof Error ? err.message : String(err));
+          },
+        );
+      } else {
         this.say(
-          'That is not a join code or an invite link. A host shows its code (e.g. KQ7-XM4); a server prints a link when it starts.',
+          'That is not a join code, a server address or an invite link. A host shows its code (e.g. KQ7-XM4); a server prints its code and a link when it starts.',
         );
       }
     });
     section.append(title, form);
+    if (this.deps.master) section.append(this.nearbySection(this.deps.master));
     if (this.deps.recent.length > 0) {
       const recent = document.createElement('ul');
       recent.id = 'recent-servers';
@@ -226,6 +255,41 @@ export class MainMenu {
       section.append(label, recent);
     }
     return section;
+  }
+
+  /** Servers and friend worlds on this network (Phase 5d), filled in when the master answers. */
+  private nearbySection(master: NonNullable<MainMenuDeps['master']>): HTMLElement {
+    const box = document.createElement('div');
+    box.id = 'nearby';
+    const label = document.createElement('p');
+    label.className = 'menu-hint';
+    label.textContent = 'Looking for games on your network…';
+    const list = document.createElement('ul');
+    list.id = 'nearby-list';
+    box.append(label, list);
+    master.nearby().then(
+      (found) => {
+        const items = [
+          ...found.servers.map((s) => ({ code: s.code, text: nearbyLabel(s) })),
+          ...found.worlds.map((w) => ({ code: w.code, text: nearbyLabel(w) })),
+        ];
+        label.textContent =
+          items.length > 0 ? 'On your network:' : 'Nothing is being hosted on your network.';
+        for (const item of items) {
+          const li = document.createElement('li');
+          li.append(
+            button(item.text, 'menu-button-small', () => {
+              this.deps.go({ code: item.code });
+            }),
+          );
+          list.append(li);
+        }
+      },
+      () => {
+        box.hidden = true; // no master reachable: nothing to show
+      },
+    );
+    return box;
   }
 
   /** Lists worlds saved before the index existed (or opened by link in another way). */

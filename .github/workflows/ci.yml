@@ -134,7 +134,7 @@ jobs:
       - name: Smoke-run server
         # The server runs until signalled: start it, then after 10 s ask it to stop (SIGINT) and
         # require a clean shutdown (--preserve-status: its own exit code, not timeout's 124).
-        run: timeout --preserve-status --signal=INT 10s server/build/dev/app/dwell_server --world ''
+        run: timeout --preserve-status --signal=INT 10s server/build/dev/app/dwell_server --world '' --visibility none
       - name: Player controller performance gate and golden trace (Release)
         working-directory: server
         run: |
@@ -201,7 +201,7 @@ jobs:
         working-directory: platforms/electron
         run: |
           npm ci
-          ../../server/build/dev/app/dwell_server --port 4433 > server.log &
+          ../../server/build/dev/app/dwell_server --port 4433 --visibility none > server.log &
           sleep 2
           QUERY="?$(grep -o 'invite link: .*' server.log | cut -d'?' -f2)"
           xvfb-run -a npx electron . --smoke --no-sandbox "--join=$QUERY"

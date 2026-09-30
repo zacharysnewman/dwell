@@ -19,6 +19,10 @@ export interface HostSettings {
   /** Who may edit blocks, and who may fly (the host is always an op). */
   edits: HostPolicy;
   flight: HostPolicy;
+  /** Code only, or also listed to players on the host's network (Phase 5d). */
+  visibility: 'code' | 'network';
+  /** The world's name, as listed to the network. */
+  name: string;
 }
 
 /** Most guests a host may allow, by platform (host profiles, §10.2). */
@@ -257,7 +261,7 @@ export async function startHosting(
   if (!binding) throw new Error('This browser gave no certificate fingerprint.');
   const [iceServers, room] = await Promise.all([
     master.turn(),
-    master.createRoom(settings.maxGuests),
+    master.createRoom(settings.maxGuests, settings.visibility, settings.name),
   ]);
   const socket = await RoomSocket.open(master.roomSocketUrl(room.code, room.hostToken));
   worker.postToWorker({

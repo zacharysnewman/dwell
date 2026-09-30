@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { codeLink, launchOf, pastedCode, pastedInvite, withRoute } from './launch';
+import {
+  codeLink,
+  launchOf,
+  looksLikeAddress,
+  pastedCode,
+  pastedInvite,
+  withRoute,
+} from './launch';
 
 const CERT = 'ab'.repeat(32);
 const ICE = `ufrag:${'p'.repeat(22)}`;
@@ -70,5 +77,22 @@ describe('join codes', () => {
     expect(
       codeLink('http://localhost:5173/dwell/?play=wabc&master=http://localhost:8787#x', 'KQ7XM4'),
     ).toBe('http://localhost:5173/dwell/?master=http%3A%2F%2Flocalhost%3A8787&code=KQ7XM4');
+  });
+});
+
+describe('server addresses in the Join box (Phase 5d)', () => {
+  it('are told apart from codes and other text', () => {
+    for (const a of [
+      '192.168.1.50',
+      '192.168.1.50:4433',
+      'play.example.com',
+      'localhost:4433',
+      '[::1]:4433',
+    ]) {
+      expect(looksLikeAddress(a), a).toBe(true);
+    }
+    for (const a of ['KQ7XM4', 'hello world', 'localhostx', 'a b.c', 'host:99999999']) {
+      expect(looksLikeAddress(a), a).toBe(false);
+    }
   });
 });

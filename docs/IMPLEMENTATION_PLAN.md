@@ -22,7 +22,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d–5e not started | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c) |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) 🔍 in review — phone check outstanding. 5e not started | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -834,8 +834,9 @@ physics phases (6–8); see *Deviations* below.
 the bare page expecting a local world; fixed in #26. 5b complete (#27; deploy fix #29): the
 master runs at `https://dwell-master.dropkick.workers.dev`. 5c merged (#31) with its e2e test
 failing on a race in the test itself; fixed in #34 (the same fix also merged with #33). Outstanding: the manual phone
-checks, and the TURN key (manual setup; without it the master hands out STUN only). 5d–5e not
-started.
+checks, and the TURN key (manual setup; without it the master hands out STUN only). 5d in review
+(#36): dedicated servers register with the master (join codes, join by address, "On your
+network"); outstanding is its manual phone check. 5e not started.
 
 ### 5a — Main menu & world management (client only)
 
@@ -945,7 +946,7 @@ Exit criteria
 ### 5d — Dedicated servers on the master; join by address
 
 Deliverables
-- [ ] `dwell_server --master <url>` (default: the deployed master) and a persistent Ed25519
+- [x] `dwell_server --master <url>` (default: the deployed master) and a persistent Ed25519
   **server key** (world `settings`); the server registers
   and heartbeats (~30 s, signed) with the master through an HTTPS client in the Rust `net/wt`
   crate: port, RTC port and ICE credentials, current cert SHA-256, name, MOTD, players,
@@ -953,17 +954,22 @@ Deliverables
   never contacts the master). The master takes the public address from the request
   (`CF-Connecting-IP`) unless `--advertise` is given; servers also report their LAN addresses.
   Missed heartbeats expire the record (a `Directory` alarm).
-- [ ] **Join by address:** the Join box resolves `host[:port]` through the master to address +
+- [x] **Join by address:** the Join box resolves `host[:port]` through the master to address +
   cert hash (+ WebRTC parameters). LAN addresses resolve only among servers whose public IP
   matches the requester's, so typing `192.168.1.50` works on the same network.
-- [ ] **Join codes for dedicated servers** (stable per server key) and invite links that carry a
-  code instead of a cert hash, so they survive certificate rotation.
-- [ ] **"On your network":** the Play/Join screens list friend worlds and servers whose public IP
-  matches the player's (visibility "code + same network" or public) — LAN discovery for the web.
+- [x] **Join codes for dedicated servers** (stable per server key) and invite links that carry a
+  code instead of a cert hash, so they survive certificate rotation. (The server prints its code
+  and a `?code=` link; `?code=` resolves to a server or a friend world.)
+- [x] **"On your network":** the main menu's Join section lists friend worlds and servers whose
+  public IP matches the player's (visibility "code + same network" or public) — LAN discovery for
+  the web. The host dialog gains the visibility choice (code only / code + same network, the
+  default).
 
 Exit criteria
-- [ ] E2E: a native server registers with a local master; a browser joins it by typing its
+- [x] E2E: a native server registers with a local master; a browser joins it by typing its
   address and by its code; after the server stops, it disappears within two heartbeat periods.
+  *`e2e/servers.spec.ts` (#36): passing locally (the server killed without a goodbye is gone
+  within 2 × 2 s heartbeats plus a reload); CI on #36.*
 - [ ] Manual: a phone on the same Wi-Fi finds a dedicated server under "On your network" and joins
   it (Safari over WebRTC, Chrome over WebTransport).
 
@@ -1048,6 +1054,18 @@ These steps need an account owner's dashboard access and cannot be done from cod
   throttle it anyway).
 - 5c: guests keep the room socket open while playing, so the room counts them against the guest
   limit and can tell them the host left even when the peer connection lingers.
+- 5d: "unlisted" servers (the default) are found by code and address and are shown on their own
+  network; only the lobby list (5e) is reserved for "public". A server that crashes disappears
+  after two missed heartbeats (the interval it reports; `--heartbeat` shortens it for tests); one
+  that shuts down tells the master and disappears at once.
+- 5d: a server's key is kept as its Ed25519 seed in the world's `settings` (`server_key`); an
+  in-memory world (`--world ""`) gets a new key, so a new code, each run.
+- 5d: no certificate or `--advertise` changes are needed for LAN addresses: browsers accept a
+  hash-pinned WebTransport certificate at any address, and the ICE-lite WebRTC fallback answers
+  on every interface (checked in Chromium against the machine's LAN address). The e2e browser
+  runs with `--no-proxy-server`: a proxy from the environment cannot carry WebTransport.
+- 5d: friend worlds listed to their network are checked against their room when listed (a
+  closed room's entry is dropped then), rather than removed by the room itself.
 - 5b: rate limits are in the Directory's memory, not SQLite: an evicted object starts with full
   buckets, which errs on allowing requests (acceptable for abuse limits; revisit if abused).
 - 5b: the master pins Vitest 4 (what `@cloudflare/vitest-pool-workers` supports) while the client

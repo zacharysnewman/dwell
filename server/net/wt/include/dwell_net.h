@@ -11,7 +11,7 @@
 /**
  * Version of this C ABI. Bumped on any incompatible change to the exported functions.
  */
-#define DWELL_NET_ABI_VERSION 3
+#define DWELL_NET_ABI_VERSION 4
 
 #define TRANSPORT_WEBRTC 2
 
@@ -33,6 +33,11 @@ typedef enum DwellNetEventKind {
   Reliable = 3,
   Datagram = 4,
 } DwellNetEventKind;
+
+/**
+ * Opaque handle for a dedicated server's registration with the master server.
+ */
+typedef struct DwellMaster DwellMaster;
 
 /**
  * Opaque network front-end handle.
@@ -196,6 +201,51 @@ bool dwell_net_send_datagram(const struct DwellNet *net,
  * `net` must be a live handle.
  */
 void dwell_net_close(const struct DwellNet *net, uint32_t session);
+
+/**
+ * Starts registering with the master at `base_url` (NUL-terminated http(s) URL), signing with the
+ * Ed25519 key whose 32-byte seed is at `seed`. Nothing is sent until `dwell_master_heartbeat`.
+ * Returns NULL on failure (see `dwell_net_last_error`).
+ *
+ * # Safety
+ * `base_url` must be a valid NUL-terminated string and `seed` must point to 32 readable bytes.
+ */
+struct DwellMaster *dwell_master_start(const char *base_url, const uint8_t *seed);
+
+/**
+ * Queues a heartbeat whose body is the NUL-terminated JSON `body` (see ARCHITECTURE.md §10.3,
+ * `POST /v1/servers`). Returns at once; the latest queued heartbeat is the one sent.
+ *
+ * # Safety
+ * `master` must come from `dwell_master_start` and `body` must be a valid NUL-terminated string.
+ */
+void dwell_master_heartbeat(struct DwellMaster *master, const char *body);
+
+/**
+ * The server's join code as shown ("KQ7-XM4"), or "" before the master has answered. Valid until
+ * the next call on this handle.
+ *
+ * # Safety
+ * `master` must come from `dwell_master_start`.
+ */
+const char *dwell_master_code(struct DwellMaster *master);
+
+/**
+ * The last registration error, or "" after a successful heartbeat. Valid until the next call.
+ *
+ * # Safety
+ * `master` must come from `dwell_master_start`.
+ */
+const char *dwell_master_error(struct DwellMaster *master);
+
+/**
+ * Stops registering and frees the handle. With `leave`, first tells the master the server is
+ * going away (waiting a few seconds at most), so it disappears from listings at once.
+ *
+ * # Safety
+ * `master` must come from `dwell_master_start` and is invalid afterwards.
+ */
+void dwell_master_stop(struct DwellMaster *master, bool leave);
 
 #ifdef __cplusplus
 }  // extern "C"
