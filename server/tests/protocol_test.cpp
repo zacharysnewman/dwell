@@ -163,7 +163,10 @@ std::map<std::string, Message> Expected() {
   PlayerInput input;
   input.last_snapshot_tick = 300;
   input.inputs = {{41, 127, -127, InputButtons::kJump | InputButtons::kRun, -16384, 32767},
-                  {42, 0, 90, InputButtons::kCrouch | InputButtons::kFly, 12345, -100}};
+                  {42, 0, 90,
+                   static_cast<std::uint16_t>(InputButtons::kCrouch | InputButtons::kFly |
+                                              (kFlySpeedMaxLevel << kFlySpeedShift)),
+                   12345, -100}};
   PhysicsSnapshot minimal;
   minimal.server_tick = 3;
   minimal.local = TestLocal(0, 100, PlayerState::kIdle, TestController(0));

@@ -1,7 +1,8 @@
 // Input sampling and quantization (PLAYER_CONTROLLER.md §8.4). The client quantizes each tick's
 // input exactly once; the server and the client's own prediction both dequantize the same
 // integers (C++ DequantizeInput), so they simulate identical inputs.
-import { InputButtons } from '../protocol/constants.gen';
+import { InputButtons, Players } from '../protocol/constants.gen';
+import { clampFlySpeedLevel } from './flightSpeed';
 import { FlightToggle } from './flight';
 import type { TouchState } from './touch';
 import type { InputFrame } from '../protocol/messages';
@@ -17,6 +18,8 @@ export interface PlayerInputState {
   crouch: boolean;
   /** Creative flight is on (PLAYER_CONTROLLER.md §6.7): held as a mode bit every tick. */
   fly: boolean;
+  /** Flight speed level, 0 (normal) to MAX_FLY_SPEED_LEVEL (predict/flightSpeed.ts). */
+  flySpeed: number;
 }
 
 export const IDLE_INPUT: PlayerInputState = {
@@ -28,6 +31,7 @@ export const IDLE_INPUT: PlayerInputState = {
   run: false,
   crouch: false,
   fly: false,
+  flySpeed: 0,
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -62,7 +66,8 @@ export function quantizeInput(input: PlayerInputState, seq: number): InputFrame 
       (input.jump ? InputButtons.jump : 0) |
       (input.run ? InputButtons.run : 0) |
       (input.crouch ? InputButtons.crouch : 0) |
-      (input.fly ? InputButtons.fly : 0),
+      (input.fly ? InputButtons.fly : 0) |
+      ((clampFlySpeedLevel(input.flySpeed) << Players.flySpeedShift) & InputButtons.flySpeed),
     yaw: quantizeYaw(input.yaw),
     pitch: quantizePitch(input.pitch),
   };
@@ -144,6 +149,7 @@ export class KeyboardMouseInput {
       run: k('ShiftLeft') || k('ShiftRight') || (t?.run ?? false),
       crouch: k('KeyC') || k('ControlLeft') || (t?.crouch ?? false),
       fly: this.flight.flying,
+      flySpeed: this.flight.speedLevel,
     };
   }
 

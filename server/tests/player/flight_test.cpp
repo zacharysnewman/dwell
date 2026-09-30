@@ -4,6 +4,9 @@
 
 #include <Jolt/Jolt.h>
 
+#include <cmath>
+
+#include "dwell/player/net.h"
 #include "player_test_world.h"
 
 using namespace dwell;
@@ -77,6 +80,55 @@ TEST_SUITE("player: flight") {
     w.Step(Ticks(2.0f));
     CHECK(w.Feet(e) <= cfg.fly.ceiling + 4.0f);  // float feet: 2 m steps up here
     CHECK(w.Feet(e) >= cfg.fly.ceiling - 4.0f);
+  }
+
+  TEST_CASE("the speed slider's level sets a floor under the height-based speed") {
+    const auto cfg = player::DefaultConfig();
+    CHECK(player::FlySpeedFactor(0) == 1.0f);
+    CHECK(player::FlySpeedFactor(1) == std::sqrt(2.0f));
+    CHECK(player::FlySpeedFactor(20) == 1024.0f);
+    const float top = player::FlySpeedFactor(protocol::kFlySpeedMaxLevel);
+    CHECK(top == std::ldexp(std::sqrt(2.0f), 19));
+    CHECK(player::FlySpeedFactor(255) == top);
+    // The fastest level stays within the height-based factor at the ceiling (the body's speed
+    // limit is set from that).
+    CHECK(top <=
+          1.0f + (cfg.fly.ceiling - static_cast<float>(core::kSeaLevel)) / cfg.fly.boost_height);
+
+    auto speed_at = [](float feet, std::uint8_t level) {
+      PlayerTestWorld w;
+      const auto e = w.Spawn(Vec3(0, feet, 0));
+      w.input = [level](int, PlayerHandle) {
+        Input i = Fly(0, 1);
+        i.fly_speed = level;
+        return i;
+      };
+      w.Step(Ticks(1.5f));
+      return w.HorizontalSpeed(e);
+    };
+    // A level slower than the height gives changes nothing (level 0 is the old behaviour).
+    CHECK(speed_at(20000, 10) == speed_at(20000, 0));
+    // Above the terrain band a higher level flies faster: level 30 is 11 m/s × 2^15.
+    CHECK(speed_at(20000, 30) == doctest::Approx(cfg.fly.speed * 32768.0f).epsilon(0.05));
+    // Near the ground a low level helps: level 8 is 11 m/s × 16 = 176 m/s.
+    CHECK(speed_at(4, 8) == doctest::Approx(cfg.fly.speed * 16.0f).epsilon(0.05));
+    // In the terrain band the cap still holds, whatever the level.
+    CHECK(speed_at(100, protocol::kFlySpeedMaxLevel) ==
+          doctest::Approx(cfg.fly.terrain_speed).epsilon(0.02));
+  }
+
+  TEST_CASE("the speed level travels in the input's buttons and is capped") {
+    Input i;
+    i.fly = true;
+    i.fly_speed = 17;
+    CHECK(player::DequantizeInput(player::QuantizeInput(i, 1)).fly_speed == 17);
+    CHECK(player::DequantizeInput(player::QuantizeInput(i, 1)).fly);
+    i.fly_speed = 200;
+    CHECK(player::DequantizeInput(player::QuantizeInput(i, 1)).fly_speed ==
+          protocol::kFlySpeedMaxLevel);
+    protocol::InputFrame f;
+    f.buttons = protocol::InputButtons::kFlySpeed;  // level 63 on the wire
+    CHECK(player::DequantizeInput(f).fly_speed == protocol::kFlySpeedMaxLevel);
   }
 
   TEST_CASE("diving at the band's top speed stops on the ground, not through it") {

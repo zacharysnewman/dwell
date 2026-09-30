@@ -44,10 +44,13 @@ protocol::InputFrame QuantizeInput(const Input& input, std::uint32_t seq) {
   }
   f.move_x = static_cast<std::int8_t>(RoundHalfUp(std::clamp(mx, -1.0f, 1.0f) * 127.0f));
   f.move_y = static_cast<std::int8_t>(RoundHalfUp(std::clamp(my, -1.0f, 1.0f) * 127.0f));
-  f.buttons = static_cast<std::uint16_t>((input.jump ? protocol::InputButtons::kJump : 0) |
-                                         (input.run ? protocol::InputButtons::kRun : 0) |
-                                         (input.crouch ? protocol::InputButtons::kCrouch : 0) |
-                                         (input.fly ? protocol::InputButtons::kFly : 0));
+  f.buttons = static_cast<std::uint16_t>(
+      (input.jump ? protocol::InputButtons::kJump : 0) |
+      (input.run ? protocol::InputButtons::kRun : 0) |
+      (input.crouch ? protocol::InputButtons::kCrouch : 0) |
+      (input.fly ? protocol::InputButtons::kFly : 0) |
+      ((std::min<int>(input.fly_speed, protocol::kFlySpeedMaxLevel) << protocol::kFlySpeedShift) &
+       protocol::InputButtons::kFlySpeed));
   f.yaw = QuantizeYaw(input.look_yaw);
   f.pitch = QuantizePitch(input.look_pitch);
   return f;
@@ -61,6 +64,9 @@ Input DequantizeInput(const protocol::InputFrame& f) {
   input.run = (f.buttons & protocol::InputButtons::kRun) != 0;
   input.crouch = (f.buttons & protocol::InputButtons::kCrouch) != 0;
   input.fly = (f.buttons & protocol::InputButtons::kFly) != 0;
+  input.fly_speed = static_cast<std::uint8_t>(
+      std::min<int>((f.buttons & protocol::InputButtons::kFlySpeed) >> protocol::kFlySpeedShift,
+                    protocol::kFlySpeedMaxLevel));
   input.look_yaw = DequantizeYaw(f.yaw);
   input.look_pitch = DequantizePitch(f.pitch);
   return input;

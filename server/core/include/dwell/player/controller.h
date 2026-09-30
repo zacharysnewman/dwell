@@ -45,7 +45,15 @@ struct Input {
   // Creative flight (◆ Dwell): held while the player's flight mode is on; the server clears it
   // for players who may not fly.
   bool fly = false;
+  // Flight speed level (◆ Dwell, the speed slider): 0 flies at the height-based speed; level L
+  // flies at least fly.speed × FlySpeedFactor(L). Levels above kFlySpeedMaxLevel count as it.
+  std::uint8_t fly_speed = 0;
 };
+
+// 2^(level / 2), level capped at protocol::kFlySpeedMaxLevel (2^19.5 ≈ 741,000: the height-based
+// factor near the flight ceiling). Exact in float — ldexp and the correctly rounded sqrt(2) — so
+// the server and the client's WASM prediction agree.
+float FlySpeedFactor(std::uint8_t level);
 
 struct GroundInfo {
   bool grounded = false, was_grounded = false;  // THE grounded flag every pass uses

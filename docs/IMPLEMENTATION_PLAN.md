@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) in PR #27; the Cloudflare manual setup is outstanding (needed for 5b's deploy check). 5c–5e not started | #25 (5a), #26 (fix), #27 (5b) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -521,7 +521,7 @@ streaming, protocol v6, 4c the client's LOD system, rendering and creative fligh
 in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #15; a fix for
 z-fighting on distant water in #21; height fog with a settings menu in #22; full-detail chunks
 beyond the view (`ChunkRequest`, protocol v8), a velocity lookahead and the playtested fog
-defaults in #23. Also outstanding: z-fighting reported high up, not reproduced here (see
+defaults in #23; a flight speed slider (protocol v9, PR pending). Also outstanding: z-fighting reported high up, not reproduced here (see
 deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
@@ -762,8 +762,17 @@ Deviations and additions (4c):
   this sandbox. A detector rendering each view twice with different depth ranges (a depth tie
   changes pixels; nothing else does) found no ties at 30, 300 or 3,000 km, and the far pass's near
   plane clips nothing; screenshots or positions from the report are needed to go further.
-- Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
-  level.
+- **Flight speed slider** (playtest request, to explore faster in dev): while flying, a "Flight
+  speed" slider (top right) and the − / = keys set a level 0–39 carried in every input frame
+  (`InputButtons.flySpeed`, bits 4–9 of `buttons`; protocol v9). Level 0 is the height-based speed
+  as before; level L flies at least 11 m/s × 2^(L/2), up to ≈ the speed near the flight ceiling
+  (2^19.5 ≈ 741,000×, ≈ 8,200 km/s). The server applies it like every input, so prediction stays
+  exact; the 400 m/s cap below `WORLD_MAX_Y` still holds. Kept in this browser. Tests:
+  `flight_test.cpp` "the speed slider's level sets a floor…" and "…travels in the input's buttons",
+  `flight.test.ts` and `flightSpeed.test.ts`, and the PlayerInput golden vector (now carrying
+  level 39). Not a bug fix, so no red → green; level 0 keeps the golden trace unchanged.
+- Debug hooks: `window.__dwell.fly(on)`, `window.__dwell.flySpeed(level)`; `?lod=0` disables LOD,
+  `?lodcolors=1` tints sections by level.
 
 Exit criteria
 - [x] *(4a)* `GenerateLod` is bit-identical natively and in WASM (CI golden test), and a section

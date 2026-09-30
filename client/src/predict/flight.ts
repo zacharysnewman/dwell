@@ -2,6 +2,8 @@
 // is on, every input frame carries the fly bit, and the shared controller flies the player. The
 // server clears the bit for players its flight policy excludes; Welcome says whether this one may.
 
+import { clampFlySpeedLevel } from './flightSpeed';
+
 /** Two jump presses within this many ms toggle flight. */
 export const DOUBLE_TAP_MS = 300;
 
@@ -10,8 +12,23 @@ export class FlightToggle {
   private mayFly = true;
   private on = false;
   private lastPress = -Infinity;
+  private level = 0;
   /** Flight turned on or off. */
   onChange: ((flying: boolean) => void) | null = null;
+  /** The flight speed level changed (predict/flightSpeed.ts). */
+  onSpeedChange: ((level: number) => void) | null = null;
+
+  /** The flight speed level sent with every input (0: normal). */
+  get speedLevel(): number {
+    return this.level;
+  }
+
+  set speedLevel(level: number) {
+    const l = clampFlySpeedLevel(level);
+    if (l === this.level) return;
+    this.level = l;
+    this.onSpeedChange?.(l);
+  }
 
   get flying(): boolean {
     return this.mayFly && this.on;

@@ -15,6 +15,7 @@ import {
   MessageType,
   PlayerEventKind,
   PlayerFlags,
+  Players,
   PlayerState,
   RejectReason,
   VoxelModificationReason,
@@ -149,7 +150,10 @@ const expected: Record<string, Message> = {
         seq: 42,
         moveX: 0,
         moveY: 90,
-        buttons: InputButtons.crouch | InputButtons.fly,
+        buttons:
+          InputButtons.crouch |
+          InputButtons.fly |
+          (Players.flySpeedMaxLevel << Players.flySpeedShift),
         yaw: 12345,
         pitch: -100,
       },

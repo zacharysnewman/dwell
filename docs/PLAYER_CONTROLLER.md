@@ -371,8 +371,13 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   crouched player up (the exclusive rule of `stepCrouch`). While flying there is no gravity: the
   body's velocity is eased towards the wish with exponential `fly.drag` — horizontal from the move
   input along the camera's yaw, up with jump, down with crouch — at
-  `fly.speed × (run ? fly.runFactor : 1) × (1 + max(0, feet − SEA_LEVEL) / fly.boostHeight)`, so
-  speed grows with height and the climb is exponential. Below `WORLD_MAX_Y` speed is capped at
+  `fly.speed × (run ? fly.runFactor : 1) × max(1 + max(0, feet − SEA_LEVEL) / fly.boostHeight,
+  FlySpeedFactor(input.flySpeed))`, so speed grows with height and the climb is exponential.
+  `input.flySpeed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 39, carried in bits
+  4–9 of the input's `buttons`, protocol v9): `FlySpeedFactor(L) = 2^(L/2)` — computed with `ldexp`
+  and the correctly rounded `sqrt(2)`, so native and WASM agree exactly — sets a floor under the
+  height-based factor; level 0 (factor 1) is the height-based speed alone, and level 39
+  (2^19.5 ≈ 741,000) stays just under the factor at the ceiling, within the body's velocity limit. Below `WORLD_MAX_Y` speed is capped at
   `fly.terrainSpeed`: collision around the player is built a few ticks ahead (its reach is capped
   at 64 m of travel), and the server has to generate the chunks being flown through. Collision is
   unchanged — `LinearCast` motion keeps a fast dive from tunnelling into the ground.
@@ -425,7 +430,7 @@ engine movement, checked against Halo 3); rows marked ◆ differ from the PPC de
 | | `jumpOffVelocity` / `snapStrength` | (0, 4, 3) m/s / 10 /s | same | |
 | Swim ◆ | `speed` / `enterFraction` / `exitFraction` | 3 m/s / 0.6 / 0.4 | — | Dwell addition |
 | | `buoyancy` / `drag` / `floatFraction` | 12 m/s² / 2 /s / 0.7 | — | |
-| Fly ◆ | `speed` / `runFactor` / `boostHeight` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × (1 + height above sea / boostHeight) |
+| Fly ◆ | `speed` / `runFactor` / `boostHeight` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × max(1 + height above sea / boostHeight, 2^(speed level / 2)) |
 | | `terrainSpeed` / `ceiling` / `horizontalLimit` | 400 m/s / 24,000 km / 8,400 km | — | Below `WORLD_MAX_Y` / feet height / \|x\|, \|z\| |
 | Damage ◆ | `fallDamageMinSpeed` / `fallDamagePerSpeed` | 12 m/s / 8 per m/s | — | From the `Landed` event's impact speed |
 | | `crushSpeed` / `crushTicks` | 4 m/s / 6 | — | |

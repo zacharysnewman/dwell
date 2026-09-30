@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 8,
+  "protocolVersion": 9,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -16,7 +16,9 @@
     "predictProxyRadius": 16,
     "reachDistance": 5,
     "blockEditIntervalMs": 100,
-    "flightCeiling": 24000000
+    "flightCeiling": 24000000,
+    "flySpeedShift": 4,
+    "flySpeedMaxLevel": 39
   },
   "world": {
     "worldMinY": -2048,
@@ -107,7 +109,8 @@
     "jump": 1,
     "run": 2,
     "crouch": 4,
-    "fly": 8
+    "fly": 8,
+    "flySpeed": 1008
   },
   "playerStates": {
     "Idle": 0,

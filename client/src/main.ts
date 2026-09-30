@@ -23,6 +23,8 @@ import { Hotbar, slotForKey } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MAP_STEP, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import { FlightSpeedControl } from './ui/flightSpeedControl';
+import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
 import { ChunkStreamer } from './world/chunkStream';
@@ -45,6 +47,8 @@ interface DwellDebug {
   voxel(x: number, y: number, z: number): number;
   /** Turns creative flight on or off, as double-tapping Space does (if the server allows it). */
   fly(on: boolean): void;
+  /** Sets the flight speed level, as the slider does. */
+  flySpeed(level: number): void;
 }
 
 declare global {
@@ -144,6 +148,9 @@ function start(): App {
     fly: (on) => {
       app.input.flight.set(on);
     },
+    flySpeed: (level) => {
+      app.input.flight.speedLevel = level;
+    },
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
   app.input.onAction = (action) => app.game?.edit(action, performance.now());
@@ -162,8 +169,26 @@ function start(): App {
   touch.onJumpPress = (nowMs) => {
     input.flight.jumpPressed(nowMs);
   };
+  // Flight speed (§6.7): a slider while flying, the − and = keys, kept in this browser.
+  const flightSpeed = new FlightSpeedControl(document.body, (level) => {
+    input.flight.speedLevel = level;
+  });
+  input.flight.speedLevel = loadFlySpeedLevel();
+  flightSpeed.show(input.flight.speedLevel);
+  input.flight.onSpeedChange = (level) => {
+    flightSpeed.show(level);
+    saveFlySpeedLevel(level);
+  };
+  window.addEventListener('keydown', (e) => {
+    // Not while typing in a text field (the slider itself still takes the keys).
+    const typing = e.target instanceof HTMLInputElement && e.target.type !== 'range';
+    if (!input.flight.flying || typing) return;
+    if (e.code === 'Minus' || e.code === 'NumpadSubtract') input.flight.speedLevel -= 1;
+    if (e.code === 'Equal' || e.code === 'NumpadAdd') input.flight.speedLevel += 1;
+  });
   input.flight.onChange = (flying) => {
     touch.setFlight(input.flight.allowed, flying);
+    flightSpeed.visible = flying;
   };
   touch.onTap = () => {
     const action = app.interaction?.touchAction;
