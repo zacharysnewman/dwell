@@ -277,6 +277,10 @@ function play(
           cacheBytes: (mobile ? Lod.cacheMbMobile : Lod.cacheMbDesktop) * 1048576,
           maxGenerationJobs: pool.capacity,
           maxMeshJobs: meshPool.capacity,
+          // Full detail beyond the streamed view: chunks asked for by the LOD (§6.6).
+          requestChunks: (coords) => {
+            session.sendControl({ type: MessageType.ChunkRequest, coords });
+          },
         },
       );
       lod.setFullMode(hash === 0n);

@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#21 |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#22 |
 | 5 — Voxel awakening | ⏳ Not started | — |
 | 6 — Tiered physics | ⏳ Not started | — |
 | 7 — Sleep / re-bake | ⏳ Not started | — |
@@ -516,7 +516,10 @@ Exit criteria
 **Status:** in progress — every deliverable built (4a grid and generation, 4b propagation and
 streaming, protocol v6, 4c the client's LOD system, rendering and creative flight — protocol v7),
 in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #15; a fix for
-z-fighting on distant water in #21; height fog with a settings menu pending review.
+z-fighting on distant water in #21; height fog with a settings menu in #22; full-detail chunks
+beyond the view (`ChunkRequest`, protocol v8), a velocity lookahead and the playtested fog
+defaults pending review. Also outstanding: z-fighting reported high up, not reproduced here (see
+deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
 the Distant Horizons mod, adapted to 3D). Sub-phases: **4a — LOD data and generation**; **4b —
@@ -738,6 +741,21 @@ Deviations and additions (4c):
   a clear disc from the ceiling, sliders applied live and kept after a reload. Defaults from
   playtesting: distance 4 km, density 50%, height 1.5 km (`fog.test.ts` pins them; it failed on
   the first guess of 100 km / 60%).
+- **Full detail beyond the view, loading ahead** (playtest: coarse sections close by, and
+  modified chunks must show at full detail, not pop in close): the pixel error wanted chunks out to
+  ~120–350 m, but only the 96 m view was streamed, and drawable chunks waited 1 s. The LOD system
+  now asks the server for the chunks a refined level-1 section needs (`ChunkRequest`, protocol
+  v8, within `RENDER_RADIUS_CHUNKS` = 12), nearest first; the server streams them like the view's
+  (Generated markers, explicit when modified, edits included) and keeps them within that radius;
+  sections switch to their chunks as soon as all are drawable; and refinement and load order look
+  1.5 s ahead along the camera's velocity. `chunk_request_test.cpp` (sent after the view, range
+  and rate limits, explicit modified chunks with their edits, kept and unloaded by radius) and
+  `lodSystem.test.ts` "asks for the chunks beyond the view…" and "looks ahead along the velocity…"
+  failed before (no requests); the kept-view-chunk case failed before its fix.
+- **Z-fighting high up** (playtest, "at various heights" while flying high): not reproduced in
+  this sandbox. A detector rendering each view twice with different depth ranges (a depth tie
+  changes pixels; nothing else does) found no ties at 30, 300 or 3,000 km, and the far pass's near
+  plane clips nothing; screenshots or positions from the report are needed to go further.
 - Debug hooks: `window.__dwell.fly(on)`; `?lod=0` disables LOD, `?lodcolors=1` tints sections by
   level.
 

@@ -260,6 +260,8 @@ vectors = {
     "voxel_modification": VOXEL_MOD,
     "chunk_resync": struct.pack("<BH", T["ChunkResync"], 2)
     + struct.pack("<iiiiii", 0, -1, 2, 256000, 191, -256000),
+    "chunk_request": struct.pack("<BH", T["ChunkRequest"], 2)
+    + struct.pack("<iiiiii", 3, 0, -4, -250000, -64, 250000),
     "lod_index": lod_index(1, [(1024, 1023, 7), (0, 2047, 4000000000)]),
     "lod_index_empty": lod_index(1, []),
     "lod_index_part": lod_index(0, [(-5, 3, 1)]),
@@ -324,7 +326,10 @@ malformed = {
     "!lod_data_unchanged_payload": lod_head(LF["Unchanged"], 1, (0, 0, 0), 1) + b"\x00",
     "!lod_data_truncated": LOD_EXPLICIT[:-1],
     "!resync_empty": struct.pack("<BH", T["ChunkResync"], 0),
+    "!chunk_request_empty": struct.pack("<BH", T["ChunkRequest"], 0),
     "!resync_too_many": struct.pack("<BH", T["ChunkResync"], c["limits"]["maxResyncChunks"] + 1)
+    + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
+    "!chunk_request_too_many": struct.pack("<BH", T["ChunkRequest"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
 }
 

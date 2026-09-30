@@ -312,6 +312,13 @@ const expected: Record<string, Message> = {
       [256000, 191, -256000],
     ],
   },
+  chunk_request: {
+    type: MessageType.ChunkRequest,
+    coords: [
+      [3, 0, -4],
+      [-250000, -64, 250000],
+    ],
+  },
   lod_index: {
     type: MessageType.LodIndex,
     last: true,

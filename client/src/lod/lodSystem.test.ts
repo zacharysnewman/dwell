@@ -21,7 +21,13 @@ import {
   type LodBounds,
   type LodCoord,
 } from './grid';
-import { LodSystem, type LodView } from './lodSystem';
+import {
+  CHUNK_REQUEST_RADIUS,
+  lookahead,
+  LodSystem,
+  MAX_LOOKAHEAD_M,
+  type LodView,
+} from './lodSystem';
 
 /** A deterministic PRNG (mulberry32). */
 function rng(seed: number): () => number {
@@ -213,7 +219,7 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     expect(checked).toBeGreaterThan(2000);
     // Near the body the streamed chunks stand in for level 0; high above, coarse levels only.
     const start = camera([0.5, 1.6, 0.5], 0, -10);
-    for (let i = 0; i < 2000 && lod.lastSelection().chunks.length === 0; i++) {
+    for (let i = 0; i < 2000 && !lod.chunkVisible([0, 0, 0]); i++) {
       lod.update(start, ++frames * 16);
       await jobs.finish(random, 1);
     }
@@ -495,5 +501,87 @@ describe('LOD requests (§6.6)', { timeout: 60_000 }, () => {
     s.answer(requests, now());
     expect(s.state.asked).toEqual([]);
     expect(lodInWorld(sectionAt(8, site))).toBe(true);
+  });
+});
+
+describe('LOD chunk requests (§6.6)', { timeout: 120_000 }, () => {
+  const key = (c: ChunkCoord) => c.join(',');
+  const chunkOf = (p: Vec3): ChunkCoord => p.map((v) => Math.floor(v / 32)) as ChunkCoord;
+
+  /** A LOD system whose view streams chunks within 3 of `body`; requests arrive a frame later. */
+  function setup(body: Vec3) {
+    const jobs = new Jobs();
+    const held = new Set<string>();
+    const arriving: ChunkCoord[] = [];
+    const requested: ChunkCoord[][] = [];
+    const inView = (c: ChunkCoord) =>
+      Math.max(...c.map((v, a) => Math.abs(v - (chunkOf(body)[a] ?? 0)))) <= 3;
+    const chunks = {
+      drawable: (c: ChunkCoord) => inView(c) || held.has(key(c)),
+      isLoaded: (c: ChunkCoord) => inView(c) || held.has(key(c)),
+    };
+    const lod = new LodSystem(jobs, jobs, new View(), chunks, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 64 * 1048576,
+      maxGenerationJobs: 16,
+      maxMeshJobs: 8,
+      requestChunks: (coords) => {
+        requested.push(coords);
+        arriving.push(...coords);
+      },
+    });
+    let now = 0;
+    const run = async (cam: LodCamera, frames: number) => {
+      const random = rng(3);
+      for (let i = 0; i < frames; i++) {
+        for (const c of arriving.splice(0)) held.add(key(c));
+        lod.update(cam, (now += 16));
+        await jobs.finish(random, 1);
+      }
+    };
+    return { lod, requested, run };
+  }
+
+  it('asks for the chunks beyond the view, nearest first, within the render radius, once each', async () => {
+    const body: Vec3 = [0.5, 1.6, 0.5];
+    const { lod, requested, run } = setup(body);
+    await run(camera(body, 0, -10), 400);
+    const all = requested.flat();
+    const at = chunkOf(body);
+    const beyond = all.filter((c) => Math.max(...c.map((v, a) => Math.abs(v - (at[a] ?? 0)))) > 3);
+    expect(beyond.length).toBeGreaterThan(20);
+    // Within the render radius (less a margin), and never asked twice.
+    const r = CHUNK_REQUEST_RADIUS;
+    for (const c of all) {
+      const d2 = c.reduce((s, v, a) => s + (v - (at[a] ?? 0)) ** 2, 0);
+      expect(d2).toBeLessThanOrEqual(r * r + r);
+    }
+    expect(new Set(all.map(key)).size).toBe(all.length);
+    // Each batch nearest first.
+    for (const batch of requested) {
+      const d = batch.map((c) => Math.hypot(...c.map((v, a) => v - (at[a] ?? 0))));
+      for (let i = 1; i < d.length; i++) expect(d[i]).toBeGreaterThanOrEqual((d[i - 1] ?? 0) - 1.8);
+    }
+    // Once they arrive they are drawn, without the view's grace period.
+    expect(beyond.some((c) => lod.chunkVisible(c))).toBe(true);
+    expect(lod.chunkVisible([30, -1, 0])).toBe(false); // beyond the radius: never full detail
+  });
+
+  it('looks ahead along the velocity: what the camera heads for is asked for first', async () => {
+    const body: Vec3 = [0.5, 1.6, 0.5];
+    const { requested, run } = setup(body);
+    const moving = { ...camera(body, 90, -10), velocity: [100, 0, 0] as Vec3 };
+    await run(moving, 300);
+    const order = requested.flat().map(key);
+    const ahead = order.indexOf(key([5, -1, 0]));
+    const behind = order.indexOf(key([-5, -1, 0]));
+    expect(ahead).toBeGreaterThanOrEqual(0);
+    // 150 m ahead is where it will be: that ground outranks the same distance behind.
+    expect(behind === -1 || ahead < behind).toBe(true);
+    expect(lookahead(moving)).toEqual([150.5, 1.6, 0.5]);
+    expect(lookahead({ ...moving, velocity: [0, 0, 0] })).toBeNull();
+    // Fast flight looks at most MAX_LOOKAHEAD_M ahead.
+    const fast = lookahead({ ...moving, velocity: [0, 10_000, 0] });
+    expect(fast?.[1]).toBeCloseTo(1.6 + MAX_LOOKAHEAD_M);
   });
 });

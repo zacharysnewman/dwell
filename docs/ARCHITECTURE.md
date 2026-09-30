@@ -291,7 +291,7 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
-| `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB`. |
+| `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB`; `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4, two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
 | `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material, skirts toggled per frame, chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry face shading (and the flat colour of untextured materials). |
 | `physics/` | Debris world (Phase 6) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
@@ -548,6 +548,16 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   tick; one chunk may overdraw it). When the player's chunk changes, chunks beyond the view plus
   `UNLOAD_MARGIN_CHUNKS` (hysteresis) are unloaded (outside the sphere of r + margin). Dead players
   stream around their body. Beyond the view, the LOD system (§6.6, Phase 4) takes over.
+- **Requested chunks** **[built, Phase 4]** (`Server::RequestChunks`, `StreamRequested`). Beyond
+  the view, the client asks for the chunks it will draw at full detail (`ChunkRequest`, from the
+  LOD system, §6.6), within `RENDER_RADIUS_CHUNKS` (12, 384 m) of the player's chunk. They are
+  queued (at most 1,024, `CHUNK_REQUESTS_PER_SECOND` a token bucket; the rest dropped and counted
+  in `StreamStats`) and sent after the view's own chunks within the same byte and per-tick
+  budgets, in the forms above — so unmodified ones cost a `Generated` marker, modified ones arrive
+  explicitly, and edits reach them like any streamed chunk. A requested chunk (view chunks the
+  client asks for included) stays until it is beyond the render radius plus
+  `UNLOAD_MARGIN_CHUNKS`. In full-chunk mode only stored chunks are answered (the server does not
+  generate for rendering alone).
 - **Client** (`world/chunkStream.ts`, `worldgen/`). Generated chunks go to the worldgen worker
   pool (`cores − 2` module workers, 1–4, each with its own `dwell_worldgen.wasm` — the generator
   alone, ~30 KB; up to 4 jobs queued per worker; voxels come back as transferred buffers) and then
@@ -776,9 +786,18 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   so turning shows what is already loaded instead of popping in (playtest feedback). The view
   decides only the load order: work outside it (and not closer than its own size) ranks 8× lower,
   so what the camera faces loads first and the ring around it after. Level-0 nodes are the streamed chunks: a level-1 section refines into its 8
-  chunks when all are loaded and meshed (or air); chunks whose level-1 section is not refined are
-  hidden, since LOD draws there (all chunks show until the root is ready). Away from the body the
-  finest level drawn is 1. **The player's surroundings never wait for coarse levels:** a level-1
+  chunks as soon as all are loaded and meshed (or air); chunks whose level-1 section is not refined are
+  hidden, since LOD draws there (all chunks show until the root is ready). **Full detail beyond
+  the view [built, Phase 4]:** the chunks a refined level-1 section needs that the view does not
+  stream are asked of the server (`ChunkRequest`, within `RENDER_RADIUS_CHUNKS` less one, nearest
+  first, paced under `CHUNK_REQUESTS_PER_SECOND`, re-asked after 10 s if they never came), and the
+  section stays drawn until they arrive; modified chunks and structures therefore show at full
+  detail as far as the pixel error wants chunks (about 350 m on a 1080p desktop, 130 m on a phone),
+  capped by the render radius; beyond it the finest level drawn is 1. Chunks the client already
+  holds are asked for once as well, so the server keeps them after they leave the view.
+  **Lookahead:** distances for refinement and load order are the nearer of the camera's and of
+  where it will be `LOOKAHEAD_S` (1.5 s, at most `MAX_LOOKAHEAD_M`, 1 km) along its velocity, so
+  detail — chunks included — loads ahead of a moving player. **The player's surroundings never wait for coarse levels:** a level-1
   section around the camera whose chunks have been drawable for `FORCE_CHUNKS_AFTER_MS` (1 s)
   is always reached — the walk descends to it through ancestors whose children are not all
   ready, drawing the ready siblings and leaving the unready ones empty (sky) until they are,
@@ -977,7 +996,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `MAX_INPUTS_PER_DATAGRAM` | 4 | Input redundancy per `PlayerInput` |
 | `REACH_DISTANCE` | 5 m | Block break/place reach from the eye (§6.5; the server allows 1 m more for latency) |
 | `BLOCK_EDIT_INTERVAL_MS` | 100 ms | Minimum time between a player's block edits (§6.5; server: token bucket, bursts of 3) |
-| `MAX_RESYNC_CHUNKS` | 64 | Chunks per `ChunkResync` request |
+| `MAX_RESYNC_CHUNKS` | 64 | Chunks per `ChunkResync` or `ChunkRequest` message |
 | `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~192 KB, under SCTP's 256 KiB) |
 | `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
 | **Terrain (§6.3)** | | |
@@ -989,6 +1008,8 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `BEDROCK_LAYERS` | 4 | Indestructible anchor layers at the bottom |
 | `SEA_LEVEL` | 0 | Water fill height |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
+| `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
+| `CHUNK_REQUESTS_PER_SECOND` | 256 | Per-client `ChunkRequest` rate limit (chunks) |
 | Terrain collision region | 64 chunks (2 048 m), anchor hysteresis 8 chunks | `TerrainCollision::kRegionChunks`, `kAnchorHysteresisChunks` (§6.1; code constants) |
 | `UNLOAD_MARGIN_CHUNKS` | 1 | Hysteresis before chunks leaving the view are unloaded |
 | `CHUNK_BYTES_PER_SECOND` | 1 MiB/s | Terrain bandwidth budget per client |
@@ -998,6 +1019,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `LOD_MAX_LEVEL` | 19 | Root level; one section holds the whole disc |
 | `LOD_INDEX_LEVEL` | 8 | Level of the modified-section index sent to clients |
 | `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6) |
+| LOD lookahead (client, `lodSystem.ts`) | 1.5 s, at most 1 km | Distances are the nearer of the camera's and of its position this far ahead along its velocity (§6.6) |
 | `LOD_NEAR_SPLIT_M` | 1 024 m | Distance splitting the near and far depth passes |
 | `LOD_CACHE_MB` | 256 (desktop) / 96 (mobile) | Client cache of LOD section content and meshes |
 | `LOD_BYTES_PER_SECOND` | 256 KiB/s | LOD bandwidth budget per client (`lod` stream) |
@@ -1060,7 +1082,7 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v7):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v8):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
@@ -1069,7 +1091,8 @@ in `Welcome` (Phase 3b; protocol v3); planet-scale positions and the `Air` chunk
 protocol v4); `BlockEditRequest` 0x4A, `ChunkResync` 0x4B and `VoxelModification` 0x10 (Phase 3d;
 protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodRequest` 0x4C and the
 `lod` channel (Phase 4b; protocol v6); `Welcome` flags, the `fly` input button, the `Flying`
-state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
+state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
+0x4D for full detail beyond the view (Phase 4; protocol v8) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
 reference encoder, including half floats). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
 `controllerFlags`, `welcomeFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
@@ -1175,6 +1198,14 @@ Place only: u16 material        // the block placed against the face
 u8   type = 0x4B
 u16  count                      // 1..MAX_RESYNC_CHUNKS (64)
 repeat count: i32×3 chunkCoord  // answered with ChunkData for those the client is streamed
+```
+
+**Client → Server: `ChunkRequest` (reliable, `control`) [built, Phase 4; protocol v8]** — chunks
+beyond the view to draw at full detail (§6.3, §6.6)
+```
+u8   type = 0x4D
+u16  count                      // 1..MAX_RESYNC_CHUNKS (64)
+repeat count: i32×3 chunkCoord  // streamed as ChunkData within RENDER_RADIUS_CHUNKS, nearest asked first
 ```
 The signature covers `"dwell-auth-v1" ‖ nonce ‖ transport binding ‖ publicKey`; the binding
 (§8.1) ties it to the server certificate, so a signed challenge cannot be relayed to a different
@@ -1455,6 +1486,9 @@ No platform needs a trusted certificate to join any server (ADR 0008).
   placed, and placements into blocks, outside the world, or overlapping any player capsule are
   rejected (§6.5). At most 8 requests per session queue per tick; `ChunkResync` answers only chunks
   the client is streamed, at most `MAX_RESYNC_CHUNKS` per request.
+- **[built, Phase 4]** `ChunkRequest`s are bounded to `RENDER_RADIUS_CHUNKS` of the player,
+  rate-limited (`CHUNK_REQUESTS_PER_SECOND`, a token bucket; at most 1,024 queued) and share the
+  chunk byte budget with the view; the server never generates chunks for them.
 - Message decoders bounds-check every length field; malformed messages drop the connection.
 - **[built, Phase 4b]** `LodRequest`s are rate-limited (`LOD_REQUESTS_PER_SECOND`, a token
   bucket; at most 256 queued, the rest dropped and counted in `LodStats`) and bounded (levels

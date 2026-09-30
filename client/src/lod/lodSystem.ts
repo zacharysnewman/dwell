@@ -4,12 +4,15 @@
 // empty or buried); level-0 children are the streamed chunks. Unmodified sections are generated in
 // the worldgen pool; sections the LOD index says may be modified are asked of the server
 // (LodRequest), and a `Generated` answer covers the section's whole subtree. Jobs go coarsest first,
-// then nearest; content and meshes live in a cache bounded by LOD_CACHE_MB.
+// then nearest; content and meshes live in a cache bounded by LOD_CACHE_MB. Beyond the streamed
+// view, the chunks a refined level-1 section needs are asked of the server (ChunkRequest, within
+// RENDER_RADIUS_CHUNKS), nearest first. Distances look ahead along the camera's velocity, so
+// detail loads before the camera arrives.
 import type { SectionMeshes } from '../mesh/lodMesher';
 import { sectionBytes, SURFACE_STRIDE } from '../mesh/lodMesher';
 import type { SectionMesher } from '../mesh/pool';
 import type { LodMessage } from '../net/session';
-import { Lod, LodForm, MessageType } from '../protocol/constants.gen';
+import { CHUNK_SIZE, Limits, Lod, LodForm, MessageType, World } from '../protocol/constants.gen';
 import type { ChunkCoord, LodIndexEntry, LodSectionRequest, Vec3 } from '../protocol/messages';
 import type { SectionSource } from '../worldgen/pool';
 import { Frustum, type LodCamera } from './frustum';
@@ -45,6 +48,8 @@ export interface LodView {
 /** Which streamed chunks can stand in for level 0 (loaded, and meshed or all air). */
 export interface ChunkReadiness {
   drawable(coord: ChunkCoord): boolean;
+  /** Received (and not unloaded), drawable or not yet (default: drawable). */
+  isLoaded?(coord: ChunkCoord): boolean;
 }
 
 export interface LodOptions {
@@ -56,6 +61,13 @@ export interface LodOptions {
   /** LodRequest pacing (sections per second, under the server's limit) and unanswered retry. */
   requestsPerSecond?: number;
   requestTimeoutMs?: number;
+  /**
+   * Asks the server for chunks beyond the view (ChunkRequest, at most Limits.maxResyncChunks per
+   * call); without it, level 0 is only the streamed view.
+   */
+  requestChunks?: (coords: ChunkCoord[]) => void;
+  /** Chunk request pacing (per second, under the server's limit). */
+  chunkRequestsPerSecond?: number;
 }
 
 export interface LodStats {
@@ -120,6 +132,13 @@ const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
 const OFF_VIEW_PRIORITY = 1 / 8;
 /** Drawable chunks wait at most this long (ms) for the LOD levels above them (see findCovered). */
 export const FORCE_CHUNKS_AFTER_MS = 1000;
+/** Distances look this far ahead along the camera's velocity (s), and at most this far (m). */
+export const LOOKAHEAD_S = 1.5;
+export const MAX_LOOKAHEAD_M = 1024;
+/** A requested chunk that has not arrived is asked for again after this long (ms). */
+export const CHUNK_REQUEST_RETRY_MS = 10_000;
+/** Chunks are asked for within this many chunks of the camera (the server's radius, less a margin). */
+export const CHUNK_REQUEST_RADIUS = World.renderRadiusChunks - 1;
 /** The chunks draw water's surface 1/8 m below a full block (mesher.ts WATER_SURFACE). */
 const CHUNK_WATER_DROP_M = 0.125;
 const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
@@ -162,7 +181,15 @@ export class LodSystem {
   private readonly coveredAncestors = new Set<number>();
   /** When each level-1 section around the camera first had all its chunks drawable (ms). */
   private readonly drawableSince = new Map<number, number>();
+  /** Where the camera will be (LOOKAHEAD_S along its velocity), if it moves. */
+  private ahead: Vec3 | null = null;
+  private cameraChunk: ChunkCoord = [0, 0, 0];
+  /** Chunks asked of the server (by key: the chunk and when), and the pacing of those requests. */
+  private readonly chunkAsked = new Map<string, { coord: ChunkCoord; at: number }>();
+  private chunkCredit = 0;
+  private lastChunkRequestMs: number | null = null;
   // Collected by the traversal each frame.
+  private wantedChunks: { coord: ChunkCoord; d: number }[] = [];
   private wanted: Node[] = [];
   private due: Node[] = [];
   private remeshed: Node[] = [];
@@ -241,6 +268,9 @@ export class LodSystem {
   update(camera: LodCamera, nowMs: number): void {
     this.frame++;
     const frustum = new Frustum(camera);
+    this.ahead = lookahead(camera);
+    this.cameraChunk = camera.position.map((v) => Math.floor(v / CHUNK_SIZE)) as ChunkCoord;
+    this.wantedChunks = [];
     this.wanted = [];
     this.due = [];
     this.remeshed = [];
@@ -269,6 +299,7 @@ export class LodSystem {
 
     this.schedule(frustum);
     this.sendRequests(nowMs);
+    this.sendChunkRequests(nowMs);
     this.evict();
     this.stats = this.computeStats(nowMs);
   }
@@ -304,8 +335,11 @@ export class LodSystem {
       return;
     }
     if (node.coord[0] === 1) {
-      // Level 0 is the streamed chunks: all 8 must be drawable.
-      if (this.covered.has(node.id) && (!ready || this.refine(node, frustum))) {
+      // Level 0 is the streamed chunks: all 8 must be drawable. Those the view does not stream are
+      // asked for; the section stays drawn until they arrive (no wait once they have).
+      const refine = ready && this.refine(node, frustum);
+      if (refine) this.wantChunks(node, frustum);
+      if ((this.covered.has(node.id) && (!ready || refine)) || (refine && this.allDrawable(node))) {
         selection.chunks.push(node.coord);
         this.refined.add(node.id);
       } else if (ready) {
@@ -413,8 +447,78 @@ export class LodSystem {
    * popping in. Where the camera looks only decides what loads first (schedule).
    */
   private refine(node: Node, frustum: Frustum): boolean {
-    const d = Math.max(1, frustum.distance(node.lo, node.hi));
+    const d = Math.max(1, this.distance(node.lo, node.hi, frustum));
     return (cellSize(node.coord[0]) / d) * frustum.pixelsPerRadian > this.options.pixelError;
+  }
+
+  /** Distance to a box from the camera, or from where it is heading if that is nearer. */
+  private distance(lo: Vec3, hi: Vec3, frustum: Frustum): number {
+    const d = frustum.distance(lo, hi);
+    return this.ahead ? Math.min(d, boxDistance(this.ahead, lo, hi)) : d;
+  }
+
+  private loaded(c: ChunkCoord): boolean {
+    return this.chunks.isLoaded ? this.chunks.isLoaded(c) : this.chunks.drawable(c);
+  }
+
+  private allDrawable(node: Node): boolean {
+    for (let o = 0; o < 8; o++) {
+      if (!this.chunks.drawable(chunkOfLod(lodChild(node.coord, o)))) return false;
+    }
+    return true;
+  }
+
+  /** The chunks of a refined level-1 section, to ask the server for (see sendChunkRequests). */
+  private wantChunks(node: Node, frustum: Frustum): void {
+    if (!this.options.requestChunks || this.fullMode) return;
+    for (let o = 0; o < 8; o++) {
+      const c = chunkOfLod(lodChild(node.coord, o));
+      const dx = c[0] - this.cameraChunk[0];
+      const dy = c[1] - this.cameraChunk[1];
+      const dz = c[2] - this.cameraChunk[2];
+      const r = CHUNK_REQUEST_RADIUS;
+      if (dx * dx + dy * dy + dz * dz > r * r + r) continue;
+      if (this.chunkAsked.has(chunkKey(c))) continue;
+      const lo: Vec3 = [c[0] * CHUNK_SIZE, c[1] * CHUNK_SIZE, c[2] * CHUNK_SIZE];
+      const hi: Vec3 = [lo[0] + CHUNK_SIZE, lo[1] + CHUNK_SIZE, lo[2] + CHUNK_SIZE];
+      this.wantedChunks.push({ coord: c, d: this.distance(lo, hi, frustum) });
+    }
+  }
+
+  /**
+   * Asks for the wanted chunks, nearest first, paced under CHUNK_REQUESTS_PER_SECOND. Chunks the
+   * client already holds are asked for once too: the server then keeps them while they are within
+   * its render radius, rather than unloading them when they leave the view.
+   */
+  private sendChunkRequests(nowMs: number): void {
+    const send = this.options.requestChunks;
+    if (!send) return;
+    const rate = this.options.chunkRequestsPerSecond ?? World.chunkRequestsPerSecond - 16;
+    this.chunkCredit =
+      this.lastChunkRequestMs === null
+        ? rate
+        : Math.min(rate, this.chunkCredit + ((nowMs - this.lastChunkRequestMs) / 1000) * rate);
+    this.lastChunkRequestMs = nowMs;
+    // Forget requests whose chunk never came (or has since been unloaded): asked again if wanted.
+    for (const [key, { coord, at }] of this.chunkAsked) {
+      if (nowMs - at > CHUNK_REQUEST_RETRY_MS && !this.loaded(coord)) this.chunkAsked.delete(key);
+    }
+    if (this.wantedChunks.length === 0) return;
+    this.wantedChunks.sort((a, b) => a.d - b.d);
+    let batch: ChunkCoord[] = [];
+    for (const { coord } of this.wantedChunks) {
+      if (this.chunkCredit < 1) break;
+      const key = chunkKey(coord);
+      if (this.chunkAsked.has(key)) continue;
+      this.chunkAsked.set(key, { coord, at: nowMs });
+      this.chunkCredit -= 1;
+      batch.push(coord);
+      if (batch.length === Limits.maxResyncChunks) {
+        send(batch);
+        batch = [];
+      }
+    }
+    if (batch.length > 0) send(batch);
   }
 
   /** Out of view, and not close (a section beside the camera can reach into the view). */
@@ -556,7 +660,7 @@ export class LodSystem {
     // coarse levels before the camera's own ground. A parent always outranks its children.
     const priority = new Map<Node, number>();
     for (const n of wanted) {
-      const d = Math.max(1, frustum.distance(n.lo, n.hi));
+      const d = Math.max(1, this.distance(n.lo, n.hi, frustum));
       // What the view shows now goes first; the ring around it is loaded behind.
       const scale = this.offView(n, frustum, d) ? OFF_VIEW_PRIORITY : 1;
       priority.set(n, (cellSize(n.coord[0]) / d) * scale);
@@ -766,4 +870,27 @@ export function formatLodStats(s: LodStats): string {
     `LOD jobs gen ${String(s.generating)} mesh ${String(s.meshing)} ask ${String(s.asking)} · ` +
       `cache ${(s.cacheBytes / 1048576).toFixed(1)} MB · ${(s.bytesPerSecond / 1024).toFixed(1)} KB/s`,
   ].join('\n');
+}
+
+const chunkKey = (c: ChunkCoord): string => `${String(c[0])},${String(c[1])},${String(c[2])}`;
+
+/** Where the camera will be LOOKAHEAD_S from now (at most MAX_LOOKAHEAD_M away), if it moves. */
+export function lookahead(camera: LodCamera): Vec3 | null {
+  const v = camera.velocity;
+  if (!v) return null;
+  const speed = Math.hypot(v[0], v[1], v[2]);
+  if (speed < 0.5) return null;
+  const t = Math.min(LOOKAHEAD_S, MAX_LOOKAHEAD_M / speed);
+  const p = camera.position;
+  return [p[0] + v[0] * t, p[1] + v[1] * t, p[2] + v[2] * t];
+}
+
+function boxDistance(p: Vec3, lo: Vec3, hi: Vec3): number {
+  let d = 0;
+  for (let a = 0; a < 3; a++) {
+    const v = p[a] ?? 0;
+    const e = v < (lo[a] ?? 0) ? (lo[a] ?? 0) - v : v > (hi[a] ?? 0) ? v - (hi[a] ?? 0) : 0;
+    d += e * e;
+  }
+  return Math.sqrt(d);
 }

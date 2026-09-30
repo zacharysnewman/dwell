@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 7,
+  "protocolVersion": 8,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -25,6 +25,8 @@
     "worldRadius": 8192000,
     "positionFixedScale": 256,
     "viewRadiusChunks": 3,
+    "renderRadiusChunks": 12,
+    "chunkRequestsPerSecond": 256,
     "unloadMarginChunks": 1,
     "chunkBytesPerSecond": 1048576,
     "maxChunksPerTick": 32,
@@ -84,7 +86,8 @@
     "LodIndex": 19,
     "LodIndexUpdate": 20,
     "LodData": 21,
-    "LodRequest": 76
+    "LodRequest": 76,
+    "ChunkRequest": 77
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
