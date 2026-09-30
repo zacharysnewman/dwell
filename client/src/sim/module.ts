@@ -1,4 +1,5 @@
 import type { DwellFiles } from '../local/worldFiles';
+import { versionedLocateFile, wasmUrl } from './wasmUrl';
 
 // The Emscripten build of the sim core (server/wasm/wasm_api.cpp): one ES-module factory, one
 // instance per use (the local-mode server in its worker; the client sim on the main thread).
@@ -77,17 +78,23 @@ export interface DwellCoreModule {
 }
 
 /** Module options: `dwellFiles` gives the local server its world file (local/worldFiles.ts). */
-export type DwellCoreFactory = (options?: { dwellFiles?: DwellFiles }) => Promise<DwellCoreModule>;
+export type DwellCoreFactory = (options?: {
+  dwellFiles?: DwellFiles;
+  locateFile?: (path: string, prefix: string) => string;
+}) => Promise<DwellCoreModule>;
 
-/** URL of the WASM core's JS loader, served from `public/wasm` at the site base. */
+/** URL of the WASM core's JS loader, served from `public/wasm` at the site base (versioned). */
 export function dwellCoreUrl(): string {
-  return `${import.meta.env.BASE_URL}wasm/dwell_core.js`;
+  return wasmUrl('dwell_core.js');
 }
 
-/** Loads the core's factory (browser; tests import the file directly). */
+/**
+ * Loads the core's factory (browser; tests import the file directly). Its .wasm is fetched with
+ * the same build version as the loader (sim/wasmUrl.ts).
+ */
 export async function importDwellCore(): Promise<DwellCoreFactory> {
   const mod = (await import(/* @vite-ignore */ dwellCoreUrl())) as { default: DwellCoreFactory };
-  return mod.default;
+  return (options = {}) => mod.default({ locateFile: versionedLocateFile(), ...options });
 }
 
 /** Runs `fn` with `bytes` copied into the module's heap. */

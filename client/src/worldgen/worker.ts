@@ -3,6 +3,7 @@
 // as a transferred buffer.
 import { ChunkGenerator, dwellWorldgenUrl, type DwellWorldgenFactory } from './generator';
 import type { FromWorldgen, ToWorldgen } from './messages';
+import { versionedLocateFile } from '../sim/wasmUrl';
 
 interface WorkerScope {
   postMessage(message: FromWorldgen, transfer?: Transferable[]): void;
@@ -37,7 +38,10 @@ async function init(generatorVersion: number, worldSeed: bigint): Promise<void> 
     const mod = (await import(/* @vite-ignore */ dwellWorldgenUrl())) as {
       default: DwellWorldgenFactory;
     };
-    generator = await ChunkGenerator.load(mod.default, generatorVersion, worldSeed);
+    // Its .wasm with the same build version as the loader (sim/wasmUrl.ts).
+    const factory: DwellWorldgenFactory = (options = {}) =>
+      mod.default({ locateFile: versionedLocateFile(), ...options });
+    generator = await ChunkGenerator.load(factory, generatorVersion, worldSeed);
   } catch (err) {
     scope.postMessage({
       t: 'error',
