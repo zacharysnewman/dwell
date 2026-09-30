@@ -82,7 +82,7 @@ TEST_SUITE("player: flight") {
     CHECK(w.Feet(e) >= cfg.fly.ceiling - 4.0f);
   }
 
-  TEST_CASE("the speed slider's level sets a floor under the height-based speed") {
+  TEST_CASE("the speed slider's level is a true minimum speed") {
     const auto cfg = player::DefaultConfig();
     CHECK(player::FlySpeedFactor(0) == 1.0f);
     CHECK(player::FlySpeedFactor(1) == std::sqrt(2.0f));
@@ -112,9 +112,12 @@ TEST_SUITE("player: flight") {
     CHECK(speed_at(20000, 30) == doctest::Approx(cfg.fly.speed * 32768.0f).epsilon(0.05));
     // Near the ground a low level helps: level 8 is 11 m/s × 16 = 176 m/s.
     CHECK(speed_at(4, 8) == doctest::Approx(cfg.fly.speed * 16.0f).epsilon(0.05));
-    // In the terrain band the cap still holds, whatever the level.
-    CHECK(speed_at(100, protocol::kFlySpeedMaxLevel) ==
-          doctest::Approx(cfg.fly.terrain_speed).epsilon(0.02));
+    // The terrain band's cap limits only the height-based speed: the level's minimum holds there
+    // too (level 20 is 11 m/s × 1024, well over the cap)...
+    CHECK(speed_at(100, 20) == doctest::Approx(cfg.fly.speed * 1024.0f).epsilon(0.05));
+    CHECK(speed_at(3000, 20) == doctest::Approx(cfg.fly.speed * 1024.0f).epsilon(0.05));
+    // ...while a level under the cap leaves the capped height-based speed as it was.
+    CHECK(speed_at(3000, 8) == doctest::Approx(cfg.fly.terrain_speed).epsilon(0.02));
   }
 
   TEST_CASE("the speed level travels in the input's buttons and is capped") {
