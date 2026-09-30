@@ -88,7 +88,7 @@ test('local mode streams terrain: Generated chunks, or every chunk explicitly on
   page,
 }) => {
   test.setTimeout(90_000);
-  for (const query of ['./', './?chunks=full']) {
+  for (const query of ['./?local=1', './?local=1&chunks=full']) {
     await page.goto(query);
     await waitActive(page);
     // The whole view arrives (about 110 chunks), and meshes follow.
