@@ -10,6 +10,9 @@ export const DEFAULT_HEARTBEAT_S = 30;
 export const MAX_LAN_ADDRESSES = 8;
 export const MAX_NAME = 64;
 export const MAX_MOTD = 256;
+/** Tags a server may report (5e), each 1–24 of `a-z`, `0-9` and `-`. */
+export const MAX_TAGS = 8;
+export const MAX_TAG = 24;
 
 export type ServerVisibility = 'public' | 'unlisted';
 
@@ -30,6 +33,8 @@ export interface ServerReport {
   maxPlayers: number;
   protocol: number;
   visibility: ServerVisibility;
+  /** Lower-case tags for the lobby list's search (5e). */
+  tags: string[];
   heartbeatS: number;
 }
 
@@ -87,6 +92,16 @@ export function parseServerReport(body: Record<string, unknown>): ServerReport |
       if (ip && !lan.includes(ip)) lan.push(ip);
     }
   }
+  const tags: string[] = [];
+  if (Array.isArray(body.tags)) {
+    for (const t of body.tags) {
+      const tag = typeof t === 'string' ? t.trim().toLowerCase() : '';
+      if (new RegExp(`^[a-z0-9-]{1,${String(MAX_TAG)}}$`).test(tag) && !tags.includes(tag)) {
+        tags.push(tag);
+      }
+      if (tags.length === MAX_TAGS) break;
+    }
+  }
   const visibility = body.visibility === 'public' ? 'public' : 'unlisted';
   const heartbeat =
     typeof body.heartbeatS === 'number' && Number.isFinite(body.heartbeatS)
@@ -105,6 +120,7 @@ export function parseServerReport(body: Record<string, unknown>): ServerReport |
     maxPlayers: count(body.maxPlayers, 65535),
     protocol: count(body.protocol, 65535),
     visibility,
+    tags,
     heartbeatS: Math.max(MIN_HEARTBEAT_S, Math.min(MAX_HEARTBEAT_S, heartbeat)),
   };
 }
@@ -129,4 +145,73 @@ export function parseAddress(input: string): TypedAddress | null {
   const host = hostName(m[1]);
   const p = m[2] === undefined ? null : port(Number(m[2]));
   return host && (m[2] === undefined || p !== null) ? { host, port: p } : null;
+}
+
+// --- the lobby list (5e) ---------------------------------------------------------------------
+
+/** Most entries a lobby-list query answers with. */
+export const MAX_LIST = 100;
+
+/** A lobby-list query (`GET /v1/servers?…`): search text and filters. */
+export interface ListQuery {
+  /** Words that must each appear in the name, MOTD or tags (case-insensitive). */
+  words: string[];
+  /** A tag the entry must have. */
+  tag: string | null;
+  /** Only entries running this protocol version (compatible with the player's client). */
+  protocol: number | null;
+  /** Only entries with room for another player. */
+  notFull: boolean;
+  /** Only entries with someone playing. */
+  hasPlayers: boolean;
+  /** Unverified servers ("new") instead of verified servers and friend worlds. */
+  fresh: boolean;
+  limit: number;
+}
+
+/** A lobby-list query from the URL's parameters (unknown or malformed ones are ignored). */
+export function parseListQuery(params: URLSearchParams): ListQuery {
+  const q = (params.get('q') ?? '').toLowerCase().slice(0, 100);
+  const tag = (params.get('tag') ?? '').trim().toLowerCase();
+  const protocol = Number(params.get('protocol') ?? 'NaN');
+  const limit = Number(params.get('limit') ?? 'NaN');
+  const flag = (name: string) => params.get(name) === '1' || params.get(name) === 'true';
+  return {
+    words: q.split(/\s+/).filter((w) => w !== ''),
+    tag: tag === '' ? null : tag,
+    protocol: Number.isInteger(protocol) && protocol >= 0 ? protocol : null,
+    notFull: flag('notFull'),
+    hasPlayers: flag('hasPlayers'),
+    fresh: flag('new'),
+    limit: Number.isInteger(limit) && limit >= 1 ? Math.min(limit, MAX_LIST) : MAX_LIST,
+  };
+}
+
+/** What a listed entry offers to the query. */
+export interface Listable {
+  name: string;
+  motd: string;
+  tags: string[];
+  players: number;
+  maxPlayers: number;
+  protocol: number | null;
+}
+
+/** Whether an entry matches a query's search words and filters (not `fresh`: the caller's). */
+export function matchesQuery(entry: Listable, query: ListQuery): boolean {
+  const haystack = [entry.name, entry.motd, ...entry.tags].join('\n').toLowerCase();
+  if (!query.words.every((w) => haystack.includes(w))) return false;
+  if (query.tag !== null && !entry.tags.includes(query.tag)) return false;
+  if (query.protocol !== null && entry.protocol !== query.protocol) return false;
+  if (query.notFull && entry.players >= entry.maxPlayers) return false;
+  if (query.hasPlayers && entry.players === 0) return false;
+  return true;
+}
+
+/** Most players first, then by name: the lobby list's order. */
+export function byPlayersThenName(
+  a: Pick<Listable, 'players' | 'name'>,
+  b: Pick<Listable, 'players' | 'name'>,
+): number {
+  return b.players - a.players || a.name.localeCompare(b.name);
 }

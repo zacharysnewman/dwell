@@ -3,7 +3,10 @@
 // shows the join code, an invite link to copy, a QR code for phones, the guests connected, and
 // Stop hosting.
 import qrcode from 'qrcode-generator';
-import { HostPolicy, maxGuestsFor, type HostSettings } from '../net/hosting';
+import { HostPolicy, maxGuestsFor, type HostSettings, type HostVisibility } from '../net/hosting';
+
+/** The visibility choices' values, in the dialog's order. */
+const VISIBILITIES: readonly HostVisibility[] = ['code', 'network', 'public'];
 
 export interface Hosted {
   /** The code as shown ("KQ7-XM4"), and the link that joins by it. */
@@ -128,6 +131,7 @@ export class HostPanel {
       [
         { value: 0, label: 'Code only' },
         { value: 1, label: 'Code + same network' },
+        { value: 2, label: 'Public (server list)' },
       ],
       1,
     );
@@ -142,7 +146,7 @@ export class HostPanel {
         maxGuests: Number(guests.value),
         edits: Number(edits.value) as HostPolicy,
         flight: Number(flight.value) as HostPolicy,
-        visibility: visibility.value === '1' ? 'network' : 'code',
+        visibility: VISIBILITIES[Number(visibility.value)] ?? 'code',
         name: this.deps.worldName,
       };
       this.deps.start(settings).then(

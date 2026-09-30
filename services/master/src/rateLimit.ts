@@ -14,6 +14,9 @@ export interface BucketSpec {
  */
 export const JOIN_LIMIT: BucketSpec = { burst: 20, perSecond: 0.5 };
 
+/** Lobby-list queries per IP (unsigned): a page load and some searching. */
+export const LIST_LIMIT: BucketSpec = { burst: 30, perSecond: 1 };
+
 /** Limits for signed requests: a burst of 30, then 1 per second, per key and per IP. */
 export const SIGNED_LIMITS: { key: BucketSpec; ip: BucketSpec } = {
   key: { burst: 30, perSecond: 1 },

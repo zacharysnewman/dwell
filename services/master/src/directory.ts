@@ -1,12 +1,19 @@
 // The Directory Durable Object (ARCHITECTURE.md §10.3, ADR 0013): one instance ("global") holding
 // the master's shared state: its SQLite schema (with migrations), the rate limits of signed
 // requests (5b), and the registered dedicated servers with their stable join codes and the friend
-// worlds shown to their own network (5d). Join receipts (5e) come as a later migration.
+// worlds shown to their own network (5d), and the lobby list's public friend worlds and join
+// receipts (5e).
 import { DurableObject } from 'cloudflare:workers';
 import { formatCode, newCode } from './codes';
 import type { Env } from './env';
-import { JOIN_LIMIT, RateLimiter, SIGNED_LIMITS } from './rateLimit';
-import type { ServerReport } from './servers';
+import { JOIN_LIMIT, LIST_LIMIT, RateLimiter, SIGNED_LIMITS } from './rateLimit';
+import {
+  byPlayersThenName,
+  matchesQuery,
+  MAX_LIST,
+  type ListQuery,
+  type ServerReport,
+} from './servers';
 
 /** Schema migrations, applied in order; the index + 1 is the schema version. */
 export const MIGRATIONS: readonly string[] = [
@@ -22,7 +29,24 @@ export const MIGRATIONS: readonly string[] = [
   `CREATE TABLE nearby_rooms (code TEXT PRIMARY KEY, public_ip TEXT NOT NULL, name TEXT NOT NULL,
      created INTEGER NOT NULL)`,
   `CREATE INDEX nearby_rooms_public_ip ON nearby_rooms (public_ip)`,
+  // 5e: friend worlds listed to their network or, when public, in the lobby list too.
+  `ALTER TABLE nearby_rooms RENAME TO listed_rooms`,
+  `ALTER TABLE listed_rooms ADD COLUMN public INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE listed_rooms ADD COLUMN protocol INTEGER`,
+  // 5e: a player's latest join of a server through the master (resolving its code), which
+  // entitles it to post one receipt for that server.
+  `CREATE TABLE resolutions (player_key TEXT NOT NULL, server_key TEXT NOT NULL,
+     at INTEGER NOT NULL, PRIMARY KEY (player_key, server_key))`,
+  // 5e: join receipts — a player says it joined a server; distinct recent ones verify it.
+  `CREATE TABLE receipts (server_key TEXT NOT NULL, player_key TEXT NOT NULL,
+     at INTEGER NOT NULL, PRIMARY KEY (server_key, player_key))`,
 ];
+
+/** A public server is verified once this many distinct players joined it within the window. */
+export const VERIFIED_PLAYERS = 2;
+export const RECEIPT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** A receipt counts only this soon after the player resolved the server's code or address. */
+export const RECEIPT_AFTER_RESOLVE_MS = 10 * 60 * 1000;
 
 /** A registered server as players see it: how to reach it, and what it is. */
 export interface ServerEntry {
@@ -39,6 +63,20 @@ export interface ServerEntry {
   cert: string;
   rtcPort: number | null;
   ice: string | null;
+  tags: string[];
+}
+
+/** A public server in the lobby list: verified once distinct players have joined it (5e). */
+export interface ListedServer extends ServerEntry {
+  verified: boolean;
+}
+
+/** A public friend world in the lobby list, before its room adds the player count. */
+export interface ListedRoom {
+  code: string;
+  display: string;
+  name: string;
+  protocol: number | null;
 }
 
 export interface NearbyRoom {
@@ -99,6 +137,12 @@ export class Directory extends DurableObject<Env> {
   admitJoin(ip: string, now: number): Admission {
     if (this.limits.take(`j:${ip}`, JOIN_LIMIT, now)) return { ok: true };
     return { ok: false, retryAfterS: Math.ceil(1 / JOIN_LIMIT.perSecond) };
+  }
+
+  /** Admits a lobby-list query from `ip` (LIST_LIMIT), or says how long to wait. */
+  admitList(ip: string, now: number): Admission {
+    if (this.limits.take(`l:${ip}`, LIST_LIMIT, now)) return { ok: true };
+    return { ok: false, retryAfterS: Math.ceil(1 / LIST_LIMIT.perSecond) };
   }
 
   // --- dedicated servers (5d) ----------------------------------------------------------------
@@ -219,14 +263,26 @@ export class Directory extends DurableObject<Env> {
       .map((row) => entry(row, this.codeOf(row.key), requesterIp));
   }
 
-  /** Lists a friend world to its host's network ("code + same network" visibility). */
-  addNearbyRoom(code: string, publicIp: string, name: string, now: number): void {
+  /**
+   * Lists a friend world to its host's network ("code + same network" visibility) and, when
+   * public, in the lobby list too.
+   */
+  addListedRoom(
+    code: string,
+    publicIp: string,
+    name: string,
+    listing: { public: boolean; protocol: number | null },
+    now: number,
+  ): void {
     this.ctx.storage.sql.exec(
-      `INSERT OR REPLACE INTO nearby_rooms (code, public_ip, name, created) VALUES (?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO listed_rooms (code, public_ip, name, created, public, protocol)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       code,
       publicIp,
       name,
       now,
+      listing.public ? 1 : 0,
+      listing.protocol,
     );
   }
 
@@ -234,7 +290,7 @@ export class Directory extends DurableObject<Env> {
   nearbyRooms(requesterIp: string, now: number): NearbyRoom[] {
     return this.ctx.storage.sql
       .exec<{ code: string; name: string }>(
-        `SELECT code, name FROM nearby_rooms WHERE public_ip = ? AND created > ? ORDER BY created`,
+        `SELECT code, name FROM listed_rooms WHERE public_ip = ? AND created > ? ORDER BY created`,
         requesterIp,
         now - NEARBY_ROOM_MAX_MS,
       )
@@ -242,8 +298,116 @@ export class Directory extends DurableObject<Env> {
       .map((r) => ({ code: r.code, display: formatCode(r.code), name: r.name }));
   }
 
-  removeNearbyRoom(code: string): void {
-    this.ctx.storage.sql.exec(`DELETE FROM nearby_rooms WHERE code = ?`, code);
+  /** Public friend worlds (the caller checks each room is still open and counts its players). */
+  publicRooms(now: number): ListedRoom[] {
+    return this.ctx.storage.sql
+      .exec<{ code: string; name: string; protocol: number | null }>(
+        `SELECT code, name, protocol FROM listed_rooms WHERE public = 1 AND created > ?
+         ORDER BY created LIMIT ?`,
+        now - NEARBY_ROOM_MAX_MS,
+        MAX_LIST * 2,
+      )
+      .toArray()
+      .map((r) => ({
+        code: r.code,
+        display: formatCode(r.code),
+        name: r.name,
+        protocol: r.protocol,
+      }));
+  }
+
+  removeListedRoom(code: string): void {
+    this.ctx.storage.sql.exec(`DELETE FROM listed_rooms WHERE code = ?`, code);
+  }
+
+  // --- the lobby list (5e) -------------------------------------------------------------------
+
+  /**
+   * Public servers matching the query, as seen from `requesterIp`: verified ones, or with
+   * `query.fresh` the unverified ("new") ones.
+   */
+  listServers(query: ListQuery, requesterIp: string, now: number): ListedServer[] {
+    const sql = this.ctx.storage.sql;
+    const verified = new Set(
+      sql
+        .exec<{ server_key: string }>(
+          `SELECT server_key FROM receipts WHERE at > ? GROUP BY server_key HAVING COUNT(*) >= ?`,
+          now - RECEIPT_WINDOW_MS,
+          VERIFIED_PLAYERS,
+        )
+        .toArray()
+        .map((r) => r.server_key),
+    );
+    const listed: ListedServer[] = [];
+    for (const row of sql
+      .exec<ServerRow>(`SELECT * FROM servers WHERE expires > ?`, now)
+      .toArray()) {
+      const report = JSON.parse(row.report) as ServerReport;
+      if (report.visibility !== 'public') continue;
+      const isVerified = verified.has(row.key);
+      if (isVerified === query.fresh) continue;
+      const e = entry(row, this.codeOf(row.key), requesterIp);
+      if (!matchesQuery(e, query)) continue;
+      listed.push({ ...e, verified: isVerified });
+    }
+    return listed.sort(byPlayersThenName).slice(0, query.limit);
+  }
+
+  /** A player resolved a server's code or address: it may post a receipt for it soon. */
+  noteResolution(playerKey: string, serverCode: string, now: number): void {
+    const sql = this.ctx.storage.sql;
+    const server = sql
+      .exec<{ key: string }>(`SELECT key FROM server_codes WHERE code = ?`, serverCode)
+      .toArray()[0];
+    if (!server || server.key === playerKey) return;
+    sql.exec(`DELETE FROM resolutions WHERE at <= ?`, now - RECEIPT_AFTER_RESOLVE_MS);
+    sql.exec(
+      `INSERT OR REPLACE INTO resolutions (player_key, server_key, at) VALUES (?, ?, ?)`,
+      playerKey,
+      server.key,
+      now,
+    );
+  }
+
+  /**
+   * A player's receipt for joining the server with this code (ADR 0013: player-attested
+   * reachability). Counted only after the player resolved that server through the master; one
+   * per player and server (a later one refreshes it). Answers whether the server is now verified.
+   */
+  addReceipt(
+    playerKey: string,
+    serverCode: string,
+    now: number,
+  ): { ok: true; verified: boolean } | { ok: false } {
+    const sql = this.ctx.storage.sql;
+    const server = sql
+      .exec<{ key: string }>(`SELECT key FROM server_codes WHERE code = ?`, serverCode)
+      .toArray()[0];
+    if (!server) return { ok: false };
+    const resolved = sql
+      .exec(
+        `DELETE FROM resolutions WHERE player_key = ? AND server_key = ? AND at > ? RETURNING 1`,
+        playerKey,
+        server.key,
+        now - RECEIPT_AFTER_RESOLVE_MS,
+      )
+      .toArray();
+    if (resolved.length === 0) return { ok: false };
+    sql.exec(`DELETE FROM receipts WHERE at <= ?`, now - RECEIPT_WINDOW_MS);
+    sql.exec(
+      `INSERT OR REPLACE INTO receipts (server_key, player_key, at) VALUES (?, ?, ?)`,
+      server.key,
+      playerKey,
+      now,
+    );
+    const count = sql
+      .exec<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM receipts WHERE server_key = ? AND at > ?`,
+        server.key,
+        now - RECEIPT_WINDOW_MS,
+      )
+      .one().n;
+    return { ok: true, verified: count >= VERIFIED_PLAYERS };
   }
 
   private codeOf(key: string): string {
@@ -258,12 +422,17 @@ export class Directory extends DurableObject<Env> {
     if (current === null || current > at) await this.ctx.storage.setAlarm(at);
   }
 
-  /** Deletes expired server records and old room listings; runs again while servers remain. */
+  /**
+   * Deletes expired server records, old room listings, receipts and resolutions; runs again
+   * while servers remain.
+   */
   override async alarm(): Promise<void> {
     const now = Date.now();
     const sql = this.ctx.storage.sql;
     sql.exec(`DELETE FROM servers WHERE expires <= ?`, now);
-    sql.exec(`DELETE FROM nearby_rooms WHERE created <= ?`, now - NEARBY_ROOM_MAX_MS);
+    sql.exec(`DELETE FROM listed_rooms WHERE created <= ?`, now - NEARBY_ROOM_MAX_MS);
+    sql.exec(`DELETE FROM receipts WHERE at <= ?`, now - RECEIPT_WINDOW_MS);
+    sql.exec(`DELETE FROM resolutions WHERE at <= ?`, now - RECEIPT_AFTER_RESOLVE_MS);
     const next = sql
       .exec<{ next: number | null }>(`SELECT MIN(expires) AS next FROM servers`)
       .one().next;
@@ -297,5 +466,6 @@ function entry(row: ServerRow, code: string, requesterIp: string): ServerEntry {
     cert: r.cert,
     rtcPort: r.rtcPort,
     ice: r.ice,
+    tags: Array.isArray(r.tags) ? r.tags : [], // reports from before 5e have none
   };
 }

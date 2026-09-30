@@ -213,6 +213,20 @@ export class Room extends DurableObject<Env> {
     await this.ctx.storage.deleteAll();
   }
 
+  /**
+   * The room as the lobby list shows it (5e): closed, waiting for its host to connect, or open
+   * with the host and connected guests as its players.
+   */
+  async listing(): Promise<
+    { state: 'closed' | 'waiting' } | { state: 'open'; players: number; maxPlayers: number }
+  > {
+    const room = await this.state();
+    if (!room || room.closed) return { state: 'closed' };
+    if (!this.host()) return { state: 'waiting' };
+    const guests = this.ctx.getWebSockets().length - this.ctx.getWebSockets('host').length;
+    return { state: 'open', players: 1 + guests, maxPlayers: 1 + room.maxGuests };
+  }
+
   /** Tests: whether a room is open under this name. */
   async isOpen(): Promise<boolean> {
     const room = await this.state();

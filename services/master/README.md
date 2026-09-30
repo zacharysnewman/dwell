@@ -2,18 +2,19 @@
 
 The master server (ARCHITECTURE.md §10.3, ADR 0013): a Cloudflare Worker with SQLite-backed
 Durable Objects, on the Workers Free plan. It carries no game traffic. It holds friend worlds'
-join codes and signaling and hands out TURN credentials (Phase 5c); registered dedicated servers
-and the lobby list follow (Phase 5d–5e).
+join codes and signaling and hands out TURN credentials (Phase 5c), registered dedicated servers
+(Phase 5d), and the lobby list with players' join receipts (Phase 5e).
 
-| Path               | What                                                                 |
-| ------------------ | -------------------------------------------------------------------- |
-| `src/index.ts`     | Routes under `/v1/`, CORS, signed-request checks                     |
-| `src/auth.ts`      | Ed25519 request signatures (the format is in the file's header)      |
-| `src/directory.ts` | `Directory` Durable Object: schema migrations, rate limits           |
-| `src/room.ts`      | `Room` Durable Object: one per friend world, named by its join code  |
-| `src/codes.ts`     | Join codes: alphabet, parsing, display                               |
-| `src/turn.ts`      | ICE servers from Cloudflare's TURN service (STUN without a key)      |
-| `wrangler.jsonc`   | Worker, bindings, Durable Object migrations, allowed browser origins |
+| Path               | What                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| `src/index.ts`     | Routes under `/v1/`, CORS, signed-request checks                                             |
+| `src/auth.ts`      | Ed25519 request signatures (the format is in the file's header)                              |
+| `src/directory.ts` | `Directory` Durable Object: schema migrations, rate limits, servers, listed worlds, receipts |
+| `src/servers.ts`   | Server reports, typed addresses, lobby-list queries                                          |
+| `src/room.ts`      | `Room` Durable Object: one per friend world, named by its join code                          |
+| `src/codes.ts`     | Join codes: alphabet, parsing, display                                                       |
+| `src/turn.ts`      | ICE servers from Cloudflare's TURN service (STUN without a key)                              |
+| `wrangler.jsonc`   | Worker, bindings, Durable Object migrations, allowed browser origins                         |
 
 API so far (details in ARCHITECTURE.md §10.3):
 
@@ -25,6 +26,11 @@ API so far (details in ARCHITECTURE.md §10.3):
   `409 full`.
 - `GET /v1/rooms/<code>/ws?token=…`: the room's signaling WebSocket, for the host or a guest.
 - `POST /v1/turn` (signed) → `{ iceServers }`.
+- `POST /v1/servers` (signed by a server key) registers or heartbeats a dedicated server;
+  `POST /v1/servers/leave`; `POST /v1/resolve { code | address }`; `POST /v1/nearby` (5d).
+- `GET /v1/servers?q=&tag=&protocol=&notFull=1&hasPlayers=1&new=1` → `{ servers, worlds }`: the
+  lobby list (unsigned, limited per IP); `POST /v1/receipts { code }` (signed): a player joined
+  that server after resolving it (5e).
 
 ## Develop
 

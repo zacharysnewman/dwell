@@ -2,7 +2,8 @@
 // requests with the device key (§10.4). The message format matches the Worker's
 // (services/master/src/auth.ts); shared/master/vectors.json pins it for both. Friend worlds (5c) use
 // its rooms (join codes and signaling) and TURN credentials; dedicated servers (5d) are found by
-// code or typed address, and listed to players on their own network.
+// code or typed address, and listed to players on their own network; public ones, and public
+// friend worlds, are in the lobby list (5e), and players confirm their joins with receipts.
 import type { DeviceKey } from '../identity/deviceKey';
 
 export const SIGNATURE_CONTEXT = 'dwell-master-v1';
@@ -81,6 +82,56 @@ export interface ServerEntry {
   cert: string;
   rtcPort: number | null;
   ice: string | null;
+  /** Lobby-list tags (5e; absent from older masters). */
+  tags?: string[];
+}
+
+/** A public server in the lobby list: verified once distinct players have joined it (5e). */
+export interface ListedServer extends ServerEntry {
+  verified: boolean;
+}
+
+/** A public friend world in the lobby list (players include the host). */
+export interface ListedWorld {
+  code: string;
+  display: string;
+  name: string;
+  players: number;
+  maxPlayers: number;
+  /** The host's protocol version, when it said. */
+  protocol: number | null;
+}
+
+/** The lobby list: verified public servers and public friend worlds, or the "new" servers. */
+export interface Lobby {
+  servers: ListedServer[];
+  worlds: ListedWorld[];
+}
+
+/** A lobby-list search (all optional). */
+export interface LobbyQuery {
+  /** Words to find in names, MOTDs and tags. */
+  q?: string;
+  tag?: string;
+  /** Only servers running this protocol version. */
+  protocol?: number;
+  notFull?: boolean;
+  hasPlayers?: boolean;
+  /** Unverified ("new") servers instead. */
+  fresh?: boolean;
+}
+
+/** The lobby-list query string for a search (`GET /v1/servers?…`). */
+export function lobbyQueryString(query: LobbyQuery): string {
+  const p = new URLSearchParams();
+  if (query.q?.trim()) p.set('q', query.q.trim());
+  if (query.tag) p.set('tag', query.tag);
+  if (query.protocol !== undefined) p.set('protocol', String(query.protocol));
+  if (query.notFull) p.set('notFull', '1');
+  if (query.hasPlayers) p.set('hasPlayers', '1');
+  if (query.fresh) p.set('new', '1');
+  const s = p.toString();
+  return s === '' ? '' : `?${s}`;
 }
 
 /** What a join code or typed address leads to. */
@@ -135,14 +186,16 @@ export class MasterClient {
 
   /**
    * Opens a room for a friend world: its join code, and the host's token for the room socket.
-   * Visibility "network" also lists it (by `name`) to players on the host's network.
+   * Visibility "network" also lists it (by `name`) to players on the host's network; "public"
+   * there and in the lobby list, with the host's protocol version.
    */
   createRoom(
     maxGuests: number,
-    visibility: 'code' | 'network' = 'code',
+    visibility: 'code' | 'network' | 'public' = 'code',
     name = '',
+    protocol?: number,
   ): Promise<{ code: string; display: string; hostToken: string }> {
-    return this.request('POST', '/v1/rooms', { maxGuests, visibility, name });
+    return this.request('POST', '/v1/rooms', { maxGuests, visibility, name, protocol });
   }
 
   /** Asks to join the room with this code: a one-use token for the room socket. */
@@ -168,6 +221,19 @@ export class MasterClient {
   /** Servers and friend worlds on this player's network. */
   nearby(): Promise<Nearby> {
     return this.request('POST', '/v1/nearby', {});
+  }
+
+  /** The lobby list (5e): public servers and friend worlds matching the search. */
+  lobby(query: LobbyQuery = {}): Promise<Lobby> {
+    return this.request('GET', `/v1/servers${lobbyQueryString(query)}`, null);
+  }
+
+  /**
+   * Confirms this player joined the server with this code (after resolving it): the receipts of
+   * distinct players verify a public server (ADR 0013).
+   */
+  receipt(code: string): Promise<{ ok: boolean; verified: boolean }> {
+    return this.request('POST', '/v1/receipts', { code });
   }
 
   /** The room socket's URL for a host or guest token. */

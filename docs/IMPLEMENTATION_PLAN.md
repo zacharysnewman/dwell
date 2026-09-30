@@ -22,7 +22,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37, in review); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e not started | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d) |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) 🔍 in review | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
@@ -836,7 +836,9 @@ master runs at `https://dwell-master.dropkick.workers.dev`. 5c merged (#31) with
 failing on a race in the test itself; fixed in #34 (the same fix also merged with #33). Outstanding: the manual phone
 checks, and the TURN key (manual setup; without it the master hands out STUN only). 5d merged
 (#36): dedicated servers register with the master (join codes, join by address, "On your
-network"); outstanding is its manual phone check. 5e not started.
+network"); outstanding is its manual phone check. 5e (the lobby list, join receipts, the server
+browser) in review (#39); every sub-phase is then built, and what remains of the phase is
+the manual checks and the TURN key.
 
 ### 5a — Main menu & world management (client only)
 
@@ -976,20 +978,24 @@ Exit criteria
 ### 5e — Lobby list
 
 Deliverables
-- [ ] `GET /v1/servers`: public servers and public friend worlds, with search and filter (name,
-  MOTD, tags, player count, compatible version).
-- [ ] **Reachability (player-attested, ADR 0013):** after a successful join through the master,
+- [x] `GET /v1/servers`: public servers and public friend worlds, with search and filter (name,
+  MOTD, tags, player count, compatible version). *(Servers report tags with `--tags`.)*
+- [x] **Reachability (player-attested, ADR 0013):** after a successful join through the master,
   the client posts a signed receipt; a server is shown as verified once receipts from distinct
   player keys arrive within a window. Unverified public servers appear only under a "new"
   filter.
-- [ ] **Server browser** in the client: the list, client-side ping via `StatusRequest` for
+- [x] **Server browser** in the client: the list, client-side ping via `StatusRequest` for
   dedicated servers (friend worlds show players only), incompatible servers marked with the
   handshake's reason.
 
 Exit criteria
-- [ ] E2E: a public native server and a public hosted friend world both appear in the list on a
-  third client, and joining either from the list works.
-- [ ] Master tests: a server without receipts is not listed as verified; one with enough is.
+- [x] E2E: a public native server and a public hosted friend world both appear in the list on a
+  third client, and joining either from the list works. *`e2e/lobby.spec.ts` (#39): passing locally,
+  with the other master and hosting specs (servers, friend, menu); CI on #39.*
+- [x] Master tests: a server without receipts is not listed as verified; one with enough is.
+  *`services/master/test/lobby.test.ts`: also that a receipt needs a prior resolve, one player
+  counts once, unlisted servers are never listed, and friend worlds are listed only while their
+  host is connected.*
 
 ### Manual setup (Cloudflare and GitHub — done by the project owner)
 
@@ -1066,6 +1072,15 @@ These steps need an account owner's dashboard access and cannot be done from cod
   runs with `--no-proxy-server`: a proxy from the environment cannot carry WebTransport.
 - 5d: friend worlds listed to their network are checked against their room when listed (a
   closed room's entry is dropped then), rather than removed by the room itself.
+- 5e: friend worlds need no receipts to be listed: the room knows its host is connected, and TURN
+  reaches it. A receipt counts only after the player resolved that server through the master
+  (within 10 minutes; one receipt per resolve), and a server is verified by 2 distinct players
+  within 7 days. Player keys are free to make, so this keeps unreachable servers out of the
+  default list rather than stopping a determined liar; accounts can weight receipts later.
+- 5e: tags are a launch option (`--tags`), not yet a saved world setting like the name and MOTD.
+- 5e: the browser pings a server by opening a transport for one `StatusRequest` (WebTransport, or
+  WebRTC where that is all there is) and marks other protocol versions with the handshake's own
+  reason text, from the version the server reports, without connecting.
 - 5b: rate limits are in the Directory's memory, not SQLite: an evicted object starts with full
   buckets, which errs on allowing requests (acceptable for abuse limits; revisit if abused).
 - 5b: the master pins Vitest 4 (what `@cloudflare/vitest-pool-workers` supports) while the client

@@ -1,7 +1,8 @@
 // The main menu (ARCHITECTURE.md §2.1, Phase 5a), shown when the page opens without a world or
 // server in its address: the local worlds (create with a seed, play, regenerate, delete) and Join
 // (a join code, a server address or an invite link; servers and friend worlds on this network;
-// recently joined servers). Choosing one navigates to it (ui/launch.ts).
+// recently joined servers), and the server browser (the lobby list, Phase 5e). Choosing one
+// navigates to it (ui/launch.ts).
 import { GENERATORS } from '../local/world';
 import {
   cleanName,
@@ -12,9 +13,11 @@ import {
   type WorldMeta,
   type WorldType,
 } from '../local/worldIndex';
-import type { Nearby } from '../net/master';
+import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
+import { PROTOCOL_VERSION } from '../protocol/constants.gen';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
+import { ServerBrowser } from './serverBrowser';
 
 export interface MainMenuDeps {
   index: WorldIndex;
@@ -32,6 +35,9 @@ export interface MainMenuDeps {
     /** Invite parameters for a server address, or a rejection with a message for the player. */
     resolveAddress(address: string): Promise<Record<string, string>>;
     nearby(): Promise<Nearby>;
+    /** The lobby list (Phase 5e), and a dedicated server's round trip in ms. */
+    lobby(query: LobbyQuery): Promise<Lobby>;
+    ping(server: ListedServer): Promise<number>;
   };
 }
 
@@ -133,6 +139,18 @@ export class MainMenu {
       this.list,
       this.joinSection(),
     );
+    const master = deps.master;
+    if (master) {
+      const browser = new ServerBrowser({
+        lobby: (query) => master.lobby(query),
+        ping: (server) => master.ping(server),
+        go: (route) => {
+          deps.go(route);
+        },
+        protocol: PROTOCOL_VERSION,
+      });
+      panel.append(browser.root);
+    }
     this.root.append(panel);
     parent.append(this.root);
     this.render();
