@@ -1,0 +1,22 @@
+// The master server (ARCHITECTURE.md §10.3, ADR 0013): a Worker with SQLite-backed Durable Objects
+// on the Workers Free plan. `npm run dev` runs it locally; `.github/workflows/master.yml` deploys it.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dwell-master",
+  "main": "src/index.ts",
+  // Keep at or below the workerd bundled with wrangler (package.json).
+  "compatibility_date": "2026-08-15",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "ROOM", "class_name": "Room" },
+    ],
+  },
+  // SQLite-backed classes: the only kind the Workers Free plan offers.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Directory", "Room"] }],
+  "vars": {
+    // Pages that may call the master from a browser (CORS); dwell_server sends no Origin.
+    "ALLOWED_ORIGINS": "https://dropkickarcade.com,http://localhost:5173,http://localhost:4173",
+  },
+}
