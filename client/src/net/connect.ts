@@ -15,7 +15,7 @@ export interface ConnectOptions {
   transport?: TransportPreference;
   /** Simulated latency / jitter / loss (`?netsim=`), for testing prediction. */
   netsim?: NetConditions | null;
-  /** Local mode: the world to generate (`?world=`, `?seed=`). */
+  /** Local mode: the world to open (from the menu, or `?world=`, `?seed=`). */
   localWorld?: LocalWorld;
 }
 
@@ -66,15 +66,21 @@ export async function connectToInvite(
   return session;
 }
 
+/** A joined local world: its session, and a way to save the world now (e.g. before quitting). */
+export interface LocalSession {
+  session: ClientSession;
+  save: () => Promise<boolean>;
+}
+
 /** Starts the integrated server in a worker and joins it (local mode, ARCHITECTURE.md §2.1). */
-export async function connectLocal(options: ConnectOptions): Promise<ClientSession> {
+export async function connectLocal(options: ConnectOptions): Promise<LocalSession> {
   const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
   const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
   const world = options.localWorld ?? { worldSeed: 0, generatorVersion: GENERATORS.terrain };
   const loopback = await LoopbackTransport.start(worker, world);
   // The world saves every few seconds, and at once when the page is hidden or closed (§6.4).
   const save = () => {
-    loopback.save();
+    void loopback.save();
   };
   window.addEventListener('pagehide', save);
   document.addEventListener('visibilitychange', () => {
@@ -83,5 +89,5 @@ export async function connectLocal(options: ConnectOptions): Promise<ClientSessi
   const transport = simulate(loopback, options);
   const session = new ClientSession(transport, key, options);
   session.start();
-  return session;
+  return { session, save: () => loopback.save() };
 }

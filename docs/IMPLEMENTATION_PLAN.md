@@ -22,10 +22,10 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | ⏳ Not started — planned (5a–5e); Cloudflare manual setup outstanding | — |
-| 6 — Voxel awakening | ⏳ Not started | — |
-| 7 — Tiered physics | ⏳ Not started | — |
-| 8 — Sleep / re-bake | ⏳ Not started | — |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) in PR #25; its exit criteria wait on CI's e2e run and a phone check. 5b–5e not started; Cloudflare manual setup outstanding | #25 (5a) |
+| 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
+| 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
+| 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 9 — Dedicated servers & packaging | ⏳ Not started | — |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -816,27 +816,30 @@ TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloud
 §10). This phase takes the web parts of the former hosting phase (now Phase 9) ahead of the
 physics phases (6–8); see *Deviations* below.
 
-**Status:** Not started.
+**Status:** In progress — 5a built (PR #25); its exit criteria are covered by `e2e/menu.spec.ts`
+(to be confirmed by CI) and a manual phone check, both outstanding. 5b–5e not started.
 
 ### 5a — Main menu & world management (client only)
 
 Deliverables
-- [ ] **Main menu** when the page opens with no invite: Play (world list), Join, Settings (the
+- [x] **Main menu** when the page opens with no invite: Play (world list), Join, Settings (the
   existing settings panel). Deep links keep working: `?join=…` goes straight into the game,
   `?local=1` / `?world=` / `?seed=` straight into a local world (so existing e2e tests and shared
   links are unaffected).
-- [ ] **World list** (local worlds in OPFS): name, world type, seed, last played. Worlds get
-  id-based file names (`dwell/worlds/<id>.dwellworld`) and a metadata index in the `dwell`
-  IndexedDB database (`worlds` store); the world file stays the source of truth for seed and
-  generator. Existing `local-g<generator>-s<seed>` files are adopted into the list on first run.
-- [ ] **Create world:** name, seed (blank = random, shown afterwards), type (terrain /
+- [x] **World list** (local worlds in OPFS): name, world type, seed, last played. Worlds get
+  id-based file names (`dwell/worlds/<id>.dwellworld`) and a metadata index in local storage
+  (`dwell.worlds`, `local/worldIndex.ts`); the world file stays the source of truth for seed and
+  generator. Existing `local-g<generator>-s<seed>` files are adopted into the list when the menu
+  opens.
+- [x] **Create world:** name, seed (blank = random, shown afterwards), type (terrain /
   playground / flat). **Delete** (with confirmation). **Regenerate:** recreate from the same seed
   with the current generator version, discarding edits (with confirmation).
-- [ ] **Pause menu** (Esc, or a button on touch screens): Resume, Settings, Host… (5c), Quit to
-  main menu. Quitting saves the world, stops the local worker and releases its OPFS handles, so a
-  world can be reopened (or deleted) without a reload.
-- [ ] **Join screen:** paste an invite link, a join code (5c) or an address (5d); a list of
-  recently joined servers.
+- [x] **Game menu** (the ☰ panel, which opens when the pointer is released with Esc; the ☰
+  button on touch screens): Resume, Quit to main menu, and the settings. Quitting saves the world
+  (waiting for the worker's `saved` reply) and returns to the menu page, which ends the worker and
+  releases its OPFS handles. Host… is added in 5c.
+- [x] **Join screen:** paste an invite link; a list of recently joined servers. (Join codes: 5c;
+  addresses: 5d.)
 
 Exit criteria
 - [ ] E2E (Chromium): open the site → create a world with a given seed → play → quit to the menu
@@ -989,12 +992,22 @@ These steps need an account owner's dashboard access and cannot be done from cod
   are added with Phases 6–8.
 - LAN discovery on the web is "same public IP" through the master (5d); Electron's local-network
   discovery stays in Phase 9.
+- 5a: the world index is kept in local storage rather than an IndexedDB store — it is a few
+  hundred bytes, read synchronously at startup, and cleared together with the worlds' OPFS files.
+- 5a: the menu opens worlds and servers by navigating (`?play=<id>`, or the invite), and Quit
+  returns to the menu page, instead of tearing the game down in place: a page load releases the
+  worker, its OPFS handles and every render resource, a reload continues the same world, and Back
+  returns to the menu. Links (`?join=`, `?local=1`, `?world=`, `?seed=`) open directly as before.
+- 5a: the game menu does not pause the world — the simulation is the (local or remote) server's.
+- 5a: Phases 6–8 were put on hold until Phase 5 is complete (2026-09-30).
 
 ---
 
 ## Phase 6 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
+
+**Status:** On hold until Phase 5 (multiplayer ready) is complete (2026-09-30).
 
 Deliverables
 - [ ] Anchor definition (bedrock layer + `grounded` flag) and budgeted 6-connected flood-fill
@@ -1031,6 +1044,8 @@ Exit criteria
 
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
+**Status:** On hold until Phase 5 (multiplayer ready) is complete (2026-09-30).
+
 Deliverables
 - [ ] Explosion system on the server: radius/force, material strength attenuation, impulse to
   existing Tier 1 bodies, newly awakened clusters, and **players** (knockback + damage via
@@ -1064,6 +1079,8 @@ Exit criteria
 ## Phase 8 — Sleep / Re-bake Cycle
 
 **Goal:** Spec Phase 6. Long-running servers keep a bounded number of dynamic bodies (§7.3).
+
+**Status:** On hold until Phase 5 (multiplayer ready) is complete (2026-09-30).
 
 Deliverables
 - [ ] Sleep monitor with `SLEEP_LINEAR_THRESHOLD`, `SLEEP_ANGULAR_THRESHOLD`, `SLEEP_SECONDS`.

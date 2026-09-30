@@ -23,7 +23,7 @@ test('joins a native server over the WebRTC fallback', async ({ page }) => {
 });
 
 test('runs a local world with no server (GitHub Pages mode)', async ({ page }) => {
-  await page.goto('./');
+  await page.goto('./?local=1');
   await expectJoined(page, 'local');
 });
 

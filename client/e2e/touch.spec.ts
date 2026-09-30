@@ -26,7 +26,7 @@ async function touch(
 }
 
 test('touch controls: stick, look, and jump', async ({ page }) => {
-  await page.goto('./');
+  await page.goto('./?local=1');
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
     .toBe(true);

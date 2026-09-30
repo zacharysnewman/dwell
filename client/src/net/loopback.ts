@@ -14,6 +14,8 @@ export class LoopbackTransport implements Transport {
   readonly binding = new Uint8Array(32);
   private handlers: TransportHandlers | null = null;
   private closed = false;
+  /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
+  private readonly saving: ((ok: boolean) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -52,9 +54,16 @@ export class LoopbackTransport implements Transport {
     if (!this.closed) this.post({ t: 'datagram', session: SESSION, bytes });
   }
 
-  /** Asks the local server to save the world now (§6.4). */
-  save(): void {
-    if (!this.closed) this.post({ t: 'save' });
+  /**
+   * Asks the local server to save the world now (§6.4); resolves with whether the save committed
+   * (false once the transport is closed).
+   */
+  save(): Promise<boolean> {
+    if (this.closed) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      this.saving.push(resolve);
+      this.post({ t: 'save' });
+    });
   }
 
   close(): void {
@@ -69,6 +78,7 @@ export class LoopbackTransport implements Transport {
 
   private finish(message: string): void {
     this.closed = true;
+    for (const resolve of this.saving.splice(0)) resolve(false);
     this.handlers?.onClose({ message });
     this.handlers = null;
   }
@@ -86,6 +96,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'error':
         this.finish(msg.message);
+        break;
+      case 'saved':
+        this.saving.shift()?.(msg.ok);
         break;
       case 'ready':
         break;

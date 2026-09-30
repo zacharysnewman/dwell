@@ -6,6 +6,11 @@ export const GENERATORS = { flat: 0, playground: 1, terrain: 4 } as const;
 export interface LocalWorld {
   worldSeed: number;
   generatorVersion: number;
+  /**
+   * The world file's name in `dwell/worlds/` (without `.dwellworld`); by default the one per
+   * generator and seed that `?world=`/`?seed=` links open (`localWorldName`).
+   */
+  file?: string;
 }
 
 export function parseLocalWorld(search: string): LocalWorld {
