@@ -105,6 +105,9 @@ async function start(worldSeed: number, generatorVersion: number, file?: string)
   // Fixed-step simulation clock (the core accumulates real time into 60 Hz steps).
   let last = performance.now();
   setInterval(() => {
+    if (core) scope.postMessage({ t: 'memory', bytes: core.heapBytes() });
+  }, 1000);
+  setInterval(() => {
     const now = performance.now();
     if (!paused) core?.advance((now - last) / 1000);
     last = now;

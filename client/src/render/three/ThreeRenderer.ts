@@ -21,6 +21,7 @@ import {
   RGBAFormat,
   Scene,
   SRGBColorSpace,
+  Vector2,
   Vector3,
   WebGLRenderer,
   type MeshLambertMaterialParameters,
@@ -43,7 +44,7 @@ import {
 import { setFogUniforms, withHeightFog } from './heightFog';
 import { LodSectionGeometry, releaseOnUpload } from './lodSection';
 import { BatchedTerrain } from './batchedTerrain';
-import { type BatchHandle, MeshBatch } from './meshBatch';
+import { type BatchHandle, geometryBytes, MeshBatch } from './meshBatch';
 
 const SKY = 0x87b5e0;
 /** Near/far depth split (§6.6): LOD beyond it in a far pass, then a depth clear and a near pass. */
@@ -69,6 +70,8 @@ interface LodEntry {
   /** The section's water in the shared batch (lodWater), if it has any. */
   water: BatchHandle | null;
   shown: boolean;
+  /** Bytes of the section's own mesh (not its water, which the batch counts). */
+  bytes: number;
 }
 
 /** Level tints for the debug per-level colouring (?lodcolors=1). */
@@ -175,7 +178,13 @@ export class ThreeRenderer implements Renderer {
     triangles: 0,
     batched: false,
     pixelRatio: 1,
+    meshBytes: 0,
+    screenBytes: 0,
   };
+  /** Bytes of the separate chunk and LOD meshes (the batches count their own). */
+  private separateBytes = 0;
+  private readonly chunkBytes = new Map<string, number>();
+  private readonly drawingBuffer = new Vector2();
   private lodLevelMaterials: MeshLambertMaterial[] | null = null;
   /** The far pass's camera (the main camera is the near pass's). */
   private readonly farCamera = new PerspectiveCamera(VERTICAL_FOV, 1, NEAR_SPLIT, FAR_PLANE);
@@ -283,7 +292,14 @@ export class ThreeRenderer implements Renderer {
   }
 
   stats(): RenderStats {
-    return { ...this.frameStats };
+    this.renderer.getDrawingBufferSize(this.drawingBuffer);
+    const pixels = this.drawingBuffer.x * this.drawingBuffer.y;
+    return {
+      ...this.frameStats,
+      meshBytes: this.separateBytes + this.lodWater.bytes + (this.batch?.bytes ?? 0),
+      // 4× multisampled colour and depth (antialias), then the resolved and displayed images.
+      screenBytes: pixels * (4 * 8 + 8),
+    };
   }
 
   setLodSection(id: number, origin: Vec3, cellSize: number, meshes: SectionMeshes | null): void {
@@ -294,6 +310,7 @@ export class ThreeRenderer implements Renderer {
         this.scene.remove(old.mesh);
       }
       if (old.water) this.lodWater.remove(old.water);
+      this.separateBytes -= old.bytes;
       this.lod.delete(id);
     }
     if (!meshes) {
@@ -304,6 +321,8 @@ export class ThreeRenderer implements Renderer {
     const level = Math.round(Math.log2(cellSize));
     const section = this.batch ? null : LodSectionGeometry.from(meshes);
     let mesh: Mesh | null = null;
+    const bytes = section ? geometryBytes(section.geometry) : 0;
+    this.separateBytes += bytes;
     if (section) {
       mesh = new Mesh(section.geometry, this.lodLevelMaterials?.[level] ?? this.lodMaterial);
       mesh.position.set(...origin);
@@ -314,7 +333,7 @@ export class ThreeRenderer implements Renderer {
     const waterGeometry = flatGeometry(meshes.water);
     const water = waterGeometry ? this.lodWater.add(waterGeometry, origin, cellSize) : null;
     waterGeometry?.dispose();
-    this.lod.set(id, { mesh, section, level, water, shown: false });
+    this.lod.set(id, { mesh, section, level, water, shown: false, bytes });
   }
 
   showLodSections(visible: ReadonlyMap<number, number>): void {
@@ -355,6 +374,8 @@ export class ThreeRenderer implements Renderer {
       this.scene.remove(old);
       this.chunks.delete(key);
       this.chunkCoords.delete(key);
+      this.separateBytes -= this.chunkBytes.get(key) ?? 0;
+      this.chunkBytes.delete(key);
     }
     if (!meshes) return;
     const group = new Group();
@@ -362,6 +383,9 @@ export class ThreeRenderer implements Renderer {
     const opaque = geometryOf(meshes.opaque);
     const water = geometryOf(meshes.transparent);
     if (!opaque && !water) return;
+    const bytes = (opaque ? geometryBytes(opaque) : 0) + (water ? geometryBytes(water) : 0);
+    this.chunkBytes.set(key, bytes);
+    this.separateBytes += bytes;
     if (opaque) group.add(new Mesh(opaque, this.opaqueMaterial));
     if (water) {
       const mesh = new Mesh(water, this.waterMaterial);

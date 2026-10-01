@@ -40,5 +40,19 @@ for (const batched of [false, true]) {
     // Batched: a draw call per batch and pass (chunks, chunk water, LOD, LOD water, the outline).
     if (batched) expect(stats.calls).toBeLessThanOrEqual(12);
     else expect(stats.calls).toBeGreaterThan(20);
+    // The memory report (F3): the local world's server core, the client's, the workers', the GPU.
+    const memory = await page.evaluate<{
+      coreBytes: number;
+      serverBytes: number | null;
+      worldgenBytes: number[];
+      meshBytes: number;
+      screenBytes: number;
+    } | null>('globalThis.__dwell?.memory()');
+    expect(memory?.coreBytes).toBeGreaterThan(0);
+    expect(memory?.serverBytes).toBeGreaterThan(0);
+    expect(memory?.worldgenBytes.length).toBeGreaterThan(0);
+    expect(memory?.worldgenBytes.every((b) => b > 0)).toBe(true);
+    expect(memory?.meshBytes).toBeGreaterThan(0);
+    expect(memory?.screenBytes).toBeGreaterThan(0);
   });
 }

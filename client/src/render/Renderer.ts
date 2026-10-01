@@ -39,6 +39,10 @@ export interface RenderStats {
   batched: boolean;
   /** Drawing-buffer pixels per CSS pixel (device pixel ratio × ?scale). */
   pixelRatio: number;
+  /** GPU memory (bytes): terrain and LOD geometry (batches: their reserved space), and an
+   *  estimate of the drawing buffers (multisampled colour and depth, and the resolved image). */
+  meshBytes: number;
+  screenBytes: number;
 }
 
 export interface Renderer {

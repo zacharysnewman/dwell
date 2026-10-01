@@ -31,4 +31,6 @@ export type FromWorker =
   | { t: 'saved'; ok: boolean }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
   | { t: 'datagram'; session: number; bytes: Uint8Array }
-  | { t: 'close'; session: number };
+  | { t: 'close'; session: number }
+  /** The server core's WebAssembly memory (bytes), every second. */
+  | { t: 'memory'; bytes: number };

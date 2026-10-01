@@ -59,10 +59,14 @@ const JOBS_PER_WORKER = 4;
 
 const key = (c: ChunkCoord): string => `${String(c[0])},${String(c[1])},${String(c[2])}`;
 
-/** Workers to start: cores − 2 (the main thread and the local server keep theirs), 1..4. */
-export function defaultWorkerCount(): number {
+/**
+ * Workers to start: cores − 2 (the main thread and the local server keep theirs), 1..4; on phones
+ * at most 2, as each worker's memory counts against the tab's (mobile Safari closes a tab that
+ * uses too much).
+ */
+export function defaultWorkerCount(mobile = false): number {
   const cores = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency || 4;
-  return Math.max(1, Math.min(4, cores - 2));
+  return Math.max(1, Math.min(mobile ? 2 : 4, cores - 2));
 }
 
 export class WorldgenPool implements ChunkSource, SectionSource {
@@ -75,6 +79,7 @@ export class WorldgenPool implements ChunkSource, SectionSource {
   private runningCount = 0;
   private nextId = 1;
   private failure: Error | null = null;
+  private readonly memory = new Map<WorkerLike, number>();
 
   constructor(
     private readonly workers: WorkerLike[],
@@ -174,7 +179,16 @@ export class WorldgenPool implements ChunkSource, SectionSource {
     for (const w of this.workers) w.terminate();
   }
 
+  /** Each worker's WebAssembly memory (bytes), as last reported. */
+  heapBytes(): number[] {
+    return this.workers.map((w) => this.memory.get(w) ?? 0);
+  }
+
   private onMessage(w: WorkerLike, msg: FromWorldgen) {
+    if (msg.t === 'memory') {
+      this.memory.set(w, msg.bytes);
+      return;
+    }
     if (msg.t === 'ready') {
       this.ready.push(w);
       this.running.set(w, []);

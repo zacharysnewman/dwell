@@ -46,8 +46,10 @@ import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
 import { FpsMeter } from './ui/fps';
+import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
+import type { LoopbackTransport } from './net/loopback';
 import { ChunkStreamer } from './world/chunkStream';
-import { WorldgenPool } from './worldgen/pool';
+import { defaultWorkerCount, WorldgenPool } from './worldgen/pool';
 import { LodSystem } from './lod/lodSystem';
 import { defaultDetail } from './lod/detail';
 import { lodViewport } from './lod/frustum';
@@ -70,6 +72,8 @@ interface DwellDebug {
   flySpeed(level: number): void;
   /** The last frame's draw calls and triangles. */
   renderStats(): RenderStats;
+  /** What the game knows it holds in memory (ui/memory.ts), once playing. */
+  memory(): MemoryReport | null;
 }
 
 declare global {
@@ -103,6 +107,8 @@ interface App {
   settings: SettingsMenu | null;
   /** Frames per second, shown in the status line. */
   fps: FpsMeter;
+  /** What the game knows it holds in memory (F3), once playing. */
+  memory: (() => MemoryReport) | null;
 }
 
 function start(): App {
@@ -144,6 +150,7 @@ function start(): App {
     core: null,
     settings: null,
     fps: new FpsMeter(),
+    memory: null,
   };
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
@@ -183,6 +190,7 @@ function start(): App {
       app.input.flight.speedLevel = level;
     },
     renderStats: () => renderer.stats(),
+    memory: () => app.memory?.() ?? null,
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
   app.input.onAction = (action) => app.game?.edit(action, performance.now());
@@ -255,6 +263,8 @@ function play(
   app: App,
   session: ClientSession,
   joined: Extract<SessionState, { phase: 'joined' }>,
+  /** A local world's worker (its server core's memory), or null on a server. */
+  loopback: LoopbackTransport | null,
 ) {
   // Creative flight is the server's to allow (Welcome, §8.3).
   app.input.flight.allowed = joined.mayFly;
@@ -262,7 +272,8 @@ function play(
   void (async () => {
     // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
     const fullChunks = new URLSearchParams(location.search).get('chunks') === 'full';
-    const pool = WorldgenPool.create(joined.generatorVersion, joined.worldSeed);
+    const workers = defaultWorkerCount(prefersTouch());
+    const pool = WorldgenPool.create(joined.generatorVersion, joined.worldSeed, workers);
     let core: ClientCore;
     try {
       core = await ClientCore.load(await importDwellCore());
@@ -276,7 +287,7 @@ function play(
     session.subscribe((_state, s) => {
       stats = s;
     });
-    const meshPool = MeshPool.create();
+    const meshPool = MeshPool.create(workers);
     const terrain = new ChunkStreamer(core, pool, meshPool, app.renderer, (coords) => {
       session.sendControl({ type: MessageType.ChunkResync, coords });
     });
@@ -308,6 +319,17 @@ function play(
       interaction,
       (x, y, z) => core.voxel(x, y, z),
     );
+    app.memory = () => {
+      const render = app.renderer.stats();
+      return {
+        coreBytes: core.heapBytes(),
+        serverBytes: loopback ? loopback.heapBytes : null,
+        worldgenBytes: pool.heapBytes(),
+        meshBytes: render.meshBytes,
+        screenBytes: render.screenBytes,
+        jsHeapBytes: jsHeapBytes(),
+      };
+    };
     startDebugTools(app, pool, core, terrain, game);
     session.onGame((m, bytes) => {
       game.onGameMessage(m, bytes, performance.now());
@@ -372,6 +394,7 @@ function startDebugTools(
 ): void {
   let busy = false;
   setInterval(() => {
+    if (app.hud.debugVisible && app.memory) game.memoryNote = formatMemory(app.memory());
     const s = game.debugState();
     if (busy || !s.active) return;
     const [x, y, z] = s.feet.map(Math.floor) as [number, number, number];
@@ -591,7 +614,7 @@ async function connect(app: App): Promise<void> {
         started = true;
         const joinedInvite = invite ? pastedInvite(location.search) : null;
         if (joinedInvite) rememberServer(storage(), joinedInvite, Date.now());
-        play(app, session, state);
+        play(app, session, state, local?.loopback ?? null);
       }
     });
   } catch (err) {

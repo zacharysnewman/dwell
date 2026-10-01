@@ -21,6 +21,8 @@ export class LoopbackTransport implements Transport {
   private closed = false;
   /** Output for other sessions: the hosting relay's (§10.2). */
   onGuestOutput: ((msg: GuestOutput) => void) | null = null;
+  /** The local server core's WebAssembly memory (bytes), as the worker last reported it. */
+  heapBytes = 0;
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
 
@@ -120,6 +122,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'saved':
         this.saving.shift()?.(msg.ok);
+        break;
+      case 'memory':
+        this.heapBytes = msg.bytes;
         break;
       case 'ready':
         break;

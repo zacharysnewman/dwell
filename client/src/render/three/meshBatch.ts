@@ -2,8 +2,8 @@
 // with one draw call per render pass (WEBGL_multi_draw, which three.js uses where the browser has
 // it) instead of one per mesh, culled per member against each pass's camera and sorted (back to
 // front when see-through). Used for the LOD sections' water always, and for the chunks and the LOD
-// sections when batching is on (?batch=1). Space grows as needed, and deleted members' space is
-// reclaimed by repacking before growing. A batch keeps a CPU copy of its geometry (for partial
+// sections when batching is on (?batch=1). Space starts small and grows by half as needed, and
+// deleted members' space is reclaimed by repacking before growing. A batch keeps a CPU copy of its geometry (for partial
 // uploads), unlike the separate meshes, whose vertex data leaves the page once uploaded.
 import { BatchedMesh, type BufferGeometry, type Color, type Material, Matrix4 } from 'three';
 
@@ -22,6 +22,15 @@ export interface MeshBatchOptions {
 }
 
 const matrix = new Matrix4();
+const grow = (n: number): number => Math.ceil(n * 1.5);
+
+/** Bytes of a geometry's attributes and index (as created: before any upload drops them). */
+export function geometryBytes(g: BufferGeometry): number {
+  let n = g.index?.array.byteLength ?? 0;
+  for (const a of Object.values(g.attributes))
+    n += (a.array as ArrayLike<number> & { byteLength: number }).byteLength;
+  return n;
+}
 
 export class MeshBatch {
   readonly mesh: BatchedMesh;
@@ -37,14 +46,19 @@ export class MeshBatch {
 
   constructor(material: Material, options: MeshBatchOptions = {}) {
     this.instances = options.instances ?? 64;
-    this.vertices = options.vertices ?? 1 << 17;
-    this.indices = options.indices ?? 1 << 18;
+    this.vertices = options.vertices ?? 1 << 15;
+    this.indices = options.indices ?? 1 << 16;
     this.mesh = new BatchedMesh(this.instances, this.vertices, this.indices, material);
     // Sorted per pass, and culled per member. Not as a whole: three.js caches a BatchedMesh's
     // bounds on its first check, and members come and go.
     this.mesh.sortObjects = true;
     this.mesh.perObjectFrustumCulled = true;
     this.mesh.frustumCulled = false;
+  }
+
+  /** Bytes of the batch's geometry: its reserved space, on the GPU and as a copy in the page. */
+  get bytes(): number {
+    return geometryBytes(this.mesh.geometry);
   }
 
   /** Members in the batch. */
@@ -57,7 +71,7 @@ export class MeshBatch {
     const vertices = geometry.getAttribute('position').count;
     const indices = geometry.getIndex()?.count ?? 0;
     if (this.live >= this.instances) {
-      this.instances *= 2;
+      this.instances = grow(this.instances);
       this.mesh.setInstanceCount(this.instances);
     }
     if (this.endVertices + vertices > this.vertices || this.endIndices + indices > this.indices) {
@@ -66,8 +80,10 @@ export class MeshBatch {
       this.endVertices = this.usedVertices;
       this.endIndices = this.usedIndices;
       if (this.endVertices + vertices > this.vertices || this.endIndices + indices > this.indices) {
-        while (this.endVertices + vertices > this.vertices) this.vertices *= 2;
-        while (this.endIndices + indices > this.indices) this.indices *= 2;
+        // By half (not doubling): the space is reserved on the GPU and copied in the page, and
+        // growing briefly holds the old and the new geometry.
+        while (this.endVertices + vertices > this.vertices) this.vertices = grow(this.vertices);
+        while (this.endIndices + indices > this.indices) this.indices = grow(this.indices);
         this.mesh.setGeometrySize(this.vertices, this.indices);
       }
     }

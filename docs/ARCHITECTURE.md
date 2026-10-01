@@ -113,7 +113,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    (`dwell_core.wasm`) provides local mode and the client's prediction/debris physics; its
    generator sources alone form `dwell_worldgen.wasm` (~30 KB, no Jolt) for the client's worldgen
    workers. Every piece of simulation logic (player controller, worldgen, physics setup) has
-   exactly one implementation.
+   exactly one implementation. `dwell_core.wasm` starts with 16 MB of memory and grows as needed
+   (the client's settles near 28 MB, a local world's server near 41 MB; 64 MB at the start cost
+   phones ~60 MB for nothing), `dwell_worldgen.wasm` with 4 MB.
 
 Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds the WASM core
 (Emscripten) and `client/`, and publishes them with `actions/deploy-pages` on pushes to `main`
@@ -309,7 +311,7 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
 | `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB` (the pixel error coarsens while the view's own sections exceed it); `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
-| `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4, two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
+| `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4 (at most 2 on phones), two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
 | `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material; a section's surface and skirts are one geometry and one draw call, `lodSection.ts`, its index rewritten when the sides whose skirts show change; chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Terrain is static: world matrices are computed when an object is placed rather than for the whole scene in each pass, and the CPU copies of chunk and LOD vertex data are dropped once uploaded to the GPU. `?batch=1` instead draws the chunks and LOD sections in three batches, a draw call each per pass (§6.6, experimental); `?scale=` scales the resolution; `stats()` reports the frame's draw calls and triangles (F3). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry face shading (and the flat colour of untextured materials). |
 | `physics/` | Debris world (Phase 7) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
 | `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 6; player interpolation is in `game/remotes.ts`. |
@@ -576,7 +578,7 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   `UNLOAD_MARGIN_CHUNKS`. In full-chunk mode only stored chunks are answered (the server does not
   generate for rendering alone).
 - **Client** (`world/chunkStream.ts`, `worldgen/`). Generated chunks go to the worldgen worker
-  pool (`cores − 2` module workers, 1–4, each with its own `dwell_worldgen.wasm` — the generator
+  pool (`cores − 2` module workers, 1–4 — at most 2 on phones — each with its own `dwell_worldgen.wasm` — the generator
   alone, ~30 KB; up to 4 jobs queued per worker; voxels come back as transferred buffers) and then
   into the client sim's streamed world; Explicit chunks are decoded on the main thread; Air
   chunks only count as loaded (nothing stored or meshed). Pending
@@ -841,7 +843,7 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   budget and checks it settles within it, holds, and grows finer again where the view needs
   less. **Both are settings** (playtest: the coarser view looked worse, and it should be
   tunable): *Distant detail* (the pixel error, 1–16 CSS px) and *Distant memory* (the cache
-  budget, 32–1,024 MB) sliders in the settings menu, next to Full detail (`lod/detail.ts`,
+  budget, 32–1,024 MB; 192 MB on phones) sliders in the settings menu, next to Full detail (`lod/detail.ts`,
   defaults `LOD_PIXEL_ERROR` and `LOD_CACHE_MB`); a change applies at once and restarts the error
   scale from 1, so the view re-fits the new budget within seconds. (A 2× screen's view before the
   cap was ~2 CSS px with no memory bound.) A test walks, turns
@@ -935,7 +937,21 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
-  `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off.
+  `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off. Measured under Node with
+  a fake worker pool, one frame's update (selection, skirts, jobs) costs ~2–4 ms for ~2,800 drawn
+  sections.
+- **Memory (F3, `ui/memory.ts`):** a phone's browser closes a tab that uses too much, without
+  warning (mobile Safari reloads it; playtest: periodic crashes), so the overlay shows what the
+  game knows it holds: the client's sim core, a local world's server core (its worker reports it
+  each second) and each terrain-generation worker's WebAssembly memory, the GPU's terrain and LOD
+  geometry (batches: their reserved space) and an estimate of the drawing buffers (4×
+  multisampled colour and depth, and the resolved image), and Chrome's JavaScript heap (shown,
+  not added: it may include the main thread's WebAssembly memory); `__dwell.memory()` for tests.
+  Phone emulation, local world, 3 min standing still: ~237 MB counted (core 28, world 41,
+  worldgen 2 × 4, geometry 110, drawing buffers 50 — the anti-aliasing at 2×) and a ~170 MB
+  heap. **Phone budget:** at most 2 terrain-generation and 2 meshing workers, Distant memory up
+  to 192 MB (`lod/detail.ts` `detailLimits`), the WASM cores starting at 16 MB instead of 64 MB
+  (they settle at ~28 and ~41 MB: −59 MB), and batches that start small and grow by half.
 - **Batched terrain, a switch for comparing (`?batch=1`) [built, experimental]:** the chunks'
   blocks, the chunks' water and the LOD sections (each section's surface and six skirts as
   separate members, a skirt shown by a visibility flag) go into three `MeshBatch`es
@@ -945,8 +961,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   quarter less script per frame; the cost is ~150 MB more heap, as a batch keeps a CPU copy of
   its geometry, and a full re-upload when a batch grows or repacks. Off by default until it is
   measured on real devices. `?scale=0.5` (0.25–2) renders at a fraction of the resolution: a
-  frame rate that rises with it is bound by pixels rather than draw calls (`render/display.ts`). Measured under Node with a fake worker pool, one frame's update
-  (selection, skirts, jobs) costs ~2–4 ms for ~2,800 drawn sections.
+  frame rate that rises with it is bound by pixels rather than draw calls (`render/display.ts`).
+  The batches start small (2¹⁵ vertices) and grow by half, not doubling, as their space is held
+  twice (GPU and page) and growing briefly holds old and new: batching costs ~28 MB more in the
+  phone measurement above (it reserved ~100 MB up front at first, and crashed mobile Safari).
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
 The player flies — the body itself, simulated by the server and predicted like any movement — up

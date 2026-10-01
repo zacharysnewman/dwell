@@ -2,7 +2,7 @@
 // (render/fog.ts) and the detail settings (lod/detail.ts), ARCHITECTURE.md §6.6. The settings
 // are kept in this browser. In a game the panel is also the game menu (Phase 5a): Resume and Quit
 // to main menu above the sliders; it opens when the pointer is released (Esc).
-import { DETAIL_LIMITS, defaultDetail, sanitizeDetail, type DetailSettings } from '../lod/detail';
+import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from '../lod/detail';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from '../render/fog';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
@@ -73,7 +73,7 @@ export function loadSettings(mobile: boolean): Settings {
   const fog = load(FOG_KEY);
   return {
     fog: fog ? sanitizeFog(fog) : defaults.fog,
-    detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail),
+    detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
   };
 }
 
@@ -102,72 +102,76 @@ const withFog = (key: keyof FogSettings) => (s: Settings, v: number) => ({
   fog: { ...s.fog, [key]: v },
 });
 
-const SECTIONS: { title: string; sliders: SliderSpec[] }[] = [
-  {
-    title: 'Fog',
-    sliders: [
-      {
-        label: 'Distance',
-        hint: 'How far the haze reaches half strength at sea level',
-        ...FOG_LIMITS.distanceM,
-        log: true,
-        format: formatMetres,
-        get: (s) => s.fog.distanceM,
-        with: withFog('distanceM'),
-      },
-      {
-        label: 'Density',
-        hint: 'The most the haze can hide the far distance (0: no fog)',
-        ...FOG_LIMITS.density,
-        log: false,
-        format: (v) => `${String(Math.round(v * 100))}%`,
-        get: (s) => s.fog.density,
-        with: withFog('density'),
-      },
-      {
-        label: 'Height',
-        hint: 'How high the haze reaches: the air thins above it',
-        ...FOG_LIMITS.heightM,
-        log: true,
-        format: formatMetres,
-        get: (s) => s.fog.heightM,
-        with: withFog('heightM'),
-      },
-    ],
-  },
-  {
-    title: 'Detail',
-    sliders: [
-      {
-        label: 'Full detail',
-        hint: 'How far every block is drawn; farther uses more memory',
-        ...DETAIL_LIMITS.distanceM,
-        log: false,
-        format: formatMetres,
-        get: (s) => s.detail.distanceM,
-        with: (s, v) => ({ ...s, detail: { ...s.detail, distanceM: v } }),
-      },
-      {
-        label: 'Distant detail',
-        hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
-        ...DETAIL_LIMITS.pixelError,
-        log: true,
-        format: (v) => `${v.toFixed(1)} px`,
-        get: (s) => s.detail.pixelError,
-        with: (s, v) => ({ ...s, detail: { ...s.detail, pixelError: v } }),
-      },
-      {
-        label: 'Distant memory',
-        hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
-        ...DETAIL_LIMITS.memoryMb,
-        log: true,
-        format: (v) => `${String(Math.round(v))} MB`,
-        get: (s) => s.detail.memoryMb,
-        with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
-      },
-    ],
-  },
-];
+/** The menu's sliders; the detail ranges depend on the device (lod/detail.ts). */
+function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
+  const DETAIL_LIMITS = detailLimits(mobile);
+  return [
+    {
+      title: 'Fog',
+      sliders: [
+        {
+          label: 'Distance',
+          hint: 'How far the haze reaches half strength at sea level',
+          ...FOG_LIMITS.distanceM,
+          log: true,
+          format: formatMetres,
+          get: (s) => s.fog.distanceM,
+          with: withFog('distanceM'),
+        },
+        {
+          label: 'Density',
+          hint: 'The most the haze can hide the far distance (0: no fog)',
+          ...FOG_LIMITS.density,
+          log: false,
+          format: (v) => `${String(Math.round(v * 100))}%`,
+          get: (s) => s.fog.density,
+          with: withFog('density'),
+        },
+        {
+          label: 'Height',
+          hint: 'How high the haze reaches: the air thins above it',
+          ...FOG_LIMITS.heightM,
+          log: true,
+          format: formatMetres,
+          get: (s) => s.fog.heightM,
+          with: withFog('heightM'),
+        },
+      ],
+    },
+    {
+      title: 'Detail',
+      sliders: [
+        {
+          label: 'Full detail',
+          hint: 'How far every block is drawn; farther uses more memory',
+          ...DETAIL_LIMITS.distanceM,
+          log: false,
+          format: formatMetres,
+          get: (s) => s.detail.distanceM,
+          with: (s, v) => ({ ...s, detail: { ...s.detail, distanceM: v } }),
+        },
+        {
+          label: 'Distant detail',
+          hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
+          ...DETAIL_LIMITS.pixelError,
+          log: true,
+          format: (v) => `${v.toFixed(1)} px`,
+          get: (s) => s.detail.pixelError,
+          with: (s, v) => ({ ...s, detail: { ...s.detail, pixelError: v } }),
+        },
+        {
+          label: 'Distant memory',
+          hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
+          ...DETAIL_LIMITS.memoryMb,
+          log: true,
+          format: (v) => `${String(Math.round(v))} MB`,
+          get: (s) => s.detail.memoryMb,
+          with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
+        },
+      ],
+    },
+  ];
+}
 
 export class SettingsMenu {
   private readonly panel: HTMLDivElement;
@@ -196,7 +200,7 @@ export class SettingsMenu {
     this.panel = document.createElement('div');
     this.panel.id = 'settings-menu';
     this.panel.hidden = true;
-    for (const section of SECTIONS) {
+    for (const section of sections(mobile)) {
       const title = document.createElement('h2');
       title.textContent = section.title;
       this.panel.append(title);
