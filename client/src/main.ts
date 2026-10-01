@@ -26,7 +26,13 @@ import { parseNetConditions } from './net/netsim';
 import type { ClientSession, SessionState, SessionStats } from './net/session';
 import { KeyboardMouseInput } from './predict/input';
 import { prefersTouch, TouchControls } from './predict/touch';
-import { createRenderer, RendererUnavailableError, type Renderer } from './render';
+import {
+  createRenderer,
+  RendererUnavailableError,
+  type Renderer,
+  type RenderStats,
+} from './render';
+import { displayOptions } from './render/display';
 import { ClientCore } from './sim/clientCore';
 import { importDwellCore } from './sim/module';
 import { MessageType } from './protocol/constants.gen';
@@ -62,6 +68,8 @@ interface DwellDebug {
   fly(on: boolean): void;
   /** Sets the flight speed level, as the slider does. */
   flySpeed(level: number): void;
+  /** The last frame's draw calls and triangles. */
+  renderStats(): RenderStats;
 }
 
 declare global {
@@ -101,16 +109,22 @@ function start(): App {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   const canvas = element('view', HTMLCanvasElement);
 
+  // Comparing performance on a device: ?batch=1 and ?scale= (render/display.ts).
+  const display = displayOptions(location.search);
   let renderer: Renderer;
   try {
-    renderer = createRenderer(canvas);
+    renderer = createRenderer(canvas, { batched: display.batched });
   } catch (err) {
     showFatal(err instanceof RendererUnavailableError ? err.message : 'Dwell failed to start.');
     throw err;
   }
 
   const resize = (): void => {
-    renderer.resize(canvas.clientWidth, canvas.clientHeight, Math.min(window.devicePixelRatio, 2));
+    renderer.resize(
+      canvas.clientWidth,
+      canvas.clientHeight,
+      Math.min(window.devicePixelRatio, 2) * display.scale,
+    );
   };
   new ResizeObserver(resize).observe(canvas);
   resize();
@@ -168,6 +182,7 @@ function start(): App {
     flySpeed: (level) => {
       app.input.flight.speedLevel = level;
     },
+    renderStats: () => renderer.stats(),
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
   app.input.onAction = (action) => app.game?.edit(action, performance.now());
