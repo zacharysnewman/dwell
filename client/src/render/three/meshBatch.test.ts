@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Matrix4, MeshBasicMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
-import { WaterBatch } from './waterBatch';
+import { MeshBatch } from './meshBatch';
 
 /** A section's water: `quads` quads. */
 function water(quads: number): BufferGeometry {
@@ -19,9 +19,9 @@ function water(quads: number): BufferGeometry {
   return g;
 }
 
-describe('WaterBatch', () => {
+describe('MeshBatch', () => {
   it('holds any number of sections as they come and go, in one mesh', () => {
-    const batch = new WaterBatch(new MeshBasicMaterial());
+    const batch = new MeshBatch(new MeshBasicMaterial());
     const live = [];
     // Far more sections and vertices than the initial space, with churn.
     for (let i = 0; i < 600; i++) {

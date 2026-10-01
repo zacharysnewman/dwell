@@ -25,6 +25,22 @@ export interface PlayerView {
  * first-person camera, and debug lines; Phase 3d the targeted-block outline; Phase 4c LOD sections
  * and a two-pass depth split (far pass for LOD beyond LOD_NEAR_SPLIT_M, then a near pass). Dynamic body meshes arrive with Tier 1 bodies (Phase 6).
  */
+/** How the renderer draws (main.ts, from the address: ?batch=1). */
+export interface RendererOptions {
+  /** Chunks and LOD sections in a few batches (one draw call each per pass), not a mesh each. */
+  batched?: boolean;
+}
+
+/** The last frame's work (the debug overlay). */
+export interface RenderStats {
+  /** Draw calls and triangles over both passes. */
+  calls: number;
+  triangles: number;
+  batched: boolean;
+  /** Drawing-buffer pixels per CSS pixel (device pixel ratio × ?scale). */
+  pixelRatio: number;
+}
+
 export interface Renderer {
   /** Resize the drawing buffer to CSS pixels × device pixel ratio. */
   resize(width: number, height: number, pixelRatio: number): void;
@@ -56,6 +72,8 @@ export interface Renderer {
   setCamera(eye: Vec3, yawDeg: number, pitchDeg: number): void;
   /** Debug line segments (pairs of points) with one colour each, or null to clear. */
   setDebugLines(segments: readonly { from: Vec3; to: Vec3; color: number }[] | null): void;
+  /** The last frame's draw calls and triangles. */
+  stats(): RenderStats;
   /** Release GPU resources. */
   dispose(): void;
 }

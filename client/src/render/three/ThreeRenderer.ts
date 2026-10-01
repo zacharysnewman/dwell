@@ -33,10 +33,17 @@ import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { DEFAULT_FOG, type FogSettings } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
 import { sharedAtlas } from '../textures';
-import { RendererUnavailableError, type PlayerView, type Renderer } from '../Renderer';
+import {
+  RendererUnavailableError,
+  type PlayerView,
+  type Renderer,
+  type RendererOptions,
+  type RenderStats,
+} from '../Renderer';
 import { setFogUniforms, withHeightFog } from './heightFog';
 import { LodSectionGeometry, releaseOnUpload } from './lodSection';
-import { WaterBatch, type WaterHandle } from './waterBatch';
+import { BatchedTerrain } from './batchedTerrain';
+import { type BatchHandle, MeshBatch } from './meshBatch';
 
 const SKY = 0x87b5e0;
 /** Near/far depth split (§6.6): LOD beyond it in a far pass, then a depth clear and a near pass. */
@@ -60,7 +67,7 @@ interface LodEntry {
   section: LodSectionGeometry | null;
   level: number;
   /** The section's water in the shared batch (lodWater), if it has any. */
-  water: WaterHandle | null;
+  water: BatchHandle | null;
   shown: boolean;
 }
 
@@ -160,7 +167,15 @@ export class ThreeRenderer implements Renderer {
       side: DoubleSide,
     }),
   );
-  private readonly lodWater = new WaterBatch(this.lodWaterMaterial);
+  private readonly lodWater = new MeshBatch(this.lodWaterMaterial);
+  /** The chunks and LOD sections in batches (?batch=1), or null: a mesh each. */
+  private readonly batch: BatchedTerrain | null;
+  private readonly frameStats: RenderStats = {
+    calls: 0,
+    triangles: 0,
+    batched: false,
+    pixelRatio: 1,
+  };
   private lodLevelMaterials: MeshLambertMaterial[] | null = null;
   /** The far pass's camera (the main camera is the near pass's). */
   private readonly farCamera = new PerspectiveCamera(VERTICAL_FOV, 1, NEAR_SPLIT, FAR_PLANE);
@@ -172,7 +187,7 @@ export class ThreeRenderer implements Renderer {
     new LineBasicMaterial({ color: 0x101418, transparent: true, opacity: 0.8 }),
   );
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     if (!canvas.getContext('webgl2')) {
       throw new RendererUnavailableError('WebGL2 is not available on this device.');
     }
@@ -188,6 +203,15 @@ export class ThreeRenderer implements Renderer {
     this.scene.add(this.outline);
     this.lodWater.mesh.renderOrder = 1;
     this.scene.add(this.lodWater.mesh);
+    this.batch = options.batched
+      ? new BatchedTerrain({
+          chunk: this.opaqueMaterial,
+          chunkWater: this.waterMaterial,
+          lod: this.lodMaterial,
+        })
+      : null;
+    this.frameStats.batched = this.batch !== null;
+    if (this.batch) this.scene.add(...this.batch.meshes);
     this.camera.position.set(0, 6, 14);
     this.camera.lookAt(0, 0, 0);
     // Nearly everything in the scene is static terrain: world matrices are computed when an object
@@ -217,6 +241,7 @@ export class ThreeRenderer implements Renderer {
 
   resize(width: number, height: number, pixelRatio: number): void {
     this.renderer.setPixelRatio(pixelRatio);
+    this.frameStats.pixelRatio = pixelRatio;
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / Math.max(1, height);
     this.camera.fov = verticalFov(this.camera.aspect);
@@ -237,6 +262,7 @@ export class ThreeRenderer implements Renderer {
       l.shown = shown;
       if (shown) l.section?.setSkirts(mask);
     }
+    this.batch?.update(this.chunkVisible, this.lodShown);
     // Two passes (§6.6): the far one for everything beyond the split (its near plane pushed out
     // with altitude, where nothing is closer), then a depth clear and the near one.
     const altitude = this.camera.position.y - World.worldMaxY;
@@ -249,8 +275,15 @@ export class ThreeRenderer implements Renderer {
     far.updateProjectionMatrix();
     this.renderer.clear();
     this.renderer.render(this.scene, far);
+    const { calls, triangles } = this.renderer.info.render;
     this.renderer.clearDepth();
     this.renderer.render(this.scene, this.camera);
+    this.frameStats.calls = calls + this.renderer.info.render.calls;
+    this.frameStats.triangles = triangles + this.renderer.info.render.triangles;
+  }
+
+  stats(): RenderStats {
+    return { ...this.frameStats };
   }
 
   setLodSection(id: number, origin: Vec3, cellSize: number, meshes: SectionMeshes | null): void {
@@ -263,9 +296,13 @@ export class ThreeRenderer implements Renderer {
       if (old.water) this.lodWater.remove(old.water);
       this.lod.delete(id);
     }
-    if (!meshes) return;
+    if (!meshes) {
+      this.batch?.setLodSection(id, origin, cellSize, null);
+      return;
+    }
+    this.batch?.setLodSection(id, origin, cellSize, meshes);
     const level = Math.round(Math.log2(cellSize));
-    const section = LodSectionGeometry.from(meshes);
+    const section = this.batch ? null : LodSectionGeometry.from(meshes);
     let mesh: Mesh | null = null;
     if (section) {
       mesh = new Mesh(section.geometry, this.lodLevelMaterials?.[level] ?? this.lodMaterial);
@@ -297,9 +334,19 @@ export class ThreeRenderer implements Renderer {
     for (const l of this.lod.values()) {
       if (l.mesh) l.mesh.material = this.lodLevelMaterials?.[l.level] ?? this.lodMaterial;
     }
+    this.batch?.setLevelTints(on ? LEVEL_TINTS : null);
   }
 
   setTerrainChunk(key: string, origin: Vec3, meshes: ChunkMeshes | null): void {
+    if (this.batch) {
+      const coord: ChunkCoord = [
+        Math.floor(origin[0] / CHUNK_SIZE),
+        Math.floor(origin[1] / CHUNK_SIZE),
+        Math.floor(origin[2] / CHUNK_SIZE),
+      ];
+      this.batch.setChunk(key, origin, coord, meshes);
+      return;
+    }
     const old = this.chunks.get(key);
     if (old) {
       for (const child of old.children) {

@@ -18,6 +18,7 @@ import { quantizeInput } from '../predict/input';
 import { predictionMayRun } from './gate';
 import { hudText } from './hudText';
 import type { PlayerView, Renderer } from '../render';
+import { formatRenderStats } from '../render/display';
 import type { ClientCore, ClientState } from '../sim/clientCore';
 import { formatDebug, type Hud } from '../ui/hud';
 import type { ChunkStreamer, StreamStats } from '../world/chunkStream';
@@ -301,6 +302,7 @@ export class Game {
       });
       const lines = [text];
       if (this.lod) lines.push(formatLodStats(this.lod.debugStats()));
+      lines.push(formatRenderStats(this.renderer.stats()));
       if (this.debugNote) lines.push(this.debugNote);
       this.hud.setDebug(lines.join('\n'));
       this.renderer.setDebugLines(this.probeLines(center, c));
