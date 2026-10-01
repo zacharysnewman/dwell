@@ -36,4 +36,18 @@ describe('MeshBatch', () => {
     batch.mesh.getMatrixAt(live[5]?.instance ?? -1, e);
     expect(e.elements[0]).toBe(2);
   });
+
+  it('starts small and grows by half, not doubling (its space is held twice: GPU and page)', () => {
+    // Playtest: batching crashed mobile Safari; the batches reserved ~100 MB up front.
+    const batch = new MeshBatch(new MeshBasicMaterial());
+    const capacity = (): number => batch.mesh.geometry.getAttribute('position').count;
+    batch.add(water(1), [0, 0, 0]); // the space is reserved with the first member
+    expect(capacity()).toBe(1 << 15);
+    expect(batch.bytes).toBeLessThan(2 * 1048576);
+    // Four vertices more than fit: 1.5× the space, not 2×.
+    batch.add(water((1 << 13) - 1), [0, 0, 0]);
+    expect(capacity()).toBe(1 << 15);
+    batch.add(water(1), [0, 0, 0]);
+    expect(capacity()).toBe(Math.ceil((1 << 15) * 1.5));
+  });
 });

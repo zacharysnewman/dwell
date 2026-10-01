@@ -95,6 +95,8 @@ export class Game {
   private readonly eye = new EyeCamera();
   /** Extra line for the debug overlay (the regenerate-and-diff check, main.ts). */
   debugNote = '';
+  /** The debug overlay's memory line (ui/memory.ts, refreshed each second by main.ts). */
+  memoryNote = '';
   /** The whole-world view, once the session has verified its generator (main.ts). */
   lod: LodSystem | null = null;
   viewport: ViewportInfo = () => ({ fovYDeg: 75, aspect: 16 / 9, heightPx: 1080 });
@@ -303,6 +305,7 @@ export class Game {
       const lines = [text];
       if (this.lod) lines.push(formatLodStats(this.lod.debugStats()));
       lines.push(formatRenderStats(this.renderer.stats()));
+      if (this.memoryNote) lines.push(this.memoryNote);
       if (this.debugNote) lines.push(this.debugNote);
       this.hud.setDebug(lines.join('\n'));
       this.renderer.setDebugLines(this.probeLines(center, c));

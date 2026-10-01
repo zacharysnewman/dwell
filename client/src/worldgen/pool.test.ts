@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChunkCoord } from '../protocol/messages';
-import { WorldgenPool, type WorkerLike } from './pool';
+import { defaultWorkerCount, WorldgenPool, type WorkerLike } from './pool';
 
 /** A worker that replies when the test says so. */
 class FakeWorker implements WorkerLike {
@@ -84,5 +84,24 @@ describe('WorldgenPool', () => {
     await expect(pool.generate([1, 0, 0])).rejects.toThrow('no wasm');
     pool.terminate();
     expect(w.terminated).toBe(true);
+  });
+});
+
+describe('worker count', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is cores − 2 (1 to 4), and at most 2 on phones (each worker counts against the tab)', () => {
+    for (const [cores, desktop, phone] of [
+      [2, 1, 1],
+      [4, 2, 2],
+      [6, 4, 2],
+      [12, 4, 2],
+    ] as const) {
+      vi.stubGlobal('navigator', { hardwareConcurrency: cores });
+      expect(defaultWorkerCount()).toBe(desktop);
+      expect(defaultWorkerCount(true)).toBe(phone);
+    }
   });
 });

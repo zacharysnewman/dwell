@@ -13,6 +13,15 @@ const scope = self as unknown as WorkerScope;
 
 let generator: ChunkGenerator | null = null;
 const queued: ToWorldgen[] = [];
+let reportedBytes = 0;
+
+/** Tells the pool when the WebAssembly memory has grown (the debug overlay's memory line). */
+function reportMemory(g: ChunkGenerator): void {
+  const bytes = g.heapBytes();
+  if (bytes === reportedBytes) return;
+  reportedBytes = bytes;
+  scope.postMessage({ t: 'memory', bytes });
+}
 
 function generate(msg: ToWorldgen, g: ChunkGenerator): void {
   if (msg.t === 'generate') {
@@ -31,6 +40,7 @@ function generate(msg: ToWorldgen, g: ChunkGenerator): void {
   } else if (msg.t === 'bounds') {
     scope.postMessage({ t: 'bounds', id: msg.id, ...g.lodBounds(msg.level, msg.i, msg.k) });
   }
+  reportMemory(g);
 }
 
 async function init(generatorVersion: number, worldSeed: bigint): Promise<void> {
@@ -50,6 +60,7 @@ async function init(generatorVersion: number, worldSeed: bigint): Promise<void> 
     return;
   }
   scope.postMessage({ t: 'ready' });
+  reportMemory(generator);
   for (const msg of queued.splice(0)) generate(msg, generator);
 }
 

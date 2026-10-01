@@ -57,16 +57,20 @@ export class BatchedTerrain {
   private levelTints: Color[] | null = null;
 
   constructor(materials: { chunk: Material; chunkWater: Material; lod: Material }) {
-    const big = { instances: 1024, vertices: 1 << 20, indices: 1 << 21 };
-    this.chunkOpaque = new MeshBatch(materials.chunk, big);
+    this.chunkOpaque = new MeshBatch(materials.chunk, { instances: 512 });
     this.chunkWater = new MeshBatch(materials.chunkWater);
     this.chunkWater.mesh.renderOrder = 1;
-    this.lodOpaque = new MeshBatch(materials.lod, { ...big, instances: 4096 });
+    this.lodOpaque = new MeshBatch(materials.lod, { instances: 2048 });
   }
 
   /** The batches, to add to the scene. */
   get meshes(): Object3D[] {
     return [this.chunkOpaque.mesh, this.chunkWater.mesh, this.lodOpaque.mesh];
+  }
+
+  /** Bytes reserved by the three batches (on the GPU, and copied in the page). */
+  get bytes(): number {
+    return this.chunkOpaque.bytes + this.chunkWater.bytes + this.lodOpaque.bytes;
   }
 
   /** Members per batch (tests and the debug overlay). */

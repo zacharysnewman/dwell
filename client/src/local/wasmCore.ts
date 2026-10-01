@@ -33,6 +33,11 @@ export class LocalCore {
    * Starts the local server. With `files` (the world file's handles) the world is loaded from and
    * saved to it, and a saved world's seed and generator win over the arguments.
    */
+  /** Bytes of the core's WebAssembly memory (it grows, never shrinks). */
+  heapBytes(): number {
+    return this.m.HEAPU8.buffer.byteLength;
+  }
+
   static async load(
     factory: DwellCoreFactory,
     worldSeed = 0,

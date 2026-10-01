@@ -24,6 +24,18 @@ export const DETAIL_LIMITS = {
   memoryMb: { min: 32, max: 1024 },
 } as const;
 
+/**
+ * The ranges on this device: on phones the distant view's memory stops at MOBILE_MEMORY_MAX_MB,
+ * as mobile Safari closes a tab that uses too much (more was a crash, not more detail).
+ */
+export const MOBILE_MEMORY_MAX_MB = 192;
+export type DetailLimits = { [K in keyof DetailSettings]: { min: number; max: number } };
+export function detailLimits(mobile: boolean): DetailLimits {
+  return mobile
+    ? { ...DETAIL_LIMITS, memoryMb: { min: DETAIL_LIMITS.memoryMb.min, max: MOBILE_MEMORY_MAX_MB } }
+    : DETAIL_LIMITS;
+}
+
 /** Defaults: phones hold fewer chunks and sections (memory), desktops more. */
 export function defaultDetail(mobile: boolean): DetailSettings {
   return mobile
@@ -32,11 +44,15 @@ export function defaultDetail(mobile: boolean): DetailSettings {
 }
 
 /** Clamps stored settings into range; anything missing or not a number takes the default. */
-export function sanitizeDetail(value: unknown, fallback: DetailSettings): DetailSettings {
+export function sanitizeDetail(
+  value: unknown,
+  fallback: DetailSettings,
+  limits: DetailLimits = DETAIL_LIMITS,
+): DetailSettings {
   const stored = value as Partial<Record<keyof DetailSettings, unknown>> | null;
   const field = (key: keyof DetailSettings): number => {
     const x = stored?.[key];
-    const { min, max } = DETAIL_LIMITS[key];
+    const { min, max } = limits[key];
     return typeof x === 'number' && Number.isFinite(x)
       ? Math.min(max, Math.max(min, x))
       : fallback[key];

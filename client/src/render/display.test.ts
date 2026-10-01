@@ -12,10 +12,24 @@ describe('display options', () => {
 
   it('formats the frame’s work for the debug overlay', () => {
     expect(
-      formatRenderStats({ calls: 712, triangles: 1_234_567, batched: false, pixelRatio: 2 }),
+      formatRenderStats({
+        calls: 712,
+        triangles: 1_234_567,
+        batched: false,
+        pixelRatio: 2,
+        meshBytes: 0,
+        screenBytes: 0,
+      }),
     ).toBe('render 712 draws · 1.23 M tris · meshes · 2.00× pixels');
-    expect(formatRenderStats({ calls: 9, triangles: 48_900, batched: true, pixelRatio: 1 })).toBe(
-      'render 9 draws · 49 k tris · batched · 1.00× pixels',
-    );
+    expect(
+      formatRenderStats({
+        calls: 9,
+        triangles: 48_900,
+        batched: true,
+        pixelRatio: 1,
+        meshBytes: 0,
+        screenBytes: 0,
+      }),
+    ).toBe('render 9 draws · 49 k tris · batched · 1.00× pixels');
   });
 });

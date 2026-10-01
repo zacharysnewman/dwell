@@ -25,4 +25,6 @@ export type FromWorldgen =
       cells: Uint16Array<ArrayBuffer>;
       surface: Float32Array<ArrayBuffer> | null;
     }
-  | { t: 'bounds'; id: number; lo: number; hi: number; anyInside: boolean };
+  | { t: 'bounds'; id: number; lo: number; hi: number; anyInside: boolean }
+  /** The worker's WebAssembly memory changed size (bytes); not an answer to a job. */
+  | { t: 'memory'; bytes: number };

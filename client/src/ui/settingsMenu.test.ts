@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { FOG_LIMITS, sanitizeFog } from '../render/fog';
-import { DETAIL_LIMITS, defaultDetail, sanitizeDetail } from '../lod/detail';
+import {
+  DETAIL_LIMITS,
+  defaultDetail,
+  detailLimits,
+  MOBILE_MEMORY_MAX_MB,
+  sanitizeDetail,
+} from '../lod/detail';
 import {
   formatMetres,
   settingsJson,
@@ -87,5 +93,16 @@ describe('detail settings', () => {
       memoryMb: 256,
     });
     expect(sanitizeDetail(null, defaultDetail(false))).toEqual(defaultDetail(false));
+  });
+
+  it('stop the distant memory lower on phones, where too much closes the tab', () => {
+    // Playtest: mobile Safari reloaded the page (out of memory) with the sliders raised.
+    expect(detailLimits(false)).toEqual(DETAIL_LIMITS);
+    expect(detailLimits(true).memoryMb).toEqual({ min: 32, max: MOBILE_MEMORY_MAX_MB });
+    expect(MOBILE_MEMORY_MAX_MB).toBeLessThan(DETAIL_LIMITS.memoryMb.max);
+    // A value kept from before (or set on a desktop) comes down to the phone's ceiling.
+    expect(
+      sanitizeDetail({ memoryMb: 1024 }, defaultDetail(true), detailLimits(true)).memoryMb,
+    ).toBe(MOBILE_MEMORY_MAX_MB);
   });
 });

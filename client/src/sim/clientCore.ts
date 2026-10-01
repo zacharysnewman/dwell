@@ -77,6 +77,11 @@ export interface BlockTarget {
 export class ClientCore {
   private constructor(private readonly m: DwellCoreModule) {}
 
+  /** Bytes of the core's WebAssembly memory (it grows, never shrinks). */
+  heapBytes(): number {
+    return this.m.HEAPU8.buffer.byteLength;
+  }
+
   /** A client sim with an empty streamed world: chunks arrive through setChunk. */
   static async load(factory: DwellCoreFactory): Promise<ClientCore> {
     const m = await factory();

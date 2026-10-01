@@ -47,6 +47,11 @@ export function dwellWorldgenUrl(): string {
 export class ChunkGenerator {
   private constructor(private readonly m: DwellWorldgenModule) {}
 
+  /** Bytes of the generator's WebAssembly memory (it grows, never shrinks). */
+  heapBytes(): number {
+    return this.m.HEAPU8.buffer.byteLength;
+  }
+
   static async load(
     factory: DwellWorldgenFactory,
     generatorVersion: number,
