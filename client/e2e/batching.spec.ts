@@ -41,13 +41,13 @@ for (const batched of [false, true]) {
     if (batched) expect(stats.calls).toBeLessThanOrEqual(12);
     else expect(stats.calls).toBeGreaterThan(20);
     // The memory report (F3): the local world's server core, the client's, the workers', the GPU.
-    const memory = (await page.evaluate('globalThis.__dwell?.memory()')) as {
+    const memory = await page.evaluate<{
       coreBytes: number;
       serverBytes: number | null;
       worldgenBytes: number[];
       meshBytes: number;
       screenBytes: number;
-    } | null;
+    } | null>('globalThis.__dwell?.memory()');
     expect(memory?.coreBytes).toBeGreaterThan(0);
     expect(memory?.serverBytes).toBeGreaterThan(0);
     expect(memory?.worldgenBytes.length).toBeGreaterThan(0);
