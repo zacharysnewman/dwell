@@ -8,6 +8,7 @@ Web client: <https://dropkickarcade.com/dwell/>
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Future plans](docs/FUTURE.md)
 - [Decision records](docs/adr/README.md)
+- [License](LICENSE) — all rights reserved; public for reference only ([third-party notices](THIRD_PARTY_NOTICES))
 
 ## Development
 
