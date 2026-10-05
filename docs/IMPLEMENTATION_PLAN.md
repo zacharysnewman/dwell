@@ -1168,10 +1168,11 @@ Deliverables
   menu's About screen; CI runs `shared/licenses/gen.py --check`.
 - [ ] App version: one semantic version embedded in every build (HUD and menu instead of the commit
   SHA), recorded with `protocolVersion` and generator versions in `build.json`; stable and dev
-  channels. The baseline release is `0.1.0`; minor bumps for world, generator or protocol changes,
-  patch for compatible fixes (`RELEASES.md` §3).
+  channels. Semantic Versioning 2.0.0 with a declared public API (world format, generated terrain,
+  protocols, the storage contract); the baseline release is `0.1.0`; before `1.0.0` breaking
+  changes bump MINOR, compatible ones PATCH; dev builds `0.2.0-dev.<run>+<sha>` (`RELEASES.md` §3).
 - [ ] Release workflow: build each version for `base: '/dwell/v/<version>/'`, publish it as a
-  GitHub Release (`v<version>`, or a `dev-<version>` pre-release) with the build archive and
+  GitHub Release (`v<version>`, or a `v<version>-dev.<run>` pre-release) with the build archive and
   `build.json`; prune old dev pre-releases.
 - [ ] Pages workflow: assemble the site from the releases (every stable, the newest dev), generate
   `versions.json`, deploy; size reported per deploy against the 1 GB limit.

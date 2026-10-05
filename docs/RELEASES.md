@@ -51,25 +51,34 @@ from the menu's About screen, and run `gen.py --check` in CI.
 
 ## 3. Builds, versions and tags
 
-- **App version:** one semantic version for the whole app — client, sim core, generator, protocol.
-  `protocolVersion` and the generator versions stay as internal numbers and are recorded with each
-  build. Scheme (owner, 2026-10-05):
-  - **The baseline — the first versioned release — is `0.1.0`.** The app stays below `1.0.0` until
-    launch.
-  - **Minor** (`0.2.0`, `0.3.0`, …): any release that changes saved worlds, terrain generation or
-    the network protocol — the changes that version-lock worlds (§6). Most phases ship at least one.
-  - **Patch** (`0.1.1`): fixes that change none of those, so worlds and servers stay compatible.
-  - **Dev builds** carry the next release's number: `0.2.0-dev.<yyyymmdd>.<sha7>`.
-  - The version lives in one place (the client's `package.json`), and the build embeds it; the other
-    manifests' own version fields are not the app version.
+- **App version: [Semantic Versioning 2.0.0](https://semver.org)** (owner, 2026-10-05) — one
+  `MAJOR.MINOR.PATCH` version for the whole app (client, sim core, generator, protocol).
+  `protocolVersion` and the generator versions stay as internal numbers, recorded with each build.
+  - **The public API** — what compatibility means, as SemVer requires it to be declared: the saved
+    world format, the terrain a seed generates, the network protocol (client ↔ server, and the
+    master server's API), and the cross-version browser storage contract (§6). Changes that keep
+    all four compatible are compatible changes; anything else is a breaking change.
+  - **From `1.0.0`** (launch): MAJOR for breaking changes, MINOR for compatible new features, PATCH
+    for compatible fixes.
+  - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention
+    (npm's and Cargo's): breaking changes bump MINOR (`0.1.0` → `0.2.0`), compatible features and
+    fixes bump PATCH (`0.1.0` → `0.1.1`). Most phases ship at least one breaking release.
+  - **The baseline — the first versioned release — is `0.1.0`.**
+  - **Dev builds** are SemVer pre-releases of the next version, numbered by the CI run, with the
+    commit as build metadata: `0.2.0-dev.42+ab12cd3`. They sort correctly
+    (`0.2.0-dev.41` < `0.2.0-dev.42` < `0.2.0`), and every identifier is valid (a purely numeric
+    commit hash with a leading zero would not be, so the hash only appears as build metadata).
+  - **Tags:** `v<version>` without build metadata — `v0.1.0`, `v0.2.0-dev.42`.
+  - The version lives in one place (the client's `package.json`), and the build embeds it; the
+    other manifests' own version fields are not the app version.
 - **Channels:** **stable** (a release: pushing a `v<version>` tag, or a manual "Release" workflow)
   and **dev** (every push to `main`). Both are published; the launcher defaults to stable and
   offers dev in settings.
 - **Each build is built for its own path:** Vite `base: '/dwell/v/<version>/'`, the version
   embedded (shown in the HUD and the menu, replacing today's commit SHA overlay). Source maps may
   be published, since the source is public.
-- **Publishing:** the release workflow creates a **GitHub Release** for the tag — `v<version>`
-  (stable) or `dev-<version>` (a pre-release) — and attaches the build as an archive plus its
+- **Publishing:** the release workflow creates a **GitHub Release** for the tag — `v0.2.0`
+  (stable) or `v0.2.0-dev.42` (a GitHub pre-release) — and attaches the build as an archive plus its
   `build.json` (version, channel, date, commit, `protocolVersion`, generator versions, minimum
   launcher version). The tags and their releases **are** the builds. Keeping builds as release
   assets, not commits, keeps the repository's history free of build output.
