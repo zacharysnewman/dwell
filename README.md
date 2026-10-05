@@ -83,6 +83,12 @@ After changing the Rust crate's C ABI (`server/net/wt/src/lib.rs`), regenerate t
 editing `shared/protocol/constants.json`, run `node shared/protocol/gen.mjs` and
 `python3 shared/protocol/make_vectors.py`.
 
+After adding, removing or upgrading a dependency that ships in a build (a CMake library, a client
+runtime `dependency`, a Rust crate, or the Emscripten version), update
+`shared/licenses/third_party.json` (and its `texts/`) if it is not a crate, then run
+`python3 shared/licenses/gen.py` (needs `cargo`) to regenerate `THIRD_PARTY_NOTICES`;
+`--check` fails if it is out of date.
+
 ### Desktop (`platforms/electron/`)
 
 ```sh
@@ -91,3 +97,10 @@ npm ci
 npm start                                   # local world (uses ../../client/dist)
 npx electron . "--join=?join=…&cert=…"      # join a server
 ```
+
+## License
+
+Copyright (c) 2026 Zachary Newman. **All rights reserved.** This repository is public for
+reference only; it is not open source, and no license is granted to copy, modify, distribute or
+reuse it — see [LICENSE](LICENSE). Third-party components keep their own licenses; see
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).

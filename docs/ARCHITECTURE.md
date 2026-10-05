@@ -180,6 +180,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/protocol     constants.json (single source of protocol constants) + gen.mjs (→ C++ and TS
                      headers), make_vectors.py (independent reference encoder) → vectors.txt
                      (golden bytes both codecs must match).
+/shared/licenses     gen.py → THIRD_PARTY_NOTICES (root): third_party.json + texts/ for components
+                     that are not Rust crates, `cargo metadata` for the crates linked into the server.
 /services/master     Master server: Cloudflare Worker + Durable Objects, TypeScript, Wrangler
                      (listing, join codes, signaling, TURN credentials; ADR 0013).
 /platforms/electron  Electron shell (incl. "Host world" launching the native server).
@@ -188,6 +190,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   /adr               Architecture decision records.
 /.github/workflows   ci.yml (protocol, client, server, e2e jobs), pages.yml (deploy).
 rust-toolchain.toml  Pinned Rust toolchain.
+LICENSE              All rights reserved (the source is public for reference only).
+THIRD_PARTY_NOTICES  Licenses of the third-party components in Dwell's builds (generated).
 ```
 
 Built so far (Phases 0–2): `client/` (renderer, networking, identity, local mode, game loop with
@@ -1799,4 +1803,4 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 11 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
 | 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
 | 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 8–9 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
-| 20 | Release pipeline: versions loaded from tags, version-locked worlds; source visibility and license | Owner's direction (2026-10-05): one public repository under a restrictive license (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md) |
+| 20 | Release pipeline: versions loaded from tags, version-locked worlds | Owner's direction (2026-10-05): one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md). License decided: all rights reserved (`LICENSE`) |

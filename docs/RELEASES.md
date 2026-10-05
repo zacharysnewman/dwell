@@ -31,24 +31,23 @@ the CI in the public repo against private source would leak source through publi
 caches. The owner's aim — that others may read the code but not reuse it — is what a license
 does.
 
-**License** (a deliverable, chosen by the owner — not legal advice). Today the repository has no
-license file, which by default reserves all rights (GitHub's terms still let people view and
-fork it on GitHub), but says so nowhere. Options to weigh:
-
-- **All rights reserved**, stated in a `LICENSE` file: reading allowed (by GitHub's terms), no
-  other use. Simplest; contributions would need a separate agreement.
-- **A source-available license** that grants limited rights, e.g. **PolyForm Strict** (use for
-  personal, noncommercial purposes only; no changes or redistribution) or **PolyForm
-  Noncommercial** (noncommercial use including changes); or the **Business Source License**
-  (source-available now, converting to an open license after a set date).
-
-Whichever is chosen goes in `LICENSE` at the root, in `package.json` / `Cargo.toml` license fields,
-and in the README.
+**License — all rights reserved** (owner, 2026-10-05; built). `LICENSE` states that the
+repository is public for reference only: no right to copy, modify, distribute or reuse it beyond
+viewing and forking on GitHub (GitHub's terms), and no restriction on playing the builds the
+owner distributes. The package manifests say `"license": "UNLICENSED"` (npm's term for no license
+granted) and the Rust crate points `license-file` at `LICENSE`. Source-available licenses
+(PolyForm Strict or Noncommercial, the Business Source License) were the alternatives; one can
+still be adopted later.
 
 **Third-party notices.** Builds ship code under licenses that require their notices in copies
-(Jolt Physics, Three.js, `wtransport` and the Rust crates, zstd, and others; SQLite is public
-domain). Each build includes a generated `THIRD_PARTY_NOTICES` file (from the npm, cargo and CMake
-dependency lists), linked from the menu's About screen and shipped beside the native server.
+(Jolt Physics, three.js, `wtransport` and the other Rust crates, zstd, the Emscripten runtime and
+others; SQLite is public domain). **Built:** `shared/licenses/gen.py` writes `THIRD_PARTY_NOTICES`
+at the root from `shared/licenses/third_party.json` (the CMake, npm and Emscripten components,
+with their license texts in `texts/`) and `cargo metadata` (every crate linked into the server,
+its license text read from the crate; for a choice of licenses the most permissive is used, and
+the few crates that publish no license file get the standard MIT text with their authors).
+**Still to do in this phase:** ship the file in every build and beside the native server, link it
+from the menu's About screen, and run `gen.py --check` in CI.
 
 ## 3. Builds, versions and tags
 
@@ -153,7 +152,7 @@ Missing or unreachable versions show a clear message with the choice to open the
 
 ## 8. Manual setup (owner)
 
-1. Choose the license (§2); the phase adds the files.
+1. ~~Choose the license (§2).~~ Done: all rights reserved (2026-10-05).
 2. In the repository settings, allow the release workflow to create releases (Actions' workflow
    permissions: read and write, or `contents: write` in the workflow).
 3. Run the first stable release; check `https://dropkickarcade.com/dwell/` loads it through the
