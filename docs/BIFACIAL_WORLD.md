@@ -142,15 +142,16 @@ the zone still holds both faces; bodies that fall off the rim settle in the flip
   lit by the other face's light).
 - Manual: walking face B, digging through and going around the rim, and views of both domes.
 
-## 9. Decisions and open questions
+## 9. Decisions
 
-Decided (owner, 2026-10-05): no crossing routes — only digging through the rock or going around
-the rim; light from a static sun (face A) and a static counter-angled moon (face B); spawn always
-on face A; the crust stays ~4 km thick.
+Decided (owner, 2026-10-05):
+- **No crossing routes:** only digging through the rock or going around the rim.
+- **Light:** a static sun (face A) and a static, counter-angled moon (face B).
+- **Spawn** always on face A; the **crust** stays ~4 km thick.
+- **The rim ocean stays:** Phase 10's ~400 km rim ocean is kept, so reaching the edge means crossing
+  open water or flying.
+- **Face B reuses everything:** the same generator stages, biome table, palette and island design
+  as face A, with its own seed streams; only its light (the moon) and night sky differ.
 
-Still open:
-1. **Reaching the rim:** Phase 10's ~400 km rim ocean makes the edge reachable only across water or
-   by flight; leave it, or let some coasts reach the rim?
-2. **Face B's character** beyond its moonlight: the same biome palette, or its own?
-3. **A day/night cycle** (moving sun and moon) — later, once static lighting is in.
-
+Later (not part of this phase): a day/night cycle with a moving sun and moon, and giving face B a
+character of its own.

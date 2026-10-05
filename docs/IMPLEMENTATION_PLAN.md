@@ -1496,8 +1496,9 @@ object. Down is always toward the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFA
 
 **Status:** Not started. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
 (2026-10-05): no crossing routes (dig through or go around the rim), a static sun for face A and a
-counter-angled static moon for face B, spawn on face A, a ~4 km crust. Still open: reaching the rim
-across Phase 10's rim ocean, face B's biome character (`BIFACIAL_WORLD.md` §9).
+counter-angled static moon for face B, spawn on face A, a ~4 km crust, the rim ocean kept, and
+face B reusing face A's generator, biomes, palette and islands (`BIFACIAL_WORLD.md` §9). No open
+questions.
 
 Deliverables
 - [ ] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, the core
