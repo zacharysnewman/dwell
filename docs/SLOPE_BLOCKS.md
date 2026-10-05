@@ -77,7 +77,7 @@ How pieces combine:
 - Mixed runs (1:1 one way, 1:2 the other) and saddles (heights 1, 0, 1, 0) are not in the set;
   the terrain rule in §5 maps them to the nearest piece.
 
-Inner corners are not convex: wherever a convex shape is needed (Tier 1 clusters, Phase 12) they
+Inner corners are not convex: wherever a convex shape is needed (Tier 1 clusters, Phase 13) they
 split into two convex wedges. Terrain collision is a triangle mesh and does not care.
 
 ## 2. Representation: block families in the block registry
@@ -97,7 +97,7 @@ proposed a hand-made id formula; the registry replaces it.)
   base material for textures, density and drops. Plain `dwell:<m>` stays the full cube.
 - **`flooded`** is Minecraft's `waterlogged`: water in the open part of a shaped cell (§3.1, §4, §5).
 - Per state, the registry gives what the systems need: shape and orientation, collision
-  triangles, face coverage for culling (§3.1), volume (mass for Phase 12), convexity, `placeable`.
+  triangles, face coverage for culling (§3.1), volume (mass for Phase 13), convexity, `placeable`.
   The protocol version is bumped for the registry hash as part of Phase 10; adding the slope
   families is a registry change (new hash, regenerated goldens), not a format change.
 
@@ -203,11 +203,11 @@ at first; extending the rule to them is a later tuning step.
 
 ## 7. Later phases
 
-- **Phase 12 (voxel awakening):** integrity treats any two solid voxels sharing a face as connected
+- **Phase 13 (voxel awakening):** integrity treats any two solid voxels sharing a face as connected
   (partial coverage included, so a slope supports what sits on it). Cluster bodies use one convex
   shape per voxel from the registry (inner corners as two wedges), and mass from density ×
   volume.
-- **Phases 13–14:** debris and re-baking snap to the 24 orientations; a shaped voxel re-bakes into
+- **Phases 14–15:** debris and re-baking snap to the 24 orientations; a shaped voxel re-bakes into
   the state whose orientation matches, or as a full block when none does.
 
 ## 8. How Phase 11 is checked

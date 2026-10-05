@@ -715,12 +715,12 @@ Phase 9's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
 6. **Stability pass.** The field can leave small fragments; the pass removes those under 48 voxels
    inside a chunk, which is acceptable. Tiny islets (18 cells) are exempt by construction (the pass
    skips voxels a feature function placed).
-7. **Structural integrity (Phase 12).** Islands are not connected to bedrock, so the first edit
+7. **Structural integrity (Phase 13).** Islands are not connected to bedrock, so the first edit
    would detach a whole island. Islands need an **anchor**: e.g. the generated island field's
    voxels count as grounded while unmodified components remain larger than a threshold, or an
    indestructible core per island; finding "per island" is hard with a density field, so a
    grounded flag on generated island material is the likelier answer. Decided in Phase 9's ADR;
-   Phase 12's anchor definition follows it.
+   Phase 13's anchor definition follows it.
 8. **Streaming and memory.** Measure chunk counts and memory in a flight through archipelagos
    against today's budgets.
 

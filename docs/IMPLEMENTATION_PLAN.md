@@ -29,10 +29,11 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 9 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
 | 10 — Block registry: namespaced block states and palettes | ⏳ Not started | — |
 | 11 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
-| 12 — Voxel awakening | ⏸ Waits for Phases 6–11 (2026-10-05) | — |
-| 13 — Tiered physics | ⏸ Waits for Phases 6–11 (2026-10-05) | — |
-| 14 — Sleep / re-bake | ⏸ Waits for Phases 6–11 (2026-10-05) | — |
-| 15 — Dedicated servers & packaging | ⏳ Not started | — |
+| 12 — Versioned releases: private source, public deploy repo, builds by tag, version-locked worlds | ⏳ Not started | — |
+| 13 — Voxel awakening | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
+| 14 — Tiered physics | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
+| 15 — Sleep / re-bake | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
+| 16 — Dedicated servers & packaging | ⏳ Not started | — |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -42,8 +43,10 @@ Phases 6–9 (the world's look and shape; design in [`WORLD_GENERATION.md`](./WO
 were added on 2026-10-05 and, by the owner's decision the same day, run before the remaining
 phases. Phase 10 (the block registry; [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)) and Phase 11
 (slope blocks; [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)) were added the same day, after them and
-before physics, whose collision shapes slopes change. The former Phases 6–9 (voxel awakening,
-tiered physics, sleep/re-bake, dedicated servers and packaging) are now **12–15**. References in
+before physics, whose collision shapes slopes change; Phase 12 (versioned releases;
+[`RELEASES.md`](./RELEASES.md)) was added the same day after them. The order of Phases 6–12 is
+under review with the owner. The former Phases 6–9 (voxel awakening,
+tiered physics, sleep/re-bake, dedicated servers and packaging) are now **13–16**. References in
 this plan, `ARCHITECTURE.md` and code comments use the new numbers; ADRs keep the numbers of their
 day (`adr/README.md`). Phases 6–9 depend only on Phases 3–4 (the generator and the LOD) and run in
 order (6 is independent of 7–8; 9 needs 8). Phase 10 depends on nothing after Phase 5 and may be
@@ -128,7 +131,7 @@ Deliverables
   - [x] WebRTC fallback endpoint (ADR 0008): ICE-lite `str0m` in the same crate, same channel
     mapping and framing. Spike includes the invite-link path (client synthesizes the remote
     description from address + fingerprint + ICE credentials); if it fails, invite-link
-    fallback joins require the master server (Phase 15).
+    fallback joins require the master server (Phase 16).
 - [x] **Client networking (`client/net`)**
   - [x] `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
@@ -158,7 +161,7 @@ Exit criteria
 
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
-ragdoll and animation from `State` (Phase 13, see below). Playtested by a human (Open Decision
+ragdoll and animation from `State` (Phase 14, see below). Playtested by a human (Open Decision
 #9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
@@ -200,9 +203,9 @@ Deviations from the deliverables below:
   gently (PLAYER_CONTROLLER.md §8.1).
 - Dwell uses right-handed axes: the controller's camera-right vector is the mirror of the PPC's
   (Unity, left-handed) so that strafing matches the screen.
-- The snapshot's `groundEntityId` fields are deferred to Phase 12, when Tier 1 bodies can be stood
+- The snapshot's `groundEntityId` fields are deferred to Phase 13, when Tier 1 bodies can be stood
   on (ARCHITECTURE §8.3).
-- Deferred to Phase 13: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
+- Deferred to Phase 14: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
   down until the client debris world exists — and animating players from `State` (players are
   capsules; there are no character models yet).
 
@@ -241,9 +244,9 @@ Deliverables
   - [x] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
-    interpolated kinematic capsules. (Animation from `State` moved to Phase 13.)
+    interpolated kinematic capsules. (Animation from `State` moved to Phase 14.)
   - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
-    to Phase 13; dead players are drawn lying down.)
+    to Phase 14; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
   divergence, checked against `externalAbsorbThreshold`. (Measured: positions bit-identical,
@@ -464,7 +467,7 @@ Deviations and additions (3e):
   can go away at any time. One world file per generator and seed; a second tab on the same world
   runs without persistence (sync access handles are exclusive).
 - Settings and permissions come from launch options saved into the world (`--name`, `--motd`,
-  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 15. Bans and an
+  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 16. Bans and an
   allow-list (`allow_list` setting) are enforced at join. `permissions` records who granted an
   entry (`granted_by`).
 - The wire stays without zstd: Explicit chunks are rare in generated mode, and QUIC/SCTP framing
@@ -874,7 +877,7 @@ multiplayer world without typing certificates or forwarding ports: a main menu w
 management, **one-click Host** from the browser (a join code), **join by code or address**, and
 a **lobby list**. The master server is built as a Cloudflare Worker with Durable Objects, and
 TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloudflare.md),
-§10). This phase takes the web parts of the former hosting phase (now Phase 15) ahead of the
+§10). This phase takes the web parts of the former hosting phase (now Phase 16) ahead of the
 physics phases (6–8); see *Deviations* below.
 
 **Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
@@ -1081,13 +1084,13 @@ These steps need an account owner's dashboard access and cannot be done from cod
 - **New phase, inserted 2026-09-30.** Multiplayer hosting was the last phase; playtesting multiplayer
   needed an easy way to start, host and join worlds, so the web-first parts moved ahead of the
   physics phases. The former Phases 5–8 are now 6–9. The master server, friend worlds and server
-  browser moved here from Phase 15; the dedicated-server distribution (binaries, Docker, admin
+  browser moved here from Phase 16; the dedicated-server distribution (binaries, Docker, admin
   commands, UPnP, backups, certificate rotation), world export/import, versioned client builds,
-  and the Electron and Capacitor apps stay in Phase 15.
+  and the Electron and Capacitor apps stay in Phase 16.
 - Physics caps in host profiles cover what exists (players, view distance); Tier 1/Tier 2 caps
-  are added with Phases 12–14.
+  are added with Phases 13–15.
 - LAN discovery on the web is "same public IP" through the master (5d); Electron's local-network
-  discovery stays in Phase 15.
+  discovery stays in Phase 16.
 - 5a: the world index is kept in local storage rather than an IndexedDB store — it is a few
   hundred bytes, read synchronously at startup, and cleared together with the worlds' OPFS files.
 - 5a: the menu opens worlds and servers by navigating (`?play=<id>`, or the invite), and Quit
@@ -1095,7 +1098,7 @@ These steps need an account owner's dashboard access and cannot be done from cod
   worker, its OPFS handles and every render resource, a reload continues the same world, and Back
   returns to the menu. Links (`?join=`, `?local=1`, `?world=`, `?seed=`) open directly as before.
 - 5a: the game menu does not pause the world — the simulation is the (local or remote) server's.
-- 5a: Phases 12–14 were put on hold until Phase 5 is complete (2026-09-30).
+- 5a: Phases 13–15 were put on hold until Phase 5 is complete (2026-09-30).
 - 5b: the `Room` class is a stub (501) and the Directory holds only its schema version and the
   rate limits; their real contents are 5c–5e deliverables, added as migrations. `POST /v1/whoami`
   was added to check signing end to end. `dwell_server --master` moved to 5d.
@@ -1295,7 +1298,7 @@ Deliverables
   at altitude.
 - [ ] 9b: ADR: sky islands — the Aether density field, archipelagos (layout, scale, presence over
   altitude), decoration as deterministic feature functions, island anchors (decided here, before
-  Phase 12's integrity work).
+  Phase 13's integrity work).
 - [ ] 9b: the island field (§4.3): fields A, B and selector S, height gain, vertical ramps, the
   8 × 4 × 8 lattice shared by chunks, `SolidAt` and LOD; field statistics tests against the
   reference's targets.
@@ -1382,7 +1385,7 @@ the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 **Status:** Not started. Needs Phase 10 (the block registry). Sub-phases: **11a — shapes, slope
 families, meshing, collision and the
 controller**; **11b — building** (palette, orientation, validation); **11c — terrain shaping**
-(generator version bump); **11d — LOD slopes**. Runs after Phases 6–9 and before Phase 12, whose
+(generator version bump); **11d — LOD slopes**. Runs after Phases 6–9 and before Phase 13, whose
 cluster shapes and integrity rules must know about slopes.
 
 Deliverables
@@ -1419,11 +1422,64 @@ Exit criteria
 
 ---
 
-## Phase 12 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
+## Phase 12 — Versioned Releases: Private Source, Public Deploy Repo, Builds by Tag
+
+**Goal:** Keep the source private and publish only builds (owner, 2026-10-05): this repository
+becomes private and builds into a new **public deploy repo** that serves the web app on GitHub
+Pages and holds **one git tag per build**. A small launcher at `https://dropkickarcade.com/dwell/`
+loads app versions dynamically from those tags (served same-origin at `/dwell/v/<version>/`), and
+**worlds record the app version they were created with and are locked to it** for now. Design and
+the owner's setup steps: [`RELEASES.md`](./RELEASES.md).
+
+**Status:** Not started. Absorbs Phase 16's "versioned client builds" for the web.
+
+Deliverables
+- [ ] ADR: versioned releases — repositories and visibility, the app version and channels, builds
+  as tags in the deploy repo, the site assembled from tags, the launcher, version-locked worlds,
+  the cross-version storage contract; supersedes the deployment parts of §2.1 and ADR 0005's
+  "older builds" note.
+- [ ] App version: one semantic version embedded in every build (HUD and menu instead of the commit
+  SHA), recorded with `protocolVersion` and generator versions in `build.json`; stable and dev
+  channels.
+- [ ] Source-repo release workflow: build each version for `base: '/dwell/v/<version>/'` without
+  source maps (kept as private artifacts), commit it alone to the deploy repo's `builds` branch, tag
+  it (`v<version>` / `dev-<version>`); push the launcher to the deploy repo's `main` when it changes.
+- [ ] Deploy-repo Pages workflow: assemble the site from the tags (every stable, the newest dev),
+  generate `versions.json`, deploy; size reported per deploy against the 1 GB limit.
+- [ ] Launcher: pick the version (world, invite/code, server, latest stable or dev), redirect with
+  the query kept; Back to the menu returns to `/dwell/`; clear errors for missing versions.
+- [ ] Worlds: `app_version_created` / `app_version_last` in the world file and `appVersion` in the
+  world index; existing worlds stamped with the baseline version; a build opens only its own
+  version's worlds (browser and `dwell_server`, which names the version to run); the menu lists all
+  worlds with a version badge.
+- [ ] Cross-version storage contract: the world index, settings and other shared stores are
+  append-only and preserve unknown fields on rewrite — in the baseline release before anything
+  else depends on it.
+- [ ] Master server: rooms and listings carry the host's app version; join-by-code and the server
+  browser open the matching build; the handshake's rejection names the server's version.
+- [ ] Owner setup done (`RELEASES.md` §8): repos renamed and created, token stored, first release
+  live, source repo private; Actions minutes reviewed.
+- [ ] `ARCHITECTURE.md` §2.1, §3.1, §6.4, §10.3 and §10.5 updated.
+
+Exit criteria
+- [ ] A release produces a deploy-repo tag holding exactly the build and `build.json`, listed in
+  `versions.json` and served at `/dwell/v/<version>/`.
+- [ ] e2e against a locally assembled two-version site: the launcher opens the latest stable;
+  `?play=` opens a world in its own version; an invite opens the host's version; Back returns to
+  `/dwell/`; other versions' worlds are listed with badges.
+- [ ] A world from version A refuses to open in version B, in the browser and in `dwell_server`.
+- [ ] An older build rewriting the world index keeps fields it does not know (test).
+- [ ] Worlds saved before the baseline open in the baseline version.
+- [ ] The live site deploys from the public repo with the source repo private; no source maps
+  published (manual check).
+
+---
+
+## Phase 13 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
 
-**Status:** Not started. Runs after Phases 6–11 (owner's decision, 2026-10-05); previously on hold
+**Status:** Not started. Runs after Phases 6–12 (owner's decision, 2026-10-05); previously on hold
 until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
@@ -1438,7 +1494,7 @@ Deliverables
   (reason `Collapse`).
 - [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
 - [ ] `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
-- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 13); client
+- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 14); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
 - [ ] **Player ↔ Tier 1 interaction** (§9.2, §9.4):
   - [ ] Players push light clusters (contact mass scaling: `maxPushForce`, `pushableMassLimit`);
@@ -1462,11 +1518,11 @@ Exit criteria
 
 ---
 
-## Phase 13 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
+## Phase 14 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
 
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
-**Status:** Not started. Runs after Phases 6–11 (owner's decision, 2026-10-05); previously on hold
+**Status:** Not started. Runs after Phases 6–12 (owner's decision, 2026-10-05); previously on hold
 until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
@@ -1499,11 +1555,11 @@ Exit criteria
 
 ---
 
-## Phase 14 — Sleep / Re-bake Cycle
+## Phase 15 — Sleep / Re-bake Cycle
 
 **Goal:** Spec Phase 6. Long-running servers keep a bounded number of dynamic bodies (§7.3).
 
-**Status:** Not started. Runs after Phases 6–11 (owner's decision, 2026-10-05); previously on hold
+**Status:** Not started. Runs after Phases 6–12 (owner's decision, 2026-10-05); previously on hold
 until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
@@ -1527,7 +1583,7 @@ Exit criteria
 
 ---
 
-## Phase 15 — Dedicated Server Distribution & Platform Packaging
+## Phase 16 — Dedicated Server Distribution & Platform Packaging
 
 **Goal:** Complete player-hosted multiplayer with no official game servers (ADR 0003):
 distributable dedicated servers and packaged desktop/mobile apps (ARCHITECTURE §10), on top of the
@@ -1541,8 +1597,9 @@ Deliverables
   physics and view caps. Certificate rotation, publishing each new hash to the master (5d).
 - [ ] **World export/import** (`.dwellworld`) across dedicated servers, browsers, and apps; Capacitor
   storage VFS verified per platform.
-- [ ] **Versioned client builds** at `/dwell/v/<version>/`; the server browser (5e) offers the build
-  matching an incompatible server.
+- [ ] Versioned builds for the Electron and Capacitor shells: whether they load versions from the
+  site (store policies on downloaded code, iOS in particular) or bundle one version (the web
+  launcher and versioned builds themselves are Phase 12).
 - [ ] **Electron:** packaging for Windows/macOS/Linux (electron-builder), custom protocol with
   COOP/COEP and the multithreaded sim-core build (ADR 0007),
   "Host world" launching the native server; local-network discovery.
@@ -1560,7 +1617,8 @@ Exit criteria
 - [ ] Certificate rotation on a dedicated server is invisible to players joining through the master.
 - [ ] An iOS Safari player joins a self-signed dedicated server over WebRTC, including one behind
   strict NAT via TURN.
-- [ ] An outdated client is rejected with a clear message and offered the matching versioned build.
+- [ ] An outdated app (Electron, Capacitor) is rejected with a clear message and offered the matching
+  versioned build.
 
 ---
 
