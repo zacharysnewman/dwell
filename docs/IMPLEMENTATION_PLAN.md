@@ -1489,19 +1489,23 @@ Exit criteria
 ## Phase 13 — The Bifacial World
 
 **Goal:** A second inhabited face on the disc's underside with gravity inverted past the halfway
-point (owner, 2026-10-05): the midplane (y = −2,048) becomes the world's core, with bedrock
-straddling it; face B mirrors face A's structure — its own terrain (different seed streams) and its
-own dome of sky islands — so the world is a two-sided, sphere-like object. Down is always toward
-the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).
+point (owner, 2026-10-05): the midplane (y = −2,048) becomes the world's core — diggable rock
+anchored for integrity by position, no bedrock; face B mirrors face A's structure — its own terrain
+(different seed streams) and its own dome of sky islands — so the world is a two-sided, sphere-like
+object. Down is always toward the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).
 
-**Status:** Not started. Depends on Phases 10–12 (face B repeats their terrain and dome). Open
-questions (crossing routes, light, face B's character) in `BIFACIAL_WORLD.md` §9.
+**Status:** Not started. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
+(2026-10-05): no crossing routes (dig through or go around the rim), a static sun for face A and a
+counter-angled static moon for face B, spawn on face A, a ~4 km crust. Still open: reaching the rim
+across Phase 10's rim ocean, face B's biome character (`BIFACIAL_WORLD.md` §9).
 
 Deliverables
-- [ ] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, gravity
-  toward the midplane and the flip band, the crossing routes; supersedes ADR 0011's vertical bounds
+- [ ] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, the core
+  anchor zone (no bedrock), gravity toward the midplane and the flip band, crossing by digging or
+  around the rim, sun and moon; supersedes ADR 0011's vertical bounds
   and Phase 12's single dome.
-- [ ] Bounds: bedrock straddling the midplane; face B's ground band and dome; the LOD origin at −2²³
+- [ ] Bounds: no bedrock and no void below — a diggable core with a positional anchor zone
+  (`CORE_ANCHOR_LAYERS`); face B's ground band and dome; the LOD origin at −2²³
   in y; streaming, air chunks, edits and the flight limits on both sides.
 - [ ] Generation in face-local coordinates with per-face seed streams; face-B chunks as flipped
   face-local chunks; point queries by face; LOD cells by their side of the midplane; per-face
@@ -1510,9 +1514,11 @@ Deliverables
 - [ ] Player controller: a face sign through every vertical quantity and probe; mirrored voxel
   queries; the mirror-equivalence suite; crossing the flip band with a smooth camera turn
   (protocol bump if the snapshot needs a flag).
-- [ ] Crossing routes (as decided): wells through the crust and/or the rim ledge at the midplane.
-- [ ] Rendering: camera up by face; face-B tops shaded as tops; sky, sun and haze in the viewer's
-  face frame.
+- [ ] Crossing without dedicated routes: a shaft dug through the core and going over the rim both
+  work through the flip band (no generated wells, ledges or portals).
+- [ ] Lighting and rendering: a static sun (face A) and a counter-angled static moon (face B), each
+  fragment lit only by its own face's light and ambient; camera up by face; face-B tops shaded as
+  tops; face B's moonlit night sky and haze in the viewer's face frame.
 - [ ] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
 
 Exit criteria
@@ -1521,8 +1527,9 @@ Exit criteria
   client module.
 - [ ] Mirror-equivalence: every controller scenario mirrored onto face B gives the mirrored trace,
   natively and in WASM, at both origins.
-- [ ] A player walks, jumps, swims and climbs on face B, and crosses between the faces by each
-  route, the face sign and camera turning over once.
+- [ ] A player walks, jumps, swims and climbs on face B, and crosses between the faces by digging
+  through the core and by going over the rim, the face sign and camera turning over once.
+- [ ] Face A is lit only by the sun and face B only by the moon (ceilings included).
 - [ ] A body falling off the rim settles in the flip band; bodies on face B fall toward the
   midplane.
 - [ ] Nothing generated outside the two bands and domes; streaming and LOD reach both domes.
@@ -1538,12 +1545,13 @@ Exit criteria
 until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
-- [ ] Bifacial world (Phase 13): the midplane bedrock anchors both faces; bodies fall toward the
-  midplane by their side and settle in the flip band.
+- [ ] Bifacial world (Phase 13): the core anchor zone around the midplane (positional, diggable;
+  there is no bedrock) anchors both faces; bodies fall toward the midplane by their side and settle
+  in the flip band.
 - [ ] Slopes (Phase 9): any two solid voxels sharing a face are connected; cluster bodies use one
   convex shape per voxel from the state table (inner corners as two wedges), mass from volume
   (`SLOPE_BLOCKS.md` §7).
-- [ ] Anchor definition (bedrock layer + `grounded` flag) and budgeted 6-connected flood-fill
+- [ ] Anchor definition (the core anchor zone of Phase 13 + `grounded` flag) and budgeted 6-connected flood-fill
   structural-integrity pass triggered by voxel removal (`INTEGRITY_BUDGET_VOXELS`). The anchor
   rule must also cover generated sky islands (Phase 12; `WORLD_GENERATION.md` §4.5 item 7),
   whichever phase lands first.

@@ -1017,6 +1017,9 @@ Triggered when the server registers an explosion, a block removal, or a structur
    server flood-fills (6-connectivity) looking for an **anchor** (bedrock layer, or any voxel
    flagged as grounded). Components that reach an anchor stay static. Components that do not
    are **detached**.
+   **[planned, Phase 13]** The bifacial world removes the bedrock layer: the anchor becomes a
+   positional core zone around the midplane, whose voxels can be dug
+   ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §2).
    - The search is budgeted (max voxels visited per tick). A component that exceeds the
      budget is treated as anchored for this tick and re-queued, so a single event can never
      stall the tick.
@@ -1807,4 +1810,4 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
 | 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 8–9 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
 | 20 | Release pipeline: versions loaded from tags, version-locked worlds | Owner's direction (2026-10-05): one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md). License decided: all rights reserved (`LICENSE`) |
-| 21 | The bifacial world: crossing between faces (wells, rim ledge), light on face B, face B's character, crust thickness | Owner's direction (2026-10-05): a mirrored second face with gravity toward the midplane; decide by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9 |
+| 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust. Still open: reaching the rim across the rim ocean, face B's biome character. ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9 |

@@ -24,9 +24,12 @@ radius `DOME_RADIUS` = 8,192 km above.
 Bifacial:
 
 - **The midplane** — the halfway point — is the plane `y = MIDPLANE_Y` = −2,048 (today's world
-  floor; chunk-aligned: chunk row −64). The **bedrock layer moves to straddle it** (`BEDROCK_LAYERS`
-  on each side), so one indestructible core anchors both faces for structural integrity (§7.1,
-  Phase 14).
+  floor; chunk-aligned: chunk row −64). There is **no bedrock**: the rock at the midplane is
+  ordinary and can be dug through (owner, 2026-10-05). Instead, a **core zone** of
+  `CORE_ANCHOR_LAYERS` (≈ 8) on each side of the midplane anchors both faces for structural
+  integrity by *position*: any solid voxel still in the zone counts as grounded (§7.1, Phase 14),
+  so a dug shaft leaves the surrounding crust standing. Today's bedrock material and the void
+  below the world are no longer generated.
 - **Face A** (the top, today's world) is unchanged: ground band [−2,048, 6,144), sea level 0, dome
   above.
 - **Face B** (the underside) is its **mirror image about the midplane**: a voxel at height `y` on
@@ -37,8 +40,8 @@ Bifacial:
 - **Its own terrain.** Face B is not a reflection of face A's landscape: it is generated with a
   different seed stream (its own continents, rivers, biomes, islands), in face-local coordinates,
   then mirrored into place. Generation stays a pure function of `(seed, version, chunk)`.
-- The crust between the two seas is ~4 km thick; between face A's deepest basins (~−540 m) and
-  face B's, there are ~3 km of rock and the bedrock core.
+- The crust between the two seas is ~4 km thick (kept, owner 2026-10-05); between face A's deepest
+  basins (~−540 m) and face B's, there are ~3 km of rock.
 - **Fits the existing numbers:** y spans about −8,196,096 to +8,192,000. Chunk rows stay within
   `int32`; `posfix` positions (1/256 m, ±8,388,608 m) cover both domes; the LOD root (level 19,
   16,777 km) covers the whole span once its origin moves from `WORLD_MIN_Y` to −2²³ (like x and z
@@ -62,20 +65,21 @@ B's dome hang below the disc with their tops facing −y.
 
 ## 4. Crossing between the faces
 
-Because down points toward the midplane from both sides, going "over the edge" means falling
-*to* the midplane, then climbing *away* from it on the other side. Recommended routes (to confirm
-with the owner, §9):
+**No dedicated crossing routes** (owner, 2026-10-05): no generated wells, ledges or portals. A
+player crosses in one of two ways:
 
-1. **Wells through the crust.** Rare generated shafts (a hashed cell grid, ~50–200 km apart, a
-   few metres wide) that pierce the bedrock core, with ladders or climbable walls. Climb down
-   (gravity toward the midplane), pass the midplane — the view turns over (§6) — and climb out the
-   other side, which is now "up". The bedrock around a well stays indestructible.
-2. **The rim.** The disc's edge is a cliff about 4 km tall between the two seas. At the midplane
-   the rim carries a **ledge** (a ring shelf of bedrock a few metres wide), the floor of both
-   halves of the rim wall: from either face, a climb or fall down the wall ends on it. Stepping off
-   its outer edge leaves you floating in the flip band, from where you can climb the other half of
-   the wall. (Today the rim drops into a killing void; the bifacial rim replaces that.)
-3. Digging through bedrock stays impossible.
+1. **Through the rock.** Dig down toward the midplane (gravity points there), through the core —
+   nothing in it is indestructible — and keep digging into face B's crust; past the midplane "down"
+   points back toward it, so the far side of the shaft is now "up" and the player builds or digs
+   their way out. In the open air of a dug shaft the flip band applies (§3).
+2. **Around the outside.** The disc's edge is a cliff about 4 km tall between the two seas, with
+   nothing at the midplane. A player who goes over the edge falls toward the midplane, is slowed in
+   the flip band and floats there beside the wall; from there they climb, dig into or build up the
+   wall on the other side. (Today the rim drops into a killing void; the bifacial rim replaces
+   that.) Phase 10 rings the rim with ~400 km of open ocean, so reaching the edge means crossing
+   that ocean (or flying).
+
+Spawn is always on face A (owner, 2026-10-05).
 
 ## 5. Generation and LOD
 
@@ -100,40 +104,53 @@ with the owner, §9):
   (±1) threaded through every vertical quantity and probe direction; the voxel queries mirror
   lookups for face B. A **mirror-equivalence suite** proves it: every controller scenario run on
   face A and its mirror image on face B gives mirrored traces bit for bit, natively and in WASM.
-- **Crossing the band** (in a well or off the rim ledge): the face sign switches at the midplane;
+- **Crossing the band** (in a dug shaft, or beside the rim wall): the face sign switches at the midplane;
   the camera turns over smoothly (a roll through 180° over ~0.5 s) instead of snapping. The flip is
   predicted like any other movement; if the local player's state needs a flag for it, it goes in
   `PhysicsSnapshot` (a protocol bump).
+- **Light: a sun and a moon** (owner, 2026-10-05), both **static** for now. The sun is Phase 7's
+  directional light, lighting face A; the **moon** is a second directional light pointing the
+  opposite way (`moon direction = −sun direction`, "counter-angled"), lighting face B with a
+  cooler, dimmer moonlight. With no shadows, each light would also reach the other face's
+  ceilings, so each fragment takes only its own face's light (chosen by its side of the midplane),
+  and the hemisphere/ambient light is per face too. Colours and intensities live in Phase 7's
+  palette module as tunables.
 - **Rendering:** the camera's up vector follows the face; the meshers' per-face shading (Phase 7's
-  tint table) treats a face-B chunk's −y faces as its tops; the sky gradient, sun direction and
-  haze are evaluated in the viewer's face-local frame, so each face has its own sky (§9: one sun
-  or two). Height fog uses the height above the viewer's face's sea level.
+  tint table) treats a face-B chunk's −y faces as its tops; the sky gradient (face B: a moonlit
+  night sky with the moon's glow where the sun's is on face A) and haze are evaluated in the
+  viewer's face-local frame. Height fog uses the height above the viewer's face's sea level.
 
 ## 7. Physics (Phases 14–16)
 
-Falling clusters and debris use per-body gravity by side; integrity anchors include the midplane
-bedrock (which anchors both faces); bodies that fall off the rim settle in the flip band.
+Falling clusters and debris use per-body gravity by side; structural integrity anchors on the core
+zone (§2) instead of a bedrock layer, so digging through the core is allowed and what remains in
+the zone still holds both faces; bodies that fall off the rim settle in the flip band.
 
 ## 8. How the phase is checked
 
 - Generation: a face-B chunk equals the vertical flip of the face-local chunk; face B's terrain
-  differs from face A's; bedrock straddles the midplane; goldens for face-B chunks and straddling
-  LOD sections, natively and in WASM.
+  differs from face A's; no bedrock is generated and every core voxel can be dug; goldens for
+  face-B chunks and straddling LOD sections, natively and in WASM.
 - Controller: the mirror-equivalence suite (all scenarios, both origins, native and WASM); walking,
-  jumping, swimming and climbing on face B; crossing a well and the rim ledge, with the face sign
-  and camera turning over once.
+  jumping, swimming and climbing on face B; crossing by a dug shaft through the core and by going
+  over the rim, with the face sign and camera turning over once.
 - Gravity: a body falling off the rim settles in the flip band (no endless oscillation); Jolt bodies
   on face B fall toward the midplane.
 - Bounds: nothing generated outside the two domes and bands; streaming and LOD reach both domes;
   posfix round-trips positions at both extremes.
-- Manual: walking face B, going through a well and around the rim, and views of both domes.
+- Lighting: face A lit by the sun only and face B by the moon only (a ceiling on either face is not
+  lit by the other face's light).
+- Manual: walking face B, digging through and going around the rim, and views of both domes.
 
-## 9. Open questions
+## 9. Decisions and open questions
 
-1. **Crossing routes:** wells, the rim ledge, both, or something else (e.g. portals)?
-2. **Light:** one sun lighting both faces in turn (needs a day/night cycle), two suns, or each face
-   lit in its own frame without a physical sun?
-3. **Face identity:** should face B differ in character (darker, stranger, another biome palette),
-   or be "more of the same"?
-4. **Spawn and worlds:** always on face A, or a choice per world?
-5. **Crust thickness:** keep today's band (≈ 4 km between the seas) or thicken it.
+Decided (owner, 2026-10-05): no crossing routes — only digging through the rock or going around
+the rim; light from a static sun (face A) and a static counter-angled moon (face B); spawn always
+on face A; the crust stays ~4 km thick.
+
+Still open:
+1. **Reaching the rim:** Phase 10's ~400 km rim ocean makes the edge reachable only across water or
+   by flight; leave it, or let some coasts reach the rim?
+2. **Face B's character** beyond its moonlight: the same biome palette, or its own?
+3. **A day/night cycle** (moving sun and moon) — later, once static lighting is in.
+
