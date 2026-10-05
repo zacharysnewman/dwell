@@ -478,8 +478,9 @@ with the biome table rather than Phase 6's colour pass:
   (orange), `leaves_red` (rust-red), `leaves_blossom` (pink), `leaves_violet`; each with its own
   procedural tile. **Grass variants:** `grass_meadow` (grass with sparse pink/white/yellow flower
   flecks in the top tile), `grass_golden` (warm dry grass for dry areas). All are full cubes using
-  the existing looks; placeable like their base materials. C++ table and the TypeScript mirror
-  (`materials.ts`) change together, checked by the existing mirror test.
+  the existing looks; placeable like their base materials. They are entries in the block data
+  files if Phase 10's registry has landed (it may be pulled ahead of Phase 8), otherwise in the
+  C++ table and its TypeScript mirror (`materials.ts`), checked by the existing mirror test.
 - **Tree kinds:** the existing broadleaf (oak) and conifer (spruce), plus a **blossom tree**
   (shorter, wide round crown) and an **autumn tree** (broadleaf with autumn leaves). Crown
   colour is chosen per tree from the area: a low-frequency "grove" noise (~150–400 m) picks which
@@ -520,7 +521,7 @@ with the biome table rather than Phase 6's colour pass:
 - **No caves under water:** no cave air within the suppression depth below any water.
 - **Climate:** snow appears only above the altitude its temperature implies; a range's lee side is
   drier than its windward side (sampled across several ranges).
-- **Vegetation:** new materials mirrored (C++/TypeScript) and placeable; accent trees are clumped
+- **Vegetation:** new blocks identical on both sides (registry or mirror test) and placeable; accent trees are clumped
   (the fraction of accent trees whose nearest tree is also an accent is well above the overall
   accent fraction); a forested site's level-4 LOD surface is mostly leaf materials.
 - **Biome shares** within tolerance bands for 8 seeds (no biome missing, none above ~35 %).
@@ -714,12 +715,12 @@ Phase 9's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
 6. **Stability pass.** The field can leave small fragments; the pass removes those under 48 voxels
    inside a chunk, which is acceptable. Tiny islets (18 cells) are exempt by construction (the pass
    skips voxels a feature function placed).
-7. **Structural integrity (Phase 11).** Islands are not connected to bedrock, so the first edit
+7. **Structural integrity (Phase 12).** Islands are not connected to bedrock, so the first edit
    would detach a whole island. Islands need an **anchor**: e.g. the generated island field's
    voxels count as grounded while unmodified components remain larger than a threshold, or an
    indestructible core per island; finding "per island" is hard with a density field, so a
    grounded flag on generated island material is the likelier answer. Decided in Phase 9's ADR;
-   Phase 11's anchor definition follows it.
+   Phase 12's anchor definition follows it.
 8. **Streaming and memory.** Measure chunk counts and memory in a flight through archipelagos
    against today's budgets.
 

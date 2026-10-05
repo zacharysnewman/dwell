@@ -15,7 +15,9 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
 - `docs/WORLD_GENERATION.md` — design for Phases 6–9: art direction and palette, continents,
   rivers/mountains/biomes, sky islands (becomes an architecture sub-spec as the phases land).
-- `docs/SLOPE_BLOCKS.md` — design for Phase 10: slope block shapes, collision, building, terrain
+- `docs/BLOCK_REGISTRY.md` — design for Phase 10: namespaced block states, the registry, string
+  palettes in world files.
+- `docs/SLOPE_BLOCKS.md` — design for Phase 11: slope block shapes, collision, building, terrain
   shaping and LOD (becomes an architecture sub-spec as the phase lands).
 - `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
   spec used by Phase 9).

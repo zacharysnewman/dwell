@@ -1,12 +1,12 @@
 # Dwell — Slope Blocks: Shapes, Collision, Building, Terrain and LOD
 
-> **Status: [planned]** — the design for implementation **Phase 10**
+> **Status: [planned]** — the design for implementation **Phase 11**
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). As the phase lands, the built mechanisms
 > move into [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxel shapes and the material table, §6.3
 > generation, §6.5 building, §6.6 LOD, §8.3 messages) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)
 > (§6.2 blocks, steps, slopes), and this file keeps the rationale and the shape tables.
 
-Slopes touch nearly every system: the voxel format, the material table and its TypeScript mirror,
+Slopes touch nearly every system: the block registry (Phase 10, [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)),
 the chunk and LOD meshers, terrain collision and the player controller, prediction parity, block
 editing and the creative palette, the terrain generator, and later the physics clusters (Phases
 11–13). That is why it is its own phase.
@@ -77,34 +77,29 @@ How pieces combine:
 - Mixed runs (1:1 one way, 1:2 the other) and saddles (heights 1, 0, 1, 0) are not in the set;
   the terrain rule in §5 maps them to the nearest piece.
 
-Inner corners are not convex: wherever a convex shape is needed (Tier 1 clusters, Phase 11) they
+Inner corners are not convex: wherever a convex shape is needed (Tier 1 clusters, Phase 12) they
 split into two convex wedges. Terrain collision is a triangle mesh and does not care.
 
-## 2. Representation: block states in the existing `u16` voxel
+## 2. Representation: block families in the block registry
 
-Today a voxel is a `u16` material id, and each material has one fixed shape (`VoxelShape`:
-`kEmpty`, `kFull`, `kSlabBottom`); direction is encoded by separate ids (`ladder_n/e/s/w`).
-Slopes need (material, shape, orientation) per voxel.
+Slopes are built on Phase 10's **block registry** ([`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)):
+namespaced blocks with typed properties, canonical state strings such as
+`dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=outer]`, dense runtime state ids in
+the `u16` voxel, and world files that store palettes as strings. (An earlier draft of this section
+proposed a hand-made id formula; the registry replaces it.)
 
-**Options considered** (decided by Phase 10's ADR):
-
-- **Block states (recommended).** The `u16` id becomes an index into a **state table** generated
-  from (material × allowed shape variant). Materials flagged `shapeable` (stone, dirt, grass,
-  sand, sandstone, gravel, snow, log, …) get the 72 variants plus slabs; the others keep one state.
-  Ids are assigned by a fixed formula in a reserved range (e.g. `SHAPED_BASE + slot × 80 +
-  variant`, slots appended as materials are added), so **every existing id keeps its value** and
-  saved worlds need no migration. Chunk palettes, run-length encoding, the wire and the world file
-  are unchanged; a chunk with many shapes just has a longer palette (u16 palette indices above 256
-  entries already exist). ~10 shapeable materials ≈ 800 states, far under 65 536.
-- **A separate shape layer** (a second per-voxel byte). Cleaner in principle, but it changes the
-  chunk encoding, the wire, the world file, the LOD cells, every voxel accessor and the golden
-  vectors. Rejected unless the state count ever grows past the id space.
-
-Per state, the table gives what the systems need: base material (for textures, mining drops,
-density), shape and orientation, collision triangles, face coverage for culling (§3.1), volume
-(mass for Phase 11), and `Placeable`. The C++ table is generated from the formula, and the
-TypeScript mirror is generated the same way and checked by the existing mirror test. The protocol
-version is bumped because both sides must agree on the state table.
+- **Families per shapeable material** (stone, dirt, grass, sand, sandstone, gravel, snow, log,
+  planks later, …), generated from the block data files: `dwell:<m>_slope[facing, flooded, half,
+  shape]` — `shape` = the 9 pieces of §1.2 (`wedge`, `outer`, `inner`, `gentle_low`,
+  `gentle_high`, `gentle_outer_low`, `gentle_outer_high`, `gentle_inner_low`,
+  `gentle_inner_high`), `facing` = the direction it descends toward, `half` = `bottom` (upright) or
+  `top` (inverted) — 144 states per material; and `dwell:<m>_slab[flooded, half]`. Each links to its
+  base material for textures, density and drops. Plain `dwell:<m>` stays the full cube.
+- **`flooded`** is Minecraft's `waterlogged`: water in the open part of a shaped cell (§3.1, §4, §5).
+- Per state, the registry gives what the systems need: shape and orientation, collision
+  triangles, face coverage for culling (§3.1), volume (mass for Phase 12), convexity, `placeable`.
+  The protocol version is bumped for the registry hash as part of Phase 10; adding the slope
+  families is a registry change (new hash, regenerated goldens), not a format change.
 
 Point queries that read a voxel's shape (`ShapeHeight`, the controller's ground probes, spawn,
 block-placement fit checks) gain `SurfaceHeightAt(state, fx, fz)` — the piecewise-planar top
@@ -127,9 +122,9 @@ surface above — with the exact same arithmetic on both sides (ADR 0010 rules: 
   by the face normal (`normal.y` between top and side values), in the shared module both meshers
   import.
 - Water next to a slope: water faces against a slope's open part are drawn (the slope does not
-  cover them). Slopes **under water** need a "waterlogged" state (water in the air part of the
-  cell); until then the generator places no slopes in cells that would hold water (§5) and edits
-  that place a slope into water are refused or displace the water (decide in the ADR).
+  cover them). A **flooded** slope draws water in its own open part, up to the water surface, and
+  culls water faces against it accordingly. Placing a slope into water makes it flooded; breaking
+  a flooded slope leaves water.
 
 ### 3.2 LOD
 
@@ -174,7 +169,7 @@ rounds it to voxels. Slopes are chosen from it **per cell, from corner heights**
 cells agree without reading each other (no neighbour reads, §6.3):
 
 1. For a column's top voxel whose surface is a plain heightfield locally (no overhang noise or
-   cave air within the cell's neighbourhood, above any water), take `h` at the cell's four corners
+   cave air within the cell's neighbourhood), take `h` at the cell's four corners
    (corner points are shared by the four cells around them, so adjacent cells see the same
    numbers).
 2. Relative to the cell's floor, quantise each corner height to {0, ½, 1} (below → the cell is
@@ -184,7 +179,8 @@ cells agree without reading each other (no neighbour reads, §6.3):
    the set (saddles, mixed runs) map to the nearest piece by a fixed rule (e.g. raise the lowest
    corner), so the result is still deterministic.
 4. The material is the surface material the column already chooses (grass, sand, snow, …) in its
-   shaped state.
+   shaped state; a piece whose open part lies below the local water level (sea, rivers, lakes) is
+   `flooded=true`, so lake and sea floors are sloped too.
 
 Gentle pieces appear on gentle ground and standard pieces on slopes near 45°; anything steeper
 stays a cliff of cubes with a shaped lip. Slopes are a generator stage like the others, so this is
@@ -207,25 +203,25 @@ at first; extending the rule to them is a later tuning step.
 
 ## 7. Later phases
 
-- **Phase 11 (voxel awakening):** integrity treats any two solid voxels sharing a face as connected
+- **Phase 12 (voxel awakening):** integrity treats any two solid voxels sharing a face as connected
   (partial coverage included, so a slope supports what sits on it). Cluster bodies use one convex
-  shape per voxel from the state table (inner corners as two wedges), and mass from density ×
+  shape per voxel from the registry (inner corners as two wedges), and mass from density ×
   volume.
-- **Phases 12–13:** debris and re-baking snap to the 24 orientations; a shaped voxel re-bakes into
+- **Phases 13–14:** debris and re-baking snap to the 24 orientations; a shaped voxel re-bakes into
   the state whose orientation matches, or as a full block when none does.
 
-## 8. How Phase 10 is checked
+## 8. How Phase 11 is checked
 
 - Shape table: the corner heights, volumes, coverage and convexity of every variant computed from
-  its triangles and compared to §1.2; the C++ and TypeScript state tables identical; every existing
-  material id unchanged (a saved golden world file loads identically).
+  its triangles and compared to §1.2; the slope families' canonical strings round-trip and the
+  registries agree on both sides; the golden world file still loads identically.
 - Meshing: no holes or z-fighting between any pair of adjacent shapes (an exhaustive test over all
   shape pairs on all six sides: every surface point is covered by exactly one face); sloped faces
   lit by normal.
 - Controller: the slope scenarios above, natively and in WASM, both origins; the `maxSlopeAngle`
   test fails on 45° and passes on the new value.
 - Terrain: on sampled sites the shaped surface is within half a block of `h`, adjacent cells'
-  shared corners agree, no slopes in cells holding water; determinism goldens.
+  shared corners agree, slopes below the water level are flooded; determinism goldens.
 - LOD: the LOD slope surface within half a cell of the true surface; frame time within budget.
 - Building: placing every shape in every orientation (e2e, like the existing "break and place every
   palette block" test), seen identically by a second client.

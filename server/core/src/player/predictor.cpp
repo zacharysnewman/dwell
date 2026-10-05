@@ -73,7 +73,7 @@ GroundRef Predictor::GroundFromNet(protocol::GroundKind kind, std::uint16_t id) 
       return {};
     }
     default:
-      return {};  // Tier 1 bodies arrive in Phase 11
+      return {};  // Tier 1 bodies arrive in Phase 12
   }
 }
 
