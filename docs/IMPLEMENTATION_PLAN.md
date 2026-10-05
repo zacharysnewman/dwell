@@ -1348,16 +1348,17 @@ saved worlds. The foundation for slopes (Phase 11), flooded blocks and new conte
 
 Deliverables
 - [ ] ADR: the block registry — identity and canonical strings, data files and generated
-  registries, runtime ids and the registry hash, string palettes in the world file, unknown
-  states, aliases; supersedes the material-table parts of §6.1.
+  registries, runtime ids and the registry hash, string palettes in the world file (no migration
+  of earlier worlds: they are version-locked, Phase 12); supersedes the material-table parts of
+  §6.1.
 - [ ] Block data files (`shared/blocks/`) for today's 21 materials (ladders as
   `dwell:ladder[facing,flooded]`) and a generator emitting the C++ and TypeScript registries,
   replacing `voxel.h`'s table and `materials.ts`'s hand mirror; canonical string parse/write.
 - [ ] Every user of material ids (generator, meshers, collision, controller, edits, palette, LOD)
   on runtime state ids resolved by name; `Placeable` and render styles from the registry.
-- [ ] World file: the `block_states` table, chunk palettes of world state ids, a migration from
-  today's numeric ids, aliases and upgrade rules, the `dwell:unknown` placeholder that keeps its
-  string; the LOD cache dropped on a registry change.
+- [ ] World file: the `block_states` table and chunk palettes of world state ids; the golden world
+  file regenerated in the new format; the LOD cache dropped on a registry change. (Aliases, upgrade
+  rules and an unknown-state placeholder are deferred to world upgrades, `FUTURE.md`.)
 - [ ] Protocol: the registry hash in `Welcome` (version bump, golden vectors in both languages).
 - [ ] Paletted in-memory chunks (bit-packed indices): measure memory and meshing/collision time;
   adopt only if the trade is good, otherwise record the numbers and defer.
@@ -1366,9 +1367,8 @@ Deliverables
 Exit criteria
 - [ ] Every state's canonical string round-trips; C++ and TypeScript registries give the same order
   and hash.
-- [ ] The golden world file migrates and loads identically (terrain, edits, every voxel's string).
-- [ ] A world with an unknown state loads as the placeholder and saves the original string back;
-  an alias upgrades on load.
+- [ ] A world saved and reopened in the same build is identical (terrain, edits, every voxel's
+  string); the regenerated golden world file reads natively and in the browser.
 - [ ] Determinism goldens pass natively, under WASM and in the client module (regenerated once if
   runtime ids change, with the registry hash recorded); the e2e palette test passes.
 
@@ -1410,7 +1410,7 @@ Deliverables
 
 Exit criteria
 - [ ] Shape table verified from geometry (corner heights, volumes, coverage, convexity); the slope
-  families' canonical strings round-trip; the golden world file still loads identically.
+  families' canonical strings round-trip.
 - [ ] Exhaustive adjacency test: no holes or overlapping faces for any pair of shapes on any side.
 - [ ] Controller slope scenarios pass natively and in WASM, at the origin and ~8,000 km out; the
   divergence check passes; no slope launches, hops or sliding at rest.
@@ -1449,7 +1449,8 @@ Deliverables
 - [ ] Launcher: pick the version (world, invite/code, server, latest stable or dev), redirect with
   the query kept; Back to the menu returns to `/dwell/`; clear errors for missing versions.
 - [ ] Worlds: `app_version_created` / `app_version_last` in the world file and `appVersion` in the
-  world index; existing worlds stamped with the baseline version; a build opens only its own
+  world index; saves from before the baseline ignored (deletable from the menu), none migrated;
+  a build opens only its own
   version's worlds (browser and `dwell_server`, which names the version to run); the menu lists all
   worlds with a version badge.
 - [ ] Cross-version storage contract: the world index, settings and other shared stores are
@@ -1469,7 +1470,7 @@ Exit criteria
   `/dwell/`; other versions' worlds are listed with badges.
 - [ ] A world from version A refuses to open in version B, in the browser and in `dwell_server`.
 - [ ] An older build rewriting the world index keeps fields it does not know (test).
-- [ ] Worlds saved before the baseline open in the baseline version.
+- [ ] Saves from before the baseline are ignored without errors and can be deleted from the menu.
 - [ ] The live site deploys from the public repo with the source repo private; no source maps
   published (manual check).
 

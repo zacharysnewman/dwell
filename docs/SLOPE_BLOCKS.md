@@ -214,7 +214,7 @@ at first; extending the rule to them is a later tuning step.
 
 - Shape table: the corner heights, volumes, coverage and convexity of every variant computed from
   its triangles and compared to §1.2; the slope families' canonical strings round-trip and the
-  registries agree on both sides; the golden world file still loads identically.
+  registries agree on both sides.
 - Meshing: no holes or z-fighting between any pair of adjacent shapes (an exhaustive test over all
   shape pairs on all six sides: every surface point is covered by exactly one face); sloped faces
   lit by normal.

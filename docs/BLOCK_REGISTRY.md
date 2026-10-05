@@ -84,15 +84,15 @@ collision paths before adopting; it is a deliverable gated on that measurement.
   (indices into `block_states`), not runtime ids. On load, each world state id maps to a runtime id
   through its string; on save, runtime ids map back. Ids are world-local and stable for the life of
   the world file, whatever the code's registry does.
-- **Migration** of existing worlds (a step in the existing migration chain): today's 21 numeric
-  material ids map to canonical strings (`2 → dwell:stone`, the four ladder ids →
-  `dwell:ladder[facing=…,flooded=false]`, …) through a fixed legacy table.
-- **Renames and upgrades:** a data table of aliases and upgrade rules (`dwell:old_name →
-  dwell:new_name`, property renames, defaults for added properties) applied when a world's string
-  does not match the registry.
-- **Unknown states** (content removed, or a world from a newer build): load as a placeholder state
-  (`dwell:unknown`, drawn as a conspicuous checker cube, solid) that **keeps the original string**,
-  so saving writes it back unchanged and nothing is lost by opening a world in another build.
+- **No migration.** Worlds are locked to the app version that created them (Phase 12,
+  [`RELEASES.md`](./RELEASES.md) §6), and saves from before the version launcher are not carried
+  over (owner, 2026-10-05), so no existing world file is converted: a world written before the
+  registry keeps opening in its own build. The storage suite's golden world file is regenerated in
+  the new format.
+- **Deferred to world upgrades** ([`FUTURE.md`](./FUTURE.md)): a data table of aliases and upgrade
+  rules (`dwell:old_name → dwell:new_name`, property renames, defaults for added properties), and a
+  placeholder for unknown states (`dwell:unknown`, keeping the original string so saving writes it
+  back). String palettes on disk are what make these possible later.
 - The **LOD cache** (`lod_sections`) is a cache: it is dropped when the registry hash changes,
   instead of being migrated.
 
@@ -128,11 +128,9 @@ so a failure says which changed.
   accepts any key order and missing defaults; invalid strings are rejected with a clear error.
 - The C++ and TypeScript registries are generated from the same files and produce identical state
   orders and registry hashes (a test on both sides against the same vector).
-- An existing world file (the golden world file from Phase 3e) migrates, loads and generates
-  identically: same terrain, same edits, every voxel's canonical string equal to its legacy
-  material's mapping.
-- Unknown and renamed states: a world with a state the registry lacks loads as the placeholder and
-  saves the original string back unchanged; an alias upgrades on load.
+- A world saved, closed and reopened in the same build is identical (terrain, edits, every voxel's
+  canonical string); the regenerated golden world file is read by the native and browser storage
+  suites.
 - Determinism goldens pass (regenerated once if runtime ids change); protocol golden vectors for
   `Welcome`'s registry hash; e2e "break and place every palette block" still passes.
 - If paletted containers are adopted: chunk memory and meshing time measured before and after.

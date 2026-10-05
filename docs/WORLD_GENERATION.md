@@ -791,8 +791,9 @@ material then.
 - **Determinism (ADR 0010, 0011).** Integer hashes for every placement decision; only `+ − × /`,
   comparisons and (after Phase 7's ADR) `sqrt`; no float conversion of whole world coordinates;
   one evaluation order shared by chunks, point queries and LOD. Every output change bumps the
-  generator version and regenerates goldens (`DWELL_UPDATE_GOLDEN=1`); old versions retire as
-  today (a world saved with a retired version loads as the flat world).
+  generator version and regenerates goldens (`DWELL_UPDATE_GOLDEN=1`). No phase migrates saved
+  worlds: saves from before the version launcher (Phase 12) are not carried over, and after it
+  each world is locked to the app version that created it (`RELEASES.md` §6).
 - **No neighbour reads.** Every stage is a function of world coordinates and hashes only (chunks
   generate in any order). Rivers, lakes, plates and islands are all designed to satisfy this.
 - **LOD parity.** Every new field has an LOD evaluation with octaves and features finer than a

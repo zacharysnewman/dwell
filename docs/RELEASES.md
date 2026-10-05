@@ -112,8 +112,14 @@ Missing or unreachable versions show a clear message with the choice to open the
 
 - **Recorded:** a world's file stores `app_version_created` and `app_version_last` in its metadata
   (ADR 0006: the world file holds all data), and the browser's world index (`dwell.worlds`) record
-  stores `appVersion`. Worlds that exist before the first versioned release are stamped with that
-  release's version (the baseline).
+  stores `appVersion`.
+- **Saves from before the launcher are not carried over** (owner, 2026-10-05). The first versioned
+  release — the **baseline** — starts clean: world files and index records without an app version
+  are ignored (the menu offers to delete them, so they do not hold storage quota), and no earlier
+  format is migrated. From the baseline on, version locking means **no world ever needs
+  migrating**: a world keeps opening in the build that wrote it, so later phases may change the
+  world file format, the block registry and the generator freely (upgrading worlds is the
+  [`FUTURE.md`](./FUTURE.md) item).
 - **Locked:** a build opens a world only if `app_version_created` equals its own version; the
   launcher routes `?play=` there. The menu (in the latest version) lists **all** worlds with a
   version badge; playing one from another version navigates to it through the launcher.
@@ -164,5 +170,5 @@ Missing or unreachable versions show a clear message with the choice to open the
   message naming A.
 - Cross-version storage: an older build rewriting the world index preserves fields it does not
   know (a test with a record carrying an extra field).
-- Existing worlds (created before the baseline) are stamped with the baseline version and open.
+- Worlds saved before the baseline are ignored without errors and can be deleted from the menu.
 - No source maps in published builds; the source repo is private and the site still deploys.
