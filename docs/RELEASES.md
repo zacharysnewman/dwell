@@ -51,9 +51,17 @@ from the menu's About screen, and run `gen.py --check` in CI.
 
 ## 3. Builds, versions and tags
 
-- **App version:** one semantic version for the whole app — client, sim core, generator, protocol —
-  e.g. `0.12.0`. `protocolVersion` and the generator versions stay as internal numbers and are
-  recorded with each build. Dev builds are `0.12.0-dev.<yyyymmdd>.<sha7>`.
+- **App version:** one semantic version for the whole app — client, sim core, generator, protocol.
+  `protocolVersion` and the generator versions stay as internal numbers and are recorded with each
+  build. Scheme (owner, 2026-10-05):
+  - **The baseline — the first versioned release — is `0.1.0`.** The app stays below `1.0.0` until
+    launch.
+  - **Minor** (`0.2.0`, `0.3.0`, …): any release that changes saved worlds, terrain generation or
+    the network protocol — the changes that version-lock worlds (§6). Most phases ship at least one.
+  - **Patch** (`0.1.1`): fixes that change none of those, so worlds and servers stay compatible.
+  - **Dev builds** carry the next release's number: `0.2.0-dev.<yyyymmdd>.<sha7>`.
+  - The version lives in one place (the client's `package.json`), and the build embeds it; the other
+    manifests' own version fields are not the app version.
 - **Channels:** **stable** (a release: pushing a `v<version>` tag, or a manual "Release" workflow)
   and **dev** (every push to `main`). Both are published; the launcher defaults to stable and
   offers dev in settings.

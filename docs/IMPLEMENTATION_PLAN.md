@@ -1168,7 +1168,8 @@ Deliverables
   menu's About screen; CI runs `shared/licenses/gen.py --check`.
 - [ ] App version: one semantic version embedded in every build (HUD and menu instead of the commit
   SHA), recorded with `protocolVersion` and generator versions in `build.json`; stable and dev
-  channels.
+  channels. The baseline release is `0.1.0`; minor bumps for world, generator or protocol changes,
+  patch for compatible fixes (`RELEASES.md` §3).
 - [ ] Release workflow: build each version for `base: '/dwell/v/<version>/'`, publish it as a
   GitHub Release (`v<version>`, or a `dev-<version>` pre-release) with the build archive and
   `build.json`; prune old dev pre-releases.
