@@ -416,6 +416,14 @@ The pipeline structure below (deterministic stages, lattice-sampled fields, orde
 features) is architecture; its current *content* — the biomes, surface materials, ores, trees and
 boulders — is prototype (§6.1).
 
+**[planned, Phases 10–13]** The world's look and shape are redesigned in
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a warm, colourful fantasy palette, lighting and sky
+(Phase 10); continents from Voronoi plates with guaranteed ocean between them (Phase 11);
+drainage-consistent terrain — rivers as noise contours in valley floors, water above sea level,
+climate and a biome table (Phase 12); and sky islands in a dome, which add a second surface band
+per column (Phase 13). Nothing below changes until those phases land; each updates this section,
+§6.6 and §5 as it does.
+
 **Built (Phases 3a, 3c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
 `src/worldgen/`) is **generator version 4** (3c: the planet-scale world as version 3; Phase 4 adds
 super tall massifs as version 4; versions 2 and 3 are retired — a world saved with one loads as the
@@ -1774,3 +1782,5 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 14 | ~~Own subdomain for the client~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) (ADR 0005) |
 | 15 | ~~Friend-world host migration~~ | **Resolved:** no migration; sessions end with the host — [ADR 0009](./adr/0009-friend-world-lifetime.md). Migration and paid cloud worlds in [`FUTURE.md`](./FUTURE.md) |
 | 16 | ~~Dedicated servers accepting WebRTC~~ | **Resolved** with #13 — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
+| 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
+| 18 | Sky islands: the dome's shape and altitude band, coexistence with 5 km massifs, island anchors for integrity | Awaiting the Aether reference; decide by ADR in Phase 13 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.7 |

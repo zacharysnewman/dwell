@@ -27,11 +27,19 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 9 — Dedicated servers & packaging | ⏳ Not started | — |
+| 10 — Fantasy look: palette, lighting, sky, colourful vegetation | ⏳ Not started | — |
+| 11 — Continents from Voronoi plates | ⏳ Not started | — |
+| 12 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
+| 13 — Sky islands in a dome | ⏳ Not started — draft; design awaits the Aether reference | — |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
 Phase 5 (multiplayer ready) was inserted on 2026-09-30 (ADR 0013); the former Phases 5–8 are now
 6–9.
+Phases 10–13 (the world's look and shape) were added on 2026-10-05; their design is in
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md). They depend only on Phases 3–4 (the generator and
+the LOD), not on Phases 6–9, and may be scheduled before them; they run in order 10 → 13 (10 is
+independent of 11–12; 13 needs 12).
 
 ---
 
@@ -1126,7 +1134,9 @@ These steps need an account owner's dashboard access and cannot be done from cod
 
 Deliverables
 - [ ] Anchor definition (bedrock layer + `grounded` flag) and budgeted 6-connected flood-fill
-  structural-integrity pass triggered by voxel removal (`INTEGRITY_BUDGET_VOXELS`).
+  structural-integrity pass triggered by voxel removal (`INTEGRITY_BUDGET_VOXELS`). The anchor
+  rule must also cover generated sky islands (Phase 13; `WORLD_GENERATION.md` §4.4 item 7),
+  whichever phase lands first.
 - [ ] Clustering of detached components; removal from grid in the same `VoxelModification`
   (reason `Collapse`).
 - [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
@@ -1252,6 +1262,173 @@ Exit criteria
 - [ ] An iOS Safari player joins a self-signed dedicated server over WebRTC, including one behind
   strict NAT via TURN.
 - [ ] An outdated client is rejected with a clear message and offered the matching versioned build.
+
+---
+
+## Phase 10 — Fantasy Look: Palette, Lighting, Sky, Colourful Vegetation
+
+**Goal:** The world reads as warm, colourful, happy high fantasy: warm light and cool shadows,
+saturated foliage with clumps of autumn, blossom and violet accent trees, turquoise water, warm
+rock, a gradient sky with distance fading into a pale horizon haze. Design, measured target
+palette and a full description of the reference image: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1.
+
+**Status:** Not started. Sub-phases: **10a — rendering and palette** (no generator change);
+**10b — colourful vegetation** (new materials, generator version bump); **10c — clouds**
+(render-only, separable).
+
+Deliverables
+- [ ] 10a: material colours and procedural tiles retuned toward the measured palette (§1.3–1.4);
+  LOD colours follow via tile averages.
+- [ ] 10a: one shared per-face RGB tint table (warm top, cooler sides, blue bottom) used by both the
+  chunk mesher and the LOD mesher, replacing the scalar face shades.
+- [ ] 10a: warm sun, re-coloured hemisphere light, tone mapping with an exposure setting (in the
+  material shaders, no extra pass).
+- [ ] 10a: sky gradient (zenith → horizon, sun glow) replacing the flat clear colour; height fog
+  fades to the sky's colour in the view direction; turquoise water (chunk and LOD).
+- [ ] 10a: an e2e screenshot script for fixed views (spawn, forest edge, coast, distant mountains,
+  the disc from the flight ceiling), run before and after.
+- [ ] 10b: leaf materials (bright, autumn, red, blossom, violet) and grass variants (meadow with
+  flowers, golden), C++ table and TypeScript mirror, with tiles; blossom and autumn tree kinds.
+- [ ] 10b: accent trees chosen by a grove noise plus a per-tree hash, so accents come in clumps;
+  biome restricts the allowed set. Generator version bump; goldens regenerated.
+- [ ] 10b: distant forests keep their colour — `GenerateLod` gives forested columns a canopy
+  (leaf) surface above the tree-cell limit.
+- [ ] 10c: a render-only cloud layer (~1,500–2,500 m), warm-lit tops, faded by the haze and above
+  the flight ceiling, ≤ ~1 ms per frame on a phone.
+- [ ] `ARCHITECTURE.md` §5 (rendering), §6.1 (material list), §6.3 (trees) and §6.6 (LOD canopy)
+  updated; `WORLD_GENERATION.md` §1 trimmed to what was built plus rationale.
+
+Exit criteria
+- [ ] The owner approves before/after screenshots of the fixed views as matching the reference's
+  mood (manual).
+- [ ] Unit tests: chunk and LOD faces of the same material and direction get identical colours;
+  the tint table is warm on top and bluest underneath; the horizon fog colour equals the sky
+  gradient's horizon colour; new materials mirrored and placeable; accent trees are clumped
+  (nearest-neighbour accent fraction well above the overall accent fraction); a forested site's
+  level-4 LOD surface is mostly leaf materials.
+- [ ] Frame time within ±5 % of before on desktop and a phone (F3 readout); cloud cost measured.
+- [ ] Determinism goldens pass natively, under WASM and in the client module.
+
+---
+
+## Phase 11 — Continents from Voronoi Plates
+
+**Goal:** A two-level jittered Voronoi layout (continent cells ~2,560 km, plates ~256 km) splits
+the disc into **6–14 distinct continents with at least `OCEAN_GAP` of open ocean between any
+two**, natural fractal coastlines, island chains, an ocean ring at the rim, and per-continent
+character; continentalness becomes a signed distance to the coast. Design:
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2.
+
+**Status:** Not started.
+
+Deliverables
+- [ ] ADR: continents from Voronoi plates (layout, separation clamp, macro lattice), amending
+  ADR 0010 to allow correctly rounded `sqrt` (no other `<cmath>`), guarded by the goldens.
+- [ ] Continent and plate layers: bounded-jitter sites, land/ocean hashing, forced land at the
+  origin, ocean beyond `WORLD_RADIUS − RIM_OCEAN`, bays, island plates with their blob layer.
+- [ ] Domain warp shared by both lookups; signed coast distance from plate bisectors plus
+  scale-dependent coast fBm; the separation clamp (continents, islands, rim).
+- [ ] Shelf / slope / abyss and inland rise driven by the coast distance; per-continent record
+  (elevation, mountainousness, climate bias, wind, shelf width); internal plate-edge distance and
+  convergence exported for Phase 12.
+- [ ] Macro lattice (~256 m) shared by chunks, point queries and `GenerateLod`; per-column caching
+  where needed; chunk and LOD generation within +10 % of today.
+- [ ] Generator version bump; chunk and LOD goldens regenerated with coast, ocean-gap, island and
+  interior entries.
+- [ ] `dwell_worldgen_inspect` whole-disc image mode (continent ids, plate edges, height); the F4
+  map zooms out to the whole disc.
+- [ ] `ARCHITECTURE.md` §6.3 (climate, base height, world bounds' scale-of-terrain paragraph) updated.
+
+Exit criteria
+- [ ] Separation test: for 8 seeds and ~10,000 land points each, every sample within
+  0.99 × `OCEAN_GAP` (64 directions × 4 radii) is sea or the same continent.
+- [ ] For 8 seeds: 6–14 continents; land fraction 0.25–0.35; the origin on land; no land within
+  `RIM_OCEAN` of the rim; coastline length grows ≥ 1.5× from a 16 km to a 1 km ruler.
+- [ ] Determinism goldens pass natively, under WASM and in the client module; timings reported.
+- [ ] Whole-disc images for 3 seeds reviewed by the owner (manual).
+
+---
+
+## Phase 12 — Natural Terrain: Rivers, Mountains, Climate & Biomes
+
+**Goal:** Realistic, drainage-consistent terrain after the Epic Terrain mod's techniques
+(re-implemented, described in [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.1): rivers in
+three tiers as noise contours that always run along valley floors and reach the sea; mountains
+that rise away from rivers within plate-driven uplift belts, with derivative-damped ridged detail;
+lakes, terraced river water above sea level with waterfall steps; climate from altitude, coast
+distance and rain shadows; biomes from a data table driven by the terrain. Design: §3.
+
+**Status:** Not started. Planned sub-phases (each a generator version bump): **12a — height model,
+rivers, lakes, water above sea level**; **12b — mountain detail cascade**; **12c — climate and the
+biome table**; **12d — fantasy landforms** (karst spires, mesas; stretch, after the owner approves
+12a–c).
+
+Deliverables
+- [ ] ADR: drainage-consistent terrain — rivers as noise contours, water above sea level as
+  terraced static water, and their effect on air chunks and LOD bounds.
+- [ ] 12a: valley floor `V`, uplift `U`, distance-from-rivers factor; three river tiers with
+  channel profiles that fade inland and with altitude; terraced river surfaces with waterfall
+  steps; lake cells and wetland ponds; caves suppressed under water; overhangs reduced.
+- [ ] 12a: `IsAirChunk`/`SkyFloor` and `LodBoundsAt` include water above sea level; spawn prefers
+  land near water.
+- [ ] 12b: analytic-derivative gradient noise and the derivative-damped ridged cascade (§3.4),
+  amplitude scaled by distance from rivers and uplift; LOD octave dropping.
+- [ ] 12c: temperature with a lapse rate, humidity with coast distance and rain shadow; the biome
+  table (base grid + terrain overrides + dithered borders); surface rules and trees from it.
+- [ ] 12d (stretch): karst spire and mesa provinces.
+- [ ] Inspect tool: rivers, lakes and biomes on the map; a hillshade image mode.
+- [ ] Goldens regenerated per sub-phase, with river, lake, waterfall, alpine and coast entries;
+  LOD agreement tests gain river and lake sites.
+- [ ] `ARCHITECTURE.md` §6.3 (pipeline stages, water rule, surface rules) and §6.6 (LOD bounds)
+  updated.
+
+Exit criteria
+- [ ] Rivers lie in valleys: sampled channel beds are no higher than the terrain 50–500 m to either
+  side.
+- [ ] Great rivers' water is at sea level within 5 km of the coast.
+- [ ] No floating water: every water voxel has water or solid below; horizontal water/air contacts
+  occur only at terrace steps.
+- [ ] No cave air within the suppression depth below water.
+- [ ] Snow only above the altitude its temperature implies; lee sides of ranges drier than
+  windward sides.
+- [ ] Biome shares within bands for 8 seeds; chunk and LOD generation ≤ +25 % of today; LOD
+  agreement thresholds still met; determinism goldens pass everywhere.
+- [ ] Manual: a walk along a river from its spring to the sea and a flight over a range, with
+  screenshots for the owner.
+
+---
+
+## Phase 13 — Sky Islands in a Dome
+
+**Goal:** Separate floating islands whose envelope forms a half-dome over the world, after the
+Aether mod's sky-island terrain (landforms only — no dungeons or creatures). Design (provisional):
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
+
+**Status:** Not started — **draft**. The owner will provide the Aether reference; update
+`WORLD_GENERATION.md` §4.2–§4.4 and these deliverables from it and resolve §4.7's open questions
+before starting. Depends on Phase 12 (altitude climate, lakes, waterfalls); benefits from 10c.
+
+Deliverables (provisional)
+- [ ] ADR: sky islands — the dome envelope, island classes, multi-surface columns, island anchors.
+- [ ] Island placement: dome envelope and shell, per-class jittered cells with guaranteed gaps,
+  clearance above the ground (lift or drop).
+- [ ] Island shape: plan mask, top hills and lakes, tapering crags underneath; materials and
+  trees from the biome table; decorative waterfalls off edges.
+- [ ] Multi-surface columns (`Column` island spans), the surface pass, `GroundY` plus an island-top
+  query; the stability pass keeps islands.
+- [ ] `IsAirChunk`/`SkyFloor` and `LodBounds` with an island band; LOD classification and
+  visibility from afar.
+- [ ] Island anchors for structural integrity, coordinated with Phase 6.
+- [ ] Goldens with island chunks and LOD sections; `ARCHITECTURE.md` §6.3, §6.6 and §7.1 updated.
+
+Exit criteria (provisional)
+- [ ] No two islands touch; every island clears the ground by the clearance; island altitudes
+  follow the dome envelope across the disc.
+- [ ] Open sky between islands is still skipped as air chunks (a flight test counts generated
+  chunks); LOD sections in the band are classified correctly.
+- [ ] Islands survive the stability pass; determinism goldens pass everywhere.
+- [ ] Manual: a flight through an island field and a view of the dome from afar, reviewed by the
+  owner.
 
 ---
 
