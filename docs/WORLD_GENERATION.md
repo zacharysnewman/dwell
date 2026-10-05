@@ -1,6 +1,6 @@
 # Dwell — World Generation Plans: Look, Continents, Terrain, Sky Islands
 
-> **Status: [planned].** This is the design reference for implementation Phases 6–9
+> **Status: [planned].** This is the design reference for implementation Phases 7 and 10–12
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). It describes what to build and why, in
 > enough detail that no outside material is needed. The reference image and the Epic Terrain mod
 > it was written from are **not** in the repository and will not be available when the phases are
@@ -22,10 +22,10 @@ re-implemented from the descriptions here; none of their data or files are copie
 "All Rights Reserved").
 
 Contents
-1. [Art direction and colour (Phase 6)](#1-art-direction-and-colour-phase-6)
-2. [Continents from Voronoi plates (Phase 7)](#2-continents-from-voronoi-plates-phase-7)
-3. [Natural terrain: rivers, mountains, biomes (Phase 8)](#3-natural-terrain-rivers-mountains-biomes-phase-8)
-4. [Sky islands in a dome (Phase 9)](#4-sky-islands-in-a-dome-phase-9)
+1. [Art direction and colour (Phase 7)](#1-art-direction-and-colour-phase-7)
+2. [Continents from Voronoi plates (Phase 10)](#2-continents-from-voronoi-plates-phase-10)
+3. [Natural terrain: rivers, mountains, biomes (Phase 11)](#3-natural-terrain-rivers-mountains-biomes-phase-11)
+4. [Sky islands in a dome (Phase 12)](#4-sky-islands-in-a-dome-phase-12)
 5. [Cross-cutting rules for all four phases](#5-cross-cutting-rules-for-all-four-phases)
 
 Where things are today (generator version 4, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
@@ -39,7 +39,7 @@ a white sun (1.6); the sky is a flat clear colour `0x87b5e0`, which the height f
 
 ---
 
-## 1. Art direction and colour (Phase 6)
+## 1. Art direction and colour (Phase 7)
 
 ### 1.1 The reference image (described, since it will not be available)
 
@@ -96,11 +96,11 @@ Sampled from the image (hue-family medians of the vivid pixels, and point sample
 
 ### 1.4 What to change
 
-**Scope: colours only, no terrain generation change.** Phase 6 is a first pass at better
+**Scope: colours only, no terrain generation change.** Phase 7 is a first pass at better
 colours: it retunes how the existing materials and the sky are drawn. It adds no materials, does
 not touch the generator (no version bump, goldens unchanged) and changes no landforms or
 vegetation placement. Colourful vegetation — accent trees and new leaf and grass materials — is part
-of Phase 8's biome work (§3.7); clouds are with the sky islands (§4.9).
+of Phase 11's biome work (§3.7); clouds are with the sky islands (§4.9).
 
 **Material base colours and texture tiles.** Retune `textures.ts` tile generators and
 `materials.ts` colours toward §1.3. Starting points (tune on screen):
@@ -149,7 +149,7 @@ unit-testable.
 image's turquoise-to-blue comes from depth). LOD water (already tinted) uses the same base.
 Optional if cheap: a slight fresnel brightening at grazing angles.
 
-### 1.5 How Phase 6 is checked
+### 1.5 How Phase 7 is checked
 
 - **Screenshots.** An e2e script captures the same fixed views (seed, position, look direction,
   time) before and after: the spawn, a forest edge, a coast, mountains from a distance, the
@@ -164,7 +164,7 @@ Optional if cheap: a slight fresnel brightening at grazing angles.
 
 ---
 
-## 2. Continents from Voronoi plates (Phase 7)
+## 2. Continents from Voronoi plates (Phase 10)
 
 ### 2.1 Goal
 
@@ -221,19 +221,19 @@ borders.
    open water, whatever the noise does. The same clamp keeps continents and island plates apart
    (`ISLAND_CLEARANCE`) and keeps the rim ring open (`s ← min(s, RIM_OCEAN − (R − r))`, with
    `R − r` approximated by `(R² − r²) / 2R` near the rim to stay sqrt-free).
-4. *Shelf and abyss.* Phase 7 maps `s` to the existing continentalness range with a spline:
+4. *Shelf and abyss.* Phase 10 maps `s` to the existing continentalness range with a spline:
    a continental shelf (`s` from 0 to −`SHELF_WIDTH` ≈ 80–200 km, varying per continent, depth to
    ~−150 m), a continental slope, and the abyss (~−1,200 to −1,800 m; the world is 2,048 m deep).
    Land rises with `s` toward the continent's interior (`s / (s + K)`, saturating, no `exp`).
 
 **Per-continent character.** Hash the continent id into a small record used by later stages:
 base interior elevation, mountainousness, temperature bias (−10 to +10 °C), humidity bias,
-prevailing-wind direction (one of 8, so no trig), shelf width. Phase 7 uses the elevation and
-shelf width; Phase 8 the rest.
+prevailing-wind direction (one of 8, so no trig), shelf width. Phase 10 uses the elevation and
+shelf width; Phase 11 the rest.
 
-**Plate boundaries inside continents** (exported for Phase 8). For land points, also compute
+**Plate boundaries inside continents** (exported for Phase 11). For land points, also compute
 the distance to the nearest **internal plate edge** (between two land plates of the same
-continent) and a hashed per-edge "convergence" value in [−1, 1]. Phase 8 raises mountain belts
+continent) and a hashed per-edge "convergence" value in [−1, 1]. Phase 11 raises mountain belts
 along convergent edges and rifts/lowlands along divergent ones, so ranges have plausible
 continental-scale placement instead of free noise.
 
@@ -254,7 +254,7 @@ worker if needed (a cache of pure-function results does not affect determinism).
 **`sqrt`.** The bisector distance needs `|b − a|`. ADR 0010 bans library calls because their
 results are not specified to the last bit — but IEEE 754 requires `sqrt` to be correctly rounded,
 and both x86-64 SSE (`sqrtss`/`sqrtsd`) and WebAssembly (`f32.sqrt`/`f64.sqrt`) implement it
-exactly. Phase 7's ADR amends ADR 0010 to allow `std::sqrt` (and nothing else from `<cmath>`),
+exactly. Phase 10's ADR amends ADR 0010 to allow `std::sqrt` (and nothing else from `<cmath>`),
 with the golden tests as the guard. (Fallback if ever needed: a fixed-iteration Newton square root
 using only `+ − × /`.)
 
@@ -263,14 +263,14 @@ using only `+ − × /`.)
 - **Generator version bump**; golden chunk and LOD hashes regenerated, with new entries: a coast,
   a point inside an ocean gap, an island plate, a continent interior.
 - **The 262 km continentalness field** stops deciding land vs. sea; it may remain as a relief
-  modulator until Phase 8 replaces relief.
+  modulator until Phase 11 replaces relief.
 - **Tools.** `dwell_worldgen_inspect` gains a whole-disc image mode (PPM, ~1 pixel per 4–8 km)
   coloured by continent id, plate edges, and height; the in-game F4 map can zoom out to the whole
   disc. These are how continents are reviewed.
 - **Spawn** is unchanged in mechanism (spiral from the origin) and guaranteed on land by the
   forced origin cell.
 
-### 2.5 How Phase 7 is checked
+### 2.5 How Phase 10 is checked
 
 - **Separation test** (the key one): for 8 seeds, take ~10,000 random land points; for each, sample
   64 directions × 4 radii up to `0.99 × OCEAN_GAP`; every sample is sea or the same continent.
@@ -283,7 +283,7 @@ using only `+ − × /`.)
 
 ---
 
-## 3. Natural terrain: rivers, mountains, biomes (Phase 8)
+## 3. Natural terrain: rivers, mountains, biomes (Phase 11)
 
 ### 3.1 The reference: what Epic Terrain does (described, since the mod will not be available)
 
@@ -338,7 +338,7 @@ blocks = metres; its world is 576 m tall with sea level at 63, so its relief is 
 
 What Dwell takes: 1 (mostly), 3, 4, 5, 7, 8, 9, 10 — re-derived and re-tuned for a world with
 5 km mountains, a sea level of 0, and a 16,000 km disc. What Dwell does differently: rivers flow
-**above** sea level inland (valley floors rise with the continent), and Phase 7's plates, not
+**above** sea level inland (valley floors rise with the continent), and Phase 10's plates, not
 noise, decide continents.
 
 ### 3.2 Height model
@@ -348,13 +348,13 @@ ones), combined in one fixed order:
 
 ```
 V  = valley floor        — base elevation of the drainage network (smooth, macro lattice):
-                           0 at the coast, rising inland with Phase 7's s (saturating), plus
+                           0 at the coast, rising inland with Phase 10's s (saturating), plus
                            plate-boundary uplift (convergent belts raise V into high valleys and
                            plateaus) and the per-continent interior elevation.
 Rg, R1, R2               — river noises for three tiers (§3.3).
 D  = distance-from-rivers factor, Epic Terrain's M generalised to three tiers:
      D = f(|Rg|, |R1|, |R2|) — ~0 on any channel, growing away from all of them.
-U  = uplift              — how mountainous this place may be: plate convergence belts (Phase 7),
+U  = uplift              — how mountainous this place may be: plate convergence belts (Phase 10),
                            Dwell's existing 49 km ranges and massifs, continent mountainousness.
 Hd = mountain detail     — the derivative-damped ridged cascade (§3.4), amplitude ∝ D × U.
 h  = V + D × U × A + Hd − carve      (A = relief scale; carve from the channel profiles)
@@ -468,19 +468,18 @@ lake shores in warm climates, gravel in cold; snow above the snow line where the
 riverbeds gravel/sand. Keep the top-down column pass and its rules (cave air does not start a
 surface).
 
-### 3.7 Colourful vegetation (Phase 8c)
+### 3.7 Colourful vegetation (Phase 11c)
 
 The reference image's character (§1.1) comes largely from vegetation colour variety: accent trees
 following §1.2 rule 4. This needs new materials and the generator to place them, so it belongs
-with the biome table rather than Phase 6's colour pass:
+with the biome table rather than Phase 7's colour pass:
 
 - **Leaf materials:** `leaves` (green, retuned), `leaves_bright` (yellow-green), `leaves_autumn`
   (orange), `leaves_red` (rust-red), `leaves_blossom` (pink), `leaves_violet`; each with its own
   procedural tile. **Grass variants:** `grass_meadow` (grass with sparse pink/white/yellow flower
   flecks in the top tile), `grass_golden` (warm dry grass for dry areas). All are full cubes using
   the existing looks; placeable like their base materials. They are entries in the block data
-  files if Phase 10's registry has landed (it may be pulled ahead of Phase 8), otherwise in the
-  C++ table and its TypeScript mirror (`materials.ts`), checked by the existing mirror test.
+  files of the block registry (Phase 8, which comes first).
 - **Tree kinds:** the existing broadleaf (oak) and conifer (spruce), plus a **blossom tree**
   (shorter, wide round crown) and an **autumn tree** (broadleaf with autumn leaves). Crown
   colour is chosen per tree from the area: a low-frequency "grove" noise (~150–400 m) picks which
@@ -496,8 +495,8 @@ with the biome table rather than Phase 6's colour pass:
 
 ### 3.8 What else changes
 
-- **Generator version bump(s).** Phase 8 is large: it may ship as 8a (height model, rivers,
-  lakes, water above sea level), 8b (detail cascade), 8c (climate and biome table), each a
+- **Generator version bump(s).** Phase 11 is large: it may ship as 11a (height model, rivers,
+  lakes, water above sea level), 11b (detail cascade), 11c (climate and biome table), each a
   version bump with regenerated goldens.
 - **Air chunks and LOD bounds.** `SkyFloor`/`IsAirChunk` and `LodBoundsAt` must include water
   above sea level (a chunk above the ground but below a river surface is not air). Their tests
@@ -510,7 +509,7 @@ with the biome table rather than Phase 6's colour pass:
   reviewing relief and drainage.
 - **Spawn** keeps its rules (level, open, tree-free land) and should prefer a spot near water.
 
-### 3.9 How Phase 8 is checked
+### 3.9 How Phase 11 is checked
 
 - **Rivers lie in valleys:** for random points on channel centrelines, the bed is no higher than
   the terrain at every point 50–500 m to either side, perpendicular to the channel.
@@ -531,7 +530,7 @@ with the biome table rather than Phase 6's colour pass:
 
 ---
 
-## 4. Sky islands in a dome (Phase 9)
+## 4. Sky islands in a dome (Phase 12)
 
 > **Decided, with open details.** The world's shape (§4.1–§4.2) and the island terrain (§4.3–§4.4,
 > after the owner's Aether spec in [`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md))
@@ -555,7 +554,7 @@ cliffs, small round-canopied trees, cloud banks floating beneath the islands (§
 
 ### 4.2 World bounds: from an 8 km slab to a dome (the architectural change)
 
-Today (ADR 0011) the world is the disc × [`WORLD_MIN_Y` −2,048, `WORLD_MAX_Y` 6,144). Phase 9
+Today (ADR 0011) the world is the disc × [`WORLD_MIN_Y` −2,048, `WORLD_MAX_Y` 6,144). Phase 12
 supersedes the vertical part with a new ADR:
 
 - **Two bounds instead of one.** `TERRAIN_MAX_Y` = 6,144: the top of the **ground band**, the only
@@ -584,7 +583,7 @@ supersedes the vertical part with a new ADR:
   bounds to the ground band's bounds **plus** island bounds (§4.5).
 - **Rendering.** The world is already drawn from the 24,000 km flight ceiling, so depth range and
   the near/far pass split exist; measure them with islands at all altitudes and inside the dome
-  looking up. The sky gradient (Phase 6) and haze are defined for any altitude.
+  looking up. The sky gradient (Phase 7) and haze are defined for any altitude.
 - **Physics.** Gravity stays uniform and downward everywhere; a fall from an island far up lasts a
   long time at terminal speed and ends in fall damage as today. How players reach islands without
   creative flight is gameplay, out of scope here (§4.8).
@@ -651,7 +650,7 @@ throughout the dome.
 **Material roles map to existing blocks — no new blocks** (the reference's rule): base stone →
 `stone`, grass-topped soil → `grass`, soil → `dirt`, edge-shelf sand → `sand`, ice-stone → `snow`,
 common / mid-tier / rare ore → `coal_ore` / `iron_ore` / `gold_ore`, water → `water`, trees →
-`log` + a leaf material (Phase 8c's leaf variants when they exist). Clouds have no block (§4.9).
+`log` + a leaf material (Phase 11c's leaf variants when they exist). Clouds have no block (§4.9).
 
 **Surface layering** (taken as is): per column from the top down, *every* solid cell with air
 directly above is a floor → `grass` (or `dirt` if water is above); the next soil-depth solid cells
@@ -695,7 +694,7 @@ islands simply carry more of them.
 ### 4.5 What else the generator must change
 
 Sky islands break the generator's "one surface per column" assumption. Each item becomes part of
-Phase 9's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
+Phase 12's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
 
 1. **Chunks above the ground band** look up the archipelago cells overlapping them; ground chunks
    pay nothing.
@@ -719,12 +718,12 @@ Phase 9's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
    would detach a whole island. Islands need an **anchor**: e.g. the generated island field's
    voxels count as grounded while unmodified components remain larger than a threshold, or an
    indestructible core per island; finding "per island" is hard with a density field, so a
-   grounded flag on generated island material is the likelier answer. Decided in Phase 9's ADR;
+   grounded flag on generated island material is the likelier answer. Decided in Phase 12's ADR;
    Phase 13's anchor definition follows it.
 8. **Streaming and memory.** Measure chunk counts and memory in a flight through archipelagos
    against today's budgets.
 
-### 4.6 How Phase 9 is checked
+### 4.6 How Phase 12 is checked
 
 - **Bounds:** nothing generated outside the dome; edits accepted up to the dome and refused
   outside it; streaming and LOD rows reach the dome's top; the player suites pass near the top.
@@ -747,8 +746,8 @@ Phase 9's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
 
 ### 4.7 Ordering
 
-Phase 9 builds on Phase 8 (leaf variants, the water rules). The dome bounds (§4.2) can be built
-first, as 9a; then 9b islands (field, archipelagos, surface, decorations); 9c clouds (separable,
+Phase 12 builds on Phase 11 (leaf variants, the water rules). The dome bounds (§4.2) can be built
+first, as 12a; then 12b islands (field, archipelagos, surface, decorations); 12c clouds (separable,
 render-only).
 
 ### 4.8 Open questions
@@ -767,7 +766,7 @@ only**; island climate is Aether's region climate, not the lapse rate. Still ope
 5. **Reaching islands** outside creative flight (gameplay; likely a later phase).
 6. **Island anchors** for integrity (§4.5 item 7).
 
-### 4.9 Clouds (render-only, 9c)
+### 4.9 Clouds (render-only, 12c)
 
 The reference places clouds as blocks: **small clouds** (blob walks of 16 / 8 / 4 steps in 1 in 7 /
 1 in 24 / 1 in 75 regions, band y 32–96, the rarest 96–128; each step moves 0–1 per horizontal
@@ -789,14 +788,18 @@ material then.
 ## 5. Cross-cutting rules for all four phases
 
 - **Determinism (ADR 0010, 0011).** Integer hashes for every placement decision; only `+ − × /`,
-  comparisons and (after Phase 7's ADR) `sqrt`; no float conversion of whole world coordinates;
+  comparisons and (after Phase 10's ADR) `sqrt`; no float conversion of whole world coordinates;
   one evaluation order shared by chunks, point queries and LOD. Every output change bumps the
   generator version and regenerates goldens (`DWELL_UPDATE_GOLDEN=1`). No phase migrates saved
-  worlds: saves from before the version launcher (Phase 12) are not carried over, and after it
+  worlds: saves from before the version launcher (Phase 6) are not carried over, and after it
   each world is locked to the app version that created it (`RELEASES.md` §6).
 - **No neighbour reads.** Every stage is a function of world coordinates and hashes only (chunks
   generate in any order). Rivers, lakes, plates and islands are all designed to satisfy this.
-- **LOD parity.** Every new field has an LOD evaluation with octaves and features finer than a
+- **Slopes are already in place.** Slope blocks (Phase 9, [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md))
+  land before Phases 10–12, so every new terrain stage keeps the surface-shaping rule (slopes from
+  the continuous height at cell corners, flooded below water) working, and its tests and LOD slopes
+  pass, as part of the phase that changes the terrain.
+- **LOD parity. Every new field has an LOD evaluation with octaves and features finer than a
   cell dropped; the generate-vs-downsample agreement tests get a site for each new landform.
 - **Budgets.** Chunk generation and LOD section generation times are measured in every phase
   (`dwell_worldgen_inspect` timings) and reported in the PR.

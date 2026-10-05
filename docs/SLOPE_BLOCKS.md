@@ -1,12 +1,12 @@
 # Dwell — Slope Blocks: Shapes, Collision, Building, Terrain and LOD
 
-> **Status: [planned]** — the design for implementation **Phase 11**
+> **Status: [planned]** — the design for implementation **Phase 9**
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). As the phase lands, the built mechanisms
 > move into [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxel shapes and the material table, §6.3
 > generation, §6.5 building, §6.6 LOD, §8.3 messages) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)
 > (§6.2 blocks, steps, slopes), and this file keeps the rationale and the shape tables.
 
-Slopes touch nearly every system: the block registry (Phase 10, [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)),
+Slopes touch nearly every system: the block registry (Phase 8, [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)),
 the chunk and LOD meshers, terrain collision and the player controller, prediction parity, block
 editing and the creative palette, the terrain generator, and later the physics clusters (Phases
 11–13). That is why it is its own phase.
@@ -82,7 +82,7 @@ split into two convex wedges. Terrain collision is a triangle mesh and does not 
 
 ## 2. Representation: block families in the block registry
 
-Slopes are built on Phase 10's **block registry** ([`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)):
+Slopes are built on Phase 8's **block registry** ([`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)):
 namespaced blocks with typed properties, canonical state strings such as
 `dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=outer]`, dense runtime state ids in
 the `u16` voxel, and world files that store palettes as strings. (An earlier draft of this section
@@ -98,7 +98,7 @@ proposed a hand-made id formula; the registry replaces it.)
 - **`flooded`** is Minecraft's `waterlogged`: water in the open part of a shaped cell (§3.1, §4, §5).
 - Per state, the registry gives what the systems need: shape and orientation, collision
   triangles, face coverage for culling (§3.1), volume (mass for Phase 13), convexity, `placeable`.
-  The protocol version is bumped for the registry hash as part of Phase 10; adding the slope
+  The protocol version is bumped for the registry hash as part of Phase 8; adding the slope
   families is a registry change (new hash, regenerated goldens), not a format change.
 
 Point queries that read a voxel's shape (`ShapeHeight`, the controller's ground probes, spawn,
@@ -118,7 +118,7 @@ surface above — with the exact same arithmetic on both sides (ADR 0010 rules: 
   greedy merge, and runs of identical wedges along their ridge axis may be merged later.
 - Textures: sloped faces use the material's **top** tile (grass on a grass slope), projected along
   the slope's dominant axis so texels are not stretched badly; triangular sides use the side tile.
-- Shading: Phase 6's per-face tint table is keyed by axis; slopes use the same tint interpolated
+- Shading: Phase 7's per-face tint table is keyed by axis; slopes use the same tint interpolated
   by the face normal (`normal.y` between top and side values), in the shared module both meshers
   import.
 - Water next to a slope: water faces against a slope's open part are drawn (the slope does not
@@ -185,7 +185,7 @@ cells agree without reading each other (no neighbour reads, §6.3):
 Gentle pieces appear on gentle ground and standard pieces on slopes near 45°; anything steeper
 stays a cliff of cubes with a shaped lip. Slopes are a generator stage like the others, so this is
 a **generator version bump** with regenerated goldens; the point queries (`SolidAt`, `GroundY`)
-and `GenerateLod`'s surfaces follow the same rule. Islands (Phase 9) and cave floors keep cubes
+and `GenerateLod`'s surfaces follow the same rule. Islands (Phase 12) and cave floors keep cubes
 at first; extending the rule to them is a later tuning step.
 
 ## 6. Building
@@ -210,7 +210,7 @@ at first; extending the rule to them is a later tuning step.
 - **Phases 14–15:** debris and re-baking snap to the 24 orientations; a shaped voxel re-bakes into
   the state whose orientation matches, or as a full block when none does.
 
-## 8. How Phase 11 is checked
+## 8. How Phase 9 is checked
 
 - Shape table: the corner heights, volumes, coverage and convexity of every variant computed from
   its triangles and compared to §1.2; the slope families' canonical strings round-trip and the

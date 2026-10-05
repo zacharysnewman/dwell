@@ -1,6 +1,6 @@
 # Dwell — Block Registry: Namespaced Block States and Palettes
 
-> **Status: [planned]** — the design for implementation **Phase 10**
+> **Status: [planned]** — the design for implementation **Phase 8**
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). As it lands, the built mechanisms move
 > into [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxels and the material table, §6.4 persistence,
 > §6.6 LOD cache, §8.3 messages) and this file keeps the rationale.
@@ -27,8 +27,8 @@ minecraft:oak_stairs[facing=east,half=top,shape=straight,waterlogged=false]
 A **block** has a **namespaced id** (`dwell:dirt`) and declares typed **properties**; a **block
 state** is a block with a value for each property. Chunks keep a **palette of the unique states
 they contain** and store voxels as compact indices into it; everything else refers to states by
-those indices. This becomes the foundation for slopes (Phase 11, `SLOPE_BLOCKS.md`), flooded
-blocks, new vegetation materials (Phase 8c), and any later content.
+those indices. This becomes the foundation for slopes (Phase 9, `SLOPE_BLOCKS.md`), flooded
+blocks, new vegetation materials (Phase 11c), and any later content.
 
 ## 2. Identity: blocks, properties, states
 
@@ -48,7 +48,7 @@ blocks, new vegetation materials (Phase 8c), and any later content.
   `shared/protocol/constants.json` → `constants.gen.*` today), replacing the hand-mirrored tables.
   "Content is prototype" (§6.1) now has a concrete home: the real block set replaces these files.
 
-**Family convention for shaped variants** (decided in Phase 11's ADR, recommended here): plain
+**Family convention for shaped variants** (decided in Phase 9's ADR, recommended here): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,
 `dwell:stone_slope[facing,flooded,half,shape]` (9 shapes × 4 facings × 2 halves × 2 flooded = 144
@@ -84,7 +84,7 @@ collision paths before adopting; it is a deliverable gated on that measurement.
   (indices into `block_states`), not runtime ids. On load, each world state id maps to a runtime id
   through its string; on save, runtime ids map back. Ids are world-local and stable for the life of
   the world file, whatever the code's registry does.
-- **No migration.** Worlds are locked to the app version that created them (Phase 12,
+- **No migration.** Worlds are locked to the app version that created them (Phase 6,
   [`RELEASES.md`](./RELEASES.md) §6), and saves from before the version launcher are not carried
   over (owner, 2026-10-05), so no existing world file is converted: a world written before the
   registry keeps opening in its own build. The storage suite's golden world file is regenerated in
@@ -112,17 +112,17 @@ so a failure says which changed.
 ## 5. What uses it
 
 - **Ladders** become `dwell:ladder[facing,flooded]` (one block, 8 states).
-- **Slopes and slabs** (Phase 11): the shaped families above; **flooded** = water in a shaped
+- **Slopes and slabs** (Phase 9): the shaped families above; **flooded** = water in a shaped
   block's open part (Minecraft's `waterlogged`): the mesher draws water there, the controller's swim
   layer treats it as water, and the generator may place flooded slopes on lake and sea floors. This
   resolves the "slopes under water" question.
-- **Vegetation variants** (Phase 8c) are new blocks in the data files.
+- **Vegetation variants** (Phase 11c) are new blocks in the data files.
 - **Placement and editing:** the creative palette lists blocks; placement chooses property values
   (facing from the player, `half` from the hit face); `VoxelModification` carries runtime ids as
   now. Commands and tools can name blocks by string (`/fill … dwell:stone_slab[half=top]`), parsed
   by the registry.
 
-## 6. How Phase 10 is checked
+## 6. How Phase 8 is checked
 
 - The canonical string round-trips for every state (parse → state → write is identity); parsing
   accepts any key order and missing defaults; invalid strings are rejected with a clear error.

@@ -119,7 +119,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
 
 Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds the WASM core
 (Emscripten) and `client/`, and publishes them with `actions/deploy-pages` on pushes to `main`
-(the repository's Pages source is "GitHub Actions"). **[planned, Phase 12]** Each build becomes a
+(the repository's Pages source is "GitHub Actions"). **[planned, Phase 6]** Each build becomes a
 tagged GitHub Release, and the site is assembled from the releases behind a version launcher
 ([`RELEASES.md`](./RELEASES.md)). The page carries a strict
 Content-Security-Policy `<meta>` tag, since Pages cannot send headers (§11).
@@ -375,11 +375,11 @@ built (§6.3), and so are block edits (§6.5, Phase 3d): the placeable set is de
 (`Placeable`: not air, liquid, indestructible or a launch pad), mirrored by the client's `placeable`
 flags and checked by tests on both sides.
 
-**[planned, Phase 10]** A **block registry** replaces the hand-numbered material table:
+**[planned, Phase 8]** A **block registry** replaces the hand-numbered material table:
 namespaced blocks with typed properties (`dwell:ladder[facing=east,flooded=false]`), runtime
 state ids generated from data files, and chunk palettes stored as strings in the world file:
 [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
-**[planned, Phase 11]** Slope blocks — standard and gentle wedges with hip and valley corners,
+**[planned, Phase 9]** Slope blocks — standard and gentle wedges with hip and valley corners,
 upright and inverted, optionally flooded — as registry block families, with sloped collision,
 meshing, building, terrain shaping and slopes in the LOD mesher: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 
@@ -426,14 +426,14 @@ The pipeline structure below (deterministic stages, lattice-sampled fields, orde
 features) is architecture; its current *content* — the biomes, surface materials, ores, trees and
 boulders — is prototype (§6.1).
 
-**[planned, Phases 6–9]** The world's look and shape are redesigned in
+**[planned, Phases 7, 10–12]** The world's look and shape are redesigned in
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a first pass at a warm, colourful fantasy palette,
-lighting and sky, rendering only (Phase 6); continents from Voronoi plates with guaranteed ocean
-between them (Phase 7); drainage-consistent terrain — rivers as noise contours in valley floors,
-water above sea level, climate, a biome table and colourful accent vegetation (Phase 8); and a full
+lighting and sky, rendering only (Phase 7); continents from Voronoi plates with guaranteed ocean
+between them (Phase 10); drainage-consistent terrain — rivers as noise contours in valley floors,
+water above sea level, climate, a biome table and colourful accent vegetation (Phase 11); and a full
 hemispherical dome over the disc (radius 8,192 km) sparsely filled with sky islands, which raises
 the world's ceiling from 6,144 m to the dome, makes the LOD octree 3D above level 8 and changes
-`LodIndex` (Phase 9). Nothing below changes until those phases land; each updates this section, §6.6
+`LodIndex` (Phase 12). Nothing below changes until those phases land; each updates this section, §6.6
 and §5 as it does.
 
 **Built (Phases 3a, 3c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
@@ -1710,7 +1710,7 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 ### 10.5 Versioning
 - The handshake rejects incompatible `protocolVersion`s with a clear reason; the server browser
   marks incompatible servers.
-- **[planned, Phase 12]** Versioned releases ([`RELEASES.md`](./RELEASES.md)): a launcher at
+- **[planned, Phase 6]** Versioned releases ([`RELEASES.md`](./RELEASES.md)): a launcher at
   `/dwell/` loads tagged builds (GitHub Releases), served at `/dwell/v/<version>/`; the
   server browser and join-by-code open the build matching the host; worlds record the app
   version they were created with and open only in it.
@@ -1796,7 +1796,7 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 14 | ~~Own subdomain for the client~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) (ADR 0005) |
 | 15 | ~~Friend-world host migration~~ | **Resolved:** no migration; sessions end with the host — [ADR 0009](./adr/0009-friend-world-lifetime.md). Migration and paid cloud worlds in [`FUTURE.md`](./FUTURE.md) |
 | 16 | ~~Dedicated servers accepting WebRTC~~ | **Resolved** with #13 — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
-| 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 8 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
-| 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 9 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
-| 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 10–11 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
-| 20 | Release pipeline: versions loaded from tags, version-locked worlds; source visibility and license | Owner's direction (2026-10-05): one public repository under a restrictive license (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 12 — [`RELEASES.md`](./RELEASES.md) |
+| 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 11 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
+| 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
+| 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 8–9 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
+| 20 | Release pipeline: versions loaded from tags, version-locked worlds; source visibility and license | Owner's direction (2026-10-05): one public repository under a restrictive license (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md) |

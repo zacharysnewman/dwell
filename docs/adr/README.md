@@ -23,8 +23,8 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
 multiplayer-ready phase (Phase 5) was added on 2026-09-30. In ADRs 0001–0013, Phases 6–9 became
-13–16 on 2026-10-05, when the world look-and-shape phases (6–9), the block registry (10), slope
-blocks (11) and versioned releases (12) were placed before them.
+13–16 on 2026-10-05, when seven phases were placed before them (6 versioned releases, 7 colour,
+8 block registry, 9 slope blocks, 10–12 continents, natural terrain, sky islands).
 
 ## Template
 

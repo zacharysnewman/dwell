@@ -286,7 +286,7 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 - Static terrain is all axis-aligned: its ground normals are always straight up and walls exactly
   vertical, so slope logic rarely triggers on terrain. It still matters on **Tier 1 bodies**
   (rotated clusters) and on future slab/stair shapes.
-  **[planned, Phase 11]** Slope blocks add 45° and 26.57° walkable faces to static terrain;
+  **[planned, Phase 9]** Slope blocks add 45° and 26.57° walkable faces to static terrain;
   `maxSlopeAngle` (45°) is raised above 45° then, with slope scenarios ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §4).
 - `maxStepHeight` 0.55 m (PPC: 0.45): half-block **slabs** (0.5 m) are stepped up without leaving
   the ground, full 1 m blocks need a **jump** (jump height 1.25 m clears one block); step-up also
