@@ -1722,8 +1722,9 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
   marks incompatible servers.
 - **[planned, Phase 6]** Versioned releases ([`RELEASES.md`](./RELEASES.md)): a launcher at
   `/dwell/` loads tagged builds (GitHub Releases), served at `/dwell/v/<version>/`; the
-  server browser and join-by-code open the build matching the host; worlds record the app
-  version they were created with and open only in it.
+  server browser and join-by-code open a build on the host's compatibility line; worlds record
+  the app version that saved them and open only in that version or a later compatible one
+  (SemVer).
 
 ### 10.6 Platform reachability
 
@@ -1809,5 +1810,5 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 11 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
 | 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
 | 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 8–9 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
-| 20 | Release pipeline: versions loaded from tags, version-locked worlds | Owner's direction (2026-10-05): one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md). License decided: all rights reserved (`LICENSE`) |
+| 20 | Release pipeline: versions loaded from tags, worlds locked to their compatibility line | Owner's direction (2026-10-05): one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md). License decided: all rights reserved (`LICENSE`); versions follow SemVer 2.0.0 from `0.1.0`; a world opens in its version's compatibility line at or after the version that last saved it |
 | 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness, reaching the rim | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust; the rim ocean kept; face B reuses face A's generator, biomes and islands. Recorded by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9 |

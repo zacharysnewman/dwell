@@ -10,8 +10,9 @@
 1. **Every build stays playable.** Each build is a **git tag** (with a GitHub Release holding the
    built files), and the app — even the web app — **loads its versions dynamically from those
    tags**.
-2. **Worlds record the app version they were created with** and are, for now, **locked** to it: a
-   world always opens in its own version. Upgrading worlds is a later option
+2. **Worlds record the app version that saved them** and are, for now, **locked to its
+   compatibility line** (§6): they open in that version or any later compatible one (SemVer,
+   §3), never in an incompatible one. Upgrading worlds across breaking changes is a later option
    ([`FUTURE.md`](./FUTURE.md)).
 3. **The source stays public, under a restrictive license.** A split into a private source repo
    and a public deploy repo was considered and dropped (§2): a license covers what the split was
@@ -119,10 +120,11 @@ versioned:
 1. Fetch `versions.json` (same origin; GitHub's tags API is not needed at runtime and its rate
    limits are avoided).
 2. Pick the version:
-   - `?play=<world id>` → the world's recorded version (§6);
-   - a friend-world code or invite → the host's version (the master reports it, §7);
-   - a dedicated server address → the latest stable; on a version mismatch the server's `Reject`
-     names its version and the client offers to reopen in it;
+   - `?play=<world id>` → the newest published build that may open the world (§6);
+   - a friend-world code or invite → the newest published build on the host's compatibility line
+     (the master reports the host's version, §7);
+   - a dedicated server address → the latest stable; if the server is on another compatibility
+     line, its `Reject` names its version and the client offers to reopen in a build of that line;
    - otherwise → the latest stable (or dev, if chosen in settings), which shows the main menu.
 3. Navigate to `/dwell/v/<version>/` with the same query, by `location.replace` (no extra history
    entry).
@@ -131,37 +133,47 @@ versioned:
 menu. Links shared by players use `/dwell/?…`, never a version path, so they keep working.
 Missing or unreachable versions show a clear message with the choice to open the latest.
 
-## 6. Worlds locked to their version
+## 6. Worlds locked to their compatibility line
 
-- **Recorded:** a world's file stores `app_version_created` and `app_version_last` in its metadata
-  (ADR 0006: the world file holds all data), and the browser's world index (`dwell.worlds`) record
-  stores `appVersion`.
+- **Recorded:** a world's file stores `app_version_created` and `app_version_last` (the version that
+  last saved it) in its metadata (ADR 0006: the world file holds all data), and the browser's world
+  index (`dwell.worlds`) record stores `appVersion` (= the last).
+- **Compatibility line** (owner, 2026-10-05, following SemVer §3): versions that share MAJOR — and,
+  before `1.0.0`, MINOR (`0.1.x`) — are compatible: same world format, same generated terrain, same
+  protocols. A **pre-release** (dev build) promises no compatibility: its worlds are locked to that
+  exact build.
 - **Saves from before the launcher are not carried over** (owner, 2026-10-05). The first versioned
   release — the **baseline** — starts clean: world files and index records without an app version
   are ignored (the menu offers to delete them, so they do not hold storage quota), and no earlier
-  format is migrated. From the baseline on, version locking means **no world ever needs
-  migrating**: a world keeps opening in the build that wrote it, so later phases may change the
+  format is migrated. From the baseline on, locking means **no world ever needs migrating**: a
+  world only ever opens in builds of its own compatibility line, so later phases may change the
   world file format, the block registry and the generator freely (upgrading worlds is the
   [`FUTURE.md`](./FUTURE.md) item).
-- **Locked:** a build opens a world only if `app_version_created` equals its own version; the
-  launcher routes `?play=` there. The menu (in the latest version) lists **all** worlds with a
-  version badge; playing one from another version navigates to it through the launcher.
-- **Dedicated servers:** `dwell_server` refuses a world created by another version, naming the
-  version to run (an override flag is left for the later upgrade work).
+- **Opening:** a build opens a world only if it is on the world's compatibility line **and** its
+  version is at least `app_version_last` — never older, because a compatible release may add data
+  an older build would not understand (forward compatibility is not promised). The launcher routes
+  `?play=` to the newest published build that qualifies, so a world moves onto fixes and compatible
+  features automatically. The menu (in the latest version) lists **all** worlds with a version
+  badge; playing one from another line navigates to it through the launcher.
+- **Dedicated servers:** `dwell_server` refuses a world from another compatibility line, or last
+  saved by a newer version, naming the version to run (an override flag is left for the later
+  upgrade work).
 - **Shared storage is a cross-version contract.** Every version reads and writes the same
   localStorage index, settings and IndexedDB keys, so their formats become **append-only**: new
   fields optional, and **unknown fields preserved** on rewrite (older builds must not drop a field
   a newer build added). The baseline release must already follow this, or it will strip
   `appVersion` from records it rewrites; a test pins it.
-- **Retention:** a stable build that any saved world depends on must stay published. The
-  launcher can tell the player when a world's version is no longer available (and offer export,
-  Phase 17).
+- **Retention:** the newest stable build of every compatibility line that saved worlds may use
+  must stay published; older patch releases of a line can be pruned (their worlds open in the
+  line's newest build). The launcher tells the player when no build of a world's line is
+  available (and offers export, Phase 17).
 
 ## 7. Multiplayer and the master server
 
 - Friend-world rooms and dedicated-server listings carry the host's **app version** (as well as
-  `protocolVersion`), so the server browser and join-by-code open the matching client build
-  directly (this replaces the Phase 17 item "the server browser offers the build matching an
+  `protocolVersion`). The protocol is part of the public API (§3), so any build on the host's
+  compatibility line can join: the server browser marks other lines incompatible, and join-by-code
+  opens the newest build of the host's line directly (this replaces the Phase 17 item "the server browser offers the build matching an
   incompatible server").
 - The handshake's version check stays; its rejection names the server's app version.
 - The master server's own deploy is unchanged (it runs from this repository's CI with its
@@ -180,10 +192,13 @@ Missing or unreachable versions show a clear message with the choice to open the
 - A release produces a tag and a GitHub Release holding the build and `build.json`; the site lists it
   in `versions.json` and serves it at `/dwell/v/<version>/`.
 - e2e (against a locally assembled site with two versions): the launcher opens the latest stable;
-  `?play=` opens a world in its recorded version; an invite opens the host's version; Back returns
-  to `/dwell/`; a world from another version is listed with its badge and opens in its version.
-- A world created in version A refuses to open in version B (browser and `dwell_server`), with a
-  message naming A.
+  `?play=` opens a world in the newest build of its line; an invite opens a build of the host's
+  line; Back returns to `/dwell/`; a world from another line is listed with its badge and opens in
+  its line.
+- Compatibility (with `0.1.0`, `0.1.1`, `0.2.0` and `0.2.0-dev.1` builds): a world saved by `0.1.0`
+  opens in `0.1.1`; one saved by `0.1.1` does not open in `0.1.0`; neither opens in `0.2.0`; a
+  dev build's world opens only in that dev build — in the browser and in `dwell_server`, with a
+  message naming the version to use.
 - Cross-version storage: an older build rewriting the world index preserves fields it does not
   know (a test with a record carrying an extra field).
 - Worlds saved before the baseline are ignored without errors and can be deleted from the menu.

@@ -84,11 +84,11 @@ collision paths before adopting; it is a deliverable gated on that measurement.
   (indices into `block_states`), not runtime ids. On load, each world state id maps to a runtime id
   through its string; on save, runtime ids map back. Ids are world-local and stable for the life of
   the world file, whatever the code's registry does.
-- **No migration.** Worlds are locked to the app version that created them (Phase 6,
-  [`RELEASES.md`](./RELEASES.md) §6), and saves from before the version launcher are not carried
-  over (owner, 2026-10-05), so no existing world file is converted: a world written before the
-  registry keeps opening in its own build. The storage suite's golden world file is regenerated in
-  the new format.
+- **No migration.** Worlds are locked to the compatibility line of the version that saved them
+  (Phase 6, [`RELEASES.md`](./RELEASES.md) §6), and saves from before the version launcher are not
+  carried over (owner, 2026-10-05), so no existing world file is converted: a world written before
+  the registry keeps opening in builds of its own line. The storage suite's golden world file is regenerated
+  in the new format.
 - **Deferred to world upgrades** ([`FUTURE.md`](./FUTURE.md)): a data table of aliases and upgrade
   rules (`dwell:old_name → dwell:new_name`, property renames, defaults for added properties), and a
   placeholder for unknown states (`dwell:unknown`, keeping the original string so saving writes it

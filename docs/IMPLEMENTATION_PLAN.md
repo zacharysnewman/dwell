@@ -1147,10 +1147,10 @@ These steps need an account owner's dashboard access and cannot be done from cod
 **Goal:** Every build stays playable (owner, 2026-10-05): each build is a git tag with a GitHub
 Release holding the built files; the Pages site is assembled from the releases, serving each at
 `/dwell/v/<version>/`; a small launcher at `https://dropkickarcade.com/dwell/` loads versions
-dynamically from them; and **worlds record the app version they were created with and are locked
-to it** for now. The repository stays public under a restrictive license chosen by the owner (a
-private-source split was considered and dropped to keep the free CI pipeline). Design and setup
-steps: [`RELEASES.md`](./RELEASES.md).
+dynamically from them; and **worlds record the app version that saved them and are locked to its
+compatibility line** (SemVer) for now. The repository stays public under a restrictive license
+chosen by the owner (a private-source split was considered and dropped to keep the free CI
+pipeline). Design and setup steps: [`RELEASES.md`](./RELEASES.md).
 
 **Status:** In progress — the license is in (`LICENSE`, manifests, README, a generated root
 `THIRD_PARTY_NOTICES`; branch `claude/world-generation-plans`). Everything else not started,
@@ -1180,8 +1180,10 @@ Deliverables
   the query kept; Back to the menu returns to `/dwell/`; clear errors for missing versions.
 - [ ] Worlds: `app_version_created` / `app_version_last` in the world file and `appVersion` in the
   world index; saves from before the baseline ignored (deletable from the menu), none migrated; a
-  build opens only its own version's worlds (browser and `dwell_server`, which names the version to
-  run); the menu lists all worlds with a version badge.
+  build opens a world only on the world's compatibility line and at or after `app_version_last`
+  (dev builds' worlds: that exact build), in the browser and `dwell_server` (which names the
+  version to run); the launcher picks the newest qualifying build; the menu lists all worlds with a
+  version badge.
 - [ ] Cross-version storage contract: the world index, settings and other shared stores are
   append-only and preserve unknown fields on rewrite — in the baseline release before anything
   else depends on it.
@@ -1195,7 +1197,8 @@ Exit criteria
 - [ ] e2e against a locally assembled two-version site: the launcher opens the latest stable;
   `?play=` opens a world in its own version; an invite opens the host's version; Back returns to
   `/dwell/`; other versions' worlds are listed with badges.
-- [ ] A world from version A refuses to open in version B, in the browser and in `dwell_server`.
+- [ ] Compatibility rules hold in the browser and `dwell_server`: a `0.1.0` world opens in `0.1.1`,
+  a `0.1.1` world not in `0.1.0`, neither in `0.2.0`, a dev build's world only in that build.
 - [ ] An older build rewriting the world index keeps fields it does not know (test).
 - [ ] Saves from before the baseline are ignored without errors and can be deleted from the menu.
 - [x] `LICENSE` in place and referenced from the manifests and README; `THIRD_PARTY_NOTICES`

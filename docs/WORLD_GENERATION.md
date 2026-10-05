@@ -795,7 +795,7 @@ material then.
   one evaluation order shared by chunks, point queries and LOD. Every output change bumps the
   generator version and regenerates goldens (`DWELL_UPDATE_GOLDEN=1`). No phase migrates saved
   worlds: saves from before the version launcher (Phase 6) are not carried over, and after it
-  each world is locked to the app version that created it (`RELEASES.md` §6).
+  each world is locked to its app version's compatibility line (`RELEASES.md` §6).
 - **No neighbour reads.** Every stage is a function of world coordinates and hashes only (chunks
   generate in any order). Rivers, lakes, plates and islands are all designed to satisfy this.
 - **Slopes are already in place.** Slope blocks (Phase 9, [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md))
