@@ -119,7 +119,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
 
 Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds the WASM core
 (Emscripten) and `client/`, and publishes them with `actions/deploy-pages` on pushes to `main`
-(the repository's Pages source is "GitHub Actions"). The page carries a strict
+(the repository's Pages source is "GitHub Actions"). **[planned, Phase 6]** Each build becomes a
+tagged GitHub Release, and the site is assembled from the releases behind a version launcher
+([`RELEASES.md`](./RELEASES.md)). The page carries a strict
 Content-Security-Policy `<meta>` tag, since Pages cannot send headers (§11).
 
 ### 2.2 Desktop / Mobile shells **[in progress]**
@@ -130,7 +132,7 @@ The same Vite build output is wrapped by:
   IndexedDB, and WebTransport work) with COOP/COEP headers, ready for the multithreaded sim-core
   build (ADR 0007; it currently loads the single-threaded one). Invite queries are passed with
   `--join=<query>`; `--smoke` exits 0 once joined (used by CI under Xvfb). Packaging and "Host
-  world" come in Phase 9.
+  world" come in Phase 17.
 - **Capacitor** (`platforms/capacitor`) — Android System WebView (Chromium) and iOS
   WKWebView. Where WebTransport is unavailable (possibly WKWebView), the client uses WebRTC. Single-threaded sim core unless
   `SharedArrayBuffer` is confirmed available on the app scheme (ADR 0007).
@@ -149,7 +151,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   publish its SHA-256 through the master server or the invite link; clients pass it as
   WebTransport `serverCertificateHashes` or pin it as the DTLS fingerprint. Hosts with their own
   domain may use a publicly trusted certificate instead. Local development uses the same
-  mechanism on `127.0.0.1`. **[built]** (rotation before expiry: Phase 9)
+  mechanism on `127.0.0.1`. **[built]** (rotation before expiry: Phase 17)
 - **Our infrastructure** is limited to the static site (GitHub Pages), the master server, and a
   TURN relay — **[built, Phase 5b–5d; TURN key outstanding]** both on Cloudflare: a Worker with Durable Objects and
   Cloudflare's managed TURN, on the free plan (§10.3, ADR 0013).
@@ -178,6 +180,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/protocol     constants.json (single source of protocol constants) + gen.mjs (→ C++ and TS
                      headers), make_vectors.py (independent reference encoder) → vectors.txt
                      (golden bytes both codecs must match).
+/shared/licenses     gen.py → THIRD_PARTY_NOTICES (root): third_party.json + texts/ for components
+                     that are not Rust crates, `cargo metadata` for the crates linked into the server.
 /services/master     Master server: Cloudflare Worker + Durable Objects, TypeScript, Wrangler
                      (listing, join codes, signaling, TURN credentials; ADR 0013).
 /platforms/electron  Electron shell (incl. "Host world" launching the native server).
@@ -186,6 +190,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   /adr               Architecture decision records.
 /.github/workflows   ci.yml (protocol, client, server, e2e jobs), pages.yml (deploy).
 rust-toolchain.toml  Pinned Rust toolchain.
+LICENSE              All rights reserved (the source is public for reference only).
+THIRD_PARTY_NOTICES  Licenses of the third-party components in Dwell's builds (generated).
 ```
 
 Built so far (Phases 0–2): `client/` (renderer, networking, identity, local mode, game loop with
@@ -313,8 +319,8 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB` (the pixel error coarsens while the view's own sections exceed it); `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4 (at most 2 on phones), two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
 | `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material; a section's surface and skirts are one geometry and one draw call, `lodSection.ts`, its index rewritten when the sides whose skirts show change; chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Terrain is static: world matrices are computed when an object is placed rather than for the whole scene in each pass, and the CPU copies of chunk and LOD vertex data are dropped once uploaded to the GPU. `?batch=1` instead draws the chunks and LOD sections in three batches, a draw call each per pass (§6.6, experimental); `?scale=` scales the resolution; `stats()` reports the frame's draw calls and triangles (F3). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry face shading (and the flat colour of untextured materials). |
-| `physics/` | Debris world (Phase 7) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
-| `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 6; player interpolation is in `game/remotes.ts`. |
+| `physics/` | Debris world (Phase 15) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
+| `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 14; player interpolation is in `game/remotes.ts`. |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
 
 The client never mutates the voxel grid on its own authority. Block edits are sent as
@@ -373,6 +379,14 @@ built (§6.3), and so are block edits (§6.5, Phase 3d): the placeable set is de
 (`Placeable`: not air, liquid, indestructible or a launch pad), mirrored by the client's `placeable`
 flags and checked by tests on both sides.
 
+**[planned, Phase 8]** A **block registry** replaces the hand-numbered material table:
+namespaced blocks with typed properties (`dwell:ladder[facing=east,flooded=false]`), runtime
+state ids generated from data files, and chunk palettes stored as strings in the world file:
+[`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
+**[planned, Phase 9]** Slope blocks — standard and gentle wedges with hip and valley corners,
+upright and inverted, optionally flooded — as registry block families, with sloped collision,
+meshing, building, terrain shaping and slopes in the LOD mesher: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
+
 - Voxel = 1 m cube; `uint16` material ID (0 = air). Material table defines density,
   strength, and render properties and is shared by server and client.
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
@@ -415,6 +429,19 @@ generated baseline.
 The pipeline structure below (deterministic stages, lattice-sampled fields, order-independent
 features) is architecture; its current *content* — the biomes, surface materials, ores, trees and
 boulders — is prototype (§6.1).
+
+**[planned, Phases 7, 10–12]** The world's look and shape are redesigned in
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a first pass at a warm, colourful fantasy palette,
+lighting and sky, rendering only (Phase 7); continents from Voronoi plates with guaranteed ocean
+between them (Phase 10); drainage-consistent terrain — rivers as noise contours in valley floors,
+water above sea level, climate, a biome table and colourful accent vegetation (Phase 11); and a full
+hemispherical dome over the disc (radius 8,192 km) sparsely filled with sky islands, which raises
+the world's ceiling from 6,144 m to the dome, makes the LOD octree 3D above level 8 and changes
+`LodIndex` (Phase 12). **[planned, Phase 13]** The world becomes **bifacial**: a
+second face on the disc's underside, mirrored about the midplane (y = −2,048), with its own
+terrain and dome, and gravity toward the midplane on both sides ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md)).
+Nothing below changes until those phases land; each updates this section, §6.6
+and §5 as it does.
 
 **Built (Phases 3a, 3c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
 `src/worldgen/`) is **generator version 4** (3c: the planet-scale world as version 3; Phase 4 adds
@@ -615,7 +642,7 @@ file** holding **all** of its data; nothing about a world lives in side files.
 recomputed), drops and rebuilds it from the chunks when its rows belong to another generator
 version, and derives it for saved chunks it does not cover (worlds saved before Phase 4); each
 autosave writes the sections written since the last save and those still to compute (flagged
-dirty) in the same transaction as the chunks. `bodies` (Phase 6) arrives as a migration.
+dirty) in the same transaction as the chunks. `bodies` (Phase 14) arrives as a migration.
 
 - **Same code everywhere:** SQLite and zstd are compiled into `server/core` (`core/storage`:
   `WorldDb`, the file's schema and records; `WorldStore`, the server's handle on it).
@@ -653,7 +680,7 @@ dirty) in the same transaction as the chunks. `bodies` (Phase 6) arrives as a mi
   flight, §9.1; default everyone) are saved into `settings`, and `--op KEY` /
   `--ban KEY` into `permissions`; stored settings and permissions apply at startup (ops may edit
   under `--edits ops` and fly under `--flight ops`, banned keys are refused with `Reject(Banned)`, and with `allow_list` set only
-  `allow` keys may join, else `Reject(NotAllowListed)`). **[planned, Phase 9]** Admin commands.
+  `allow` keys may join, else `Reject(NotAllowListed)`). **[planned, Phase 17]** Admin commands.
 - **Tooling:** `dwell_world FILE info` (format, meta, settings, permissions, integrity) and
   `dwell_world FILE diff [cx cy cz]` (regenerate saved chunks from the world's seed and generator
   and diff them: changed voxels per chunk, flagging saved chunks identical to generation).
@@ -990,6 +1017,9 @@ Triggered when the server registers an explosion, a block removal, or a structur
    server flood-fills (6-connectivity) looking for an **anchor** (bedrock layer, or any voxel
    flagged as grounded). Components that reach an anchor stay static. Components that do not
    are **detached**.
+   **[planned, Phase 13]** The bifacial world removes the bedrock layer: the anchor becomes a
+   positional core zone around the midplane, whose voxels can be dug
+   ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §2).
    - The search is budgeted (max voxels visited per tick). A component that exceeds the
      budget is treated as anchored for this tick and re-queued, so a single event can never
      stall the tick.
@@ -1236,7 +1266,7 @@ repeat remotePlayerCount:
   u8   state                    // player::State (animation)
   u8   flags                    // PlayerFlags
 ```
-Phase 6 adds, for riding Tier 1 bodies (§9.4), a `u32 groundEntityId` to the local and remote
+Phase 14 adds, for riding Tier 1 bodies (§9.4), a `u32 groundEntityId` to the local and remote
 blocks (positions become body-local when it is non-zero), and the Tier 1 entity list:
 ```
 u8   entityCount
@@ -1379,7 +1409,7 @@ initial transform, and (spawn only) the cluster voxel layout (local offsets + ma
 
 ---
 
-## 9. Players: Physics-Based Characters **[built]** (Tier 1 interactions: Phase 6)
+## 9. Players: Physics-Based Characters **[built]** (Tier 1 interactions: Phase 14)
 
 Full specification: **[`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)** — a port of the
 [Physics Player Controller](https://github.com/zacharysnewman/physics-player-controller)
@@ -1476,12 +1506,12 @@ animated from `State` and flags in snapshots.
 ### 9.6 Health, death & respawn **[built: fall damage, death, respawn]**
 - Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are fall (built: from the
   `Landed` impact speed above 12 m/s, 8 points per m/s, and falling out of the world), crush
-  (Phase 6), explosion (Phase 7). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
+  (Phase 14), explosion (Phase 15). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
   client; a dead player's body leaves the physics world, and snapshots mark it `dead` where it
   died. The server respawns the player at the spawn point after `RESPAWN_SECONDS`.
 - On death clients currently draw the body lying down (a cosmetic pose). The **cosmetic ragdoll**
   (Jolt `Ragdoll`, Tier 2 rules — local, unsynchronized, despawned on respawn) arrives with the
-  client debris world in Phase 7.
+  client debris world in Phase 15.
 
 ### 9.7 Anti-cheat implications
 Clients only send inputs, never positions, so speed/teleport/fly hacks are structurally
@@ -1677,7 +1707,7 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 ### 10.4 Identity
 - **Device keys (now) [built on web]:** each install generates an Ed25519 key pair; the public
   key is the player ID. Web: non-extractable WebCrypto key in the `dwell` IndexedDB database
-  (`identity` store); apps: OS keychain/keystore (Phase 9). Because the key is non-extractable it
+  (`identity` store); apps: OS keychain/keystore (Phase 17). Because the key is non-extractable it
   cannot be exported; moving an identity between devices waits for accounts, which link several
   device keys (ADR 0004 amendment). Proven on every join by signing the server's challenge
   (§8.3), verified server-side with Monocypher. Servers key bans, allow-lists, ops, and player
@@ -1690,8 +1720,11 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 ### 10.5 Versioning
 - The handshake rejects incompatible `protocolVersion`s with a clear reason; the server browser
   marks incompatible servers.
-- **[planned, Phase 9]** The Pages site keeps older client builds at `/dwell/v/<version>/`; the
-  browser can open the build matching a server's version.
+- **[planned, Phase 6]** Versioned releases ([`RELEASES.md`](./RELEASES.md)): a launcher at
+  `/dwell/` loads tagged builds (GitHub Releases), served at `/dwell/v/<version>/`; the
+  server browser and join-by-code open a build on the host's compatibility line; worlds record
+  the app version that saved them and open only in that version or a later compatible one
+  (SemVer).
 
 ### 10.6 Platform reachability
 
@@ -1763,7 +1796,7 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 3 | ~~Server hosting~~ | **Resolved:** player-hosted dedicated servers + friend worlds + master server — [ADR 0003](./adr/0003-multiplayer-hosting-model.md); identity [ADR 0004](./adr/0004-player-identity.md); domain [ADR 0005](./adr/0005-domain-and-origins.md) |
 | 4 | ~~Browser multithreading / cross-origin isolation~~ | **Resolved:** single-threaded web sim core + worker pools; threads natively and in Electron — [ADR 0007](./adr/0007-threading-model.md) |
 | 5 | ~~World persistence format~~ | **Resolved:** one SQLite database per world holding all data — [ADR 0006](./adr/0006-world-persistence-sqlite.md) |
-| 6 | Final values for §7.4 tunables | Tune in Phases 6–8 |
+| 6 | Final values for §7.4 tunables | Tune in Phases 14–16 |
 | 7 | ~~Worlds larger than ±65 km (Jolt `JPH_DOUBLE_PRECISION`)~~ | **Resolved:** an 8,192 km disc, 8,192 m tall, with double-precision Jolt and f64 / fixed-point wire positions — [ADR 0011](./adr/0011-planet-scale-world.md); whole-world view via a 3D LOD octree — [ADR 0012](./adr/0012-lod-octree.md) |
 | 8 | ~~Worldgen noise numerics~~ | **Resolved:** strict IEEE float with integer-hash gradients, enforced by a native-vs-WASM golden test — [ADR 0010](./adr/0010-worldgen-noise-numerics.md) |
 | 9 | Movement feel on voxels: PPC recommended feel (walk 5 / run 8 m/s) vs. slower voxel-genre speeds | Start with PPC feel; playtest in Phase 2 |
@@ -1774,3 +1807,8 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 14 | ~~Own subdomain for the client~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) (ADR 0005) |
 | 15 | ~~Friend-world host migration~~ | **Resolved:** no migration; sessions end with the host — [ADR 0009](./adr/0009-friend-world-lifetime.md). Migration and paid cloud worlds in [`FUTURE.md`](./FUTURE.md) |
 | 16 | ~~Dedicated servers accepting WebRTC~~ | **Resolved** with #13 — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
+| 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 11 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
+| 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
+| 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 8–9 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
+| 20 | Release pipeline: versions loaded from tags, worlds locked to their compatibility line | Owner's direction (2026-10-05): one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md). License decided: all rights reserved (`LICENSE`); versions follow SemVer 2.0.0 from `0.1.0`; a world opens in its version's compatibility line at or after the version that last saved it |
+| 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness, reaching the rim | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust; the rim ocean kept; face B reuses face A's generator, biomes and islands. Recorded by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9 |

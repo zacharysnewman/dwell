@@ -13,6 +13,18 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/ARCHITECTURE.md` — the authoritative description of the game architecture.
 - `docs/PLAYER_CONTROLLER.md` — detailed spec of the physics player controller (architecture sub-spec).
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
+- `docs/WORLD_GENERATION.md` — design for Phases 7 and 10–12: art direction and palette, continents,
+  rivers/mountains/biomes, sky islands (becomes an architecture sub-spec as the phases land).
+- `docs/BLOCK_REGISTRY.md` — design for Phase 8: namespaced block states, the registry, string
+  palettes in world files.
+- `docs/SLOPE_BLOCKS.md` — design for Phase 9: slope block shapes, collision, building, terrain
+  shaping and LOD (becomes an architecture sub-spec as the phase lands).
+- `docs/RELEASES.md` — design for Phase 6: builds as tagged releases loaded by a version launcher,
+  version-locked worlds, the license.
+- `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity
+  toward the midplane, crossing between the faces.
+- `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
+  spec used by Phase 12).
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 

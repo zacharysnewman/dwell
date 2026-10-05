@@ -1,0 +1,25 @@
+Copyright (c) 2026 Zachary Newman. All rights reserved.
+
+This repository, including its source code, documentation, and assets (together, "the
+Software"), is made publicly visible for reference only. It is not open source.
+
+No license or other right is granted to copy, modify, merge, publish, distribute, sublicense,
+sell, or create derivative works of the Software, in whole or in part, or to use it for any other
+purpose, except:
+
+  - viewing and forking this repository on GitHub, as permitted by the GitHub Terms of Service;
+    and
+  - any rights the copyright holder grants separately in writing.
+
+This notice does not restrict playing the game or running builds that the copyright holder
+distributes (for example, the web app at https://dropkickarcade.com/dwell/); such builds may come
+with their own terms.
+
+Third-party components included in the Software or its builds remain under their own licenses;
+see THIRD_PARTY_NOTICES.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

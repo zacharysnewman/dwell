@@ -20,18 +20,42 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
-| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (`claude/memory-budget`, PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43 |
+| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c), #13 (3d, 3e) |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43, #44 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
-| 6 — Voxel awakening | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
-| 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
-| 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
-| 9 — Dedicated servers & packaging | ⏳ Not started | — |
+| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — license added (`LICENSE`, root `THIRD_PARTY_NOTICES`; branch `claude/world-generation-plans`, PR pending); the rest not started | — |
+| 7 — Fantasy look: a first pass at colour (rendering only) | ⏳ Not started | — |
+| 8 — Block registry: namespaced block states and palettes | ⏳ Not started | — |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
+| 10 — Continents from Voronoi plates | ⏳ Not started | — |
+| 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
+| 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started | — |
+| 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
+| 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
+| 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
+| 17 — Dedicated servers & packaging | ⏳ Not started | — |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
-Phase 5 (multiplayer ready) was inserted on 2026-09-30 (ADR 0013); the former Phases 5–8 are now
+Phase 5 (multiplayer ready) was inserted on 2026-09-30 (ADR 0013); the former Phases 5–8 became
 6–9.
+On 2026-10-05 the owner added eight phases and placed them before the physics phases, in this
+order: **6 — versioned releases** ([`RELEASES.md`](./RELEASES.md)); **7 — a first pass at colour**
+and **10–12 — continents, natural terrain, sky islands** ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md));
+**8 — the block registry** ([`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)); **9 — slope blocks**
+([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)); **13 — the bifacial world** ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md)).
+The former Phases 6–9 (voxel awakening, tiered physics, sleep/re-bake, dedicated servers and
+packaging) are now **14–17**. References in this plan,
+`ARCHITECTURE.md` and code comments use the new numbers; ADRs keep the numbers of their day
+(`adr/README.md`). Why this order: versioned releases first, so every later change to world files
+or terrain leaves earlier worlds playable in their own version; colour alongside it (rendering
+only); the registry before slopes, which are registry block families; slopes before the terrain
+phases, so terrain is tuned with slopes in place; continents before natural terrain, which builds
+on coast distance and plate edges; sky islands after natural terrain (they use its biomes); the
+bifacial world after both, since face B repeats them, and before physics, so falling bodies handle
+both gravity directions from the start.
+Phase 7 can run in parallel with Phase 6, and Phase 12's dome bounds (12a) can go earlier.
 
 ---
 
@@ -110,7 +134,7 @@ Deliverables
   - [x] WebRTC fallback endpoint (ADR 0008): ICE-lite `str0m` in the same crate, same channel
     mapping and framing. Spike includes the invite-link path (client synthesizes the remote
     description from address + fingerprint + ICE credentials); if it fails, invite-link
-    fallback joins require the master server (Phase 9).
+    fallback joins require the master server (Phase 17).
 - [x] **Client networking (`client/net`)**
   - [x] `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
@@ -140,7 +164,7 @@ Exit criteria
 
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
-ragdoll and animation from `State` (Phase 7, see below). Playtested by a human (Open Decision
+ragdoll and animation from `State` (Phase 15, see below). Playtested by a human (Open Decision
 #9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
@@ -148,7 +172,7 @@ Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
 that tick's velocity (PLAYER_CONTROLLER.md §4). The fix merged in #8.
-Later finding (fix on the branch, PR pending): jumping over a lone block while pressed against it
+Later finding (fixed, merged in #10): jumping over a lone block while pressed against it
 launched the player forward, and one jump floated the player up a diagonal staircase of full
 blocks — the block's top edge deflected the forward drive upwards and the airborne vertical layer
 absorbed that as an external force (a second jump). That lift is no longer absorbed
@@ -182,9 +206,9 @@ Deviations from the deliverables below:
   gently (PLAYER_CONTROLLER.md §8.1).
 - Dwell uses right-handed axes: the controller's camera-right vector is the mirror of the PPC's
   (Unity, left-handed) so that strafing matches the screen.
-- The snapshot's `groundEntityId` fields are deferred to Phase 6, when Tier 1 bodies can be stood
+- The snapshot's `groundEntityId` fields are deferred to Phase 14, when Tier 1 bodies can be stood
   on (ARCHITECTURE §8.3).
-- Deferred to Phase 7: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
+- Deferred to Phase 15: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
   down until the client debris world exists — and animating players from `State` (players are
   capsules; there are no character models yet).
 
@@ -223,9 +247,9 @@ Deliverables
   - [x] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
-    interpolated kinematic capsules. (Animation from `State` moved to Phase 7.)
+    interpolated kinematic capsules. (Animation from `State` moved to Phase 15.)
   - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
-    to Phase 7; dead players are drawn lying down.)
+    to Phase 15; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
   divergence, checked against `externalAbsorbThreshold`. (Measured: positions bit-identical,
@@ -261,10 +285,10 @@ server and client worldgen pools; the walking-without-hitches exit criterion awa
 **3c — scale foundations** (done, merged in #12: the planet-scale world of ADR 0011 — bounds and
 the rim, double-precision physics with region-anchored terrain collision, protocol v4 positions,
 generator version 3, air chunks, spherical streaming; every 3c exit criterion verified);
-**3d — block edits** (done, PR pending: protocol v5 edit loop, block interaction and infinite
+**3d — block edits** (done, merged in #13: protocol v5 edit loop, block interaction and infinite
 inventory on desktop and touch, revision gaps and resync, the greedy meshing worker pool; every 3d
 exit criterion verified);
-**3e — persistence and debug tooling** (done, PR pending: SQLite + zstd world files natively and in
+**3e — persistence and debug tooling** (done, merged in #13: SQLite + zstd world files natively and in
 OPFS, autosave off the tick, migrations, crash-safe saves, settings and permissions from launch
 options; the in-game terrain map and regenerate-and-diff checks; every 3e exit criterion verified).
 3c comes before edits and persistence so the world's
@@ -446,7 +470,7 @@ Deviations and additions (3e):
   can go away at any time. One world file per generator and seed; a second tab on the same world
   runs without persistence (sync access handles are exclusive).
 - Settings and permissions come from launch options saved into the world (`--name`, `--motd`,
-  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 9. Bans and an
+  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 17. Bans and an
   allow-list (`allow_list` setting) are enforced at join. `permissions` records who granted an
   entry (`granted_by`).
 - The wire stays without zstd: Explicit chunks are rare in generated mode, and QUIC/SCTP framing
@@ -529,7 +553,7 @@ LOD's view held within `LOD_CACHE_MB`, its pixel error in CSS pixels, one draw c
 section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory
 budget as settings-menu sliders (#42); batched terrain behind `?batch=1` and `?scale=` to compare
 on devices (#43); a memory readout and phone memory budget after crashes in mobile Safari
-(`claude/memory-budget`, PR pending). Also
+(merged in #44). Also
 outstanding: z-fighting reported high up, not reproduced here (see deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
@@ -856,7 +880,7 @@ multiplayer world without typing certificates or forwarding ports: a main menu w
 management, **one-click Host** from the browser (a join code), **join by code or address**, and
 a **lobby list**. The master server is built as a Cloudflare Worker with Durable Objects, and
 TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloudflare.md),
-§10). This phase takes the web parts of the former hosting phase (now Phase 9) ahead of the
+§10). This phase takes the web parts of the former hosting phase (now Phase 17) ahead of the
 physics phases (6–8); see *Deviations* below.
 
 **Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
@@ -1063,13 +1087,13 @@ These steps need an account owner's dashboard access and cannot be done from cod
 - **New phase, inserted 2026-09-30.** Multiplayer hosting was the last phase; playtesting multiplayer
   needed an easy way to start, host and join worlds, so the web-first parts moved ahead of the
   physics phases. The former Phases 5–8 are now 6–9. The master server, friend worlds and server
-  browser moved here from Phase 9; the dedicated-server distribution (binaries, Docker, admin
+  browser moved here from Phase 17; the dedicated-server distribution (binaries, Docker, admin
   commands, UPnP, backups, certificate rotation), world export/import, versioned client builds,
-  and the Electron and Capacitor apps stay in Phase 9.
+  and the Electron and Capacitor apps stay in Phase 17.
 - Physics caps in host profiles cover what exists (players, view distance); Tier 1/Tier 2 caps
-  are added with Phases 6–8.
+  are added with Phases 14–16.
 - LAN discovery on the web is "same public IP" through the master (5d); Electron's local-network
-  discovery stays in Phase 9.
+  discovery stays in Phase 17.
 - 5a: the world index is kept in local storage rather than an IndexedDB store — it is a few
   hundred bytes, read synchronously at startup, and cleared together with the worlds' OPFS files.
 - 5a: the menu opens worlds and servers by navigating (`?play=<id>`, or the invite), and Quit
@@ -1077,7 +1101,7 @@ These steps need an account owner's dashboard access and cannot be done from cod
   worker, its OPFS handles and every render resource, a reload continues the same world, and Back
   returns to the menu. Links (`?join=`, `?local=1`, `?world=`, `?seed=`) open directly as before.
 - 5a: the game menu does not pause the world — the simulation is the (local or remote) server's.
-- 5a: Phases 6–8 were put on hold until Phase 5 is complete (2026-09-30).
+- 5a: Phases 14–16 were put on hold until Phase 5 is complete (2026-09-30).
 - 5b: the `Room` class is a stub (501) and the Directory holds only its schema version and the
   rate limits; their real contents are 5c–5e deliverables, added as migrations. `POST /v1/whoami`
   was added to check signing end to end. `dwell_server --master` moved to 5d.
@@ -1118,20 +1142,430 @@ These steps need an account owner's dashboard access and cannot be done from cod
 
 ---
 
-## Phase 6 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
+## Phase 6 — Versioned Releases: Builds by Tag, a Version Launcher, Version-Locked Worlds
+
+**Goal:** Every build stays playable (owner, 2026-10-05): each build is a git tag with a GitHub
+Release holding the built files; the Pages site is assembled from the releases, serving each at
+`/dwell/v/<version>/`; a small launcher at `https://dropkickarcade.com/dwell/` loads versions
+dynamically from them; and **worlds record the app version that saved them and are locked to its
+compatibility line** (SemVer) for now. The repository stays public under a restrictive license
+chosen by the owner (a private-source split was considered and dropped to keep the free CI
+pipeline). Design and setup steps: [`RELEASES.md`](./RELEASES.md).
+
+**Status:** In progress — the license is in (`LICENSE`, manifests, README, a generated root
+`THIRD_PARTY_NOTICES`; branch `claude/world-generation-plans`). Everything else not started,
+including shipping the notices in builds. Absorbs Phase 17's "versioned client builds" for the web.
+
+Deliverables
+- [ ] ADR: versioned releases — the app version and channels, builds as tagged GitHub Releases,
+  the site assembled from releases, the launcher, version-locked worlds, the cross-version storage
+  contract, the license; supersedes the deployment parts of §2.1 and ADR 0005's "older builds" note.
+- [x] License: **all rights reserved** (owner, 2026-10-05) in `LICENSE`, the package manifests
+  (`"license": "UNLICENSED"`, lockfiles in step; Cargo `license-file`) and the README; a root
+  `THIRD_PARTY_NOTICES` generated by `shared/licenses/gen.py` (third_party.json + texts for the
+  CMake, npm and Emscripten components; `cargo metadata` for the 196 crates linked into the server).
+- [ ] `THIRD_PARTY_NOTICES` shipped in every build (and beside the native server), linked from the
+  menu's About screen; CI runs `shared/licenses/gen.py --check`.
+- [ ] App version: one semantic version embedded in every build (HUD and menu instead of the commit
+  SHA), recorded with `protocolVersion` and generator versions in `build.json`; stable and dev
+  channels. Semantic Versioning 2.0.0 with a declared public API (world format, generated terrain,
+  protocols, the storage contract); the baseline release is `0.1.0`; before `1.0.0` breaking
+  changes bump MINOR, compatible ones PATCH; dev builds `0.2.0-dev.<run>+<sha>` (`RELEASES.md` §3).
+- [ ] Release workflow: build each version for `base: '/dwell/v/<version>/'`, publish it as a
+  GitHub Release (`v<version>`, or a `v<version>-dev.<run>` pre-release) with the build archive and
+  `build.json`; prune old dev pre-releases.
+- [ ] Pages workflow: assemble the site from the releases (every stable, the newest dev), generate
+  `versions.json`, deploy; size reported per deploy against the 1 GB limit.
+- [ ] Launcher: pick the version (world, invite/code, server, latest stable or dev), redirect with
+  the query kept; Back to the menu returns to `/dwell/`; clear errors for missing versions.
+- [ ] Worlds: `app_version_created` / `app_version_last` in the world file and `appVersion` in the
+  world index; saves from before the baseline ignored (deletable from the menu), none migrated; a
+  build opens a world only on the world's compatibility line and at or after `app_version_last`
+  (dev builds' worlds: that exact build), in the browser and `dwell_server` (which names the
+  version to run); the launcher picks the newest qualifying build; the menu lists all worlds with a
+  version badge.
+- [ ] Cross-version storage contract: the world index, settings and other shared stores are
+  append-only and preserve unknown fields on rewrite — in the baseline release before anything
+  else depends on it.
+- [ ] Master server: rooms and listings carry the host's app version; join-by-code and the server
+  browser open the matching build; the handshake's rejection names the server's version.
+- [ ] `ARCHITECTURE.md` §2.1, §3.1, §6.4, §10.3 and §10.5 updated.
+
+Exit criteria
+- [ ] A release produces a tag and a GitHub Release holding the build and `build.json`, listed in
+  `versions.json` and served at `/dwell/v/<version>/`.
+- [ ] e2e against a locally assembled two-version site: the launcher opens the latest stable;
+  `?play=` opens a world in its own version; an invite opens the host's version; Back returns to
+  `/dwell/`; other versions' worlds are listed with badges.
+- [ ] Compatibility rules hold in the browser and `dwell_server`: a `0.1.0` world opens in `0.1.1`,
+  a `0.1.1` world not in `0.1.0`, neither in `0.2.0`, a dev build's world only in that build.
+- [ ] An older build rewriting the world index keeps fields it does not know (test).
+- [ ] Saves from before the baseline are ignored without errors and can be deleted from the menu.
+- [x] `LICENSE` in place and referenced from the manifests and README; `THIRD_PARTY_NOTICES`
+  generated, its picks audited (each crate's chosen license matches the text it ships), and
+  `gen.py --check` reproduces it exactly.
+- [ ] Every build carries `THIRD_PARTY_NOTICES`, reachable from the menu; CI fails when it is stale.
+
+---
+
+## Phase 7 — Fantasy Look: A First Pass at Colour
+
+**Goal:** A first stab at better colours, so the world reads as warm, colourful, happy high
+fantasy: warm light and cool shadows, saturated greens, turquoise water, warm rock, a gradient sky
+with distance fading into a pale horizon haze. **Rendering and palette only — no terrain
+generation change:** no new materials, no generator version bump, the same landforms and
+vegetation. Design, measured target palette and a full description of the reference image:
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1. (Colourful accent vegetation is in Phase 11c;
+clouds are in Phase 12.)
+
+**Status:** Not started.
+
+Deliverables
+- [ ] Material colours and procedural tiles of the existing materials retuned toward the measured
+  palette (§1.3–1.4); LOD colours follow via tile averages.
+- [ ] One shared per-face RGB tint table (warm top, cooler sides, blue bottom) used by both the
+  chunk mesher and the LOD mesher, replacing the scalar face shades.
+- [ ] Warm sun, re-coloured hemisphere light, tone mapping with an exposure setting (in the
+  material shaders, no extra pass).
+- [ ] Sky gradient (zenith → horizon, sun glow) replacing the flat clear colour; height fog fades
+  to the sky's colour in the view direction; turquoise water (chunk and LOD).
+- [ ] An e2e screenshot script for fixed views (spawn, forest edge, coast, distant mountains, the
+  disc from the flight ceiling), run before and after.
+- [ ] `ARCHITECTURE.md` §5 (rendering) and §6.6 (LOD colours, fog) updated; `WORLD_GENERATION.md`
+  §1 trimmed to what was built plus rationale.
+
+Exit criteria
+- [ ] The owner approves before/after screenshots of the fixed views as a step toward the
+  reference's mood (manual).
+- [ ] Unit tests: chunk and LOD faces of the same material and direction get identical colours;
+  the tint table is warm on top and bluest underneath; the horizon fog colour equals the sky
+  gradient's horizon colour.
+- [ ] Worldgen golden hashes (chunks and LOD) unchanged — generation untouched.
+- [ ] Frame time within ±5 % of before on desktop and a phone (F3 readout).
+
+---
+
+## Phase 8 — Block Registry: Namespaced Block States and Palettes
+
+**Goal:** Replace the hand-numbered global material table with Minecraft's pattern (owner's
+decision, 2026-10-05): namespaced blocks (`dwell:dirt`) with typed properties, canonical state
+strings (`dwell:ladder[facing=east,flooded=false]`), dense runtime state ids generated from data
+files, and world files that store chunk palettes as strings, so content can change without breaking
+saved worlds. The foundation for slopes (Phase 9), flooded blocks and new content. Design:
+[`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
+
+**Status:** Not started. No visible change in the game: same terrain, same blocks.
+
+Deliverables
+- [ ] ADR: the block registry — identity and canonical strings, data files and generated
+  registries, runtime ids and the registry hash, string palettes in the world file (no migration
+  of earlier worlds: they are version-locked, Phase 6); supersedes the material-table parts of
+  §6.1.
+- [ ] Block data files (`shared/blocks/`) for today's 21 materials (ladders as
+  `dwell:ladder[facing,flooded]`) and a generator emitting the C++ and TypeScript registries,
+  replacing `voxel.h`'s table and `materials.ts`'s hand mirror; canonical string parse/write.
+- [ ] Every user of material ids (generator, meshers, collision, controller, edits, palette, LOD)
+  on runtime state ids resolved by name; `Placeable` and render styles from the registry.
+- [ ] World file: the `block_states` table and chunk palettes of world state ids; the golden world
+  file regenerated in the new format; the LOD cache dropped on a registry change. (Aliases, upgrade
+  rules and an unknown-state placeholder are deferred to world upgrades, `FUTURE.md`.)
+- [ ] Protocol: the registry hash in `Welcome` (version bump, golden vectors in both languages).
+- [ ] Paletted in-memory chunks (bit-packed indices): measure memory and meshing/collision time;
+  adopt only if the trade is good, otherwise record the numbers and defer.
+- [ ] `ARCHITECTURE.md` §6.1, §6.4, §6.6 and §8.3 updated.
+
+Exit criteria
+- [ ] Every state's canonical string round-trips; C++ and TypeScript registries give the same order
+  and hash.
+- [ ] A world saved and reopened in the same build is identical (terrain, edits, every voxel's
+  string); the regenerated golden world file reads natively and in the browser.
+- [ ] Determinism goldens pass natively, under WASM and in the client module (regenerated once if
+  runtime ids change, with the registry hash recorded); the e2e palette test passes.
+
+---
+
+## Phase 9 — Slope Blocks
+
+**Goal:** Standard (45°) and gentle (26.57°) slope blocks with hip and valley corners, upright and
+inverted, made from the shapeable materials: placed by players, generated on the terrain surface,
+walked on smoothly by the physics player controller with identical collision on server and
+client, and used by the LOD to draw distant terrain as faceted slopes instead of terraces. Design,
+the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
+
+**Status:** Not started. Needs Phase 8 (the block registry). Sub-phases: **9a — shapes, slope
+families, meshing, collision and the
+controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
+(generator version bump); **9d — LOD slopes**. Runs after Phase 8 (the block registry) and before Phase 14, whose
+cluster shapes and integrity rules must know about slopes.
+
+Deliverables
+- [ ] ADR: slope shapes as registry block families (`<m>_slope[facing,flooded,half,shape]`,
+  `<m>_slab[flooded,half]`) and flooded blocks.
+- [ ] 9a: the 9 shapes × 4 facings × upright/inverted (§1.2) as generated slope and slab families
+  for the shapeable materials, with coverage, triangles, volume, convexity and `placeable` per
+  state; `SurfaceHeightAt` for point queries; flooded states drawn and swum in like water.
+- [ ] 9a: chunk mesher — coverage-based culling, sloped faces with true normals, top-tile
+  projection, normal-interpolated face tint shared with the LOD mesher.
+- [ ] 9a: terrain collision meshes with sloped triangles; `maxSlopeAngle` raised above 45°
+  (a tuning change with a test that fails on 45°); a slope playground and controller scenarios
+  (ramps, corners, gentle 2 × 2 corners, slope into a wall, crouching under a sloped ceiling).
+- [ ] 9b: creative palette shape selector (key and touch), orientation from facing and the hit
+  face, a placement preview, `CheckBlockEdit` against the shape's true volume; breaking gives the
+  base material.
+- [ ] 9c: the corner-height surface rule (§5) in the generator, point queries and
+  `GenerateLod`; flooded slopes below water levels; generator version bump, goldens regenerated.
+- [ ] 9d: the LOD mesher derives slopes from surface heights at every level (no LOD format
+  change).
+- [ ] `ARCHITECTURE.md` §6.1, §6.3, §6.5, §6.6 and §8.3 and `PLAYER_CONTROLLER.md` §6.2 updated.
+
+Exit criteria
+- [ ] Shape table verified from geometry (corner heights, volumes, coverage, convexity); the slope
+  families' canonical strings round-trip.
+- [ ] Exhaustive adjacency test: no holes or overlapping faces for any pair of shapes on any side.
+- [ ] Controller slope scenarios pass natively and in WASM, at the origin and ~8,000 km out; the
+  divergence check passes; no slope launches, hops or sliding at rest.
+- [ ] Generated slopes within half a block of the continuous surface, shared corners agree, flooded
+  below water; LOD slopes within half a cell; determinism goldens pass everywhere.
+- [ ] e2e: every shape in every orientation placed and broken, seen identically by a second client.
+- [ ] Frame time within budget on desktop and a phone; chunk generation and meshing times reported.
+- [ ] Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.
+
+---
+
+## Phase 10 — Continents from Voronoi Plates
+
+**Goal:** A two-level jittered Voronoi layout (continent cells ~2,560 km, plates ~256 km) splits
+the disc into **6–14 distinct continents with at least `OCEAN_GAP` of open ocean between any
+two**, natural fractal coastlines, island chains, an ocean ring at the rim, and per-continent
+character; continentalness becomes a signed distance to the coast. Design:
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2.
+
+**Status:** Not started.
+
+Deliverables
+- [ ] ADR: continents from Voronoi plates (layout, separation clamp, macro lattice), amending
+  ADR 0010 to allow correctly rounded `sqrt` (no other `<cmath>`), guarded by the goldens.
+- [ ] Continent and plate layers: bounded-jitter sites, land/ocean hashing, forced land at the
+  origin, ocean beyond `WORLD_RADIUS − RIM_OCEAN`, bays, island plates with their blob layer.
+- [ ] Domain warp shared by both lookups; signed coast distance from plate bisectors plus
+  scale-dependent coast fBm; the separation clamp (continents, islands, rim).
+- [ ] Shelf / slope / abyss and inland rise driven by the coast distance; per-continent record
+  (elevation, mountainousness, climate bias, wind, shelf width); internal plate-edge distance and
+  convergence exported for Phase 11.
+- [ ] Macro lattice (~256 m) shared by chunks, point queries and `GenerateLod`; per-column caching
+  where needed; chunk and LOD generation within +10 % of today.
+- [ ] Generator version bump; chunk and LOD goldens regenerated with coast, ocean-gap, island and
+  interior entries.
+- [ ] `dwell_worldgen_inspect` whole-disc image mode (continent ids, plate edges, height); the F4
+  map zooms out to the whole disc.
+- [ ] `ARCHITECTURE.md` §6.3 (climate, base height, world bounds' scale-of-terrain paragraph) updated.
+
+Exit criteria
+- [ ] Separation test: for 8 seeds and ~10,000 land points each, every sample within
+  0.99 × `OCEAN_GAP` (64 directions × 4 radii) is sea or the same continent.
+- [ ] For 8 seeds: 6–14 continents; land fraction 0.25–0.35; the origin on land; no land within
+  `RIM_OCEAN` of the rim; coastline length grows ≥ 1.5× from a 16 km to a 1 km ruler.
+- [ ] Determinism goldens pass natively, under WASM and in the client module; timings reported.
+- [ ] Whole-disc images for 3 seeds reviewed by the owner (manual).
+
+---
+
+## Phase 11 — Natural Terrain: Rivers, Mountains, Climate & Biomes
+
+**Goal:** Realistic, drainage-consistent terrain after the Epic Terrain mod's techniques
+(re-implemented, described in [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.1): rivers in
+three tiers as noise contours that always run along valley floors and reach the sea; mountains
+that rise away from rivers within plate-driven uplift belts, with derivative-damped ridged detail;
+lakes, terraced river water above sea level with waterfall steps; climate from altitude, coast
+distance and rain shadows; biomes from a data table driven by the terrain, with colourful accent
+vegetation. Design: §3.
+
+**Status:** Not started. Planned sub-phases (each a generator version bump): **11a — height model,
+rivers, lakes, water above sea level**; **11b — mountain detail cascade**; **11c — climate, the biome
+table and colourful vegetation**; **11d — fantasy landforms** (karst spires, mesas; stretch, after
+the owner approves 11a–c).
+
+Deliverables
+- [ ] ADR: drainage-consistent terrain — rivers as noise contours, water above sea level as
+  terraced static water, and their effect on air chunks and LOD bounds.
+- [ ] 11a: valley floor `V`, uplift `U`, distance-from-rivers factor; three river tiers with
+  channel profiles that fade inland and with altitude; terraced river surfaces with waterfall
+  steps; lake cells and wetland ponds; caves suppressed under water; overhangs reduced.
+- [ ] 11a: `IsAirChunk`/`SkyFloor` and `LodBoundsAt` include water above sea level; spawn prefers
+  land near water.
+- [ ] 11b: analytic-derivative gradient noise and the derivative-damped ridged cascade (§3.4),
+  amplitude scaled by distance from rivers and uplift; LOD octave dropping.
+- [ ] 11c: temperature with a lapse rate, humidity with coast distance and rain shadow; the biome
+  table (base grid + terrain overrides + dithered borders); surface rules and trees from it.
+- [ ] 11c: colourful vegetation (§3.7): leaf materials (bright, autumn, red, blossom, violet) and
+  grass variants (meadow with flowers, golden), C++ table and TypeScript mirror, with tiles;
+  blossom and autumn tree kinds; accent trees by a grove noise plus a per-tree hash so accents come
+  in clumps, allowed set and share per biome; distant forests keep their colour — `GenerateLod`
+  gives forested columns a canopy (leaf) surface above the tree-cell limit.
+- [ ] 11d (stretch): karst spire and mesa provinces.
+- [ ] Inspect tool: rivers, lakes and biomes on the map; a hillshade image mode.
+- [ ] Goldens regenerated per sub-phase, with river, lake, waterfall, alpine and coast entries;
+  LOD agreement tests gain river and lake sites.
+- [ ] `ARCHITECTURE.md` §6.3 (pipeline stages, water rule, surface rules) and §6.6 (LOD bounds)
+  updated.
+
+Exit criteria
+- [ ] Rivers lie in valleys: sampled channel beds are no higher than the terrain 50–500 m to either
+  side.
+- [ ] Great rivers' water is at sea level within 5 km of the coast.
+- [ ] No floating water: every water voxel has water or solid below; horizontal water/air contacts
+  occur only at terrace steps.
+- [ ] No cave air within the suppression depth below water.
+- [ ] Snow only above the altitude its temperature implies; lee sides of ranges drier than
+  windward sides.
+- [ ] Vegetation: new materials mirrored and placeable; accent trees clumped (nearest-neighbour
+  accent fraction well above the overall accent fraction); a forested site's level-4 LOD surface
+  is mostly leaf materials.
+- [ ] Biome shares within bands for 8 seeds; chunk and LOD generation ≤ +25 % of today; LOD
+  agreement thresholds still met; determinism goldens pass everywhere.
+- [ ] Manual: a walk along a river from its spring to the sea and a flight over a range, with
+  screenshots for the owner.
+
+---
+
+## Phase 12 — Sky Islands in a Dome
+
+**Goal:** The world extends upward into a **full hemispherical dome over the disc** (radius
+8,192 km, the disc's radius; decided by the owner, 2026-10-05), and the sky inside it is sparsely
+populated with separate floating islands, after the Aether mod's sky-island terrain (landforms
+only — no dungeons or creatures; the owner's spec of it is kept in
+[`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md)), using existing
+blocks only. Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
+
+**Status:** Not started. Sub-phases: **12a — dome world bounds** (decided; does not depend on the
+islands, so it may be built earlier than the rest of the phase); **12b — islands** (the
+Aether density field in sparse archipelagos, surface layering, decorations); **12c — clouds**
+(render-only, separable). Open details in `WORLD_GENERATION.md` §4.8.
+
+Deliverables
+- [ ] 12a: ADR superseding ADR 0011's vertical bounds: `TERRAIN_MAX_Y` (6,144 m, the ground band)
+  and the dome (`InsideWorldDome`, radius `WORLD_RADIUS`); what lies at the dome's surface.
+- [ ] 12a: every use of `WORLD_MAX_Y` classified as ground band or world bound and switched; edit
+  validation, chunk rows, streaming (view sphere clipped to the world) and air chunks follow the
+  dome; nothing is generated outside it.
+- [ ] 12a: a 3D LOD above level 8 (rows up to the dome's top); `LodIndex`/`LodIndexUpdate` carry the
+  row `j` — protocol version bump with golden vectors in both languages.
+- [ ] 12a: player, netcode and LOD tests near the dome's top; rendering checked from inside the dome
+  at altitude.
+- [ ] 12b: ADR: sky islands — the Aether density field, archipelagos (layout, scale, presence over
+  altitude), decoration as deterministic feature functions, island anchors (decided here, before
+  Phase 14's integrity work).
+- [ ] 12b: the island field (§4.3): fields A, B and selector S, height gain, vertical ramps, the
+  8 × 4 × 8 lattice shared by chunks, `SolidAt` and LOD; field statistics tests against the
+  reference's targets.
+- [ ] 12b: archipelagos in 3D jittered cells with scale variants and a footprint fade, from
+  `ISLAND_MIN_Y` (above the ground band) to inside the dome, never touching.
+- [ ] 12b: island surface layering on every floor; region climate (Meadow / Grove / Forest /
+  Woodland) setting tree attempts and leaf colour.
+- [ ] 12b: decorations as feature functions using point queries, no neighbour reads (§4.4): edge
+  shelves, lakes with the leak check, ores and pockets, springs as static waterfalls, trees with
+  the layered ground finder, tiny islets (exempt from the stability pass).
+- [ ] 12b: air chunks and LOD classification with archipelago bounds (cost bounded per section at
+  every level); goldens with island chunks and sections.
+- [ ] 12c: render-only clouds from the reference's blob walks and cloud banks (§4.9), a cloud mask
+  beside each chunk from the worldgen worker, plus banks in the ground sky; ≤ ~1 ms per frame on a
+  phone.
+- [ ] `ARCHITECTURE.md` §6.1, §6.3 (world bounds), §6.6 (LOD), §8.3 (`LodIndex`), §7.1 (island
+  anchors) and §5 (clouds) updated.
+
+Exit criteria
+- [ ] 12a: nothing generated outside the dome; edits accepted up to the dome and refused outside it;
+  streaming and LOD reach the dome's top; player and netcode suites pass near it.
+- [ ] 12b: field statistics within a few points of the reference's targets (solid share by band
+  height, ~1/3 of columns with land, typical thickness 15–20 m, ~1 in 5 land columns with a second
+  layer).
+- [ ] 12b: archipelagos never touch, stay above `ISLAND_MIN_Y` and inside the dome, presence matches
+  the profile, and no island is cut by a footprint edge.
+- [ ] 12b: lakes never leak; springs, trees and ores follow their rules; features crossing chunk
+  borders are identical from both sides.
+- [ ] 12b: open sky still skipped as air chunks (a flight test counts generated chunks); LOD
+  sections above the ground band classified correctly; determinism goldens pass everywhere.
+- [ ] 12c: cloud cost measured on a phone.
+- [ ] Manual: a flight through an island field and views of the dome's islands from the ground and
+  from high up, reviewed by the owner.
+
+---
+
+## Phase 13 — The Bifacial World
+
+**Goal:** A second inhabited face on the disc's underside with gravity inverted past the halfway
+point (owner, 2026-10-05): the midplane (y = −2,048) becomes the world's core — diggable rock
+anchored for integrity by position, no bedrock; face B mirrors face A's structure — its own terrain
+(different seed streams) and its own dome of sky islands — so the world is a two-sided, sphere-like
+object. Down is always toward the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).
+
+**Status:** Not started. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
+(2026-10-05): no crossing routes (dig through or go around the rim), a static sun for face A and a
+counter-angled static moon for face B, spawn on face A, a ~4 km crust, the rim ocean kept, and
+face B reusing face A's generator, biomes, palette and islands (`BIFACIAL_WORLD.md` §9). No open
+questions.
+
+Deliverables
+- [ ] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, the core
+  anchor zone (no bedrock), gravity toward the midplane and the flip band, crossing by digging or
+  around the rim, sun and moon; supersedes ADR 0011's vertical bounds
+  and Phase 12's single dome.
+- [ ] Bounds: no bedrock and no void below — a diggable core with a positional anchor zone
+  (`CORE_ANCHOR_LAYERS`); face B's ground band and dome; the LOD origin at −2²³
+  in y; streaming, air chunks, edits and the flight limits on both sides.
+- [ ] Generation in face-local coordinates with per-face seed streams; face-B chunks as flipped
+  face-local chunks; point queries by face; LOD cells by their side of the midplane; per-face
+  water.
+- [ ] Gravity: per-face direction, the flip band with drag, Jolt gravity factors by side.
+- [ ] Player controller: a face sign through every vertical quantity and probe; mirrored voxel
+  queries; the mirror-equivalence suite; crossing the flip band with a smooth camera turn
+  (protocol bump if the snapshot needs a flag).
+- [ ] Crossing without dedicated routes: a shaft dug through the core and going over the rim both
+  work through the flip band (no generated wells, ledges or portals).
+- [ ] Lighting and rendering: a static sun (face A) and a counter-angled static moon (face B), each
+  fragment lit only by its own face's light and ambient; camera up by face; face-B tops shaded as
+  tops; face B's moonlit night sky and haze in the viewer's face frame.
+- [ ] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
+
+Exit criteria
+- [ ] A face-B chunk equals the flip of its face-local chunk; face B's terrain differs from face A's;
+  goldens with face-B chunks and midplane-straddling LOD sections pass natively, in WASM and in the
+  client module.
+- [ ] Mirror-equivalence: every controller scenario mirrored onto face B gives the mirrored trace,
+  natively and in WASM, at both origins.
+- [ ] A player walks, jumps, swims and climbs on face B, and crosses between the faces by digging
+  through the core and by going over the rim, the face sign and camera turning over once.
+- [ ] Face A is lit only by the sun and face B only by the moon (ceilings included).
+- [ ] A body falling off the rim settles in the flip band; bodies on face B fall toward the
+  midplane.
+- [ ] Nothing generated outside the two bands and domes; streaming and LOD reach both domes.
+- [ ] Manual: face B walked, a crossing made, both domes seen, reviewed by the owner.
+
+---
+
+## Phase 14 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
 
-**Status:** On hold until Phase 5 (multiplayer ready) is complete (2026-09-30).
+**Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
+until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
-- [ ] Anchor definition (bedrock layer + `grounded` flag) and budgeted 6-connected flood-fill
-  structural-integrity pass triggered by voxel removal (`INTEGRITY_BUDGET_VOXELS`).
+- [ ] Bifacial world (Phase 13): the core anchor zone around the midplane (positional, diggable;
+  there is no bedrock) anchors both faces; bodies fall toward the midplane by their side and settle
+  in the flip band.
+- [ ] Slopes (Phase 9): any two solid voxels sharing a face are connected; cluster bodies use one
+  convex shape per voxel from the state table (inner corners as two wedges), mass from volume
+  (`SLOPE_BLOCKS.md` §7).
+- [ ] Anchor definition (the core anchor zone of Phase 13 + `grounded` flag) and budgeted 6-connected flood-fill
+  structural-integrity pass triggered by voxel removal (`INTEGRITY_BUDGET_VOXELS`). The anchor
+  rule must also cover generated sky islands (Phase 12; `WORLD_GENERATION.md` §4.5 item 7),
+  whichever phase lands first.
 - [ ] Clustering of detached components; removal from grid in the same `VoxelModification`
   (reason `Collapse`).
 - [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
 - [ ] `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
-- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 7); client
+- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 15); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
 - [ ] **Player ↔ Tier 1 interaction** (§9.2, §9.4):
   - [ ] Players push light clusters (contact mass scaling: `maxPushForce`, `pushableMassLimit`);
@@ -1155,11 +1589,12 @@ Exit criteria
 
 ---
 
-## Phase 7 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
+## Phase 15 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
 
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
-**Status:** On hold until Phase 5 (multiplayer ready) is complete (2026-09-30).
+**Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
+until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
 - [ ] Explosion system on the server: radius/force, material strength attenuation, impulse to
@@ -1191,11 +1626,12 @@ Exit criteria
 
 ---
 
-## Phase 8 — Sleep / Re-bake Cycle
+## Phase 16 — Sleep / Re-bake Cycle
 
 **Goal:** Spec Phase 6. Long-running servers keep a bounded number of dynamic bodies (§7.3).
 
-**Status:** On hold until Phase 5 (multiplayer ready) is complete (2026-09-30).
+**Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
+until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
 - [ ] Sleep monitor with `SLEEP_LINEAR_THRESHOLD`, `SLEEP_ANGULAR_THRESHOLD`, `SLEEP_SECONDS`.
@@ -1218,7 +1654,7 @@ Exit criteria
 
 ---
 
-## Phase 9 — Dedicated Server Distribution & Platform Packaging
+## Phase 17 — Dedicated Server Distribution & Platform Packaging
 
 **Goal:** Complete player-hosted multiplayer with no official game servers (ADR 0003):
 distributable dedicated servers and packaged desktop/mobile apps (ARCHITECTURE §10), on top of the
@@ -1232,8 +1668,9 @@ Deliverables
   physics and view caps. Certificate rotation, publishing each new hash to the master (5d).
 - [ ] **World export/import** (`.dwellworld`) across dedicated servers, browsers, and apps; Capacitor
   storage VFS verified per platform.
-- [ ] **Versioned client builds** at `/dwell/v/<version>/`; the server browser (5e) offers the build
-  matching an incompatible server.
+- [ ] Versioned builds for the Electron and Capacitor shells: whether they load versions from the
+  site (store policies on downloaded code, iOS in particular) or bundle one version (the web
+  launcher and versioned builds themselves are Phase 6).
 - [ ] **Electron:** packaging for Windows/macOS/Linux (electron-builder), custom protocol with
   COOP/COEP and the multithreaded sim-core build (ADR 0007),
   "Host world" launching the native server; local-network discovery.
@@ -1251,7 +1688,8 @@ Exit criteria
 - [ ] Certificate rotation on a dedicated server is invisible to players joining through the master.
 - [ ] An iOS Safari player joins a self-signed dedicated server over WebRTC, including one behind
   strict NAT via TURN.
-- [ ] An outdated client is rejected with a clear message and offered the matching versioned build.
+- [ ] An outdated app (Electron, Capacitor) is rejected with a clear message and offered the matching
+  versioned build.
 
 ---
 

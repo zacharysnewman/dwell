@@ -1,0 +1,69 @@
+{
+  "_comment": "Third-party components shipped in Dwell's builds that are not Rust crates (crates come from server/net/wt/Cargo.lock). Keep versions in step with server/cmake/Dependencies.cmake, client/package.json and the Emscripten version (ARCHITECTURE.md §3.1); texts/ holds each license text at that version. Build- and test-only tools (Corrosion, doctest, Vitest, ...) are not shipped and not listed. Regenerate THIRD_PARTY_NOTICES with: python3 shared/licenses/gen.py",
+  "components": [
+    {
+      "name": "Jolt Physics",
+      "version": "5.6.0",
+      "url": "https://github.com/jrouwe/JoltPhysics",
+      "license": "MIT",
+      "text": "jolt-physics.txt",
+      "used_in": "server core (native server, browser WASM)"
+    },
+    {
+      "name": "SQLite",
+      "version": "3.53.4",
+      "url": "https://sqlite.org",
+      "license": "Public domain",
+      "text": "sqlite.txt",
+      "used_in": "server core (native server, browser WASM)"
+    },
+    {
+      "name": "Zstandard (zstd)",
+      "version": "1.5.7",
+      "url": "https://github.com/facebook/zstd",
+      "license": "BSD-3-Clause (zstd is dual-licensed BSD-3-Clause OR GPL-2.0; used under BSD-3-Clause)",
+      "text": "zstd.txt",
+      "used_in": "server core (native server, browser WASM)"
+    },
+    {
+      "name": "Monocypher",
+      "version": "4.0.3",
+      "url": "https://monocypher.org",
+      "license": "BSD-2-Clause OR CC0-1.0",
+      "text": "monocypher.txt",
+      "used_in": "server core (native server, browser WASM)"
+    },
+    {
+      "name": "Emscripten runtime",
+      "version": "6.0.10",
+      "url": "https://github.com/emscripten-core/emscripten",
+      "license": "MIT OR NCSA",
+      "text": "emscripten.txt",
+      "used_in": "browser WASM builds"
+    },
+    {
+      "name": "musl libc (as bundled by Emscripten)",
+      "version": "Emscripten 6.0.10",
+      "url": "https://musl.libc.org",
+      "license": "MIT",
+      "text": "musl.txt",
+      "used_in": "browser WASM builds"
+    },
+    {
+      "name": "three.js",
+      "version": "0.186.1",
+      "url": "https://threejs.org",
+      "license": "MIT",
+      "text": "three.txt",
+      "used_in": "web client"
+    },
+    {
+      "name": "qrcode-generator",
+      "version": "2.0.4",
+      "url": "https://github.com/kazuhikoarase/qrcode-generator",
+      "license": "MIT",
+      "text": "qrcode-generator.txt",
+      "used_in": "web client"
+    }
+  ]
+}

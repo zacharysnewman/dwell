@@ -7,7 +7,7 @@
 > prediction and reconciliation, and presentation (`server/core/include/dwell/player`,
 > `server/core/src/player`, `server/tests/player`, `client/src/game`). Not yet: animation (no
 > character models), and the Tier 1 interactions of §6.6 (push cap, crush, riding clusters —
-> Phase 6).
+> Phase 14).
 
 This spec ports the **Physics Player Controller (PPC)** —
 [`zacharysnewman/physics-player-controller`](https://github.com/zacharysnewman/physics-player-controller),
@@ -286,6 +286,11 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 - Static terrain is all axis-aligned: its ground normals are always straight up and walls exactly
   vertical, so slope logic rarely triggers on terrain. It still matters on **Tier 1 bodies**
   (rotated clusters) and on future slab/stair shapes.
+  **[planned, Phase 13]** The bifacial world puts a second face on the disc's underside, where
+  up is −y: the controller gains a face sign through every vertical quantity and probe, proven by a
+  mirror-equivalence suite ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
+  **[planned, Phase 9]** Slope blocks add 45° and 26.57° walkable faces to static terrain;
+  `maxSlopeAngle` (45°) is raised above 45° then, with slope scenarios ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §4).
 - `maxStepHeight` 0.55 m (PPC: 0.45): half-block **slabs** (0.5 m) are stepped up without leaving
   the ground, full 1 m blocks need a **jump** (jump height 1.25 m clears one block); step-up also
   applies to cluster debris. Walking off a 1 m ledge is a short fall (larger than the step reach),
@@ -466,7 +471,7 @@ Owned by the `Predictor` (same Jolt settings as the server):
   extrapolating to the predicted present: head-on bumps corrected with 0.17–0.23 m per-tick
   rendered steps and no snaps, versus snaps of 1–2 m (an extrapolated kinematic proxy shoves the
   local player, while on the server two equal-mass bodies stop each other). Tier 1 proxies
-  (present-time within `PREDICT_PROXY_RADIUS`, ARCHITECTURE §9.4) arrive in Phase 6;
+  (present-time within `PREDICT_PROXY_RADIUS`, ARCHITECTURE §9.4) arrive in Phase 14;
 - the local player as the only dynamic body, with the server's body settings.
 
 ### 8.2 Loop
@@ -562,7 +567,7 @@ divergence added per tick. The whole ported player and netcode suite also passes
   `platform.yawDelta` turns the camera with rotating ground. Dwell's world is **right-handed, Y up**: yaw 0 looks along +Z, and right of +Z is −X (the
   PPC's Unity convention is left-handed); the controller's camera-right vector follows this.
 - **Players:** remote players are capsules with a visor, interpolated 100 ms in the past; dead
-  players are drawn lying down (a cosmetic pose; the physics ragdoll moves to Phase 7 with the
+  players are drawn lying down (a cosmetic pose; the physics ragdoll moves to Phase 15 with the
   client debris world). While dead, the camera orbits the body until respawn.
 - **Animation:** not yet — there are no character models. The parameters listed by the PPC
   (`Speed`, `IsGrounded`, … from `State`, velocity, and flags) are all available client-side.

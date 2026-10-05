@@ -13,7 +13,7 @@ namespace dwell::storage {
 namespace {
 
 // Ordered schema migrations: kMigrations[i] upgrades a file from format i to i + 1. Later formats
-// add tables here (bodies, Phase 6; lod_sections, Phase 4) without touching earlier steps.
+// add tables here (bodies, Phase 14; lod_sections, Phase 4) without touching earlier steps.
 constexpr const char* kMigrations[] = {
     // 0 → 1: schema v1 (§6.4).
     R"sql(
