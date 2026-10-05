@@ -32,7 +32,7 @@ struct PlayerControllerConfig {
     bool carried_by_characters = false;
     bool auto_jump = false;              // ◆ Dwell addition (touch preset: true)
     bool edge_guard = false;             // ◆ Dwell addition
-    float max_push_force = 800.0f;       // ◆ contact mass scaling (Phase 10)
+    float max_push_force = 800.0f;       // ◆ contact mass scaling (Phase 11)
     float pushable_mass_limit = 400.0f;  // ◆
   } movement;
   struct Probes {

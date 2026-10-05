@@ -20,10 +20,11 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0012](0012-lod-octree.md) | Whole-world view: a 3D level-of-detail octree, generated on the client | Accepted |
 | [0013](0013-master-server-on-cloudflare.md) | Master server on Cloudflare Workers + Durable Objects; Cloudflare TURN | Accepted |
 
-Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases 4–7
-became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
+Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
+4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
 multiplayer-ready phase (Phase 5) was added on 2026-09-30. In ADRs 0001–0013, Phases 6–9 became
-10–13 when the world look-and-shape phases (6–9) were placed before them on 2026-10-05.
+11–14 on 2026-10-05, when the world look-and-shape phases (6–9) and the slope-block phase (10) were
+placed before them.
 
 ## Template
 
