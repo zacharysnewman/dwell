@@ -19,8 +19,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   palettes in world files.
 - `docs/SLOPE_BLOCKS.md` — design for Phase 11: slope block shapes, collision, building, terrain
   shaping and LOD (becomes an architecture sub-spec as the phase lands).
-- `docs/RELEASES.md` — design for Phase 12: private source, public deploy repo, versions loaded from
-  tags by a launcher, version-locked worlds.
+- `docs/RELEASES.md` — design for Phase 12: builds as tagged releases loaded by a version launcher,
+  version-locked worlds, the license.
 - `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
   spec used by Phase 9).
 - `docs/adr/` — architecture decision records.

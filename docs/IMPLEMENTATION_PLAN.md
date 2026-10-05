@@ -29,7 +29,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 9 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
 | 10 — Block registry: namespaced block states and palettes | ⏳ Not started | — |
 | 11 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
-| 12 — Versioned releases: private source, public deploy repo, builds by tag, version-locked worlds | ⏳ Not started | — |
+| 12 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ⏳ Not started | — |
 | 13 — Voxel awakening | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
 | 14 — Tiered physics | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
 | 15 — Sleep / re-bake | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
@@ -1422,48 +1422,48 @@ Exit criteria
 
 ---
 
-## Phase 12 — Versioned Releases: Private Source, Public Deploy Repo, Builds by Tag
+## Phase 12 — Versioned Releases: Builds by Tag, a Version Launcher, Version-Locked Worlds
 
-**Goal:** Keep the source private and publish only builds (owner, 2026-10-05): this repository
-becomes private and builds into a new **public deploy repo** that serves the web app on GitHub
-Pages and holds **one git tag per build**. A small launcher at `https://dropkickarcade.com/dwell/`
-loads app versions dynamically from those tags (served same-origin at `/dwell/v/<version>/`), and
-**worlds record the app version they were created with and are locked to it** for now. Design and
-the owner's setup steps: [`RELEASES.md`](./RELEASES.md).
+**Goal:** Every build stays playable (owner, 2026-10-05): each build is a git tag with a GitHub
+Release holding the built files; the Pages site is assembled from the releases, serving each at
+`/dwell/v/<version>/`; a small launcher at `https://dropkickarcade.com/dwell/` loads versions
+dynamically from them; and **worlds record the app version they were created with and are locked
+to it** for now. The repository stays public under a restrictive license chosen by the owner (a
+private-source split was considered and dropped to keep the free CI pipeline). Design and setup
+steps: [`RELEASES.md`](./RELEASES.md).
 
 **Status:** Not started. Absorbs Phase 16's "versioned client builds" for the web.
 
 Deliverables
-- [ ] ADR: versioned releases — repositories and visibility, the app version and channels, builds
-  as tags in the deploy repo, the site assembled from tags, the launcher, version-locked worlds,
-  the cross-version storage contract; supersedes the deployment parts of §2.1 and ADR 0005's
-  "older builds" note.
+- [ ] ADR: versioned releases — the app version and channels, builds as tagged GitHub Releases,
+  the site assembled from releases, the launcher, version-locked worlds, the cross-version storage
+  contract, the license; supersedes the deployment parts of §2.1 and ADR 0005's "older builds" note.
+- [ ] License: the owner's choice in `LICENSE`, the package manifests' license fields and the
+  README; a generated `THIRD_PARTY_NOTICES` in every build (and beside the native server), linked
+  from the menu.
 - [ ] App version: one semantic version embedded in every build (HUD and menu instead of the commit
   SHA), recorded with `protocolVersion` and generator versions in `build.json`; stable and dev
   channels.
-- [ ] Source-repo release workflow: build each version for `base: '/dwell/v/<version>/'` without
-  source maps (kept as private artifacts), commit it alone to the deploy repo's `builds` branch, tag
-  it (`v<version>` / `dev-<version>`); push the launcher to the deploy repo's `main` when it changes.
-- [ ] Deploy-repo Pages workflow: assemble the site from the tags (every stable, the newest dev),
-  generate `versions.json`, deploy; size reported per deploy against the 1 GB limit.
+- [ ] Release workflow: build each version for `base: '/dwell/v/<version>/'`, publish it as a
+  GitHub Release (`v<version>`, or a `dev-<version>` pre-release) with the build archive and
+  `build.json`; prune old dev pre-releases.
+- [ ] Pages workflow: assemble the site from the releases (every stable, the newest dev), generate
+  `versions.json`, deploy; size reported per deploy against the 1 GB limit.
 - [ ] Launcher: pick the version (world, invite/code, server, latest stable or dev), redirect with
   the query kept; Back to the menu returns to `/dwell/`; clear errors for missing versions.
 - [ ] Worlds: `app_version_created` / `app_version_last` in the world file and `appVersion` in the
-  world index; saves from before the baseline ignored (deletable from the menu), none migrated;
-  a build opens only its own
-  version's worlds (browser and `dwell_server`, which names the version to run); the menu lists all
-  worlds with a version badge.
+  world index; saves from before the baseline ignored (deletable from the menu), none migrated; a
+  build opens only its own version's worlds (browser and `dwell_server`, which names the version to
+  run); the menu lists all worlds with a version badge.
 - [ ] Cross-version storage contract: the world index, settings and other shared stores are
   append-only and preserve unknown fields on rewrite — in the baseline release before anything
   else depends on it.
 - [ ] Master server: rooms and listings carry the host's app version; join-by-code and the server
   browser open the matching build; the handshake's rejection names the server's version.
-- [ ] Owner setup done (`RELEASES.md` §8): repos renamed and created, token stored, first release
-  live, source repo private; Actions minutes reviewed.
 - [ ] `ARCHITECTURE.md` §2.1, §3.1, §6.4, §10.3 and §10.5 updated.
 
 Exit criteria
-- [ ] A release produces a deploy-repo tag holding exactly the build and `build.json`, listed in
+- [ ] A release produces a tag and a GitHub Release holding the build and `build.json`, listed in
   `versions.json` and served at `/dwell/v/<version>/`.
 - [ ] e2e against a locally assembled two-version site: the launcher opens the latest stable;
   `?play=` opens a world in its own version; an invite opens the host's version; Back returns to
@@ -1471,8 +1471,7 @@ Exit criteria
 - [ ] A world from version A refuses to open in version B, in the browser and in `dwell_server`.
 - [ ] An older build rewriting the world index keeps fields it does not know (test).
 - [ ] Saves from before the baseline are ignored without errors and can be deleted from the menu.
-- [ ] The live site deploys from the public repo with the source repo private; no source maps
-  published (manual check).
+- [ ] `LICENSE` in place; every build carries `THIRD_PARTY_NOTICES`, reachable from the menu.
 
 ---
 

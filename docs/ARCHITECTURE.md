@@ -119,9 +119,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
 
 Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds the WASM core
 (Emscripten) and `client/`, and publishes them with `actions/deploy-pages` on pushes to `main`
-(the repository's Pages source is "GitHub Actions"). **[planned, Phase 12]** The source repository
-becomes private and publishes tagged builds to a public deploy repository that serves the site
-through a version launcher ([`RELEASES.md`](./RELEASES.md)). The page carries a strict
+(the repository's Pages source is "GitHub Actions"). **[planned, Phase 12]** Each build becomes a
+tagged GitHub Release, and the site is assembled from the releases behind a version launcher
+([`RELEASES.md`](./RELEASES.md)). The page carries a strict
 Content-Security-Policy `<meta>` tag, since Pages cannot send headers (§11).
 
 ### 2.2 Desktop / Mobile shells **[in progress]**
@@ -1711,7 +1711,7 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 - The handshake rejects incompatible `protocolVersion`s with a clear reason; the server browser
   marks incompatible servers.
 - **[planned, Phase 12]** Versioned releases ([`RELEASES.md`](./RELEASES.md)): a launcher at
-  `/dwell/` loads tagged builds from a public deploy repo, served at `/dwell/v/<version>/`; the
+  `/dwell/` loads tagged builds (GitHub Releases), served at `/dwell/v/<version>/`; the
   server browser and join-by-code open the build matching the host; worlds record the app
   version they were created with and open only in it.
 
@@ -1799,4 +1799,4 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 8 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
 | 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 9 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
 | 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 10–11 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
-| 20 | Release pipeline: private source, public deploy repo, versions loaded from tags, version-locked worlds | Owner's direction (2026-10-05): same-origin version directories built from deploy-repo tags, a launcher at `/dwell/`; decide by ADR in Phase 12 — [`RELEASES.md`](./RELEASES.md) |
+| 20 | Release pipeline: versions loaded from tags, version-locked worlds; source visibility and license | Owner's direction (2026-10-05): one public repository under a restrictive license (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 12 — [`RELEASES.md`](./RELEASES.md) |
