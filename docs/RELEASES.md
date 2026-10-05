@@ -138,13 +138,13 @@ Missing or unreachable versions show a clear message with the choice to open the
   `appVersion` from records it rewrites; a test pins it.
 - **Retention:** a stable build that any saved world depends on must stay published. The
   launcher can tell the player when a world's version is no longer available (and offer export,
-  Phase 16).
+  Phase 17).
 
 ## 7. Multiplayer and the master server
 
 - Friend-world rooms and dedicated-server listings carry the host's **app version** (as well as
   `protocolVersion`), so the server browser and join-by-code open the matching client build
-  directly (this replaces the Phase 16 item "the server browser offers the build matching an
+  directly (this replaces the Phase 17 item "the server browser offers the build matching an
   incompatible server").
 - The handshake's version check stays; its rejection names the server's app version.
 - The master server's own deploy is unchanged (it runs from this repository's CI with its

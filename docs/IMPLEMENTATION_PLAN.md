@@ -30,27 +30,31 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
-| 13 — Voxel awakening | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
-| 14 — Tiered physics | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
-| 15 — Sleep / re-bake | ⏸ Waits for Phases 6–12 (2026-10-05) | — |
-| 16 — Dedicated servers & packaging | ⏳ Not started | — |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started | — |
+| 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
+| 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
+| 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
+| 17 — Dedicated servers & packaging | ⏳ Not started | — |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
 Phase 5 (multiplayer ready) was inserted on 2026-09-30 (ADR 0013); the former Phases 5–8 became
 6–9.
-On 2026-10-05 the owner added seven phases and placed them before the physics phases, in this
+On 2026-10-05 the owner added eight phases and placed them before the physics phases, in this
 order: **6 — versioned releases** ([`RELEASES.md`](./RELEASES.md)); **7 — a first pass at colour**
 and **10–12 — continents, natural terrain, sky islands** ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md));
 **8 — the block registry** ([`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)); **9 — slope blocks**
-([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). The former Phases 6–9 (voxel awakening, tiered physics,
-sleep/re-bake, dedicated servers and packaging) are now **13–16**. References in this plan,
+([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)); **13 — the bifacial world** ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md)).
+The former Phases 6–9 (voxel awakening, tiered physics, sleep/re-bake, dedicated servers and
+packaging) are now **14–17**. References in this plan,
 `ARCHITECTURE.md` and code comments use the new numbers; ADRs keep the numbers of their day
 (`adr/README.md`). Why this order: versioned releases first, so every later change to world files
 or terrain leaves earlier worlds playable in their own version; colour alongside it (rendering
 only); the registry before slopes, which are registry block families; slopes before the terrain
 phases, so terrain is tuned with slopes in place; continents before natural terrain, which builds
-on coast distance and plate edges; sky islands last of the world phases (they use its biomes).
+on coast distance and plate edges; sky islands after natural terrain (they use its biomes); the
+bifacial world after both, since face B repeats them, and before physics, so falling bodies handle
+both gravity directions from the start.
 Phase 7 can run in parallel with Phase 6, and Phase 12's dome bounds (12a) can go earlier.
 
 ---
@@ -130,7 +134,7 @@ Deliverables
   - [x] WebRTC fallback endpoint (ADR 0008): ICE-lite `str0m` in the same crate, same channel
     mapping and framing. Spike includes the invite-link path (client synthesizes the remote
     description from address + fingerprint + ICE credentials); if it fails, invite-link
-    fallback joins require the master server (Phase 16).
+    fallback joins require the master server (Phase 17).
 - [x] **Client networking (`client/net`)**
   - [x] `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
@@ -160,7 +164,7 @@ Exit criteria
 
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
-ragdoll and animation from `State` (Phase 14, see below). Playtested by a human (Open Decision
+ragdoll and animation from `State` (Phase 15, see below). Playtested by a human (Open Decision
 #9): two findings, fixed in #7: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
@@ -202,9 +206,9 @@ Deviations from the deliverables below:
   gently (PLAYER_CONTROLLER.md §8.1).
 - Dwell uses right-handed axes: the controller's camera-right vector is the mirror of the PPC's
   (Unity, left-handed) so that strafing matches the screen.
-- The snapshot's `groundEntityId` fields are deferred to Phase 13, when Tier 1 bodies can be stood
+- The snapshot's `groundEntityId` fields are deferred to Phase 14, when Tier 1 bodies can be stood
   on (ARCHITECTURE §8.3).
-- Deferred to Phase 14: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
+- Deferred to Phase 15: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
   down until the client debris world exists — and animating players from `State` (players are
   capsules; there are no character models yet).
 
@@ -243,9 +247,9 @@ Deliverables
   - [x] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
-    interpolated kinematic capsules. (Animation from `State` moved to Phase 14.)
+    interpolated kinematic capsules. (Animation from `State` moved to Phase 15.)
   - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
-    to Phase 14; dead players are drawn lying down.)
+    to Phase 15; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
   divergence, checked against `externalAbsorbThreshold`. (Measured: positions bit-identical,
@@ -466,7 +470,7 @@ Deviations and additions (3e):
   can go away at any time. One world file per generator and seed; a second tab on the same world
   runs without persistence (sync access handles are exclusive).
 - Settings and permissions come from launch options saved into the world (`--name`, `--motd`,
-  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 16. Bans and an
+  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 17. Bans and an
   allow-list (`allow_list` setting) are enforced at join. `permissions` records who granted an
   entry (`granted_by`).
 - The wire stays without zstd: Explicit chunks are rare in generated mode, and QUIC/SCTP framing
@@ -876,7 +880,7 @@ multiplayer world without typing certificates or forwarding ports: a main menu w
 management, **one-click Host** from the browser (a join code), **join by code or address**, and
 a **lobby list**. The master server is built as a Cloudflare Worker with Durable Objects, and
 TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloudflare.md),
-§10). This phase takes the web parts of the former hosting phase (now Phase 16) ahead of the
+§10). This phase takes the web parts of the former hosting phase (now Phase 17) ahead of the
 physics phases (6–8); see *Deviations* below.
 
 **Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
@@ -1083,13 +1087,13 @@ These steps need an account owner's dashboard access and cannot be done from cod
 - **New phase, inserted 2026-09-30.** Multiplayer hosting was the last phase; playtesting multiplayer
   needed an easy way to start, host and join worlds, so the web-first parts moved ahead of the
   physics phases. The former Phases 5–8 are now 6–9. The master server, friend worlds and server
-  browser moved here from Phase 16; the dedicated-server distribution (binaries, Docker, admin
+  browser moved here from Phase 17; the dedicated-server distribution (binaries, Docker, admin
   commands, UPnP, backups, certificate rotation), world export/import, versioned client builds,
-  and the Electron and Capacitor apps stay in Phase 16.
+  and the Electron and Capacitor apps stay in Phase 17.
 - Physics caps in host profiles cover what exists (players, view distance); Tier 1/Tier 2 caps
-  are added with Phases 13–15.
+  are added with Phases 14–16.
 - LAN discovery on the web is "same public IP" through the master (5d); Electron's local-network
-  discovery stays in Phase 16.
+  discovery stays in Phase 17.
 - 5a: the world index is kept in local storage rather than an IndexedDB store — it is a few
   hundred bytes, read synchronously at startup, and cleared together with the worlds' OPFS files.
 - 5a: the menu opens worlds and servers by navigating (`?play=<id>`, or the invite), and Quit
@@ -1097,7 +1101,7 @@ These steps need an account owner's dashboard access and cannot be done from cod
   worker, its OPFS handles and every render resource, a reload continues the same world, and Back
   returns to the menu. Links (`?join=`, `?local=1`, `?world=`, `?seed=`) open directly as before.
 - 5a: the game menu does not pause the world — the simulation is the (local or remote) server's.
-- 5a: Phases 13–15 were put on hold until Phase 5 is complete (2026-09-30).
+- 5a: Phases 14–16 were put on hold until Phase 5 is complete (2026-09-30).
 - 5b: the `Room` class is a stub (501) and the Directory holds only its schema version and the
   rate limits; their real contents are 5c–5e deliverables, added as migrations. `POST /v1/whoami`
   was added to check signing end to end. `dwell_server --master` moved to 5d.
@@ -1150,7 +1154,7 @@ steps: [`RELEASES.md`](./RELEASES.md).
 
 **Status:** In progress — the license is in (`LICENSE`, manifests, README, a generated root
 `THIRD_PARTY_NOTICES`; branch `claude/world-generation-plans`). Everything else not started,
-including shipping the notices in builds. Absorbs Phase 16's "versioned client builds" for the web.
+including shipping the notices in builds. Absorbs Phase 17's "versioned client builds" for the web.
 
 Deliverables
 - [ ] ADR: versioned releases — the app version and channels, builds as tagged GitHub Releases,
@@ -1286,7 +1290,7 @@ the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 **Status:** Not started. Needs Phase 8 (the block registry). Sub-phases: **9a — shapes, slope
 families, meshing, collision and the
 controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
-(generator version bump); **9d — LOD slopes**. Runs after Phase 8 (the block registry) and before Phase 13, whose
+(generator version bump); **9d — LOD slopes**. Runs after Phase 8 (the block registry) and before Phase 14, whose
 cluster shapes and integrity rules must know about slopes.
 
 Deliverables
@@ -1445,7 +1449,7 @@ Deliverables
   at altitude.
 - [ ] 12b: ADR: sky islands — the Aether density field, archipelagos (layout, scale, presence over
   altitude), decoration as deterministic feature functions, island anchors (decided here, before
-  Phase 13's integrity work).
+  Phase 14's integrity work).
 - [ ] 12b: the island field (§4.3): fields A, B and selector S, height gain, vertical ramps, the
   8 × 4 × 8 lattice shared by chunks, `SolidAt` and LOD; field statistics tests against the
   reference's targets.
@@ -1482,14 +1486,60 @@ Exit criteria
 
 ---
 
-## Phase 13 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
+## Phase 13 — The Bifacial World
+
+**Goal:** A second inhabited face on the disc's underside with gravity inverted past the halfway
+point (owner, 2026-10-05): the midplane (y = −2,048) becomes the world's core, with bedrock
+straddling it; face B mirrors face A's structure — its own terrain (different seed streams) and its
+own dome of sky islands — so the world is a two-sided, sphere-like object. Down is always toward
+the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).
+
+**Status:** Not started. Depends on Phases 10–12 (face B repeats their terrain and dome). Open
+questions (crossing routes, light, face B's character) in `BIFACIAL_WORLD.md` §9.
+
+Deliverables
+- [ ] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, gravity
+  toward the midplane and the flip band, the crossing routes; supersedes ADR 0011's vertical bounds
+  and Phase 12's single dome.
+- [ ] Bounds: bedrock straddling the midplane; face B's ground band and dome; the LOD origin at −2²³
+  in y; streaming, air chunks, edits and the flight limits on both sides.
+- [ ] Generation in face-local coordinates with per-face seed streams; face-B chunks as flipped
+  face-local chunks; point queries by face; LOD cells by their side of the midplane; per-face
+  water.
+- [ ] Gravity: per-face direction, the flip band with drag, Jolt gravity factors by side.
+- [ ] Player controller: a face sign through every vertical quantity and probe; mirrored voxel
+  queries; the mirror-equivalence suite; crossing the flip band with a smooth camera turn
+  (protocol bump if the snapshot needs a flag).
+- [ ] Crossing routes (as decided): wells through the crust and/or the rim ledge at the midplane.
+- [ ] Rendering: camera up by face; face-B tops shaded as tops; sky, sun and haze in the viewer's
+  face frame.
+- [ ] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
+
+Exit criteria
+- [ ] A face-B chunk equals the flip of its face-local chunk; face B's terrain differs from face A's;
+  goldens with face-B chunks and midplane-straddling LOD sections pass natively, in WASM and in the
+  client module.
+- [ ] Mirror-equivalence: every controller scenario mirrored onto face B gives the mirrored trace,
+  natively and in WASM, at both origins.
+- [ ] A player walks, jumps, swims and climbs on face B, and crosses between the faces by each
+  route, the face sign and camera turning over once.
+- [ ] A body falling off the rim settles in the flip band; bodies on face B fall toward the
+  midplane.
+- [ ] Nothing generated outside the two bands and domes; streaming and LOD reach both domes.
+- [ ] Manual: face B walked, a crossing made, both domes seen, reviewed by the owner.
+
+---
+
+## Phase 14 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
 
-**Status:** Not started. Runs after Phases 6–12 (owner's decision, 2026-10-05); previously on hold
+**Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
 until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
+- [ ] Bifacial world (Phase 13): the midplane bedrock anchors both faces; bodies fall toward the
+  midplane by their side and settle in the flip band.
 - [ ] Slopes (Phase 9): any two solid voxels sharing a face are connected; cluster bodies use one
   convex shape per voxel from the state table (inner corners as two wedges), mass from volume
   (`SLOPE_BLOCKS.md` §7).
@@ -1501,7 +1551,7 @@ Deliverables
   (reason `Collapse`).
 - [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
 - [ ] `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
-- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 14); client
+- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 15); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
 - [ ] **Player ↔ Tier 1 interaction** (§9.2, §9.4):
   - [ ] Players push light clusters (contact mass scaling: `maxPushForce`, `pushableMassLimit`);
@@ -1525,11 +1575,11 @@ Exit criteria
 
 ---
 
-## Phase 14 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
+## Phase 15 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
 
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
-**Status:** Not started. Runs after Phases 6–12 (owner's decision, 2026-10-05); previously on hold
+**Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
 until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
@@ -1562,11 +1612,11 @@ Exit criteria
 
 ---
 
-## Phase 15 — Sleep / Re-bake Cycle
+## Phase 16 — Sleep / Re-bake Cycle
 
 **Goal:** Spec Phase 6. Long-running servers keep a bounded number of dynamic bodies (§7.3).
 
-**Status:** Not started. Runs after Phases 6–12 (owner's decision, 2026-10-05); previously on hold
+**Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
 until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
@@ -1590,7 +1640,7 @@ Exit criteria
 
 ---
 
-## Phase 16 — Dedicated Server Distribution & Platform Packaging
+## Phase 17 — Dedicated Server Distribution & Platform Packaging
 
 **Goal:** Complete player-hosted multiplayer with no official game servers (ADR 0003):
 distributable dedicated servers and packaged desktop/mobile apps (ARCHITECTURE §10), on top of the

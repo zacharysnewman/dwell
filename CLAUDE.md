@@ -21,6 +21,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   shaping and LOD (becomes an architecture sub-spec as the phase lands).
 - `docs/RELEASES.md` — design for Phase 6: builds as tagged releases loaded by a version launcher,
   version-locked worlds, the license.
+- `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity
+  toward the midplane, crossing between the faces.
 - `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
   spec used by Phase 12).
 - `docs/adr/` — architecture decision records.

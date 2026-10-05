@@ -1,7 +1,7 @@
 # Dwell — Future Plans
 
 Ideas that are **out of scope for the current implementation** (`IMPLEMENTATION_PLAN.md`
-Phases 0–16). Nothing here is part of the architecture until it is promoted: promoting an item
+Phases 0–17). Nothing here is part of the architecture until it is promoted: promoting an item
 means an ADR, an update to `ARCHITECTURE.md`, and a phase in the implementation plan.
 
 Each entry notes what the current architecture already does to keep the option open.
