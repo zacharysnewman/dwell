@@ -26,7 +26,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 6 — Fantasy look: a first pass at colour (rendering only) | ⏳ Not started | — |
 | 7 — Continents from Voronoi plates | ⏳ Not started | — |
 | 8 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
-| 9 — Sky islands in a dome | ⏳ Not started — draft; design awaits the Aether reference | — |
+| 9 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
 | 10 — Voxel awakening | ⏸ Waits for Phases 6–9 (2026-10-05) | — |
 | 11 — Tiered physics | ⏸ Waits for Phases 6–9 (2026-10-05) | — |
 | 12 — Sleep / re-bake | ⏸ Waits for Phases 6–9 (2026-10-05) | — |
@@ -1266,12 +1266,14 @@ Exit criteria
 **Goal:** The world extends upward into a **full hemispherical dome over the disc** (radius
 8,192 km, the disc's radius; decided by the owner, 2026-10-05), and the sky inside it is sparsely
 populated with separate floating islands, after the Aether mod's sky-island terrain (landforms
-only — no dungeons or creatures). Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
+only — no dungeons or creatures; the owner's spec of it is kept in
+[`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md)), using existing
+blocks only. Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
 
 **Status:** Not started. Sub-phases: **9a — dome world bounds** (decided; can start any time
-after Phase 8, or before it, since it does not depend on the islands); **9b — islands** (draft:
-the owner will provide the Aether reference; update `WORLD_GENERATION.md` §4.3–§4.4 and these
-deliverables from it, and resolve §4.8, first); **9c — clouds** (render-only, separable).
+after Phase 8, or before it, since it does not depend on the islands); **9b — islands** (the
+Aether density field in sparse archipelagos, surface layering, decorations); **9c — clouds**
+(render-only, separable). Open details in `WORLD_GENERATION.md` §4.8.
 
 Deliverables
 - [ ] 9a: ADR superseding ADR 0011's vertical bounds: `TERRAIN_MAX_Y` (6,144 m, the ground band)
@@ -1283,28 +1285,39 @@ Deliverables
   row `j` — protocol version bump with golden vectors in both languages.
 - [ ] 9a: player, netcode and LOD tests near the dome's top; rendering checked from inside the dome
   at altitude.
-- [ ] 9b: ADR: sky islands — classes, 3D cell placement, density profile, island anchors (decided
-  here, before Phase 10's integrity work).
-- [ ] 9b: placement in 3D jittered cells per class with guaranteed gaps, from `ISLAND_MIN_Y` (above
-  the ground band) to inside the dome.
-- [ ] 9b: island shape (plan mask, top hills and lakes, tapering crags underneath), materials and
-  trees, decorative waterfalls off edges; an island-top query beside `GroundY`; the stability pass
-  keeps islands.
-- [ ] 9b: air chunks and LOD classification with island bounds (cost bounded per section at every
-  level); goldens with island chunks and sections.
-- [ ] 9c: a render-only cloud layer, warm-lit tops, faded by the haze, ≤ ~1 ms per frame on a phone
-  (`WORLD_GENERATION.md` §4.9).
+- [ ] 9b: ADR: sky islands — the Aether density field, archipelagos (layout, scale, presence over
+  altitude), decoration as deterministic feature functions, island anchors (decided here, before
+  Phase 10's integrity work).
+- [ ] 9b: the island field (§4.3): fields A, B and selector S, height gain, vertical ramps, the
+  8 × 4 × 8 lattice shared by chunks, `SolidAt` and LOD; field statistics tests against the
+  reference's targets.
+- [ ] 9b: archipelagos in 3D jittered cells with scale variants and a footprint fade, from
+  `ISLAND_MIN_Y` (above the ground band) to inside the dome, never touching.
+- [ ] 9b: island surface layering on every floor; region climate (Meadow / Grove / Forest /
+  Woodland) setting tree attempts and leaf colour.
+- [ ] 9b: decorations as feature functions using point queries, no neighbour reads (§4.4): edge
+  shelves, lakes with the leak check, ores and pockets, springs as static waterfalls, trees with
+  the layered ground finder, tiny islets (exempt from the stability pass).
+- [ ] 9b: air chunks and LOD classification with archipelago bounds (cost bounded per section at
+  every level); goldens with island chunks and sections.
+- [ ] 9c: render-only clouds from the reference's blob walks and cloud banks (§4.9), a cloud mask
+  beside each chunk from the worldgen worker, plus banks in the ground sky; ≤ ~1 ms per frame on a
+  phone.
 - [ ] `ARCHITECTURE.md` §6.1, §6.3 (world bounds), §6.6 (LOD), §8.3 (`LodIndex`), §7.1 (island
   anchors) and §5 (clouds) updated.
 
 Exit criteria
 - [ ] 9a: nothing generated outside the dome; edits accepted up to the dome and refused outside it;
   streaming and LOD reach the dome's top; player and netcode suites pass near it.
-- [ ] 9b: no two islands touch; none below `ISLAND_MIN_Y` or crossing the dome; island density
-  matches the profile; islands survive the stability pass.
-- [ ] 9b: open sky between islands is still skipped as air chunks (a flight test counts generated
-  chunks); LOD sections above the ground band classified correctly; determinism goldens pass
-  everywhere.
+- [ ] 9b: field statistics within a few points of the reference's targets (solid share by band
+  height, ~1/3 of columns with land, typical thickness 15–20 m, ~1 in 5 land columns with a second
+  layer).
+- [ ] 9b: archipelagos never touch, stay above `ISLAND_MIN_Y` and inside the dome, presence matches
+  the profile, and no island is cut by a footprint edge.
+- [ ] 9b: lakes never leak; springs, trees and ores follow their rules; features crossing chunk
+  borders are identical from both sides.
+- [ ] 9b: open sky still skipped as air chunks (a flight test counts generated chunks); LOD
+  sections above the ground band classified correctly; determinism goldens pass everywhere.
 - [ ] 9c: cloud cost measured on a phone.
 - [ ] Manual: a flight through an island field and views of the dome's islands from the ground and
   from high up, reviewed by the owner.

@@ -532,10 +532,9 @@ with the biome table rather than Phase 6's colour pass:
 
 ## 4. Sky islands in a dome (Phase 9)
 
-> **Partly provisional.** The world's shape is decided (§4.1–§4.2, owner, 2026-10-05). How the
-> islands themselves look (§4.4) waits for more detail the owner will provide on the Aether mod's
-> floating islands (the mod files were too large to attach). **Update §4.4 and the island classes
-> in §4.3 from that reference before building the islands**, and resolve §4.8's open questions.
+> **Decided, with open details.** The world's shape (§4.1–§4.2) and the island terrain (§4.3–§4.4,
+> after the owner's Aether spec in [`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md))
+> are decided (2026-10-05). What remains open is listed in §4.8.
 
 ### 4.1 Intent (decided)
 
@@ -548,10 +547,10 @@ terrain and inside the dome, so the world reads as if it were enclosed in a full
 above the land.
 
 Terrain reference: the Aether mod's sky islands (Minecraft) — only the landforms, not its
-dungeons, creatures or items. General character to aim for (refined from the reference): flat-ish
-grassy rolling tops with trees and small lakes; craggy rock undersides tapering downward to
-points or hanging spurs (inverted cones / teardrops); a range of sizes from islets to large
-islands; open air between islands; clouds nearby (§4.9); water spilling off edges.
+dungeons, creatures or items — described by the owner's spec (§4.3). The character: separate
+islands with abrupt cliffs and ragged outlines, grassy tops (with grass on lower ledges too), bare
+stone undersides pinching off into hanging points, small sealed lakes, waterfalls from springs in
+cliffs, small round-canopied trees, cloud banks floating beneath the islands (§4.9).
 
 ### 4.2 World bounds: from an 8 km slab to a dome (the architectural change)
 
@@ -589,106 +588,200 @@ supersedes the vertical part with a new ADR:
   long time at terminal speed and ends in fall damage as today. How players reach islands without
   creative flight is gameplay, out of scope here (§4.8).
 
-### 4.3 Placement
+### 4.3 The island field: Aether's density, in sparse archipelagos
 
-- **3D cells per size class.** Islands are placed in 3D jittered-grid cells, one hashed candidate
-  per cell, present with a hashed probability (sparse). An island's radius and height are at most
-  `cell / 2 − gap` so islands of a class never touch; classes are kept apart by a clearance check
-  against the coarser classes' candidates (a few hashes). Provisional classes (to be set from the
-  Aether reference): islets ~30–80 m across (cells ~400 m), islands ~150–600 m (~3 km), great
-  islands ~2–8 km (~40 km, so the dome's structure shows from afar).
-- **Altitude.** Islands exist from `ISLAND_MIN_Y` (≈ `TERRAIN_MAX_Y` + 1,000 m = ~7,000 m), so they
-  never meet the ground — even 5.6 km massifs — up to the dome, with each island's bounding box
-  wholly inside the dome. Density over altitude is a tunable profile (uniform to start; maybe
-  denser at lower altitudes, so islands are reachable from the highest peaks, and thinning toward
-  the top) — a §4.8 question.
-- **Footprint.** A cell's candidate is fully described by its hash (centre, radius, thickness,
-  shape seeds), so any chunk, point query or LOD section can find every island touching it by
-  visiting only the cells that overlap it — no neighbour reads, any order (§5).
+**Reference.** The owner's engine-agnostic spec of the Aether mod's floating-island terrain
+(Aether 1.5.11, Minecraft 1.21.1) is kept verbatim in
+[`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md); its numbers are
+the mod's own. Read it alongside this section. In short: islands are **not** shapes placed one by
+one. They are the positive part of a 3D noise density inside a 128 m band, faded toward empty near
+the band's top and bottom so the noise breaks up into separate islands with tapered undersides.
+Everything else (soil, lakes, springs, trees, clouds) is decoration on top of that field.
 
-### 4.4 Island shape (sketch, pending the reference)
+**Shape field (taken as is; units are metres = voxels):**
 
-Per island (centre `c`, radius `ρ`, top altitude `y_c`):
-- **Plan mask** `m = 1 − |p − c|² / ρ²` plus domain-warp noise (sqrt-free); island where `m > 0`.
-- **Top** `y_c + A_top × m × hills(p)`: gentle hills; optional hashed lake basin.
-- **Underside** `y_c − D × m²` (deep in the middle, tapering steeply to the edge) plus 3D noise for
-  crags and hanging spurs. `D` ≈ 0.6–1.2 × `ρ`.
-- **Materials:** top/filler from the biome table (by island climate; Phase 8's lapse rate would make
-  every island frozen, so islands use their own climate rule — §4.8), rock body (a distinct
-  sky-rock material is a content question for the reference).
-- **Features:** trees on tops (an island-top query beside `GroundY`), decorative waterfalls from
-  lakes off edges (static water curtains, §3.3), clouds (§4.9).
+- Two shape fields `A`, `B`: fractal gradient noise, longest wavelength 191.5 m, each octave halving
+  wavelength and amplitude; 4–5 octaves suffice on the lattice below (Dwell's LOD drops finer ones
+  by cell size anyway). One selector `S`: 8 octaves, longest wavelength 59.85 m horizontally and
+  119.7 m vertically. `q = clamp(0.5 + 12.8 S, 0, 1)`, `N = A + (B − A) q` — a near-binary switch
+  (~85 % of samples pure A or pure B) whose seams make abrupt cliffs and ragged outlines.
+- Height gain (band-relative `y`): `N × (1 + 0.9 × clamp((y − 32) / 96, 0, 1))`. Without it high
+  terrain mostly vanishes.
+- Vertical shaping: `bottom(y) = clamp((y − 8) / 32, 0, 1)`, `top(y) = clamp((128 − y) / 72, 0, 1)`;
+  `d = N × gain − 0.13`; `d = −0.2 + top × (d + 0.2)`; `d = −0.1 + bottom × (d + 0.1)`;
+  `density = d − 0.05`; solid where `density > 0`. Short steep bottom ramp → undersides pinch off
+  into hanging points; long shallow top ramp → most tops just above the core, rare high peaks.
+- Lattice: density at points every 8 m horizontally and 4 m vertically, trilinear in between.
+  This is Dwell's own pattern (a coarse lattice plus interpolation), so the chunk path, `SolidAt`
+  and the LOD share one evaluation order as ADR 0010 requires.
+- Targets from the spec (per band, for tuning tests): ~6 % of the band solid (peak ~17 % at
+  y = 56); ~1/3 of columns with land above; islands typically 15–20 m thick (tail to ~50); ~1 in 5
+  land columns with a second walkable layer under an overhang. Coverage dial: the core threshold
+  0.18 (= 0.13 + 0.05), set at the matching percentile of Dwell's own `N` (the spec's 0.18 sits near
+  the 85th percentile in the core band). The final `d/2 − d³/24` squash does not change the sign
+  and is skipped.
+
+**Archipelagos — fitting a 128 m band into an 8,192 km dome (Dwell's addition).** Filling the
+whole dome with one band is impossible and filling its volume with the field would not be sparse.
+Instead, the field runs inside **archipelagos**: local instances of the Aether band placed sparsely
+throughout the dome.
+
+- **Layout.** 3D jittered-grid cells (`ARCHIPELAGO_CELL` ≈ 16 km × 2 km tall × 16 km); one hashed
+  candidate per cell, present with probability `p(altitude)` (the density profile, a tunable; start
+  uniform). A candidate has a centre, a plan radius (≈ 2–6 km, warped outline from a squared-
+  distance mask plus noise, sqrt-free), a band base `y_b`, and a **scale** `s` (hashed: 1 most
+  often, 2 sometimes, 4 rarely) that multiplies every length of the field (wavelengths, band
+  height, ramps, lattice spacing), so some archipelagos have islands up to ~800 m across and
+  60–80 m thick that read from far away. Each archipelago's own noise seeds come from its cell
+  hash.
+- **Footprint fade.** Inside the archipelago the band-relative `y` is `(y − y_b) / s`; toward the
+  plan edge, the density is faded to empty like the vertical ramps (a horizontal ramp over the
+  outer ~20 % of the radius), so no island is cut off by the archipelago's boundary.
+- **Separation.** An archipelago's footprint and band fit inside its cell with a gap, so
+  archipelagos never touch; islands within one are separated by the field itself, as in Aether.
+- **Altitude.** Every archipelago lies wholly between `ISLAND_MIN_Y` (≈ 7,000 m, above the ground
+  band, so never touching even the 5.6 km massifs) and the dome.
+- **Reachability within a cluster.** An archipelago is ~1/3 covered in islands, so islands within
+  it are tens of metres apart; archipelagos are kilometres apart. How players cross between them
+  is gameplay (§4.8).
+
+### 4.4 Surface layering and decoration
+
+**Material roles map to existing blocks — no new blocks** (the reference's rule): base stone →
+`stone`, grass-topped soil → `grass`, soil → `dirt`, edge-shelf sand → `sand`, ice-stone → `snow`,
+common / mid-tier / rare ore → `coal_ore` / `iron_ore` / `gold_ore`, water → `water`, trees →
+`log` + a leaf material (Phase 8c's leaf variants when they exist). Clouds have no block (§4.9).
+
+**Surface layering** (taken as is): per column from the top down, *every* solid cell with air
+directly above is a floor → `grass` (or `dirt` if water is above); the next soil-depth solid cells
+below each floor → `dirt` (depth ≈ 3, varied 1–5 by a slow 2D noise); undersides stay bare stone;
+no sea level and no groundwater on islands. Dwell's column pass gains this rule for island cells
+(ground cells keep theirs, where cave air does not start a surface); `kSurfacePad` (8) already
+covers the cells above a chunk's top that the rule reads.
+
+**Region climate** (taken as is, optional): two 2D noises — temperature (wavelengths ~1,024 and
+~256 m, weights 1.5 : 1) and humidity (~512 and ~256 m, equal), lightly domain-warped — select
+Meadow / Grove / Forest / Woodland by the reference's table, which sets **tree attempts per
+16 × 16 m region** (1; 2–3; 6–7; 5–6) and leaf colour. This replaces the lapse-rate climate on
+islands (which would freeze everything above ~7 km). Sampled every 4 m like Dwell's 2D fields.
+
+**Decoration without neighbour reads (the main adaptation).** The reference decorates a 16 × 16
+region after its neighbours' terrain exists and may write one region beyond its own. Dwell chunks
+must stay pure functions of their coordinates (§5), so every decoration is restated as a
+**deterministic feature function**: a hash of `(seed, archipelago, region cell, pass salt)` picks
+its candidates, and its preconditions are tested with **point queries on the density field**
+(`SolidAt` and a floor query, exact and cheap on the 8 × 4 × 8 lattice) instead of reading
+generated chunks. A chunk then writes only its own voxels of every feature that reaches it, in a
+fixed pass order, as trees and boulders do today. Interactions between passes are resolved by
+asking the earlier pass's function (e.g. trees ask "is there a lake here?"). Passes, in order, with
+the reference's frequencies per 16 × 16 region (heights band-relative):
+
+| Pass | Frequency | Rule in Dwell |
+|---|---|---|
+| Edge shelf | 1 in 5 regions, y 0–48 | For each column, the first air cell with `grass` above and air above that gets a flat `sand` disk of radius 3.46 (squared-distance test), air cells only |
+| Lake | 1 in 15 regions | 16 × 8 × 16 box 4 m below the surface; union of 4–7 ellipsoids (3–9 wide, 2–6 tall); **leak check** by point queries on the shape's border in the lower 4 layers; lower 4 layers water, upper 4 cleared, rim re-grassed |
+| Ores and pockets | dirt 20 × ≤33, snow 10 × ≤32, coal 20 × ≤16, iron 14 × ≤5 (y ≤ 75), gold 5 × ≤3 (y ≤ 74) and 7 × ≤4 (triangular, peak y 8) | Replace stone only; iron and gold discard half their air-exposed cells. Attempts pick random points in the band, so ore per rock scales with the rock, as in the reference |
+| Spring | 30 attempts, y 8–128 | Stone/dirt above and below, exactly 3 solid horizontal neighbours and 1 air: a **static waterfall** — water from the source out one cell and straight down until solid, or for at most `WATERFALL_MAX` (≈ 48 m × s) when it falls off the island (§4.8) |
+| Trees | by region type, every walkable layer | Layered ground finder: layer n with a 1 in 2 chance picks a column and its n-th floor from the top with ≥ 4 air above; 99 % small (trunk 4–6, round canopy radius 2), 1 % large (trunk 10, radius 3); soil below, no water |
+| Ground cover | ~10 grass patches, flowers/bushes 1 in 8–16 | Skipped until Dwell has cross-shaped plant looks (no new blocks now) |
+| Small clouds, cloud banks | see §4.9 | Render-only |
+| Tiny islet | 1 in 50 regions, y 32–96 | Only if its tree fits: a radius-2 diamond (13 cells) of grass over stone, a 5-cell plus of stone below, one small tree. Exempt from the stability pass |
+
+Scaled archipelagos (`s` > 1) scale the field, not the decorations: trees, lakes and ores keep
+their metre sizes, but region cells and frequencies stay per 16 × 16 m of island, so bigger
+islands simply carry more of them.
 
 ### 4.5 What else the generator must change
 
 Sky islands break the generator's "one surface per column" assumption. Each item becomes part of
 Phase 9's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
 
-1. **Column model.** Ground fields stay per column; islands are looked up per chunk (the 3D cells
-   overlapping it), and only for chunks above the ground band, so ground chunks pay nothing.
+1. **Chunks above the ground band** look up the archipelago cells overlapping them; ground chunks
+   pay nothing.
 2. **Air chunks.** `IsAirChunk`: a chunk is air if it is above the ground's sky floor **and**
-   outside every overlapping island's bounding box. This is what keeps the dome cheap.
-3. **Surface pass.** Ground surfaces are unaffected (islands never overlap the ground band). Island
-   surfaces start from each island's top.
-4. **Point queries and features.** `GroundY` for the ground plus an island-top query; the spawn
-   stays on the ground.
-5. **LOD bounds.** Ground-band sections classify as today; sections above it are `Empty` unless an
-   island of a class at least a cell wide overlaps them (smaller islands are below the cell and
-   dropped, like other features), so the work per section stays bounded at every level.
-6. **Stability pass.** Every island is ≥ 48 voxels (`kMinComponent`), or the pass exempts island
-   voxels.
+   outside every overlapping archipelago's bounding box (footprint × band). This keeps the dome
+   cheap. Inside a box most chunks are still air: a cheaper bound (e.g. the band's empty zones
+   below y 8 and the lattice maximum) may skip them — measure first.
+3. **Surface pass:** the island rule above; ground surfaces unchanged (islands never reach the
+   ground band).
+4. **Point queries:** `GroundY` for the ground; an island floor query ("n-th floor from the top")
+   for decorations; the spawn stays on the ground.
+5. **LOD.** Sections above the ground band are `Empty` unless an archipelago's box overlaps them;
+   inside, the field is evaluated per cell with octaves finer than the cell dropped (like caves),
+   decorations only where at least a cell wide. Archipelagos with `s` = 4 (islands up to ~800 m) keep at least two
+   cells per island to about 100 km (level 9, 512 m cells); beyond that the dome is empty sky
+   unless §4.8 question 1 adds a distant impression.
+6. **Stability pass.** The field can leave small fragments; the pass removes those under 48 voxels
+   inside a chunk, which is acceptable. Tiny islets (18 cells) are exempt by construction (the pass
+   skips voxels a feature function placed).
 7. **Structural integrity (Phase 10).** Islands are not connected to bedrock, so the first edit
-   would detach the whole island. Islands need an **anchor**: e.g. an indestructible anchor core at
-   each island's centre (like bedrock), or a generated-island flag treated as grounded. Decided in
-   Phase 9's ADR (Phase 9 now comes first); Phase 10's anchor definition follows it.
-8. **Streaming and memory.** Measure chunk counts and memory in a flight through an island field
+   would detach a whole island. Islands need an **anchor**: e.g. the generated island field's
+   voxels count as grounded while unmodified components remain larger than a threshold, or an
+   indestructible core per island; finding "per island" is hard with a density field, so a
+   grounded flag on generated island material is the likelier answer. Decided in Phase 9's ADR;
+   Phase 10's anchor definition follows it.
+8. **Streaming and memory.** Measure chunk counts and memory in a flight through archipelagos
    against today's budgets.
 
 ### 4.6 How Phase 9 is checked
 
-- **Bounds:** nothing is generated outside the dome; edits are accepted up to the dome and refused
+- **Bounds:** nothing generated outside the dome; edits accepted up to the dome and refused
   outside it; streaming and LOD rows reach the dome's top; the player suites pass near the top.
-- **Islands:** no two islands touch; none below `ISLAND_MIN_Y` or crossing the dome; sampled island
-  density matches the profile.
-- **Cost:** open sky between islands is still skipped as air chunks (a flight test counts
-  generated chunks); LOD sections above the ground band are classified correctly and cheaply.
+- **Field statistics** against the reference's targets, per band over several seeds and
+  archipelagos: solid share by band height (overall ~6 %, peak ~17 % near y 56, within a few
+  points), columns with land ~1/3, island thickness distribution (typical 15–20 m), second
+  walkable layer ~1 in 5 land columns; `N` centred on 0.
+- **Archipelagos:** none touch; none below `ISLAND_MIN_Y` or crossing the dome; presence matches
+  the profile; no island cut by a footprint edge (density ≤ 0 at the footprint boundary).
+- **Decorations:** lakes never leak (every lake water cell bordered by solid or water below and
+  beside, except the open top); springs satisfy their neighbour rule; trees stand on soil and not
+  in water; ores replace only stone; each pass is order-independent across chunks (a feature
+  crossing a chunk border is identical from both sides).
+- **Cost:** open sky still skipped as air chunks (a flight test counts generated chunks); chunk
+  and LOD times inside archipelagos reported.
 - Islands survive the stability pass; protocol golden vectors for the new `LodIndex`; determinism
   goldens with island chunks and sections.
-- Manual: a flight through an island field, a view of the dome's islands from the ground and from
-  high up, reviewed by the owner.
+- Manual: a flight through an archipelago and views of the dome from the ground and from high up,
+  reviewed by the owner.
 
 ### 4.7 Ordering
 
-Phase 9 builds on Phase 8 (biomes, lakes, waterfalls). The dome bounds (§4.2) do not depend on the
-island design and can be built first, as 9a, while the Aether reference is pending; then 9b
-islands, 9c clouds (separable, render-only, can go any time).
+Phase 9 builds on Phase 8 (leaf variants, the water rules). The dome bounds (§4.2) can be built
+first, as 9a; then 9b islands (field, archipelagos, surface, decorations); 9c clouds (separable,
+render-only).
 
 ### 4.8 Open questions
 
 Resolved 2026-10-05: the dome covers the **whole disc**; the world's ceiling is **raised to a full
-hemispherical dome** (8,192 km) instead of fitting islands under 6,144 m, so islands sit above the
-ground band and never conflict with massifs. Still open (with the Aether reference):
+hemispherical dome** (8,192 km); islands follow the Aether reference and use **existing blocks
+only**; island climate is Aether's region climate, not the lapse rate. Still open:
 
-1. **Island sizes, spacing and the density profile** over altitude (Aether's islands are tens to a
-   few hundred metres; the dome may need kilometre-scale ones to read from afar).
+1. **Archipelago layout:** cell size, presence and its profile over altitude, and how much of the
+   dome is visible from the ground (larger `s` for some, or a render-only distant impression).
 2. **The dome's surface:** an invisible boundary, a kill boundary like the void, or a visible sky
    shell; and whether creative flight may leave the dome.
-3. **Distinct materials** (sky rock, sky grass, cloud blocks with special collision?), whether
-   clouds are voxels (synchronised, editable) or render-only, and island climate (not the lapse
-   rate, which would freeze everything above ~7 km).
+3. **Waterfalls off islands:** static water cannot fall forever; the draft ends them after
+   `WATERFALL_MAX` (or at a cloud bank). Revisit if water ever flows.
 4. **Under-island shading** and darkness under large islands (no shadows today).
 5. **Reaching islands** outside creative flight (gameplay; likely a later phase).
+6. **Island anchors** for integrity (§4.5 item 7).
 
 ### 4.9 Clouds (render-only, 9c)
 
-Large white cumulus are a big part of the reference. Prototype: a render-only cloud layer of
-instanced, flattened puffy shapes (or noise-textured impostors) at ~1,500–2,500 m, placed by a
-deterministic hash grid around the camera (client only, not in the voxel world, not
-synchronised), lit warm on top and blue-grey underneath, faded by the same haze. They must not
-cost more than ~1 ms of frame time on a phone (measure with the F3 readout) and must not hide the
-LOD terrain from the flight ceiling (fade them out above them). Sky islands want clouds near them;
-whether some clouds are voxels instead is §4.8 question 3. Built as Phase 9c, which is separable
-and render-only.
+The reference places clouds as blocks: **small clouds** (blob walks of 16 / 8 / 4 steps in 1 in 7 /
+1 in 24 / 1 in 75 regions, band y 32–96, the rarest 96–128; each step moves 0–1 per horizontal
+axis on a fixed diagonal heading and half the time ±1 vertically, stamping a 3–4 × 2 box clipped
+to Manhattan distance 4–5) and long **cloud banks** under each band (sites on a 96 m jittered grid
+with a 48 m minimum gap; 64-step walks with a fixed drift of −1/0/+1 per axis, stamping 9–12 m × 2 m
+blobs, height changing 1 step in 10; starting at band y 0–32, so they read as a cloud floor). With
+no new blocks, Dwell keeps these **render-only**: the same deterministic walks (a hash per site,
+so any chunk can find the cloud cells inside it) produce a cloud mask that the client's worldgen
+worker returns beside a chunk's voxels, meshed as soft, translucent white geometry with no
+collision, not stored or synchronised, lit warm on top and blue-grey underneath and faded by the
+haze. Ground-level skies get a sparse layer of the same banks at ~1,500–2,500 m (the reference
+image's cumulus). Budget ≤ ~1 ms per frame on a phone (F3 readout); clouds must not hide the LOD
+terrain from the flight ceiling. If clouds later need to be solid or editable, they become a
+material then.
 
 ---
 
@@ -735,4 +828,7 @@ and render-only.
 | `DOME_RADIUS` | = `WORLD_RADIUS`, 8,192 km (decided) | 9 |
 | `TERRAIN_MAX_Y` (ground band top, today's `WORLD_MAX_Y`) | 6,144 m | 9 |
 | `ISLAND_MIN_Y` | ~7,000 m | 9 |
-| Island classes (size / cell) | 30–80 m / 400 m; 150–600 m / 3 km; 2–8 km / 40 km (provisional) | 9 |
+| Island field | the reference's twelve parameters ([`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md), "Parameter reference") | 9 |
+| `ARCHIPELAGO_CELL` | 16 km × 2 km × 16 km (provisional) | 9 |
+| Archipelago radius / scale `s` | 2–6 km / 1, 2 or 4 (provisional) | 9 |
+| `WATERFALL_MAX` | 48 m × `s` (provisional) | 9 |

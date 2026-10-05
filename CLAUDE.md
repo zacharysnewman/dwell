@@ -15,6 +15,8 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
 - `docs/WORLD_GENERATION.md` — design for Phases 6–9: art direction and palette, continents,
   rivers/mountains/biomes, sky islands (becomes an architecture sub-spec as the phases land).
+- `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
+  spec used by Phase 9).
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 
