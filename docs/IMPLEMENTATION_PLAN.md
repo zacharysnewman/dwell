@@ -27,7 +27,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 7 — Tiered physics | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 8 — Sleep / re-bake | ⏸ On hold until Phase 5 is complete (2026-09-30) | — |
 | 9 — Dedicated servers & packaging | ⏳ Not started | — |
-| 10 — Fantasy look: palette, lighting, sky, colourful vegetation | ⏳ Not started | — |
+| 10 — Fantasy look: a first pass at colour (rendering only) | ⏳ Not started | — |
 | 11 — Continents from Voronoi plates | ⏳ Not started | — |
 | 12 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
 | 13 — Sky islands in a dome | ⏳ Not started — draft; design awaits the Aether reference | — |
@@ -1265,49 +1265,40 @@ Exit criteria
 
 ---
 
-## Phase 10 — Fantasy Look: Palette, Lighting, Sky, Colourful Vegetation
+## Phase 10 — Fantasy Look: A First Pass at Colour
 
-**Goal:** The world reads as warm, colourful, happy high fantasy: warm light and cool shadows,
-saturated foliage with clumps of autumn, blossom and violet accent trees, turquoise water, warm
-rock, a gradient sky with distance fading into a pale horizon haze. Design, measured target
-palette and a full description of the reference image: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1.
+**Goal:** A first stab at better colours, so the world reads as warm, colourful, happy high
+fantasy: warm light and cool shadows, saturated greens, turquoise water, warm rock, a gradient sky
+with distance fading into a pale horizon haze. **Rendering and palette only — no terrain
+generation change:** no new materials, no generator version bump, the same landforms and
+vegetation. Design, measured target palette and a full description of the reference image:
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1. (Colourful accent vegetation is in Phase 12c;
+clouds are in Phase 13.)
 
-**Status:** Not started. Sub-phases: **10a — rendering and palette** (no generator change);
-**10b — colourful vegetation** (new materials, generator version bump); **10c — clouds**
-(render-only, separable).
+**Status:** Not started.
 
 Deliverables
-- [ ] 10a: material colours and procedural tiles retuned toward the measured palette (§1.3–1.4);
-  LOD colours follow via tile averages.
-- [ ] 10a: one shared per-face RGB tint table (warm top, cooler sides, blue bottom) used by both the
+- [ ] Material colours and procedural tiles of the existing materials retuned toward the measured
+  palette (§1.3–1.4); LOD colours follow via tile averages.
+- [ ] One shared per-face RGB tint table (warm top, cooler sides, blue bottom) used by both the
   chunk mesher and the LOD mesher, replacing the scalar face shades.
-- [ ] 10a: warm sun, re-coloured hemisphere light, tone mapping with an exposure setting (in the
+- [ ] Warm sun, re-coloured hemisphere light, tone mapping with an exposure setting (in the
   material shaders, no extra pass).
-- [ ] 10a: sky gradient (zenith → horizon, sun glow) replacing the flat clear colour; height fog
-  fades to the sky's colour in the view direction; turquoise water (chunk and LOD).
-- [ ] 10a: an e2e screenshot script for fixed views (spawn, forest edge, coast, distant mountains,
-  the disc from the flight ceiling), run before and after.
-- [ ] 10b: leaf materials (bright, autumn, red, blossom, violet) and grass variants (meadow with
-  flowers, golden), C++ table and TypeScript mirror, with tiles; blossom and autumn tree kinds.
-- [ ] 10b: accent trees chosen by a grove noise plus a per-tree hash, so accents come in clumps;
-  biome restricts the allowed set. Generator version bump; goldens regenerated.
-- [ ] 10b: distant forests keep their colour — `GenerateLod` gives forested columns a canopy
-  (leaf) surface above the tree-cell limit.
-- [ ] 10c: a render-only cloud layer (~1,500–2,500 m), warm-lit tops, faded by the haze and above
-  the flight ceiling, ≤ ~1 ms per frame on a phone.
-- [ ] `ARCHITECTURE.md` §5 (rendering), §6.1 (material list), §6.3 (trees) and §6.6 (LOD canopy)
-  updated; `WORLD_GENERATION.md` §1 trimmed to what was built plus rationale.
+- [ ] Sky gradient (zenith → horizon, sun glow) replacing the flat clear colour; height fog fades
+  to the sky's colour in the view direction; turquoise water (chunk and LOD).
+- [ ] An e2e screenshot script for fixed views (spawn, forest edge, coast, distant mountains, the
+  disc from the flight ceiling), run before and after.
+- [ ] `ARCHITECTURE.md` §5 (rendering) and §6.6 (LOD colours, fog) updated; `WORLD_GENERATION.md`
+  §1 trimmed to what was built plus rationale.
 
 Exit criteria
-- [ ] The owner approves before/after screenshots of the fixed views as matching the reference's
-  mood (manual).
+- [ ] The owner approves before/after screenshots of the fixed views as a step toward the
+  reference's mood (manual).
 - [ ] Unit tests: chunk and LOD faces of the same material and direction get identical colours;
   the tint table is warm on top and bluest underneath; the horizon fog colour equals the sky
-  gradient's horizon colour; new materials mirrored and placeable; accent trees are clumped
-  (nearest-neighbour accent fraction well above the overall accent fraction); a forested site's
-  level-4 LOD surface is mostly leaf materials.
-- [ ] Frame time within ±5 % of before on desktop and a phone (F3 readout); cloud cost measured.
-- [ ] Determinism goldens pass natively, under WASM and in the client module.
+  gradient's horizon colour.
+- [ ] Worldgen golden hashes (chunks and LOD) unchanged — generation untouched.
+- [ ] Frame time within ±5 % of before on desktop and a phone (F3 readout).
 
 ---
 
@@ -1356,11 +1347,12 @@ Exit criteria
 three tiers as noise contours that always run along valley floors and reach the sea; mountains
 that rise away from rivers within plate-driven uplift belts, with derivative-damped ridged detail;
 lakes, terraced river water above sea level with waterfall steps; climate from altitude, coast
-distance and rain shadows; biomes from a data table driven by the terrain. Design: §3.
+distance and rain shadows; biomes from a data table driven by the terrain, with colourful accent
+vegetation. Design: §3.
 
 **Status:** Not started. Planned sub-phases (each a generator version bump): **12a — height model,
-rivers, lakes, water above sea level**; **12b — mountain detail cascade**; **12c — climate and the
-biome table**; **12d — fantasy landforms** (karst spires, mesas; stretch, after the owner approves
+rivers, lakes, water above sea level**; **12b — mountain detail cascade**; **12c — climate, the
+biome table and colourful vegetation**; **12d — fantasy landforms** (karst spires, mesas; stretch, after the owner approves
 12a–c).
 
 Deliverables
@@ -1375,6 +1367,11 @@ Deliverables
   amplitude scaled by distance from rivers and uplift; LOD octave dropping.
 - [ ] 12c: temperature with a lapse rate, humidity with coast distance and rain shadow; the biome
   table (base grid + terrain overrides + dithered borders); surface rules and trees from it.
+- [ ] 12c: colourful vegetation (§3.7): leaf materials (bright, autumn, red, blossom, violet) and
+  grass variants (meadow with flowers, golden), C++ table and TypeScript mirror, with tiles;
+  blossom and autumn tree kinds; accent trees by a grove noise plus a per-tree hash so accents come
+  in clumps, allowed set and share per biome; distant forests keep their colour — `GenerateLod`
+  gives forested columns a canopy (leaf) surface above the tree-cell limit.
 - [ ] 12d (stretch): karst spire and mesa provinces.
 - [ ] Inspect tool: rivers, lakes and biomes on the map; a hillshade image mode.
 - [ ] Goldens regenerated per sub-phase, with river, lake, waterfall, alpine and coast entries;
@@ -1391,6 +1388,9 @@ Exit criteria
 - [ ] No cave air within the suppression depth below water.
 - [ ] Snow only above the altitude its temperature implies; lee sides of ranges drier than
   windward sides.
+- [ ] Vegetation: new materials mirrored and placeable; accent trees clumped (nearest-neighbour
+  accent fraction well above the overall accent fraction); a forested site's level-4 LOD surface
+  is mostly leaf materials.
 - [ ] Biome shares within bands for 8 seeds; chunk and LOD generation ≤ +25 % of today; LOD
   agreement thresholds still met; determinism goldens pass everywhere.
 - [ ] Manual: a walk along a river from its spring to the sea and a flight over a range, with
@@ -1406,9 +1406,11 @@ Aether mod's sky-island terrain (landforms only — no dungeons or creatures). D
 
 **Status:** Not started — **draft**. The owner will provide the Aether reference; update
 `WORLD_GENERATION.md` §4.2–§4.4 and these deliverables from it and resolve §4.7's open questions
-before starting. Depends on Phase 12 (altitude climate, lakes, waterfalls); benefits from 10c.
+before starting. Depends on Phase 12 (altitude climate, lakes, waterfalls).
 
 Deliverables (provisional)
+- [ ] Clouds (§4.8): a render-only cloud layer (~1,500–2,500 m), warm-lit tops, faded by the haze
+  and above the flight ceiling, ≤ ~1 ms per frame on a phone. Separable; can go first.
 - [ ] ADR: sky islands — the dome envelope, island classes, multi-surface columns, island anchors.
 - [ ] Island placement: dome envelope and shell, per-class jittered cells with guaranteed gaps,
   clearance above the ground (lift or drop).

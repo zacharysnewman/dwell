@@ -94,7 +94,13 @@ Sampled from the image (hue-family medians of the vivid pixels, and point sample
 | Waterfall / foam | `#F2F8FC` | `#CAE1F0` | — |
 | Sunlit cream highlight | `#F5D9A2` | — | — |
 
-### 1.4 What to change (Phase 10a — rendering and palette, no generator change)
+### 1.4 What to change
+
+**Scope: colours only, no terrain generation change.** Phase 10 is a first pass at better
+colours: it retunes how the existing materials and the sky are drawn. It adds no materials, does
+not touch the generator (no version bump, goldens unchanged) and changes no landforms or
+vegetation placement. Colourful vegetation — accent trees and new leaf and grass materials — is part
+of Phase 12's biome work (§3.7); clouds are with the sky islands (§4.8).
 
 **Material base colours and texture tiles.** Retune `textures.ts` tile generators and
 `materials.ts` colours toward §1.3. Starting points (tune on screen):
@@ -143,41 +149,7 @@ unit-testable.
 image's turquoise-to-blue comes from depth). LOD water (already tinted) uses the same base.
 Optional if cheap: a slight fresnel brightening at grazing angles.
 
-### 1.5 Colourful vegetation (Phase 10b — generator version bump)
-
-The image's character comes from vegetation colour variety. This needs new materials and the
-generator to place them:
-
-- **Leaf materials:** `leaves` (green, retuned), `leaves_bright` (yellow-green), `leaves_autumn`
-  (orange), `leaves_red` (rust-red), `leaves_blossom` (pink), `leaves_violet`; each with its own
-  procedural tile. **Grass variants:** `grass_meadow` (grass with sparse pink/white/yellow flower
-  flecks in the top tile), `grass_golden` (warm dry grass for dry areas). All are full cubes using
-  the existing looks; placeable like their base materials. C++ table and the TypeScript mirror
-  (`materials.ts`) change together, checked by the existing mirror test.
-- **Tree kinds:** the existing broadleaf (oak) and conifer (spruce), plus a **blossom tree**
-  (shorter, wide round crown) and an **autumn tree** (broadleaf with autumn leaves). Crown
-  colour is chosen per tree from the area: a low-frequency "grove" noise (~150–400 m) picks which
-  accent dominates a patch, and a per-tree hash picks accent vs. green, so accents come in
-  clumps (§1.2 rule 4). Biome decides the allowed set (no blossoms in snow; Phase 12 extends this).
-- **Distant forests keep their colour.** Trees exist in LOD only up to 4 m cells today, so
-  beyond ~1 km forests read as grass. In `GenerateLod`, at levels above the tree limit, forested
-  columns take a **canopy material** (the leaf material that the grove noise would give there,
-  with accent dithering by hash) as their surface, so distant hillsides look like the image's
-  colourful canopy. The downsample of real chunks agrees in class (solid), so the existing
-  LOD agreement tests still apply; add a test that a forested site's level-4 surface is mostly
-  leaf materials.
-
-### 1.6 Clouds (Phase 10c, separable)
-
-Large white cumulus are a big part of the reference. Prototype: a render-only cloud layer of
-instanced, flattened puffy shapes (or noise-textured impostors) at ~1,500–2,500 m, placed by a
-deterministic hash grid around the camera (client only, not in the voxel world, not
-synchronised), lit warm on top and blue-grey underneath, faded by the same haze. They must not
-cost more than ~1 ms of frame time on a phone (measure with the F3 readout) and must not hide the
-LOD terrain from the flight ceiling (fade them out above them). Sky islands (§4) will want clouds
-near them; voxel "cloud" materials are a Phase 13 question.
-
-### 1.7 How Phase 10 is checked
+### 1.5 How Phase 10 is checked
 
 - **Screenshots.** An e2e script captures the same fixed views (seed, position, look direction,
   time) before and after: the spawn, a forest edge, a coast, mountains from a distance, the
@@ -186,9 +158,8 @@ near them; voxel "cloud" materials are a Phase 13 question.
 - **Unit tests** pin the mechanisms, not taste: the shared face-tint table is used by both meshers
   (a chunk face and an LOD face of the same material and direction get identical colours); top
   is warmer than the sides and the bottom bluest; the fog colour at the horizon equals the sky
-  gradient's horizon colour; new materials are mirrored and placeable; accent trees come in
-  clumps (fraction of accent trees whose nearest tree is also an accent is well above the
-  overall accent fraction).
+  gradient's horizon colour.
+- **Generation untouched:** the worldgen golden hashes (chunks and LOD) are unchanged.
 - **Frame time** within ±5 % of before on the F3 readout (desktop and phone).
 
 ---
@@ -487,7 +458,7 @@ humid), autumn woods (cool, moderately humid), conifer forest, marsh/wetland, sa
 dunes (hot, very dry), tundra (cold, dry), alpine meadow, bare rock / scree, snowfield and
 glacier, beach, sea cliff, riverbank, lake shore, ocean, deep ocean, frozen ocean. Each biome
 row in the table names its surface materials (top, filler, under-water), tree kinds and density,
-accent palette (§1.5), and ground cover — so the real content can replace these rows later.
+accent palette (§3.7), and ground cover — so the real content can replace these rows later.
 
 ### 3.6 Surfaces
 
@@ -497,7 +468,32 @@ lake shores in warm climates, gravel in cold; snow above the snow line where the
 riverbeds gravel/sand. Keep the top-down column pass and its rules (cave air does not start a
 surface).
 
-### 3.7 What else changes
+### 3.7 Colourful vegetation (Phase 12c)
+
+The reference image's character (§1.1) comes largely from vegetation colour variety: accent trees
+following §1.2 rule 4. This needs new materials and the generator to place them, so it belongs
+with the biome table rather than Phase 10's colour pass:
+
+- **Leaf materials:** `leaves` (green, retuned), `leaves_bright` (yellow-green), `leaves_autumn`
+  (orange), `leaves_red` (rust-red), `leaves_blossom` (pink), `leaves_violet`; each with its own
+  procedural tile. **Grass variants:** `grass_meadow` (grass with sparse pink/white/yellow flower
+  flecks in the top tile), `grass_golden` (warm dry grass for dry areas). All are full cubes using
+  the existing looks; placeable like their base materials. C++ table and the TypeScript mirror
+  (`materials.ts`) change together, checked by the existing mirror test.
+- **Tree kinds:** the existing broadleaf (oak) and conifer (spruce), plus a **blossom tree**
+  (shorter, wide round crown) and an **autumn tree** (broadleaf with autumn leaves). Crown
+  colour is chosen per tree from the area: a low-frequency "grove" noise (~150–400 m) picks which
+  accent dominates a patch, and a per-tree hash picks accent vs. green, so accents come in
+  clumps (§1.2 rule 4). The biome table (§3.5) decides the allowed set and accent share per biome.
+- **Distant forests keep their colour.** Trees exist in LOD only up to 4 m cells today, so
+  beyond ~1 km forests read as grass. In `GenerateLod`, at levels above the tree limit, forested
+  columns take a **canopy material** (the leaf material that the grove noise would give there,
+  with accent dithering by hash) as their surface, so distant hillsides look like the image's
+  colourful canopy. The downsample of real chunks agrees in class (solid), so the existing
+  LOD agreement tests still apply; add a test that a forested site's level-4 surface is mostly
+  leaf materials.
+
+### 3.8 What else changes
 
 - **Generator version bump(s).** Phase 12 is large: it may ship as 12a (height model, rivers,
   lakes, water above sea level), 12b (detail cascade), 12c (climate and biome table), each a
@@ -513,7 +509,7 @@ surface).
   reviewing relief and drainage.
 - **Spawn** keeps its rules (level, open, tree-free land) and should prefer a spot near water.
 
-### 3.8 How Phase 12 is checked
+### 3.9 How Phase 12 is checked
 
 - **Rivers lie in valleys:** for random points on channel centrelines, the bed is no higher than
   the terrain at every point 50–500 m to either side, perpendicular to the channel.
@@ -524,6 +520,9 @@ surface).
 - **No caves under water:** no cave air within the suppression depth below any water.
 - **Climate:** snow appears only above the altitude its temperature implies; a range's lee side is
   drier than its windward side (sampled across several ranges).
+- **Vegetation:** new materials mirrored (C++/TypeScript) and placeable; accent trees are clumped
+  (the fraction of accent trees whose nearest tree is also an accent is well above the overall
+  accent fraction); a forested site's level-4 LOD surface is mostly leaf materials.
 - **Biome shares** within tolerance bands for 8 seeds (no biome missing, none above ~35 %).
 - Determinism goldens; chunk ≤ +25 % and LOD section ≤ +25 % of today's time; the LOD agreement
   thresholds still met.
@@ -573,7 +572,7 @@ Per island (centre `c`, radius `ρ`, top altitude `y_c`):
 - **Materials:** island top/filler from the biome table (cooler, by altitude; Phase 12's lapse
   rate), rock body (a distinct sky-rock material is a content question for the reference).
 - **Features:** trees on tops (`GroundY` generalised to "the surface below this height"),
-  decorative waterfalls from lakes off edges (static water curtains, §3.3), clouds (§1.6, or voxel
+  decorative waterfalls from lakes off edges (static water curtains, §3.3), clouds (§4.8, or voxel
   clouds — §4.7).
 
 ### 4.4 What the architecture must change (independent of the reference)
@@ -615,9 +614,8 @@ goldens with island chunks; manual flight screenshots.
 
 ### 4.6 Ordering
 
-Phase 13 builds on Phase 12 (biomes by altitude, lakes, waterfalls) and benefits from Phase 10c
-(clouds). Its integrity anchor touches Phase 6; whichever lands first defines the anchor rule and
-the other follows it.
+Phase 13 builds on Phase 12 (biomes by altitude, lakes, waterfalls). Its integrity anchor touches
+Phase 6; whichever lands first defines the anchor rule and the other follows it.
 
 ### 4.7 Open questions (resolve with the Aether reference)
 
@@ -632,6 +630,17 @@ the other follows it.
 4. **Distinct materials** (sky rock, sky grass, cloud blocks with special collision?) and whether
    clouds are voxels (synchronised, editable) or render-only.
 5. **Under-island shading** and darkness under large islands (no shadows today).
+
+### 4.8 Clouds (render-only)
+
+Large white cumulus are a big part of the reference. Prototype: a render-only cloud layer of
+instanced, flattened puffy shapes (or noise-textured impostors) at ~1,500–2,500 m, placed by a
+deterministic hash grid around the camera (client only, not in the voxel world, not
+synchronised), lit warm on top and blue-grey underneath, faded by the same haze. They must not
+cost more than ~1 ms of frame time on a phone (measure with the F3 readout) and must not hide the
+LOD terrain from the flight ceiling (fade them out above them). Sky islands want clouds near them;
+whether some clouds are voxels instead is §4.7 question 4. Built in Phase 13, first, since it is
+separable and render-only.
 
 ---
 

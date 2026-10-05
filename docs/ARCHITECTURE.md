@@ -417,10 +417,10 @@ features) is architecture; its current *content* — the biomes, surface materia
 boulders — is prototype (§6.1).
 
 **[planned, Phases 10–13]** The world's look and shape are redesigned in
-[`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a warm, colourful fantasy palette, lighting and sky
-(Phase 10); continents from Voronoi plates with guaranteed ocean between them (Phase 11);
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a first pass at a warm, colourful fantasy palette,
+lighting and sky, rendering only (Phase 10); continents from Voronoi plates with guaranteed ocean between them (Phase 11);
 drainage-consistent terrain — rivers as noise contours in valley floors, water above sea level,
-climate and a biome table (Phase 12); and sky islands in a dome, which add a second surface band
+climate, a biome table and colourful accent vegetation (Phase 12); and sky islands in a dome, which add a second surface band
 per column (Phase 13). Nothing below changes until those phases land; each updates this section,
 §6.6 and §5 as it does.
 
