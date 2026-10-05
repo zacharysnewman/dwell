@@ -13,7 +13,7 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/ARCHITECTURE.md` — the authoritative description of the game architecture.
 - `docs/PLAYER_CONTROLLER.md` — detailed spec of the physics player controller (architecture sub-spec).
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
-- `docs/WORLD_GENERATION.md` — design for Phases 10–13: art direction and palette, continents,
+- `docs/WORLD_GENERATION.md` — design for Phases 6–9: art direction and palette, continents,
   rivers/mountains/biomes, sky islands (becomes an architecture sub-spec as the phases land).
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.

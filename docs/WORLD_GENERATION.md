@@ -1,6 +1,6 @@
 # Dwell — World Generation Plans: Look, Continents, Terrain, Sky Islands
 
-> **Status: [planned].** This is the design reference for implementation Phases 10–13
+> **Status: [planned].** This is the design reference for implementation Phases 6–9
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). It describes what to build and why, in
 > enough detail that no outside material is needed. The reference image and the Epic Terrain mod
 > it was written from are **not** in the repository and will not be available when the phases are
@@ -22,10 +22,10 @@ re-implemented from the descriptions here; none of their data or files are copie
 "All Rights Reserved").
 
 Contents
-1. [Art direction and colour (Phase 10)](#1-art-direction-and-colour-phase-10)
-2. [Continents from Voronoi plates (Phase 11)](#2-continents-from-voronoi-plates-phase-11)
-3. [Natural terrain: rivers, mountains, biomes (Phase 12)](#3-natural-terrain-rivers-mountains-biomes-phase-12)
-4. [Sky islands in a dome (Phase 13, provisional)](#4-sky-islands-in-a-dome-phase-13-provisional)
+1. [Art direction and colour (Phase 6)](#1-art-direction-and-colour-phase-6)
+2. [Continents from Voronoi plates (Phase 7)](#2-continents-from-voronoi-plates-phase-7)
+3. [Natural terrain: rivers, mountains, biomes (Phase 8)](#3-natural-terrain-rivers-mountains-biomes-phase-8)
+4. [Sky islands in a dome (Phase 9)](#4-sky-islands-in-a-dome-phase-9)
 5. [Cross-cutting rules for all four phases](#5-cross-cutting-rules-for-all-four-phases)
 
 Where things are today (generator version 4, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
@@ -39,7 +39,7 @@ a white sun (1.6); the sky is a flat clear colour `0x87b5e0`, which the height f
 
 ---
 
-## 1. Art direction and colour (Phase 10)
+## 1. Art direction and colour (Phase 6)
 
 ### 1.1 The reference image (described, since it will not be available)
 
@@ -96,11 +96,11 @@ Sampled from the image (hue-family medians of the vivid pixels, and point sample
 
 ### 1.4 What to change
 
-**Scope: colours only, no terrain generation change.** Phase 10 is a first pass at better
+**Scope: colours only, no terrain generation change.** Phase 6 is a first pass at better
 colours: it retunes how the existing materials and the sky are drawn. It adds no materials, does
 not touch the generator (no version bump, goldens unchanged) and changes no landforms or
 vegetation placement. Colourful vegetation — accent trees and new leaf and grass materials — is part
-of Phase 12's biome work (§3.7); clouds are with the sky islands (§4.8).
+of Phase 8's biome work (§3.7); clouds are with the sky islands (§4.9).
 
 **Material base colours and texture tiles.** Retune `textures.ts` tile generators and
 `materials.ts` colours toward §1.3. Starting points (tune on screen):
@@ -149,7 +149,7 @@ unit-testable.
 image's turquoise-to-blue comes from depth). LOD water (already tinted) uses the same base.
 Optional if cheap: a slight fresnel brightening at grazing angles.
 
-### 1.5 How Phase 10 is checked
+### 1.5 How Phase 6 is checked
 
 - **Screenshots.** An e2e script captures the same fixed views (seed, position, look direction,
   time) before and after: the spawn, a forest edge, a coast, mountains from a distance, the
@@ -164,7 +164,7 @@ Optional if cheap: a slight fresnel brightening at grazing angles.
 
 ---
 
-## 2. Continents from Voronoi plates (Phase 11)
+## 2. Continents from Voronoi plates (Phase 7)
 
 ### 2.1 Goal
 
@@ -221,19 +221,19 @@ borders.
    open water, whatever the noise does. The same clamp keeps continents and island plates apart
    (`ISLAND_CLEARANCE`) and keeps the rim ring open (`s ← min(s, RIM_OCEAN − (R − r))`, with
    `R − r` approximated by `(R² − r²) / 2R` near the rim to stay sqrt-free).
-4. *Shelf and abyss.* Phase 11 maps `s` to the existing continentalness range with a spline:
+4. *Shelf and abyss.* Phase 7 maps `s` to the existing continentalness range with a spline:
    a continental shelf (`s` from 0 to −`SHELF_WIDTH` ≈ 80–200 km, varying per continent, depth to
    ~−150 m), a continental slope, and the abyss (~−1,200 to −1,800 m; the world is 2,048 m deep).
    Land rises with `s` toward the continent's interior (`s / (s + K)`, saturating, no `exp`).
 
 **Per-continent character.** Hash the continent id into a small record used by later stages:
 base interior elevation, mountainousness, temperature bias (−10 to +10 °C), humidity bias,
-prevailing-wind direction (one of 8, so no trig), shelf width. Phase 11 uses the elevation and
-shelf width; Phase 12 the rest.
+prevailing-wind direction (one of 8, so no trig), shelf width. Phase 7 uses the elevation and
+shelf width; Phase 8 the rest.
 
-**Plate boundaries inside continents** (exported for Phase 12). For land points, also compute
+**Plate boundaries inside continents** (exported for Phase 8). For land points, also compute
 the distance to the nearest **internal plate edge** (between two land plates of the same
-continent) and a hashed per-edge "convergence" value in [−1, 1]. Phase 12 raises mountain belts
+continent) and a hashed per-edge "convergence" value in [−1, 1]. Phase 8 raises mountain belts
 along convergent edges and rifts/lowlands along divergent ones, so ranges have plausible
 continental-scale placement instead of free noise.
 
@@ -254,7 +254,7 @@ worker if needed (a cache of pure-function results does not affect determinism).
 **`sqrt`.** The bisector distance needs `|b − a|`. ADR 0010 bans library calls because their
 results are not specified to the last bit — but IEEE 754 requires `sqrt` to be correctly rounded,
 and both x86-64 SSE (`sqrtss`/`sqrtsd`) and WebAssembly (`f32.sqrt`/`f64.sqrt`) implement it
-exactly. Phase 11's ADR amends ADR 0010 to allow `std::sqrt` (and nothing else from `<cmath>`),
+exactly. Phase 7's ADR amends ADR 0010 to allow `std::sqrt` (and nothing else from `<cmath>`),
 with the golden tests as the guard. (Fallback if ever needed: a fixed-iteration Newton square root
 using only `+ − × /`.)
 
@@ -263,14 +263,14 @@ using only `+ − × /`.)
 - **Generator version bump**; golden chunk and LOD hashes regenerated, with new entries: a coast,
   a point inside an ocean gap, an island plate, a continent interior.
 - **The 262 km continentalness field** stops deciding land vs. sea; it may remain as a relief
-  modulator until Phase 12 replaces relief.
+  modulator until Phase 8 replaces relief.
 - **Tools.** `dwell_worldgen_inspect` gains a whole-disc image mode (PPM, ~1 pixel per 4–8 km)
   coloured by continent id, plate edges, and height; the in-game F4 map can zoom out to the whole
   disc. These are how continents are reviewed.
 - **Spawn** is unchanged in mechanism (spiral from the origin) and guaranteed on land by the
   forced origin cell.
 
-### 2.5 How Phase 11 is checked
+### 2.5 How Phase 7 is checked
 
 - **Separation test** (the key one): for 8 seeds, take ~10,000 random land points; for each, sample
   64 directions × 4 radii up to `0.99 × OCEAN_GAP`; every sample is sea or the same continent.
@@ -283,7 +283,7 @@ using only `+ − × /`.)
 
 ---
 
-## 3. Natural terrain: rivers, mountains, biomes (Phase 12)
+## 3. Natural terrain: rivers, mountains, biomes (Phase 8)
 
 ### 3.1 The reference: what Epic Terrain does (described, since the mod will not be available)
 
@@ -338,7 +338,7 @@ blocks = metres; its world is 576 m tall with sea level at 63, so its relief is 
 
 What Dwell takes: 1 (mostly), 3, 4, 5, 7, 8, 9, 10 — re-derived and re-tuned for a world with
 5 km mountains, a sea level of 0, and a 16,000 km disc. What Dwell does differently: rivers flow
-**above** sea level inland (valley floors rise with the continent), and Phase 11's plates, not
+**above** sea level inland (valley floors rise with the continent), and Phase 7's plates, not
 noise, decide continents.
 
 ### 3.2 Height model
@@ -348,13 +348,13 @@ ones), combined in one fixed order:
 
 ```
 V  = valley floor        — base elevation of the drainage network (smooth, macro lattice):
-                           0 at the coast, rising inland with Phase 11's s (saturating), plus
+                           0 at the coast, rising inland with Phase 7's s (saturating), plus
                            plate-boundary uplift (convergent belts raise V into high valleys and
                            plateaus) and the per-continent interior elevation.
 Rg, R1, R2               — river noises for three tiers (§3.3).
 D  = distance-from-rivers factor, Epic Terrain's M generalised to three tiers:
      D = f(|Rg|, |R1|, |R2|) — ~0 on any channel, growing away from all of them.
-U  = uplift              — how mountainous this place may be: plate convergence belts (Phase 11),
+U  = uplift              — how mountainous this place may be: plate convergence belts (Phase 7),
                            Dwell's existing 49 km ranges and massifs, continent mountainousness.
 Hd = mountain detail     — the derivative-damped ridged cascade (§3.4), amplitude ∝ D × U.
 h  = V + D × U × A + Hd − carve      (A = relief scale; carve from the channel profiles)
@@ -468,11 +468,11 @@ lake shores in warm climates, gravel in cold; snow above the snow line where the
 riverbeds gravel/sand. Keep the top-down column pass and its rules (cave air does not start a
 surface).
 
-### 3.7 Colourful vegetation (Phase 12c)
+### 3.7 Colourful vegetation (Phase 8c)
 
 The reference image's character (§1.1) comes largely from vegetation colour variety: accent trees
 following §1.2 rule 4. This needs new materials and the generator to place them, so it belongs
-with the biome table rather than Phase 10's colour pass:
+with the biome table rather than Phase 6's colour pass:
 
 - **Leaf materials:** `leaves` (green, retuned), `leaves_bright` (yellow-green), `leaves_autumn`
   (orange), `leaves_red` (rust-red), `leaves_blossom` (pink), `leaves_violet`; each with its own
@@ -495,8 +495,8 @@ with the biome table rather than Phase 10's colour pass:
 
 ### 3.8 What else changes
 
-- **Generator version bump(s).** Phase 12 is large: it may ship as 12a (height model, rivers,
-  lakes, water above sea level), 12b (detail cascade), 12c (climate and biome table), each a
+- **Generator version bump(s).** Phase 8 is large: it may ship as 8a (height model, rivers,
+  lakes, water above sea level), 8b (detail cascade), 8c (climate and biome table), each a
   version bump with regenerated goldens.
 - **Air chunks and LOD bounds.** `SkyFloor`/`IsAirChunk` and `LodBoundsAt` must include water
   above sea level (a chunk above the ground but below a river surface is not air). Their tests
@@ -509,7 +509,7 @@ with the biome table rather than Phase 10's colour pass:
   reviewing relief and drainage.
 - **Spawn** keeps its rules (level, open, tree-free land) and should prefer a spot near water.
 
-### 3.9 How Phase 12 is checked
+### 3.9 How Phase 8 is checked
 
 - **Rivers lie in valleys:** for random points on channel centrelines, the bed is no higher than
   the terrain at every point 50–500 m to either side, perpendicular to the channel.
@@ -530,108 +530,156 @@ with the biome table rather than Phase 10's colour pass:
 
 ---
 
-## 4. Sky islands in a dome (Phase 13, provisional)
+## 4. Sky islands in a dome (Phase 9)
 
-> **Provisional.** The owner will provide more detail on the Aether mod's floating islands (the
-> mod files were too large to attach). This section records the intent and the architectural
-> consequences, which do not depend on those details. **Update §4.2–§4.4 from that reference
-> before Phase 13 starts**, and resolve the open questions in §4.7.
+> **Partly provisional.** The world's shape is decided (§4.1–§4.2, owner, 2026-10-05). How the
+> islands themselves look (§4.4) waits for more detail the owner will provide on the Aether mod's
+> floating islands (the mod files were too large to attach). **Update §4.4 and the island classes
+> in §4.3 from that reference before building the islands**, and resolve §4.8's open questions.
 
-### 4.1 Intent
+### 4.1 Intent (decided)
 
-Separate floating islands in the sky that, together, form a **half-dome over the whole world**:
-seen from afar, the islands' envelope rises from low near the rim to its highest over the centre.
-Terrain reference: the Aether mod's sky islands (Minecraft) — only the islands' landforms, not its
-dungeons, creatures or items. General character to aim for (to be refined from the reference):
-flat-ish, grassy, rolling tops with trees and small lakes; craggy rock undersides that **taper
-downward** to points or hanging spurs (inverted cones / teardrops); a range of sizes from small
-islets to large islands; clear air between islands; puffy clouds nearby; water spilling off edges.
+The world **extends upward into a full hemispherical dome over the disc**: a half-sphere whose
+radius is the disc's radius, `DOME_RADIUS` = `WORLD_RADIUS` = 8,192 km, centred on the disc's centre
+at sea level. It reaches **8,192 km above the centre** and comes down to meet the ground at the
+rim. The land below is unchanged (ground terrain stays between −2,048 and 6,144 m); the vast sky
+inside the dome is **sparsely populated with separate floating islands**, everywhere above the
+terrain and inside the dome, so the world reads as if it were enclosed in a full spherical dome
+above the land.
 
-### 4.2 Placement (sketch)
+Terrain reference: the Aether mod's sky islands (Minecraft) — only the landforms, not its
+dungeons, creatures or items. General character to aim for (refined from the reference): flat-ish
+grassy rolling tops with trees and small lakes; craggy rock undersides tapering downward to
+points or hanging spurs (inverted cones / teardrops); a range of sizes from islets to large
+islands; open air between islands; clouds nearby (§4.9); water spilling off edges.
 
-- **Envelope.** The dome's height above the disc: `y_dome(r) = Y_RIM + (Y_TOP − Y_RIM) × (1 − r²/R²)`
-  (a paraboloid; a hemisphere-like profile `sqrt(1 − r²/R²)` is allowed once `sqrt` is, §2.3).
-  Islands occupy a shell of thickness `T` below the envelope. Placeholders: `Y_TOP` ≈ 5,000 m,
-  `Y_RIM` ≈ 1,500 m, `T` ≈ 1,500 m — subject to §4.7.
-- **Cells.** Jittered-grid cells per size class (e.g. islets in ~300 m cells, islands in ~2 km
-  cells, great islands in ~12 km cells), one hashed candidate per cell, its radius at most
-  `cell / 2 − gap` so islands of one class never touch; classes are kept apart by a clearance
-  check against the coarser classes' cells (a few hashes). Altitude: hashed within the shell;
-  density highest near the envelope so the dome silhouette reads from afar.
-- **Clearance from the ground.** An island exists only if its underside is at least `CLEARANCE`
-  (≈ 300 m) above the highest terrain in its footprint (`LodBoundsAt` at a coarse level gives that
-  bound cheaply); otherwise it is lifted (within `WORLD_MAX_Y` minus its height) or dropped.
+### 4.2 World bounds: from an 8 km slab to a dome (the architectural change)
 
-### 4.3 Island shape (sketch)
+Today (ADR 0011) the world is the disc × [`WORLD_MIN_Y` −2,048, `WORLD_MAX_Y` 6,144). Phase 9
+supersedes the vertical part with a new ADR:
+
+- **Two bounds instead of one.** `TERRAIN_MAX_Y` = 6,144: the top of the **ground band**, the only
+  place ground terrain (and its generator shortcuts) exists — today's `WORLD_MAX_Y` keeps this
+  meaning. The **world** is the disc's ground band plus the dome: a voxel with `y ≥ 0` is inside
+  when `x² + y² + z² < DOME_RADIUS²` (`InsideWorldDome`, squared integers in 64 bits). Nothing is
+  generated outside it; what happens at the dome's surface (an invisible wall, a kill boundary, a
+  visible sky shell) is §4.8 question 2. Every use of `kWorldMaxY` / `worldMaxY` is classified as
+  "ground band" (the generator's sky floor, the fly-speed band, `LodBoundsAt`'s terrain bounds) or
+  "world bound" (edit validation `InWorldRows`, `kMaxChunkY`/`MAX_CHUNK_Y`, streaming row clipping,
+  LOD row counts, air-chunk bounds) and switched to the right constant; tests cover both.
+- **Precision already fits.** World y up to 8,192,000 m is the same magnitude as the disc's x and
+  z: Jolt is double precision; the local player's wire positions are f64 and `posfix` (1/256 m,
+  ±8,388,608 m) covers the dome's top; chunk y up to 256,000 is well within `int32`; noise splits
+  y into lattice cell and offset exactly like x and z (ADR 0011 point 4); terrain collision regions
+  are already 2,048 m **cubes**, so bodies near islands keep small offsets. The creative-flight
+  ceiling is already 24,000 km. Tests run the player and island suites near the dome's top.
+- **Streaming.** The view sphere is clipped to the world (ground band ∪ dome) instead of to rows.
+  The air-chunk shortcut must keep almost the entire dome free: a chunk above the ground band is
+  air unless an island's bounding box overlaps it (§4.5).
+- **LOD becomes truly 3D.** From level 8 up, sections no longer span the world's height in a single
+  row (the octree "behaves as a quadtree" today): at level 8 the dome is ~1,000 rows tall. The root
+  (level 19, a 16,777 km cube from (−2²³, `WORLD_MIN_Y`, −2²³)) still contains the whole dome.
+  `LodIndex`/`LodIndexUpdate` gain the row `j` per entry (today `i32 i, i32 k`, "one row, so no
+  j") — a **protocol version bump** with golden vectors. Section classification extends from column
+  bounds to the ground band's bounds **plus** island bounds (§4.5).
+- **Rendering.** The world is already drawn from the 24,000 km flight ceiling, so depth range and
+  the near/far pass split exist; measure them with islands at all altitudes and inside the dome
+  looking up. The sky gradient (Phase 6) and haze are defined for any altitude.
+- **Physics.** Gravity stays uniform and downward everywhere; a fall from an island far up lasts a
+  long time at terminal speed and ends in fall damage as today. How players reach islands without
+  creative flight is gameplay, out of scope here (§4.8).
+
+### 4.3 Placement
+
+- **3D cells per size class.** Islands are placed in 3D jittered-grid cells, one hashed candidate
+  per cell, present with a hashed probability (sparse). An island's radius and height are at most
+  `cell / 2 − gap` so islands of a class never touch; classes are kept apart by a clearance check
+  against the coarser classes' candidates (a few hashes). Provisional classes (to be set from the
+  Aether reference): islets ~30–80 m across (cells ~400 m), islands ~150–600 m (~3 km), great
+  islands ~2–8 km (~40 km, so the dome's structure shows from afar).
+- **Altitude.** Islands exist from `ISLAND_MIN_Y` (≈ `TERRAIN_MAX_Y` + 1,000 m = ~7,000 m), so they
+  never meet the ground — even 5.6 km massifs — up to the dome, with each island's bounding box
+  wholly inside the dome. Density over altitude is a tunable profile (uniform to start; maybe
+  denser at lower altitudes, so islands are reachable from the highest peaks, and thinning toward
+  the top) — a §4.8 question.
+- **Footprint.** A cell's candidate is fully described by its hash (centre, radius, thickness,
+  shape seeds), so any chunk, point query or LOD section can find every island touching it by
+  visiting only the cells that overlap it — no neighbour reads, any order (§5).
+
+### 4.4 Island shape (sketch, pending the reference)
 
 Per island (centre `c`, radius `ρ`, top altitude `y_c`):
 - **Plan mask** `m = 1 − |p − c|² / ρ²` plus domain-warp noise (sqrt-free); island where `m > 0`.
 - **Top** `y_c + A_top × m × hills(p)`: gentle hills; optional hashed lake basin.
 - **Underside** `y_c − D × m²` (deep in the middle, tapering steeply to the edge) plus 3D noise for
   crags and hanging spurs. `D` ≈ 0.6–1.2 × `ρ`.
-- **Materials:** island top/filler from the biome table (cooler, by altitude; Phase 12's lapse
-  rate), rock body (a distinct sky-rock material is a content question for the reference).
-- **Features:** trees on tops (`GroundY` generalised to "the surface below this height"),
-  decorative waterfalls from lakes off edges (static water curtains, §3.3), clouds (§4.8, or voxel
-  clouds — §4.7).
+- **Materials:** top/filler from the biome table (by island climate; Phase 8's lapse rate would make
+  every island frozen, so islands use their own climate rule — §4.8), rock body (a distinct
+  sky-rock material is a content question for the reference).
+- **Features:** trees on tops (an island-top query beside `GroundY`), decorative waterfalls from
+  lakes off edges (static water curtains, §3.3), clouds (§4.9).
 
-### 4.4 What the architecture must change (independent of the reference)
+### 4.5 What else the generator must change
 
 Sky islands break the generator's "one surface per column" assumption. Each item becomes part of
-Phase 13's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
+Phase 9's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
 
-1. **Column model.** `Column` gains up to two **island spans** (bottom, top) from island cells
-   overlapping the column; evaluated only for chunks whose y-range intersects the shell band, so
-   most chunks pay nothing.
-2. **Air chunks.** `SkyFloor`/`IsAirChunk`: a chunk is air if it is above the ground's sky floor
-   **and** outside every island span's bounds. The air shortcut that makes open sky free must keep
-   working above, between and below islands.
-3. **Surface pass.** "Open sky" for the ground must not be blocked by an island overhead (today
-   air under an overhang is treated like cave air and does not start a surface). The pass starts a
-   surface from the column's 2D ground height and, separately, from each island span's top.
-4. **Point queries and features.** `GroundY` (ground) plus an island-top query; trees and spawn
-   use the right one; the spawn stays on the ground.
-5. **LOD bounds.** `LodBounds` becomes a ground interval **plus** an island band; sections between
-   the ground and the band are `Empty`; `LodKindFromBounds` and its tests extend. Islands must be
-   visible from afar (the great-island class exists partly for that).
-6. **Stability pass.** Generated islands must survive it: every island is ≥ 48 voxels (`kMinComponent`)
-   or the pass exempts island voxels.
-7. **Structural integrity (Phase 6).** Islands are not connected to bedrock, so the first edit
-   would detach the whole island. Islands need an **anchor**: e.g. an indestructible anchor core
-   at each island's centre (like bedrock), or a generated-island flag treated as grounded. Decide in
-   Phase 13's ADR; Phase 6's anchor definition must allow it (noted in Phase 6's deliverables).
-8. **Streaming and memory.** Island chunks high up are real chunks; the view sphere already covers
-   them. Measure chunk counts in a flight over an island field against today's budgets.
-9. **Players.** Falls from islands use existing fall damage; nothing new is assumed.
+1. **Column model.** Ground fields stay per column; islands are looked up per chunk (the 3D cells
+   overlapping it), and only for chunks above the ground band, so ground chunks pay nothing.
+2. **Air chunks.** `IsAirChunk`: a chunk is air if it is above the ground's sky floor **and**
+   outside every overlapping island's bounding box. This is what keeps the dome cheap.
+3. **Surface pass.** Ground surfaces are unaffected (islands never overlap the ground band). Island
+   surfaces start from each island's top.
+4. **Point queries and features.** `GroundY` for the ground plus an island-top query; the spawn
+   stays on the ground.
+5. **LOD bounds.** Ground-band sections classify as today; sections above it are `Empty` unless an
+   island of a class at least a cell wide overlaps them (smaller islands are below the cell and
+   dropped, like other features), so the work per section stays bounded at every level.
+6. **Stability pass.** Every island is ≥ 48 voxels (`kMinComponent`), or the pass exempts island
+   voxels.
+7. **Structural integrity (Phase 10).** Islands are not connected to bedrock, so the first edit
+   would detach the whole island. Islands need an **anchor**: e.g. an indestructible anchor core at
+   each island's centre (like bedrock), or a generated-island flag treated as grounded. Decided in
+   Phase 9's ADR (Phase 9 now comes first); Phase 10's anchor definition follows it.
+8. **Streaming and memory.** Measure chunk counts and memory in a flight through an island field
+   against today's budgets.
 
-### 4.5 How Phase 13 is checked (sketch)
+### 4.6 How Phase 9 is checked
 
-Separation between islands of all classes (no two islands touch); clearance above the ground
-everywhere; the dome envelope (island top altitudes vs. `y_dome(r)` within the shell) across the
-disc; air chunks still skipped between islands (a flight test counts generated chunks); LOD
-sections of the band classified correctly; islands survive the stability pass; determinism
-goldens with island chunks; manual flight screenshots.
+- **Bounds:** nothing is generated outside the dome; edits are accepted up to the dome and refused
+  outside it; streaming and LOD rows reach the dome's top; the player suites pass near the top.
+- **Islands:** no two islands touch; none below `ISLAND_MIN_Y` or crossing the dome; sampled island
+  density matches the profile.
+- **Cost:** open sky between islands is still skipped as air chunks (a flight test counts
+  generated chunks); LOD sections above the ground band are classified correctly and cheaply.
+- Islands survive the stability pass; protocol golden vectors for the new `LodIndex`; determinism
+  goldens with island chunks and sections.
+- Manual: a flight through an island field, a view of the dome's islands from the ground and from
+  high up, reviewed by the owner.
 
-### 4.6 Ordering
+### 4.7 Ordering
 
-Phase 13 builds on Phase 12 (biomes by altitude, lakes, waterfalls). Its integrity anchor touches
-Phase 6; whichever lands first defines the anchor rule and the other follows it.
+Phase 9 builds on Phase 8 (biomes, lakes, waterfalls). The dome bounds (§4.2) do not depend on the
+island design and can be built first, as 9a, while the Aether reference is pending; then 9b
+islands, 9c clouds (separable, render-only, can go any time).
 
-### 4.7 Open questions (resolve with the Aether reference)
+### 4.8 Open questions
 
-1. **"Half dome" shape:** a dome *envelope* of islands over the whole disc (this draft), or a
-   different arrangement (e.g. a dome over each continent, or a hemispherical *shell* seen from
-   the ground as a vault)?
-2. **Altitude vs. the 5 km massifs.** The world's ceiling is 6,144 m and massifs reach ~5.6 km.
-   Either the dome stays below typical massif heights and islands skip massifs (the clearance
-   rule), or Phase 12 keeps massifs out from under the dome's top, or the world's ceiling rises.
-3. **Island sizes and spacing** (Aether's are tens to a few hundred metres; the dome needs some
-   kilometre-scale ones to read from afar).
-4. **Distinct materials** (sky rock, sky grass, cloud blocks with special collision?) and whether
-   clouds are voxels (synchronised, editable) or render-only.
-5. **Under-island shading** and darkness under large islands (no shadows today).
+Resolved 2026-10-05: the dome covers the **whole disc**; the world's ceiling is **raised to a full
+hemispherical dome** (8,192 km) instead of fitting islands under 6,144 m, so islands sit above the
+ground band and never conflict with massifs. Still open (with the Aether reference):
 
-### 4.8 Clouds (render-only)
+1. **Island sizes, spacing and the density profile** over altitude (Aether's islands are tens to a
+   few hundred metres; the dome may need kilometre-scale ones to read from afar).
+2. **The dome's surface:** an invisible boundary, a kill boundary like the void, or a visible sky
+   shell; and whether creative flight may leave the dome.
+3. **Distinct materials** (sky rock, sky grass, cloud blocks with special collision?), whether
+   clouds are voxels (synchronised, editable) or render-only, and island climate (not the lapse
+   rate, which would freeze everything above ~7 km).
+4. **Under-island shading** and darkness under large islands (no shadows today).
+5. **Reaching islands** outside creative flight (gameplay; likely a later phase).
+
+### 4.9 Clouds (render-only, 9c)
 
 Large white cumulus are a big part of the reference. Prototype: a render-only cloud layer of
 instanced, flattened puffy shapes (or noise-textured impostors) at ~1,500–2,500 m, placed by a
@@ -639,15 +687,15 @@ deterministic hash grid around the camera (client only, not in the voxel world, 
 synchronised), lit warm on top and blue-grey underneath, faded by the same haze. They must not
 cost more than ~1 ms of frame time on a phone (measure with the F3 readout) and must not hide the
 LOD terrain from the flight ceiling (fade them out above them). Sky islands want clouds near them;
-whether some clouds are voxels instead is §4.7 question 4. Built in Phase 13, first, since it is
-separable and render-only.
+whether some clouds are voxels instead is §4.8 question 3. Built as Phase 9c, which is separable
+and render-only.
 
 ---
 
 ## 5. Cross-cutting rules for all four phases
 
 - **Determinism (ADR 0010, 0011).** Integer hashes for every placement decision; only `+ − × /`,
-  comparisons and (after Phase 11's ADR) `sqrt`; no float conversion of whole world coordinates;
+  comparisons and (after Phase 7's ADR) `sqrt`; no float conversion of whole world coordinates;
   one evaluation order shared by chunks, point queries and LOD. Every output change bumps the
   generator version and regenerates goldens (`DWELL_UPDATE_GOLDEN=1`); old versions retire as
   today (a world saved with a retired version loads as the flat world).
@@ -666,24 +714,25 @@ separable and render-only.
 
 | Name | Value | Phase |
 |---|---|---|
-| `CONTINENT_CELL` | 2,560 km | 11 |
-| `CONTINENT_LAND_CHANCE` | 0.35 | 11 |
-| `PLATE_CELL` | 256 km | 11 |
-| `PLATE_INSET` | 120 km | 11 |
-| `BAY_CHANCE` / `ISLAND_PLATE_CHANCE` | 0.08 / 0.04 | 11 |
-| `OCEAN_GAP` | 300 km | 11 |
-| `ISLAND_CLEARANCE` | 150 km | 11 |
-| `RIM_OCEAN` | 400 km | 11 |
-| `SHELF_WIDTH` | 80–200 km per continent | 11 |
-| Coast warp (λ / amplitude) | 1,000 km / 0.3 × `PLATE_CELL` | 11 |
-| Macro lattice | 256 m | 11 |
-| River tiers (λ) | ~200 km / ~6 km / ~1.5 km | 12 |
-| River terrace step | 2–6 m (hashed) | 12 |
-| Lake cells | 3–10 km | 12 |
-| Lapse rate | 6.5 °C / km | 12 |
-| Rain-shadow samples | 20 / 60 / 150 km upwind | 12 |
-| Cave suppression under water | 12 m | 12 |
-| Overhang amplitude | 1–3 m (land), more on cliffs | 12 |
-| Dome `Y_TOP` / `Y_RIM` / shell `T` | 5,000 / 1,500 / 1,500 m (provisional) | 13 |
-| Island classes (cell size) | 300 m / 2 km / 12 km (provisional) | 13 |
-| Island ground clearance | 300 m | 13 |
+| `CONTINENT_CELL` | 2,560 km | 7 |
+| `CONTINENT_LAND_CHANCE` | 0.35 | 7 |
+| `PLATE_CELL` | 256 km | 7 |
+| `PLATE_INSET` | 120 km | 7 |
+| `BAY_CHANCE` / `ISLAND_PLATE_CHANCE` | 0.08 / 0.04 | 7 |
+| `OCEAN_GAP` | 300 km | 7 |
+| `ISLAND_CLEARANCE` | 150 km | 7 |
+| `RIM_OCEAN` | 400 km | 7 |
+| `SHELF_WIDTH` | 80–200 km per continent | 7 |
+| Coast warp (λ / amplitude) | 1,000 km / 0.3 × `PLATE_CELL` | 7 |
+| Macro lattice | 256 m | 7 |
+| River tiers (λ) | ~200 km / ~6 km / ~1.5 km | 8 |
+| River terrace step | 2–6 m (hashed) | 8 |
+| Lake cells | 3–10 km | 8 |
+| Lapse rate | 6.5 °C / km | 8 |
+| Rain-shadow samples | 20 / 60 / 150 km upwind | 8 |
+| Cave suppression under water | 12 m | 8 |
+| Overhang amplitude | 1–3 m (land), more on cliffs | 8 |
+| `DOME_RADIUS` | = `WORLD_RADIUS`, 8,192 km (decided) | 9 |
+| `TERRAIN_MAX_Y` (ground band top, today's `WORLD_MAX_Y`) | 6,144 m | 9 |
+| `ISLAND_MIN_Y` | ~7,000 m | 9 |
+| Island classes (size / cell) | 30–80 m / 400 m; 150–600 m / 3 km; 2–8 km / 40 km (provisional) | 9 |
