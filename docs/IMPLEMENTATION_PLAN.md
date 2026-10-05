@@ -20,8 +20,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 0 — Repository, tooling & Pages | ✅ Complete | #2 |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
-| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3c merged; 3d (block edits, meshing workers) and 3e (persistence, debug tooling) done on `claude/phase-3d-3e`, PR pending. Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (`claude/memory-budget`, PR pending); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43 |
+| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c), #13 (3d, 3e) |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43, #44 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Fantasy look: a first pass at colour (rendering only) | ⏳ Not started | — |
 | 7 — Continents from Voronoi plates | ⏳ Not started | — |
@@ -166,7 +166,7 @@ Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
 that tick's velocity (PLAYER_CONTROLLER.md §4). The fix merged in #8.
-Later finding (fix on the branch, PR pending): jumping over a lone block while pressed against it
+Later finding (fixed, merged in #10): jumping over a lone block while pressed against it
 launched the player forward, and one jump floated the player up a diagonal staircase of full
 blocks — the block's top edge deflected the forward drive upwards and the airborne vertical layer
 absorbed that as an external force (a second jump). That lift is no longer absorbed
@@ -279,10 +279,10 @@ server and client worldgen pools; the walking-without-hitches exit criterion awa
 **3c — scale foundations** (done, merged in #12: the planet-scale world of ADR 0011 — bounds and
 the rim, double-precision physics with region-anchored terrain collision, protocol v4 positions,
 generator version 3, air chunks, spherical streaming; every 3c exit criterion verified);
-**3d — block edits** (done, PR pending: protocol v5 edit loop, block interaction and infinite
+**3d — block edits** (done, merged in #13: protocol v5 edit loop, block interaction and infinite
 inventory on desktop and touch, revision gaps and resync, the greedy meshing worker pool; every 3d
 exit criterion verified);
-**3e — persistence and debug tooling** (done, PR pending: SQLite + zstd world files natively and in
+**3e — persistence and debug tooling** (done, merged in #13: SQLite + zstd world files natively and in
 OPFS, autosave off the tick, migrations, crash-safe saves, settings and permissions from launch
 options; the in-game terrain map and regenerate-and-diff checks; every 3e exit criterion verified).
 3c comes before edits and persistence so the world's
@@ -547,7 +547,7 @@ LOD's view held within `LOD_CACHE_MB`, its pixel error in CSS pixels, one draw c
 section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory
 budget as settings-menu sliders (#42); batched terrain behind `?batch=1` and `?scale=` to compare
 on devices (#43); a memory readout and phone memory budget after crashes in mobile Safari
-(`claude/memory-budget`, PR pending). Also
+(merged in #44). Also
 outstanding: z-fighting reported high up, not reproduced here (see deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
