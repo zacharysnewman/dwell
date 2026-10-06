@@ -31,9 +31,8 @@ within the existing biome set.
 
 ## Consequences
 
-- **A breaking change to the terrain a seed generates**, so a new compatibility line (or an in-place
-  patch of 0.5, the owner's decision as for 0.3.1 and 0.4.1) — the generator moved from version 7 to 8
-  after 0.5.0 was cut.
+- **A breaking change to the terrain a seed generates**, so a new compatibility line: the owner raised
+  the app version to 0.6.0 (the generator moved from version 7 to 8 after 0.5.0 was cut).
 - Whole-world shares over 8 seeds: plains ~28 %, forest ~28 %, desert ~11 %, snowy ~12–17 %,
   mountains ~19 % of the land; near the origin the climate is one region (seed 0: temperate), so a
   new world's spawn area is uniform for tens of kilometres. 11c's per-continent biases and biome
