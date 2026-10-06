@@ -446,15 +446,28 @@ void TerrainGenerator::ChunkSurfaces(const std::vector<Column>& cols, std::int32
     return it->second;
   };
   constexpr int kMaxLayers = 40;
+  // Only columns whose surface can matter to this chunk's cells: near it themselves, or a
+  // neighbour of one that is (a cell's shape reads the 3 × 3 columns around it).
+  std::vector<std::uint8_t> near(static_cast<std::size_t>(kCols * kCols));
+  for (int i = 0; i < kCols * kCols; ++i) {
+    const Column& col = cols[static_cast<std::size_t>(i)];
+    near[static_cast<std::size_t>(i)] =
+        !col.outside && col.height + col.overhang + 4.0f >= static_cast<float>(y0 - 3) &&
+        col.height - col.overhang - 4.0f <= static_cast<float>(y0 + S + 3);
+  }
+  const auto needed = [&](int x, int z) {
+    for (int dz = -1; dz <= 1; ++dz)
+      for (int dx = -1; dx <= 1; ++dx) {
+        const int nx = x + dx, nz = z + dz;
+        if (nx < -1 || nx > S || nz < -1 || nz > S) continue;
+        if (near[static_cast<std::size_t>((nz + 1) * kCols + nx + 1)]) return true;
+      }
+    return false;
+  };
   for (int z = -1; z <= S; ++z)
     for (int x = -1; x <= S; ++x) {
       const Column& col = cols[(z + 1) * kCols + x + 1];
-      if (col.outside) continue;
-      // Only columns whose surface can matter to this chunk's cells.
-      if (col.height + col.overhang + 4.0f < static_cast<float>(y0 - 3) ||
-          col.height - col.overhang - 4.0f > static_cast<float>(y0 + S + 3)) {
-        continue;
-      }
+      if (col.outside || !needed(x, z)) continue;
       const std::int32_t wx = x0 + x, wz = z0 + z;
       const std::int32_t i = FloorDiv(wx, kLattice) - lx0, k = FloorDiv(wz, kLattice) - lz0;
       const int fx = FloorMod(wx, kLattice), fz = FloorMod(wz, kLattice);
@@ -464,7 +477,7 @@ void TerrainGenerator::ChunkSurfaces(const std::vector<Column>& cols, std::int32
       bool have[kMaxLayers] = {};
       const auto layer = [&](std::int32_t j) -> const Corner3& {
         const std::int32_t n = j - jbase;
-        // The window holds every layer SurfaceOf can ask for (a band of at most 2 × overhang + 7 m).
+        // The window holds every layer SurfaceOf can ask for (at most 2 × overhang + 7 m).
         assert(n >= 0 && n < kMaxLayers);
         if (!have[n]) {
           const Corner3 c[4] = {corner(i, k, j), corner(i + 1, k, j), corner(i, k + 1, j),
@@ -482,8 +495,7 @@ namespace {
 
 // Corner heights (halves of a cell, absolute) of the cell at the centre of a 3×3 block of column
 // surfaces: each corner is the mean of the four columns around it, rounded to the nearest half.
-// False if any of the nine has no clean surface, or the corners differ by more than a block (a
-// cliff stays cubes).
+// False if any of the nine has no clean surface.
 template <class SurfaceCol>
 bool CellCorners(const SurfaceCol (&s)[3][3], std::int32_t (&h)[4]) {
   for (const auto& row : s)
@@ -498,16 +510,48 @@ bool CellCorners(const SurfaceCol (&s)[3][3], std::int32_t (&h)[4]) {
   h[1] = corner(0, 1);  // NE
   h[2] = corner(1, 1);  // SE
   h[3] = corner(1, 0);  // SW
-  const std::int32_t lo = std::min(std::min(h[0], h[1]), std::min(h[2], h[3]));
-  const std::int32_t hi = std::max(std::max(h[0], h[1]), std::max(h[2], h[3]));
-  return hi - lo <= 2;
+  return true;
 }
 
-// The piece of the cell whose floor is at y (halves 2y), from its absolute corner heights.
-slopes::Piece PieceAtHeight(const std::int32_t (&h)[4], std::int32_t y) {
+// What the slope rule makes of a column: the cells below `floor` are solid, the cell at `floor`
+// is `piece` (a full cube, a shape, or air), and the cells above it are open. One shaped cell per
+// column, always on solid ground: a piece never rests on another piece's slope.
+struct ColumnShape {
+  std::int32_t floor = 0;
+  slopes::Piece piece;
+};
+
+// The column's shape from its corner heights (halves, absolute) and its own surface (m). Corners
+// that fit one cell give that cell, exactly (shared corners agree with every neighbour). Where they
+// span more — ground steeper than a block per cell, or a block from a half-height to the next — the
+// cell holding the column's own surface is chosen (within the corners' span) and the corners are
+// clamped to it: a slope on top of a step instead of cubes, or of two pieces stacked with a gap.
+// The cell stays within a block of the column's own surface either way.
+ColumnShape ShapeColumn(const std::int32_t (&h)[4], float surface) {
+  const std::int32_t lo = std::min(std::min(h[0], h[1]), std::min(h[2], h[3]));
+  const std::int32_t hi = std::max(std::max(h[0], h[1]), std::max(h[2], h[3]));
+  const std::int32_t own = FloorToInt(surface);
+  // The lowest cell whose top reaches every corner, and the highest whose floor is under them all.
+  const std::int32_t reach = FloorDiv(hi + 1, 2) - 1, under = FloorDiv(lo, 2);
+  std::int32_t y = reach <= under ? reach : std::clamp(own, under, reach);
+  y = std::clamp(y, own - 1, own + 1);
   int q[4];
   for (int i = 0; i < 4; ++i) q[i] = static_cast<int>(std::clamp(h[i] - 2 * y, 0, 2));
-  return slopes::PieceFor(q[0], q[1], q[2], q[3]);
+  return {y, slopes::PieceFor(q[0], q[1], q[2], q[3])};
+}
+
+// The piece of cell y of a shaped column.
+slopes::Piece PieceAtHeight(const ColumnShape& c, std::int32_t y) {
+  if (y < c.floor) return {slopes::Kind::kFull, 0};
+  if (y > c.floor) return {slopes::Kind::kAir, 0};
+  return c.piece;
+}
+
+template <class SurfaceCol>
+std::optional<ColumnShape> ShapeColumnOf(const SurfaceCol (&s)[3][3]) {
+  std::int32_t h[4];
+  if (!CellCorners(s, h)) return std::nullopt;
+  return ShapeColumn(h, s[1][1].height);
 }
 
 }  // namespace
@@ -517,9 +561,9 @@ std::optional<slopes::Piece> TerrainGenerator::SlopePieceAt(std::int32_t x, std:
   SurfaceColumn s[3][3];
   for (int dz = 0; dz < 3; ++dz)
     for (int dx = 0; dx < 3; ++dx) s[dz][dx] = SurfaceAt(x - 1 + dx, z - 1 + dz);
-  std::int32_t h[4];
-  if (!CellCorners(s, h)) return std::nullopt;
-  return PieceAtHeight(h, y);
+  const auto shape = ShapeColumnOf(s);
+  if (!shape) return std::nullopt;
+  return PieceAtHeight(*shape, y);
 }
 
 void TerrainGenerator::ShapeSurface(const std::vector<Column>& cols,
@@ -534,35 +578,39 @@ void TerrainGenerator::ShapeSurface(const std::vector<Column>& cols,
         for (int dx = 0; dx < 3; ++dx) {
           s[dz][dx] = surfaces[static_cast<std::size_t>((z + dz) * kCols + x + dx)];
         }
-      std::int32_t h[4];
-      if (!CellCorners(s, h)) continue;
+      const auto shape = ShapeColumnOf(s);
+      if (!shape) continue;
       const Column& col = column(x, z);
       const float slope = ColumnSlope(column, x, z);
-      const std::int32_t lo = std::min(std::min(h[0], h[1]), std::min(h[2], h[3]));
-      const std::int32_t hi = std::max(std::max(h[0], h[1]), std::max(h[2], h[3]));
-      // Top-down over the cells whose floor can lie under the surface: the topmost filled cell is
-      // the surface (run 0), the one below it run 1.
+      // The cube terrain's top voxel; it and the one below are solid, the one above open.
+      const std::int32_t fl = FloorToInt(s[1][1].height);
+      const std::int32_t cube_top = static_cast<float>(fl) == s[1][1].height ? fl - 1 : fl;
+      // Top-down from above both tops to the cell under the piece: cells above the piece open,
+      // the piece, and solid below it (filling where the column's cubes were lower); the topmost
+      // filled cell is the surface (run 0).
+      const std::int32_t f = shape->floor;
       int run = 0;
-      for (std::int32_t y = FloorDiv(hi, 2) + 1; y >= FloorDiv(lo, 2) - 1; --y) {
-        const std::int32_t ly = y - y0;
+      for (std::int32_t y = std::max(f, cube_top) + 1; y >= std::min(f - 1, cube_top); --y) {
         if (y < kWorldMinY + kBedrockLayers + 1) break;
-        const slopes::Piece piece = PieceAtHeight(h, y);
+        const slopes::Piece piece = PieceAtHeight(*shape, y);
+        const std::int32_t ly = y - y0;
+        const bool here = ly >= 0 && ly < S;
+        MaterialId* v = here ? &voxels[core::LocalIndex(x, ly, z)] : nullptr;
         if (piece.kind == slopes::Kind::kAir) {
-          if (ly >= 0 && ly < S) {
-            MaterialId& v = voxels[core::LocalIndex(x, ly, z)];
-            // A cube the surface lies below: removed (sea fills the hollow).
-            if (v != M::kAir && v != M::kWater) v = y < kSeaLevel ? M::kWater : M::kAir;
-          }
+          // A cube the surface lies below: removed (sea fills the hollow).
+          if (v && *v != M::kAir && *v != M::kWater) *v = y < kSeaLevel ? M::kWater : M::kAir;
           continue;
         }
-        if (piece.kind == slopes::Kind::kFull) {
-          ++run;
-          continue;
-        }
-        if (ly >= 0 && ly < S) {
-          const bool flooded = y < kSeaLevel;
+        const bool flooded = y < kSeaLevel;
+        if (v) {
           const MaterialId cube = SurfaceMaterial(col, run, flooded, y, slope);
-          voxels[core::LocalIndex(x, ly, z)] = slopes::StateFor(cube, piece, flooded);
+          if (piece.kind == slopes::Kind::kShaped) {
+            *v = slopes::StateFor(cube, piece, flooded);
+          } else {
+            // Solid under the piece: the cells the column rises into, a pocket right under the
+            // piece, and the surface layers re-counted from the new top.
+            *v = cube;
+          }
         }
         ++run;
       }
@@ -1226,7 +1274,7 @@ bool TerrainGenerator::LevelSpawnY(std::int32_t x, std::int32_t z, std::int32_t&
       s[dz][dx] = SurfaceAt(x - 3 + dx, z - 3 + dz);
       if (!s[dz][dx].valid) return false;
     }
-  std::int32_t corners[5][5][4];
+  ColumnShape shapes[5][5];
   std::int32_t lo = std::numeric_limits<std::int32_t>::max(),
                hi = std::numeric_limits<std::int32_t>::min();
   for (int cz = 0; cz < 5; ++cz)
@@ -1234,10 +1282,12 @@ bool TerrainGenerator::LevelSpawnY(std::int32_t x, std::int32_t z, std::int32_t&
       SurfaceColumn block[3][3];
       for (int dz = 0; dz < 3; ++dz)
         for (int dx = 0; dx < 3; ++dx) block[dz][dx] = s[cz + dz][cx + dx];
-      if (!CellCorners(block, corners[cz][cx])) return false;
-      for (const std::int32_t h : corners[cz][cx]) {
-        lo = std::min(lo, h);
-        hi = std::max(hi, h);
+      std::int32_t h[4];
+      if (!CellCorners(block, h)) return false;
+      shapes[cz][cx] = ShapeColumn(h, block[1][1].height);
+      for (const std::int32_t c : h) {
+        lo = std::min(lo, c);
+        hi = std::max(hi, c);
       }
     }
   if (hi - lo > 1) return false;  // within half a block
@@ -1245,9 +1295,9 @@ bool TerrainGenerator::LevelSpawnY(std::int32_t x, std::int32_t z, std::int32_t&
     bool fits = true;
     for (int cz = 0; cz < 5 && fits; ++cz)
       for (int cx = 0; cx < 5 && fits; ++cx) {
-        fits = PieceAtHeight(corners[cz][cx], y - 1).kind != slopes::Kind::kAir &&
-               PieceAtHeight(corners[cz][cx], y).kind == slopes::Kind::kAir &&
-               PieceAtHeight(corners[cz][cx], y + 1).kind == slopes::Kind::kAir;
+        fits = PieceAtHeight(shapes[cz][cx], y - 1).kind != slopes::Kind::kAir &&
+               PieceAtHeight(shapes[cz][cx], y).kind == slopes::Kind::kAir &&
+               PieceAtHeight(shapes[cz][cx], y + 1).kind == slopes::Kind::kAir;
       }
     if (fits) {
       feet = y;

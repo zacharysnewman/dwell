@@ -21,8 +21,9 @@
 //   4. Caves (3D): spaghetti tunnels and cheese caverns, faded out near the surface and bedrock.
 //   5. Surface and strata: grass/dirt, sand/sandstone, snow, gravel by biome and depth; water fills
 //      open space below the sea level; bedrock at the bottom.
-//   5b. Slopes (version 5, SLOPE_BLOCKS.md §5): the surface cells become slope and slab pieces from
-//      the continuous surface's heights at their corners, shared by neighbouring cells.
+//   5b. Slopes (version 5, SLOPE_BLOCKS.md §5): each column's surface cell becomes a slope or slab
+//      piece from the continuous surface's heights at its corners, shared by neighbouring cells,
+//      on solid cells (one piece per column, steep ground clamped to a cell; fixed in 0.3.1).
 //   6. Stability: small solid components floating inside the chunk are removed.
 //   7. Ores: hashed vein blobs in stone.
 //   8. Features: trees and boulders at hashed positions per region cell.
@@ -102,9 +103,10 @@ class TerrainGenerator {
   };
   SurfaceColumn SurfaceAt(std::int32_t x, std::int32_t z) const;
   // What the slope rule makes of cell (x, y, z), from point queries alone — exactly the chunk
-  // path's decision: the piece (air, a full cube, or a slope or slab with its corner heights), or
-  // nothing when the cell stays as the cube terrain has it (no clean surface around it, or a
-  // cliff).
+  // path's decision: the piece (air above the column's surface cell, a slope, slab, cube or air in
+  // it, a full cube below it), or nothing when the column stays as the cube terrain has it (no
+  // clean surface around it). The cell just under the surface cell is always solid; deeper cells
+  // keep the cube terrain's caves.
   std::optional<slopes::Piece> SlopePieceAt(std::int32_t x, std::int32_t y, std::int32_t z) const;
 
   // The feature rooted in a region cell, if any (cells are kTreeCell / kBoulderCell wide).

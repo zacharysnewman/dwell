@@ -26,7 +26,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete: merged in #46 and #47, `v0.1.0` released and the site deployed by the Release run on 2026-10-06. 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing, merged in #52 and released as the dev build `v0.2.1-dev.7` (a stable release is the owner's call); outstanding: the phone-width check | #46, #47 (6a), #52 (6b) |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the CI run on `main` for the merge failed in the storage WASM test and the touch e2e test (not yet fixed); the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred | #51 |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🔍 In review — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash) | — |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d merged (#54) and released as v0.3.0 (generator v5); playtest follow-up: generated slopes left gaps under stacked pieces and steep ground unsloped — fixed in place as patch 0.3.1 (same generator version, the owner's decision); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review | #54 |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
@@ -1384,7 +1384,15 @@ browser e2e tests (including the new shape specs), the frame-time and generation
 a desktop and a phone, and the owner's manual review. **Breaking change:** generator version 5
 changes the terrain a seed generates and the registry hash changes with the new states, so this
 is a new compatibility line, so `client/package.json` is raised to 0.3.0 by the owner's decision
-(2026-10-06); merging to `main` releases it as stable.
+(2026-10-06); merged in #54 and released as v0.3.0. **Playtest follow-up (patch 0.3.1):**
+in hills and mountains the generated slopes had gaps under them and many one-block steps stayed
+bare cubes — where a cell's corners spanned a block from a half-height, 0.3.0 stacked two pieces
+with the upper one's flat bottom over the lower one's slope (14 % of shaped cells sampled), and
+ground steeper than a block per cell stayed cubes (39 % of one-block steps unsloped). The fix gives
+each column one surface cell on solid cells, clamping such corners into the cell holding the
+column's own surface (regression tests for both). It changes the terrain a seed generates, but by
+the owner's decision ships as a patch on the 0.3 line (`release/0.3`, the first backport) with the
+same generator version: worlds take it in chunks not yet edited.
 
 **Deviations:** `stone_slab` keeps its slot but the other materials' shaped blocks have no palette
 slot of their own (one slot per material plus a shape key); families use `palette: all`;
@@ -1418,8 +1426,8 @@ Exit criteria
 - [ ] Controller slope scenarios pass natively (done, at the origin and ~8,000 km out) and in WASM
   (CI); the divergence check passes (CI); no slope launches, hops or sliding at rest.
 - [ ] Generated slopes within half a block of the continuous surface, shared corners agree, flooded
-  below water; LOD slopes within half a cell (all tested natively: 99.7 % within half a block,
-  worst 0.87 m); determinism goldens pass everywhere (native done; WASM and client module in CI).
+  below water; LOD slopes within half a cell (all tested natively: 99.9 % within half a block,
+  worst 0.75 m since 0.3.1; every shaped cell on a full one); determinism goldens pass everywhere (native done; WASM and client module in CI).
 - [ ] e2e: every shape in every orientation placed and broken, seen identically by a second client.
 - [ ] Frame time within budget on desktop and a phone; chunk generation and meshing times reported.
 - [ ] Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.
