@@ -20,14 +20,17 @@ API so far (details in ARCHITECTURE.md §10.3):
 
 - `GET /v1/health`; `POST /v1/whoami` (signed; answers with the key that signed, to check a
   client's signing and clock).
-- `POST /v1/rooms` (signed, `{ maxGuests }`) → `201 { code, display, hostToken }`: a host opens a
-  friend world's room.
+- `POST /v1/rooms` (signed, `{ maxGuests, visibility?, name?, protocol?, appVersion? }`) →
+  `201 { code, display, hostToken }`: a host opens a friend world's room. `appVersion` is the host's
+  app version (a Semantic Version; build metadata is dropped), passed along to guests.
 - `POST /v1/rooms/<code>/join` (signed, rate-limited per IP) → `{ token, peer }`, `404` or
   `409 full`.
 - `GET /v1/rooms/<code>/ws?token=…`: the room's signaling WebSocket, for the host or a guest.
 - `POST /v1/turn` (signed) → `{ iceServers }`.
 - `POST /v1/servers` (signed by a server key) registers or heartbeats a dedicated server;
-  `POST /v1/servers/leave`; `POST /v1/resolve { code | address }`; `POST /v1/nearby` (5d).
+  `POST /v1/servers/leave`; `POST /v1/resolve { code | address }`; `POST /v1/nearby` (5d). A
+  server's report carries its `appVersion` too, and servers, rooms and listings return it
+  (`null` for a host from before versioned releases).
 - `GET /v1/servers?q=&tag=&protocol=&notFull=1&hasPlayers=1&new=1` → `{ servers, worlds }`: the
   lobby list (unsigned, limited per IP); `POST /v1/receipts { code }` (signed): a player joined
   that server after resolving it (5e).

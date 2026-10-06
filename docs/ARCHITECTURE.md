@@ -78,12 +78,14 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    independent WASM instances exchanging transferable buffers (§5.1,
    [ADR 0007](./adr/0007-threading-model.md)). No `coi-serviceworker`. Electron uses a
    multithreaded build; the native server is always multithreaded.
-3. **Default project path.** The site is served at `https://dropkickarcade.com/dwell/` (ADR 0005),
-   Vite `base: '/dwell/'`. The origin is shared with other `dropkickarcade.com` games, so all
-   browser storage is `dwell`-namespaced, the device key is non-extractable, and any service
-   worker is scoped to `/dwell/`. Older client builds are kept at `/dwell/v/<version>/` so
-   players can join servers that have not updated. A move to its own subdomain is a documented
-   future option (ADR 0005).
+3. **Default project path.** The site is served at `https://dropkickarcade.com/dwell/` (ADR 0005).
+   The origin is shared with other `dropkickarcade.com` games, so all browser storage is
+   `dwell`-namespaced, the device key is non-extractable, and any service worker is scoped to
+   `/dwell/`. **[built, Phase 6]** `/dwell/` is a **launcher** and every build is served from its own
+   directory, `/dwell/v/<version>/` (Vite `base` per build; `/dwell/` for a local build, the preview
+   and the e2e suite), so players can join servers and open worlds that have not moved to the
+   newest version ([ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md);
+   see "Deployment" below). A move to its own subdomain is a documented future option (ADR 0005).
 4. **Local mode** **[built]**. So the Pages deployment is playable with no hosted server, the
    server's simulation core is also compiled to WASM (`server/wasm`, Emscripten) and run in a
    module Web Worker (`client/src/local/worker.ts`), connected through `LoopbackTransport`, which
@@ -91,7 +93,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    device-key handshake, no network. **[built, Phase 5a]** A page with no world or server in its
    address opens the **main menu** (`ui/mainMenu.ts`: the world list, Join, and the ☰ settings);
    choosing a world navigates to `?play=<world id>` and joining to the invite, so a reload
-   continues the same game and Back returns to the menu (`ui/launch.ts`). Links still open
+   continues the same game and Back returns to the menu (`ui/launch.ts`). **[built, Phase 6]**
+   Those navigations go to `/dwell/` (`launcherHref`, `launcherPath.ts`), never to a version's own
+   path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
    dedicated servers generate the **procedural terrain** world (generator version 4, §6.3) by
@@ -106,8 +110,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    seed with the type's current generator) and delete. Menu-created worlds use id-based files
    (`dwell/worlds/w<10 base-36 chars>.dwellworld`); links keep opening the per-generator-and-seed
    files. An index in local storage (`dwell.worlds`, `local/worldIndex.ts`) holds each world's name,
-   type, seed, generator and when it was last played; per-seed files it doesn't list (saved before
-   the menu) are adopted when the menu opens. The game menu's Quit to main menu asks the worker to
+   type, seed, generator, when it was last played and **[built, Phase 6]** the app version that
+   last played it (§6.4); per-seed files it doesn't list (saved before the menu) are adopted when
+   the menu opens, as worlds saved before versioned releases, which are listed only to be deleted. The game menu's Quit to main menu asks the worker to
    save (answered with `saved`) before leaving.
 5. **One C++ core, compiled for the browser twice.** The Emscripten build of `server/core`
    (`dwell_core.wasm`) provides local mode and the client's prediction/debris physics; its
@@ -117,12 +122,37 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    (the client's settles near 28 MB, a local world's server near 41 MB; 64 MB at the start cost
    phones ~60 MB for nothing), `dwell_worldgen.wasm` with 4 MB.
 
-Deployment is automated by `.github/workflows/pages.yml` **[built]**: it builds the WASM core
-(Emscripten) and `client/`, and publishes them with `actions/deploy-pages` on pushes to `main`
-(the repository's Pages source is "GitHub Actions"). **[planned, Phase 6]** Each build becomes a
-tagged GitHub Release, and the site is assembled from the releases behind a version launcher
-([`RELEASES.md`](./RELEASES.md)). The page carries a strict
-Content-Security-Policy `<meta>` tag, since Pages cannot send headers (§11).
+**Deployment** **[built, Phase 6]** (the repository's Pages source is "GitHub Actions"):
+
+- **Builds are releases** (`.github/workflows/release.yml`). A push to `main` builds a **dev** build,
+  `v<next version>-dev.<run>` (a GitHub pre-release); a pushed `v<version>` tag, or the workflow run
+  by hand, builds the **stable** release of `client/package.json`'s version. `client/scripts/release.ts`
+  decides which, and the tag must match the version. Each build is made with `DWELL_VERSION` (read by
+  `client/vite.config.ts` and `server/CMakeLists.txt`), with the WASM core (Emscripten) built for it,
+  for the base `/dwell/v/<version>/`, and attached to its GitHub Release as `dwell-<version>.tar.gz`
+  with its `build.json` (version, channel, date, commit, `protocolVersion`, generator versions,
+  `minLauncher`). The version is Semantic Versioning 2.0.0, one for the whole app; before `1.0.0`
+  breaking changes bump MINOR and compatible ones PATCH (§10.5).
+- **The site is assembled from the releases** (`.github/workflows/pages.yml`, called at the end of
+  each release and runnable by hand; `client/scripts/site.ts`): `index.html` (the launcher),
+  `versions.json` (generated from each `build.json`) and `v/<version>/` for every stable release and
+  the newest 10 dev builds, each unpacked and immutable; older dev releases and their tags are
+  deleted. It is deployed with `actions/deploy-pages`, and its size is reported against Pages'
+  1 GB limit. Builds are same-origin directories because release assets carry no CORS headers or
+  script content types, the CSP is `script-src 'self'` / `worker-src 'self'`, and all versions must
+  share the origin's storage.
+- **The launcher** (`client/launcher`, its own small page and Vite build) reads `versions.json`,
+  chooses a build and replaces itself with it, keeping the query: for `?play=<id>` the newest
+  published build on the world's compatibility line and not older than the version that last played
+  it (read from the world index, shared by every version); for an invite or code with `v=<host
+  version>` the newest build on the host's line; otherwise the latest stable build (the latest dev
+  build if the player ticked "Open dev builds" under About, `dwell.channel`), falling back to the
+  other channel. A missing version, or a request no published build can serve, shows a message
+  offering the latest. `?version=<v>` pins a build (developers).
+- **Licence notices** ship in every build (`THIRD_PARTY_NOTICES.txt`, linked from the menu's
+  About) and beside the native server.
+
+The page carries a strict Content-Security-Policy `<meta>` tag, since Pages cannot send headers (§11).
 
 ### 2.2 Desktop / Mobile shells **[in progress]**
 
@@ -162,7 +192,12 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 
 ```
 /client              TypeScript client (Vite). Renderer, prediction, interpolation, debris.
-  /e2e               Playwright end-to-end tests against a native server.
+  /e2e               Playwright end-to-end tests against a native server (launcher.spec.ts: against a
+                     locally assembled site, playwright.site.config.ts).
+  /launcher          The launcher page at /dwell/ (§2.1, Phase 6): versions.json, version choice.
+  /scripts           site.ts (plan, manifest and size of the Pages site), release.ts (what a release
+                     run builds), localSite.ts (a local multi-version site for the e2e tests); run
+                     with Node's type stripping.
 /server              C++20 authoritative server (CMake). Jolt via FetchContent.
   /core              Simulation core: voxel grid, worldgen, integrity, clustering, physics,
                      players, replication.
@@ -180,6 +215,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/protocol     constants.json (single source of protocol constants) + gen.mjs (→ C++ and TS
                      headers), make_vectors.py (independent reference encoder) → vectors.txt
                      (golden bytes both codecs must match).
+/shared/version      vectors.txt: version precedence, compatibility lines and "may open" cases that the
+                     TypeScript (client/src/version) and C++ (core/app_version) implementations both
+                     pass.
 /shared/licenses     gen.py → THIRD_PARTY_NOTICES (root): third_party.json + texts/ for components
                      that are not Rust crates, `cargo metadata` for the crates linked into the server.
 /services/master     Master server: Cloudflare Worker + Durable Objects, TypeScript, Wrangler
@@ -188,7 +226,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /platforms/capacitor Capacitor shell.
 /docs                ARCHITECTURE.md, PLAYER_CONTROLLER.md, IMPLEMENTATION_PLAN.md, FUTURE.md.
   /adr               Architecture decision records.
-/.github/workflows   ci.yml (protocol, client, server, e2e jobs), pages.yml (deploy).
+/.github/workflows   ci.yml (protocol, client, server, e2e jobs), release.yml (builds as GitHub
+                     Releases), pages.yml (the site from the releases), master.yml.
 rust-toolchain.toml  Pinned Rust toolchain.
 LICENSE              All rights reserved (the source is public for reference only).
 THIRD_PARTY_NOTICES  Licenses of the third-party components in Dwell's builds (generated).
@@ -212,8 +251,9 @@ yet.
 | WASM | Emscripten 6.0.10 (`wasm` preset): ES-module factory, single-threaded (ADR 0007), copied to `client/public/wasm` (not committed; `npm run build:wasm`). Their names are fixed, so the client loads each loader and, through Emscripten's `locateFile`, its `.wasm` with `?v=<build sha>` (`sim/wasmUrl.ts`): after a deploy a browser never pairs a cached file with the new build |
 | Server Rust | Toolchain 1.94.1 (`rust-toolchain.toml`), edition 2024; `server/net/wt` (wtransport 0.7.2 with ring, str0m 0.23.1 with aws-lc-rs, tokio) built by Corrosion as a static library; C header generated by cbindgen 0.29.4 (`gen-header.sh`) and checked in |
 | Desktop | Electron 44.4.5 (`platforms/electron`) |
+| Releases | `release.yml` and `pages.yml` (§2.1): Node 22 type stripping runs `client/scripts/*.ts`; `gh` publishes releases; the site is deployed with `actions/deploy-pages` |
 | Master server | TypeScript 6.0 on Cloudflare Workers (`services/master`, compatibility date 2026-08-15), Wrangler 4.124.0, `@cloudflare/workers-types`, Vitest 4.1 with `@cloudflare/vitest-pool-workers` 0.22.0 (tests run in workerd), ESLint/Prettier as the client; `legacy-peer-deps` in its `.npmrc` |
-| CI (`ci.yml`) | Protocol: regenerated constants and vectors (including `shared/master/vectors.json`) must match. Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client: WASM build, the player/netcode suite under WASM (Node) at the origin and ~8,000 km from it, the worldgen and storage suites under WASM (the storage suite through the browser's VFS, reading the natively written golden world file), format, lint, typecheck, unit tests (WASM tests required), build. Server: clang-format, `cargo fmt`/`clippy -D warnings`/`test`, stale-header check, CMake configure/build, ctest, the player and netcode suites ~8,000 km from the origin, smoke-run, then a Release build running the player performance gate and golden trace at both origins. E2E: native↔WASM controller divergence check (`server/tools/divergence.mjs`), native server + built client in Playwright Chromium (WebTransport, WebRTC, local mode, session replacement, local-mode movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view — LOD around the player, then the whole disc after flying up to the flight ceiling), Electron smoke under Xvfb |
+| CI (`ci.yml`) | Protocol: regenerated constants and vectors (including `shared/master/vectors.json`) must match. Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client: WASM build, the player/netcode suite under WASM (Node) at the origin and ~8,000 km from it, the worldgen and storage suites under WASM (the storage suite through the browser's VFS, reading the natively written golden world file), format, lint, typecheck, unit tests (WASM tests required), build, launcher build. Server: the third-party notices are current (`shared/licenses/gen.py --check`), clang-format, `cargo fmt`/`clippy -D warnings`/`test`, stale-header check, CMake configure/build, ctest (including `dwell_version_lock`: the real server on world files saved by other versions), the player and netcode suites ~8,000 km from the origin, smoke-run, then a Release build running the player performance gate and golden trace at both origins. E2E: native↔WASM controller divergence check (`server/tools/divergence.mjs`), native server + built client in Playwright Chromium (WebTransport, WebRTC, local mode, session replacement, local-mode movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view — LOD around the player, then the whole disc after flying up to the flight ceiling), the launcher's own e2e (`npm run e2e:site`: three versions assembled locally — which build each address opens, worlds in their own line, version badges, errors), Electron smoke under Xvfb |
 | Enforced boundaries | ESLint forbids importing `three` outside `client/src/render/three` (ADR 0002) and `node:` built-ins outside tests |
 
 ---
@@ -308,11 +348,11 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `game/` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with the client sim, sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the sim, nudges its tick rate from the server's input buffer, streams terrain around the player (chunk data and voxel modifications to `world/`, mesh jobs within a per-frame budget), drives the first-person camera (per-tick eye height with crouch and step-up/down smoothing, `eye.ts`), block targeting and its outline, and the HUD. `RemotePlayers`: snapshot buffer, interpolation `INTERP_DELAY_MS` in the past. |
 | `sim/` **[built]** | `ClientCore`: the client's own instance of the sim-core WASM on the main thread (`dwell_client_*` exports): a streamed world holding the chunks the server sent (`setChunk` / `removeChunk`) and the voxel edits applied to them (`editChunk`), the C++ `Predictor` (prediction world with the local player, dead-reckoned remote proxies, terrain), its state block as 64 doubles (positions anywhere in the 8,192 km world), block targeting (`target`: the same `RaycastBlock` the server checks line of sight with, §6.5), and each chunk's voxels with a one-voxel apron for the meshing workers (`paddedChunk`). |
 | `predict/` **[built]** | Keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block); the creative-flight toggle (`flight.ts`, Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1); touch controls for phones and tablets (`touch.ts`: floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button top right toggling the F3 debug overlay, one captured Pointer Events pointer per control, merged into the same sampled input); and input quantization mirroring the C++ `QuantizeInput`. |
-| `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; a closing connection first reads the control stream to its end, up to 2 s, so the server's last message — a `Reject` such as `Replaced` — is not lost to a write racing the close; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). **[built, Phase 5b–5c]** The master client (`master.ts`: signed requests, rooms, TURN credentials, the room socket URL; `roomSocket.ts`: the signaling WebSocket); `peer.ts`: `PeerTransport`, full WebRTC to a browser-hosted friend world negotiated through the room, and `HostPeer`, the host's side of one guest; `hosting.ts`: the host's relay between the room, its guests' peer connections and the local-mode worker (§10.2); `connectToRoom` joins by code (`joinCode.ts`). **[built, Phase 5d]** `connectToCode` resolves a code first: a dedicated server is joined like an invite link (`serverInvite`), a friend world through its room; the master client also resolves typed addresses and lists games on the player's network. **[built, Phase 5e]** The lobby list (`MasterClient.lobby`, with search and filters) and join receipts (`connectToCode` posts one once it has joined a dedicated server it resolved); `statusPing.ts` pings a server for the server browser (`StatusRequest` over a fresh transport, closed after the answer; 5 s timeout). |
+| `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; a closing connection first reads the control stream to its end, up to 2 s, so the server's last message — a `Reject` such as `Replaced` — is not lost to a write racing the close; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). **[built, Phase 5b–5c]** The master client (`master.ts`: signed requests, rooms, TURN credentials, the room socket URL; `roomSocket.ts`: the signaling WebSocket); `peer.ts`: `PeerTransport`, full WebRTC to a browser-hosted friend world negotiated through the room, and `HostPeer`, the host's side of one guest; `hosting.ts`: the host's relay between the room, its guests' peer connections and the local-mode worker (§10.2); `connectToRoom` joins by code (`joinCode.ts`). **[built, Phase 5d]** `connectToCode` resolves a code first: a dedicated server is joined like an invite link (`serverInvite`), a friend world through its room; the master client also resolves typed addresses and lists games on the player's network. **[built, Phase 6]** The master reports the host's app version: `connectToCode` throws `HostVersionError` for a host on another version line (§10.5), and the page then opens the launcher with `?code=…&v=<host version>`. **[built, Phase 5e]** The lobby list (`MasterClient.lobby`, with search and filters) and join receipts (`connectToCode` posts one once it has joined a dedicated server it resolved); `statusPing.ts` pings a server for the server browser (`StatusRequest` over a fresh transport, closed after the answer; 5 s timeout). |
 | `protocol/` **[built]** | Codecs mirroring the C++ ones (including the chunk palette + RLE, `chunkVoxels.ts`), constants generated from `shared/protocol`. |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
-| `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handles (the database, its journal, and a WAL for opening a dedicated server's file), opened by the worker before the core starts and handed to its VFS as `dwellFiles`; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. |
-| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick, frame rate — `fps.ts`, per full second); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, and the full-detail distance, §6.6 — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). |
+| `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handles (the database, its journal, and a WAL for opening a dedicated server's file), opened by the worker before the core starts and handed to its VFS as `dwellFiles`; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. **[built, Phase 6]** The index records each world's `appVersion` and is a cross-version contract (append-only; unknown fields and unreadable records are preserved on rewrite); worlds without a version are listed apart; `worldAccess.ts` says whether this build may open a world (§6.4); `LocalCore.load` throws when the world file is locked to another version (`dwell_local_create` returns 3). |
+| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick, frame rate — `fps.ts`, per full second); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, and the full-detail distance, §6.6 — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices and the dev-channel option (`channel.ts`); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
@@ -626,7 +666,7 @@ file** holding **all** of its data; nothing about a world lives in side files.
 
 | Table | Contents |
 |---|---|
-| `meta` | Format version, world seed, generator version, spawn, world time, timestamps, preview image |
+| `meta` | Format version, world seed, generator version, spawn, world time, timestamps, **[built, Phase 6]** the app versions that created and last saved the world, preview image |
 | `settings` | Name, MOTD, icon, max players, visibility, password hash, online/offline mode, physics/view caps, autosave and backup policy |
 | `chunks` | Modified chunks only: `(cx, cy, cz)`, revision, generator version, zstd-compressed palette + RLE blob (same encoding as `ChunkData Explicit`) |
 | `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)`, `lodRevision`, dirty flag, generator version, zstd-compressed palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks`, rebuilt on a generator version change |
@@ -672,6 +712,17 @@ dirty) in the same transaction as the chunks. `bodies` (Phase 14) arrives as a m
   API.
 - **Portability:** a `.dwellworld` file is the database itself and opens natively and in the
   browser build (tested); **[planned]** export/import UI across dedicated servers, browsers and apps.
+- **Version lock** **[built, Phase 6]** ([ADR 0014](./adr/0014-versioned-releases.md), §10.5): every
+  save writes `app_version_last` (this build's app version) and, for a new file, `app_version_created`
+  into `meta`. A build opens a world only on its **compatibility line** — MAJOR from `1.0.0`,
+  MAJOR.MINOR before, the exact version for a pre-release (dev build) — and at or after
+  `app_version_last` (a compatible release may add data an older build would not understand).
+  `dwell_server` refuses a world it may not open, and so does the local-mode core, with a message
+  naming the version to use, before writing anything. A file with no app version was saved before
+  versioned releases: no build opens it, nothing migrates it, and the menu offers to delete it. The
+  rule is implemented twice (`client/src/version/semver.ts`, `server/core/src/app_version.cpp`) and
+  both pass `shared/version/vectors.txt`. The browser's own stores shared by all versions (the world
+  index, settings) are append-only and keep what they don't understand when rewritten.
 - **Migrations:** `PRAGMA user_version` (mirrored in `meta.format_version`) with ordered migrations
   on open, each in its own transaction; a file from a newer build is refused.
 - **Settings and permissions** **[built: launch options]:** `dwell_server --world FILE` (default
@@ -681,7 +732,7 @@ dirty) in the same transaction as the chunks. `bodies` (Phase 14) arrives as a m
   `--ban KEY` into `permissions`; stored settings and permissions apply at startup (ops may edit
   under `--edits ops` and fly under `--flight ops`, banned keys are refused with `Reject(Banned)`, and with `allow_list` set only
   `allow` keys may join, else `Reject(NotAllowListed)`). **[planned, Phase 17]** Admin commands.
-- **Tooling:** `dwell_world FILE info` (format, meta, settings, permissions, integrity) and
+- **Tooling:** `dwell_world FILE info` (format, meta with the app versions, settings, permissions, integrity) and
   `dwell_world FILE diff [cx cy cz]` (regenerate saved chunks from the world's seed and generator
   and diff them: changed voxels per chunk, flagging saved chunks identical to generation).
 
@@ -1535,6 +1586,10 @@ trusted certificates.
   **[built]**: `?join=host:port&cert=<sha256 hex>[&rtc=<port>&ice=<ufrag>:<pwd>]`. The WebRTC part
   requires an IP-literal host (WebRTC host candidates can't carry DNS names). `dwell_server
   --advertise <ip>` sets the address printed in the link and used as the WebRTC candidate.
+  **[built, Phase 6]** The link also carries `&v=<the server's app version>`, which the launcher
+  reads to open a client build on the server's compatibility line (§2.1); the server prints its
+  version at startup, refuses a world it may not open (§6.4), and the licence notices are copied
+  beside the binary.
 - Operator settings, stored in the world database's `settings` table (§6.4; **[built]** name, MOTD,
   max players, edit policy and autosave interval, set by launch options): name, MOTD,
   icon, max players, visibility (public / unlisted / none), password or allow-list,
@@ -1598,7 +1653,8 @@ trusted certificates.
   or code + same network (the default: the world is listed by its name under "On your network" to
   players with the host's public IP); public **[built, Phase 5e]**: also in the lobby list (§10.3),
 with the host's protocol version, and its players (the host and connected guests) counted by the
-room.
+room. **[built, Phase 6]** The room also holds the host's app version, which a guest's code lookup
+returns and the share link carries as `&v=` (§10.5).
 
 ### 10.3 Master server **[built]** (5b: Worker, Durable Object classes, signing, rate limits, CI and deploy; 5c: rooms, signaling, TURN credentials; 5d: dedicated servers, codes, addresses, on your network; 5e: the lobby list and join receipts. Accounts: later)
 A small HTTPS JSON service (`services/master`) on **Cloudflare Workers** with **Durable Objects**
@@ -1679,11 +1735,11 @@ stopping a determined liar; accounts (§10.4) can later weight receipts.
 
 | Function | Detail |
 |---|---|
-| Registration & heartbeat **[built, 5d]** | Dedicated servers register with their server key and heartbeat every ~30 s: port, RTC port and ICE credentials, current cert SHA-256, LAN addresses, name, MOTD, players, protocol version, visibility, tags **[built, 5e]**. The public address is the request's (`CF-Connecting-IP`) unless advertised. Two missed heartbeats delist. |
-| Join codes | Short codes (e.g. `KQ7-XM4`, unambiguous alphabet) resolve to the current address + cert hash (dedicated, stable per server key; built, 5d) or name a `Room` (friend world; built, 5c). Guessing is rate-limited per IP. |
+| Registration & heartbeat **[built, 5d]** | Dedicated servers register with their server key and heartbeat every ~30 s: port, RTC port and ICE credentials, current cert SHA-256, LAN addresses, name, MOTD, players, protocol version, app version **[built, Phase 6]**, visibility, tags **[built, 5e]**. The public address is the request's (`CF-Connecting-IP`) unless advertised. Two missed heartbeats delist. |
+| Join codes | Short codes (e.g. `KQ7-XM4`, unambiguous alphabet) resolve to the current address + cert hash (dedicated, stable per server key; built, 5d) or name a `Room` (friend world; built, 5c); either answer carries the host's `appVersion` **[built, Phase 6]**, which the master validates (SemVer, build metadata dropped) and passes along without judging compatibility — the client does (§10.5). Guessing is rate-limited per IP. |
 | Address resolution **[built, 5d]** | `host[:port]` → address + cert hash (+ WebRTC parameters). LAN addresses resolve only among servers sharing the requester's public IP. |
 | On your network **[built, 5d]** | Servers and friend worlds whose public IP matches the requester's — LAN discovery for browsers. |
-| Server browser **[built, 5e]** | Public servers and public friend worlds, with search/filter; clients ping dedicated servers themselves (`StatusRequest`). Reachability is **player-attested**: after joining through the master, clients post signed receipts, and a server is verified once distinct players have joined it recently (Workers cannot send UDP probes). Unverified servers appear only under a "new" filter. |
+| Server browser **[built, 5e]** | Public servers and public friend worlds, with search/filter; clients ping dedicated servers themselves (`StatusRequest`). Reachability is **player-attested**: after joining through the master, clients post signed receipts, and a server is verified once distinct players have joined it recently (Workers cannot send UDP probes). Unverified servers appear only under a "new" filter. Entries carry the host's app version **[built, Phase 6]**; the browser labels a host on another version line and joins it through the launcher. |
 | Signaling | WebRTC offer/answer and trickled ICE relayed through the friend world's `Room`. |
 | TURN credentials | Short-lived credentials for Cloudflare's managed TURN, for signed requests, rate-limited per player key; STUN only when no TURN key is configured (development, CI). |
 | Accounts (later) | Sign-in and account attestations (§10.4). |
@@ -1717,14 +1773,26 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
   the master's published keys. Servers choose **offline mode** (any key) or **online mode**
   (attested keys only). Enables friends lists, cross-device identity, recovery.
 
-### 10.5 Versioning
-- The handshake rejects incompatible `protocolVersion`s with a clear reason; the server browser
-  marks incompatible servers.
-- **[planned, Phase 6]** Versioned releases ([`RELEASES.md`](./RELEASES.md)): a launcher at
-  `/dwell/` loads tagged builds (GitHub Releases), served at `/dwell/v/<version>/`; the
-  server browser and join-by-code open a build on the host's compatibility line; worlds record
-  the app version that saved them and open only in that version or a later compatible one
-  (SemVer).
+### 10.5 Versioning **[built, Phase 6]**
+- The handshake rejects incompatible `protocolVersion`s with a clear reason **[built, Phase 6]**
+  naming the server's app version ("Server runs Dwell 0.1.0 (protocol 10), client runs protocol 9");
+  no wire change, the `Reject` message text carries it.
+- **App version** ([ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md)):
+  Semantic Versioning 2.0.0, one for the whole app, kept in `client/package.json` as the version the
+  next release will have, embedded in every build (client: `__APP_VERSION__`; C++:
+  `dwell::core::kAppVersion`) and recorded in `build.json`. The declared public API is the saved
+  world format, the terrain a seed generates, the network protocols and the cross-version storage
+  contract. Releases are stable (`0.1.0`); pushes to `main` are dev pre-releases
+  (`0.2.0-dev.42`, with the commit as build metadata).
+- **Compatibility line:** versions sharing MAJOR (MAJOR.MINOR before `1.0.0`) have the same world
+  format, terrain and protocols; a pre-release's line is itself. Builds on one line can play
+  together, and a world opens in the newest published build of its line, never an older one (§6.4).
+- **Choosing a build** (§2.1): the launcher at `/dwell/` picks by world, by host version (`v=` in
+  invite and code links) or the latest. Hosts report their app version to the master (§10.3), so a
+  code or the server browser leads to a build of the host's line: the browser labels such a host and
+  joins it through the launcher, and `connectToCode` redirects to the launcher when the host is on
+  another line than the page's build. A host that reports none (before versioned releases) is tried
+  as is; the handshake decides.
 
 ### 10.6 Platform reachability
 
@@ -1810,5 +1878,5 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 11 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
 | 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
 | 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 8–9 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
-| 20 | Release pipeline: versions loaded from tags, worlds locked to their compatibility line | Owner's direction (2026-10-05): one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`; decide by ADR in Phase 6 — [`RELEASES.md`](./RELEASES.md). License decided: all rights reserved (`LICENSE`); versions follow SemVer 2.0.0 from `0.1.0`; a world opens in its version's compatibility line at or after the version that last saved it |
+| 20 | ~~Release pipeline: versions loaded from tags, worlds locked to their compatibility line~~ | **Resolved:** one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`, SemVer 2.0.0 from `0.1.0`, worlds opening only in builds of their version's compatibility line at or after the version that last saved them, all rights reserved — [ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md) |
 | 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness, reaching the rim | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust; the rim ocean kept; face B reuses face A's generator, biomes and islands. Recorded by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9 |

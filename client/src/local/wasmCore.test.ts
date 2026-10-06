@@ -28,3 +28,31 @@ describe.skipIf(skip)('WASM local core', () => {
     expect(core.advance(0.5)).toBe(8); // capped at 8 steps per advance
   });
 });
+
+describe('a world file locked to another version (RELEASES.md §6)', () => {
+  /** A stand-in core whose `dwell_local_create` returns `result`, with `message` as the storage error. */
+  function fakeFactory(result: number, message: string): DwellCoreFactory {
+    const heap = new Uint8Array(256);
+    const bytes = new TextEncoder().encode(message);
+    heap.set(bytes, 16);
+    return (() =>
+      Promise.resolve({
+        HEAPU8: heap,
+        _dwell_local_create: () => result,
+        _dwell_local_storage_error: () => 16,
+      })) as unknown as DwellCoreFactory;
+  }
+
+  it('refuses to start, with the reason', async () => {
+    const message = 'this world was last saved by Dwell 0.1.1, newer than this build (0.1.0)';
+    await expect(
+      LocalCore.load(fakeFactory(3, message), 1, 4, { files: new Map() } as never),
+    ).rejects.toThrow(message);
+  });
+
+  it('starts a world that merely could not be persisted, in memory', async () => {
+    const core = await LocalCore.load(fakeFactory(1, 'no space'), 1, 4, {} as never);
+    expect(core.persisted).toBe(false);
+    expect(core.storageError).toBe('no space');
+  });
+});

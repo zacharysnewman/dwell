@@ -1,4 +1,6 @@
 dist/
+dist-launcher/
+dist-site/
 node_modules/
 package-lock.json
 public/wasm/

@@ -1,0 +1,62 @@
+# Version vectors (RELEASES.md §3, §6), read by the TypeScript (client/src/version/semver.test.ts)
+# and C++ (server/tests/app_version_test.cpp) implementations so both agree.
+#
+#   compare A B R   precedence of A against B (SemVer 2.0.0 §11; build metadata ignored): -1, 0, 1
+#   line V L        the compatibility line of V ("-" if V is not a valid version)
+#   open BUILD WORLD YES|NO   may a build of version BUILD open a world last saved by WORLD
+#   invalid V       V is not a valid version
+
+compare 0.1.0 0.1.0 0
+compare 0.1.0 0.1.1 -1
+compare 0.2.0 0.1.9 1
+compare 1.0.0 0.99.99 1
+compare 0.2.0-dev.41 0.2.0-dev.42 -1
+compare 0.2.0-dev.9 0.2.0-dev.10 -1
+compare 0.2.0-dev.42 0.2.0 -1
+compare 0.2.0 0.2.0-dev.42 1
+compare 0.2.0-dev.42+ab12cd3 0.2.0-dev.42+ffffff 0
+compare 0.2.0-alpha 0.2.0-alpha.1 -1
+compare 0.2.0-alpha.1 0.2.0-alpha.beta -1
+compare 0.2.0-1 0.2.0-alpha -1
+
+line 0.1.0 0.1
+line 0.1.7 0.1
+line 0.2.0 0.2
+line 1.0.0 1
+line 1.4.2 1
+line 2.0.0 2
+line 0.2.0-dev.42 0.2.0-dev.42
+line 0.2.0-dev.42+ab12cd3 0.2.0-dev.42
+line 1.0.0-rc.1 1.0.0-rc.1
+line 0.1.0+build.5 0.1
+line 0.1 -
+line v0.1.0 -
+line 01.2.3 -
+line 0.1.0- -
+
+open 0.1.0 0.1.0 YES
+open 0.1.1 0.1.0 YES
+open 0.1.0 0.1.1 NO
+open 0.2.0 0.1.0 NO
+open 0.2.0 0.1.1 NO
+open 0.1.1 0.2.0 NO
+open 0.2.0-dev.1 0.2.0-dev.1 YES
+open 0.2.0-dev.1+aaa 0.2.0-dev.1+bbb YES
+open 0.2.0-dev.2 0.2.0-dev.1 NO
+open 0.2.0-dev.1 0.2.0-dev.2 NO
+open 0.2.0 0.2.0-dev.1 NO
+open 0.2.0-dev.1 0.2.0 NO
+open 0.1.0-dev.5 0.1.0 NO
+open 1.2.0 1.1.5 YES
+open 1.1.5 1.2.0 NO
+open 2.0.0 1.9.9 NO
+open 0.1.0 invalid NO
+open invalid 0.1.0 NO
+
+invalid 0.1
+invalid 1.2.3.4
+invalid 01.2.3
+invalid 1.2.3-
+invalid 1.2.3-01
+invalid v1.2.3
+invalid 

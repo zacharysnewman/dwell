@@ -1,5 +1,8 @@
 # Simulation core: platform-free; compiled natively and (from Phase 1) to WASM. ARCHITECTURE.md §4.3.
+configure_file(src/app_version_build.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/app_version_build.cpp" @ONLY)
 add_library(dwell_core
+  "${CMAKE_CURRENT_BINARY_DIR}/app_version_build.cpp"
+  src/app_version.cpp
   src/block_edit.cpp
   src/crypto.cpp
   src/entropy.cpp

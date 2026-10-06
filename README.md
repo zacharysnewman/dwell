@@ -26,7 +26,16 @@ npm run lint && npm run typecheck && npm test
 npm run build        # outputs dist/
 npm run e2e          # Playwright against a native server and a local master (build the server
                      # first; `npm ci` in services/master)
+npm run e2e:site     # the launcher against a locally assembled three-version site (no server needed)
 ```
+
+**Versions and releases** ([`docs/RELEASES.md`](docs/RELEASES.md)): the app version is Semantic
+Versioning, kept in `client/package.json` (the version the next release will have). A build for
+another version: `DWELL_VERSION=0.2.0 npm run build` (served at `/dwell/v/0.2.0/`); the native
+server and the WASM core read the same version from `DWELL_VERSION` or `package.json` when CMake
+configures. Pushes to `main` publish dev builds as GitHub Releases; to release, run the Release
+workflow or push a `v<version>` tag (then bump `package.json`). Local builds are `<version>-dev.local`
+and serve at `/dwell/` with no launcher; worlds are locked to their version's compatibility line.
 
 **Playing:** the main menu lists your worlds (create one with a name and seed; regenerate or delete it) and joins a friend's world by its code (e.g. `KQ7-XM4`) or a server from a pasted invite link. In a game, Esc (or ☰) opens the game menu: Resume, Host… (in your own worlds: choose how many guests and who may build and fly, then share the code, link or QR code; keep the page open while hosting), Quit to main menu, and the settings. Click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)
 crouch, double-tap Space to fly (creative flight: Space/C up and down, Shift faster, the higher the

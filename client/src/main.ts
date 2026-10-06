@@ -1,4 +1,4 @@
-import { buildInfo, formatBuildInfo } from './buildInfo';
+import { buildInfo, formatBuildInfo, recordedVersion } from './buildInfo';
 import { Game, type GameDebugState } from './game/game';
 import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInteraction';
 import { MeshPool } from './mesh/pool';
@@ -6,6 +6,7 @@ import {
   connectLocal,
   connectToInvite,
   connectToCode,
+  HostVersionError,
   openTransport,
   type ConnectOptions,
   type LocalSession,
@@ -16,10 +17,13 @@ import { formatCode } from './net/joinCode';
 import { configuredMasterUrl, MasterClient, serverInvite } from './net/master';
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from './identity/deviceKey';
 import { parseInvite } from './net/invite';
+import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
 import { WorldIndex } from './local/worldIndex';
+import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
-import { launchOf, pastedInvite, withRoute } from './ui/launch';
+import { launchOf, launcherHref, pastedInvite } from './ui/launch';
+import { loadChannel, saveChannel } from './ui/channel';
 import { MainMenu, type MainMenuDeps } from './ui/mainMenu';
 import { loadRecent, rememberServer } from './ui/recentServers';
 import { parseNetConditions } from './net/netsim';
@@ -439,7 +443,8 @@ function storage(): Storage | null {
 
 /** Opens a route (a world or server, or `{}` for the main menu), keeping debug parameters. */
 function go(route: Record<string, string>): void {
-  location.assign(`${location.pathname}${withRoute(location.search, route)}`);
+  // Always through the launcher, which opens the build the choice needs (RELEASES.md §5).
+  location.assign(launcherHref(location.search, route));
 }
 
 /** The main menu (Phase 5a): shown when the address names no world or server. */
@@ -479,6 +484,12 @@ function openMainMenu(app: App, message?: string): void {
     deleteFiles: deleteWorldFiles,
     go,
     now: () => Date.now(),
+    channel: {
+      get: () => loadChannel(storage()),
+      set: (channel) => {
+        saveChannel(storage(), channel);
+      },
+    },
     ...(message ? { message } : {}),
     ...(master ? { master } : {}),
   });
@@ -542,6 +553,11 @@ async function connect(app: App): Promise<void> {
       openMainMenu(app, 'That world is not in this browser any more.');
       return;
     }
+    const access = worldAccess(world, buildInfo.version);
+    if (!access.ok) {
+      openMainMenu(app, access.message);
+      return;
+    }
     localWorld = {
       worldSeed: world.seed,
       generatorVersion: world.generatorVersion,
@@ -551,10 +567,16 @@ async function connect(app: App): Promise<void> {
     index.touch(world.id, Date.now());
   } else if (launch.kind === 'link') {
     localWorld = parseLocalWorld(location.search);
-    const world = index.adopt(
-      localWorldName(localWorld.generatorVersion, localWorld.worldSeed),
-      Date.now(),
-    );
+    // A link to a world file that is already there opens a world saved before versioned releases
+    // (ignored); a new one is this build's.
+    const name = localWorldName(localWorld.generatorVersion, localWorld.worldSeed);
+    const existed = (await listWorldFiles()).includes(name);
+    const world = index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
+    const access = world ? worldAccess(world, buildInfo.version) : null;
+    if (access && !access.ok) {
+      openMainMenu(app, access.message);
+      return;
+    }
     if (world) {
       worldName = world.name;
       index.touch(world.id, Date.now());
@@ -575,7 +597,7 @@ async function connect(app: App): Promise<void> {
   const forced = params.get('transport');
   const options: ConnectOptions = {
     displayName: displayName(),
-    clientVersion: buildInfo.sha.slice(0, 12),
+    clientVersion: recordedVersion(),
     transport: forced === 'webrtc' || forced === 'webtransport' ? forced : 'auto',
     netsim: parseNetConditions(params.get('netsim')),
     ...(localWorld ? { localWorld } : {}),
@@ -618,6 +640,15 @@ async function connect(app: App): Promise<void> {
       }
     });
   } catch (err) {
+    if (err instanceof HostVersionError && code) {
+      // The host runs another version line: the launcher opens a build of it (RELEASES.md §5). If
+      // it already chose for this host's line, don't loop: say why.
+      const routed = params.get('v');
+      if (!routed || !sameLine(routed, err.hostVersion)) {
+        location.replace(launcherHref(location.search, { code, v: err.hostVersion }));
+        return;
+      }
+    }
     status.textContent = `Could not connect to ${target}: ${err instanceof Error ? err.message : String(err)}`;
   }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   codeLink,
+  launcherHref,
   launchOf,
   looksLikeAddress,
   pastedCode,
@@ -94,5 +95,34 @@ describe('server addresses in the Join box (Phase 5d)', () => {
     for (const a of ['KQ7XM4', 'hello world', 'localhostx', 'a b.c', 'host:99999999']) {
       expect(looksLikeAddress(a), a).toBe(false);
     }
+  });
+});
+
+describe('the host version in an invite', () => {
+  it('is kept from a pasted invite, for the launcher to open a build on the host line', () => {
+    expect(pastedInvite(`?join=1.2.3.4:4433&cert=${CERT}&v=0.1.0&debug=1`)).toEqual({
+      join: '1.2.3.4:4433',
+      cert: CERT,
+      v: '0.1.0',
+    });
+  });
+
+  it('is dropped when the route changes', () => {
+    expect(withRoute(`?join=h:1&cert=${CERT}&v=0.1.0&debug=1`, { play: 'wabc' })).toBe(
+      '?debug=1&play=wabc',
+    );
+  });
+});
+
+describe('where routes open', () => {
+  // From a versioned page (/dwell/v/0.1.0/) too: the launcher picks the build (RELEASES.md §5), and
+  // Back to the menu is the launcher with no route.
+  it('goes through the launcher at /dwell/, keeping debug parameters', () => {
+    expect(launcherHref('?play=wabc&debug=1', {})).toBe('/dwell/?debug=1');
+    expect(launcherHref('', {})).toBe('/dwell/');
+    expect(launcherHref('?debug=1', { play: 'wabc' })).toBe('/dwell/?debug=1&play=wabc');
+    expect(launcherHref(`?join=h:1&cert=x&v=0.1.0`, { code: 'KQ7XM4' })).toBe(
+      '/dwell/?code=KQ7XM4',
+    );
   });
 });

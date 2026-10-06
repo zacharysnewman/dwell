@@ -6,6 +6,7 @@ import { parseInvite } from './invite';
 import { PeerTransport, type SignalData, type Signaler } from './peer';
 import { RoomSocket } from './roomSocket';
 import { GENERATORS, type LocalWorld } from '../local/world';
+import { sameLine } from '../version/semver';
 import { LoopbackTransport } from './loopback';
 import { SimulatedTransport, type NetConditions } from './netsim';
 import { ClientSession } from './session';
@@ -115,6 +116,22 @@ function roomError(err: unknown): Error {
 }
 
 /**
+ * A join code that leads to a host on another compatibility line than this build (RELEASES.md §7):
+ * the game opens a build of the host's line through the launcher instead.
+ */
+export class HostVersionError extends Error {
+  override name = 'HostVersionError';
+  constructor(
+    readonly hostVersion: string,
+    readonly buildVersion: string,
+  ) {
+    super(
+      `This game runs Dwell ${hostVersion}, which this build (${buildVersion}) can't join; a build on its version line is needed.`,
+    );
+  }
+}
+
+/**
  * Joins whatever a join code names (§10.3): a dedicated server (connected to directly, like an
  * invite link: the master supplies its current address and certificate) or a browser-hosted
  * friend world (connectToRoom).
@@ -132,6 +149,12 @@ export async function connectToCode(
       throw new Error('Nothing is being hosted with that code.', { cause: err });
     }
     throw roomError(err);
+  }
+  // The master reports the host's app version: any build on its compatibility line can join, others
+  // can't (a host from before versioned releases reports none: try, the handshake decides).
+  const hostVersion = found.kind === 'room' ? found.appVersion : found.server.appVersion;
+  if (hostVersion && !sameLine(hostVersion, options.clientVersion)) {
+    throw new HostVersionError(hostVersion, options.clientVersion);
   }
   if (found.kind === 'room') return connectToRoom(master, code, options);
   const invite = parseInvite(`?${new URLSearchParams(serverInvite(found.server)).toString()}`);

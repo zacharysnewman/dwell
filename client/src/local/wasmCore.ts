@@ -20,6 +20,9 @@ export interface Outgoing {
 }
 
 /** The authoritative server core running in this JS context (a worker in the browser). */
+/** `dwell_local_create`'s result for a world file this build may not open (RELEASES.md §6). */
+const VERSION_LOCKED = 3;
+
 export class LocalCore {
   private constructor(
     private readonly m: DwellCoreModule,
@@ -45,11 +48,13 @@ export class LocalCore {
     files: DwellFiles | null = null,
   ): Promise<LocalCore> {
     const m = await factory(files ? { dwellFiles: files } : {});
-    const persisted = m._dwell_local_create(worldSeed, generatorVersion, files ? 1 : 0) === 2;
+    const created = m._dwell_local_create(worldSeed, generatorVersion, files ? 1 : 0);
     let error = '';
     const ptr = m._dwell_local_storage_error();
     for (let i = ptr; m.HEAPU8[i]; i++) error += String.fromCharCode(m.HEAPU8[i] ?? 0);
-    return new LocalCore(m, persisted, error);
+    // 3: the world file is locked to another version (RELEASES.md §6): no world was started.
+    if (created === VERSION_LOCKED) throw new Error(error);
+    return new LocalCore(m, created === 2, error);
   }
 
   /** Saves the world now (the page is closing). True if the save committed. */

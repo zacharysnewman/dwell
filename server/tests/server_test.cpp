@@ -6,6 +6,7 @@
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <monocypher-ed25519.h>
 
+#include "dwell/core/app_version.h"
 #include "dwell/core/jolt_runtime.h"
 #include "dwell/core/server.h"
 
@@ -112,6 +113,9 @@ TEST_CASE("server: wrong protocol version is rejected and closed") {
   const auto replies = f.Replies(1, &closed);
   REQUIRE(replies.size() == 1);
   CHECK(std::get<Reject>(replies[0]).reason == RejectReason::kProtocolVersion);
+  // The rejection names the server's app version, so the player knows what to run (RELEASES.md §7).
+  CHECK(std::get<Reject>(replies[0]).message.find(std::string("Dwell ") + kAppVersion) !=
+        std::string::npos);
   CHECK(closed);
 }
 

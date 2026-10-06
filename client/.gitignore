@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-launcher/
+dist-site/
 # Built by `npm run build:wasm` (server/wasm); not committed.
 public/wasm/
 test-results/

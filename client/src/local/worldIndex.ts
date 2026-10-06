@@ -2,6 +2,8 @@
 // listing each world's name, type, seed and when it was last played. The world file in OPFS
 // (`dwell/worlds/<id>.dwellworld`, §6.4) stays the source of truth for the seed and generator;
 // the index is what the main menu shows.
+import { recordedVersion } from '../buildInfo';
+import { isVersion } from '../version/semver';
 import { GENERATORS } from './world';
 
 export type WorldType = keyof typeof GENERATORS;
@@ -16,6 +18,12 @@ export interface WorldMeta {
   generatorVersion: number;
   createdAt: number;
   lastPlayedAt: number;
+  /**
+   * The app version that last played the world (RELEASES.md §6): it locks the world to that
+   * version's compatibility line. Absent on worlds saved before versioned releases, which are
+   * ignored (the menu offers to delete them).
+   */
+  appVersion?: string;
 }
 
 /** The part of `Storage` the index uses. */
@@ -80,6 +88,11 @@ export function cleanName(name: string, fallback: string): string {
   return t === '' ? fallback : t;
 }
 
+/** Whether a world record carries a valid app version (otherwise it predates versioning). */
+export function isVersioned(world: WorldMeta): world is WorldMeta & { appVersion: string } {
+  return typeof world.appVersion === 'string' && isVersion(world.appVersion);
+}
+
 function isMeta(v: unknown): v is WorldMeta {
   if (typeof v !== 'object' || v === null) return false;
   const m = v as Record<string, unknown>;
@@ -97,38 +110,60 @@ function isMeta(v: unknown): v is WorldMeta {
   );
 }
 
+/**
+ * The index is shared by every app version (RELEASES.md §6): its format is append-only, and a build
+ * keeps what it does not understand when it rewrites it — unknown fields of a record, and whole
+ * records it cannot read — so an older build never strips what a newer one stored.
+ */
 export class WorldIndex {
   constructor(private readonly store: KeyValueStore | null) {}
 
-  /** The worlds, most recently played first. Entries that don't parse are dropped. */
-  list(): WorldMeta[] {
-    let raw: unknown;
+  /** Every stored entry as parsed, readable or not. */
+  private entries(): unknown[] {
     try {
-      raw = JSON.parse(this.store?.getItem(INDEX_KEY) ?? '[]');
+      const raw: unknown = JSON.parse(this.store?.getItem(INDEX_KEY) ?? '[]');
+      return Array.isArray(raw) ? raw : [];
     } catch {
-      raw = null;
+      return [];
     }
-    const worlds = Array.isArray(raw) ? raw.filter(isMeta) : [];
-    return worlds.sort((a, b) => b.lastPlayedAt - a.lastPlayedAt);
+  }
+
+  private records(): WorldMeta[] {
+    return this.entries()
+      .filter(isMeta)
+      .sort((a, b) => b.lastPlayedAt - a.lastPlayedAt);
+  }
+
+  /** The worlds, most recently played first: those with an app version. */
+  list(): WorldMeta[] {
+    return this.records().filter(isVersioned);
+  }
+
+  /** Worlds saved before versioned releases: ignored, but kept until the player deletes them. */
+  legacy(): WorldMeta[] {
+    return this.records().filter((w) => !isVersioned(w));
   }
 
   get(id: string): WorldMeta | null {
-    return this.list().find((w) => w.id === id) ?? null;
+    return this.records().find((w) => w.id === id) ?? null;
   }
 
-  /** Adds or replaces a world. */
+  /** Adds or replaces a world, keeping fields of the stored record that this build doesn't know. */
   put(world: WorldMeta): void {
-    this.write([world, ...this.list().filter((w) => w.id !== world.id)]);
+    const entries = this.entries();
+    const stored = entries.find((e) => hasId(e, world.id));
+    const merged = typeof stored === 'object' && stored !== null ? { ...stored, ...world } : world;
+    this.write([merged, ...entries.filter((e) => !hasId(e, world.id))]);
   }
 
   remove(id: string): void {
-    this.write(this.list().filter((w) => w.id !== id));
+    this.write(this.entries().filter((e) => !hasId(e, id)));
   }
 
-  /** Marks a world as played now. */
+  /** Marks a world as played now, by this build's version. */
   touch(id: string, now: number): void {
     const world = this.get(id);
-    if (world) this.put({ ...world, lastPlayedAt: now });
+    if (world) this.put({ ...world, lastPlayedAt: now, appVersion: recordedVersion() });
   }
 
   /** Creates a new world's entry (its file is created when it is first played). */
@@ -137,7 +172,7 @@ export class WorldIndex {
     now: number,
     random: () => number = Math.random,
   ): WorldMeta {
-    const taken = new Set(this.list().map((w) => w.id));
+    const taken = new Set(this.records().map((w) => w.id));
     let id = newWorldId(random);
     while (taken.has(id)) id = newWorldId(random);
     const world: WorldMeta = {
@@ -148,16 +183,19 @@ export class WorldIndex {
       generatorVersion: GENERATORS[options.type],
       createdAt: now,
       lastPlayedAt: now,
+      appVersion: recordedVersion(),
     };
     this.put(world);
     return world;
   }
 
   /**
-   * The entry for a world opened by a `?world=`/`?seed=` link or saved before the index existed
-   * (named `local-g<generator>-s<seed>`), added if missing. Null for other names.
+   * The entry for a world opened by a `?world=`/`?seed=` link or found as a file without an entry
+   * (named `local-g<generator>-s<seed>`), added if missing. Null for other names. `appVersion` is
+   * the version to record: this build's for a world the link is creating now, none for a file
+   * that was already there (saved before versioned releases, so ignored).
    */
-  adopt(id: string, now: number): WorldMeta | null {
+  adopt(id: string, now: number, appVersion?: string): WorldMeta | null {
     const existing = this.get(id);
     if (existing) return existing;
     const m = LEGACY_ID.exec(id);
@@ -174,16 +212,21 @@ export class WorldIndex {
       generatorVersion,
       createdAt: now,
       lastPlayedAt: 0,
+      ...(appVersion ? { appVersion } : {}),
     };
     this.put(world);
     return world;
   }
 
-  private write(worlds: WorldMeta[]): void {
+  private write(entries: unknown[]): void {
     try {
-      this.store?.setItem(INDEX_KEY, JSON.stringify(worlds));
+      this.store?.setItem(INDEX_KEY, JSON.stringify(entries));
     } catch {
       // Storage full or blocked: the list isn't kept, the world files still are.
     }
   }
+}
+
+function hasId(entry: unknown, id: string): boolean {
+  return typeof entry === 'object' && entry !== null && (entry as { id?: unknown }).id === id;
 }

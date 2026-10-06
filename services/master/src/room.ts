@@ -31,6 +31,8 @@ interface RoomState {
   hostToken: string;
   maxGuests: number;
   nextPeer: number;
+  /** The host's app version (RELEASES.md §7), reported when the room opened. */
+  appVersion?: string | null;
   tickets: Record<string, GuestTicket>;
   closed: boolean;
 }
@@ -71,6 +73,7 @@ export class Room extends DurableObject<Env> {
     hostKey: string,
     maxGuests: number,
     now: number,
+    appVersion: string | null = null,
   ): Promise<{ hostToken: string } | null> {
     const existing = await this.state();
     if (existing && !existing.closed) return null;
@@ -79,6 +82,7 @@ export class Room extends DurableObject<Env> {
       hostToken: token(),
       maxGuests: Math.max(1, Math.min(MAX_GUESTS, Math.floor(maxGuests))),
       nextPeer: 1,
+      appVersion,
       tickets: {},
       closed: false,
     };
@@ -225,6 +229,12 @@ export class Room extends DurableObject<Env> {
     if (!this.host()) return { state: 'waiting' };
     const guests = this.ctx.getWebSockets().length - this.ctx.getWebSockets('host').length;
     return { state: 'open', players: 1 + guests, maxPlayers: 1 + room.maxGuests };
+  }
+
+  /** The host's app version (RELEASES.md §7), if the room is open and the host reported one. */
+  async appVersion(): Promise<string | null> {
+    const room = await this.state();
+    return room && !room.closed ? (room.appVersion ?? null) : null;
   }
 
   /** Tests: whether a room is open under this name. */

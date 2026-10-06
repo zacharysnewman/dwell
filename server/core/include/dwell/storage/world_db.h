@@ -36,6 +36,11 @@ struct WorldMeta {
   std::uint32_t world_tick = 0;                // simulation time
   std::int64_t created_at = 0;                 // unix seconds
   std::int64_t saved_at = 0;
+  // The app versions (RELEASES.md §6) that created the world and last saved it: they lock it to
+  // their compatibility line. Empty in a file saved before versioned releases. On save, `created`
+  // is kept if the file already has one.
+  std::string app_version_created = {};
+  std::string app_version_last = {};
 };
 
 struct SavedChunk {

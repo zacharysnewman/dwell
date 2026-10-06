@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "dwell/core/app_version.h"
 #include "dwell/core/entropy.h"
 #include "dwell/core/fixed_step.h"
 #include "dwell/core/jolt_runtime.h"
@@ -266,6 +267,17 @@ bool OpenWorld(Options& o) {
     }
   }
   const auto meta = db.LoadMeta();
+  // Worlds are locked to their compatibility line (RELEASES.md §6): refuse one this build may not
+  // open, naming the version to run. Nothing was written to it.
+  if (meta) {
+    const std::string locked =
+        dwell::core::WorldVersionError(dwell::core::kAppVersion, meta->app_version_last);
+    if (!locked.empty()) {
+      std::fprintf(stderr, "dwell_server %s: cannot open world file %s: %s\n",
+                   dwell::core::kAppVersion, o.world.c_str(), locked.c_str());
+      return false;
+    }
+  }
   if (meta &&
       (meta->world_seed != c.world_seed || meta->generator_version != c.generator_version)) {
     std::printf("world: %s keeps its own seed %llu and generator %u\n", o.world.c_str(),
@@ -361,8 +373,9 @@ int main(int argc, char** argv) {
   const std::uint16_t port = dwell_net_port(net);
   const std::string hash_hex = Hex(cert_hash, sizeof cert_hash);
 
-  std::printf("dwell_server | %s | dwell-net %s | protocol v%u\n", dwell::core::JoltVersionString(),
-              dwell_net_crate_version(), dwell::protocol::kProtocolVersion);
+  std::printf("dwell_server %s | %s | dwell-net %s | protocol v%u\n", dwell::core::kAppVersion,
+              dwell::core::JoltVersionString(), dwell_net_crate_version(),
+              dwell::protocol::kProtocolVersion);
   const std::uint16_t rtc_port = dwell_net_rtc_port(net);
   std::printf("listening on UDP %u (WebTransport) and UDP %u (WebRTC)\n", port, rtc_port);
   std::printf("certificate sha-256: %s\n", hash_hex.c_str());
@@ -370,9 +383,11 @@ int main(int argc, char** argv) {
   const std::string host = options.advertise.find(':') != std::string::npos
                                ? "[" + options.advertise + "]"
                                : options.advertise;
-  std::printf("invite link: %s?join=%s:%u&cert=%s&rtc=%u&ice=%s:%s\n", options.client_url.c_str(),
-              host.c_str(), port, hash_hex.c_str(), rtc_port, dwell_net_ice_ufrag(net),
-              dwell_net_ice_pwd(net));
+  // `v` is this server's app version: the launcher opens a client build on its compatibility line
+  // (RELEASES.md §5).
+  std::printf("invite link: %s?join=%s:%u&cert=%s&rtc=%u&ice=%s:%s&v=%s\n",
+              options.client_url.c_str(), host.c_str(), port, hash_hex.c_str(), rtc_port,
+              dwell_net_ice_ufrag(net), dwell_net_ice_pwd(net), dwell::core::kAppVersion);
   std::fflush(stdout);
 
   // Registration with the master (§10.1, Phase 5d): a heartbeat now and every heartbeat_s.
@@ -405,6 +420,7 @@ int main(int argc, char** argv) {
         ",\"players\":" + std::to_string(server.joined_players()) +
         ",\"maxPlayers\":" + std::to_string(c.max_players) +
         ",\"protocol\":" + std::to_string(dwell::protocol::kProtocolVersion) +
+        ",\"appVersion\":" + JsonString(dwell::core::kAppVersion) +
         ",\"visibility\":" + JsonString(options.visibility) + ",\"tags\":[" + tags_json + "]" +
         ",\"heartbeatS\":" + std::to_string(options.heartbeat_s) + "}";
     dwell_master_heartbeat(master, body.c_str());

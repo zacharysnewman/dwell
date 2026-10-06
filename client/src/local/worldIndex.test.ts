@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { recordedVersion } from '../buildInfo';
 import { GENERATORS } from './world';
 import {
   cleanName,
@@ -90,7 +91,7 @@ describe('world index', () => {
 
   it('adopts worlds saved per generator and seed, once', () => {
     const index = new WorldIndex(memoryStore());
-    const w = index.adopt('local-g1-s42', 5);
+    const w = index.adopt('local-g1-s42', 5, '0.1.0');
     expect(w).toMatchObject({
       id: 'local-g1-s42',
       type: 'playground',
@@ -101,7 +102,10 @@ describe('world index', () => {
     expect(index.adopt('local-g1-s42', 9)).toEqual(w);
     expect(index.list()).toHaveLength(1);
     // A retired terrain version is still a terrain world, keeping its own version.
-    expect(index.adopt('local-g3-s0', 5)).toMatchObject({ type: 'terrain', generatorVersion: 3 });
+    expect(index.adopt('local-g3-s0', 5, '0.1.0')).toMatchObject({
+      type: 'terrain',
+      generatorVersion: 3,
+    });
     expect(index.adopt('w0123456789', 5)).toBeNull();
     expect(index.adopt('local-g4-s1e9', 5)).toBeNull();
   });
@@ -115,6 +119,7 @@ describe('world index', () => {
       generatorVersion: 0,
       createdAt: 1,
       lastPlayedAt: 1,
+      appVersion: '0.1.0',
     };
     const bad = [{ ...good, id: '../x' }, { ...good, type: 'moon' }, { ...good, seed: -1 }, 7];
     const index = new WorldIndex(memoryStore({ [INDEX_KEY]: JSON.stringify([good, ...bad]) }));
@@ -123,6 +128,84 @@ describe('world index', () => {
     const none = new WorldIndex(null);
     expect(none.list()).toEqual([]);
     expect(none.create({ name: 'X', type: 'flat', seed: 1 }, 1).name).toBe('X');
+  });
+
+  it('records the app version of the build that created and last played a world', () => {
+    const index = new WorldIndex(memoryStore());
+    const w = index.create({ name: 'A', type: 'terrain', seed: 1 }, 1);
+    expect(w.appVersion).toBe(recordedVersion());
+    index.put({ ...w, appVersion: '0.0.9' });
+    index.touch(w.id, 5);
+    expect(index.get(w.id)?.appVersion).toBe(recordedVersion());
+  });
+
+  it('sets worlds saved before versioned releases apart, to be deleted but never opened', () => {
+    const old = {
+      id: 'wold',
+      name: 'Old',
+      type: 'terrain',
+      seed: 1,
+      generatorVersion: 4,
+      createdAt: 1,
+      lastPlayedAt: 1,
+    };
+    const store = memoryStore({ [INDEX_KEY]: JSON.stringify([old]) });
+    const index = new WorldIndex(store);
+    expect(index.list()).toEqual([]);
+    expect(index.legacy()).toEqual([old]);
+    // A file found without an entry (adopted by the menu) is the same.
+    expect(index.adopt('local-g4-s7', 2)?.appVersion).toBeUndefined();
+    expect(
+      index
+        .legacy()
+        .map((w) => w.id)
+        .sort(),
+    ).toEqual(['local-g4-s7', 'wold']);
+    index.remove('wold');
+    expect(index.legacy().map((w) => w.id)).toEqual(['local-g4-s7']);
+  });
+
+  // The index is shared by every app version (RELEASES.md §6): a build rewriting it must not drop
+  // what a newer build stored.
+  describe('cross-version storage contract', () => {
+    const record = {
+      id: 'wabc',
+      name: 'Future',
+      type: 'flat',
+      seed: 3,
+      generatorVersion: 0,
+      createdAt: 1,
+      lastPlayedAt: 1,
+      appVersion: '0.1.4',
+    };
+
+    it('keeps fields of a record that this build does not know', () => {
+      const store = memoryStore({
+        [INDEX_KEY]: JSON.stringify([{ ...record, sky: { islands: 3 }, favourite: true }]),
+      });
+      const index = new WorldIndex(store);
+      index.touch('wabc', 99);
+      const world = index.get('wabc');
+      if (!world) throw new Error('missing world');
+      index.put({ ...world, name: 'Renamed' });
+      const [stored] = JSON.parse(store.data[INDEX_KEY] ?? '[]') as Record<string, unknown>[];
+      expect(stored).toMatchObject({ sky: { islands: 3 }, favourite: true, name: 'Renamed' });
+    });
+
+    it('keeps records it cannot read when it rewrites the index', () => {
+      const unreadable = { ...record, id: 'wnew', type: 'sky-island' };
+      const notAnObject = 'future format';
+      const store = memoryStore({
+        [INDEX_KEY]: JSON.stringify([record, unreadable, notAnObject]),
+      });
+      const index = new WorldIndex(store);
+      expect(index.list().map((w) => w.id)).toEqual(['wabc']);
+      index.create({ name: 'New', type: 'flat', seed: 1 }, 5);
+      index.remove('wabc');
+      const stored = JSON.parse(store.data[INDEX_KEY] ?? '[]') as unknown[];
+      expect(stored).toContainEqual(unreadable);
+      expect(stored).toContain(notAnObject);
+    });
   });
 
   it('cleans names', () => {

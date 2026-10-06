@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ListedServer, ListedWorld } from '../net/master';
-import { formatPing, incompatibility, lobbyDetails } from './serverBrowser';
+import { formatPing, incompatibility, lobbyDetails, otherLineNote } from './serverBrowser';
 
 const server: ListedServer = {
   code: 'ABCDEF',
@@ -32,6 +32,14 @@ describe('server browser text', () => {
     expect(incompatibility(10, 10)).toBeNull();
     expect(incompatibility(null, 10)).toBeNull();
     expect(incompatibility(9, 10)).toBe('Server runs protocol 9, client runs 10.');
+  });
+
+  it('says a host on another version line is joined through its own build', () => {
+    expect(otherLineNote('0.2.0', '0.1.0')).toBe('Runs Dwell 0.2.0: joining opens that version.');
+    expect(otherLineNote('0.1.4', '0.1.0')).toBeNull(); // the same line
+    expect(otherLineNote('0.2.0-dev.1', '0.2.0-dev.2')).not.toBeNull(); // dev builds: exact
+    expect(otherLineNote(null, '0.1.0')).toBeNull(); // a host from before versioned releases
+    expect(otherLineNote(undefined, '0.1.0')).toBeNull();
   });
 
   it('describes servers and friend worlds', () => {

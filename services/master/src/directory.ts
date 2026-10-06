@@ -40,6 +40,8 @@ export const MIGRATIONS: readonly string[] = [
   // 5e: join receipts — a player says it joined a server; distinct recent ones verify it.
   `CREATE TABLE receipts (server_key TEXT NOT NULL, player_key TEXT NOT NULL,
      at INTEGER NOT NULL, PRIMARY KEY (server_key, player_key))`,
+  // Phase 6: friend worlds carry the host's app version (RELEASES.md §7).
+  `ALTER TABLE listed_rooms ADD COLUMN app_version TEXT`,
 ];
 
 /** A public server is verified once this many distinct players joined it within the window. */
@@ -57,6 +59,8 @@ export interface ServerEntry {
   players: number;
   maxPlayers: number;
   protocol: number;
+  /** The server's app version (RELEASES.md §7); null if it predates versioned releases. */
+  appVersion: string | null;
   /** Where to connect: its LAN address for a player on its network, else its public one. */
   host: string;
   port: number;
@@ -77,12 +81,14 @@ export interface ListedRoom {
   display: string;
   name: string;
   protocol: number | null;
+  appVersion: string | null;
 }
 
 export interface NearbyRoom {
   code: string;
   display: string;
   name: string;
+  appVersion: string | null;
 }
 
 interface ServerRow extends Record<string, SqlStorageValue> {
@@ -271,38 +277,45 @@ export class Directory extends DurableObject<Env> {
     code: string,
     publicIp: string,
     name: string,
-    listing: { public: boolean; protocol: number | null },
+    listing: { public: boolean; protocol: number | null; appVersion: string | null },
     now: number,
   ): void {
     this.ctx.storage.sql.exec(
-      `INSERT OR REPLACE INTO listed_rooms (code, public_ip, name, created, public, protocol)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO listed_rooms (code, public_ip, name, created, public, protocol, app_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       code,
       publicIp,
       name,
       now,
       listing.public ? 1 : 0,
       listing.protocol,
+      listing.appVersion,
     );
   }
 
   /** Friend worlds listed to this network (the caller checks each room is still open). */
   nearbyRooms(requesterIp: string, now: number): NearbyRoom[] {
     return this.ctx.storage.sql
-      .exec<{ code: string; name: string }>(
-        `SELECT code, name FROM listed_rooms WHERE public_ip = ? AND created > ? ORDER BY created`,
+      .exec<{ code: string; name: string; app_version: string | null }>(
+        `SELECT code, name, app_version FROM listed_rooms WHERE public_ip = ? AND created > ?
+         ORDER BY created`,
         requesterIp,
         now - NEARBY_ROOM_MAX_MS,
       )
       .toArray()
-      .map((r) => ({ code: r.code, display: formatCode(r.code), name: r.name }));
+      .map((r) => ({
+        code: r.code,
+        display: formatCode(r.code),
+        name: r.name,
+        appVersion: r.app_version,
+      }));
   }
 
   /** Public friend worlds (the caller checks each room is still open and counts its players). */
   publicRooms(now: number): ListedRoom[] {
     return this.ctx.storage.sql
-      .exec<{ code: string; name: string; protocol: number | null }>(
-        `SELECT code, name, protocol FROM listed_rooms WHERE public = 1 AND created > ?
+      .exec<{ code: string; name: string; protocol: number | null; app_version: string | null }>(
+        `SELECT code, name, protocol, app_version FROM listed_rooms WHERE public = 1 AND created > ?
          ORDER BY created LIMIT ?`,
         now - NEARBY_ROOM_MAX_MS,
         MAX_LIST * 2,
@@ -313,6 +326,7 @@ export class Directory extends DurableObject<Env> {
         display: formatCode(r.code),
         name: r.name,
         protocol: r.protocol,
+        appVersion: r.app_version,
       }));
   }
 
@@ -461,6 +475,7 @@ function entry(row: ServerRow, code: string, requesterIp: string): ServerEntry {
     players: r.players,
     maxPlayers: r.maxPlayers,
     protocol: r.protocol,
+    appVersion: r.appVersion ?? null, // reports from before versioned releases have none
     host: local ?? row.advertise ?? row.public_ip,
     port: r.port,
     cert: r.cert,

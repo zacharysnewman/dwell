@@ -32,12 +32,16 @@ if(EMSCRIPTEN)
 
   # The storage suite under Node, through the browser's VFS with files on disk (§6.4):
   # node build/wasm/tools/dwell_storage_tests.js. Reads the golden world file the native build
-  # wrote and (DWELL_WRITE_GOLDEN=1) writes its own for the native build to read.
+  # wrote and (DWELL_WRITE_GOLDEN=1) writes its own for the native build to read. Also the app
+  # version rules (RELEASES.md §6) under WASM, against the vectors the native and TypeScript
+  # implementations pass.
   add_executable(dwell_storage_tests ${CMAKE_CURRENT_SOURCE_DIR}/../tests/main.cpp
-                 ${CMAKE_CURRENT_SOURCE_DIR}/../tests/storage/storage_test.cpp)
+                 ${CMAKE_CURRENT_SOURCE_DIR}/../tests/storage/storage_test.cpp
+                 ${CMAKE_CURRENT_SOURCE_DIR}/../tests/app_version_test.cpp)
   target_link_libraries(dwell_storage_tests PRIVATE dwell_core dwell_options doctest::doctest
                         monocypher dwell_sqlite)
   target_compile_definitions(dwell_storage_tests PRIVATE
+    DWELL_VERSION_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../../shared/version/vectors.txt"
     DWELL_STORAGE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/../tests/storage/golden")
   target_link_options(dwell_storage_tests PRIVATE -sENVIRONMENT=node -sNODERAWFS=1
                       -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=128MB -sSTACK_SIZE=4MB

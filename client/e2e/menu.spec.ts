@@ -1,6 +1,6 @@
 // Phase 5a: the main menu and world management (ARCHITECTURE.md §2.1) — create a world with a seed,
 // play it, quit to the menu (saving), reopen it, regenerate it and delete it; and a world saved
-// before the menu existed shows up in the list.
+// before versioned releases is ignored and can be deleted.
 import { expect, test, type Page } from '@playwright/test';
 
 type Vec3 = [number, number, number];
@@ -99,27 +99,74 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   await expect(page.locator('.menu-empty')).toBeVisible();
 });
 
-test('main menu: a world saved before the menu existed is listed and keeps its edits', async ({
+test('main menu: a world file without a versioned entry is ignored, and can be deleted', async ({
   page,
 }) => {
   test.setTimeout(90_000);
-  // A world opened by link is saved per generator and seed, as every world was before Phase 5a.
+  // A world opened by link is saved per generator and seed.
   await page.goto('./?world=flat&seed=77');
   await ready(page);
-  const cell = await aim(page);
-  expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
-  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
-  await page.waitForTimeout(6_000); // the autosave
-  // Forget the list, as a browser from before the menu has none.
+  await page.waitForTimeout(6_000); // the autosave: the file exists
+  // Forget the list, as a browser from before versioned releases (RELEASES.md §6) has none that
+  // records an app version for it.
   await page.evaluate(() => {
     localStorage.removeItem('dwell.worlds');
   });
 
   await page.goto('./');
-  await expect(world(page, 'Flat world 77')).toContainText('Flat · seed 77');
-  await world(page, 'Flat world 77').locator('.world-play').click();
-  await ready(page);
-  await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(0);
+  // Not a world to play: listed apart, to delete.
+  await expect(page.locator('.menu-empty')).toBeVisible();
+  const old = page.locator('#legacy-worlds .world-item', { hasText: 'Flat world 77' });
+  await expect(old).toBeVisible();
+  await expect(old.locator('.world-play')).toHaveCount(0);
+  await old.getByRole('button', { name: 'Delete' }).click();
+  await old.getByRole('button', { name: 'Delete forever?' }).click();
+  await expect(page.locator('#legacy-worlds')).toBeHidden();
+  await expect(page.locator('#menu-message')).toHaveText('Deleted "Flat world 77".');
+});
+
+test('main menu: shows the app version, and the licence notices from About', async ({
+  page,
+  request,
+}) => {
+  await page.goto('./');
+  await expect(page.locator('#app-version')).toContainText(/Dwell \d+\.\d+\.\d+/);
+  await page.getByRole('button', { name: 'About' }).click();
+  const notices = page.getByRole('link', { name: 'Third-party notices' });
+  await expect(notices).toBeVisible();
+  const href = await notices.getAttribute('href');
+  const response = await request.get(new URL(href ?? '', page.url()).href);
+  expect(response.ok()).toBe(true);
+  expect(await response.text()).toContain('THIRD-PARTY NOTICES');
+});
+
+test('main menu: a world from before versioned releases is listed to delete, never played', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'dwell.worlds',
+      JSON.stringify([
+        {
+          id: 'wold0000000',
+          name: 'Ancient',
+          type: 'terrain',
+          seed: 5,
+          generatorVersion: 4,
+          createdAt: 1,
+          lastPlayedAt: 1,
+        },
+      ]),
+    );
+  });
+  await page.reload();
+  await expect(page.locator('#legacy-worlds')).toContainText('Ancient');
+  await expect(page.locator('#legacy-worlds .world-play')).toHaveCount(0);
+  // Opening it by link is refused with the reason.
+  await page.goto('./?play=wold0000000');
+  await expect(page.locator('#main-menu')).toBeVisible();
+  await expect(page.locator('#menu-message')).toContainText('before versioned releases');
 });
 
 test('main menu: joining asks for a join code, an address or an invite link', async ({ page }) => {

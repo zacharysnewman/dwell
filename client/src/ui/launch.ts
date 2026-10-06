@@ -1,6 +1,7 @@
 // What the page opens (ARCHITECTURE.md §2.1, Phase 5a): the main menu, or — from a link or a menu
 // choice — straight into a game. The menu starts a game by navigating, so a reload continues the
 // same world or server and Back returns to the menu.
+import { LAUNCHER_PATH } from '../launcherPath';
 import { parseInvite } from '../net/invite';
 import { normalizeCode } from '../net/joinCode';
 
@@ -17,8 +18,12 @@ export type Launch =
   | { kind: 'link' };
 
 /** Parameters that choose what the page opens; every other one (debug flags) is kept. */
-const ROUTE_PARAMS = ['join', 'cert', 'rtc', 'ice', 'code', 'play', 'local', 'world', 'seed'];
-const INVITE_PARAMS = ['join', 'cert', 'rtc', 'ice'];
+const ROUTE_PARAMS = ['join', 'cert', 'rtc', 'ice', 'code', 'play', 'local', 'world', 'seed', 'v'];
+/**
+ * What an invite link carries; `v` is the host's app version (RELEASES.md §5), which the launcher
+ * reads to open a build on the host's compatibility line.
+ */
+const INVITE_PARAMS = ['join', 'cert', 'rtc', 'ice', 'v'];
 
 export function launchOf(search: string): Launch {
   const params = new URLSearchParams(search);
@@ -45,6 +50,15 @@ export function withRoute(search: string, route: Record<string, string>): string
   for (const [key, value] of Object.entries(route)) params.set(key, value);
   const query = params.toString();
   return query ? `?${query}` : '';
+}
+
+/**
+ * Where a route opens: the launcher at `/dwell/` (RELEASES.md §5), which opens the build the route
+ * needs — from any version's page, `{}` goes back to the main menu of the latest. Other parameters
+ * of the current page (`?debug=1`) are kept.
+ */
+export function launcherHref(search: string, route: Record<string, string>): string {
+  return `${LAUNCHER_PATH}${withRoute(search, route)}`;
 }
 
 /**
@@ -80,10 +94,15 @@ export function pastedCode(text: string): string | null {
   return code === null ? null : normalizeCode(code);
 }
 
-/** The link that joins a friend world by its code: this page with `?code=`. */
-export function codeLink(pageUrl: string, code: string): string {
+/**
+ * The link that joins a friend world by its code: this page with `?code=`, and the host's app
+ * version as `v`, which the launcher reads to open a build on the host's line (RELEASES.md §5).
+ * Links go to the launcher (`/dwell/`), never to a version's path, so they keep working.
+ */
+export function codeLink(pageUrl: string, code: string, version?: string): string {
   const url = new URL(pageUrl);
-  url.search = withRoute(url.search, { code });
+  url.pathname = LAUNCHER_PATH;
+  url.search = withRoute(url.search, version ? { code, v: version } : { code });
   url.hash = '';
   return url.href;
 }

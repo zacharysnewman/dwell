@@ -4,6 +4,7 @@
 // `StatusRequest`; friend worlds show their players only. Servers running another protocol version
 // are marked with the handshake's reason and can't be joined.
 import type { Lobby, LobbyQuery, ListedServer, ListedWorld } from '../net/master';
+import { sameLine } from '../version/semver';
 
 export interface ServerBrowserDeps {
   lobby(query: LobbyQuery): Promise<Lobby>;
@@ -13,6 +14,8 @@ export interface ServerBrowserDeps {
   go(route: Record<string, string>): void;
   /** This client's protocol version. */
   protocol: number;
+  /** This build's app version: entries on another compatibility line open their own build. */
+  version: string;
 }
 
 /** Pings at once, so a long list doesn't open dozens of connections together. */
@@ -30,6 +33,19 @@ export function incompatibility(
 ): string | null {
   if (serverProtocol === null || serverProtocol === clientProtocol) return null;
   return `Server runs protocol ${String(serverProtocol)}, client runs ${String(clientProtocol)}.`;
+}
+
+/**
+ * What to tell the player about a host on another compatibility line than this build
+ * (RELEASES.md §7): joining it opens a build of its line through the launcher. Null when the host
+ * reports no version or is on this build's line.
+ */
+export function otherLineNote(
+  hostVersion: string | null | undefined,
+  build: string,
+): string | null {
+  if (!hostVersion || sameLine(hostVersion, build)) return null;
+  return `Runs Dwell ${hostVersion}: joining opens that version.`;
 }
 
 /** An entry's details line: "2/16 players · pve, creative" or "friend world · 1/5 players". */
@@ -132,7 +148,9 @@ export class ServerBrowser {
     await eachLimited(lobby.servers, PING_CONCURRENCY, async (server) => {
       if (generation !== this.generation) return;
       const cell = this.list.querySelector<HTMLElement>(`[data-code="${server.code}"] .lobby-ping`);
-      if (!cell || incompatibility(server.protocol, this.deps.protocol)) return;
+      if (!cell || this.cannotJoin(server) || otherLineNote(server.appVersion, this.deps.version)) {
+        return;
+      }
       let ms: number | null = null;
       try {
         ms = await this.deps.ping(server);
@@ -141,6 +159,12 @@ export class ServerBrowser {
       }
       cell.textContent = formatPing(ms);
     });
+  }
+
+  /** Why this build can't join an entry (the handshake's reason), or null: it can, or a build of its line can. */
+  private cannotJoin(entry: ListedServer | ListedWorld): string | null {
+    if (otherLineNote(entry.appVersion, this.deps.version)) return null;
+    return incompatibility(entry.protocol, this.deps.protocol);
   }
 
   private item(entry: ListedServer | ListedWorld): HTMLLIElement {
@@ -162,11 +186,14 @@ export class ServerBrowser {
       motd.textContent = entry.motd;
       info.append(motd);
     }
-    const reason = incompatibility(entry.protocol, this.deps.protocol);
-    if (reason) {
+    // A host on another version line is joined through the launcher, in a build of its line, so
+    // its protocol differing from this build's is no reason not to join.
+    const other = otherLineNote(entry.appVersion, this.deps.version);
+    const reason = this.cannotJoin(entry);
+    if (reason ?? other) {
       const why = document.createElement('span');
       why.className = 'world-details lobby-reason';
-      why.textContent = reason;
+      why.textContent = reason ?? other;
       info.append(why);
     }
     const actions = document.createElement('div');
@@ -174,7 +201,7 @@ export class ServerBrowser {
     if ('cert' in entry) {
       const ping = document.createElement('span');
       ping.className = 'world-details lobby-ping';
-      ping.textContent = reason ? '' : '…';
+      ping.textContent = (reason ?? other) ? '' : '…';
       actions.append(ping);
     }
     const join = document.createElement('button');
@@ -183,7 +210,9 @@ export class ServerBrowser {
     join.textContent = 'Join';
     join.disabled = reason !== null;
     join.addEventListener('click', () => {
-      this.deps.go({ code: entry.code });
+      this.deps.go(
+        entry.appVersion ? { code: entry.code, v: entry.appVersion } : { code: entry.code },
+      );
     });
     actions.append(join);
     li.append(info, actions);

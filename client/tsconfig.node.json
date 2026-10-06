@@ -8,8 +8,16 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "e2e"]
+  "include": [
+    "vite.config.ts",
+    "vite.launcher.config.ts",
+    "playwright.config.ts",
+    "playwright.site.config.ts",
+    "e2e",
+    "scripts"
+  ]
 }
