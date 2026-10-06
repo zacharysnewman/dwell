@@ -142,6 +142,56 @@ body {
   white-space: pre;
 }
 
+#debug-overlay pre {
+  margin: 0;
+  font: inherit;
+  white-space: inherit;
+}
+
+#debug-copy,
+#debug-dump button {
+  margin-top: 6px;
+  padding: 4px 10px;
+  border: 1px solid rgb(255 255 255 / 50%);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 15%);
+  color: inherit;
+  font: inherit;
+  pointer-events: auto;
+}
+
+#hud-note {
+  position: absolute;
+  top: calc(50% + 40px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+}
+
+/* A block dump the clipboard refused (debug/blockDump.ts), to select and copy by hand. */
+#debug-dump {
+  position: absolute;
+  inset: 10%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 80%);
+  pointer-events: auto;
+}
+
+#debug-dump[hidden] {
+  display: none;
+}
+
+#debug-dump textarea {
+  flex: 1;
+  font:
+    11px ui-monospace,
+    monospace;
+}
+
 /* Block hotbar (ui/hotbar.ts): above the health bar; at the top on touch screens. */
 #hotbar {
   position: fixed;

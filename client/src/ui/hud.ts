@@ -42,8 +42,14 @@ export class Hud {
   private readonly healthFill: HTMLDivElement;
   private readonly message: HTMLDivElement;
   private readonly status: HTMLDivElement;
-  private readonly debug: HTMLPreElement;
+  private readonly debug: HTMLDivElement;
+  private readonly debugText: HTMLPreElement;
+  private readonly dump: HTMLDivElement;
+  private readonly note: HTMLDivElement;
+  private readonly dumpText: HTMLTextAreaElement;
   private damageUntil = 0;
+  /** The debug overlay's "Copy block info" button (or F6): dump the blocks around the target. */
+  onCopyBlocks: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -58,10 +64,39 @@ export class Hud {
     this.message.id = 'center-message';
     this.status = document.createElement('div');
     this.status.id = 'status-chip';
-    this.debug = document.createElement('pre');
+    this.debug = document.createElement('div');
     this.debug.id = 'debug-overlay';
     this.debug.hidden = true;
-    this.root.append(crosshair, this.health, this.message, this.status, this.debug);
+    this.debugText = document.createElement('pre');
+    const copy = document.createElement('button');
+    copy.id = 'debug-copy';
+    copy.type = 'button';
+    copy.textContent = 'Copy block info';
+    copy.title = 'The targeted block and its neighbours as JSON (F6)';
+    copy.addEventListener('click', () => this.onCopyBlocks?.());
+    this.debug.append(copy, this.debugText); // first: a phone's overlay clips its long text
+    // Where the clipboard is refused: the dump in a box to select and copy by hand.
+    this.dump = document.createElement('div');
+    this.dump.id = 'debug-dump';
+    this.dump.hidden = true;
+    this.dumpText = document.createElement('textarea');
+    this.dumpText.readOnly = true;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.addEventListener('click', () => (this.dump.hidden = true));
+    this.dump.append(this.dumpText, close);
+    this.note = document.createElement('div');
+    this.note.id = 'hud-note';
+    this.root.append(
+      crosshair,
+      this.health,
+      this.message,
+      this.status,
+      this.debug,
+      this.dump,
+      this.note,
+    );
     parent.append(this.root);
   }
 
@@ -92,6 +127,22 @@ export class Hud {
   }
 
   setDebug(text: string): void {
-    if (!this.debug.hidden) this.debug.textContent = text;
+    if (!this.debug.hidden) this.debugText.textContent = text;
+  }
+
+  /** Shows text (a block dump the clipboard refused) selected in a box, to copy by hand. */
+  showDump(text: string): void {
+    this.dumpText.value = text;
+    this.dump.hidden = false;
+    this.dumpText.focus();
+    this.dumpText.select();
+  }
+
+  /** A short note under the middle of the view that clears itself (the centre message is the game's). */
+  flash(text: string, ms = 2000): void {
+    this.note.textContent = text;
+    setTimeout(() => {
+      if (this.note.textContent === text) this.note.textContent = '';
+    }, ms);
   }
 }

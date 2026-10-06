@@ -156,7 +156,7 @@ export class KeyboardMouseInput {
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (e.code === 'F3' || e.code === 'F4') {
+    if (e.code === 'F3' || e.code === 'F4' || e.code === 'F6') {
       e.preventDefault();
       this.onToggle?.(e.code);
       return;

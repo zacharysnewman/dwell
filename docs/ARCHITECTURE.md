@@ -552,7 +552,11 @@ continents' areas and the land share, `… [seed] stats [seeds]` tabulates the l
 seeds, and `… [seed] bench` times chunk and LOD generation (reported in every worldgen change). In
 game (Phase 3e), F4 shows the terrain's biome/height map around the player — and, since Phase 10,
 `-` and `=` zoom it out and in, from 8 m per column (1 km across) to the whole disc (128 km per
-column) — and the F3 overlay the player's chunk regenerated and diffed against the world's; `dwell_world FILE
+column) — and the F3 overlay the player's chunk regenerated and diffed against the world's; the overlay's **Copy
+block info** button (or F6) copies the targeted block and the 5 × 5 × 5 cells around it as JSON
+(`debug/blockDump.ts`: canonical state strings by palette index, with the world's seed and generator
+version, the build, and the player's position and view) — or shows it to copy by hand where the
+clipboard is refused — so a spot can be regenerated and examined exactly; `dwell_world FILE
 diff` does the same for a world file (§6.4). **Built (Phase 3b):** streaming, the verification chunk, and the generation pools
 (below).
 

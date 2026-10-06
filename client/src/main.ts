@@ -1,4 +1,5 @@
 import { buildInfo, formatBuildInfo, recordedVersion } from './buildInfo';
+import { blockDump, formatBlockDump, type BlockDump } from './debug/blockDump';
 import { Game, type GameDebugState } from './game/game';
 import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInteraction';
 import { MeshPool } from './mesh/pool';
@@ -82,6 +83,8 @@ interface DwellDebug {
   renderStats(): RenderStats;
   /** What the game knows it holds in memory (ui/memory.ts), once playing. */
   memory(): MemoryReport | null;
+  /** The block dump around the target (debug/blockDump.ts), or null before playing. */
+  blockDump(): BlockDump | null;
 }
 
 declare global {
@@ -117,6 +120,8 @@ interface App {
   fps: FpsMeter;
   /** What the game knows it holds in memory (F3), once playing. */
   memory: (() => MemoryReport) | null;
+  /** The world being played (its seed and generator), once joined: for the block dump. */
+  world: { seed: bigint; generatorVersion: number } | null;
 }
 
 function start(): App {
@@ -159,6 +164,7 @@ function start(): App {
     settings: null,
     fps: new FpsMeter(),
     memory: null,
+    world: null,
   };
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
@@ -177,6 +183,7 @@ function start(): App {
   if (new URLSearchParams(location.search).get('debug') === '1') app.hud.toggleDebug();
   app.input.onToggle = (key) => {
     if (key === 'F3') app.hud.toggleDebug();
+    if (key === 'F6') copyBlockDump(app);
     if (key === 'F4') app.map.toggle();
     if (key === 'Minus') app.map.zoomBy(1);
     if (key === 'Equal') app.map.zoomBy(-1);
@@ -207,6 +214,10 @@ function start(): App {
     },
     renderStats: () => renderer.stats(),
     memory: () => app.memory?.() ?? null,
+    blockDump: () => blockDumpOf(app),
+  };
+  app.hud.onCopyBlocks = () => {
+    copyBlockDump(app);
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
   app.input.onAction = (action) => app.game?.edit(action, performance.now());
@@ -283,6 +294,7 @@ function play(
   /** A local world's worker (its server core's memory), or null on a server. */
   loopback: LoopbackTransport | null,
 ) {
+  app.world = { seed: joined.worldSeed, generatorVersion: joined.generatorVersion };
   // Creative flight is the server's to allow (Welcome, §8.3).
   app.input.flight.allowed = joined.mayFly;
   app.touch.setFlight(joined.mayFly, app.input.flight.flying);
@@ -463,6 +475,41 @@ function startDebugTools(
       busy = false;
     });
   }, 1000);
+}
+
+/** The block dump (F6, or the debug overlay's button) of the client's world, once playing. */
+function blockDumpOf(app: App): BlockDump | null {
+  const core = app.core;
+  const game = app.game;
+  if (!core || !game) return null;
+  return blockDump({
+    voxel: (x, y, z) => core.voxel(x, y, z),
+    target: app.interaction?.target ?? null,
+    feet: game.debugState().feet,
+    view: { yaw: app.input.yaw, pitch: app.input.pitch },
+    world: app.world,
+    build: { version: buildInfo.version, sha: buildInfo.sha },
+  });
+}
+
+/** Copies the block dump to the clipboard, or shows it to copy by hand where that is refused. */
+function copyBlockDump(app: App): void {
+  const dump = blockDumpOf(app);
+  if (!dump) {
+    app.hud.flash('No world to dump yet');
+    return;
+  }
+  const text = formatBlockDump(dump);
+  const shown = () => {
+    app.hud.showDump(text);
+  };
+  try {
+    navigator.clipboard.writeText(text).then(() => {
+      app.hud.flash('Block info copied');
+    }, shown);
+  } catch {
+    shown(); // no clipboard (an insecure context)
+  }
 }
 
 /** Local storage, or null where it is blocked. */
