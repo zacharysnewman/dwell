@@ -59,6 +59,9 @@ struct Welcome {
   // Chunk the client generates and hashes for WorldgenCheck (§6.3).
   ChunkCoordNet verification_chunk{};
   std::uint8_t flags = 0;  // WelcomeFlags
+  // The block registry hash (core::kRegistryHash, docs/BLOCK_REGISTRY.md): runtime state ids on
+  // the wire mean the same blocks only if it matches the client's; the client rejects a mismatch.
+  std::uint64_t registry_hash = 0;
 };
 struct Reject {
   RejectReason reason = RejectReason::kMalformed;

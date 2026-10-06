@@ -25,7 +25,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ✅ Complete — merged in #46 and #47 (the first run's fixes); `v0.1.0` released and the site deployed by the Release run on 2026-10-06 | #46, #47 |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
-| 8 — Block registry: namespaced block states and palettes | ⏳ Not started | — |
+| 8 — Block registry: namespaced block states and palettes | 🚧 In progress — every deliverable built and verified natively and in the client (C++ suite, Vitest); outstanding: the checks that need the WASM build and a browser (golden world file, determinism goldens under WASM and the client module, the e2e palette test), run by CI on the PR. `package.json` raised to 0.2.0 (the new compatibility line, set by the owner); releases as `v0.2.0` once merged | #51 |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
@@ -1270,33 +1270,47 @@ files, and world files that store chunk palettes as strings, so content can chan
 saved worlds. The foundation for slopes (Phase 9), flooded blocks and new content. Design:
 [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
 
-**Status:** Not started. No visible change in the game: same terrain, same blocks.
+**Status:** Built and tested natively and in the client (PR #51); the WASM / browser checks (listed under the
+exit criteria) wait for its CI. No visible change in the game: same terrain, same
+blocks. Breaking: the saved world format and the network protocol (v11) change, so it starts a new
+compatibility line: `package.json` is raised to 0.2.0 by the owner's decision (2026-10-06), and a push of
+this to `main` releases `v0.2.0` ([`RELEASES.md`](./RELEASES.md)).
+
+Deviations from the design ([ADR 0015](./adr/0015-block-registry.md)): state ids follow the
+declaration order of the data files, not a sort by name (appending a block keeps earlier ids); a
+state's `placeable` flag comes from an optional `palette` list in the data; `wasm.dwellworld` was
+written natively with the browser's journal settings (`DWELL_WRITE_GOLDEN=wasm-style`) because the
+WASM toolchain was not available when it was regenerated — CI's WASM job opens it; paletted
+in-memory chunks were measured and deferred.
 
 Deliverables
-- [ ] ADR: the block registry — identity and canonical strings, data files and generated
+- [x] ADR: the block registry — identity and canonical strings, data files and generated
   registries, runtime ids and the registry hash, string palettes in the world file (no migration
   of earlier worlds: they are version-locked, Phase 6); supersedes the material-table parts of
   §6.1.
-- [ ] Block data files (`shared/blocks/`) for today's 21 materials (ladders as
+- [x] Block data files (`shared/blocks/`) for today's 21 materials (ladders as
   `dwell:ladder[facing,flooded]`) and a generator emitting the C++ and TypeScript registries,
   replacing `voxel.h`'s table and `materials.ts`'s hand mirror; canonical string parse/write.
-- [ ] Every user of material ids (generator, meshers, collision, controller, edits, palette, LOD)
+- [x] Every user of material ids (generator, meshers, collision, controller, edits, palette, LOD)
   on runtime state ids resolved by name; `Placeable` and render styles from the registry.
-- [ ] World file: the `block_states` table and chunk palettes of world state ids; the golden world
+- [x] World file: the `block_states` table and chunk palettes of world state ids; the golden world
   file regenerated in the new format; the LOD cache dropped on a registry change. (Aliases, upgrade
   rules and an unknown-state placeholder are deferred to world upgrades, `FUTURE.md`.)
-- [ ] Protocol: the registry hash in `Welcome` (version bump, golden vectors in both languages).
+- [x] Protocol: the registry hash in `Welcome` (version bump, golden vectors in both languages).
 - [ ] Paletted in-memory chunks (bit-packed indices): measure memory and meshing/collision time;
   adopt only if the trade is good, otherwise record the numbers and defer.
-- [ ] `ARCHITECTURE.md` §6.1, §6.4, §6.6 and §8.3 updated.
+- [x] `ARCHITECTURE.md` §6.1, §6.4, §6.6 and §8.3 updated.
 
 Exit criteria
-- [ ] Every state's canonical string round-trips; C++ and TypeScript registries give the same order
-  and hash.
-- [ ] A world saved and reopened in the same build is identical (terrain, edits, every voxel's
-  string); the regenerated golden world file reads natively and in the browser.
-- [ ] Determinism goldens pass natively, under WASM and in the client module (regenerated once if
-  runtime ids change, with the registry hash recorded); the e2e palette test passes.
+- [x] Every state's canonical string round-trips; C++ and TypeScript registries give the same order
+  and hash. (`block registry:` tests in C++ and `blocks.test.ts`, against `shared/blocks/vectors.txt`.)
+- [x] A world saved and reopened in the same build is identical (terrain, edits, every voxel's
+  string): `storage: a world saved and reopened is identical…` and the server restart test.
+- [ ] The regenerated golden world file reads natively and in the browser. Native: ✅ (`storage:
+  world files written natively and in WASM open in both builds`). Browser (WASM): pending CI.
+- [x] Determinism goldens pass natively (regenerated once, the registry hash recorded in each).
+- [ ] Determinism goldens pass under WASM and in the client module; the e2e palette test passes
+  (needs the WASM build and a browser: CI).
 
 ---
 

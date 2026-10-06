@@ -142,6 +142,8 @@ export type Message =
       verificationChunk: ChunkCoord;
       /** WelcomeFlags, e.g. whether this player may use creative flight (§8.3). */
       flags: number;
+      /** Block registry hash (world/blocks.ts): runtime state ids match only if it does. */
+      registryHash: bigint;
     }
   | {
       type: typeof MessageType.WorldgenCheck;
@@ -270,6 +272,7 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u32(m.serverTick);
       for (const v of m.verificationChunk) w.i32(v);
       w.u8(m.flags);
+      w.u64(m.registryHash);
       break;
     case MessageType.WorldgenCheck:
       w.u64(m.hash);
@@ -604,6 +607,7 @@ function decodeBody(r: ByteReader, type: number): Message {
         serverTick: r.u32(),
         verificationChunk: coord(r),
         flags: r.u8(),
+        registryHash: r.u64(),
       };
     case MessageType.WorldgenCheck:
       return { type, hash: r.u64() };

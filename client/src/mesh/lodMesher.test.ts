@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { LOD_PAD, LOD_VOLUME, lodCell } from '../lod/grid';
 import { faceTint } from '../render/look';
 import { averageTileColor } from '../render/textures';
+import { stateId } from '../world/blocks';
 import { lodColor, meshSection, SURFACE_STRIDE } from './lodMesher';
 
+const WATER = stateId('dwell:water');
 const quads = (m: { indices: Uint32Array }): number => m.indices.length / 6;
 
 describe('LOD section mesher (§6.6)', () => {
@@ -38,7 +40,7 @@ describe('LOD section mesher (§6.6)', () => {
     for (let z = -1; z <= 32; z++) {
       for (let x = -1; x <= 32; x++) {
         cells[lodCell(x, 0, z)] = 12; // sand
-        cells[lodCell(x, 1, z)] = 10; // water
+        cells[lodCell(x, 1, z)] = WATER; // water
       }
     }
     const m = meshSection(cells);
@@ -110,7 +112,7 @@ describe('LOD section mesher (§6.6)', () => {
     for (let z = -1; z <= 32; z++) {
       for (let x = -1; x <= 32; x++) {
         cells[lodCell(x, -1, z)] = 12; // sand below
-        cells[lodCell(x, 0, z)] = 10; // water (the cell holds the whole sea)
+        cells[lodCell(x, 0, z)] = WATER; // water (the cell holds the whole sea)
         const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
         surface[c] = 0.5;
         surface[c + 1] = 12; // a sand floor
@@ -157,7 +159,7 @@ describe('LOD section mesher (§6.6)', () => {
       for (let z = -1; z <= 32; z++) {
         for (let x = -1; x <= 32; x++) {
           cells[lodCell(x, 0, z)] = 12; // sand below
-          cells[lodCell(x, 1, z)] = 10; // water
+          cells[lodCell(x, 1, z)] = WATER; // water
           const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
           surface[c] = 1 + floor;
           surface[c + 1] = 4; // a floor of another material than the cell below

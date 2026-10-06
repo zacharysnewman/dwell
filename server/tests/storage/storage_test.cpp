@@ -6,6 +6,7 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -122,7 +123,7 @@ void CopyWorld(const std::string& from, const std::string& to) {
 
 }  // namespace
 
-TEST_CASE("storage: a new world file is created at the current format (schema v2)") {
+TEST_CASE("storage: a new world file is created at the current format (schema v3)") {
   const std::string path = Scratch("fresh");
   auto db = OpenOrFail(path);
   CHECK(db->format_version() == kFormatVersion);
@@ -288,6 +289,17 @@ TEST_CASE("storage: world files written natively and in WASM open in both builds
     REQUIRE(db->Save(GoldenBatch(), error));
     REQUIRE(db->SetSetting("name", "Golden world"));
   }
+  // DWELL_WRITE_GOLDEN=wasm-style (native build only): writes wasm.dwellworld with the browser's
+  // journal settings (no WAL, exclusive locking) when no WASM build is at hand.
+  if (const char* style = std::getenv("DWELL_WRITE_GOLDEN");
+      style && std::string(style) == "wasm-style") {
+    const std::string wasm = std::string(DWELL_STORAGE_GOLDEN) + "/wasm.dwellworld";
+    for (const char* suffix : {"", "-journal", "-wal", "-shm"}) fs::remove(wasm + suffix);
+    auto db = OpenOrFail(wasm, OpenOptions{nullptr, /*wal=*/false});
+    std::string error;
+    REQUIRE(db->Save(GoldenBatch(), error));
+    REQUIRE(db->SetSetting("name", "Golden world"));
+  }
   for (const char* name : {"native", "wasm"}) {
     CAPTURE(name);
     const std::string golden = std::string(DWELL_STORAGE_GOLDEN) + "/" + name + ".dwellworld";
@@ -422,28 +434,145 @@ TEST_CASE("debug tooling: regenerate and diff lists exactly the voxels changed s
   CHECK(diff[1].current == Materials::kAir);
 }
 
-TEST_CASE("storage: a format-1 world migrates to the LOD cache table (format 2)") {
-  const std::string path = Scratch("migrate");
-  { auto db = OpenOrFail(path); }
+TEST_CASE("storage: worlds saved before the block registry (formats 1 and 2) are refused") {
+  for (const int format : {1, 2}) {
+    CAPTURE(format);
+    const std::string path = Scratch("predates");
+    { auto db = OpenOrFail(path); }
+    sqlite3* raw = nullptr;
+    REQUIRE(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(
+                raw,
+                ("DROP TABLE block_states; PRAGMA user_version = " + std::to_string(format) + ";")
+                    .c_str(),
+                nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(raw);
+    std::string error;
+    CHECK_FALSE(WorldDb::Open(path, error, kPlatform));
+    CHECK(error.find("block registry") != std::string::npos);
+  }
+}
+
+namespace {
+
+std::string Exec(const std::string& path, const std::string& sql) {
   sqlite3* raw = nullptr;
   REQUIRE(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
-  REQUIRE(sqlite3_exec(raw, "DROP TABLE lod_sections; PRAGMA user_version = 1;", nullptr, nullptr,
-                       nullptr) == SQLITE_OK);
+  char* message = nullptr;
+  const int rc = sqlite3_exec(raw, sql.c_str(), nullptr, nullptr, &message);
+  std::string error = rc == SQLITE_OK ? "" : message;
+  sqlite3_free(message);
   sqlite3_close(raw);
+  return error;
+}
+
+// A chunk with every state of the registry in it (and runs between).
+std::vector<std::uint16_t> EveryState() {
+  std::vector<std::uint16_t> v(dwell::core::kChunkVolume, dwell::core::Materials::kStone);
+  for (std::uint16_t id = 0; id < dwell::core::Materials::kCount; ++id) v[id * 7] = id;
+  return v;
+}
+
+}  // namespace
+
+TEST_CASE("storage: a world saved and reopened is identical, every voxel's canonical string") {
+  const std::string path = Scratch("strings");
+  const auto voxels = EveryState();
+  {
+    auto db = OpenOrFail(path);
+    SaveBatch b;
+    b.meta = WorldMeta{1, 4, std::nullopt, 0, 0, 0};
+    b.chunks.push_back({{1, 2, 3}, 5, voxels});
+    std::string error;
+    REQUIRE(db->Save(b, error));
+  }
   auto db = OpenOrFail(path);
-  CHECK(db->format_version() == 2);
+  const auto chunk = db->LoadChunk({1, 2, 3});
+  REQUIRE(chunk);
+  CHECK(chunk->voxels == voxels);
+  for (std::size_t i = 0; i < voxels.size(); ++i) {
+    if (chunk->voxels[i] != voxels[i]) FAIL("voxel " << i);  // not CHECK: 32,768 of them
+  }
+  // The file names states by canonical string, once each, in order of first use.
+  const auto states = db->BlockStates();
+  REQUIRE(states.size() == dwell::core::Materials::kCount);
+  CHECK(states.front() == "dwell:air");  // the first state in the first voxel
+  CHECK(std::count(states.begin(), states.end(), "dwell:ladder[facing=east,flooded=true]") == 1);
+}
+
+TEST_CASE("storage: a chunk's meaning is its strings, whatever the code's runtime ids are") {
+  const std::string path = Scratch("meaning");
+  {
+    auto db = OpenOrFail(path);
+    SaveBatch b;
+    b.meta = WorldMeta{1, 4, std::nullopt, 0, 0, 0};
+    b.chunks.push_back({{0, 0, 0}, 1, Filled(2)});  // stone and dirt
+    std::string error;
+    REQUIRE(db->Save(b, error));
+  }
+  {
+    // Stored with world ids, not runtime ids: ids 2 and 3 are not the file's ids for them.
+    auto db = OpenOrFail(path);
+    const auto states = db->BlockStates();
+    REQUIRE(states.size() == 3);  // stone, air, dirt: in order of first use
+    CHECK(states == std::vector<std::string>{"dwell:stone", "dwell:air", "dwell:dirt"});
+  }
+  // A registry that numbered the blocks differently reads the same strings as the same blocks:
+  // here the file's "stone" becomes "dirt" and its "dirt" becomes "stone".
+  REQUIRE(Exec(path,
+               "UPDATE block_states SET state = 'x' WHERE state = 'dwell:stone';"
+               "UPDATE block_states SET state = 'dwell:stone' WHERE state = 'dwell:dirt';"
+               "UPDATE block_states SET state = 'dwell:dirt' WHERE state = 'x';")
+              .empty());
+  auto db = OpenOrFail(path);
+  const auto chunk = db->LoadChunk({0, 0, 0});
+  REQUIRE(chunk);
+  CHECK(chunk->voxels[0] == dwell::core::Materials::kDirt);
+  CHECK(chunk->voxels[12345] == dwell::core::Materials::kStone);
+  // A state this build does not know cannot be read (the chunk is generated again instead).
+  REQUIRE(Exec(path, "UPDATE block_states SET state = 'dwell:removed' WHERE state = 'dwell:dirt';")
+              .empty());
+  auto reopened = OpenOrFail(path);
+  CHECK_FALSE(reopened->LoadChunk({0, 0, 0}));
+}
+
+TEST_CASE("storage: a second connection's new states are visible to the first") {
+  const std::string path = Scratch("twoconn");
+  auto reader = OpenOrFail(path);
+  auto writer = OpenOrFail(path);
+  SaveBatch b;
+  b.meta = WorldMeta{1, 4, std::nullopt, 0, 0, 0};
+  b.chunks.push_back({{0, 0, 0}, 1, Filled(16)});
+  std::string error;
+  REQUIRE(writer->Save(b, error));
+  const auto chunk = reader->LoadChunk({0, 0, 0});
+  REQUIRE(chunk);
+  CHECK(chunk->voxels == Filled(16));
+}
+
+TEST_CASE("storage: the LOD cache is a cache: dropped when the registry hash changes") {
+  const std::string path = Scratch("lodcache");
   bool stale = true;
+  {
+    auto db = OpenOrFail(path);
+    SaveBatch b;
+    b.meta = WorldMeta{1, 0, std::nullopt, 0, 0, 0};
+    b.lod_sections.push_back({{3, 1, 2, 3}, 9, false, {1, 2, 3}});
+    b.lod_sections.push_back({{4, 5, 6, 7}, 0, true, {}});
+    std::string error;
+    REQUIRE(db->Save(b, error));
+    CHECK(db->LodSections(0, stale).size() == 2);
+  }
+  {
+    auto db = OpenOrFail(path);  // the same registry: kept
+    CHECK(db->LodSections(0, stale).size() == 2);
+    CHECK(db->LodSections(3, stale).empty());  // another generator version: stale
+    CHECK(stale);
+  }
+  REQUIRE(Exec(path, "UPDATE meta SET value = '1' WHERE key = 'registry_hash';").empty());
+  auto db = OpenOrFail(path);  // another registry: dropped
   CHECK(db->LodSections(0, stale).empty());
   CHECK_FALSE(stale);
-  SaveBatch b;
-  b.lod_sections.push_back({{3, 1, 2, 3}, 9, false, {1, 2, 3}});
-  b.lod_sections.push_back({{4, 5, 6, 7}, 0, true, {}});
-  std::string error;
-  REQUIRE(db->Save(b, error));
-  const auto rows = db->LodSections(0, stale);
-  REQUIRE(rows.size() == 2);
-  CHECK(db->LodSections(3, stale).empty());  // another generator version: stale
-  CHECK(stale);
 }
 
 namespace {

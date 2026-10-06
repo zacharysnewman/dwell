@@ -68,3 +68,9 @@ if(NOT EMSCRIPTEN)
   add_executable(dwell_world world_tool.cpp)
   target_link_libraries(dwell_world PRIVATE dwell_core dwell_options)
 endif()
+
+if(NOT EMSCRIPTEN)
+  # Paletted in-memory chunks vs plain arrays (Phase 8, ADR 0015).
+  add_executable(dwell_chunk_palette_bench chunk_palette_bench.cpp)
+  target_link_libraries(dwell_chunk_palette_bench PRIVATE dwell_core dwell_options)
+endif()

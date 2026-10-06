@@ -430,6 +430,7 @@ TEST_SUITE("lod: golden") {
         update && std::string(update) == "1") {
       std::ofstream out(path);
       out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 4\n";
+      out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden LOD hashes written to " << path);
       return;
@@ -437,9 +438,17 @@ TEST_SUITE("lod: golden") {
     std::ifstream in(path);
     REQUIRE_MESSAGE(in.good(), "missing " << path << "; run with DWELL_UPDATE_GOLDEN=1");
     std::vector<std::string> expected;
+    std::string registry;  // the block registry hash the golden was written with
     for (std::string line; std::getline(in, line);) {
+      if (line.starts_with("# registry ")) registry = line.substr(11);
       if (!line.empty() && line[0] != '#') expected.push_back(line);
     }
+    std::ostringstream now;
+    now << std::hex << core::kRegistryHash;
+    CHECK_MESSAGE(registry == now.str(),
+                  "the block registry changed (golden "
+                      << registry << ", now " << now.str()
+                      << "): ids moved; regenerate with DWELL_UPDATE_GOLDEN=1");
     REQUIRE(expected.size() == actual.size());
     for (std::size_t i = 0; i < expected.size(); ++i) CHECK(actual[i] == expected[i]);
   }

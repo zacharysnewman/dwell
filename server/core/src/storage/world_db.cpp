@@ -7,6 +7,7 @@
 #include <cmath>
 #include <ctime>
 
+#include "dwell/core/block_registry.h"
 #include "dwell/protocol/bytes.h"
 
 namespace dwell::storage {
@@ -48,6 +49,12 @@ constexpr const char* kMigrations[] = {
         generator_version INTEGER NOT NULL,
         data BLOB NOT NULL,
         PRIMARY KEY (level, i, j, k)) WITHOUT ROWID;
+    )sql",
+    // 2 → 3: the block registry (Phase 8, §6.4): chunk palettes hold world state ids.
+    R"sql(
+      CREATE TABLE block_states (
+        world_state_id INTEGER PRIMARY KEY,
+        state TEXT NOT NULL UNIQUE);
     )sql",
 };
 static_assert(std::size(kMigrations) == kFormatVersion);
@@ -147,6 +154,11 @@ std::unique_ptr<WorldDb> WorldDb::Open(const std::string& path, std::string& err
             std::to_string(kFormatVersion) + ")";
     return nullptr;
   }
+  if (version > 0 && version < 3) {
+    error = "world file format " + std::to_string(version) +
+            " predates the block registry (format 3); run the version that saved it";
+    return nullptr;
+  }
   for (int v = version; v < kFormatVersion; ++v) {
     const std::string sql = std::string("BEGIN IMMEDIATE;") + kMigrations[v] +
                             "INSERT OR REPLACE INTO meta VALUES ('format_version', " +
@@ -158,7 +170,55 @@ std::unique_ptr<WorldDb> WorldDb::Open(const std::string& path, std::string& err
       return nullptr;
     }
   }
+  // The LOD cache holds runtime ids: it is dropped when the registry changed (it is rebuilt).
+  {
+    const std::string current = std::to_string(core::kRegistryHash);
+    bool same = false;
+    {
+      Stmt s(raw, "SELECT value FROM meta WHERE key = 'registry_hash';");
+      same = s.Step() == SQLITE_ROW && s.ColText(0) == current;
+    }
+    if (!same) {
+      const std::string sql =
+          "BEGIN IMMEDIATE; DELETE FROM lod_sections;"
+          "INSERT OR REPLACE INTO meta VALUES ('registry_hash', '" +
+          current + "'); COMMIT;";
+      if (!db->Exec(sql.c_str(), &error)) {
+        db->Exec("ROLLBACK;");
+        return nullptr;
+      }
+    }
+  }
+  db->RefreshStates();
   return db;
+}
+
+void WorldDb::RefreshStates() {
+  world_states_.clear();
+  Stmt s(db_, "SELECT world_state_id, state FROM block_states ORDER BY world_state_id;");
+  std::vector<std::int64_t> ids;
+  while (s.Step() == SQLITE_ROW) {
+    ids.push_back(s.ColInt(0));
+    world_states_.push_back(s.ColText(1));
+  }
+  to_runtime_.assign(world_states_.size(), -1);
+  to_world_.assign(core::Materials::kCount, -1);
+  for (std::size_t i = 0; i < world_states_.size(); ++i) {
+    if (ids[i] != static_cast<std::int64_t>(i)) {  // ids are dense from 0: we assign them so
+      to_runtime_.assign(world_states_.size(), -1);
+      break;
+    }
+    if (const auto runtime = core::ParseState(world_states_[i]);
+        runtime && core::StateString(*runtime) == world_states_[i]) {
+      to_runtime_[i] = *runtime;
+      to_world_[*runtime] = static_cast<std::int32_t>(i);
+    }
+  }
+}
+
+std::vector<std::string> WorldDb::BlockStates() {
+  RefreshStates();
+  return world_states_;
 }
 
 WorldDb::~WorldDb() { sqlite3_close_v2(db_); }
@@ -230,6 +290,16 @@ std::optional<SavedChunk> WorldDb::LoadChunk(const core::ChunkCoord& c) {
   if (s.Step() != SQLITE_ROW) return std::nullopt;
   auto voxels = DecompressChunk(s.ColBlob(1));
   if (!voxels) return std::nullopt;
+  // World state ids → runtime ids. Another connection may have added states since: look again.
+  const auto unknown = [&] {
+    for (const std::uint16_t w : *voxels) {
+      if (w >= to_runtime_.size() || to_runtime_[w] < 0) return true;
+    }
+    return false;
+  };
+  if (unknown()) RefreshStates();
+  if (unknown()) return std::nullopt;  // a state this build does not know: generated instead
+  for (std::uint16_t& v : *voxels) v = static_cast<std::uint16_t>(to_runtime_[v]);
   return SavedChunk{c, static_cast<std::uint32_t>(s.ColInt(0)), std::move(*voxels)};
 }
 
@@ -378,10 +448,28 @@ bool WorldDb::Save(const SaveBatch& batch, std::string& error) {
   }
 
   if (!batch.chunks.empty()) {
+    // Runtime ids → world state ids; a state new to the file gets the next id, and its string is
+    // stored once (the table is read inside the transaction: another connection may have added).
+    RefreshStates();
+    std::vector<std::int32_t> to_world = to_world_;
+    Stmt add(db_, "INSERT INTO block_states VALUES (?, ?);");
+    std::vector<std::uint16_t> world_voxels;
     Stmt put(db_, "INSERT OR REPLACE INTO chunks VALUES (?, ?, ?, ?, ?, ?);");
+    std::size_t next_id = world_states_.size();
     for (const SavedChunk& c : batch.chunks) {
+      world_voxels.assign(c.voxels.begin(), c.voxels.end());
+      for (std::uint16_t& v : world_voxels) {
+        if (v >= core::Materials::kCount) v = core::Materials::kAir;  // unknown ids read as air
+        if (to_world[v] < 0) {
+          add.Int(1, static_cast<std::int64_t>(next_id)).Text(2, core::StateString(v));
+          if (add.Step() != SQLITE_DONE) return fail("block_states");
+          add.Reset();
+          to_world[v] = static_cast<std::int32_t>(next_id++);
+        }
+        v = static_cast<std::uint16_t>(to_world[v]);
+      }
       put.Int(1, c.coord.x).Int(2, c.coord.y).Int(3, c.coord.z).Int(4, c.revision);
-      put.Int(5, generator_version).Blob(6, CompressChunk(c.voxels));
+      put.Int(5, generator_version).Blob(6, CompressChunk(world_voxels));
       if (put.Step() != SQLITE_DONE) return fail("chunks");
       put.Reset();
     }
@@ -411,8 +499,10 @@ bool WorldDb::Save(const SaveBatch& batch, std::string& error) {
   if (before_commit) before_commit();
   if (!Exec("COMMIT;", &error)) {
     Exec("ROLLBACK;");
+    RefreshStates();
     return false;
   }
+  RefreshStates();
   return true;
 }
 

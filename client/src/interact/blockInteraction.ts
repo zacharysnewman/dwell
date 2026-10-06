@@ -4,6 +4,7 @@
 import { BlockEditAction, MessageType, Players } from '../protocol/constants.gen';
 import type { Message, Vec3 } from '../protocol/messages';
 import type { BlockTarget } from '../sim/clientCore';
+import { BLOCK_DEFS, STATE_DEFS } from '../world/blocks';
 import { MATERIALS, PLACEABLE } from '../world/materials';
 
 export type EditAction = 'break' | 'place';
@@ -16,16 +17,23 @@ export interface PaletteSlot {
   ladder: boolean;
 }
 
-/** The palette (§6.5): every placeable material, ladders as one slot. */
-export const PALETTE: readonly PaletteSlot[] = PLACEABLE.flatMap((id): PaletteSlot[] => {
+/** The palette (§6.5): one slot per placeable block (its first palette state), ladders as one. */
+export const PALETTE: readonly PaletteSlot[] = PLACEABLE.flatMap((id, i): PaletteSlot[] => {
   const style = MATERIALS[id];
-  if (!style) return [];
-  if (style.look !== 'ladder') return [{ name: style.name, material: id, ladder: false }];
-  return style.name === 'ladder_n' ? [{ name: 'ladder', material: id, ladder: true }] : [];
+  const state = STATE_DEFS[id];
+  if (!style || !state) return [];
+  const previous = PLACEABLE[i - 1];
+  if (previous !== undefined && STATE_DEFS[previous]?.block === state.block) return [];
+  const block = BLOCK_DEFS[state.block]?.id ?? style.name;
+  return [
+    { name: block.slice(block.indexOf(':') + 1), material: id, ladder: style.look === 'ladder' },
+  ];
 });
 
 const LADDER_BY_FACING = new Map(
-  MATERIALS.flatMap((m, id) => (m.ladderFace !== undefined ? [[m.ladderFace, id] as const] : [])),
+  MATERIALS.flatMap((m, id) =>
+    m.ladderFace !== undefined && m.placeable ? [[m.ladderFace, id] as const] : [],
+  ),
 );
 
 /**

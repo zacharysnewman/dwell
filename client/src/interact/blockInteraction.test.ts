@@ -28,13 +28,13 @@ describe('block palette', () => {
   });
 
   it('mounts ladders on the clicked face, facing out of it, or facing the player on tops', () => {
-    expect(name(ladderFor(0, 0))).toBe('ladder_e');
-    expect(name(ladderFor(1, 0))).toBe('ladder_w');
-    expect(name(ladderFor(4, 0))).toBe('ladder_s');
-    expect(name(ladderFor(5, 0))).toBe('ladder_n');
-    expect(name(ladderFor(2, 0))).toBe('ladder_n'); // looking +Z: the ladder faces −Z
-    expect(name(ladderFor(2, 90))).toBe('ladder_w'); // looking +X
-    expect(name(ladderFor(3, 180))).toBe('ladder_s');
+    expect(name(ladderFor(0, 0))).toBe('dwell:ladder[facing=east,flooded=false]');
+    expect(name(ladderFor(1, 0))).toBe('dwell:ladder[facing=west,flooded=false]');
+    expect(name(ladderFor(4, 0))).toBe('dwell:ladder[facing=south,flooded=false]');
+    expect(name(ladderFor(5, 0))).toBe('dwell:ladder[facing=north,flooded=false]');
+    expect(name(ladderFor(2, 0))).toBe('dwell:ladder[facing=north,flooded=false]'); // looking +Z: the ladder faces −Z
+    expect(name(ladderFor(2, 90))).toBe('dwell:ladder[facing=west,flooded=false]'); // looking +X
+    expect(name(ladderFor(3, 180))).toBe('dwell:ladder[facing=south,flooded=false]');
   });
 });
 
@@ -95,7 +95,9 @@ describe('BlockInteraction', () => {
     interaction.select(PALETTE.findIndex((s) => s.ladder));
     interaction.act('place', 0);
     const m = sent[0];
-    expect(m?.type === MessageType.BlockEditRequest && name(m.material)).toBe('ladder_n');
+    expect(m?.type === MessageType.BlockEditRequest && name(m.material)).toBe(
+      'dwell:ladder[facing=north,flooded=false]',
+    );
   });
 
   it('selects slots by number and scroll, wrapping around', () => {

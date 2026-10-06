@@ -8,6 +8,7 @@ import {
   TransportKind,
   WelcomeFlags,
 } from '../protocol/constants.gen';
+import { REGISTRY_HASH } from '../world/blocks';
 import { authTranscript, decode, encode, type Message } from '../protocol/messages';
 import { ClientSession, type SessionState } from './session';
 import type { Transport, TransportHandlers } from './Transport';
@@ -89,6 +90,7 @@ describe('ClientSession', () => {
       serverTick: 10,
       verificationChunk: [0, 2, 0],
       flags: WelcomeFlags.flight,
+      registryHash: REGISTRY_HASH,
     });
     await flush();
     expect(states.at(-1)).toEqual({
@@ -114,6 +116,26 @@ describe('ClientSession', () => {
     expect(got).toEqual([MessageType.ChunkUnload, MessageType.ChunkData]);
     session.sendControl({ type: MessageType.WorldgenCheck, hash: 7n });
     expect(transport.sent.at(-1)).toEqual({ type: MessageType.WorldgenCheck, hash: 7n });
+    session.close();
+  });
+
+  it('rejects a server whose block registry differs (its state ids would mean other blocks)', async () => {
+    const { transport, session, states } = await setup();
+    transport.deliver({
+      type: MessageType.Welcome,
+      playerId: 3,
+      worldSeed: 5n,
+      generatorVersion: 0,
+      serverTick: 10,
+      verificationChunk: [0, 2, 0],
+      flags: 0,
+      registryHash: REGISTRY_HASH ^ 1n,
+    });
+    await flush();
+    expect(states.at(-1)).toMatchObject({
+      phase: 'rejected',
+      reason: RejectReason.ProtocolVersion,
+    });
     session.close();
   });
 

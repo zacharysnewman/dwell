@@ -4,7 +4,7 @@ import {
   Channel,
   MessageType,
   PROTOCOL_VERSION,
-  type RejectReason,
+  RejectReason,
   type TransportKind,
   WelcomeFlags,
   HostState,
@@ -16,6 +16,7 @@ import {
   type ChunkCoord,
   type Message,
 } from '../protocol/messages';
+import { REGISTRY_HASH } from '../world/blocks';
 import type { Transport } from './Transport';
 
 export type SessionState =
@@ -207,6 +208,17 @@ export class ClientSession {
         break;
       }
       case MessageType.Welcome:
+        if (m.registryHash !== REGISTRY_HASH) {
+          // Runtime state ids on the wire would name different blocks (docs/BLOCK_REGISTRY.md).
+          this.setState({
+            phase: 'rejected',
+            reason: RejectReason.ProtocolVersion,
+            message: 'The server runs a different block registry (another build).',
+          });
+          this.stopPings();
+          this.close();
+          break;
+        }
         this.stats.serverTick = m.serverTick;
         this.setState({
           phase: 'joined',

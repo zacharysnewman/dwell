@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { tileRect } from '../render/textures';
+import { stateId } from '../world/blocks';
 import { meshChunk, PADDED_VOLUME, paddedIndex, type MeshArrays } from './mesher';
+
+const WATER = stateId('dwell:water');
 
 /** Padded voxels with the given cells set (chunk-local, −1..32). */
 function voxels(cells: [number, number, number, number][]): Uint16Array {
@@ -119,8 +122,8 @@ describe('greedy chunk mesher', () => {
   it('draws water in the transparent pass with its surface lowered and hides it against water', () => {
     const { opaque, transparent } = meshChunk(
       voxels([
-        [0, 0, 0, 10],
-        [1, 0, 0, 10],
+        [0, 0, 0, WATER],
+        [1, 0, 0, WATER],
       ]),
     );
     expect(quads(opaque)).toBe(0);
