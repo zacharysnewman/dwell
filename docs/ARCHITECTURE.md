@@ -463,7 +463,8 @@ meshers agree. `core/block_shape.h` (`ShapeOf`, `SolidSpanAt`/`SurfaceHeightAt`,
 `RayEnterShape`, `VerticalSegmentDistanceSq`; `+ − × /`, `min`, `max` only, ADR 0010) answers every
 point query: the **terrain collision mesh** adds each shape's polygons (a cell face is skipped where
 a neighbour's opposite face covers it entirely; sloped faces never are), **block targeting**
-(`RaycastBlock`, the controller's ray probes) enters the exact shape, the **edit check** tests the
+(`RaycastBlock`, the controller's ray probes) enters the exact shape (a block without a solid, a
+ladder, is targeted and seen as its whole cell), the **edit check** tests the
 capsule against the placed shape's true volume, and the controller's overlap test (uncrouching) uses
 the true surface. The exhaustive adjacency test checks that no pair of shapes leaves a hole on any
 side. The meshers draw polygons with their true normals and a face tint interpolated by the normal
@@ -884,7 +885,8 @@ Players break and place blocks. Server-authoritative like every voxel change
 - **Targeting (client):** each frame `RaycastBlock` (a DDA from the eye along the view,
   `REACH_DISTANCE` long, in float relative to the eye's cell so it is exact anywhere in the world)
   finds the first *targetable* cell — anything but air and liquids — by entering its exact shape
-  (a slab, a slope: `RayEnterShape`), and the face it entered through (a sloped surface counts as
+  (a slab, a slope: `RayEnterShape`; a ladder, which has no solid, as its whole cell — the server's
+  line-of-sight check sees it the same way), and the face it entered through (a sloped surface counts as
   the face its normal mostly points through, the top on a tie); the renderer outlines the cell. The
   client sim runs the same C++ as the server.
 - **Actions:** desktop — left click breaks the targeted block, right click places the selected
