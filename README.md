@@ -35,7 +35,8 @@ only to start a new line). A build for
 another version: `DWELL_VERSION=0.2.0 npm run build` (served at `/dwell/v/0.2.0/`); the native
 server and the WASM core read the same version from `DWELL_VERSION` or `package.json` when CMake
 configures. Pushes to `main` publish dev builds as GitHub Releases; to release, run the Release
-workflow (optionally naming a version) or push a `v<version>` tag. Local builds are `<version>-dev.local`
+workflow (optionally naming a version) or push a `v<version>` tag; merging a PR that raises
+`package.json` above the newest release releases that version. Local builds are `<version>-dev.local`
 and serve at `/dwell/` with no launcher; worlds are locked to their version's compatibility line.
 
 **Playing:** the main menu lists your worlds (create one with a name and seed; regenerate or delete it) and joins a friend's world by its code (e.g. `KQ7-XM4`) or a server from a pasted invite link. In a game, Esc (or ☰) opens the game menu: Resume, Host… (in your own worlds: choose how many guests and who may build and fly, then share the code, link or QR code; keep the page open while hosting), Quit to main menu, and the settings. Click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)

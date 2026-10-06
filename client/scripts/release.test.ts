@@ -5,20 +5,23 @@ const SHA = 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12';
 const base = { run: 42, sha: SHA, packageVersion: '0.2.0', latestStable: null };
 
 describe('what a release run builds', () => {
-  it('builds a dev pre-release of package.json’s version for a push to main', () => {
-    expect(releasePlan({ ...base, event: 'push', ref: 'refs/heads/main' })).toEqual({
-      version: '0.2.0-dev.42',
-      buildVersion: '0.2.0-dev.42+ab12cd3',
-      tag: 'v0.2.0-dev.42',
+  it('builds a dev pre-release of the next version for a push to main', () => {
+    expect(
+      releasePlan({ ...base, latestStable: '0.2.0', event: 'push', ref: 'refs/heads/main' }),
+    ).toEqual({
+      version: '0.2.1-dev.42',
+      buildVersion: '0.2.1-dev.42+ab12cd3',
+      tag: 'v0.2.1-dev.42',
       channel: 'dev',
-      archive: 'dwell-0.2.0-dev.42.tar.gz',
+      archive: 'dwell-0.2.1-dev.42.tar.gz',
     });
   });
 
   it('orders dev builds below the release they lead to, and by run number', () => {
-    const at = (run: number) => releasePlan({ ...base, run, event: 'push', ref: '' }).version;
-    expect(at(9)).toBe('0.2.0-dev.9');
-    expect(at(10)).toBe('0.2.0-dev.10');
+    const at = (run: number) =>
+      releasePlan({ ...base, latestStable: '0.2.0', run, event: 'push', ref: '' }).version;
+    expect(at(9)).toBe('0.2.1-dev.9');
+    expect(at(10)).toBe('0.2.1-dev.10');
   });
 
   it('releases package.json’s version for a tag that names it', () => {
@@ -54,8 +57,11 @@ describe('what a release run builds', () => {
   });
 
   it('checks the run number and commit of a dev build', () => {
-    expect(() => releasePlan({ ...base, run: 0, event: 'push', ref: '' })).toThrow('run number');
-    expect(() => releasePlan({ ...base, sha: 'unknown', event: 'push', ref: '' })).toThrow(
+    const released = { ...base, latestStable: '0.2.0' };
+    expect(() => releasePlan({ ...released, run: 0, event: 'push', ref: '' })).toThrow(
+      'run number',
+    );
+    expect(() => releasePlan({ ...released, sha: 'unknown', event: 'push', ref: '' })).toThrow(
       'commit',
     );
   });
@@ -88,9 +94,16 @@ describe('the version after a release', () => {
       buildVersion: '0.1.1-dev.42+ab12cd3',
       tag: 'v0.1.1-dev.42',
     });
+    // package.json above the newest release is a release, not a dev build (below).
     expect(
-      releasePlan({ ...released, packageVersion: '0.2.0', event: 'push', ref: '' }).version,
-    ).toBe('0.2.0-dev.42');
+      releasePlan({
+        ...released,
+        packageVersion: '0.1.1',
+        latestStable: '0.1.5',
+        event: 'push',
+        ref: '',
+      }).version,
+    ).toBe('0.1.6-dev.42');
   });
 
   it('releases the next version when run by hand, or the one asked for', () => {
@@ -136,5 +149,36 @@ describe('the newest release', () => {
     expect(latestStable(['v0.1.0', 'v0.1.10', 'v0.1.9', 'v0.2.0-dev.5', 'nightly'])).toBe('0.1.10');
     expect(latestStable(['v0.2.0-dev.5', 'x'])).toBeNull();
     expect(latestStable([])).toBeNull();
+  });
+});
+
+// A push to main that raises package.json above the newest release releases that version: the
+// bump is the deliberate act (RELEASES.md §3), so no one has to run the workflow for it.
+describe('a push that raises package.json above the newest release', () => {
+  const push = { ...base, event: 'push' as const, ref: 'refs/heads/main' };
+
+  it('releases the baseline when nothing is released yet', () => {
+    expect(releasePlan({ ...push, packageVersion: '0.1.0', latestStable: null })).toEqual({
+      version: '0.1.0',
+      buildVersion: '0.1.0',
+      tag: 'v0.1.0',
+      channel: 'stable',
+      archive: 'dwell-0.1.0.tar.gz',
+    });
+  });
+
+  it('releases a new line when package.json was raised to it', () => {
+    expect(releasePlan({ ...push, packageVersion: '0.2.0', latestStable: '0.1.4' })).toMatchObject({
+      version: '0.2.0',
+      channel: 'stable',
+      tag: 'v0.2.0',
+    });
+  });
+
+  it('is only a dev build once that version is released', () => {
+    for (const latest of ['0.2.0', '0.3.1']) {
+      const plan = releasePlan({ ...push, packageVersion: '0.2.0', latestStable: latest });
+      expect(plan.channel).toBe('dev');
+    }
   });
 });

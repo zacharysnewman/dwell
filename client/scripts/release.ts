@@ -51,7 +51,9 @@ export function nextVersion(floor: string, latest: string | null): string {
 }
 
 /**
- * - `push` (to main): a dev build, a pre-release of the next version (`nextVersion`):
+ * - `push` (to main): a **stable release of `package.json`'s version if that is above the newest
+ *   release** (raising it is the deliberate act that starts a release: the baseline, or a new
+ *   line); otherwise a dev build, a pre-release of the next version (`nextVersion`):
  *   `<next>-dev.<run>`, with the commit as build metadata.
  * - `dispatch` (the manual workflow): a stable release of the next version, or of `requested` (a
  *   minor or major bump that package.json does not carry yet).
@@ -78,8 +80,14 @@ export function releasePlan(input: {
     );
   }
   const next = nextVersion(packageVersion, latest);
-  if (event === 'tag' || event === 'dispatch') {
-    const named = event === 'tag' ? ref.replace(/^refs\/tags\/v?/, '') : (input.requested ?? '');
+  const raised = latest === null || compareVersionText(packageVersion, latest) > 0;
+  if (event === 'tag' || event === 'dispatch' || raised) {
+    const named =
+      event === 'tag'
+        ? ref.replace(/^refs\/tags\/v?/, '')
+        : event === 'dispatch'
+          ? (input.requested ?? '')
+          : packageVersion;
     const version = named === '' ? next : named;
     const parsed = parseVersion(version);
     if (!parsed || !isStable(parsed) || parsed.build !== null) {

@@ -103,3 +103,7 @@ raised by hand only to start a new line (a breaking change); the manual Release 
 version. Dev builds are pre-releases of the computed version. The decision is otherwise unchanged;
 the consequence about bumping `package.json` after a release no longer applies. Logic and tests:
 `client/scripts/release.ts`.
+
+Also, a push to `main` that leaves `package.json` above the newest release publishes that version as
+a **stable** release instead of a dev build: raising the floor is the deliberate act, so its merge is
+the release (the baseline `0.1.0` included). Patch releases stay manual.

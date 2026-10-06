@@ -1,12 +1,14 @@
 name: Release
 
 # Every build is a git tag with a GitHub Release holding the built files (RELEASES.md §3):
-#   - a push to main        → a dev build, `v<next version>-dev.<run>` (a GitHub pre-release);
+#   - a push to main        → a dev build, `v<next version>-dev.<run>` (a GitHub pre-release) —
+#                             or, if the push raised client/package.json above the newest
+#                             release (the baseline, a new line), that version as a stable release;
 #   - a pushed `v<version>` tag, or this workflow run by hand
 #                           → a stable release.
 # The version follows the newest release (its next patch), so nothing is bumped after a release;
-# client/package.json is a floor, raised by hand only for a breaking change, and the manual run
-# can name a higher version (client/scripts/release.ts, RELEASES.md §3).
+# client/package.json is a floor, raised by hand only for a breaking change (the merge that raises
+# it is the release), and the manual run can name a higher version (client/scripts/release.ts, RELEASES.md §3).
 # Each build is made for its own path (`/dwell/v/<version>/`); the site is then assembled from the
 # releases by pages.yml, called at the end (a workflow's own GITHUB_TOKEN can't trigger another).
 on:
