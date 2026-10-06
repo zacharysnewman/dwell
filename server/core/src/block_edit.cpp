@@ -27,6 +27,16 @@ bool InWorldRows(std::int32_t y) { return y >= kWorldMinY && y < kWorldMaxY; }
 
 bool Targetable(MaterialId m) { return m != Materials::kAir && !GetMaterial(m).liquid; }
 
+namespace {
+
+// The shape a targetable block is aimed at and seen by: its solid, or for a block without one (a
+// ladder) the whole cell.
+const ShapeInfo& TargetShape(MaterialId m) {
+  return GetMaterial(m).shape == VoxelShape::kEmpty ? ShapeOf(Materials::kStone) : ShapeOf(m);
+}
+
+}  // namespace
+
 bool Placeable(MaterialId m) { return m < Materials::kCount && GetMaterial(m).placeable; }
 
 std::optional<BlockHit> RaycastBlock(VoxelWorld& world, const std::array<double, 3>& origin,
@@ -57,7 +67,7 @@ std::optional<BlockHit> RaycastBlock(VoxelWorld& world, const std::array<double,
     if (Targetable(m)) {
       const float corner[3] = {static_cast<float>(cell[0]), static_cast<float>(cell[1]),
                                static_cast<float>(cell[2])};
-      if (const auto hit = RayEnterShape(ShapeOf(m), corner, o, d, max_distance);
+      if (const auto hit = RayEnterShape(TargetShape(m), corner, o, d, max_distance);
           hit && hit->t <= max_distance) {
         BlockHit out;
         for (int i = 0; i < 3; ++i) out.cell[i] = base[i] + cell[i];
@@ -97,7 +107,7 @@ EditOutcome CheckBlockEdit(VoxelWorld& world, const protocol::BlockEditRequest& 
   // Line of sight: the eye is in front of a surface of the target whose normal points through the
   // requested face (a cell face, or a sloped face whose normal mostly does), and a ray from it
   // reaches the target cell first at the polygon's centre or one of its corners' neighbourhoods.
-  const ShapeInfo& target_shape = ShapeOf(target);
+  const ShapeInfo& target_shape = TargetShape(target);
   bool visible = false;
   for (const ShapeFace& polygon : FacesOf(target_shape)) {
     if (visible) break;

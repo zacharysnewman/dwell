@@ -463,7 +463,8 @@ meshers agree. `core/block_shape.h` (`ShapeOf`, `SolidSpanAt`/`SurfaceHeightAt`,
 `RayEnterShape`, `VerticalSegmentDistanceSq`; `+ − × /`, `min`, `max` only, ADR 0010) answers every
 point query: the **terrain collision mesh** adds each shape's polygons (a cell face is skipped where
 a neighbour's opposite face covers it entirely; sloped faces never are), **block targeting**
-(`RaycastBlock`, the controller's ray probes) enters the exact shape, the **edit check** tests the
+(`RaycastBlock`, the controller's ray probes) enters the exact shape (a block without a solid, a
+ladder, is targeted and seen as its whole cell), the **edit check** tests the
 capsule against the placed shape's true volume, and the controller's overlap test (uncrouching) uses
 the true surface. The exhaustive adjacency test checks that no pair of shapes leaves a hole on any
 side. The meshers draw polygons with their true normals and a face tint interpolated by the normal
@@ -530,7 +531,8 @@ and §5 as it does.
 
 **Built (Phases 3a, 3c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
 `src/worldgen/`) is **generator version 5** (3c: the planet-scale world as version 3; Phase 4 adds
-super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; versions 2–4
+super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5 — its slope
+rule fixed in place by the 0.3.1 patch, below; versions 2–4
 are retired — a world saved with one loads as the flat world) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
 tests and movement work. Players spawn at the generator's spawn point: the first level, open,
@@ -603,15 +605,29 @@ arithmetic, so features placed by point queries agree with the chunks.
    *continuous surface*: the highest zero of its density going down from the sky, closed-form per
    lattice layer (density is linear in y between layers), valid only where solid cells lie under it
    and open ones over it. A cell corner's height is the mean of the four columns around it, rounded
-   to a half; a cell takes its slope piece (or air, or a cube) from its four corner heights relative
-   to its floor — the nine shapes in four orientations and the slab where they match exactly,
-   otherwise the nearest piece (`PIECE_NEAREST`, generated: raise the lowest corner on a tie).
-   Neighbouring cells, and chunks, share corners, so nothing reads a neighbour's data. Corners more
-   than a block apart (a cliff) or any of the nine columns without a clean surface leave the cell as
-   cubes. The material is the column's surface material; shapes under `SEA_LEVEL` are flooded. Sampled
-   over generated terrain, 99.7 % of shaped columns lie within half a block of the continuous surface
-   (worst 0.87 m), and neighbouring shaped cells differ at their shared edge by at most half a block
-   (in 3.9 % of pairs where the nearest-piece rule bends a corner). Point queries
+   to a half. Each column has **one surface cell**, with solid cells under it and open cells over
+   it (since the 0.3.1 patch): where the four corners fit one cell, that cell, exactly; where they
+   span more (ground steeper than a block per cell, or a block from a half-height to the next), the
+   cell holding the column's own surface, within the corners' span (a column above or below all
+   its corners — a peak, a cliff's top, a pit — may keep a cube at its own height), with the
+   corners clamped to it
+   — so a step of the surface carries a slope on top and a piece never rests on another piece's
+   slope. The cell stays within a block of the column's own surface. Its piece comes from the
+   (clamped) corner heights relative to its floor — the nine shapes in four orientations and the
+   slab where they match exactly, otherwise the nearest piece (`PIECE_NEAREST`, generated: raise
+   the lowest corner on a tie). The cells the column rises into, and the one under the piece, are
+   filled solid. Neighbouring cells, and chunks, share corners, so nothing reads a neighbour's data
+   (a chunk computes the surface of every column next to one near it). Columns among whose nine
+   columns one has no clean surface (a cave or overhang pocket at the surface) stay cubes. The
+   material is the column's surface material; shapes under `SEA_LEVEL` are flooded. Sampled over
+   generated terrain, 99.9 % of shaped columns lie within half a block of the continuous surface
+   (worst 0.75 m); neighbouring shaped cells at the same level differ at their shared edge by at
+   most half a block (in 4.1 % of pairs, where the nearest-piece rule bends a corner or a steep cell
+   is clamped); every shaped cell stands on a full one; and of ~11,000 one-block steps sampled on
+   gentle ground and in mountains, none is left as two bare cubes (0.3.0: 39 %, and 14 % of shaped
+   cells hung over a gap). The fix changed the terrain within the generator version and the 0.3
+   line, by the owner's decision (2026-10-06): worlds of the line take it for every chunk not yet
+   edited, and edited (saved) chunks keep the old slopes, so a seam can show where they meet. Point queries
    (`SurfaceAt`, `SlopePieceAt`) apply the same rule from scratch, and a test checks them against
    the chunk path cell for cell across chunk borders. Slopes cost ~25 % more per chunk
    (10.5 ms against 8.4 ms, Debug).
@@ -817,7 +833,8 @@ Players break and place blocks. Server-authoritative like every voxel change
 - **Targeting (client):** each frame `RaycastBlock` (a DDA from the eye along the view,
   `REACH_DISTANCE` long, in float relative to the eye's cell so it is exact anywhere in the world)
   finds the first *targetable* cell — anything but air and liquids — by entering its exact shape
-  (a slab, a slope: `RayEnterShape`), and the face it entered through (a sloped surface counts as
+  (a slab, a slope: `RayEnterShape`; a ladder, which has no solid, as its whole cell — the server's
+  line-of-sight check sees it the same way), and the face it entered through (a sloped surface counts as
   the face its normal mostly points through, the top on a tie); the renderer outlines the cell. The
   client sim runs the same C++ as the server.
 - **Actions:** desktop — left click breaks the targeted block, right click places the selected
@@ -1107,7 +1124,7 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   columns around it, rounded to a half *of a cell*; the column's surface cell is drawn as the
   piece for its corners clamped to the cell (`PIECE_NEAREST`, generated and shared with C++), as
   triangles with true normals and the shared normal tint. A cliff (corners more than a cell
-  apart), a sea floor, an empty or full piece, or a column without all nine neighbours stays as
+  apart; unlike the generator since 0.3.1, which slopes the top of such columns too), a sea floor, an empty or full piece, or a column without all nine neighbours stays as
   before; walls between columns follow the slopes' edges (trapezoids), so sloped neighbours meet
   without a gap and a step down to a flat or cliff column still has its wall, skirts included.
   Flat ground keeps its merged rectangles.

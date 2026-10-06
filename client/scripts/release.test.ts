@@ -182,3 +182,59 @@ describe('a push that raises package.json above the newest release', () => {
     }
   });
 });
+
+// Backports (RELEASES.md §3): a patch of an older compatibility line, released from its
+// maintenance branch while a newer line is out.
+describe('a patch of an older line', () => {
+  const branch = { ...base, packageVersion: '0.3.0', latestStable: '0.4.0', lineLatest: '0.3.0' };
+
+  it('releases the patch a tag names on the line’s branch', () => {
+    expect(releasePlan({ ...branch, event: 'tag', ref: 'refs/tags/v0.3.1' })).toEqual({
+      version: '0.3.1',
+      buildVersion: '0.3.1',
+      tag: 'v0.3.1',
+      channel: 'stable',
+      archive: 'dwell-0.3.1.tar.gz',
+    });
+    expect(
+      releasePlan({
+        ...branch,
+        event: 'dispatch',
+        ref: 'refs/heads/release/0.3',
+        requested: '0.3.1',
+      }).version,
+    ).toBe('0.3.1');
+  });
+
+  it('refuses a version the line already has', () => {
+    expect(() => releasePlan({ ...branch, event: 'tag', ref: 'refs/tags/v0.3.0' })).toThrow(
+      'already released',
+    );
+    expect(() =>
+      releasePlan({ ...branch, lineLatest: '0.3.2', event: 'tag', ref: 'refs/tags/v0.3.2' }),
+    ).toThrow('newest release on its line is 0.3.2');
+  });
+
+  it('refuses an older line’s version from a branch on another line', () => {
+    // main (package.json 0.4.0) cannot be released as a 0.3 patch.
+    const main = { ...base, packageVersion: '0.4.0', latestStable: '0.4.0', lineLatest: '0.4.0' };
+    expect(() => releasePlan({ ...main, event: 'tag', ref: 'refs/tags/v0.3.1' })).toThrow();
+    // Nor a 0.2 patch from the 0.3 branch.
+    expect(() => releasePlan({ ...branch, event: 'tag', ref: 'refs/tags/v0.2.5' })).toThrow();
+  });
+
+  it('releases the line’s next patch when run by hand on its branch', () => {
+    const run = { ...branch, event: 'dispatch' as const, ref: 'refs/heads/release/0.3' };
+    expect(releasePlan(run).version).toBe('0.3.1');
+    expect(releasePlan({ ...run, lineLatest: '0.3.4' }).version).toBe('0.3.5');
+    expect(() => releasePlan({ ...run, requested: '0.4.1' })).toThrow('not on this branch');
+  });
+
+  it('finds the newest release of a line', () => {
+    const tags = ['v0.3.0', 'v0.3.1', 'v0.4.0', 'v0.3.2-dev.4', 'v0.2.0'];
+    expect(latestStable(tags, '0.3.0')).toBe('0.3.1');
+    expect(latestStable(tags, '0.4.0')).toBe('0.4.0');
+    expect(latestStable(tags, '0.5.0')).toBeNull();
+    expect(latestStable(tags)).toBe('0.4.0');
+  });
+});

@@ -1,6 +1,6 @@
 // Slopes on generated terrain (docs/SLOPE_BLOCKS.md §5): the surface cells follow the continuous
 // surface within half a block, the rule needs no neighbour chunk, water floods the shapes below the
-// sea, and cliffs stay cubes.
+// sea, every shaped cell stands on a full one, and steps of the surface are sloped.
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -36,6 +36,31 @@ std::optional<std::array<int, 4>> CornersOfVoxel(MaterialId m) {
   if (!IsShapedState(m) || ShapeOf(m).inverted) return std::nullopt;
   const auto& c = ShapeOf(m).corners;
   return std::array<int, 4>{c[0], c[1], c[2], c[3]};
+}
+
+// Sites with gentle ground, hills and mountains (seed 0): the origin and a mountain range.
+constexpr std::pair<int, int> kSteepSites[] = {{0, 0}, {512, 1536}};
+
+// The top terrain cell of a column near its surface (y and state), if it has a clean surface.
+std::optional<std::pair<int, MaterialId>> TopOf(VoxelWorld& world, const TerrainGenerator& gen,
+                                                int x, int z) {
+  const auto s = gen.SurfaceAt(x, z);
+  if (!s.valid) return std::nullopt;
+  const int base = static_cast<int>(std::floor(s.height));
+  for (int y = base + 3; y >= base - 3; --y) {
+    const MaterialId m = world.GetVoxel(x, y, z);
+    if (m != Materials::kAir && m != Materials::kWater) return std::pair{y, m};
+  }
+  return std::nullopt;
+}
+
+// Whether the 3 × 3 columns around (x, z) all have a clean surface (no cave or overhang pocket at
+// it), so the slope rule applies to the column however steep its ground.
+bool CleanAround(const TerrainGenerator& gen, int x, int z) {
+  for (int dz = -1; dz <= 1; ++dz)
+    for (int dx = -1; dx <= 1; ++dx)
+      if (!gen.SurfaceAt(x + dx, z + dz).valid) return false;
+  return true;
 }
 
 }  // namespace
@@ -101,8 +126,8 @@ TEST_SUITE("worldgen: slopes") {
     VoxelWorld world = SlopeWorld(gen);
     // Cells along chunk borders and inside, in chunks the surface passes through.
     int compared = 0, shaped = 0;
-    for (const auto& [cx, cz] :
-         {std::pair{0, 0}, std::pair{-1, 0}, std::pair{0, -1}, std::pair{3, 2}}) {
+    for (const auto& [cx, cz] : {std::pair{0, 0}, std::pair{-1, 0}, std::pair{0, -1},
+                                 std::pair{3, 2}, std::pair{16, 48}, std::pair{15, 47}}) {
       for (int z = 0; z < 32; z += (z % 31 == 0 || z % 31 == 1) ? 1 : 5)
         for (int x = 0; x < 32; x += (x % 31 == 0 || x % 31 == 1) ? 1 : 5) {
           const int wx = cx * 32 + x, wz = cz * 32 + z;
@@ -124,6 +149,10 @@ TEST_SUITE("worldgen: slopes") {
                 break;
               case slopes::Kind::kFull:
                 CHECK_FALSE(IsShapedState(m));
+                // Directly under the surface cell: solid, whatever the cube terrain had there.
+                if (gen.SlopePieceAt(wx, y + 1, wz)->kind != slopes::Kind::kFull) {
+                  CHECK(GetMaterial(m).shape == VoxelShape::kFull);
+                }
                 break;
               case slopes::Kind::kShaped: {
                 ++shaped;
@@ -170,7 +199,7 @@ TEST_SUITE("worldgen: slopes") {
     CHECK(mismatched * 10 <= pairs);  // …and for no more than one pair in ten
   }
 
-  TEST_CASE("shapes below the sea are flooded, above it dry; cliffs stay cubes") {
+  TEST_CASE("shapes below the sea are flooded, above it dry") {
     const TerrainGenerator gen(0);
     VoxelWorld world = SlopeWorld(gen);
     int wet = 0, dry = 0;
@@ -195,24 +224,52 @@ TEST_SUITE("worldgen: slopes") {
     CHECK(dry > 50);
   }
 
-  TEST_CASE("steep ground stays cubes: where the surface rises more than a block between corners") {
+  // Regression (generator version 5): where the corners spanned a block from a half-height, two
+  // pieces were stacked and the upper one's flat bottom hung over the lower one's slope (a gap
+  // under the slope); and ground steeper than a block per cell stayed cubes, so hills and
+  // mountains were mostly unsloped one-block steps.
+  TEST_CASE("every shaped cell rests on a full cell, on gentle ground, hills and mountains") {
     const TerrainGenerator gen(0);
     VoxelWorld world = SlopeWorld(gen);
-    int cliffs = 0;
-    for (int z = -300; z < 300 && cliffs < 40; z += 2)
-      for (int x = -300; x < 300 && cliffs < 40; x += 2) {
-        const auto s = gen.SurfaceAt(x, z);
-        const auto e = gen.SurfaceAt(x + 1, z);
-        if (!s.valid || !e.valid || std::fabs(s.height - e.height) < 2.5f) continue;
-        ++cliffs;
-        // Wherever the rule declines the cell, the cube terrain stands there.
-        const int base = static_cast<int>(std::floor(std::min(s.height, e.height)));
-        for (int y = base - 1; y <= base + 1; ++y) {
-          if (gen.SlopePieceAt(x, y, z)) continue;
-          CHECK_FALSE(IsShapedState(world.GetVoxel(x, y, z)));
+    int shaped = 0, unsupported = 0;
+    for (const auto& [cx, cz] : kSteepSites)
+      for (int z = cz - 48; z < cz + 48; ++z)
+        for (int x = cx - 48; x < cx + 48; ++x) {
+          const auto top = TopOf(world, gen, x, z);
+          if (!top || !IsShapedState(top->second)) continue;
+          ++shaped;
+          const MaterialId below = world.GetVoxel(x, top->first - 1, z);
+          CAPTURE(x);
+          CAPTURE(top->first);
+          CAPTURE(z);
+          unsupported += GetMaterial(below).shape != VoxelShape::kFull;
+          CHECK(GetMaterial(below).shape == VoxelShape::kFull);
         }
-      }
-    CHECK(cliffs > 0);
+    MESSAGE(shaped << " shaped surface cells, " << unsupported << " not on a full cell");
+    CHECK(shaped > 10000);
+  }
+
+  TEST_CASE("one-block steps of the surface get a slope, on hills and mountains too") {
+    const TerrainGenerator gen(0);
+    VoxelWorld world = SlopeWorld(gen);
+    int steps = 0, bare = 0;
+    for (const auto& [cx, cz] : kSteepSites)
+      for (int z = cz - 48; z < cz + 48; ++z)
+        for (int x = cx - 48; x < cx + 48; ++x) {
+          const auto a = TopOf(world, gen, x, z);
+          if (!a || !CleanAround(gen, x, z)) continue;
+          for (const auto& [dx, dz] : {std::pair{1, 0}, std::pair{0, 1}}) {
+            const auto b = TopOf(world, gen, x + dx, z + dz);
+            if (!b || std::abs(a->first - b->first) != 1) continue;
+            if (!CleanAround(gen, x + dx, z + dz)) continue;
+            ++steps;
+            bare += !IsShapedState(a->second) && !IsShapedState(b->second);
+          }
+        }
+    MESSAGE(steps << " one-block steps between neighbouring columns, " << bare
+                  << " of them between two cubes");
+    CHECK(steps > 2000);
+    CHECK(bare * 20 <= steps);  // at most one step in twenty without a slope on either side
   }
 
   TEST_CASE("trunks stand on solid ground even where the ground voxel became a slope") {
