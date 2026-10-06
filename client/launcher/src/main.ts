@@ -6,6 +6,7 @@ import { isBuildOf, parseManifest, type Manifest } from './manifest';
 import {
   choose,
   forwardedSearch,
+  isPlainVisit,
   latestBuild,
   listBuilds,
   parseWorldIndex,
@@ -186,6 +187,39 @@ async function openBuild(manifest: Manifest, version: string): Promise<void> {
   ]);
 }
 
+/** How long the landing screen waits before opening the latest build by itself. */
+const LANDING_MS = 1200;
+
+/**
+ * The screen a plain visit lands on (Phase 6b): the launcher is unversioned, so this is where the
+ * version choice lives whatever build was played last. Opens the latest by itself after a moment.
+ */
+function landing(version: string): Promise<'play' | 'pick'> {
+  return new Promise((resolve) => {
+    const done = (answer: 'play' | 'pick'): void => {
+      clearTimeout(timer);
+      resolve(answer);
+    };
+    const timer = setTimeout(() => {
+      done('play');
+    }, LANDING_MS);
+    show(`Opening Dwell ${version}…`, [
+      {
+        label: 'Play now',
+        run: () => {
+          done('play');
+        },
+      },
+      {
+        label: 'Choose version',
+        run: () => {
+          done('pick');
+        },
+      },
+    ]);
+  });
+}
+
 async function run(): Promise<void> {
   const manifest = await manifestOf();
   if (!manifest) {
@@ -218,6 +252,12 @@ async function run(): Promise<void> {
   if (choice.kind === 'error') {
     show(choice.message, offerLatest);
     return;
+  }
+  if (choice.why === 'latest' && isPlainVisit(location.search)) {
+    if ((await landing(choice.version)) === 'pick') {
+      showVersions(manifest);
+      return;
+    }
   }
   if (!(await published(choice.version))) {
     show(`Dwell ${choice.version} couldn't be loaded. It may have been removed.`, [

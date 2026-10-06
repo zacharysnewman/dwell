@@ -166,3 +166,19 @@ test('the version page opens by address, with dev builds hidden until asked', as
   await page.locator('#use-dev-builds').uncheck();
   await expect(page.locator('.version-row')).toHaveCount(3);
 });
+
+test('a plain visit lands on a screen with Choose version, whatever build was played last', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await expect(page.locator('#launcher-status')).toContainText('Opening Dwell 0.2.0');
+  await page.getByRole('button', { name: 'Choose version' }).click();
+  await expect(page.locator('.version-row')).toHaveCount(3);
+  expect(versionOf(page)).toBeUndefined();
+  // Without a click it opens the latest by itself.
+  await page.goto('./');
+  await expect.poll(() => versionOf(page)).toBe('0.2.0');
+  // A link that names a world, game or build does not stop on it.
+  await page.goto('./?version=0.1.0');
+  await expect.poll(() => versionOf(page)).toBe('0.1.0');
+});

@@ -3,6 +3,7 @@ import { isBuildOf, LAUNCHER_VERSION, parseManifest, type Manifest } from './man
 import {
   choose,
   forwardedSearch,
+  isPlainVisit,
   latestBuild,
   listBuilds,
   parseWorldIndex,
@@ -217,5 +218,21 @@ describe('the version page', () => {
     ]);
     expect(parseWorldIndex('{')).toEqual([]);
     expect(parseWorldIndex(null)).toEqual([]);
+  });
+});
+
+describe('the landing screen', () => {
+  it('is for plain visits only; links to a world, game or build go straight through', () => {
+    expect(isPlainVisit('')).toBe(true);
+    expect(isPlainVisit('?debug=1')).toBe(true);
+    for (const q of [
+      '?play=a',
+      '?join=h:1',
+      '?code=ABCD',
+      '?v=0.1.0',
+      '?version=0.1.0',
+      '?versions',
+    ])
+      expect(isPlainVisit(q)).toBe(false);
   });
 });
