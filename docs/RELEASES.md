@@ -4,7 +4,7 @@
 > [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md), now implemented. What was built is in
 > [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§2.1 deployment, §3.1 CI, §6.4 persistence, §10.5
 > versioning) and [ADR 0014](./adr/0014-versioned-releases.md); this file keeps the rationale, the
-> release procedure and the setup steps. The first real release (§8) is the owner's step.
+> release procedure and the setup steps. The first stable release, `0.1.0`, was published on 2026-10-06 (§8).
 
 ## 1. Goals (owner, 2026-10-05)
 
@@ -222,11 +222,10 @@ Missing or unreachable versions show a clear message with the choice to open the
    need (`contents: write` to create and prune releases, `pages: write` and `id-token: write` to
    deploy). If the repository's default workflow permissions are restricted, that is fine; if
    *organization* policy blocks `contents: write` for workflows, allow it.
-3. The first stable release, `0.1.0` (the baseline), needs no step: `package.json` says `0.1.0` and
-   nothing is released yet, so the first push to `main` that includes this rule publishes it. Check
-   that `https://dropkickarcade.com/dwell/` loads it through the launcher, the main menu works, and
-   new worlds record the version. Until then the site serves the newest dev build (the launcher
-   falls back to dev when there is no stable one).
+3. ~~The first stable release, `0.1.0` (the baseline).~~ Done: published on 2026-10-06 by the push
+   that merged #47 (`package.json` said `0.1.0` and nothing was released). Still worth a look: that
+   `https://dropkickarcade.com/dwell/` loads it through the launcher, the main menu works, and new
+   worlds record the version.
 4. Nothing to bump afterwards (**Releasing**, step 3).
 
 ## 9. How the phase is checked
@@ -235,7 +234,7 @@ Automated in CI unless noted: `shared/version/vectors.txt` through both implemen
 and C++, native and WASM); `dwell_version_lock` (the real `dwell_server` on world files saved by other
 versions); the world index contract tests; `client/scripts/*.test.ts` (which releases the site holds,
 the manifest, what a release run builds); the launcher's unit tests; and `npm run e2e:site` (below).
-Not automated: a real release run of the workflows (the first one, §8).
+Not automated: the workflows themselves; their first real runs were the merges of #46 and #47 (§8).
 
 - A release produces a tag and a GitHub Release holding the build and `build.json`; the site lists it
   in `versions.json` and serves it at `/dwell/v/<version>/`.
