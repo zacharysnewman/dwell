@@ -111,6 +111,14 @@ act, so merging it is the release. Patch releases are manual:
 2. Check `https://dropkickarcade.com/dwell/` (the launcher opens the new stable build; the menu
    shows its version).
 3. Nothing to bump afterwards: later dev builds are pre-releases of the next patch.
+3a. **A patch of an older line (a backport)**, while a newer line is out: commit the fix on the
+   line's maintenance branch `release/<line>` (e.g. `release/0.3`, branched from the line's newest
+   release tag; its `package.json` stays on the line), then push the tag
+   (`git tag v0.3.1 && git push origin v0.3.1`) or run the **Release** workflow on that branch (it
+   releases the line's next patch, or the version typed, which must be on the line). The version
+   must be newer than the line's newest release; the launcher's latest stays the newest version,
+   and the line's worlds move onto the patch. `release.ts` refuses another line's version from the
+   branch, and an older line's version from `main`. No dev builds are made of maintenance branches.
 4. A change that breaks the public API (§3) raises `package.json`'s version (to the next MINOR,
    before `1.0.0`) in its PR, so the merge releases that version as stable and worlds of the old
    line stay with the old builds. (Merge the breaking change only when it should ship: there is no
