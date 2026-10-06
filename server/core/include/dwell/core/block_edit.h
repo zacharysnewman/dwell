@@ -29,8 +29,9 @@ struct BlockHit {
   float distance = 0.0f;
 };
 
-// Nearest targetable cell along the ray (unit `dir`) within `max_distance`, as its shape's box
-// (slabs: the bottom half; everything else the whole cell). A box containing the origin is skipped.
+// Nearest targetable cell along the ray (unit `dir`) within `max_distance`, as its exact shape
+// (slabs and slopes: their solid; a block without one, such as a ladder: the whole cell). A cell
+// containing the origin is skipped.
 // Walks in float relative to the origin's cell, so it is as precise ~8,000 km out as at the origin.
 std::optional<BlockHit> RaycastBlock(VoxelWorld& world, const std::array<double, 3>& origin,
                                      const std::array<float, 3>& dir, float max_distance);
