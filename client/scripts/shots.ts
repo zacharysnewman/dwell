@@ -14,6 +14,9 @@ import { join } from 'node:path';
 import { chromium, type Page } from '@playwright/test';
 
 const SEED = 7;
+/** Resolution scale (`?scale=`): software rendering is bound by pixels, and a quarter of them is
+ * several times faster. Compare only shots taken at the same scale. */
+const SCALE = process.env.SHOT_SCALE ?? '0.5';
 const WIDTH = 960;
 const HEIGHT = 540;
 
@@ -120,7 +123,7 @@ async function main(): Promise<void> {
   page.on('pageerror', (e) => {
     console.log(`page error: ${e.message}`);
   });
-  await page.goto(`${base.replace(/\/$/, '')}/dwell/?local=1&seed=${String(SEED)}`);
+  await page.goto(`${base.replace(/\/$/, '')}/dwell/?local=1&seed=${String(SEED)}&scale=${SCALE}`);
   await page.waitForFunction(
     () => (globalThis as unknown as { __dwell?: Hooks }).__dwell?.state()?.terrainReady,
     null,
