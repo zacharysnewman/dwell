@@ -468,7 +468,10 @@ ladder, is targeted and seen as its whole cell), the **edit check** tests the
 capsule against the placed shape's true volume, and the controller's overlap test (uncrouching) uses
 the true surface. The exhaustive adjacency test checks that no pair of shapes leaves a hole on any
 side. The meshers draw polygons with their true normals and a face tint interpolated by the normal
-(`render/look.ts` `normalTint`, shared with the LOD). Water in a flooded shape: the server sets
+(`render/look.ts` `normalTint`, shared with the LOD). Sloped faces take the top tile, projected
+along their dominant axis; an upright piece's side faces take the side tile measured down from
+their own top edge, so its top (a grass side's fringe) runs along a slope's edge and a slab's top
+rather than the cell's top. Water in a flooded shape: the server sets
 `flooded` from the cell on placement (placed into water: flooded; anywhere else: dry — no water from
 nothing), breaking a flooded shape leaves water, and a flooded cell counts as water for swimming.
 
