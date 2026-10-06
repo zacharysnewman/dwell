@@ -283,14 +283,24 @@ through a 1-wide, 2-tall doorway. Dwell's defaults (§7): **radius 0.3, height 1
 openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.2 Blocks, steps, slopes
-- Static terrain is all axis-aligned: its ground normals are always straight up and walls exactly
-  vertical, so slope logic rarely triggers on terrain. It still matters on **Tier 1 bodies**
-  (rotated clusters) and on future slab/stair shapes.
+- Cubes and slabs have axis-aligned faces; **[built, Phase 9]** slope blocks add faces at 45° (the
+  standard slope) and 26.57° (the gentle one) to static terrain — a hip or valley's *line* is
+  shallower (35.26°, 19.47°), but its faces keep the pitch of their straight slopes — and generated
+  terrain is made of them ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §4). Slope logic matters on
+  terrain now, and on **Tier 1 bodies** (rotated clusters).
   **[planned, Phase 13]** The bifacial world puts a second face on the disc's underside, where
   up is −y: the controller gains a face sign through every vertical quantity and probe, proven by a
   mirror-equivalence suite ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
-  **[planned, Phase 9]** Slope blocks add 45° and 26.57° walkable faces to static terrain;
-  `maxSlopeAngle` (45°) is raised above 45° then, with slope scenarios ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §4).
+  **[built, Phase 9]** `maxSlopeAngle` is **50°**: a standard slope's face is exactly 45°, so the
+  limit must not hinge on float rounding of its normal (a test pins it). Slope scenarios
+  (`server/tests/player/slope_test.cpp`; natively, in WASM and ~8,000 km out): up and down standard
+  and gentle ramps in all four directions without leaving the ground (the ground snap holds a
+  player to a 45° descent), across a hip and a valley, standing still on a slope (no sliding), a
+  slope into a wall, crouching under a sloped ceiling, the in-game slope playground and generated
+  sloped terrain; no gain in speed and no launch (a rise per tick is at most a step-up).
+  Ray probes and the uncrouch overlap test read the exact shape (`core/block_shape.h`); the
+  controller golden trace of cubes and slabs is bit-for-bit unchanged (the box ray cast is kept as
+  a differential test), and the scenario has a fifth player on the slope features.
 - `maxStepHeight` 0.55 m (PPC: 0.45): half-block **slabs** (0.5 m) are stepped up without leaving
   the ground, full 1 m blocks need a **jump** (jump height 1.25 m clears one block); step-up also
   applies to cluster debris. Walking off a 1 m ledge is a short fall (larger than the step reach),
@@ -431,7 +441,7 @@ engine movement, checked against Halo 3); rows marked ◆ differ from the PPC de
 | | `maxPushForce` ◆ | 800 N | — | Contact mass scaling |
 | | `pushableMassLimit` ◆ | 400 kg | — | Heavier clusters are immovable by players |
 | Probes | `groundProbeMargin` / `ceilingProbeMargin` | 0.15 / 0.10 m | same | |
-| | `maxSlopeAngle` | 45° | same | |
+| | `maxSlopeAngle` | 50° ◆ (Phase 9; 45° would hinge on rounding at a standard slope's 45°) | same | |
 | Jump | `height` | 1.25 m | same | Clears one block |
 | | `bufferTime` / `coyoteTime` ◆ | 0.2 / 0.2 s (12 / 12 ticks) | 0.2 / 0.1 s | Stored as ticks. Coyote time doubled: 0.1 s felt stingy next to other games |
 | Crouch | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |
@@ -514,7 +524,7 @@ Owned by the `Predictor` (same Jolt settings as the server):
 ### 8.3 Divergence budget **[built]**
 Native and WASM Jolt are not assumed bit-identical. Jolt is built with
 `JPH_CROSS_PLATFORM_DETERMINISTIC` and everything without FMA contraction (`-ffp-contract=off`),
-and the result is **measured** in CI: `dwell_scenario_trace` runs the four-player scenario natively
+and the result is **measured** in CI: `dwell_scenario_trace` runs the five-player scenario natively
 and under Node (WASM), and `server/tools/divergence.mjs` compares them. Measured: positions
 bit-identical over all 600 ticks; velocities within 1.2 × 10⁻⁷ m/s (float rounding in the trig
 functions), far below `externalAbsorbThreshold` (0.01 m/s), which the check enforces for the

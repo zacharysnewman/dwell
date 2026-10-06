@@ -25,8 +25,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ✅ Complete — merged in #46 and #47 (the first run's fixes); `v0.1.0` released and the site deployed by the Release run on 2026-10-06 | #46, #47 |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
-| 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred | #51 |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a started | — |
+| 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the CI run on `main` for the merge failed in the storage WASM test and the touch e2e test (not yet fixed); the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred | #51 |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🔍 In review — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; new compatibility line to be raised by the owner (generator v5, registry hash) | — |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
@@ -1322,40 +1322,50 @@ walked on smoothly by the physics player controller with identical collision on 
 client, and used by the LOD to draw distant terrain as faceted slopes instead of terraces. Design,
 the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 
-**Status:** Not started. Needs Phase 8 (the block registry). Sub-phases: **9a — shapes, slope
-families, meshing, collision and the
-controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
-(generator version bump); **9d — LOD slopes**. Runs after Phase 8 (the block registry) and before Phase 14, whose
-cluster shapes and integrity rules must know about slopes.
+**Status:** Built (9a–9d), in review. Sub-phases: **9a — shapes, slope families, meshing, collision
+and the controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
+(generator version 5); **9d — LOD slopes**. Runs after Phase 8 and before Phase 14, whose cluster
+shapes and integrity rules must know about slopes. Outstanding: everything that needs CI or a
+person — the WASM suites (controller scenarios, determinism goldens, native↔WASM divergence), the
+browser e2e tests (including the new shape specs), the frame-time and generation/meshing timings on
+a desktop and a phone, and the owner's manual review. **Breaking change:** generator version 5
+changes the terrain a seed generates and the registry hash changes with the new states, so this
+needs a new compatibility line — the owner raises `client/package.json`; it is not raised here.
+
+**Deviations:** `stone_slab` keeps its slot but the other materials' shaped blocks have no palette
+slot of their own (one slot per material plus a shape key); families use `palette: all`;
+partly covered faces are kept, so some back-to-back interior faces remain (the adjacency test proves
+no holes); the "smooth" brush is not built. Details: [ADR 0016](./adr/0016-slope-blocks.md).
 
 Deliverables
-- [ ] ADR: slope shapes as registry block families (`<m>_slope[facing,flooded,half,shape]`,
+- [x] ADR: slope shapes as registry block families (`<m>_slope[facing,flooded,half,shape]`,
   `<m>_slab[flooded,half]`) and flooded blocks.
-- [ ] 9a: the 9 shapes × 4 facings × upright/inverted (§1.2) as generated slope and slab families
+- [x] 9a: the 9 shapes × 4 facings × upright/inverted (§1.2) as generated slope and slab families
   for the shapeable materials, with coverage, triangles, volume, convexity and `placeable` per
   state; `SurfaceHeightAt` for point queries; flooded states drawn and swum in like water.
-- [ ] 9a: chunk mesher — coverage-based culling, sloped faces with true normals, top-tile
+- [x] 9a: chunk mesher — coverage-based culling, sloped faces with true normals, top-tile
   projection, normal-interpolated face tint shared with the LOD mesher.
-- [ ] 9a: terrain collision meshes with sloped triangles; `maxSlopeAngle` raised above 45°
+- [x] 9a: terrain collision meshes with sloped triangles; `maxSlopeAngle` raised above 45°
   (a tuning change with a test that fails on 45°); a slope playground and controller scenarios
   (ramps, corners, gentle 2 × 2 corners, slope into a wall, crouching under a sloped ceiling).
-- [ ] 9b: creative palette shape selector (key and touch), orientation from facing and the hit
+- [x] 9b: creative palette shape selector (key and touch), orientation from facing and the hit
   face, a placement preview, `CheckBlockEdit` against the shape's true volume; breaking gives the
   base material.
-- [ ] 9c: the corner-height surface rule (§5) in the generator, point queries and
+- [x] 9c: the corner-height surface rule (§5) in the generator, point queries and
   `GenerateLod`; flooded slopes below water levels; generator version bump, goldens regenerated.
-- [ ] 9d: the LOD mesher derives slopes from surface heights at every level (no LOD format
+- [x] 9d: the LOD mesher derives slopes from surface heights at every level (no LOD format
   change).
-- [ ] `ARCHITECTURE.md` §6.1, §6.3, §6.5, §6.6 and §8.3 and `PLAYER_CONTROLLER.md` §6.2 updated.
+- [x] `ARCHITECTURE.md` §6.1, §6.3, §6.5, §6.6 and §8.3 and `PLAYER_CONTROLLER.md` §6.2 updated.
 
 Exit criteria
-- [ ] Shape table verified from geometry (corner heights, volumes, coverage, convexity); the slope
+- [x] Shape table verified from geometry (corner heights, volumes, coverage, convexity); the slope
   families' canonical strings round-trip.
-- [ ] Exhaustive adjacency test: no holes or overlapping faces for any pair of shapes on any side.
-- [ ] Controller slope scenarios pass natively and in WASM, at the origin and ~8,000 km out; the
-  divergence check passes; no slope launches, hops or sliding at rest.
+- [x] Exhaustive adjacency test: no holes or overlapping faces for any pair of shapes on any side.
+- [ ] Controller slope scenarios pass natively (done, at the origin and ~8,000 km out) and in WASM
+  (CI); the divergence check passes (CI); no slope launches, hops or sliding at rest.
 - [ ] Generated slopes within half a block of the continuous surface, shared corners agree, flooded
-  below water; LOD slopes within half a cell; determinism goldens pass everywhere.
+  below water; LOD slopes within half a cell (all tested natively: 99.7 % within half a block,
+  worst 0.87 m); determinism goldens pass everywhere (native done; WASM and client module in CI).
 - [ ] e2e: every shape in every orientation placed and broken, seen identically by a second client.
 - [ ] Frame time within budget on desktop and a phone; chunk generation and meshing times reported.
 - [ ] Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.

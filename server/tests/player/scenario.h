@@ -1,6 +1,6 @@
 #pragma once
 
-// The four-player scenario (PPC Phase8Hardening / GoldenTrace) on voxel geometry: a floor, ramp,
+// The five-player scenario (PPC Phase8Hardening / GoldenTrace) on voxel geometry: a floor, ramp,
 // slab step, crawlspace, ladder to a ledge, pool, a moving and turning platform, and an explosion.
 // Used by the golden-trace test, the performance gate, and the native↔WASM divergence tool
 // (server/tools/scenario_trace.cpp).

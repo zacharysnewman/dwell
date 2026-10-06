@@ -98,7 +98,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 4, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 5, §6.3) by
    default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
@@ -405,16 +405,18 @@ lower on mobile.
 
 Built (Phases 1–3a; registry Phase 8): the prototype blocks — air, bedrock, stone, dirt, grass,
 stone slab, ladders, water, a debug launch pad, and the terrain generator's sand, sandstone, gravel,
-snow, log, leaves, and coal/iron/gold ores — where each state has a collision **shape** (`Empty`,
-`Full`, `SlabBottom`), `climbable` + facing, `liquid`, and `launch_speed` (PLAYER_CONTROLLER.md §6);
+snow, log, leaves, and coal/iron/gold ores, plus a slab and nine slope shapes of the shapeable
+materials (below) — where each state has a collision **shape** (`Empty`, `Full`, `Shaped`: a slab or a
+slope, geometry below), `climbable` + facing, `liquid`, `flooded` and `launch_speed`
+(PLAYER_CONTROLLER.md §6);
 32³ chunks with revisions (generated chunks
 start at revision 0); `VoxelWorld`, generate-on-access with eviction of unmodified chunks on the
 server, and *streamed* (no generator; missing chunks read as air) in the client sim; a flat test world (grass top face at y = 0,
 bedrock at the bottom); and a **playground** generator (flat world plus slab stairs, a block step,
 a 1×2 doorway, a crawlspace, a ladder to a ledge, a pool, and a launch pad near the spawn) for
 movement testing. **Terrain collision** (`terrain_collision.h`, Phase 2; regions Phase 3c): static
-Jolt bodies with a `MutableCompoundShape` of per-chunk `MeshShape`s (unit quads per exposed face, no
-greedy merge), built around players, rebuilt in the same tick as an edit, and unloaded far from
+Jolt bodies with a `MutableCompoundShape` of per-chunk `MeshShape`s (the polygons of every shape's
+exposed faces, no greedy merge), built around players, rebuilt in the same tick as an edit, and unloaded far from
 players. For the 8,192 km world each body sits at the centre of a 2 048 m *region* and holds every
 chunk around the players *anchored* to it, so its sub-shape offsets stay small; a player collides
 only with its anchor's body and re-anchors, with hysteresis, well inside the next region — there is
@@ -439,9 +441,30 @@ and checked by the client. Runtime ids stay on the wire and in memory (a `u16` p
 bit-packed chunk-local palette would be 7× smaller but 2.7× slower to scan with the current access
 pattern, ADR 0015 — deferred); on disk, chunk palettes hold **world state ids** mapped to strings
 (§6.4).
-**[planned, Phase 9]** Slope blocks — standard and gentle wedges with hip and valley corners,
-upright and inverted, optionally flooded — as registry block families, with sloped collision,
-meshing, building, terrain shaping and slopes in the LOD mesher: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
+
+**Shapes and slope blocks [built, Phase 9]** ([ADR 0016](./adr/0016-slope-blocks.md),
+[`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). Every solid state has a **shape**: its top surface is given
+by four corner heights in halves of a cell (NW, NE, SE, SW), split into two planar triangles along
+one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube is (2, 2, 2, 2),
+a slab (1, 1, 1, 1). The nine slope shapes — wedge, outer (hip) and inner (valley) corner, each at 1:1
+(45°) and the gentle 1:2 (26.57°) pitch in a low and a high piece — in four facings and two halves
+are generated per shapeable material (`shapeFamilies` in the block data: stone, dirt, grass, sand,
+sandstone, gravel, snow, log) as the blocks `dwell:<m>_slope[facing,flooded,half,shape]` (144
+states) and `dwell:<m>_slab[flooded,half]`; `flooded` means water fills the shape's open part. The
+geometry is baked once by `shared/blocks/shapes.mjs` (`gen.mjs`) into both languages: each shape's
+closed, outward-wound polygons tagged with the cell face they lie on (or the sloped surface), its
+side profiles for culling, volume, convexity and extent — one table, so server, WASM client and
+meshers agree. `core/block_shape.h` (`ShapeOf`, `SolidSpanAt`/`SurfaceHeightAt`, `FaceCovered`,
+`RayEnterShape`, `VerticalSegmentDistanceSq`; `+ − × /`, `min`, `max` only, ADR 0010) answers every
+point query: the **terrain collision mesh** adds each shape's polygons (a cell face is skipped where
+a neighbour's opposite face covers it entirely; sloped faces never are), **block targeting**
+(`RaycastBlock`, the controller's ray probes) enters the exact shape, the **edit check** tests the
+capsule against the placed shape's true volume, and the controller's overlap test (uncrouching) uses
+the true surface. The exhaustive adjacency test checks that no pair of shapes leaves a hole on any
+side. The meshers draw polygons with their true normals and a face tint interpolated by the normal
+(`render/look.ts` `normalTint`, shared with the LOD). Water in a flooded shape: the server sets
+`flooded` from the cell on placement (placed into water: flooded; anywhere else: dry — no water from
+nothing), breaking a flooded shape leaves water, and a flooded cell counts as water for swimming.
 
 - Voxel = 1 m cube; `uint16` block-state ID (0 = air). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
@@ -470,8 +493,8 @@ meshing, building, terrain shaping and slopes in the LOD mesher: [`SLOPE_BLOCKS.
 | **Tier 1 dynamic** (gameplay-critical) | Server Jolt world as one `CompoundShape` body per cluster | Active | Unreliable snapshots, 20 Hz |
 | **Tier 2 dynamic** (cosmetic debris) | Client-local Jolt world only | Client only | Not synchronized; derived from a reliable event |
 
-Static collision uses a per-chunk `MeshShape` of unit face quads (a `HeightFieldShape` cannot
-represent overhangs/caves), held in per-region bodies (§6.1). Collision exists only for full-detail chunks
+Static collision uses a per-chunk `MeshShape` of the exposed polygons of cubes, slabs and slopes (a
+`HeightFieldShape` cannot represent overhangs/caves), held in per-region bodies (§6.1). Collision exists only for full-detail chunks
 near players; LOD terrain (§6.6) is render-only.
 Both server and client build the same collision mesh from the same chunk data so client
 prediction collides with the same geometry the server does.
@@ -501,9 +524,9 @@ Nothing below changes until those phases land; each updates this section, §6.6
 and §5 as it does.
 
 **Built (Phases 3a, 3c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
-`src/worldgen/`) is **generator version 4** (3c: the planet-scale world as version 3; Phase 4 adds
-super tall massifs as version 4; versions 2 and 3 are retired — a world saved with one loads as the
-flat world) and
+`src/worldgen/`) is **generator version 5** (3c: the planet-scale world as version 3; Phase 4 adds
+super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; versions 2–4
+are retired — a world saved with one loads as the flat world) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
 tests and movement work. Players spawn at the generator's spawn point: the first level, open,
 tree-free land found in an 8 m spiral from the origin. A chunk takes ~1.2 ms to generate natively
@@ -571,6 +594,22 @@ arithmetic, so features placed by point queries agree with the chunks.
    (snowy; mountain tops above 900 m), sand over sandstone (desert, beach), sand or gravel under
    water, bare stone on steep slopes; stone below. Open space below `SEA_LEVEL` fills with water;
    the bottom `BEDROCK_LAYERS` are bedrock.
+5b. **Slopes [built, Phase 9c]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §5). Each column has a
+   *continuous surface*: the highest zero of its density going down from the sky, closed-form per
+   lattice layer (density is linear in y between layers), valid only where solid cells lie under it
+   and open ones over it. A cell corner's height is the mean of the four columns around it, rounded
+   to a half; a cell takes its slope piece (or air, or a cube) from its four corner heights relative
+   to its floor — the nine shapes in four orientations and the slab where they match exactly,
+   otherwise the nearest piece (`PIECE_NEAREST`, generated: raise the lowest corner on a tie).
+   Neighbouring cells, and chunks, share corners, so nothing reads a neighbour's data. Corners more
+   than a block apart (a cliff) or any of the nine columns without a clean surface leave the cell as
+   cubes. The material is the column's surface material; shapes under `SEA_LEVEL` are flooded. Sampled
+   over generated terrain, 99.7 % of shaped columns lie within half a block of the continuous surface
+   (worst 0.87 m), and neighbouring shaped cells differ at their shared edge by at most half a block
+   (in 3.9 % of pairs where the nearest-piece rule bends a corner). Point queries
+   (`SurfaceAt`, `SlopePieceAt`) apply the same rule from scratch, and a test checks them against
+   the chunk path cell for cell across chunk borders. Slopes cost ~25 % more per chunk
+   (10.5 ms against 8.4 ms, Debug).
 6. **Stability pass.** Solid components that do not touch a chunk face and have fewer than 48
    voxels are removed (to water in open sea, otherwise air), so newly generated terrain does not
    collapse the first time a nearby voxel changes. The check is within the chunk: a piece that
@@ -582,7 +621,10 @@ arithmetic, so features placed by point queries agree with the chunks.
    mountain biomes) at hashed positions per cell, on the ground found by `GroundY`; each writes
    only voxels inside the chunk being generated. Boulders and leaves fill only air, logs air and
    leaves, and features apply in a fixed order (boulders, then trees, each by cell), so
-   overlapping features resolve the same way in every chunk. Hand-authored structures come later.
+   overlapping features resolve the same way in every chunk. A trunk starts one voxel below the
+   ground `GroundY` found (logs also replace a slope piece), so it stands on solid ground where the
+   slope stage shaved the ground voxel. Hand-authored structures come later. The spawn is the first
+   level patch (corners within half a block, solid cells under two open ones) on that surface.
 
 #### Determinism **[built]**
 Server (native), local mode (WASM), and client (WASM) must produce **bit-identical** chunks
@@ -769,9 +811,10 @@ Players break and place blocks. Server-authoritative like every voxel change
 
 - **Targeting (client):** each frame `RaycastBlock` (a DDA from the eye along the view,
   `REACH_DISTANCE` long, in float relative to the eye's cell so it is exact anywhere in the world)
-  finds the first *targetable* cell — anything but air and liquids, as its shape's box (slabs the
-  bottom half, everything else the whole cell) — and the face the ray entered; the renderer
-  outlines the cell. The client sim runs the same C++ as the server.
+  finds the first *targetable* cell — anything but air and liquids — by entering its exact shape
+  (a slab, a slope: `RayEnterShape`), and the face it entered through (a sloped surface counts as
+  the face its normal mostly points through, the top on a tie); the renderer outlines the cell. The
+  client sim runs the same C++ as the server.
 - **Actions:** desktop — left click breaks the targeted block, right click places the selected
   block against the targeted face (only while the pointer is locked; the first click locks it).
   Touch — a tap on the view (a touch on the look half that moves ≤ 12 px and lifts within 500 ms)
@@ -784,9 +827,11 @@ Players break and place blocks. Server-authoritative like every voxel change
   `CheckBlockEdit`: the target cell within `REACH_DISTANCE` + 1 m (latency slack) of the server's
   view of the eye (checked first, so a far request reads nothing); a targetable cell; the eye in
   front of the targeted face and a ray to its centre or one of four points near its corners
-  reaching the target first (line of sight); Break — not indestructible (bedrock); Place — a
-  placeable material, into an air or liquid cell inside the world's rows and disc, and (solid
-  blocks) not overlapping any player's capsule. Accepted edits of a step are batched into one
+  reaching the target first (line of sight; on a shape, the sample points lie on the polygons whose
+  normal points through the requested face); Break — not indestructible (bedrock), leaving water
+  where a flooded shape stood; Place — a placeable state, into an air or liquid cell inside the
+  world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
+  player's capsule, tested against the shape's true volume. Accepted edits of a step are batched into one
   `VoxelModification` (one entry per chunk, its revision + 1) sent to each client streaming a
   changed chunk; clients streaming it later get the chunk Explicit. The client does not predict
   edits: the change shows when the modification arrives (one RTT), and terrain collision — server
@@ -799,7 +844,14 @@ Players break and place blocks. Server-authoritative like every voxel change
   mounted on that block, facing out of it; on a top or bottom face it faces the player. A hotbar
   HUD shows the palette with the selected block highlighted; number keys (1–9, 0) and the scroll
   wheel (desktop) or tapping a hotbar slot (touch) change the selection. Selection is client-side
-  UI state and travels in each `BlockEditRequest`. Collected, finite inventories are out of scope
+  UI state and travels in each `BlockEditRequest`. **[built, Phase 9b]** The hotbar has one slot per
+  material, and the shaped families are *pieces* of it, not slots: the **shape key** (R, Shift+R
+  back, or the button beside the hotbar) cycles the cube, the slab and the nine slope shapes for
+  the materials that have families. A slope descends toward the player (rising away like stairs)
+  and hangs from the ceiling against a block's underside or the upper half of a side face (the
+  view ray's height on the face); a preview outline (`render/shapeEdges.ts`) shows the exact
+  shape at the cell before placing. All of a family's states are placeable, the server accepting
+  any of them with `flooded` normalised from the cell. Collected, finite inventories are out of scope
   for now.
 
 ### 6.6 Level of Detail: the Whole-World View **[built, Phase 4]** (frame-rate check on real hardware outstanding)
@@ -1042,6 +1094,18 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   cracks along section borders, found in a playtest.) The cells themselves — and so the
   server, `Downsample`, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
+- **Slopes [built, Phase 9d]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §3.2): distant terrain reads
+  as facets, not terraces. With `slopes` (on in the game), the mesher derives the same pieces as
+  the generator (§6.3 5b) from heights alone — no format change, at every level: a column's height
+  is its generated surface where the section carries it and the cell holds it, else the top of its
+  topmost solid cell (so modified sections slope too); a corner's height is the mean of the four
+  columns around it, rounded to a half *of a cell*; the column's surface cell is drawn as the
+  piece for its corners clamped to the cell (`PIECE_NEAREST`, generated and shared with C++), as
+  triangles with true normals and the shared normal tint. A cliff (corners more than a cell
+  apart), a sea floor, an empty or full piece, or a column without all nine neighbours stays as
+  before; walls between columns follow the slopes' edges (trapezoids), so sloped neighbours meet
+  without a gap and a step down to a flat or cliff column still has its wall, skirts included.
+  Flat ground keeps its merged rectangles.
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
@@ -1513,7 +1577,7 @@ architectural summary.
 - Probes (ground/ceiling rings, wall rays, overlap tests) query the **voxel grid** directly (DDA)
   for terrain and Jolt only for moving bodies (PLAYER_CONTROLLER.md §5).
 - **[built]** `dwell::player::Players` runs the pipeline for every player of a physics world; the
-  whole PPC test suite is ported to voxel geometry (`server/tests/player`, including a four-player
+  whole PPC test suite is ported to voxel geometry (`server/tests/player`, including a five-player
   golden trace and the 64-player < 1 ms/tick gate), and runs both at the origin and ~8,000 km from
   it. Player bodies use the `Character` object layer, double-precision positions (ADR 0011), a
   terrain collision group for their anchor (§6.1), and a Jolt `ContactListener` (installed by

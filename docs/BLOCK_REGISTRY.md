@@ -51,7 +51,7 @@ blocks, new vegetation materials (Phase 11c), and any later content.
   `shared/protocol/constants.json` → `constants.gen.*` today), replacing the hand-mirrored tables.
   "Content is prototype" (§6.1) now has a concrete home: the real block set replaces these files.
 
-**Family convention for shaped variants** (decided in Phase 9's ADR, recommended here): plain
+**Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,
 `dwell:stone_slope[facing,flooded,half,shape]` (9 shapes × 4 facings × 2 halves × 2 flooded = 144

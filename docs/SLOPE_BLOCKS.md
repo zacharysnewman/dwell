@@ -1,10 +1,31 @@
 # Dwell — Slope Blocks: Shapes, Collision, Building, Terrain and LOD
 
-> **Status: [planned]** — the design for implementation **Phase 9**
-> ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). As the phase lands, the built mechanisms
-> move into [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxel shapes and the material table, §6.3
-> generation, §6.5 building, §6.6 LOD, §8.3 messages) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)
-> (§6.2 blocks, steps, slopes), and this file keeps the rationale and the shape tables.
+> **Status: [built, Phase 9]** — implemented as designed below, with the decisions recorded in
+> [ADR 0016](./adr/0016-slope-blocks.md); the built mechanisms live in
+> [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxel shapes and the registry, §6.3 generation, §6.5
+> building, §6.6 LOD) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md) (§6.2 blocks, steps,
+> slopes), and this file keeps the rationale and the shape tables.
+>
+> **Differences from the design below** (what was built):
+> - A shape is *four corner heights in halves of a cell plus a split diagonal and an inversion
+>   flag*; the §1.2 table is checked against the baked geometry (`shared/blocks/shapes.mjs`, tests in
+>   C++ and TypeScript: volumes by the divergence theorem, closure, winding, convexity).
+> - Faces culled only where a neighbour covers them entirely (§3.1): partly covered faces stay, so
+>   some back-to-back interior faces remain (the exhaustive adjacency test proves no holes).
+> - `SurfaceHeightAt` of an inverted piece is the top of its solid (1 where it has thickness).
+> - Terrain (§5): the "continuous surface" is the highest zero of the density (closed form per
+>   lattice layer, so overhang noise is included); corner heights are the mean of four columns
+>   rounded to a half; the piece is the exact shape or the nearest (`PIECE_NEAREST`); cliffs and
+>   columns with caves or overhang pockets under their surface stay cubes. 99.7 % of shaped columns
+>   lie within half a block of the surface (worst 0.87 m); shared edges differ by half a block in
+>   3.9 % of neighbouring pairs, never more.
+> - LOD (§3.2): a column's piece is clamped to its own cell (a corner above the cell's top gives a
+>   gentler facet); sea floors stay flat; walls follow the slopes' edges.
+> - The creative palette (§6): one slot per material and a shape key (R, Shift+R, or the button beside
+>   the hotbar); `stone_slab` has no slot of its own; a preview outline shows the shape.
+> - Not built: the "smooth" brush (§6, optional), faces' triangle merging along a ridge, top-slab
+>   shortcuts. Frame-time budgets on a desktop and a phone, the WASM/native divergence check and the
+>   browser end-to-end tests are CI's to confirm.
 
 Slopes touch nearly every system: the block registry (Phase 8, [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)),
 the chunk and LOD meshers, terrain collision and the player controller, prediction parity, block
