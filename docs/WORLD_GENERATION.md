@@ -1,6 +1,6 @@
 # Dwell — World Generation Plans: Look, Continents, Terrain, Sky Islands
 
-> **Status: [planned].** This is the design reference for implementation Phases 7 and 10–12
+> **Status: [planned]; §1 (Phase 7) is [built].** This is the design reference for implementation Phases 7 and 10–12
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). It describes what to build and why, in
 > enough detail that no outside material is needed. The reference image and the Epic Terrain mod
 > it was written from are **not** in the repository and will not be available when the phases are
@@ -94,7 +94,9 @@ Sampled from the image (hue-family medians of the vivid pixels, and point sample
 | Waterfall / foam | `#F2F8FC` | `#CAE1F0` | — |
 | Sunlit cream highlight | `#F5D9A2` | — | — |
 
-### 1.4 What to change
+### 1.4 What was changed (Phase 7, built)
+
+Built in `client/src/render/look.ts` (the live values), `textures.ts`, `materials.ts` and `render/three/sky.ts`; the tables below are the starting points the work was tuned from, kept for the rationale.
 
 **Scope: colours only, no terrain generation change.** Phase 7 is a first pass at better
 colours: it retunes how the existing materials and the sky are drawn. It adds no materials, does
@@ -149,7 +151,7 @@ unit-testable.
 image's turquoise-to-blue comes from depth). LOD water (already tinted) uses the same base.
 Optional if cheap: a slight fresnel brightening at grazing angles.
 
-### 1.5 How Phase 7 is checked
+### 1.5 How Phase 7 was checked
 
 - **Screenshots.** An e2e script captures the same fixed views (seed, position, look direction,
   time) before and after: the spawn, a forest edge, a coast, mountains from a distance, the
