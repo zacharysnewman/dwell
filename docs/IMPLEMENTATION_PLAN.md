@@ -26,7 +26,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ✅ Complete — merged in #46 and #47 (the first run's fixes); `v0.1.0` released and the site deployed by the Release run on 2026-10-06 | #46, #47 |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the CI run on `main` for the merge failed in the storage WASM test and the touch e2e test (not yet fixed); the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred | #51 |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🔍 In review — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; new compatibility line to be raised by the owner (generator v5, registry hash) | — |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🔍 In review — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash) | — |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
@@ -1330,7 +1330,8 @@ person — the WASM suites (controller scenarios, determinism goldens, native↔
 browser e2e tests (including the new shape specs), the frame-time and generation/meshing timings on
 a desktop and a phone, and the owner's manual review. **Breaking change:** generator version 5
 changes the terrain a seed generates and the registry hash changes with the new states, so this
-needs a new compatibility line — the owner raises `client/package.json`; it is not raised here.
+is a new compatibility line, so `client/package.json` is raised to 0.3.0 by the owner's decision
+(2026-10-06); merging to `main` releases it as stable.
 
 **Deviations:** `stone_slab` keeps its slot but the other materials' shaped blocks have no palette
 slot of their own (one slot per material plus a shape key); families use `palette: all`;
