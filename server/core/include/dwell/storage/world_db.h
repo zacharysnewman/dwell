@@ -23,8 +23,11 @@ struct sqlite3;
 namespace dwell::storage {
 
 // Schema version written by this build (PRAGMA user_version, mirrored in meta.format_version).
-// Opening an older file migrates it in order; a newer one is refused.
-inline constexpr int kFormatVersion = 2;
+// Opening a new file creates it at this version; a newer one is refused. Files of formats 1 and 2
+// predate the block registry (chunk palettes of runtime ids, no `block_states` table) and are
+// refused too: worlds are version-locked (RELEASES.md §6), not converted. Format 3 stores chunk
+// palettes as world state ids (BLOCK_REGISTRY.md §4).
+inline constexpr int kFormatVersion = 3;
 
 // File extension of world files (and of the export format: the database itself).
 inline constexpr std::string_view kWorldExtension = ".dwellworld";
@@ -46,7 +49,7 @@ struct WorldMeta {
 struct SavedChunk {
   core::ChunkCoord coord;
   std::uint32_t revision = 0;
-  std::vector<std::uint16_t> voxels;  // kChunkVolume materials, chunk index order
+  std::vector<std::uint16_t> voxels;  // kChunkVolume runtime state ids, chunk index order
 };
 
 // A modified LOD section (§6.6): a cache derivable from the chunks. `encoded` is the palette + RLE
@@ -111,6 +114,10 @@ class WorldDb {
   // Modified chunks in the file and their revisions.
   std::vector<std::pair<core::ChunkCoord, std::uint32_t>> ChunkIndex();
   std::optional<SavedChunk> LoadChunk(const core::ChunkCoord& coord);
+  // The world's block states: world state id → canonical string (BLOCK_REGISTRY.md §4). Chunks are
+  // stored with these ids, so a world outlives changes to the code's runtime ids.
+  std::vector<std::string> BlockStates();
+
   // The LOD cache (format 2). Rows of another generator version are skipped and `stale` set: the
   // cache must be rebuilt from the chunks.
   std::vector<SavedLodSection> LodSections(std::uint32_t generator_version, bool& stale);
@@ -134,7 +141,14 @@ class WorldDb {
  private:
   explicit WorldDb(sqlite3* db) : db_(db) {}
   bool Exec(const char* sql, std::string* error = nullptr);
+  // Reloads `block_states` and the id maps between runtime and world state ids.
+  void RefreshStates();
   sqlite3* db_;
+  // World state id → runtime id (-1: a string this build's registry does not know).
+  std::vector<std::int32_t> to_runtime_;
+  // Runtime id → world state id (-1: not in the world file yet).
+  std::vector<std::int32_t> to_world_;
+  std::vector<std::string> world_states_;
 };
 
 // Player state blob (players.state), version 1: u8 1, f64×3 feet, u8 health.
@@ -146,7 +160,9 @@ std::vector<std::uint8_t> CompressBytes(std::span<const std::uint8_t> raw);
 std::optional<std::vector<std::uint8_t>> DecompressBytes(std::span<const std::uint8_t> blob,
                                                          std::size_t max_size);
 
-// Chunk blob (chunks.data): zstd of the palette + RLE voxels (ChunkData Explicit payload).
+// Chunk blob (chunks.data): zstd of the palette + RLE voxels (ChunkData Explicit payload). Free
+// functions code whatever ids they are given; WorldDb translates between runtime and world state
+// ids around them.
 std::vector<std::uint8_t> CompressChunk(const std::vector<std::uint16_t>& voxels);
 std::optional<std::vector<std::uint16_t>> DecompressChunk(std::span<const std::uint8_t> blob);
 

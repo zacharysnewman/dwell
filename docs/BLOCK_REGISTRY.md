@@ -1,9 +1,12 @@
 # Dwell — Block Registry: Namespaced Block States and Palettes
 
-> **Status: [planned]** — the design for implementation **Phase 8**
-> ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). As it lands, the built mechanisms move
-> into [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxels and the material table, §6.4 persistence,
-> §6.6 LOD cache, §8.3 messages) and this file keeps the rationale.
+> **Status: [built, Phase 8]** — implemented as designed here, with the decisions recorded in
+> [ADR 0015](./adr/0015-block-registry.md); the built mechanisms live in
+> [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxels and the registry, §6.4 persistence, §8.3
+> messages) and this file keeps the rationale. Differences from the design below: state ids follow
+> the **declaration order** of the data files (appending a block keeps earlier ids) rather than
+> sorting by name; the per-state `placeable` set comes from an optional `palette` list in the data
+> (partial property assignments); paletted in-memory chunks were measured and **deferred**.
 
 ## 1. Why
 

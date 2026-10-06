@@ -298,7 +298,8 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
                   config_.generator_version,
                   tick_,
                   {verification_chunk_.x, verification_chunk_.y, verification_chunk_.z},
-                  static_cast<std::uint8_t>(MayFly(joined) ? protocol::WelcomeFlags::kFlight : 0)});
+                  static_cast<std::uint8_t>(MayFly(joined) ? protocol::WelcomeFlags::kFlight : 0),
+                  kRegistryHash});
       // A returning player continues where it left the world (§6.4), unless it was dead.
       std::optional<storage::PlayerRecord> saved;
       if (config_.store) saved = config_.store->db().LoadPlayer(joined.public_key);

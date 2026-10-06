@@ -5,32 +5,6 @@
 namespace dwell::core {
 namespace {
 
-using enum VoxelShape;
-
-constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{
-    {"air", 0.0f, false, false},
-    {"bedrock", 3000.0f, true, true, kFull},
-    {"stone", 2400.0f, true, false, kFull},
-    {"dirt", 1500.0f, true, false, kFull},
-    {"grass", 1400.0f, true, false, kFull},
-    {"stone_slab", 2400.0f, true, false, kSlabBottom},
-    {"ladder_n", 600.0f, false, false, kEmpty, true, Facing::kNorth},
-    {"ladder_e", 600.0f, false, false, kEmpty, true, Facing::kEast},
-    {"ladder_s", 600.0f, false, false, kEmpty, true, Facing::kSouth},
-    {"ladder_w", 600.0f, false, false, kEmpty, true, Facing::kWest},
-    {"water", 1000.0f, false, false, kEmpty, false, Facing::kNone, 1.0f, true},
-    {"launch_pad", 2400.0f, true, false, kFull, false, Facing::kNone, 1.0f, false, 14.0f},
-    {"sand", 1600.0f, true, false, kFull},
-    {"sandstone", 2200.0f, true, false, kFull},
-    {"gravel", 1800.0f, true, false, kFull},
-    {"snow", 500.0f, true, false, kFull},
-    {"log", 700.0f, true, false, kFull},
-    {"leaves", 200.0f, true, false, kFull},
-    {"coal_ore", 2400.0f, true, false, kFull},
-    {"iron_ore", 3200.0f, true, false, kFull},
-    {"gold_ore", 3600.0f, true, false, kFull},
-}};
-
 MaterialId FlatMaterial(std::int32_t y) {
   if (y < kWorldMinY) return Materials::kAir;
   if (y < kWorldMinY + kBedrockLayers) return Materials::kBedrock;

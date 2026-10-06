@@ -43,11 +43,7 @@ bool InWorldRows(std::int32_t y) { return y >= kWorldMinY && y < kWorldMaxY; }
 
 bool Targetable(MaterialId m) { return m != Materials::kAir && !GetMaterial(m).liquid; }
 
-bool Placeable(MaterialId m) {
-  if (m >= Materials::kCount || !Targetable(m)) return false;
-  const MaterialInfo& info = GetMaterial(m);
-  return !info.indestructible && info.launch_speed == 0.0f;
-}
+bool Placeable(MaterialId m) { return m < Materials::kCount && GetMaterial(m).placeable; }
 
 std::optional<BlockHit> RaycastBlock(VoxelWorld& world, const std::array<double, 3>& origin,
                                      const std::array<float, 3>& dir, float max_distance) {

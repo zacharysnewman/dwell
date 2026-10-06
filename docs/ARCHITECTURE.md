@@ -358,7 +358,7 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handles (the database, its journal, and a WAL for opening a dedicated server's file), opened by the worker before the core starts and handed to its VFS as `dwellFiles`; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. **[built, Phase 6]** The index records each world's `appVersion` and is a cross-version contract (append-only; unknown fields and unreadable records are preserved on rewrite); worlds without a version are listed apart; `worldAccess.ts` says whether this build may open a world (§6.4); `LocalCore.load` throws when the world file is locked to another version (`dwell_local_create` returns 3). |
 | `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick, frame rate — `fps.ts`, per full second); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, the full-detail distance, §6.6, and the tone-mapping exposure — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices and the dev-channel option (`channel.ts`); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
-| `world/` **[built]** | Material ids, render styles and the placeable set (mirroring `voxel.h`, checked by tests). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
+| `world/` **[built]** | The block registry (`blocks.gen.ts` generated from `shared/blocks/`, `blocks.ts`: canonical strings, parse, properties, registry hash, §6.1; checked against the same vector as the C++ one) and, over it, the render styles and the placeable set (`materials.ts`). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
 | `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB` (the pixel error coarsens while the view's own sections exceed it); `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4 (at most 2 on phones), two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
@@ -397,17 +397,17 @@ lower on mobile.
 > terrain's style (§6.3: biomes, trees, boulders, ore distribution) are **placeholders** that
 > exercise the systems: meshing, textures, collision shapes, streaming, generation, and editing.
 > They are not Dwell's block set or world design and deliberately do not constrain it. The
-> architecture fixes only the *mechanisms*: a `u16` material id with per-material properties
-> (shape, liquid, climbable, strength, density, render style), one material table shared by
-> server and client (mirrored in TypeScript and checked by a test), and an indestructible anchor layer at the bottom of the world. Real
-> content replaces the prototype set later, through the generator version and the material table,
+> architecture fixes only the *mechanisms*: a `u16` block-state id with per-state properties
+> (shape, liquid, climbable, strength, density, render style), one block registry generated from data
+> files shared by server and client, and an indestructible anchor layer at the bottom of the world. Real
+> content replaces the prototype set later, through the generator version and the block data files,
 > without architectural change.
 
-Built (Phases 1–3a, `server/core/include/dwell/core/voxel.h`): material table — air, bedrock,
-stone, dirt, grass, stone slab, ladders (`ladder_n/e/s/w`), water, a debug launch pad, and the
-terrain generator's sand, sandstone, gravel, snow, log, leaves, and coal/iron/gold ores — where
-each material has a collision **shape** (`Empty`, `Full`, `SlabBottom`), `climbable` + facing,
-`liquid`, and `launch_speed` (PLAYER_CONTROLLER.md §6); 32³ chunks with revisions (generated chunks
+Built (Phases 1–3a; registry Phase 8): the prototype blocks — air, bedrock, stone, dirt, grass,
+stone slab, ladders, water, a debug launch pad, and the terrain generator's sand, sandstone, gravel,
+snow, log, leaves, and coal/iron/gold ores — where each state has a collision **shape** (`Empty`,
+`Full`, `SlabBottom`), `climbable` + facing, `liquid`, and `launch_speed` (PLAYER_CONTROLLER.md §6);
+32³ chunks with revisions (generated chunks
 start at revision 0); `VoxelWorld`, generate-on-access with eviction of unmodified chunks on the
 server, and *streamed* (no generator; missing chunks read as air) in the client sim; a flat test world (grass top face at y = 0,
 bedrock at the bottom); and a **playground** generator (flat world plus slab stairs, a block step,
@@ -419,20 +419,32 @@ players. For the 8,192 km world each body sits at the centre of a 2 048 m *regio
 chunk around the players *anchored* to it, so its sub-shape offsets stay small; a player collides
 only with its anchor's body and re-anchors, with hysteresis, well inside the next region — there is
 no seam under a player (PLAYER_CONTROLLER.md §5). The procedural terrain generator and streaming are
-built (§6.3), and so are block edits (§6.5, Phase 3d): the placeable set is derived from the table
-(`Placeable`: not air, liquid, indestructible or a launch pad), mirrored by the client's `placeable`
-flags and checked by tests on both sides.
+built (§6.3), and so are block edits (§6.5, Phase 3d): the placeable set is the registry's
+`palette` data (a state's `placeable` flag; not air, liquid, indestructible or a launch pad), the
+client reads the same flags from the generated TypeScript registry, and tests check both sides.
 
-**[planned, Phase 8]** A **block registry** replaces the hand-numbered material table:
-namespaced blocks with typed properties (`dwell:ladder[facing=east,flooded=false]`), runtime
-state ids generated from data files, and chunk palettes stored as strings in the world file:
-[`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
+**Block registry [built, Phase 8]** ([ADR 0015](./adr/0015-block-registry.md),
+[`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)). Voxels are runtime **state ids** of a registry of
+namespaced blocks with typed properties; a state's canonical string is
+`ns:name[k=v,…]` (all properties, keys alphabetical: `dwell:ladder[facing=north,flooded=false]`).
+Blocks are data (`shared/blocks/*.json`: properties, shape, density, liquid, climbable, launch
+speed, palette membership, look, colour, textures); `shared/blocks/gen.mjs` generates the C++
+tables (`blocks.gen.h`: `MaterialInfo` per state, block and property tables, `Materials::k…`
+constants, `kRegistryHash`) and the TypeScript tables (`blocks.gen.ts`, with `world/blocks.ts` for
+parse/write/properties and `world/materials.ts` for draw styles), plus a shared vector
+(`vectors.txt`); CI fails on stale output. State ids are dense `u16`, assigned in declaration order
+(air = 0), each block's states in property order (keys alphabetical, the last varying fastest). The
+**registry hash** (FNV-1a 64 over the canonical strings in id order) is carried by `Welcome` (§8.3)
+and checked by the client. Runtime ids stay on the wire and in memory (a `u16` per voxel: a
+bit-packed chunk-local palette would be 7× smaller but 2.7× slower to scan with the current access
+pattern, ADR 0015 — deferred); on disk, chunk palettes hold **world state ids** mapped to strings
+(§6.4).
 **[planned, Phase 9]** Slope blocks — standard and gentle wedges with hip and valley corners,
 upright and inverted, optionally flooded — as registry block families, with sloped collision,
 meshing, building, terrain shaping and slopes in the LOD mesher: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 
-- Voxel = 1 m cube; `uint16` material ID (0 = air). Material table defines density,
-  strength, and render properties and is shared by server and client.
+- Voxel = 1 m cube; `uint16` block-state ID (0 = air). The registry defines each state's density,
+  strength, and render properties and is shared by server and client (generated from one data set).
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
   every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The world is 256 chunk
   rows (8,192 m) tall; `int32` coordinates reach the rim of the 8,192 km disc (chunk ±256 000) with
@@ -440,7 +452,8 @@ meshing, building, terrain shaping and slopes in the LOD mesher: [`SLOPE_BLOCKS.
 - Wire / storage encoding **[built]**: per-chunk **palette + run-length encoding**
   (`ChunkData Explicit`, §8.3). Voxels are taken in layer order (x fastest, then z, then y) so
   horizontal strata make long runs; the palette lists materials in order of first appearance; each
-  run is a LEB128 length and a palette index (u8, or u16 above 256 entries). The encoding is
+  run is a LEB128 length and a palette index (u8, or u16 above 256 entries). The ids are runtime
+  state ids on the wire and **world state ids** in the file (§6.4). The encoding is
   canonical, so C++ and TypeScript round-trip each other's bytes exactly (golden vectors).
   In the world file the same bytes are zstd-compressed (§6.4); the wire does without general-purpose
   compression (QUIC and SCTP do not compress, but Explicit chunks are rare in generated mode).
@@ -663,7 +676,7 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   are loaded ("Loading terrain…"). The client sim treats missing chunks as air, and its terrain
   collision rebuilds a chunk when it or a neighbour arrives.
 
-### 6.4 World Persistence **[built, Phase 3e; LOD cache Phase 4b]** (bodies, backups, export UI: later)
+### 6.4 World Persistence **[built, Phase 3e; LOD cache Phase 4b; block states Phase 8]** (bodies, backups, export UI: later)
 
 Decision: [ADR 0006](./adr/0006-world-persistence-sqlite.md). Each world is **one SQLite database
 file** holding **all** of its data; nothing about a world lives in side files.
@@ -672,8 +685,9 @@ file** holding **all** of its data; nothing about a world lives in side files.
 |---|---|
 | `meta` | Format version, world seed, generator version, spawn, world time, timestamps, **[built, Phase 6]** the app versions that created and last saved the world, preview image |
 | `settings` | Name, MOTD, icon, max players, visibility, password hash, online/offline mode, physics/view caps, autosave and backup policy |
-| `chunks` | Modified chunks only: `(cx, cy, cz)`, revision, generator version, zstd-compressed palette + RLE blob (same encoding as `ChunkData Explicit`) |
-| `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)`, `lodRevision`, dirty flag, generator version, zstd-compressed palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks`, rebuilt on a generator version change |
+| `block_states` | **[built, Phase 8]** `(world_state_id, state)`: each block state's canonical string (§6.1) once, ids assigned in order of first use and stable for the life of the file |
+| `chunks` | Modified chunks only: `(cx, cy, cz)`, revision, generator version, zstd-compressed palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |
+| `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)`, `lodRevision`, dirty flag, generator version, zstd-compressed palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks` (its cells are runtime ids: dropped when `meta.registry_hash` changes), rebuilt on a generator or registry change |
 | `players` | Keyed by device public key: display name, state blob (position, health, later inventory), first/last seen |
 | `bodies` | In-flight Tier 1 clusters (voxel layout, transform, velocities) |
 | `permissions` | Ops, bans, allow-list by public key, with reason/by/when |
@@ -686,7 +700,14 @@ file** holding **all** of its data; nothing about a world lives in side files.
 recomputed), drops and rebuilds it from the chunks when its rows belong to another generator
 version, and derives it for saved chunks it does not cover (worlds saved before Phase 4); each
 autosave writes the sections written since the last save and those still to compute (flagged
-dirty) in the same transaction as the chunks. `bodies` (Phase 14) arrives as a migration.
+dirty) in the same transaction as the chunks. **Schema v3 (Phase 8)** adds `block_states` and
+changes what chunk palettes hold. `WorldDb` translates runtime ids to world state ids on save (a state
+new to the file gets the next id and its string is stored, in the save's transaction) and back on
+load through the canonical strings, so a world outlives changes to the code's runtime ids; a chunk
+holding a string the build's registry does not know is unreadable and is generated again (aliases,
+upgrade rules and an unknown-state placeholder are deferred to world upgrades, `FUTURE.md`).
+Worlds of formats 1 and 2 predate the registry and are refused, not migrated (they are
+version-locked, ADR 0014). `bodies` (Phase 14) arrives as a migration.
 
 - **Same code everywhere:** SQLite and zstd are compiled into `server/core` (`core/storage`:
   `WorldDb`, the file's schema and records; `WorldStore`, the server's handle on it).
@@ -728,7 +749,8 @@ dirty) in the same transaction as the chunks. `bodies` (Phase 14) arrives as a m
   both pass `shared/version/vectors.txt`. The browser's own stores shared by all versions (the world
   index, settings) are append-only and keep what they don't understand when rewritten.
 - **Migrations:** `PRAGMA user_version` (mirrored in `meta.format_version`) with ordered migrations
-  on open, each in its own transaction; a file from a newer build is refused.
+  on open, each in its own transaction; a file from a newer build is refused, and so is an existing
+  file older than format 3 (above).
 - **Settings and permissions** **[built: launch options]:** `dwell_server --world FILE` (default
   `world.dwellworld`; `""` keeps the world in memory) opens the world; `--name`, `--motd`,
   `--max-players`, `--edits everyone|ops|nobody` and `--flight everyone|ops|nobody` (creative
@@ -1257,7 +1279,7 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v10):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v11):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
@@ -1269,7 +1291,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
 reference encoder, including half floats). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
 `controllerFlags`, `welcomeFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
@@ -1359,7 +1381,9 @@ C→S  ClientAuth    u8[64] signature over (nonce ‖ transport binding ‖ publ
                    [optional: account attestation — online mode, §10.4]
 S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick,
                    i32×3 verificationChunk, u8 flags (WelcomeFlags: 1 = flight — this
-                   player may use creative flight)
+                   player may use creative flight), u64 registryHash (the block registry
+                   hash, §6.1: runtime state ids on the wire mean the same blocks only if
+                   it matches; the client rejects the server otherwise)
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
                    Malformed, Replaced, ServerClosing — the server is shutting down or the
                    friend-world host stopped hosting), str message — followed by closing
@@ -1886,6 +1910,6 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 16 | ~~Dedicated servers accepting WebRTC~~ | **Resolved** with #13 — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
 | 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 11 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
 | 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
-| 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05) and `flooded` for slopes under water; decide by ADRs in Phases 8–9 — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
+| 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05): **resolved for identity by [ADR 0015](./adr/0015-block-registry.md) (Phase 8)**; `flooded` for slopes under water and the shapes are decided by Phase 9's ADR — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
 | 20 | ~~Release pipeline: versions loaded from tags, worlds locked to their compatibility line~~ | **Resolved:** one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`, SemVer 2.0.0 from `0.1.0`, worlds opening only in builds of their version's compatibility line at or after the version that last saved them, all rights reserved — [ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md) |
 | 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness, reaching the rim | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust; the rim ocean kept; face B reuses face A's generator, biomes and islands. Recorded by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9 |

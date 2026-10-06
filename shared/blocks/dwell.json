@@ -1,0 +1,83 @@
+{
+  "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). The content is prototype (ARCHITECTURE.md §6.1).",
+  "namespace": "dwell",
+  "blocks": [
+    { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
+    {
+      "name": "bedrock", "density": 3000, "shape": "full", "indestructible": true,
+      "color": "#4e4858", "textures": "bedrock"
+    },
+    {
+      "name": "stone", "density": 2400, "shape": "full", "placeable": true,
+      "color": "#bbafa6", "textures": "stone"
+    },
+    {
+      "name": "dirt", "density": 1500, "shape": "full", "placeable": true,
+      "color": "#8a5a3a", "textures": "dirt"
+    },
+    {
+      "name": "grass", "density": 1400, "shape": "full", "placeable": true,
+      "color": "#8dbf3f", "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
+    },
+    {
+      "name": "stone_slab", "density": 2400, "shape": "slab_bottom", "look": "slab", "placeable": true,
+      "color": "#c8bdb4", "textures": "stone"
+    },
+    {
+      "name": "ladder", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
+      "facingProperty": "facing",
+      "properties": {
+        "facing": ["north", "east", "south", "west"],
+        "flooded": ["false", "true"]
+      },
+      "palette": [
+        { "facing": "north" }, { "facing": "east" }, { "facing": "south" }, { "facing": "west" }
+      ],
+      "color": "#a0703a", "textures": "ladder"
+    },
+    {
+      "name": "water", "density": 1000, "shape": "empty", "look": "water", "liquid": true,
+      "color": "#3fb2d6", "opacity": 0.55, "textures": "water"
+    },
+    {
+      "name": "launch_pad", "density": 2400, "shape": "full", "launchSpeed": 14,
+      "color": "#e8792a", "textures": { "top": "launchPad", "side": "stone", "bottom": "stone" }
+    },
+    {
+      "name": "sand", "density": 1600, "shape": "full", "placeable": true,
+      "color": "#eed9a4", "textures": "sand"
+    },
+    {
+      "name": "sandstone", "density": 2200, "shape": "full", "placeable": true,
+      "color": "#e0be86", "textures": "sandstone"
+    },
+    {
+      "name": "gravel", "density": 1800, "shape": "full", "placeable": true,
+      "color": "#a3968e", "textures": "gravel"
+    },
+    {
+      "name": "snow", "density": 500, "shape": "full", "placeable": true,
+      "color": "#fbf8f2", "textures": "snow"
+    },
+    {
+      "name": "log", "density": 700, "shape": "full", "placeable": true,
+      "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
+    },
+    {
+      "name": "leaves", "density": 200, "shape": "full", "placeable": true,
+      "color": "#6fa83a", "textures": "leaves"
+    },
+    {
+      "name": "coal_ore", "density": 2400, "shape": "full", "placeable": true,
+      "color": "#bbafa6", "textures": "coalOre"
+    },
+    {
+      "name": "iron_ore", "density": 3200, "shape": "full", "placeable": true,
+      "color": "#bbafa6", "textures": "ironOre"
+    },
+    {
+      "name": "gold_ore", "density": 3600, "shape": "full", "placeable": true,
+      "color": "#bbafa6", "textures": "goldOre"
+    }
+  ]
+}

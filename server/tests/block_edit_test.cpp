@@ -41,15 +41,18 @@ std::vector<VoxelModification> Modifications(const std::vector<Message>& message
 
 }  // namespace
 
-TEST_CASE("block edit: the palette (mirrored by client/src/world/materials.ts)") {
+TEST_CASE("block edit: the palette (the registry's placeable states)") {
   std::vector<std::string_view> placeable;
   for (MaterialId m = 0; m < Materials::kCount; ++m) {
     if (Placeable(m)) placeable.push_back(GetMaterial(m).name);
   }
-  CHECK(placeable == std::vector<std::string_view>{"stone", "dirt", "grass", "stone_slab",
-                                                   "ladder_n", "ladder_e", "ladder_s", "ladder_w",
-                                                   "sand", "sandstone", "gravel", "snow", "log",
-                                                   "leaves", "coal_ore", "iron_ore", "gold_ore"});
+  CHECK(placeable ==
+        std::vector<std::string_view>{
+            "dwell:stone", "dwell:dirt", "dwell:grass", "dwell:stone_slab",
+            "dwell:ladder[facing=north,flooded=false]", "dwell:ladder[facing=east,flooded=false]",
+            "dwell:ladder[facing=south,flooded=false]", "dwell:ladder[facing=west,flooded=false]",
+            "dwell:sand", "dwell:sandstone", "dwell:gravel", "dwell:snow", "dwell:log",
+            "dwell:leaves", "dwell:coal_ore", "dwell:iron_ore", "dwell:gold_ore"});
   CHECK_FALSE(Placeable(Materials::kCount));
   CHECK_FALSE(Targetable(Materials::kAir));
   CHECK_FALSE(Targetable(Materials::kWater));

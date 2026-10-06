@@ -10,6 +10,7 @@ add_executable(dwell_tests
   chunk_request_test.cpp
   hosting_test.cpp
   block_edit_test.cpp
+  block_registry_test.cpp
   lod_server_test.cpp
   storage/storage_test.cpp
   player/movement_test.cpp
@@ -25,6 +26,7 @@ target_link_libraries(dwell_tests PRIVATE dwell_core dwell_net dwell_options doc
 add_test(NAME dwell_tests COMMAND dwell_tests)
 target_compile_definitions(dwell_tests PRIVATE
   DWELL_VERSION_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../../shared/version/vectors.txt"
+  DWELL_BLOCK_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../../shared/blocks/vectors.txt"
   DWELL_PROTOCOL_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../../shared/protocol/vectors.txt"
   DWELL_PLAYER_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/player/golden/scenario-trace.txt"
   DWELL_WORLDGEN_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/worldgen/golden/chunk-hashes.txt"

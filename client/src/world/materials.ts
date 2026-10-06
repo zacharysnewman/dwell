@@ -1,17 +1,12 @@
-// Material ids and how they are drawn. Ids mirror the table in server/core/include/dwell/core/voxel.h
-// (ARCHITECTURE.md §6.1); the WASM core reports faces by these ids.
-import type { TileName } from '../render/textures';
+// How block states are drawn. The styles come from the block registry (world/blocks.ts, generated
+// from shared/blocks/*.json), id for id with the C++ table (ARCHITECTURE.md §6.1); the WASM core
+// reports faces by these runtime state ids.
+import { STATE_DEFS, type MaterialLook, type MaterialTextures } from './blocks';
 
-export type MaterialLook = 'cube' | 'slab' | 'ladder' | 'water';
-
-/** Texture tiles (render/textures.ts) per face group; untextured materials use `color`. */
-export interface MaterialTextures {
-  top: TileName;
-  side: TileName;
-  bottom: TileName;
-}
+export type { MaterialLook, MaterialTextures };
 
 export interface MaterialStyle {
+  /** Canonical state string, e.g. `dwell:ladder[facing=north,flooded=false]`. */
   name: string;
   look: MaterialLook;
   color: number;
@@ -23,115 +18,15 @@ export interface MaterialStyle {
   placeable?: boolean;
 }
 
-const GRASS: MaterialTextures = { top: 'grass', side: 'grassSide', bottom: 'dirt' };
-const STONE: MaterialTextures = { top: 'stone', side: 'stone', bottom: 'stone' };
-const all = (tile: TileName): MaterialTextures => ({ top: tile, side: tile, bottom: tile });
-const LAUNCH_PAD: MaterialTextures = { top: 'launchPad', side: 'stone', bottom: 'stone' };
-const LADDER = (name: string, ladderFace: number): MaterialStyle => ({
-  name,
-  look: 'ladder',
-  color: 0xa0703a,
-  opacity: 1,
-  textures: all('ladder'),
-  ladderFace,
-  placeable: true,
-});
-const LOG: MaterialTextures = { top: 'logTop', side: 'logSide', bottom: 'logTop' };
-
-export const MATERIALS: readonly MaterialStyle[] = [
-  { name: 'air', look: 'cube', color: 0x000000, opacity: 0 },
-  { name: 'bedrock', look: 'cube', color: 0x4e4858, opacity: 1, textures: all('bedrock') },
-  { name: 'stone', look: 'cube', color: 0xbbafa6, opacity: 1, textures: STONE, placeable: true },
-  {
-    name: 'dirt',
-    look: 'cube',
-    color: 0x8a5a3a,
-    opacity: 1,
-    textures: all('dirt'),
-    placeable: true,
-  },
-  { name: 'grass', look: 'cube', color: 0x8dbf3f, opacity: 1, textures: GRASS, placeable: true },
-  {
-    name: 'stone_slab',
-    look: 'slab',
-    color: 0xc8bdb4,
-    opacity: 1,
-    textures: STONE,
-    placeable: true,
-  },
-  LADDER('ladder_n', 5),
-  LADDER('ladder_e', 0),
-  LADDER('ladder_s', 4),
-  LADDER('ladder_w', 1),
-  { name: 'water', look: 'water', color: 0x3fb2d6, opacity: 0.55, textures: all('water') },
-  { name: 'launch_pad', look: 'cube', color: 0xe8792a, opacity: 1, textures: LAUNCH_PAD },
-  // Terrain generator materials (Phase 3).
-  {
-    name: 'sand',
-    look: 'cube',
-    color: 0xeed9a4,
-    opacity: 1,
-    textures: all('sand'),
-    placeable: true,
-  },
-  {
-    name: 'sandstone',
-    look: 'cube',
-    color: 0xe0be86,
-    opacity: 1,
-    textures: all('sandstone'),
-    placeable: true,
-  },
-  {
-    name: 'gravel',
-    look: 'cube',
-    color: 0xa3968e,
-    opacity: 1,
-    textures: all('gravel'),
-    placeable: true,
-  },
-  {
-    name: 'snow',
-    look: 'cube',
-    color: 0xfbf8f2,
-    opacity: 1,
-    textures: all('snow'),
-    placeable: true,
-  },
-  { name: 'log', look: 'cube', color: 0x7a5236, opacity: 1, textures: LOG, placeable: true },
-  {
-    name: 'leaves',
-    look: 'cube',
-    color: 0x6fa83a,
-    opacity: 1,
-    textures: all('leaves'),
-    placeable: true,
-  },
-  {
-    name: 'coal_ore',
-    look: 'cube',
-    color: 0xbbafa6,
-    opacity: 1,
-    textures: all('coalOre'),
-    placeable: true,
-  },
-  {
-    name: 'iron_ore',
-    look: 'cube',
-    color: 0xbbafa6,
-    opacity: 1,
-    textures: all('ironOre'),
-    placeable: true,
-  },
-  {
-    name: 'gold_ore',
-    look: 'cube',
-    color: 0xbbafa6,
-    opacity: 1,
-    textures: all('goldOre'),
-    placeable: true,
-  },
-];
+export const MATERIALS: readonly MaterialStyle[] = STATE_DEFS.map((s) => ({
+  name: s.state,
+  look: s.look,
+  color: s.color,
+  opacity: s.opacity,
+  ...(s.textures ? { textures: s.textures } : {}),
+  ...(s.ladderFace !== undefined ? { ladderFace: s.ladderFace } : {}),
+  ...(s.placeable ? { placeable: true } : {}),
+}));
 
 export function materialStyle(id: number): MaterialStyle {
   return (
@@ -139,5 +34,5 @@ export function materialStyle(id: number): MaterialStyle {
   );
 }
 
-/** The infinite creative palette (§6.5): every placeable material, in table order. */
+/** The infinite creative palette (§6.5): every placeable state, in id order. */
 export const PLACEABLE: readonly number[] = MATERIALS.flatMap((m, id) => (m.placeable ? [id] : []));

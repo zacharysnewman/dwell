@@ -161,6 +161,7 @@ void Write(ByteWriter& w, const Welcome& m) {
   w.U32(m.server_tick);
   for (std::int32_t v : m.verification_chunk) w.I32(v);
   w.U8(m.flags);
+  w.U64(m.registry_hash);
 }
 void Write(ByteWriter& w, const Reject& m) {
   w.U8(static_cast<std::uint8_t>(m.reason));
@@ -631,6 +632,7 @@ std::optional<Message> Decode(std::span<const std::uint8_t> bytes) {
       m.server_tick = r.U32();
       m.verification_chunk = ReadCoord(r);
       m.flags = r.U8();
+      m.registry_hash = r.U64();
       out = m;
       break;
     }

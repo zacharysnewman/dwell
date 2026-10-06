@@ -12,6 +12,7 @@ add_library(dwell_core
   src/physics_world.cpp
   src/server.cpp
   src/terrain_collision.cpp
+  src/block_registry.cpp
   src/voxel.cpp
   src/worldgen_pool.cpp
   src/protocol/bytes.cpp

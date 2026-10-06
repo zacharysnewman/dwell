@@ -239,6 +239,7 @@ const expected: Record<string, Message> = {
     serverTick: 123456,
     verificationChunk: [-3, 2, 1000000],
     flags: WelcomeFlags.flight,
+    registryHash: 0x160e5ffd3cc97380n,
   },
   worldgen_check: { type: MessageType.WorldgenCheck, hash: 0xfedcba9876543210n },
   chunk_data_generated: {

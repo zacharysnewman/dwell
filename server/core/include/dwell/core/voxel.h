@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "dwell/core/block_types.h"
+#include "dwell/core/blocks.gen.h"
 #include "dwell/protocol/constants.gen.h"
 
 // Voxel world storage (ARCHITECTURE.md §6.1): materials, 32³ chunks, the flat test world and the
@@ -21,60 +23,17 @@ inline constexpr int kBedrockLayers = 4;
 inline constexpr int kSeaLevel = protocol::kSeaLevel;  // terrain: water fills open space below
 inline constexpr int kWorldRadius = protocol::kWorldRadius;  // world disc radius (m); beyond: void
 
-using MaterialId = std::uint16_t;
-
+// Block states: ids by name (Materials::k…), the table and the registry are generated from
+// shared/blocks/*.json (block_registry.h).
+// Directional aliases of the ladder's states (facing north = −Z, mounted on the cell's +Z side).
 namespace Materials {
-inline constexpr MaterialId kAir = 0;
-inline constexpr MaterialId kBedrock = 1;
-inline constexpr MaterialId kStone = 2;
-inline constexpr MaterialId kDirt = 3;
-inline constexpr MaterialId kGrass = 4;
-inline constexpr MaterialId kStoneSlab = 5;  // bottom half of the cell
-inline constexpr MaterialId kLadderN =
-    6;  // climbable; faces north (−Z), mounted on the cell's +Z side
-inline constexpr MaterialId kLadderE = 7;  // faces east (+X)
-inline constexpr MaterialId kLadderS = 8;  // faces south (+Z)
-inline constexpr MaterialId kLadderW = 9;  // faces west (−X)
-inline constexpr MaterialId kWater = 10;
-inline constexpr MaterialId kLaunchPad = 11;  // debug: launches players standing on it (Phase 2)
-// Terrain generator materials (Phase 3, §6.3).
-inline constexpr MaterialId kSand = 12;
-inline constexpr MaterialId kSandstone = 13;
-inline constexpr MaterialId kGravel = 14;
-inline constexpr MaterialId kSnow = 15;
-inline constexpr MaterialId kLog = 16;
-inline constexpr MaterialId kLeaves = 17;
-inline constexpr MaterialId kCoalOre = 18;
-inline constexpr MaterialId kIronOre = 19;
-inline constexpr MaterialId kGoldOre = 20;
-inline constexpr MaterialId kCount = 21;
+inline constexpr MaterialId kLadderN = kLadder;
+inline constexpr MaterialId kLadderE = kLadderFacingEast;
+inline constexpr MaterialId kLadderS = kLadderFacingSouth;
+inline constexpr MaterialId kLadderW = kLadderFacingWest;
 }  // namespace Materials
 
-// Collision shape of a voxel inside its 1 m cell (PLAYER_CONTROLLER.md §5).
-enum class VoxelShape : std::uint8_t { kEmpty, kFull, kSlabBottom };
-
-// Compass facing of directional materials (ladders). North = −Z, east = +X.
-enum class Facing : std::uint8_t { kNone, kNorth, kEast, kSouth, kWest };
-
-struct MaterialInfo {
-  std::string_view name;
-  float density_kg_m3;  // per 1 m³ voxel (mass for Tier 1 clusters, §7.1)
-  bool solid;           // has collision (shape != kEmpty)
-  bool indestructible;  // bedrock: the structural-integrity anchor (§6.3)
-  VoxelShape shape = VoxelShape::kEmpty;
-  bool climbable = false;         // ladders, vines (PLAYER_CONTROLLER.md §6.3)
-  Facing facing = Facing::kNone;  // climbable: direction the climbing side faces
-  float climb_speed_scale = 1.0f;
-  bool liquid = false;        // water: swim layer (PLAYER_CONTROLLER.md §6.4)
-  float launch_speed = 0.0f;  // debug launch pad: upward knockback when stood on (m/s)
-};
-
-// Height of the solid part of a voxel shape within its cell (0 = empty, 1 = full cube).
-inline float ShapeHeight(VoxelShape shape) {
-  return shape == VoxelShape::kFull ? 1.0f : shape == VoxelShape::kSlabBottom ? 0.5f : 0.0f;
-}
-
-// Shared material table; unknown ids resolve to air.
+// Shared state table; unknown ids resolve to air.
 const MaterialInfo& GetMaterial(MaterialId id);
 
 inline constexpr int kChunkSize = protocol::kChunkSize;

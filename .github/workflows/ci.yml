@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   protocol:
-    name: Protocol (generated files up to date)
+    name: Protocol and block registry (generated files up to date)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,7 @@ jobs:
       - name: Regenerate constants and golden vectors
         run: |
           node shared/protocol/gen.mjs
+          node shared/blocks/gen.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
           git diff --exit-code
