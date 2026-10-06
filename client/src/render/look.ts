@@ -42,7 +42,7 @@ export const LIGHT = {
   hemisphereSky: 0x9cc6f0,
   /** Green bounce off the grass, not brown. */
   hemisphereGround: 0x7a8a4a,
-  hemisphereIntensity: 1.5,
+  hemisphereIntensity: 1.9,
 } as const;
 
 /** Tone mapping exposure: 1 leaves the lights as set. */

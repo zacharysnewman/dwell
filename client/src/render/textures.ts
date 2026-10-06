@@ -221,8 +221,8 @@ function logTop(x: number, y: number): Rgb {
 function leaves(x: number, y: number): Rgb {
   const n = tiledFbm(x, y, 101);
   const gap = hash(x, y, 2, 102);
-  let c = mix(scale(LEAVES, 0.8), LEAVES_HIGH, Math.max(0, n - 0.35) * 1.4);
-  if (gap > 0.88) c = scale(c, 0.55); // dark gaps between leaves
+  let c = mix(scale(LEAVES, 0.95), LEAVES_HIGH, Math.max(0, n - 0.3) * 1.5);
+  if (gap > 0.88) c = scale(c, 0.7); // darker gaps between leaves
   return c;
 }
 
