@@ -4,7 +4,7 @@
 // prints `key=value` lines for $GITHUB_OUTPUT. Runs under Node's type stripping.
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { compareVersionText, isStable, parseVersion } from '../src/version/semver.ts';
+import { compareVersionText, isStable, parseVersion, sameLine } from '../src/version/semver.ts';
 
 export type ReleaseEvent = 'push' | 'tag' | 'dispatch';
 
@@ -26,14 +26,22 @@ function nextPatch(version: string): string {
   return `${String(v.major)}.${String(v.minor)}.${String(v.patch + 1)}`;
 }
 
-/** The highest stable version among release tags (`v<version>`), or null. */
-export function latestStable(tags: string[]): string | null {
+/**
+ * The highest stable version among release tags (`v<version>`), or null; with `line`, the highest
+ * on that version's compatibility line.
+ */
+export function latestStable(tags: string[], line?: string): string | null {
   const versions = tags
     .filter((t) => t.startsWith('v'))
     .map((t) => t.slice(1))
     .filter((v) => {
       const parsed = parseVersion(v);
-      return parsed !== null && isStable(parsed) && parsed.build === null;
+      return (
+        parsed !== null &&
+        isStable(parsed) &&
+        parsed.build === null &&
+        (line === undefined || sameLine(v, line))
+      );
     })
     .sort(compareVersionText);
   return versions.at(-1) ?? null;
@@ -59,7 +67,10 @@ export function nextVersion(floor: string, latest: string | null): string {
  *   minor or major bump that package.json does not carry yet).
  * - `tag` (pushing `v<version>`): a stable release of the version the tag names.
  * A named version must be a release version, newer than the newest release and not below
- * `package.json`'s (the floor).
+ * `package.json`'s (the floor) — or a **backport**: a patch of an older compatibility line, named
+ * by a tag or the manual run on that line's maintenance branch (`release/<line>`, whose
+ * `package.json` is on the line), newer than the line's newest release (RELEASES.md §3). The
+ * manual run on a maintenance branch releases the next patch of its line, never another line's.
  */
 export function releasePlan(input: {
   event: ReleaseEvent;
@@ -69,6 +80,8 @@ export function releasePlan(input: {
   packageVersion: string;
   /** The newest stable release so far, or null. */
   latestStable: string | null;
+  /** The newest stable release on `package.json`'s compatibility line, or null (for backports). */
+  lineLatest?: string | null;
   /** A version asked for by the manual workflow's input (empty or absent: the next one). */
   requested?: string;
 }): ReleasePlan {
@@ -88,13 +101,35 @@ export function releasePlan(input: {
         : event === 'dispatch'
           ? (input.requested ?? '')
           : packageVersion;
-    const version = named === '' ? next : named;
+    // A run by hand on a maintenance branch releases the next patch of its own line.
+    const maintenance = event === 'dispatch' && ref.startsWith('refs/heads/release/');
+    const version =
+      named !== ''
+        ? named
+        : maintenance
+          ? nextVersion(packageVersion, input.lineLatest ?? null)
+          : next;
+    if (maintenance && !sameLine(version, packageVersion)) {
+      throw new Error(`${version} is not on this branch's line (package.json ${packageVersion}).`);
+    }
     const parsed = parseVersion(version);
     if (!parsed || !isStable(parsed) || parsed.build !== null) {
       throw new Error(`${version} is not a release version like 0.1.0`);
     }
-    if (latest !== null && compareVersionText(version, latest) <= 0) {
-      throw new Error(`${version} is already released (the newest release is ${latest}).`);
+    // A backport: a version named for package.json's line while a newer line is out.
+    const backport =
+      (named !== '' || maintenance) &&
+      latest !== null &&
+      compareVersionText(version, latest) < 0 &&
+      sameLine(version, packageVersion) &&
+      !sameLine(version, latest);
+    const newest = backport ? (input.lineLatest ?? null) : latest;
+    if (newest !== null && compareVersionText(version, newest) <= 0) {
+      throw new Error(
+        backport
+          ? `${version} is already released (the newest release on its line is ${newest}).`
+          : `${version} is already released (the newest release is ${newest}).`,
+      );
     }
     if (compareVersionText(version, packageVersion) < 0) {
       throw new Error(
@@ -134,13 +169,15 @@ function main(args: string[]): number {
     const releases = releasesFile
       ? (JSON.parse(readFileSync(releasesFile, 'utf8')) as { tagName: string }[])
       : [];
+    const tags = releases.map((r) => r.tagName);
     const plan = releasePlan({
       event,
       ref,
       run: Number(run),
       sha,
       packageVersion,
-      latestStable: latestStable(releases.map((r) => r.tagName)),
+      latestStable: latestStable(tags),
+      lineLatest: latestStable(tags, packageVersion),
       ...(requested ? { requested } : {}),
     });
     for (const [key, value] of Object.entries(plan) as [string, string][]) {
