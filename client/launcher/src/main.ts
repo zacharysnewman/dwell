@@ -187,36 +187,28 @@ async function openBuild(manifest: Manifest, version: string): Promise<void> {
   ]);
 }
 
-/** How long the landing screen waits before opening the latest build by itself. */
-const LANDING_MS = 1200;
-
 /**
  * The screen a plain visit lands on (Phase 6b): the launcher is unversioned, so this is where the
- * version choice lives whatever build was played last. Opens the latest by itself after a moment.
+ * version choice lives whatever build was played last. Nothing happens until a button is pressed;
+ * Play opens the latest build (the stable one unless the player opted into dev builds).
  */
 function landing(version: string): Promise<'play' | 'pick'> {
   return new Promise((resolve) => {
-    const done = (answer: 'play' | 'pick'): void => {
-      clearTimeout(timer);
-      resolve(answer);
-    };
-    const timer = setTimeout(() => {
-      done('play');
-    }, LANDING_MS);
-    show(`Opening Dwell ${version}…`, [
+    show('Welcome to Dwell.', [
       {
-        label: 'Play now',
+        label: `Play Dwell ${version}`,
         run: () => {
-          done('play');
+          resolve('play');
         },
       },
       {
         label: 'Choose version',
         run: () => {
-          done('pick');
+          resolve('pick');
         },
       },
     ]);
+    actions?.querySelector('button')?.focus();
   });
 }
 

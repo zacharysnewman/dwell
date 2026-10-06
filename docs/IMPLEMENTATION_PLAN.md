@@ -1232,8 +1232,8 @@ builds").
 the launcher's too (owner, 2026-10-06: a link in the menu only reaches players on a build that has
 it). The launcher is the only unversioned page, so it is always current; published builds are
 immutable and could never gain or fix a selector. A plain visit to `/dwell/` lands on a short
-launcher screen — "Opening Dwell <latest>" with **Play now** and **Choose version**, opening the
-latest by itself after ~1 s — so the picker is one step from the site root whatever build was
+launcher screen — **Play Dwell <latest stable>** and **Choose version**, waiting for a click
+(owner, 2026-10-06: no auto-continue; the default is the latest stable) — so the picker is one step from the site root whatever build was
 played last. Links that name a world, game or build go straight through. `/dwell/?versions` opens
 the picker directly, and newer builds' menus also link to it. A choice
 opens that build for the visit only and is not remembered: Back to the menu still lands on the
@@ -1262,8 +1262,8 @@ Exit criteria
 - [x] Unit tests: the list's order, the dev opt-in, and per-build world compatibility, including
   dev builds' worlds and an index with unknown fields.
 - [x] e2e against a locally assembled two-version site (`npm run e2e:site`): the menu's Versions
-  entry opens the version page; a plain visit's landing screen offers Choose version and otherwise
-  opens the latest by itself; picking the older build opens it at `/dwell/v/<older>/`; its Back
+  entry opens the version page; a plain visit's landing screen waits for a click and offers Play (latest stable) and
+  Choose version; picking the older build opens it at `/dwell/v/<older>/`; its Back
   to the menu returns to `/dwell/` and the latest; `/dwell/?versions` works for a build without
   the menu entry.
 - [ ] Manual check on a phone: the version page is usable at phone width.
