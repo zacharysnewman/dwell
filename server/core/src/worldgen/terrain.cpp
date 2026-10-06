@@ -533,7 +533,9 @@ ColumnShape ShapeColumn(const std::int32_t (&h)[4], float surface) {
   const std::int32_t own = FloorToInt(surface);
   // The lowest cell whose top reaches every corner, and the highest whose floor is under them all.
   const std::int32_t reach = FloorDiv(hi + 1, 2) - 1, under = FloorDiv(lo, 2);
-  std::int32_t y = reach <= under ? reach : std::clamp(own, under, reach);
+  // A column above all its corners (a peak, a cliff's top) may keep a cube at its own height, and
+  // one below them all (a pit) a cube up to them, rather than a piece a block off its surface.
+  std::int32_t y = reach <= under ? reach : std::clamp(own, under - 1, reach + 1);
   y = std::clamp(y, own - 1, own + 1);
   int q[4];
   for (int i = 0; i < 4; ++i) q[i] = static_cast<int>(std::clamp(h[i] - 2 * y, 0, 2));

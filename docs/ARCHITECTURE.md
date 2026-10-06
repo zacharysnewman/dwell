@@ -607,7 +607,9 @@ arithmetic, so features placed by point queries agree with the chunks.
    to a half. Each column has **one surface cell**, with solid cells under it and open cells over
    it (since the 0.3.1 patch): where the four corners fit one cell, that cell, exactly; where they
    span more (ground steeper than a block per cell, or a block from a half-height to the next), the
-   cell holding the column's own surface, within the corners' span, with the corners clamped to it
+   cell holding the column's own surface, within the corners' span (a column above or below all
+   its corners — a peak, a cliff's top, a pit — may keep a cube at its own height), with the
+   corners clamped to it
    — so a step of the surface carries a slope on top and a piece never rests on another piece's
    slope. The cell stays within a block of the column's own surface. Its piece comes from the
    (clamped) corner heights relative to its floor — the nine shapes in four orientations and the
