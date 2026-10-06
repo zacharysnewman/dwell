@@ -38,3 +38,58 @@ body {
   font: inherit;
   cursor: pointer;
 }
+
+#launcher #dev-toggle {
+  margin: 16px 0 8px;
+  font-size: 14px;
+}
+
+#version-list {
+  width: 100%;
+  max-width: 520px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.version-row {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 6px;
+}
+
+.version-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.version-meta {
+  flex: 1;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.version-open {
+  padding: 8px 14px;
+  border: 1px solid rgb(255 255 255 / 40%);
+  border-radius: 6px;
+  background: rgb(120 170 255 / 30%);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.version-open:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.version-worlds {
+  margin: 6px 0 0;
+  font-size: 13px;
+  opacity: 0.8;
+}

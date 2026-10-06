@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { isBuildOf, LAUNCHER_VERSION, parseManifest, type Manifest } from './manifest';
-import { choose, forwardedSearch, latestBuild, type Channel } from './select';
+import {
+  choose,
+  forwardedSearch,
+  latestBuild,
+  listBuilds,
+  parseWorldIndex,
+  type Channel,
+} from './select';
 
 function manifest(versions: string[], minLauncher: Record<string, number> = {}): Manifest {
   const entries = versions.map((version) => ({
@@ -154,5 +161,61 @@ describe('a version directory', () => {
     expect(isBuildOf({ version: '0.1.0-dev.2+abc' }, '0.1.0-dev.1')).toBe(false);
     for (const odd of [null, 7, 'x', {}, { version: 3 }])
       expect(isBuildOf(odd, '0.1.0')).toBe(false);
+  });
+});
+
+describe('the version page', () => {
+  const worlds = [
+    { name: 'Old', appVersion: '0.1.0' },
+    { name: 'New', appVersion: '0.2.0' },
+    { name: 'Dev', appVersion: '0.2.0-dev.7' },
+    { name: 'Before versions', appVersion: null },
+  ];
+
+  it('lists stable builds newest first, marking the latest stable one', () => {
+    const rows = listBuilds(SITE, false, []);
+    expect(rows.map((r) => r.version)).toEqual(['0.2.0', '0.1.1', '0.1.0']);
+    expect(rows.map((r) => r.recommended)).toEqual([true, false, false]);
+    expect(rows.map((r) => r.line)).toEqual(['0.2.x', '0.1.x', '0.1.x']);
+  });
+
+  it('adds dev builds only when asked, each on its own exact line', () => {
+    const rows = listBuilds(SITE, true, []);
+    expect(rows.map((r) => r.version)).toEqual(['0.2.0', '0.2.0-dev.7', '0.1.1', '0.1.0']);
+    expect(rows.find((r) => r.channel === 'dev')).toMatchObject({ line: '0.2.0-dev.7' });
+  });
+
+  it('names the worlds each build can open: same line, not older, a dev build only its own', () => {
+    const by = Object.fromEntries(listBuilds(SITE, true, worlds).map((r) => [r.version, r.worlds]));
+    expect(by['0.2.0']).toEqual(['New']);
+    expect(by['0.1.1']).toEqual(['Old']); // 0.1.0's world opens in 0.1.1
+    expect(by['0.1.0']).toEqual(['Old']);
+    expect(by['0.2.0-dev.7']).toEqual(['Dev']);
+  });
+
+  it('marks a build that needs a newer launcher as not openable', () => {
+    const rows = listBuilds(
+      manifest(['0.2.0', '0.1.0'], { '0.2.0': LAUNCHER_VERSION + 1 }),
+      false,
+      [],
+    );
+    expect(rows.map((r) => r.openable)).toEqual([false, true]);
+  });
+
+  it('reads the world index, skipping damage and keeping what it can', () => {
+    const text = JSON.stringify([
+      { id: 'a', name: 'One', appVersion: '0.1.0', future: { x: 1 } },
+      { id: 'b', name: 'Two' },
+      { id: 'c', name: 'Bad', appVersion: 'nope' },
+      7,
+      { id: 'd' },
+    ]);
+    expect(parseWorldIndex(text)).toEqual([
+      { name: 'One', appVersion: '0.1.0' },
+      { name: 'Two', appVersion: null },
+      { name: 'Bad', appVersion: null },
+    ]);
+    expect(parseWorldIndex('{')).toEqual([]);
+    expect(parseWorldIndex(null)).toEqual([]);
   });
 });

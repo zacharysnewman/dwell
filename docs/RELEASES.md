@@ -161,9 +161,15 @@ versioned:
      links add it; the game also redirects to `?code=…&v=…` after the master reports a host on
      another line), which the launcher routes the same way as the master's version;
    - `?version=<version>` pins a build (developers); the player's channel choice (`dwell.channel`,
-     the menu's About section) picks dev instead of stable for the latest.
+     the version page's tick) picks dev instead of stable for the latest.
 3. Navigate to `/dwell/v/<version>/` with the same query (minus `version`), by `location.replace`
    (no extra history entry), after checking that the version's `build.json` loads and names it.
+
+**Version page [built, Phase 6b]:** `/dwell/?versions` lists every published build so players can
+choose one themselves; the main menu's **Versions** link opens it, and it holds the "Show dev builds" tick (`dwell.channel`). It lives in the launcher because published
+builds are immutable. A choice opens that build for the visit only, so Back to the menu still
+returns to the latest. Worlds stay locked to their line (§6), and the page shows which of the
+player's worlds each build can open.
 
 **Back to the menu always goes to `/dwell/`**, so a player is never stuck in an old version's
 menu. Links shared by players use `/dwell/?…`, never a version path, so they keep working.

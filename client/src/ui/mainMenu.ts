@@ -16,7 +16,6 @@ import {
 } from '../local/worldIndex';
 import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { PROTOCOL_VERSION } from '../protocol/constants.gen';
-import type { Channel } from './channel';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
@@ -30,8 +29,6 @@ export interface MainMenuDeps {
   /** Opens a route: `{ play: id }`, or invite parameters. */
   go(route: Record<string, string>): void;
   now(): number;
-  /** The release channel the launcher opens (RELEASES.md §3), changed from About. */
-  channel: { get(): Channel; set(channel: Channel): void };
   /** Shown on opening, e.g. why the menu came up instead of a world. */
   message?: string;
   /** The master server (Phase 5d), when this build has one: addresses and nearby games. */
@@ -174,11 +171,23 @@ export class MainMenu {
     const line = document.createElement('p');
     line.className = 'menu-hint';
     const version = recordedVersion();
+    // The version page is the launcher's (RELEASES.md §5), always the current one; the launcher
+    // is the site's root, `/dwell/` in production.
+    const versions = document.createElement('a');
+    versions.id = 'versions-link';
+    versions.className = 'menu-link';
+    versions.href = new URL(
+      '../../?versions',
+      new URL(import.meta.env.BASE_URL, location.href),
+    ).href;
+    versions.textContent = 'Versions';
     line.append(
       `Dwell ${version} (${channelOf(buildInfo.version)}) · `,
       button('About', 'menu-link', () => {
         details.hidden = !details.hidden;
       }),
+      ' · ',
+      versions,
     );
     line.id = 'app-version';
     const details = document.createElement('div');
@@ -192,20 +201,7 @@ export class MainMenu {
     notices.target = '_blank';
     notices.rel = 'noopener';
     notices.textContent = 'Third-party notices';
-    const dev = document.createElement('input');
-    dev.type = 'checkbox';
-    dev.id = 'use-dev-builds';
-    dev.checked = this.deps.channel.get() === 'dev';
-    dev.addEventListener('change', () => {
-      this.deps.channel.set(dev.checked ? 'dev' : 'stable');
-    });
-    const devLabel = document.createElement('label');
-    devLabel.className = 'menu-hint';
-    devLabel.append(
-      dev,
-      ' Open dev builds (unfinished; a world made in one stays in that exact build)',
-    );
-    details.append(text, notices, document.createElement('br'), devLabel);
+    details.append(text, notices);
     section.append(line, details);
     return section;
   }
