@@ -1,0 +1,169 @@
+name: Release
+
+# Every build is a git tag with a GitHub Release holding the built files (RELEASES.md §3):
+#   - a push to main        → a dev build, `v<next version>-dev.<run>` (a GitHub pre-release);
+#   - a pushed `v<version>` tag, or this workflow run by hand
+#                           → the stable release of client/package.json's version.
+# Each build is made for its own path (`/dwell/v/<version>/`); the site is then assembled from the
+# releases by pages.yml, called at the end (a workflow's own GITHUB_TOKEN can't trigger another).
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# One release run at a time per ref; a later push waits (never cancel a half-published release).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Decide the version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      buildVersion: ${{ steps.plan.outputs.buildVersion }}
+      tag: ${{ steps.plan.outputs.tag }}
+      channel: ${{ steps.plan.outputs.channel }}
+      archive: ${{ steps.plan.outputs.archive }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: plan
+        working-directory: client
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*) event=tag ;;
+            refs/heads/*) if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then event=dispatch; else event=push; fi ;;
+            *) echo "::error::unexpected ref $GITHUB_REF"; exit 1 ;;
+          esac
+          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+      - name: A release is made once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          CHANNEL: ${{ steps.plan.outputs.channel }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$CHANNEL" = stable ]; then
+              echo "::error::$TAG is already released. Bump client/package.json to the next version first."
+              exit 1
+            fi
+          fi
+      - name: Warn when main still carries a released version
+        if: steps.plan.outputs.channel == 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          stable="v${VERSION%-dev.*}"
+          if gh release view "$stable" >/dev/null 2>&1; then
+            echo "::warning::$stable is already released, so this dev build sorts below it. Bump client/package.json to the next version (RELEASES.md §3)."
+          fi
+
+  build:
+    name: Build ${{ needs.plan.outputs.version }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: client
+    env:
+      # The build embeds this version (client/vite.config.ts and server/CMakeLists.txt read it)
+      # and is made for its own path, /dwell/v/<version>/.
+      DWELL_VERSION: ${{ needs.plan.outputs.buildVersion }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Cache Emscripten
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-6.0.10-${{ runner.os }}
+      - name: Install Emscripten (keep in sync with ARCHITECTURE.md §3.1)
+        run: |
+          [ -d ~/emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install 6.0.10
+          ~/emsdk/emsdk activate 6.0.10
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: npm ci
+      - name: Build local-mode WASM core
+        run: npm run build:wasm
+      - run: npm run build
+        env:
+          # The master server's URL (repository variable, Phase 5 manual setup); empty until set.
+          VITE_MASTER_URL: ${{ vars.VITE_MASTER_URL }}
+      - name: Check the build is the version and path it should be
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node -e '
+            const b = JSON.parse(require("fs").readFileSync("dist/build.json", "utf8"));
+            if (b.version !== process.env.DWELL_VERSION) throw new Error("build.json says " + b.version);
+            const html = require("fs").readFileSync("dist/index.html", "utf8");
+            if (!html.includes("/dwell/v/" + process.env.VERSION + "/")) throw new Error("index.html is not based at /dwell/v/<version>/");
+            if (!require("fs").existsSync("dist/THIRD_PARTY_NOTICES.txt")) throw new Error("no THIRD_PARTY_NOTICES.txt");
+          '
+      - name: Archive the build
+        env:
+          ARCHIVE: ${{ needs.plan.outputs.archive }}
+        run: tar -czf "../$ARCHIVE" -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: |
+            ${{ needs.plan.outputs.archive }}
+            client/dist/build.json
+          if-no-files-found: error
+
+  publish:
+    name: Publish the GitHub Release
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+          ARCHIVE: ${{ needs.plan.outputs.archive }}
+        run: |
+          # `build.json` was uploaded from client/dist/, so it sits under client/dist/ here.
+          files=("$ARCHIVE" client/dist/build.json)
+          if [ "$CHANNEL" = dev ]; then
+            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --prerelease \
+              --title "Dwell $VERSION (dev)" --notes "Dev build of $GITHUB_SHA."
+          elif git ls-remote --exit-code --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" "${files[@]}" --verify-tag --title "Dwell $VERSION" --generate-notes
+          else
+            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --title "Dwell $VERSION" --generate-notes
+          fi
+
+  site:
+    name: Update the site
+    needs: [plan, publish]
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

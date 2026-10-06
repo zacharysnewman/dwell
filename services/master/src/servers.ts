@@ -16,6 +16,20 @@ export const MAX_TAG = 24;
 
 export type ServerVisibility = 'public' | 'unlisted';
 
+const APP_VERSION =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?$/;
+
+/**
+ * A host's app version (RELEASES.md §3, §7) from a request, without build metadata; null if it is
+ * absent or not a Semantic Version (a host from before versioned releases reports none). The
+ * master only passes it along: the client decides which builds can join (same compatibility line).
+ */
+export function parseAppVersion(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 64) return null;
+  const m = APP_VERSION.exec(value);
+  return m ? value.replace(/\+.*$/, '') : null;
+}
+
 /** A registration or heartbeat, as validated. */
 export interface ServerReport {
   port: number;
@@ -32,6 +46,8 @@ export interface ServerReport {
   players: number;
   maxPlayers: number;
   protocol: number;
+  /** The server's app version (RELEASES.md §7); null from a build before versioned releases. */
+  appVersion: string | null;
   visibility: ServerVisibility;
   /** Lower-case tags for the lobby list's search (5e). */
   tags: string[];
@@ -119,6 +135,7 @@ export function parseServerReport(body: Record<string, unknown>): ServerReport |
     players: count(body.players, 65535),
     maxPlayers: count(body.maxPlayers, 65535),
     protocol: count(body.protocol, 65535),
+    appVersion: parseAppVersion(body.appVersion),
     visibility,
     tags,
     heartbeatS: Math.max(MIN_HEARTBEAT_S, Math.min(MAX_HEARTBEAT_S, heartbeat)),

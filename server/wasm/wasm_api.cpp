@@ -19,6 +19,7 @@
 #include <memory>
 #include <vector>
 
+#include "dwell/core/app_version.h"
 #include "dwell/core/block_edit.h"
 #include "dwell/core/entropy.h"
 #include "dwell/core/fixed_step.h"
@@ -82,7 +83,9 @@ extern "C" {
 
 // Creates (or recreates) the local server. With `persist`, the world is the world file the page
 // opened (Module.dwellFiles, OPFS): a saved world's seed and generator win over the arguments.
-// Returns 2 with a persisted world, 1 without one (see dwell_local_storage_error).
+// Returns 2 with a persisted world, 1 without one (see dwell_local_storage_error), or 3 when the
+// world file is locked to another version (RELEASES.md §6): no server is created and the storage
+// error says which version opens it.
 EMSCRIPTEN_KEEPALIVE int dwell_local_create(double world_seed, std::uint32_t generator_version,
                                             int persist) {
   dwell::core::ServerConfig config;
@@ -94,6 +97,11 @@ EMSCRIPTEN_KEEPALIVE int dwell_local_create(double world_seed, std::uint32_t gen
   if (persist) {
     auto db = dwell::storage::WorldDb::Open(kLocalWorldFile, g_storage_error, {nullptr, false});
     if (db) {
+      if (const auto meta = db->LoadMeta()) {
+        g_storage_error =
+            dwell::core::WorldVersionError(dwell::core::kAppVersion, meta->app_version_last);
+        if (!g_storage_error.empty()) return 3;
+      }
       config.store = std::make_shared<dwell::storage::WorldStore>(std::move(db));
       config.autosave_seconds = kLocalAutosaveSeconds;
     }

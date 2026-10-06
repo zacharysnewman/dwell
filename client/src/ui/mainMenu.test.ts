@@ -26,6 +26,10 @@ describe('main menu text', () => {
       lastPlayedAt: 0,
     };
     expect(worldDetails(world, 1)).toBe('Terrain · seed 42 · never played');
+    // The version that last played it is the badge (RELEASES.md §6).
+    expect(worldDetails({ ...world, appVersion: '0.1.0' }, 1)).toBe(
+      'Terrain · seed 42 · never played · v0.1.0',
+    );
   });
 });
 

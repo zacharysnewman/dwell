@@ -4,6 +4,7 @@
 #include <cmath>
 #include <variant>
 
+#include "dwell/core/app_version.h"
 #include "dwell/core/crypto.h"
 #include "dwell/player/net.h"
 
@@ -240,7 +241,8 @@ void Server::HandleControl(SessionId id, Session& s, const Message& m) {
       if (!hello) break;
       if (hello->protocol_version != kProtocolVersion) {
         Reject(id, RejectReason::kProtocolVersion,
-               "Server runs protocol " + std::to_string(kProtocolVersion) + ", client runs " +
+               "Server runs Dwell " + std::string(kAppVersion) + " (protocol " +
+                   std::to_string(kProtocolVersion) + "), client runs protocol " +
                    std::to_string(hello->protocol_version) + ".");
         return;
       }
@@ -1114,6 +1116,8 @@ void Server::SaveNow() {
   storage::SaveBatch batch;
   batch.meta =
       storage::WorldMeta{config_.world_seed, config_.generator_version, config_.spawn, tick_};
+  // This build's version is the world's last (and, for a new file, its first): RELEASES.md §6.
+  batch.meta->app_version_created = batch.meta->app_version_last = kAppVersion;
   std::vector<std::pair<ChunkCoord, std::uint32_t>> revisions;
   for (const ChunkCoord& c : dirty_) {
     const Chunk* chunk = world_.Find(c);

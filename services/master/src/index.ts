@@ -9,6 +9,7 @@ import {
   byPlayersThenName,
   matchesQuery,
   parseAddress,
+  parseAppVersion,
   parseListQuery,
   parseServerReport,
 } from './servers';
@@ -85,7 +86,7 @@ async function signedPost(
 const clientIp = (request: Request) => request.headers.get('cf-connecting-ip') ?? 'unknown';
 
 /**
- * POST /v1/rooms {maxGuests, visibility?, name?, protocol?}: a new friend-world room and its host
+ * POST /v1/rooms {maxGuests, visibility?, name?, protocol?, appVersion?}: a new friend-world room and its host
  * token (§10.2). Visibility "network" also lists it to players on the host's network (5d);
  * "public" lists it there and in the lobby list (5e).
  */
@@ -93,11 +94,12 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
   const req = await signedPost(request, env);
   if (req instanceof Response) return req;
   const maxGuests = typeof req.body.maxGuests === 'number' ? req.body.maxGuests : 8;
+  const appVersion = parseAppVersion(req.body.appVersion);
   const now = Date.now();
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = newCode();
     if (await directory(env).isServerCode(code)) continue; // a dedicated server's code
-    const opened = await room(env, code).open(req.key, maxGuests, now);
+    const opened = await room(env, code).open(req.key, maxGuests, now, appVersion);
     if (opened) {
       const visibility = req.body.visibility;
       if (visibility === 'network' || visibility === 'public') {
@@ -113,7 +115,7 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
           code,
           clientIp(request),
           name,
-          { public: visibility === 'public', protocol },
+          { public: visibility === 'public', protocol, appVersion },
           now,
         );
       }
@@ -161,7 +163,12 @@ async function resolve(request: Request, env: Env): Promise<Response> {
       return json({ kind: 'server', server });
     }
     if (await room(env, code).isOpen()) {
-      return json({ kind: 'room', code, display: formatCode(code) });
+      return json({
+        kind: 'room',
+        code,
+        display: formatCode(code),
+        appVersion: await room(env, code).appVersion(),
+      });
     }
     return problem(404, 'not_found', 'Nothing is being hosted with that code.');
   }

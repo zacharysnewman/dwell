@@ -1,6 +1,6 @@
 # 0005. Domain and web origin: the default Pages path `dropkickarcade.com/dwell/`
 
-- Status: Accepted
+- Status: Accepted (the note on keeping older builds at `/dwell/v/<version>/` is carried out by [0014](0014-versioned-releases.md))
 - Date: 2026-09-25
 
 ## Context

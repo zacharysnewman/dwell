@@ -1,7 +1,12 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { normalizeCode } from '../src/codes';
-import { parseAddress, parseServerReport, type ServerReport } from '../src/servers';
+import {
+  parseAddress,
+  parseAppVersion,
+  parseServerReport,
+  type ServerReport,
+} from '../src/servers';
 import { newKey, signedRequest, type TestKey } from './sign';
 
 const BASE = 'https://master.test';
@@ -197,5 +202,79 @@ describe('dedicated servers', () => {
       new Request(`${BASE}/v1/servers`, { method: 'POST', body: JSON.stringify(report()) }),
     );
     expect(unsigned.status).toBe(401);
+  });
+});
+
+// Hosts report their app version (RELEASES.md §7); the master passes it along so a client can
+// open a build on the host's compatibility line.
+describe('app versions of hosts', () => {
+  it('are read strictly, without build metadata; a host before versioned releases has none', () => {
+    expect(parseAppVersion('0.1.0')).toBe('0.1.0');
+    expect(parseAppVersion('0.2.0-dev.42')).toBe('0.2.0-dev.42');
+    expect(parseAppVersion('0.2.0-dev.42+ab12cd3')).toBe('0.2.0-dev.42');
+    for (const bad of ['0.1', 'v0.1.0', '01.0.0', '0.1.0-', 'x'.repeat(100), 7, null, undefined]) {
+      expect(parseAppVersion(bad)).toBeNull();
+    }
+    expect((parseServerReport(report({ appVersion: '0.1.0' })) as ServerReport).appVersion).toBe(
+      '0.1.0',
+    );
+    expect((parseServerReport(report()) as ServerReport).appVersion).toBeNull();
+    expect(
+      (parseServerReport(report({ appVersion: 'junk' })) as ServerReport).appVersion,
+    ).toBeNull();
+  });
+
+  it('come with a dedicated server when its code or address is resolved, and in the lobby', async () => {
+    const name = `Versioned ${crypto.randomUUID()}`;
+    const code = (
+      await register(await newKey(), '203.0.113.90', {
+        name,
+        visibility: 'public',
+        appVersion: '0.1.4',
+      })
+    ).code;
+    const player = await newKey();
+    const resolved = await (
+      await post(player, '/v1/resolve', { code }, '203.0.113.90')
+    ).json<{ kind: string; server: { appVersion: string | null } }>();
+    expect(resolved.kind).toBe('server');
+    expect(resolved.server.appVersion).toBe('0.1.4');
+    const nearby = await (
+      await post(await newKey(), '/v1/nearby', {}, '203.0.113.90')
+    ).json<{ servers: { code: string; appVersion: string | null }[] }>();
+    expect(nearby.servers.find((s) => s.code === code)?.appVersion).toBe('0.1.4');
+  });
+
+  it('come with a friend world when its code is resolved, and when it is listed', async () => {
+    const name = `Versioned world ${crypto.randomUUID()}`;
+    const created = await post(
+      await newKey(),
+      '/v1/rooms',
+      { maxGuests: 3, visibility: 'network', name, appVersion: '0.2.0-dev.7+abc' },
+      '203.0.113.91',
+    );
+    const { code } = await created.json<{ code: string }>();
+    const resolved = await (
+      await post(await newKey(), '/v1/resolve', { code }, '203.0.113.91')
+    ).json<{ kind: string; appVersion: string | null }>();
+    expect(resolved).toMatchObject({ kind: 'room', appVersion: '0.2.0-dev.7' });
+    const nearby = await (
+      await post(await newKey(), '/v1/nearby', {}, '203.0.113.91')
+    ).json<{ worlds: { code: string; appVersion: string | null }[] }>();
+    expect(nearby.worlds.find((w) => w.code === code)?.appVersion).toBe('0.2.0-dev.7');
+  });
+
+  it('are null for a friend world whose host sent none', async () => {
+    const created = await post(
+      await newKey(),
+      '/v1/rooms',
+      { maxGuests: 3, visibility: 'network', name: 'Old host' },
+      '203.0.113.92',
+    );
+    const { code } = await created.json<{ code: string }>();
+    const resolved = await (
+      await post(await newKey(), '/v1/resolve', { code }, '203.0.113.92')
+    ).json<{ appVersion: string | null }>();
+    expect(resolved.appVersion).toBeNull();
   });
 });

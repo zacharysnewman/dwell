@@ -1,6 +1,7 @@
 // Hosting the local world from the game menu (ARCHITECTURE.md §10.2, Phase 5c): wires Host… to the
 // master, the hosting relay and the page's lifecycle (ADR 0009): the screen stays awake while
 // hosting; a hidden page pauses the world (guests see "Host paused"); leaving the page ends it.
+import { recordedVersion } from './buildInfo';
 import type { LocalSession } from './net/connect';
 import { startHosting, type HostRelay } from './net/hosting';
 import { configuredMasterUrl, MasterClient } from './net/master';
@@ -68,7 +69,10 @@ export function enableHosting(
         panel.say('Lost the master server: the code no longer works, but guests stay connected.');
       };
       wake.set(true);
-      return { display: hosting.display, link: codeLink(location.href, hosting.code) };
+      return {
+        display: hosting.display,
+        link: codeLink(location.href, hosting.code, recordedVersion()),
+      };
     },
     stop,
   });

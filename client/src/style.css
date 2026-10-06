@@ -597,6 +597,22 @@ body {
   background: rgb(120 170 255 / 30%);
 }
 
+/* A text-style button: About in the main menu's version line. */
+.menu-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgb(150 190 255);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#about a {
+  color: rgb(150 190 255);
+  font-size: 12px;
+}
+
 .menu-confirm {
   border-color: #ff8a80;
   background: rgb(255 80 60 / 30%);

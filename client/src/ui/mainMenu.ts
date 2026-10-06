@@ -3,6 +3,7 @@
 // (a join code, a server address or an invite link; servers and friend worlds on this network;
 // recently joined servers), and the server browser (the lobby list, Phase 5e). Choosing one
 // navigates to it (ui/launch.ts).
+import { buildInfo, channelOf, recordedVersion } from '../buildInfo';
 import { GENERATORS } from '../local/world';
 import {
   cleanName,
@@ -15,6 +16,7 @@ import {
 } from '../local/worldIndex';
 import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { PROTOCOL_VERSION } from '../protocol/constants.gen';
+import type { Channel } from './channel';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
@@ -28,6 +30,8 @@ export interface MainMenuDeps {
   /** Opens a route: `{ play: id }`, or invite parameters. */
   go(route: Record<string, string>): void;
   now(): number;
+  /** The release channel the launcher opens (RELEASES.md §3), changed from About. */
+  channel: { get(): Channel; set(channel: Channel): void };
   /** Shown on opening, e.g. why the menu came up instead of a world. */
   message?: string;
   /** The master server (Phase 5d), when this build has one: addresses and nearby games. */
@@ -62,9 +66,10 @@ export function formatPlayed(at: number, now: number): string {
   return `played ${String(days)} day${days === 1 ? '' : 's'} ago`;
 }
 
-/** A world's details line: "Terrain · seed 42 · played 3 h ago". */
+/** A world's details line: "Terrain · seed 42 · played 3 h ago · v0.1.0". */
 export function worldDetails(world: WorldMeta, now: number): string {
-  return `${typeLabel(world.type)} · seed ${String(world.seed)} · ${formatPlayed(world.lastPlayedAt, now)}`;
+  const version = world.appVersion ? ` · v${world.appVersion}` : '';
+  return `${typeLabel(world.type)} · seed ${String(world.seed)} · ${formatPlayed(world.lastPlayedAt, now)}${version}`;
 }
 
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
@@ -106,6 +111,8 @@ export class MainMenu {
   private readonly list = document.createElement('ul');
   private readonly message = document.createElement('p');
   private readonly form = document.createElement('form');
+  /** Worlds saved before versioned releases (RELEASES.md §6): listed only to be deleted. */
+  private readonly legacy = document.createElement('section');
 
   constructor(
     parent: HTMLElement,
@@ -139,6 +146,7 @@ export class MainMenu {
       this.list,
       this.joinSection(),
     );
+    this.legacy.id = 'legacy-worlds';
     const master = deps.master;
     if (master) {
       const browser = new ServerBrowser({
@@ -148,13 +156,58 @@ export class MainMenu {
           deps.go(route);
         },
         protocol: PROTOCOL_VERSION,
+        version: recordedVersion(),
       });
       panel.append(browser.root);
     }
+    panel.append(this.legacy, this.aboutSection());
     this.root.append(panel);
     parent.append(this.root);
     this.render();
     void this.adoptSavedWorlds();
+  }
+
+  /** The version, and the About details: licence and third-party notices (RELEASES.md §2). */
+  private aboutSection(): HTMLElement {
+    const section = document.createElement('section');
+    section.id = 'about';
+    const line = document.createElement('p');
+    line.className = 'menu-hint';
+    const version = recordedVersion();
+    line.append(
+      `Dwell ${version} (${channelOf(buildInfo.version)}) · `,
+      button('About', 'menu-link', () => {
+        details.hidden = !details.hidden;
+      }),
+    );
+    line.id = 'app-version';
+    const details = document.createElement('div');
+    details.id = 'about-details';
+    details.hidden = true;
+    const text = document.createElement('p');
+    text.className = 'menu-hint';
+    text.textContent = `Build ${buildInfo.sha.slice(0, 7)}, ${buildInfo.time.slice(0, 10)}. Dwell is not open source: all rights reserved, and the source is public for reference only. `;
+    const notices = document.createElement('a');
+    notices.href = `${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.txt`;
+    notices.target = '_blank';
+    notices.rel = 'noopener';
+    notices.textContent = 'Third-party notices';
+    const dev = document.createElement('input');
+    dev.type = 'checkbox';
+    dev.id = 'use-dev-builds';
+    dev.checked = this.deps.channel.get() === 'dev';
+    dev.addEventListener('change', () => {
+      this.deps.channel.set(dev.checked ? 'dev' : 'stable');
+    });
+    const devLabel = document.createElement('label');
+    devLabel.className = 'menu-hint';
+    devLabel.append(
+      dev,
+      ' Open dev builds (unfinished; a world made in one stays in that exact build)',
+    );
+    details.append(text, notices, document.createElement('br'), devLabel);
+    section.append(line, details);
+    return section;
   }
 
   private say(text: string): void {
@@ -288,8 +341,16 @@ export class MainMenu {
     master.nearby().then(
       (found) => {
         const items = [
-          ...found.servers.map((s) => ({ code: s.code, text: nearbyLabel(s) })),
-          ...found.worlds.map((w) => ({ code: w.code, text: nearbyLabel(w) })),
+          ...found.servers.map((s) => ({
+            code: s.code,
+            text: nearbyLabel(s),
+            version: s.appVersion,
+          })),
+          ...found.worlds.map((w) => ({
+            code: w.code,
+            text: nearbyLabel(w),
+            version: w.appVersion,
+          })),
         ];
         label.textContent =
           items.length > 0 ? 'On your network:' : 'Nothing is being hosted on your network.';
@@ -297,7 +358,9 @@ export class MainMenu {
           const li = document.createElement('li');
           li.append(
             button(item.text, 'menu-button-small', () => {
-              this.deps.go({ code: item.code });
+              this.deps.go(
+                item.version ? { code: item.code, v: item.version } : { code: item.code },
+              );
             }),
           );
           list.append(li);
@@ -312,14 +375,16 @@ export class MainMenu {
 
   /** Lists worlds saved before the index existed (or opened by link in another way). */
   private async adoptSavedWorlds(): Promise<void> {
-    const before = this.deps.index.list().length;
+    const before = this.deps.index.list().length + this.deps.index.legacy().length;
+    // A file the index doesn't know was saved before versioned releases: it is listed to delete.
     for (const name of await this.deps.listFiles()) this.deps.index.adopt(name, this.deps.now());
-    if (this.deps.index.list().length !== before) this.render();
+    if (this.deps.index.list().length + this.deps.index.legacy().length !== before) this.render();
   }
 
   private render(): void {
     const worlds = this.deps.index.list();
     const now = this.deps.now();
+    this.renderLegacy();
     this.list.replaceChildren();
     if (worlds.length === 0) {
       const empty = document.createElement('li');
@@ -356,13 +421,46 @@ export class MainMenu {
     }
   }
 
+  private renderLegacy(): void {
+    const old = this.deps.index.legacy();
+    this.legacy.replaceChildren();
+    this.legacy.hidden = old.length === 0;
+    if (old.length === 0) return;
+    const title = document.createElement('h2');
+    title.textContent = 'Saved before versioned releases';
+    const hint = document.createElement('p');
+    hint.className = 'menu-hint';
+    hint.textContent =
+      "These worlds can't be opened by any version of Dwell. Delete them to free their space.";
+    const list = document.createElement('ul');
+    for (const world of old) {
+      const item = document.createElement('li');
+      item.className = 'world-item';
+      item.dataset.id = world.id;
+      const name = document.createElement('span');
+      name.className = 'world-name';
+      name.textContent = world.name;
+      item.append(
+        name,
+        confirmButton('Delete', 'Delete forever?', () => void this.remove(world)),
+      );
+      list.append(item);
+    }
+    this.legacy.append(title, hint, list);
+  }
+
   /** Recreates a world from its seed with its type's current generator, discarding changes. */
   private async regenerate(world: WorldMeta): Promise<void> {
     if (!(await this.deps.deleteFiles(world.id))) {
       this.say(`"${world.name}" is open in another tab. Close it there first.`);
       return;
     }
-    this.deps.index.put({ ...world, generatorVersion: GENERATORS[world.type] });
+    // A new file: this build's world, whichever version the old one was.
+    this.deps.index.put({
+      ...world,
+      generatorVersion: GENERATORS[world.type],
+      appVersion: recordedVersion(),
+    });
     this.deps.go({ play: world.id });
   }
 

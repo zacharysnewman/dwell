@@ -77,6 +77,8 @@ export interface ServerEntry {
   players: number;
   maxPlayers: number;
   protocol: number;
+  /** The server's app version (RELEASES.md §7); absent or null from a host before versioned releases. */
+  appVersion?: string | null;
   host: string;
   port: number;
   cert: string;
@@ -100,6 +102,8 @@ export interface ListedWorld {
   maxPlayers: number;
   /** The host's protocol version, when it said. */
   protocol: number | null;
+  /** The host's app version, when it said. */
+  appVersion?: string | null;
 }
 
 /** The lobby list: verified public servers and public friend worlds, or the "new" servers. */
@@ -136,18 +140,23 @@ export function lobbyQueryString(query: LobbyQuery): string {
 
 /** What a join code or typed address leads to. */
 export type Resolved =
-  { kind: 'server'; server: ServerEntry } | { kind: 'room'; code: string; display: string };
+  | { kind: 'server'; server: ServerEntry }
+  | { kind: 'room'; code: string; display: string; appVersion?: string | null };
 
 /** Servers and friend worlds on the player's network (same public IP). */
 export interface Nearby {
   servers: ServerEntry[];
-  worlds: { code: string; display: string; name: string }[];
+  worlds: { code: string; display: string; name: string; appVersion?: string | null }[];
 }
 
-/** Invite-link parameters (`?join=…&cert=…[&rtc=…&ice=…]`) for a resolved server. */
+/**
+ * Invite-link parameters (`?join=…&cert=…[&rtc=…&ice=…][&v=<app version>]`) for a resolved server;
+ * `v` lets the launcher open a build on the server's compatibility line (RELEASES.md §5).
+ */
 export function serverInvite(s: ServerEntry): Record<string, string> {
   const host = s.host.includes(':') ? `[${s.host}]` : s.host;
   const route: Record<string, string> = { join: `${host}:${String(s.port)}`, cert: s.cert };
+  if (s.appVersion) route.v = s.appVersion;
   if (s.rtcPort !== null && s.ice) {
     route.rtc = String(s.rtcPort);
     route.ice = s.ice;
@@ -187,15 +196,17 @@ export class MasterClient {
   /**
    * Opens a room for a friend world: its join code, and the host's token for the room socket.
    * Visibility "network" also lists it (by `name`) to players on the host's network; "public"
-   * there and in the lobby list, with the host's protocol version.
+   * there and in the lobby list, with the host's protocol version. `appVersion` is the host's app
+   * version, which the room reports so a guest opens a build on its line (RELEASES.md §7).
    */
   createRoom(
     maxGuests: number,
     visibility: 'code' | 'network' | 'public' = 'code',
     name = '',
     protocol?: number,
+    appVersion?: string,
   ): Promise<{ code: string; display: string; hostToken: string }> {
-    return this.request('POST', '/v1/rooms', { maxGuests, visibility, name, protocol });
+    return this.request('POST', '/v1/rooms', { maxGuests, visibility, name, protocol, appVersion });
   }
 
   /** Asks to join the room with this code: a one-use token for the room socket. */

@@ -161,6 +161,10 @@ describe('dedicated servers through the master (Phase 5d)', () => {
     expect(invite?.webrtc).toMatchObject({ ip: '192.168.1.50', port: 4434 });
     expect(serverInvite({ ...entry, host: 'fd00::5', rtcPort: null }).join).toBe('[fd00::5]:4433');
     expect(serverInvite({ ...entry, ice: null })).not.toHaveProperty('rtc');
+    // The server's app version rides along, for the launcher to open a build on its line.
+    expect(route).not.toHaveProperty('v');
+    expect(serverInvite({ ...entry, appVersion: '0.1.4' }).v).toBe('0.1.4');
+    expect(serverInvite({ ...entry, appVersion: null })).not.toHaveProperty('v');
   });
 
   it('resolve codes and addresses, list nearby games, and send room visibility', async () => {
@@ -186,10 +190,13 @@ describe('dedicated servers through the master (Phase 5d)', () => {
     });
     expect((await client.nearby()).servers).toHaveLength(1);
     await client.createRoom(4, 'network', 'Bravo');
+    await client.createRoom(4, 'public', 'Charlie', 10, '0.1.0');
     expect(bodies).toEqual([
       'https://m.test/v1/resolve {"address":"192.168.1.50"}',
       'https://m.test/v1/nearby {}',
       'https://m.test/v1/rooms {"maxGuests":4,"visibility":"network","name":"Bravo"}',
+      // The host's app version is reported with the room (RELEASES.md §7).
+      'https://m.test/v1/rooms {"maxGuests":4,"visibility":"public","name":"Charlie","protocol":10,"appVersion":"0.1.0"}',
     ]);
   });
 

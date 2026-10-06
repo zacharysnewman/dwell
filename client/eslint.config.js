@@ -10,7 +10,16 @@ function restrictImports(files, ignores, patterns) {
 }
 
 export default tseslint.config(
-  { ignores: ['dist/', 'public/wasm/', 'test-results/', 'playwright-report/'] },
+  {
+    ignores: [
+      'dist/',
+      'dist-site/',
+      'dist-launcher/',
+      'public/wasm/',
+      'test-results/',
+      'playwright-report/',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {

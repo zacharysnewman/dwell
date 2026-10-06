@@ -93,6 +93,8 @@ jobs:
         env:
           DWELL_REQUIRE_WASM: '1'
       - run: npm run build
+      - name: Build the launcher (RELEASES.md §5)
+        run: npm run build:launcher
 
   server:
     name: Server (C++ + Rust)
@@ -106,6 +108,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server/net/wt
+      - name: Third-party notices are up to date (RELEASES.md §2)
+        run: python3 shared/licenses/gen.py --check
       - name: C++ format
         run: find server/core server/app server/tests \( -name '*.cpp' -o -name '*.h' \) ! -name '*.gen.h' | xargs clang-format --dry-run --Werror
       - name: Rust format, clippy, tests
@@ -197,6 +201,9 @@ jobs:
       - name: Browser end-to-end tests
         working-directory: client
         run: npx playwright test
+      - name: Launcher end-to-end tests (a locally assembled site with three versions)
+        working-directory: client
+        run: npm run e2e:site
       - name: Electron smoke test (WebTransport and local mode)
         working-directory: platforms/electron
         run: |

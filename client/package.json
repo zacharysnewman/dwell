@@ -1,6 +1,6 @@
 {
   "name": "@dwell/client",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -17,7 +17,10 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "build:wasm": "cd ../server && cmake --preset wasm >/dev/null && cmake --build --preset wasm",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "build:launcher": "vite build -c vite.launcher.config.ts",
+    "site:fixture": "node --experimental-strip-types scripts/localSite.ts",
+    "e2e:site": "npm run site:fixture && playwright test -c playwright.site.config.ts"
   },
   "dependencies": {
     "qrcode-generator": "2.0.4",

@@ -199,6 +199,10 @@ std::optional<WorldMeta> WorldDb::LoadMeta() {
       m.created_at = s.ColInt(1);
     } else if (key == "saved_at") {
       m.saved_at = s.ColInt(1);
+    } else if (key == "app_version_created") {
+      m.app_version_created = s.ColText(1);
+    } else if (key == "app_version_last") {
+      m.app_version_last = s.ColText(1);
     } else if (key.starts_with("spawn_") && key.size() == 7 && !s.ColNull(1)) {
       spawn[static_cast<std::size_t>(key[6] - 'x')] = s.ColReal(1);
     }
@@ -345,6 +349,17 @@ bool WorldDb::Save(const SaveBatch& batch, std::string& error) {
               set_int(put, "world_tick", m.world_tick) &&
               set_int(keep, "created_at", m.created_at ? m.created_at : now) &&
               set_int(put, "saved_at", now);
+    auto set_text = [&](Stmt& s, const char* key, const std::string& v) {
+      s.Text(1, key).Text(2, v);
+      const int rc = s.Step();
+      s.Reset();
+      return rc == SQLITE_DONE;
+    };
+    if (ok && !m.app_version_last.empty()) {
+      ok = set_text(put, "app_version_last", m.app_version_last) &&
+           set_text(keep, "app_version_created",
+                    m.app_version_created.empty() ? m.app_version_last : m.app_version_created);
+    }
     for (int i = 0; i < 3 && ok; ++i) {
       const char key[] = {'s', 'p', 'a', 'w', 'n', '_', static_cast<char>('x' + i), '\0'};
       put.Text(1, key);

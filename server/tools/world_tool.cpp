@@ -60,6 +60,10 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(meta->world_seed), meta->generator_version,
                 meta->world_tick, static_cast<long long>(meta->created_at),
                 static_cast<long long>(meta->saved_at));
+    std::printf(
+        "app version: created by %s, last saved by %s\n",
+        meta->app_version_created.empty() ? "(unversioned)" : meta->app_version_created.c_str(),
+        meta->app_version_last.empty() ? "(unversioned)" : meta->app_version_last.c_str());
     if (meta->spawn) {
       std::printf("spawn %.3f %.3f %.3f\n", (*meta->spawn)[0], (*meta->spawn)[1],
                   (*meta->spawn)[2]);

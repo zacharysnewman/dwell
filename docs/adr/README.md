@@ -10,7 +10,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0002](0002-client-renderer.md) | Client renderer: Three.js on WebGL2, behind a thin render interface | Accepted |
 | [0003](0003-multiplayer-hosting-model.md) | Multiplayer hosting model: player-hosted servers, friend worlds, and a master server | Accepted |
 | [0004](0004-player-identity.md) | Player identity: device keys now, optional accounts later | Accepted |
-| [0005](0005-domain-and-origins.md) | Domain and web origin: the default Pages path `dropkickarcade.com/dwell/` | Accepted |
+| [0005](0005-domain-and-origins.md) | Domain and web origin: the default Pages path `dropkickarcade.com/dwell/` | Accepted (older builds: 0014) |
 | [0006](0006-world-persistence-sqlite.md) | World persistence: one SQLite database per world, holding all data | Accepted |
 | [0007](0007-threading-model.md) | Threading model: single-threaded web sim core with worker pools; threads natively | Accepted |
 | [0008](0008-dedicated-server-transports.md) | Dedicated-server transports: WebTransport primary, WebRTC fallback, no WebSocket | Accepted |
@@ -19,6 +19,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0011](0011-planet-scale-world.md) | Planet-scale world: an 8,192 km disc, 8,192 m tall, with double-precision physics | Accepted |
 | [0012](0012-lod-octree.md) | Whole-world view: a 3D level-of-detail octree, generated on the client | Accepted |
 | [0013](0013-master-server-on-cloudflare.md) | Master server on Cloudflare Workers + Durable Objects; Cloudflare TURN | Accepted |
+| [0014](0014-versioned-releases.md) | Versioned releases: builds as tagged GitHub Releases behind a launcher, worlds locked to their compatibility line | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

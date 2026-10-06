@@ -3,6 +3,7 @@
 // through the master's room (net/roomSocket.ts), and the host page relays the guest's data channels
 // to the local-mode worker as another session (TransportKind WebRTC, binding = the SHA-256 of the
 // host's certificate). Peer connections live on the main thread because workers have none.
+import { recordedVersion } from '../buildInfo';
 import type { ToWorker } from '../local/messages';
 import { HostPolicy } from '../local/wasmCore';
 import { Channel, HostState, PROTOCOL_VERSION, TransportKind } from '../protocol/constants.gen';
@@ -266,7 +267,13 @@ export async function startHosting(
   if (!binding) throw new Error('This browser gave no certificate fingerprint.');
   const [iceServers, room] = await Promise.all([
     master.turn(),
-    master.createRoom(settings.maxGuests, settings.visibility, settings.name, PROTOCOL_VERSION),
+    master.createRoom(
+      settings.maxGuests,
+      settings.visibility,
+      settings.name,
+      PROTOCOL_VERSION,
+      recordedVersion(),
+    ),
   ]);
   const socket = await RoomSocket.open(master.roomSocketUrl(room.code, room.hostToken));
   worker.postToWorker({

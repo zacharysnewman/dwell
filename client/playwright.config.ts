@@ -6,6 +6,8 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'e2e',
+  // The launcher's tests have their own config and site (playwright.site.config.ts).
+  testIgnore: 'launcher.spec.ts',
   timeout: 30_000,
   fullyParallel: false,
   workers: 1,

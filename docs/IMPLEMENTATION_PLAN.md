@@ -23,7 +23,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c), #13 (3d, 3e) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43, #44 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
-| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — license added (`LICENSE`, root `THIRD_PARTY_NOTICES`; branch `claude/world-generation-plans`, PR pending); the rest not started | — |
+| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — everything built and tested locally (branch `claude/phase-6-versioned-releases`, PR pending); outstanding: the workflows' first real run, i.e. the owner's first release (`RELEASES.md` §8), and CI on the PR | — |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ⏳ Not started | — |
 | 8 — Block registry: namespaced block states and palettes | ⏳ Not started | — |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
@@ -1152,59 +1152,68 @@ compatibility line** (SemVer) for now. The repository stays public under a restr
 chosen by the owner (a private-source split was considered and dropped to keep the free CI
 pipeline). Design and setup steps: [`RELEASES.md`](./RELEASES.md).
 
-**Status:** In progress — the license is in (`LICENSE`, manifests, README, a generated root
-`THIRD_PARTY_NOTICES`; branch `claude/world-generation-plans`). Everything else not started,
-including shipping the notices in builds. Absorbs Phase 17's "versioned client builds" for the web.
+**Status:** In progress — built and tested locally; branch `claude/phase-6-versioned-releases`, PR
+pending. The two release workflows (`release.yml`, `pages.yml`) have not run yet (GitHub runs them
+only once merged; their logic — version and tag rules, which releases the site holds, the manifest —
+is in unit-tested scripts, and the launcher was exercised end to end against a locally assembled
+site), so the exit criterion for a real release stays open until the owner's first release
+(`RELEASES.md` §8), as does a green CI run on the PR. Absorbs Phase 17's "versioned client builds"
+for the web.
+
+**Deviations:** the launcher's source is `client/launcher/`, not a top-level `launcher/` (it shares
+the client's toolchain, tests and version library); the site and release scripts are TypeScript in
+`client/scripts/` run with Node's type stripping, not shell. The "handshake's rejection names the
+server's version" needed no wire change: the `Reject` message text carries it.
 
 Deliverables
-- [ ] ADR: versioned releases — the app version and channels, builds as tagged GitHub Releases,
+- [x] ADR: versioned releases — the app version and channels, builds as tagged GitHub Releases,
   the site assembled from releases, the launcher, version-locked worlds, the cross-version storage
   contract, the license; supersedes the deployment parts of §2.1 and ADR 0005's "older builds" note.
 - [x] License: **all rights reserved** (owner, 2026-10-05) in `LICENSE`, the package manifests
   (`"license": "UNLICENSED"`, lockfiles in step; Cargo `license-file`) and the README; a root
   `THIRD_PARTY_NOTICES` generated by `shared/licenses/gen.py` (third_party.json + texts for the
   CMake, npm and Emscripten components; `cargo metadata` for the 196 crates linked into the server).
-- [ ] `THIRD_PARTY_NOTICES` shipped in every build (and beside the native server), linked from the
+- [x] `THIRD_PARTY_NOTICES` shipped in every build (and beside the native server), linked from the
   menu's About screen; CI runs `shared/licenses/gen.py --check`.
-- [ ] App version: one semantic version embedded in every build (HUD and menu instead of the commit
+- [x] App version: one semantic version embedded in every build (HUD and menu instead of the commit
   SHA), recorded with `protocolVersion` and generator versions in `build.json`; stable and dev
   channels. Semantic Versioning 2.0.0 with a declared public API (world format, generated terrain,
   protocols, the storage contract); the baseline release is `0.1.0`; before `1.0.0` breaking
   changes bump MINOR, compatible ones PATCH; dev builds `0.2.0-dev.<run>+<sha>` (`RELEASES.md` §3).
-- [ ] Release workflow: build each version for `base: '/dwell/v/<version>/'`, publish it as a
+- [x] Release workflow: build each version for `base: '/dwell/v/<version>/'`, publish it as a
   GitHub Release (`v<version>`, or a `v<version>-dev.<run>` pre-release) with the build archive and
   `build.json`; prune old dev pre-releases.
-- [ ] Pages workflow: assemble the site from the releases (every stable, the newest dev), generate
+- [x] Pages workflow: assemble the site from the releases (every stable, the newest dev), generate
   `versions.json`, deploy; size reported per deploy against the 1 GB limit.
-- [ ] Launcher: pick the version (world, invite/code, server, latest stable or dev), redirect with
+- [x] Launcher: pick the version (world, invite/code, server, latest stable or dev), redirect with
   the query kept; Back to the menu returns to `/dwell/`; clear errors for missing versions.
-- [ ] Worlds: `app_version_created` / `app_version_last` in the world file and `appVersion` in the
+- [x] Worlds: `app_version_created` / `app_version_last` in the world file and `appVersion` in the
   world index; saves from before the baseline ignored (deletable from the menu), none migrated; a
   build opens a world only on the world's compatibility line and at or after `app_version_last`
   (dev builds' worlds: that exact build), in the browser and `dwell_server` (which names the
   version to run); the launcher picks the newest qualifying build; the menu lists all worlds with a
   version badge.
-- [ ] Cross-version storage contract: the world index, settings and other shared stores are
+- [x] Cross-version storage contract: the world index, settings and other shared stores are
   append-only and preserve unknown fields on rewrite — in the baseline release before anything
   else depends on it.
-- [ ] Master server: rooms and listings carry the host's app version; join-by-code and the server
+- [x] Master server: rooms and listings carry the host's app version; join-by-code and the server
   browser open the matching build; the handshake's rejection names the server's version.
-- [ ] `ARCHITECTURE.md` §2.1, §3.1, §6.4, §10.3 and §10.5 updated.
+- [x] `ARCHITECTURE.md` §2.1, §3.1, §6.4, §10.3 and §10.5 updated.
 
 Exit criteria
 - [ ] A release produces a tag and a GitHub Release holding the build and `build.json`, listed in
   `versions.json` and served at `/dwell/v/<version>/`.
-- [ ] e2e against a locally assembled two-version site: the launcher opens the latest stable;
+- [x] e2e against a locally assembled two-version site: the launcher opens the latest stable;
   `?play=` opens a world in its own version; an invite opens the host's version; Back returns to
   `/dwell/`; other versions' worlds are listed with badges.
-- [ ] Compatibility rules hold in the browser and `dwell_server`: a `0.1.0` world opens in `0.1.1`,
+- [x] Compatibility rules hold in the browser and `dwell_server`: a `0.1.0` world opens in `0.1.1`,
   a `0.1.1` world not in `0.1.0`, neither in `0.2.0`, a dev build's world only in that build.
-- [ ] An older build rewriting the world index keeps fields it does not know (test).
-- [ ] Saves from before the baseline are ignored without errors and can be deleted from the menu.
+- [x] An older build rewriting the world index keeps fields it does not know (test).
+- [x] Saves from before the baseline are ignored without errors and can be deleted from the menu.
 - [x] `LICENSE` in place and referenced from the manifests and README; `THIRD_PARTY_NOTICES`
   generated, its picks audited (each crate's chosen license matches the text it ships), and
   `gen.py --check` reproduces it exactly.
-- [ ] Every build carries `THIRD_PARTY_NOTICES`, reachable from the menu; CI fails when it is stale.
+- [x] Every build carries `THIRD_PARTY_NOTICES`, reachable from the menu; CI fails when it is stale.
 
 ---
 

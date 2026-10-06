@@ -1,9 +1,10 @@
 # Dwell — Versioned Releases: Builds by Tag, a Version Launcher, Version-Locked Worlds
 
-> **Status: [planned]** — the design for the versioned-releases phase of
-> [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md). As it lands, the built parts move into
+> **Status: [built, Phase 6]** — the design of the versioned-releases phase of
+> [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md), now implemented. What was built is in
 > [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§2.1 deployment, §3.1 CI, §6.4 persistence, §10.5
-> versioning) and an ADR; this file keeps the rationale and the setup steps.
+> versioning) and [ADR 0014](./adr/0014-versioned-releases.md); this file keeps the rationale, the
+> release procedure and the setup steps. The first real release (§8) is the owner's step.
 
 ## 1. Goals (owner, 2026-10-05)
 
@@ -47,8 +48,9 @@ at the root from `shared/licenses/third_party.json` (the CMake, npm and Emscript
 with their license texts in `texts/`) and `cargo metadata` (every crate linked into the server,
 its license text read from the crate; for a choice of licenses the most permissive is used, and
 the few crates that publish no license file get the standard MIT text with their authors).
-**Still to do in this phase:** ship the file in every build and beside the native server, link it
-from the menu's About screen, and run `gen.py --check` in CI.
+**Also built:** the file ships in every build (`THIRD_PARTY_NOTICES.txt`, emitted by the Vite build
+and linked from the menu's About screen) and beside the native server (copied next to
+`dwell_server` after each build and installed with it), and CI runs `gen.py --check`.
 
 ## 3. Builds, versions and tags
 
@@ -83,8 +85,26 @@ from the menu's About screen, and run `gen.py --check` in CI.
   `build.json` (version, channel, date, commit, `protocolVersion`, generator versions, minimum
   launcher version). The tags and their releases **are** the builds. Keeping builds as release
   assets, not commits, keeps the repository's history free of build output.
-- **The launcher** (a small page, source in `launcher/`) is versioned separately and deployed with
-  the site.
+- **The launcher** (a small page, source in `client/launcher/`: it shares the client's toolchain,
+  tests and the version library, so it lives in that package rather than a folder of its own) is
+  versioned separately and deployed with the site. Each build's `build.json` carries `minLauncher`,
+  the launcher it needs; the launcher skips builds that ask for a newer one.
+
+### Releasing
+
+`client/package.json`'s `version` is the version the **next release** will have; pushes to `main`
+publish dev builds of it, pre-releases `v<version>-dev.<run>`.
+
+1. To release, run the **Release** workflow by hand (Actions → Release → Run workflow, on `main`),
+   or push the tag: `git tag v<version> && git push origin v<version>` (the tag must name
+   `package.json`'s version, or the workflow stops with a message).
+2. Check `https://dropkickarcade.com/dwell/` (the launcher opens the new stable build; the menu
+   shows its version).
+3. **Right after**, bump `client/package.json` to the next version (MINOR for a breaking change,
+   PATCH otherwise, before `1.0.0`): later dev builds are pre-releases of *that*, and sort below the
+   release they follow if it is forgotten (the workflow warns).
+4. A change that breaks the public API (§3) also bumps `package.json`'s version in the same PR, so
+   its dev builds are on a new line and worlds of the old line stay with the old builds.
 
 ## 4. The site, assembled from the tags
 
@@ -126,8 +146,13 @@ versioned:
    - a dedicated server address → the latest stable; if the server is on another compatibility
      line, its `Reject` names its version and the client offers to reopen in a build of that line;
    - otherwise → the latest stable (or dev, if chosen in settings), which shows the main menu.
-3. Navigate to `/dwell/v/<version>/` with the same query, by `location.replace` (no extra history
-   entry).
+   - an invite or code link carries `v=<host version>` (`dwell_server` prints it, hosts' share
+     links add it; the game also redirects to `?code=…&v=…` after the master reports a host on
+     another line), which the launcher routes the same way as the master's version;
+   - `?version=<version>` pins a build (developers); the player's channel choice (`dwell.channel`,
+     the menu's About section) picks dev instead of stable for the latest.
+3. Navigate to `/dwell/v/<version>/` with the same query (minus `version`), by `location.replace`
+   (no extra history entry), after checking that the version's `build.json` loads and names it.
 
 **Back to the menu always goes to `/dwell/`**, so a player is never stuck in an old version's
 menu. Links shared by players use `/dwell/?…`, never a version path, so they keep working.
@@ -182,12 +207,23 @@ Missing or unreachable versions show a clear message with the choice to open the
 ## 8. Manual setup (owner)
 
 1. ~~Choose the license (§2).~~ Done: all rights reserved (2026-10-05).
-2. In the repository settings, allow the release workflow to create releases (Actions' workflow
-   permissions: read and write, or `contents: write` in the workflow).
-3. Run the first stable release; check `https://dropkickarcade.com/dwell/` loads it through the
-   launcher, the main menu works, and new worlds record the version.
+2. Nothing to change in the repository settings for the workflows: they declare the permissions they
+   need (`contents: write` to create and prune releases, `pages: write` and `id-token: write` to
+   deploy). If the repository's default workflow permissions are restricted, that is fine; if
+   *organization* policy blocks `contents: write` for workflows, allow it.
+3. Run the first stable release (**Releasing**, step 1) — `0.1.0`, the baseline — and check
+   `https://dropkickarcade.com/dwell/` loads it through the launcher, the main menu works, and new
+   worlds record the version. Until then the site serves the newest dev build (the launcher falls
+   back to dev when there is no stable one).
+4. Bump `client/package.json` to the next version (**Releasing**, step 3).
 
 ## 9. How the phase is checked
+
+Automated in CI unless noted: `shared/version/vectors.txt` through both implementations (TypeScript
+and C++, native and WASM); `dwell_version_lock` (the real `dwell_server` on world files saved by other
+versions); the world index contract tests; `client/scripts/*.test.ts` (which releases the site holds,
+the manifest, what a release run builds); the launcher's unit tests; and `npm run e2e:site` (below).
+Not automated: a real release run of the workflows (the first one, §8).
 
 - A release produces a tag and a GitHub Release holding the build and `build.json`; the site lists it
   in `versions.json` and serves it at `/dwell/v/<version>/`.
