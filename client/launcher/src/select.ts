@@ -26,7 +26,7 @@ export interface Request {
 }
 
 /** Parameters that choose a version, not forwarded: they are the launcher's. */
-export const LAUNCHER_PARAMS = ['version'];
+export const LAUNCHER_PARAMS = ['version', 'versions'];
 
 /** The newest published build of a channel, falling back to the other one. */
 export function latestBuild(manifest: Manifest, channel: Channel): BuildEntry | null {
@@ -101,4 +101,65 @@ export function forwardedSearch(search: string): string {
   for (const key of LAUNCHER_PARAMS) params.delete(key);
   const query = params.toString();
   return query ? `?${query}` : '';
+}
+
+/** The query that opens the version page instead of a build (RELEASES.md §5). */
+export const VERSIONS_PARAM = 'versions';
+
+/** A local world as the version page needs it: from the menu's index, `dwell.worlds`. */
+export interface WorldRef {
+  name: string;
+  /** The app version that last saved it; null for a save from before versioned releases. */
+  appVersion: string | null;
+}
+
+/** The worlds in the index's JSON text; tolerant of damage and of fields it does not know. */
+export function parseWorldIndex(text: string | null): WorldRef[] {
+  try {
+    const raw: unknown = JSON.parse(text ?? '[]');
+    if (!Array.isArray(raw)) return [];
+    const worlds: WorldRef[] = [];
+    for (const entry of raw as unknown[]) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const r = entry as { name?: unknown; appVersion?: unknown };
+      if (typeof r.name !== 'string') continue;
+      const v = typeof r.appVersion === 'string' && isVersion(r.appVersion) ? r.appVersion : null;
+      worlds.push({ name: r.name, appVersion: v });
+    }
+    return worlds;
+  } catch {
+    return [];
+  }
+}
+
+export interface VersionRow {
+  version: string;
+  channel: Channel;
+  date: string;
+  /** The compatibility line, e.g. `0.2.x`, or the exact build for a dev build. */
+  line: string;
+  /** The newest stable build: the one the launcher opens by default. */
+  recommended: boolean;
+  /** False when the build needs a newer launcher than this one. */
+  openable: boolean;
+  /** Names of the player's worlds this build can open (same line, not older than their last save). */
+  worlds: string[];
+}
+
+/** Every published build for the version page, newest first; dev builds only when `showDev`. */
+export function listBuilds(manifest: Manifest, showDev: boolean, worlds: WorldRef[]): VersionRow[] {
+  return manifest.versions
+    .filter((e) => showDev || e.channel === 'stable')
+    .sort((a, b) => compareVersionText(b.version, a.version))
+    .map((e) => ({
+      version: e.version,
+      channel: e.channel,
+      date: e.date,
+      line: e.channel === 'dev' ? e.version : `${compatibilityLine(e.version) ?? '?'}.x`,
+      recommended: e.version === manifest.latestStable,
+      openable: e.minLauncher <= LAUNCHER_VERSION,
+      worlds: worlds
+        .filter((w) => w.appVersion !== null && canOpenWorld(e.version, w.appVersion))
+        .map((w) => w.name),
+    }));
 }

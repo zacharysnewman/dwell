@@ -3,9 +3,17 @@
 // the latest) and replaces itself with it, keeping the query. Everything else is an error page
 // that offers the latest version.
 import { isBuildOf, parseManifest, type Manifest } from './manifest';
-import { choose, forwardedSearch, latestBuild, type Channel } from './select';
+import {
+  choose,
+  forwardedSearch,
+  latestBuild,
+  listBuilds,
+  parseWorldIndex,
+  VERSIONS_PARAM,
+  type Channel,
+} from './select';
 
-// Written by the game's menu (src/ui/channel.ts).
+// The player's dev-builds choice, kept by the version page below.
 const CHANNEL_KEY = 'dwell.channel';
 const WORLDS_KEY = 'dwell.worlds';
 
@@ -21,7 +29,7 @@ function storage(): Storage | null {
   }
 }
 
-/** The channel the player chose in the menu's About section; stable unless they chose dev. */
+/** The channel the player chose on the version page; stable unless they chose dev. */
 function channel(): Channel {
   return storage()?.getItem(CHANNEL_KEY) === 'dev' ? 'dev' : 'stable';
 }
@@ -89,6 +97,95 @@ function openLatest(manifest: Manifest): void {
   if (latest) location.replace(buildUrl(latest.version));
 }
 
+/**
+ * The version page (RELEASES.md §5, Phase 6b): every published build, to open one for this visit.
+ * Nothing is remembered, so Back to the menu still lands on the latest.
+ */
+function showVersions(manifest: Manifest): void {
+  const root = document.getElementById('launcher');
+  if (!root) return;
+  const worlds = parseWorldIndex(storage()?.getItem(WORLDS_KEY) ?? null);
+  const showDev = channel() === 'dev';
+  const rows = listBuilds(manifest, showDev, worlds);
+  if (status) status.textContent = 'Choose a version to play. Worlds stay with their version line.';
+  actions?.replaceChildren();
+
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.id = 'use-dev-builds';
+  toggle.checked = showDev;
+  toggle.addEventListener('change', () => {
+    try {
+      storage()?.setItem(CHANNEL_KEY, toggle.checked ? 'dev' : 'stable');
+    } catch {
+      // storage blocked: the choice isn't kept
+    }
+    showVersions(manifest);
+  });
+  const label = document.createElement('label');
+  label.id = 'dev-toggle';
+  label.append(
+    toggle,
+    ' Show dev builds (unfinished; a world made in one stays in that exact build)',
+  );
+
+  const list = document.createElement('ul');
+  list.id = 'version-list';
+  for (const row of rows) {
+    const item = document.createElement('li');
+    item.className = 'version-row';
+    item.dataset.version = row.version;
+    const head = document.createElement('div');
+    head.className = 'version-head';
+    const name = document.createElement('strong');
+    name.textContent = `Dwell ${row.version}`;
+    const meta = document.createElement('span');
+    meta.className = 'version-meta';
+    meta.textContent = [
+      row.recommended ? 'recommended' : row.channel,
+      row.date.slice(0, 10),
+      `line ${row.line}`,
+    ].join(' · ');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'version-open';
+    open.textContent = 'Play';
+    open.disabled = !row.openable;
+    open.addEventListener('click', () => {
+      void openBuild(manifest, row.version);
+    });
+    head.append(name, meta, open);
+    const note = document.createElement('p');
+    note.className = 'version-worlds';
+    note.textContent = row.openable
+      ? row.worlds.length
+        ? `Can open: ${row.worlds.join(', ')}`
+        : 'Opens none of your worlds yet.'
+      : 'Needs a newer launcher: reload the page.';
+    item.append(head, note);
+    list.append(item);
+  }
+  root.querySelector('#dev-toggle')?.remove();
+  root.querySelector('#version-list')?.remove();
+  root.append(label, list);
+}
+
+/** Opens a build from the version page, checking first that it is there. */
+async function openBuild(manifest: Manifest, version: string): Promise<void> {
+  if (await published(version)) {
+    location.assign(buildUrl(version));
+    return;
+  }
+  show(`Dwell ${version} couldn't be loaded. It may have been removed.`, [
+    {
+      label: 'Back to the list',
+      run: () => {
+        showVersions(manifest);
+      },
+    },
+  ]);
+}
+
 async function run(): Promise<void> {
   const manifest = await manifestOf();
   if (!manifest) {
@@ -100,6 +197,10 @@ async function run(): Promise<void> {
         },
       },
     ]);
+    return;
+  }
+  if (new URLSearchParams(location.search).has(VERSIONS_PARAM)) {
+    showVersions(manifest);
     return;
   }
   const choice = choose(manifest, { search: location.search, worldVersion, channel: channel() });

@@ -134,3 +134,35 @@ test('falls back to the stable build when the dev channel has none', async ({ pa
   await page.goto('./');
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
 });
+
+test('the menu links to the version page, and a chosen older build still returns to the latest', async ({
+  page,
+}) => {
+  await seedWorlds(page, [world('wold0000001', 'Old line', '0.1.0')]);
+  await page.goto('./');
+  await expect.poll(() => versionOf(page)).toBe('0.2.0');
+  await page.locator('#versions-link').click();
+  await expect(page.locator('#version-list')).toBeVisible();
+  expect(versionOf(page)).toBeUndefined();
+  const row = (v: string) => page.locator(`.version-row[data-version="${v}"]`);
+  await expect(page.locator('.version-row')).toHaveCount(3);
+  await expect(row('0.2.0')).toContainText('recommended');
+  await expect(row('0.1.1')).toContainText('Old line');
+  await expect(row('0.2.0')).toContainText('Opens none of your worlds yet');
+  // Playing the older build opens it for this visit...
+  await row('0.1.0').locator('.version-open').click();
+  await expect.poll(() => versionOf(page)).toBe('0.1.0');
+  // ...and a fresh visit to /dwell/ is still the latest: the choice is not remembered.
+  await page.goto('./');
+  await expect.poll(() => versionOf(page)).toBe('0.2.0');
+});
+
+test('the version page opens by address, with dev builds hidden until asked', async ({ page }) => {
+  await page.goto('./?versions');
+  await expect(page.locator('#version-list')).toBeVisible();
+  await expect(page.locator('.version-row')).toHaveCount(3);
+  await page.locator('#use-dev-builds').check();
+  expect(await page.evaluate(() => localStorage.getItem('dwell.channel'))).toBe('dev');
+  await page.locator('#use-dev-builds').uncheck();
+  await expect(page.locator('.version-row')).toHaveCount(3);
+});

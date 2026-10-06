@@ -23,7 +23,6 @@ import { WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
 import { launchOf, launcherHref, pastedInvite } from './ui/launch';
-import { loadChannel, saveChannel } from './ui/channel';
 import { MainMenu, type MainMenuDeps } from './ui/mainMenu';
 import { loadRecent, rememberServer } from './ui/recentServers';
 import { parseNetConditions } from './net/netsim';
@@ -485,12 +484,6 @@ function openMainMenu(app: App, message?: string): void {
     deleteFiles: deleteWorldFiles,
     go,
     now: () => Date.now(),
-    channel: {
-      get: () => loadChannel(storage()),
-      set: (channel) => {
-        saveChannel(storage(), channel);
-      },
-    },
     ...(message ? { message } : {}),
     ...(master ? { master } : {}),
   });
