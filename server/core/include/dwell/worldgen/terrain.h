@@ -40,8 +40,8 @@
 // planet-scale layer varies land, ocean and kilometre-scale relief across the disc; sea level is
 // 0; nothing is generated outside the disc. The terrain's content (biomes, materials, features) is
 // prototype (ARCHITECTURE.md §6.1).
-// Version 7 (ADR 0018, WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain — three tiers
-// of rivers as noise contours, lakes, and static water above sea level at a terraced surface
+// Version 7 (ADR 0018, WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain — three
+// tiers of rivers as noise contours, lakes, and static water above sea level at a terraced surface
 // (waterfall steps); the land is a valley floor V with the relief standing away from the channels.
 // Version 6 (ADR 0017, WORLD_GENERATION.md §2): land and sea come from a plate layout of 11–14
 // continents separated by open ocean, not from noise; continentalness is a signed distance to the
@@ -68,7 +68,7 @@ struct Column {
   // Water: open voxels below `water` (y < water) are water. Sea level, or the surface of the river
   // or lake in this column (a terrace of the valley floor).
   std::int32_t water = 0;
-  float wet = 0;  // 0..1: how much a river channel (banks included) or a lake claims the column
+  float wet = 0;      // 0..1: how much a river channel (banks included) or a lake claims the column
   bool lake = false;  // in a lake's bowl (inside its shore)
   Biome biome = Biome::kPlains;
   bool outside = false;  // beyond the world's disc: nothing is generated

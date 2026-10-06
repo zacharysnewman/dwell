@@ -102,9 +102,8 @@ Cell Classify(const Column& col, std::int32_t y, Noise&& noise) {
   // Caves fade in from 3 m to 15 m below the surface and fade out just above the bedrock; under a
   // river, a lake or a shallow sea they start kCaveClearance deeper, so none drains or breaches
   // the water (rivers.h).
-  const bool under_water =
-      col.wet > 0.0f || (col.height < static_cast<float>(col.water) &&
-                         col.height > -rivers::kShallowSea);
+  const bool under_water = col.wet > 0.0f || (col.height < static_cast<float>(col.water) &&
+                                              col.height > -rivers::kShallowSea);
   const float fade =
       Clamp01((col.height - fy - 3.0f - (under_water ? rivers::kCaveClearance : 0.0f)) *
               (1.0f / 12.0f)) *
@@ -368,9 +367,8 @@ Column TerrainGenerator::Finish(const Corner2& c) const {
   col.wet = river_wet;
   col.water = kSeaLevel;
   if (river_wet > 0.0f) {
-    col.water = std::max(
-        col.water, static_cast<std::int32_t>(rivers::TerraceSurface(
-                       river_seeds_.terrace, valley - rivers::kFreeboard)));
+    col.water = std::max(col.water, static_cast<std::int32_t>(rivers::TerraceSurface(
+                                        river_seeds_.terrace, valley - rivers::kFreeboard)));
   }
   // Lakes: a bowl below the lake's surface and, beyond the shore, a low berm that keeps the water
   // from spilling over a lower shore. The shore line is the squared radius 1.
@@ -1611,8 +1609,7 @@ std::array<double, 3> TerrainGenerator::SpawnPoint() const {
     for (int n = 0; n < steps; ++n) {
       const Column col = ColumnAt(x, z);
       const bool land = col.height >= static_cast<float>(col.water + 2) && col.mountain < 0.05f &&
-                        col.wet == 0.0f && col.biome != Biome::kBeach &&
-                        col.biome != Biome::kOcean;
+                        col.wet == 0.0f && col.biome != Biome::kBeach && col.biome != Biome::kOcean;
       if (land) {
         if (const auto g = GroundY(x, z)) {
           const std::array<double, 3> cube_here{x + 0.5, *g + 1.0, z + 0.5};
@@ -1663,8 +1660,8 @@ std::array<double, 3> TerrainGenerator::SpawnPoint() const {
   const auto nearest_water = [&]() -> std::optional<std::pair<std::int32_t, std::int32_t>> {
     for (std::int32_t r = kWaterRing; r <= kWaterSearch; r += kWaterRing)
       for (std::int32_t a = -r; a <= r; a += kWaterRing)
-        for (const auto& [px, pz] : {std::pair{a, -r}, std::pair{a, r}, std::pair{-r, a},
-                                     std::pair{r, a}}) {
+        for (const auto& [px, pz] :
+             {std::pair{a, -r}, std::pair{a, r}, std::pair{-r, a}, std::pair{r, a}}) {
           const Column c = ColumnAt(px, pz);
           if (!c.outside && c.height < static_cast<float>(c.water)) return std::pair{px, pz};
         }

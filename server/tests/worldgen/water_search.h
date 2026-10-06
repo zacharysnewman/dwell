@@ -90,9 +90,10 @@ inline std::optional<Point> FindLake(const worldgen::TerrainGenerator& gen,
 // Follows a tier's contour from `from` (on it) for up to `length` m in steps of `step` m, and
 // returns the first point where the water surface changes between two consecutive steps by a
 // terrace (a waterfall): the point before the step, and the one after.
-inline std::optional<std::pair<Point, Point>> FindWaterfall(
-    const worldgen::TerrainGenerator& gen, Tier tier, Point from, std::int32_t length,
-    std::int32_t step = 8) {
+inline std::optional<std::pair<Point, Point>> FindWaterfall(const worldgen::TerrainGenerator& gen,
+                                                            Tier tier, Point from,
+                                                            std::int32_t length,
+                                                            std::int32_t step = 8) {
   Point p = from;
   auto n = TierNormal(gen, tier, p.x, p.z);
   // Walk both ways along the tangent (perpendicular to the normal).

@@ -301,8 +301,8 @@ TEST_SUITE("lod: generation") {
     int count = 0;
     for (const Site& site : sites) {
       const auto column = gen.ColumnAt(site.x, site.z);
-      const auto h = static_cast<std::int64_t>(
-          std::max(column.height, static_cast<float>(column.water)));
+      const auto h =
+          static_cast<std::int64_t>(std::max(column.height, static_cast<float>(column.water)));
       for (int level = 1; level <= (site.name == "mountains" ? 3 : 2); ++level) {
         // The section holding the surface there.
         const LodCoord c = SectionAt(level, site.x, std::max<std::int64_t>(h, -1), site.z);
@@ -371,10 +371,10 @@ TEST_SUITE("lod: sea") {
       for (int z = 0; z < N; ++z)
         for (int x = 0; x < N; ++x) {
           if (level <= 7 && gen.ColumnAt(static_cast<std::int32_t>(core::LodSectionOrigin(c).x +
-                                                     x * core::LodCellSize(level)),
-                           static_cast<std::int32_t>(core::LodSectionOrigin(c).z +
-                                                     z * core::LodCellSize(level)))
-                  .height >= -30.0f) {
+                                                                   x * core::LodCellSize(level)),
+                                         static_cast<std::int32_t>(core::LodSectionOrigin(c).z +
+                                                                   z * core::LodCellSize(level)))
+                                    .height >= -30.0f) {
             continue;  // land, shore or shallows (coarse columns are smoothed)
           }
           for (int y = N - 1; y >= 0; --y) {
@@ -436,7 +436,8 @@ TEST_SUITE("lod: golden") {
       REQUIRE(wl.found);
       const auto surface = [&](const testing::Point& p) {
         const auto col = gen.ColumnAt(p.x, p.z);
-        return static_cast<std::int64_t>(std::max<float>(col.height, static_cast<float>(col.water)));
+        return static_cast<std::int64_t>(
+            std::max<float>(col.height, static_cast<float>(col.water)));
       };
       for (const int level : {1, 3})
         cases.push_back({seed, level, wl.lake.x, surface(wl.lake), wl.lake.z});
@@ -534,8 +535,8 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
         if (!probe.outside && probe.coast > 0 && probe.height - probe.valley < 25.0f) break;
       }
       const LodCoord c = SectionAt(
-          level, px, std::max<std::int64_t>(static_cast<std::int64_t>(gen.ColumnAt(px, pz).height), 0),
-          pz);
+          level, px,
+          std::max<std::int64_t>(static_cast<std::int64_t>(gen.ColumnAt(px, pz).height), 0), pz);
       LodCells cells;
       core::LodSurfaces surface;
       if (gen.GenerateLod(c, cells, &surface) != LodKind::kContent) continue;

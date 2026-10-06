@@ -62,8 +62,8 @@ namespace {
 // The smooth fields — the great river's windings (30 km) and the spring noise (12 km) — vary far
 // less than a metre over 256 m, so they are evaluated at the corners of a 256 m lattice and
 // interpolated bilinearly (the error is well under a metre of displacement and 0.002 of noise).
-// Corners are cached per thread, a pure function of (seed, lattice point): chunks, point queries and
-// the level of detail all read the same interpolated values.
+// Corners are cached per thread, a pure function of (seed, lattice point): chunks, point queries
+// and the level of detail all read the same interpolated values.
 constexpr std::int64_t kSmoothStep = 256;
 struct SmoothCorner {
   float gx, gz, spring;
@@ -130,8 +130,10 @@ Seeds MakeSeeds(std::uint64_t world_seed) {
   s.great_meander_z = SeedWord(world_seed, 221);
   const std::int32_t wavelengths[3] = {kGreat.wavelength, kRiver.wavelength, kStream.wavelength};
   for (int t = 0; t < 3; ++t) {
-    s.offset_x[t] = Mix32(SeedWord(world_seed, 210 + 2 * t)) % static_cast<std::uint32_t>(wavelengths[t]);
-    s.offset_z[t] = Mix32(SeedWord(world_seed, 211 + 2 * t)) % static_cast<std::uint32_t>(wavelengths[t]);
+    s.offset_x[t] =
+        Mix32(SeedWord(world_seed, 210 + 2 * t)) % static_cast<std::uint32_t>(wavelengths[t]);
+    s.offset_z[t] =
+        Mix32(SeedWord(world_seed, 211 + 2 * t)) % static_cast<std::uint32_t>(wavelengths[t]);
   }
   return s;
 }
@@ -171,8 +173,7 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
     return c;
   }
   // From 256 m cells on, neighbouring samples lie in different lattice cells: evaluate directly.
-  const SmoothCorner smooth =
-      cell >= kSmoothStep ? SmoothCornerAt(s, x, z) : SmoothFields(s, x, z);
+  const SmoothCorner smooth = cell >= kSmoothStep ? SmoothCornerAt(s, x, z) : SmoothFields(s, x, z);
   {
     // The great river winds gently across its 200 km wavelength.
     const std::int64_t gx = FloorToInt(smooth.gx * kGreatMeanderAmplitude);
@@ -184,12 +185,12 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
   const bool small_tiers = cell < kRiver.drop_cell;
   if (small_tiers) {
     Meander m;
-    m.x = FloorToInt(Perlin2(s.meander_x, Lattice(x, kMeanderWavelength),
-                             Lattice(z, kMeanderWavelength)) *
-                     kMeanderAmplitude);
-    m.z = FloorToInt(Perlin2(s.meander_z, Lattice(x, kMeanderWavelength),
-                             Lattice(z, kMeanderWavelength)) *
-                     kMeanderAmplitude);
+    m.x = FloorToInt(
+        Perlin2(s.meander_x, Lattice(x, kMeanderWavelength), Lattice(z, kMeanderWavelength)) *
+        kMeanderAmplitude);
+    m.z = FloorToInt(
+        Perlin2(s.meander_z, Lattice(x, kMeanderWavelength), Lattice(z, kMeanderWavelength)) *
+        kMeanderAmplitude);
     c.r1 = TierNoise<kRiver>(s.river, x + m.x + s.offset_x[1], z + m.z + s.offset_z[1], cell);
     c.r2 = TierNoise<kStream>(s.stream, x + m.x + s.offset_x[2], z + m.z + s.offset_z[2], cell);
     c.w1 = Widen<kRiver>(cell);
@@ -216,7 +217,7 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
       const float q_geo = (dx * dx + dz * dz) / (radius * radius);
       if (q_geo <= kBermTo + 0.5f) {  // within the berm, even with the shore noise
         float q = q_geo + kShoreNoise * Perlin2(s.shore, Lattice(x, kShoreWavelength),
-                                                 Lattice(z, kShoreWavelength));
+                                                Lattice(z, kShoreWavelength));
         if (q < 0.0f) q = 0.0f;
         const float level = CachedLakeLevel(s, i, j, sx, sz, oracle);
         if (level > kNoLevel * 0.5f) {

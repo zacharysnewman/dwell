@@ -21,8 +21,8 @@ namespace dwell::worldgen {
 namespace rivers {
 
 // A channel's depth falls from its full value at |noise| = core to zero at `bank` as (1 − s)⁴, with
-// s the smoothstep of |noise| between them: the water, which stands a metre or more below the banks,
-// keeps to the bed and the lower banks, and the carve's tail is a gentle slope.
+// s the smoothstep of |noise| between them: the water, which stands a metre or more below the
+// banks, keeps to the bed and the lower banks, and the carve's tail is a gentle slope.
 inline constexpr int kProfileSharpness = 4;
 
 // One tier of rivers: the zero contour of a single-octave Perlin noise. A column is in the channel
@@ -43,9 +43,12 @@ struct Tier {
   // looping everywhere. The great river has none (−2, −1).
   float spring_lo, spring_hi;
 };
-inline constexpr Tier kGreat{200'000, 0.0006f, 0.008f, 0.06f, 14.0f, 3000.0f, 5500.0f, 0, -2.0f, -1.0f};
-inline constexpr Tier kRiver{6'000, 0.006f, 0.10f, 0.15f, 6.0f, 150.0f, 800.0f, 128, -0.30f, -0.05f};
-inline constexpr Tier kStream{1'500, 0.004f, 0.06f, 0.10f, 2.5f, 600.0f, 1800.0f, 16, -0.10f, 0.15f};
+inline constexpr Tier kGreat{200'000, 0.0006f, 0.008f, 0.06f, 14.0f,
+                             3000.0f, 5500.0f, 0,      -2.0f, -1.0f};
+inline constexpr Tier kRiver{6'000,  0.006f, 0.10f, 0.15f,  6.0f,
+                             150.0f, 800.0f, 128,   -0.30f, -0.05f};
+inline constexpr Tier kStream{1'500,  0.004f,  0.06f, 0.10f,  2.5f,
+                              600.0f, 1800.0f, 16,    -0.10f, 0.15f};
 // The distance factor D of an unresolved tier (a dropped one): the mean of its ramp, which is about
 // 0.78 for the river tier and 0.85 for the stream tier (measured over the world); one value.
 inline constexpr float kDroppedFactor = 0.81f;
@@ -70,14 +73,14 @@ inline constexpr float kTerraceStep = 4.0f;
 // level — plus uplift belts along convergent plate edges, plus a share of the mountain relief.
 inline constexpr float kValleyRise = 250.0f;
 inline constexpr float kValleyHalf = 150'000.0f;
-inline constexpr float kCoastPlain = 2.0f;           // m: V at the shore
-inline constexpr float kPlainStart = 5'000.0f;       // m inland: the coast's own lowland begins
-inline constexpr float kPlainEnd = 30'000.0f;        // m inland: and is complete
-inline constexpr float kBeltReach = 60'000.0f;       // m from a convergent plate edge
-inline constexpr float kBeltCore = 10'000.0f;        // m: full strength within
-inline constexpr float kBeltValley = 120.0f;         // m raised in V by a belt
-inline constexpr float kBeltRelief = 900.0f;         // m of relief a belt adds (× ridged field)
-inline constexpr float kMountainValley = 0.12f;      // share of range relief that lifts V
+inline constexpr float kCoastPlain = 2.0f;       // m: V at the shore
+inline constexpr float kPlainStart = 5'000.0f;   // m inland: the coast's own lowland begins
+inline constexpr float kPlainEnd = 30'000.0f;    // m inland: and is complete
+inline constexpr float kBeltReach = 60'000.0f;   // m from a convergent plate edge
+inline constexpr float kBeltCore = 10'000.0f;    // m: full strength within
+inline constexpr float kBeltValley = 120.0f;     // m raised in V by a belt
+inline constexpr float kBeltRelief = 900.0f;     // m of relief a belt adds (× ridged field)
+inline constexpr float kMountainValley = 0.12f;  // share of range relief that lifts V
 
 // Lakes: a jittered grid of cells with at most one lake each, on land at least kLakeInland from the
 // coast. The lake's surface is the terraced valley floor at its centre, kLakeFreeboard m lower;
@@ -90,20 +93,20 @@ inline constexpr float kLakeMinDepth = 4.0f, kLakeDepthRange = 8.0f;         // 
 inline constexpr float kLakeFreeboard = 3.0f;
 inline constexpr float kShoreNoise = 0.45f;  // the shoreline's wobble, in squared radii
 inline constexpr std::int32_t kShoreWavelength = 600;
-inline constexpr float kBermHeight = 1.5f;  // m above the surface
+inline constexpr float kBermHeight = 1.5f;                                  // m above the surface
 inline constexpr float kBermFrom = 1.0f, kBermPeak = 1.1f, kBermTo = 1.4f;  // squared radii
 // Rivers stop at a lake's shore (squared radii): a channel's full strength beyond kLakeRiverFull.
 inline constexpr float kLakeRiverZero = 0.7f, kLakeRiverFull = 1.1f;
-inline constexpr float kNoLake = 4.0f;       // squared radius with no lake near
-inline constexpr float kNoLevel = -1e9f;     // lake level of a corner with no lake
+inline constexpr float kNoLake = 4.0f;    // squared radius with no lake near
+inline constexpr float kNoLevel = -1e9f;  // lake level of a corner with no lake
 
 // Caves stay this far (m) below a river, lake or shallow sea floor (added to the 3 m the cave fade
 // starts below the surface).
 inline constexpr float kCaveClearance = 12.0f;
 inline constexpr float kShallowSea = 40.0f;  // m: sea floors shallower than this are shallow
 
-// Level of detail: cells this wide (m) or wider (levels 12 and up) no longer show lakes or the great
-// river's windings, which are smaller than a cell.
+// Level of detail: cells this wide (m) or wider (levels 12 and up) no longer show lakes or the
+// great river's windings, which are smaller than a cell.
 inline constexpr std::int64_t kLakeSkipCell = 4096;
 
 // The surface of the terrace containing the valley-floor height v (m, an integer-valued float):
@@ -113,13 +116,13 @@ float TerraceSurface(std::uint32_t seed, float v);
 // The raw fields at one point, before the terrain turns them into heights.
 struct Corner {
   float rg = 1.0f, r1 = 1.0f, r2 = 1.0f;  // signed noise of each tier (1: dropped for the cell)
-  // Level of detail: the factor (≥ 1) a tier's channel is widened by for the cell (the valley, which
-  // the distance factor reads from the noise itself, is not).
+  // Level of detail: the factor (≥ 1) a tier's channel is widened by for the cell (the valley,
+  // which the distance factor reads from the noise itself, is not).
   float wg = 1.0f, w1 = 1.0f, w2 = 1.0f;
-  float spring = 1.0f;                    // the small tiers' spring noise
-  float lake_q = kNoLake;                 // squared radius of the nearest lake (≥ kNoLake: none)
-  float lake_level = kNoLevel;            // m: the surface of that lake
-  float lake_depth = 0.0f;                // m: its deepest point below the surface
+  float spring = 1.0f;          // the small tiers' spring noise
+  float lake_q = kNoLake;       // squared radius of the nearest lake (≥ kNoLake: none)
+  float lake_level = kNoLevel;  // m: the surface of that lake
+  float lake_depth = 0.0f;      // m: its deepest point below the surface
 };
 
 // The seeds of the river noises.

@@ -1,7 +1,7 @@
 // Rivers, lakes and water above sea level (Phase 11a, WORLD_GENERATION.md §3.2–3.3, §3.9): the
-// terraces, rivers lying in valleys and reaching the sea at sea level, water that never floats, caves
-// that never breach it, and the spawn beside water. Runs natively (dwell_tests) and under Node
-// (dwell_worldgen_tests.js, CI).
+// terraces, rivers lying in valleys and reaching the sea at sea level, water that never floats,
+// caves that never breach it, and the spawn beside water. Runs natively (dwell_tests) and under
+// Node (dwell_worldgen_tests.js, CI).
 #include <doctest/doctest.h>
 
 #include <algorithm>
@@ -55,8 +55,8 @@ std::vector<Point> ShorePoints(const TerrainGenerator& gen, float at, int bearin
 }
 
 // Points where the great river's centreline lies within a band of the coast (coast distance in
-// (0, 5,000) m), near `around`: a grid of `step` m over ±`half` m, a sign change of the tier's noise
-// between east-west neighbours that are both in the band, bisected to the contour.
+// (0, 5,000) m), near `around`: a grid of `step` m over ±`half` m, a sign change of the tier's
+// noise between east-west neighbours that are both in the band, bisected to the contour.
 std::vector<Point> GreatRiverMouths(const TerrainGenerator& gen, Point around, int half, int step) {
   std::vector<Point> out;
   for (std::int32_t z = around.z - half; z <= around.z + half; z += step) {
@@ -129,11 +129,10 @@ TEST_SUITE("worldgen: rivers") {
       for (const Tier tier : {Tier::kGreat, Tier::kRiver, Tier::kStream}) {
         CAPTURE(seed);
         CAPTURE(static_cast<int>(tier));
-        const auto lines =
-            tier == Tier::kGreat
-                ? testing::FindCentrelines(gen, tier, 0, 0, 240000, 8000, 12)
-                : testing::FindCentrelines(gen, tier, 0, 0, 40000,
-                                           tier == Tier::kRiver ? 400 : 200, 80);
+        const auto lines = tier == Tier::kGreat
+                               ? testing::FindCentrelines(gen, tier, 0, 0, 240000, 8000, 12)
+                               : testing::FindCentrelines(gen, tier, 0, 0, 40000,
+                                                          tier == Tier::kRiver ? 400 : 200, 80);
         REQUIRE(lines.size() >= 5);
         int checked = 0, violations = 0;
         for (const Point& p : lines) {
@@ -147,8 +146,9 @@ TEST_SUITE("worldgen: rivers") {
                                                : std::vector<int>{50, 100, 200, 350, 500};
           for (const int d : reaches)
             for (const double sign : {1.0, -1.0}) {
-              const auto side = gen.ColumnAt(p.x + static_cast<std::int32_t>(std::lround(n.first * d * sign)),
-                                             p.z + static_cast<std::int32_t>(std::lround(n.second * d * sign)));
+              const auto side =
+                  gen.ColumnAt(p.x + static_cast<std::int32_t>(std::lround(n.first * d * sign)),
+                               p.z + static_cast<std::int32_t>(std::lround(n.second * d * sign)));
               if (side.wet > 0.0f || side.outside) continue;  // another channel, or a lake's rim
               ++checked;
               if (side.height < bed.height - 0.01f) {
@@ -283,8 +283,8 @@ TEST_SUITE("worldgen: rivers") {
             if (world.GetVoxel(x, y, z) != M::kWater) continue;
             ++water;
             below_air += world.GetVoxel(x, y - 1, z) == M::kAir;
-            for (const auto& [ox, oz] : {std::pair{1, 0}, std::pair{-1, 0}, std::pair{0, 1},
-                                         std::pair{0, -1}}) {
+            for (const auto& [ox, oz] :
+                 {std::pair{1, 0}, std::pair{-1, 0}, std::pair{0, 1}, std::pair{0, -1}}) {
               if (world.GetVoxel(x + ox, y, z + oz) != M::kAir) continue;
               ++contacts;
               const auto n = gen.ColumnAt(x + ox, z + oz);
@@ -317,7 +317,8 @@ TEST_SUITE("worldgen: rivers") {
         const auto lines = testing::FindCentrelines(gen, tier, 0, 0, 12000, 200, 2);
         sites.insert(sites.end(), lines.begin(), lines.end());
       }
-      if (const auto sea = FindBiome(gen, Biome::kOcean)) sites.push_back({sea->first, sea->second});
+      if (const auto sea = FindBiome(gen, Biome::kOcean))
+        sites.push_back({sea->first, sea->second});
       REQUIRE(sites.size() >= 3);
       long columns = 0, caves = 0;
       for (const Point& site : sites)

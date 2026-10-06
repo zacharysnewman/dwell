@@ -533,7 +533,8 @@ TEST_SUITE("worldgen: golden") {
       cases.push_back(col(lm.island, kSurface));
       cases.push_back(col(lm.interior, kSurface));
       cases.push_back(col(lm.abyss, kSurface));
-      // Water above sea level (Phase 11a): a lake, a stream, a river, a great river and a waterfall.
+      // Water above sea level (Phase 11a): a lake, a stream, a river, a great river and a
+      // waterfall.
       const auto wl = testing::FindWaterLandmarks(TerrainGenerator(seed));
       REQUIRE(wl.found);
       for (const testing::Point& p : {wl.lake, wl.stream, wl.river, wl.great, wl.waterfall}) {
