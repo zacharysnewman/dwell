@@ -163,3 +163,12 @@ export function listBuilds(manifest: Manifest, showDev: boolean, worlds: WorldRe
         .map((w) => w.name),
     }));
 }
+
+/** Query parameters that route to a particular build or game: a visit with none is "plain". */
+const ROUTING_PARAMS = ['play', 'join', 'code', 'v', 'version', VERSIONS_PARAM];
+
+/** Whether the address asks for nothing in particular (the site root, maybe `?debug=1`). */
+export function isPlainVisit(search: string): boolean {
+  const params = new URLSearchParams(search);
+  return !ROUTING_PARAMS.some((key) => params.has(key));
+}

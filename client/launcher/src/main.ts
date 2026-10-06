@@ -6,6 +6,7 @@ import { isBuildOf, parseManifest, type Manifest } from './manifest';
 import {
   choose,
   forwardedSearch,
+  isPlainVisit,
   latestBuild,
   listBuilds,
   parseWorldIndex,
@@ -186,6 +187,31 @@ async function openBuild(manifest: Manifest, version: string): Promise<void> {
   ]);
 }
 
+/**
+ * The screen a plain visit lands on (Phase 6b): the launcher is unversioned, so this is where the
+ * version choice lives whatever build was played last. Nothing happens until a button is pressed;
+ * Play opens the latest build (the stable one unless the player opted into dev builds).
+ */
+function landing(version: string): Promise<'play' | 'pick'> {
+  return new Promise((resolve) => {
+    show('Welcome to Dwell.', [
+      {
+        label: `Play Dwell ${version}`,
+        run: () => {
+          resolve('play');
+        },
+      },
+      {
+        label: 'Choose version',
+        run: () => {
+          resolve('pick');
+        },
+      },
+    ]);
+    actions?.querySelector('button')?.focus();
+  });
+}
+
 async function run(): Promise<void> {
   const manifest = await manifestOf();
   if (!manifest) {
@@ -218,6 +244,12 @@ async function run(): Promise<void> {
   if (choice.kind === 'error') {
     show(choice.message, offerLatest);
     return;
+  }
+  if (choice.why === 'latest' && isPlainVisit(location.search)) {
+    if ((await landing(choice.version)) === 'pick') {
+      showVersions(manifest);
+      return;
+    }
   }
   if (!(await published(choice.version))) {
     show(`Dwell ${choice.version} couldn't be loaded. It may have been removed.`, [

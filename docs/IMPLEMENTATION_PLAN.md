@@ -23,7 +23,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c), #13 (3d, 3e) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43, #44 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
-| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete: merged in #46 and #47, `v0.1.0` released and the site deployed by the Release run on 2026-10-06. 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check | #46, #47 (6a) |
+| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete: merged in #46 and #47, `v0.1.0` released and the site deployed by the Release run on 2026-10-06. 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing, merged in #52 and released as the dev build `v0.2.1-dev.7` (a stable release is the owner's call); outstanding: the phone-width check | #46, #47 (6a), #52 (6b) |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
 | 8 — Block registry: namespaced block states and palettes | 🚧 In progress — every deliverable built and verified natively and in the client (C++ suite, Vitest); outstanding: the checks that need the WASM build and a browser (golden world file, determinism goldens under WASM and the client module, the e2e palette test), run by CI on the PR. `package.json` raised to 0.2.0 (the new compatibility line, set by the owner); releases as `v0.2.0` once merged | #51 |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
@@ -1154,7 +1154,8 @@ chosen by the owner (a private-source split was considered and dropped to keep t
 pipeline). Design and setup steps: [`RELEASES.md`](./RELEASES.md).
 
 **Status:** In progress — 6a complete; 6b (version selector, added 2026-10-06) built and tested
-(unit, `npm run e2e:site`); outstanding: the phone-width check and its PR.
+(unit, `npm run e2e:site`), merged in #52 and released as dev build `v0.2.1-dev.7`; outstanding: the
+phone-width check, and a stable release (owner's call) for the menu link to reach stable players.
 6a merged in #46; the first real run of the release workflows (on that merge)
 published `v0.1.0-dev.1` but its site job failed on build metadata in `build.json`, and the launcher
 e2e raced a redirect; #47 fixed both, made the version follow the newest release, and released `0.1.0`
@@ -1227,10 +1228,14 @@ through `?version=`: a list of the site's versions, from which any one can be op
 launcher always picks for them (the latest stable, or the latest dev if they ticked "Open dev
 builds").
 
-**Design:** the selector lives in the **launcher**, not in the game's menu. The launcher is the
-only unversioned page, so it is always current; published builds are immutable and could never
-gain or fix a selector. The game's menu (from the build that ships 6b on) links to it, and
-`/dwell/?versions` opens it directly, so it is reachable from builds without the link. A choice
+**Design:** the selector lives in the **launcher**, not in the game's menu, and its entrance is
+the launcher's too (owner, 2026-10-06: a link in the menu only reaches players on a build that has
+it). The launcher is the only unversioned page, so it is always current; published builds are
+immutable and could never gain or fix a selector. A plain visit to `/dwell/` lands on a short
+launcher screen — **Play Dwell <latest stable>** and **Choose version**, waiting for a click
+(owner, 2026-10-06: no auto-continue; the default is the latest stable) — so the picker is one step from the site root whatever build was
+played last. Links that name a world, game or build go straight through. `/dwell/?versions` opens
+the picker directly, and newer builds' menus also link to it. A choice
 opens that build for the visit only and is not remembered: Back to the menu still lands on the
 latest, so a player is never stranded in an old build whose menu has no way back. The choice obeys
 the same rules as the launcher's other routes: version-locked worlds (`RELEASES.md` §6) and
@@ -1247,6 +1252,8 @@ Deliverables
 - [x] 6b: opening a build navigates to `/dwell/v/<version>/` through the same `build.json` check as
   the other routes (the page checks `build.json` before navigating); a build needing a newer launcher, or one that fails to load, shows the existing
   clear errors.
+- [x] 6b: a plain visit to `/dwell/` lands on the launcher's screen with **Choose version**
+  (`isPlainVisit`, tested).
 - [x] 6b: the game's main menu gets a **Versions** entry linking to `/dwell/?versions`; the "Open
   dev builds" tick moves from About to the version page (same key).
 - [x] 6b: `RELEASES.md` §5 and `ARCHITECTURE.md` §2.1 describe the version page as built.
@@ -1255,7 +1262,8 @@ Exit criteria
 - [x] Unit tests: the list's order, the dev opt-in, and per-build world compatibility, including
   dev builds' worlds and an index with unknown fields.
 - [x] e2e against a locally assembled two-version site (`npm run e2e:site`): the menu's Versions
-  entry opens the version page; picking the older build opens it at `/dwell/v/<older>/`; its Back
+  entry opens the version page; a plain visit's landing screen waits for a click and offers Play (latest stable) and
+  Choose version; picking the older build opens it at `/dwell/v/<older>/`; its Back
   to the menu returns to `/dwell/` and the latest; `/dwell/?versions` works for a build without
   the menu entry.
 - [ ] Manual check on a phone: the version page is usable at phone width.

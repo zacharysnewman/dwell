@@ -24,7 +24,13 @@ function world(id: string, name: string, appVersion?: string) {
  */
 async function openLauncher(page: Page): Promise<void> {
   await page.goto('./');
+  await play(page);
   await page.waitForURL(/\/dwell\/v\/[^/]+\//);
+}
+
+/** Presses Play on the launcher's landing screen (a plain visit waits for it). */
+async function play(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /^Play Dwell / }).click();
 }
 
 /** Puts worlds in the browser's index (the launcher and every version share this origin). */
@@ -40,11 +46,13 @@ const versionOf = (page: Page) => /\/dwell\/v\/([^/]+)\//.exec(new URL(page.url(
 
 test('opens the latest stable build for the main menu', async ({ page }) => {
   await page.goto('./');
+  await play(page);
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
   await expect(page.locator('#main-menu')).toBeVisible();
   await expect(page.locator('#app-version')).toContainText('Dwell 0.2.0 (stable)');
   // Query parameters such as ?debug=1 are kept.
   await page.goto('./?debug=1');
+  await play(page);
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
   expect(new URL(page.url()).search).toBe('?debug=1');
 });
@@ -81,6 +89,7 @@ test("the latest menu lists every line's worlds with version badges, and plays t
     world('wprev0000001', 'Before versions'),
   ]);
   await page.goto('./');
+  await play(page);
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
   const item = (name: string) => page.locator('#world-list .world-item', { hasText: name });
   await expect(item('Old line')).toContainText('v0.1.0');
@@ -132,6 +141,7 @@ test('falls back to the stable build when the dev channel has none', async ({ pa
     localStorage.setItem('dwell.channel', 'dev');
   });
   await page.goto('./');
+  await play(page);
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
 });
 
@@ -140,6 +150,7 @@ test('the menu links to the version page, and a chosen older build still returns
 }) => {
   await seedWorlds(page, [world('wold0000001', 'Old line', '0.1.0')]);
   await page.goto('./');
+  await play(page);
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
   await page.locator('#versions-link').click();
   await expect(page.locator('#version-list')).toBeVisible();
@@ -154,6 +165,7 @@ test('the menu links to the version page, and a chosen older build still returns
   await expect.poll(() => versionOf(page)).toBe('0.1.0');
   // ...and a fresh visit to /dwell/ is still the latest: the choice is not remembered.
   await page.goto('./');
+  await play(page);
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
 });
 
@@ -165,4 +177,23 @@ test('the version page opens by address, with dev builds hidden until asked', as
   expect(await page.evaluate(() => localStorage.getItem('dwell.channel'))).toBe('dev');
   await page.locator('#use-dev-builds').uncheck();
   await expect(page.locator('.version-row')).toHaveCount(3);
+});
+
+test('a plain visit lands on a screen with Choose version, whatever build was played last', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await expect(page.getByRole('button', { name: 'Play Dwell 0.2.0' })).toBeVisible();
+  await page.getByRole('button', { name: 'Choose version' }).click();
+  await expect(page.locator('.version-row')).toHaveCount(3);
+  expect(versionOf(page)).toBeUndefined();
+  // It waits for a click, then Play opens the latest stable.
+  await page.goto('./');
+  await page.waitForTimeout(1500);
+  expect(versionOf(page)).toBeUndefined();
+  await page.getByRole('button', { name: 'Play Dwell 0.2.0' }).click();
+  await expect.poll(() => versionOf(page)).toBe('0.2.0');
+  // A link that names a world, game or build does not stop on it.
+  await page.goto('./?version=0.1.0');
+  await expect.poll(() => versionOf(page)).toBe('0.1.0');
 });

@@ -155,7 +155,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
   offering the latest. `?version=<v>` pins a build (developers).
   `/dwell/?versions` is the **version page** (Phase 6b): every published build, newest first, with its
   compatibility line and the player's worlds it can open, and the "Show dev builds" tick
-  (`dwell.channel`). Playing a build opens it for that visit only; the menu's Versions link goes there.
+  (`dwell.channel`). Playing a build opens it for that visit only. A plain visit to `/dwell/` lands on a launcher
+  screen (Play latest stable / Choose version, waiting for a click) so the page is reachable whatever
+  build was last played; the menu's Versions link goes there too.
 - **Licence notices** ship in every build (`THIRD_PARTY_NOTICES.txt`, linked from the menu's
   About) and beside the native server.
 

@@ -165,7 +165,9 @@ versioned:
 3. Navigate to `/dwell/v/<version>/` with the same query (minus `version`), by `location.replace`
    (no extra history entry), after checking that the version's `build.json` loads and names it.
 
-**Version page [built, Phase 6b]:** `/dwell/?versions` lists every published build so players can
+**Version page [built, Phase 6b]:** a plain visit to `/dwell/` first shows a launcher screen (**Play Dwell
+<latest stable>** and **Choose version**; it waits for a click, no auto-continue), so the choice does not
+depend on the build last played; links naming a world, game or build skip it. `/dwell/?versions` lists every published build so players can
 choose one themselves; the main menu's **Versions** link opens it, and it holds the "Show dev builds" tick (`dwell.channel`). It lives in the launcher because published
 builds are immutable. A choice opens that build for the visit only, so Back to the menu still
 returns to the latest. Worlds stay locked to their line (§6), and the page shows which of the
