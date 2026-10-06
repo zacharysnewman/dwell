@@ -73,8 +73,10 @@ export interface BuildJson {
 export function buildManifest(builds: Map<string, BuildJson>, generated: string): Manifest {
   const versions: BuildEntry[] = [];
   for (const [dir, b] of builds) {
+    // A build.json may carry the commit as build metadata ("0.1.0-dev.1+d9a097d"); the site lists
+    // and serves the version without it, as the tag and the directory name it.
     const parsed = parseVersion(b.version);
-    if (!parsed || parsed.build !== null) throw new Error(`${dir}: bad version ${b.version}`);
+    if (!parsed) throw new Error(`${dir}: bad version ${b.version}`);
     if (withoutBuild(parsed) !== dir) throw new Error(`${dir}: build.json says ${b.version}`);
     const channel = isStable(parsed) ? 'stable' : 'dev';
     if (b.channel !== channel) throw new Error(`${dir}: channel ${b.channel}, expected ${channel}`);
@@ -82,7 +84,7 @@ export function buildManifest(builds: Map<string, BuildJson>, generated: string)
       throw new Error(`${dir}: build.json lacks protocolVersion or minLauncher`);
     }
     versions.push({
-      version: b.version,
+      version: dir,
       channel,
       date: b.date,
       commit: b.commit,

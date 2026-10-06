@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAUNCHER_VERSION, parseManifest, type Manifest } from './manifest';
+import { isBuildOf, LAUNCHER_VERSION, parseManifest, type Manifest } from './manifest';
 import { choose, forwardedSearch, latestBuild, type Channel } from './select';
 
 function manifest(versions: string[], minLauncher: Record<string, number> = {}): Manifest {
@@ -142,5 +142,17 @@ describe('the manifest', () => {
     expect(parseManifest(null)).toBeNull();
     expect(parseManifest({ schema: 2, versions: [] })).toBeNull();
     expect(parseManifest({ schema: 1 })).toBeNull();
+  });
+});
+
+describe('a version directory', () => {
+  // build.json names the version, with or without the commit as build metadata.
+  it('is the version its build.json names, ignoring build metadata', () => {
+    expect(isBuildOf({ version: '0.1.0' }, '0.1.0')).toBe(true);
+    expect(isBuildOf({ version: '0.1.0-dev.1+d9a097d' }, '0.1.0-dev.1')).toBe(true);
+    expect(isBuildOf({ version: '0.1.1' }, '0.1.0')).toBe(false);
+    expect(isBuildOf({ version: '0.1.0-dev.2+abc' }, '0.1.0-dev.1')).toBe(false);
+    for (const odd of [null, 7, 'x', {}, { version: 3 }])
+      expect(isBuildOf(odd, '0.1.0')).toBe(false);
   });
 });
