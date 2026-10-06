@@ -15,6 +15,8 @@
 #include "dwell/core/voxel.h"
 #include "dwell/worldgen/terrain.h"
 
+#include "biome_search.h"
+
 using namespace dwell::core;
 using namespace dwell::worldgen;
 
@@ -174,8 +176,12 @@ TEST_SUITE("worldgen: slopes") {
     const TerrainGenerator gen(0);
     VoxelWorld world = SlopeWorld(gen);
     int wet = 0, dry = 0;
-    for (int cz = -4; cz <= 4; ++cz)
-      for (int cx = -4; cx <= 4; ++cx)
+    // At the sea: the coast (the layout puts it far from the origin), the beach and the shallows
+    // off it.
+    const auto coast = dwell::testing::FindLandmarks(gen).coast;
+    const int ox = FloorDiv(coast.first, kChunkSize), oz = FloorDiv(coast.second, kChunkSize);
+    for (int cz = oz - 4; cz <= oz + 4; ++cz)
+      for (int cx = ox - 8; cx <= ox + 8; ++cx)
         for (int cy = -1; cy <= 0; ++cy) {
           Chunk chunk;
           gen.Generate({cx, cy, cz}, chunk, kSlopesOnly);

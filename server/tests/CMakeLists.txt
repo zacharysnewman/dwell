@@ -23,6 +23,7 @@ add_executable(dwell_tests
   player/scenario_test.cpp
   player/netcode_test.cpp
   worldgen/worldgen_test.cpp
+  worldgen/continents_test.cpp
   worldgen/lod_test.cpp
   worldgen/slopes_test.cpp
   worldgen/slope_terrain_test.cpp)

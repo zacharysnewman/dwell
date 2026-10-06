@@ -1,6 +1,6 @@
 # Dwell — World Generation Plans: Look, Continents, Terrain, Sky Islands
 
-> **Status: [planned]; §1 (Phase 7) is [built].** This is the design reference for implementation Phases 7 and 10–12
+> **Status: [planned]; §1 (Phase 7) and §2 (Phase 10) are [built].** This is the design reference for implementation Phases 7 and 10–12
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). It describes what to build and why, in
 > enough detail that no outside material is needed. The reference image and the Epic Terrain mod
 > it was written from are **not** in the repository and will not be available when the phases are
@@ -28,9 +28,9 @@ Contents
 4. [Sky islands in a dome (Phase 12)](#4-sky-islands-in-a-dome-phase-12)
 5. [Cross-cutting rules for all four phases](#5-cross-cutting-rules-for-all-four-phases)
 
-Where things are today (generator version 4, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
-at y = 0, the world from −2,048 to 6,144 m; continentalness from fBm plus a 262 km field; ridged
-mountains and 49 km ranges with 5.4 km massifs; biomes ocean, beach, plains, forest, desert, snowy,
+Where things are today (generator version 6, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
+at y = 0, the world from −2,048 to 6,144 m; 12–13 continents from Voronoi plates with a signed coast
+distance behind continentalness (§2, built); ridged mountains and 49 km ranges with 5.4 km massifs; biomes ocean, beach, plains, forest, desert, snowy,
 mountains; surfaces grass/dirt/sand/sandstone/gravel/snow/stone; oak and spruce trees, boulders.
 Colours come from `client/src/render/textures.ts` (procedural tiles) and `client/src/world/materials.ts`;
 LOD colours are tile averages (`averageTileColor`); faces get a fixed scalar shade in both meshers
@@ -282,6 +282,49 @@ using only `+ − × /`.)
   ruler).
 - Determinism (native = WASM goldens) and the timing budget.
 - Manual: whole-disc PPMs for 3 seeds attached to the PR.
+
+### 2.6 What was built (Phase 10), and where it differs from the design above
+
+[ADR 0017](./adr/0017-continents-from-voronoi-plates.md) records the decisions; the code is
+`server/core/src/worldgen/continents.cpp` (the layout) and `terrain.cpp` (the terrain from it). Each
+difference below is for a reason found in building or testing it:
+
+- **Which cells are land** is a seed-hashed count (12–13, the origin's cell first) of the cells
+  hashing lowest, not a per-cell chance of 0.35. The design's numbers do not fit each other: with
+  independent chances a seed has 6–15 land cells, and a quarter to a third of the disc is land only
+  for 12–14 continents of this cell size (a continent can fill at most ~70 % of its cell once the
+  gap and the coast are taken out). Land share over 64 seeds: 25.9–33.4 % (mean 29.8 %); continents 2.3–7.5 million km² (seeds 0–7).
+- **Cells are centred on the origin** (cell (0, 0) holds the origin and its site is the origin), and
+  **jitter is 0.2–0.8**, not 0.15–0.85: that is what makes the nearest site always lie in the 3 × 3
+  cells around a point.
+- **The coast distance** is `(D_sea − D_land) / 2`, not a minimum over plate bisectors: the bisector
+  form jumps where one land plate gives way to another (each has its own sea neighbours); this one
+  is continuous, zero on the land/sea bisectors, and saturates at ±256 km.
+- **The clamp is relative to the point's continent** (its cell, or at sea the nearest land plate's
+  cell), over the bisectors with every other land cell, and is widened by the warp's Lipschitz bound
+  (measured 0.23, bound 0.3). Clamping by the point's own cell alone let land spilling into an ocean
+  cell between two continents come within the gap of the other. The coast detail *recedes* a clamped
+  coast (0–60 km, never outward) so it is ragged too, and fades out beyond 50–150 km from the coast.
+- **A plate's continent** is its site's cell; land and the sea around it keep that continent
+  (`Column::continent`), land that spills into an ocean cell included.
+- **Islands** keep 750 km from land cells' borders (not 150 km): continents spill past their cells'
+  borders, and the separation test samples every continent point out to 0.99 × the gap — islands
+  within that would fail it. The seabed offshore of an island falls ten times faster than the
+  island rises, so an island's own seabed stays within the blobs searched.
+- **Constants:** `PLATE_INSET` 90 km, `BAY_CHANCE` 0.08, `ISLAND_PLATE_CHANCE` 0.05, `RIM_OCEAN`
+  512 km, coast detail 9 octaves from 400 km (amplitude 100 km, ×0.65 per octave: ~13 km at 25 km), warp
+  76.8 km at 1,000 km, shelf 80–160 km, the abyss −1,500 ± 300 m, the inland rise `s / (s + 40 km)`.
+- **Cell hashing** uses its own `CellHash`: `Hash2` repeats for small coordinates (39 distinct values
+  in the 49 cells around the origin).
+- **The macro lattice** holds every field of the layout, evaluated exactly at its corners and cached
+  per thread; the level of detail reads it below 256 m cells and evaluates the layout at cell
+  centres above (anchors every 4 columns, interpolated only in interiors and the deep sea), and a
+  cell too wide for the erosion and ridged octaves reads their means.
+- **Checks:** the separation test samples 500 land points per seed for 8 seeds in CI
+  (`DWELL_SEPARATION_POINTS=10000` runs the exit criterion's count: 0 violations in 20.5 million
+  samples); the shape statistics, the coastline ruler (1 km sees 1.9–2.3 × the 16 km length), the
+  Lipschitz bound of the warp, cache purity, the shelf/slope/abyss profile and the landmarks the
+  goldens use are in `continents_test.cpp`. Whole-disc images: `dwell_worldgen_inspect seed disc`.
 
 ---
 
@@ -793,7 +836,8 @@ material then.
 ## 5. Cross-cutting rules for all four phases
 
 - **Determinism (ADR 0010, 0011).** Integer hashes for every placement decision; only `+ − × /`,
-  comparisons and (after Phase 10's ADR) `sqrt`; no float conversion of whole world coordinates;
+  comparisons and (ADR 0017) the correctly rounded `sqrt`; no float conversion of whole world
+  coordinates;
   one evaluation order shared by chunks, point queries and LOD. Every output change bumps the
   generator version and regenerates goldens (`DWELL_UPDATE_GOLDEN=1`). No phase migrates saved
   worlds: saves from before the version launcher (Phase 6) are not carried over, and after it
@@ -817,28 +861,29 @@ material then.
 
 | Name | Value | Phase |
 |---|---|---|
-| `CONTINENT_CELL` | 2,560 km | 7 |
-| `CONTINENT_LAND_CHANCE` | 0.35 | 7 |
-| `PLATE_CELL` | 256 km | 7 |
-| `PLATE_INSET` | 120 km | 7 |
-| `BAY_CHANCE` / `ISLAND_PLATE_CHANCE` | 0.08 / 0.04 | 7 |
-| `OCEAN_GAP` | 300 km | 7 |
-| `ISLAND_CLEARANCE` | 150 km | 7 |
-| `RIM_OCEAN` | 400 km | 7 |
-| `SHELF_WIDTH` | 80–200 km per continent | 7 |
-| Coast warp (λ / amplitude) | 1,000 km / 0.3 × `PLATE_CELL` | 7 |
-| Macro lattice | 256 m | 7 |
-| River tiers (λ) | ~200 km / ~6 km / ~1.5 km | 8 |
-| River terrace step | 2–6 m (hashed) | 8 |
-| Lake cells | 3–10 km | 8 |
-| Lapse rate | 6.5 °C / km | 8 |
-| Rain-shadow samples | 20 / 60 / 150 km upwind | 8 |
-| Cave suppression under water | 12 m | 8 |
-| Overhang amplitude | 1–3 m (land), more on cliffs | 8 |
-| `DOME_RADIUS` | = `WORLD_RADIUS`, 8,192 km (decided) | 9 |
-| `TERRAIN_MAX_Y` (ground band top, today's `WORLD_MAX_Y`) | 6,144 m | 9 |
-| `ISLAND_MIN_Y` | ~7,000 m | 9 |
-| Island field | the reference's twelve parameters ([`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md), "Parameter reference") | 9 |
-| `ARCHIPELAGO_CELL` | 16 km × 2 km × 16 km (provisional) | 9 |
-| Archipelago radius / scale `s` | 2–6 km / 1, 2 or 4 (provisional) | 9 |
-| `WATERFALL_MAX` | 48 m × `s` (provisional) | 9 |
+| `CONTINENT_CELL` | 2,560 km | 10 (built) |
+| Continents (land cells) | 12–13, seed-hashed (was `CONTINENT_LAND_CHANCE` 0.35) | 10 (built) |
+| `PLATE_CELL` | 256 km | 10 (built) |
+| `PLATE_INSET` | 90 km | 10 (built) |
+| `BAY_CHANCE` / `ISLAND_PLATE_CHANCE` | 0.08 / 0.05 | 10 (built) |
+| `OCEAN_GAP` | 300 km | 10 (built) |
+| `ISLAND_CLEARANCE` (from land cells' borders) | 750 km | 10 (built) |
+| `RIM_OCEAN` | 512 km | 10 (built) |
+| `SHELF_WIDTH` | 80–160 km per continent | 10 (built) |
+| Coast warp (λ / amplitude) | 1,000 km / 76.8 km (0.3 × `PLATE_CELL`) | 10 (built) |
+| Coast detail | 9 octaves from 400 km, 100 km × 0.65 per octave | 10 (built) |
+| Macro lattice | 256 m | 10 (built) |
+| River tiers (λ) | ~200 km / ~6 km / ~1.5 km | 11 |
+| River terrace step | 2–6 m (hashed) | 11 |
+| Lake cells | 3–10 km | 11 |
+| Lapse rate | 6.5 °C / km | 11 |
+| Rain-shadow samples | 20 / 60 / 150 km upwind | 11 |
+| Cave suppression under water | 12 m | 11 |
+| Overhang amplitude | 1–3 m (land), more on cliffs | 11 |
+| `DOME_RADIUS` | = `WORLD_RADIUS`, 8,192 km (decided) | 12 |
+| `TERRAIN_MAX_Y` (ground band top, today's `WORLD_MAX_Y`) | 6,144 m | 12 |
+| `ISLAND_MIN_Y` | ~7,000 m | 12 |
+| Island field | the reference's twelve parameters ([`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md), "Parameter reference") | 12 |
+| `ARCHIPELAGO_CELL` | 16 km × 2 km × 16 km (provisional) | 12 |
+| Archipelago radius / scale `s` | 2–6 km / 1, 2 or 4 (provisional) | 12 |
+| `WATERFALL_MAX` | 48 m × `s` (provisional) | 12 |

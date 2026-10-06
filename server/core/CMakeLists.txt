@@ -23,6 +23,7 @@ add_library(dwell_core
   src/player/predictor.cpp
   src/player/voxel_query.cpp
   src/worldgen/noise.cpp
+  src/worldgen/continents.cpp
   src/worldgen/terrain.cpp
   src/worldgen/slopes.cpp
   src/storage/world_db.cpp

@@ -32,14 +32,29 @@ constexpr int kSurfacePad = 8;
 // Solid components smaller than this, not touching a chunk face, are removed (stability pass).
 constexpr int kMinComponent = 48;
 constexpr int kSnowLine = 900;
+// Level of detail: erosion (raw) and ridges when the cell is wider than all their octaves — the
+// value whose mountain weight (0.28) and ridged height (0.61) are the fields' means (§6.6).
+constexpr float kLodErosion = -0.078f;
+constexpr float kLodRidges = 0.61f;
 // Placeholder planet-scale layer (prototype, §6.1): continents and oceans a few hundred km across,
 // and ranges of kilometre-scale relief on the larger landmasses.
 constexpr std::int32_t kMacroWavelength = 262144;  // m
 constexpr std::int32_t kReliefWavelength = 49152;  // m
 constexpr float kMacroReliefHeight = 1800.0f;      // m, at the crest of a range
 // Massifs: in the cores of the largest ranges crests rise this much higher (peaks ~5.5 km).
-constexpr float kMassifHeight = 3600.0f;    // m
-constexpr float kMacroOceanDepth = 500.0f;  // m, added below the continental shelf
+constexpr float kMassifHeight = 3600.0f;  // m
+// Coast distance (continents.h) → terrain. Metres of coast per unit of the local fine octaves
+// (the 1.4 km continentalness noise), the distance inland at which the interior's rise reaches half
+// its height, and the distance offshore at which continentalness reaches −1.
+constexpr float kCoastLocal = 900.0f;
+constexpr float kInlandRise = 40'000.0f;
+constexpr float kSeaScale = 200'000.0f;
+// The shelf's end and the foot of the continental slope, in shelf widths offshore; the abyss's
+// depth.
+constexpr float kShelfEnd = 1.0f;
+constexpr float kSlopeFoot = 1.25f;
+constexpr float kShelfDepth = -150.0f;   // m, at the edge of the shelf
+constexpr float kAbyssDepth = -1500.0f;  // m, ±300 m by the planet-scale field
 // Trees reach at most this far above their ground, and leaves this far sideways from the trunk.
 constexpr int kTreeReach = 12;
 constexpr int kTreeSpread = 3;
@@ -58,21 +73,16 @@ float Spline(const Knot (&k)[N], float x) {
   return k[N - 1].y;
 }
 
-// Base height (m, sea level 0) from continentalness: deep ocean, shelf, coast, lowlands, uplands.
-constexpr Knot kContinentHeight[] = {{-1.0f, -42.0f}, {-0.45f, -26.0f}, {-0.2f, -10.0f},
-                                     {-0.08f, -3.0f}, {0.0f, 2.0f},     {0.25f, 8.0f},
-                                     {0.6f, 22.0f},   {1.0f, 40.0f}};
+// Base height (m, sea level 0) of land from continentalness: the coast, lowlands, uplands.
+constexpr Knot kLandHeight[] = {{0.0f, 2.0f}, {0.25f, 8.0f}, {0.6f, 22.0f}, {1.0f, 40.0f}};
+// The seabed from the coast to the edge of the shelf, by distance offshore in shelf widths.
+constexpr Knot kShelfProfile[] = {{0.0f, 2.0f},   {0.005f, -1.0f}, {0.03f, -6.0f},
+                                  {0.2f, -20.0f}, {0.6f, -60.0f},  {kShelfEnd, kShelfDepth}};
 
 float Clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 // Classification of one voxel before materials are assigned.
 enum Cell : std::uint8_t { kOpenAir, kWater, kCaveAir, kSolid };
-
-std::uint32_t SeedWord(std::uint64_t world_seed, std::uint32_t stream) {
-  const auto lo = static_cast<std::uint32_t>(world_seed);
-  const auto hi = static_cast<std::uint32_t>(world_seed >> 32);
-  return Mix32(Mix32(lo ^ Mix32(stream * 0x9E3779B9u)) ^ Mix32(hi + stream));
-}
 
 // A 3D noise sample and the column it belongs to → voxel class. Shared by the chunk and point
 // paths so both give bit-identical answers.
@@ -177,7 +187,7 @@ const char* BiomeName(Biome b) {
   return "?";
 }
 
-TerrainGenerator::TerrainGenerator(std::uint64_t world_seed) {
+TerrainGenerator::TerrainGenerator(std::uint64_t world_seed) : continents_(world_seed) {
   std::uint32_t stream = 0;
   for (std::uint32_t* s :
        {&seeds_.continent, &seeds_.erosion, &seeds_.temperature, &seeds_.humidity, &seeds_.hills,
@@ -201,16 +211,36 @@ TerrainGenerator::Corner2 TerrainGenerator::SampleCorner2(std::int32_t lx, std::
   c.ridges = Ridged2(seeds_.ridges, x, z, 360, 5);
   c.macro = Fbm2(seeds_.macro, x, z, kMacroWavelength, 4);
   c.relief = Ridged2(seeds_.relief, x, z, kReliefWavelength, 4);
+  const MacroCorner m = continents_.Sample(x, z);
+  c.coast = m.coast;
+  c.plate_edge = m.plate_edge;
+  c.convergence = m.convergence;
+  c.elevation = m.elevation;
+  c.shelf = m.shelf;
+  c.continent = m.continent;
   return c;
 }
 
 Column TerrainGenerator::Finish(const Corner2& c) {
   Column col;
   // Fractal Perlin sums rarely leave ±0.5; stretch the climate fields to about ±1.
-  // The planet-scale layer shifts the local continentalness: whole regions of ocean or land.
   const float macro = Clamp(c.macro * 2.2f, -1.0f, 1.0f);
-  col.continentalness =
-      Clamp(c.continentalness * 2.2f + macro * 0.9f + 0.15f, -1.0f, 1.0f);  // ~⅓ ocean
+  // Continentalness from the signed distance to the coast (continents.h): the continent layout's
+  // coarse value plus the 1.4 km octaves. At sea it falls to −1 over kSeaScale; on land it rises
+  // toward 1 inland (s / (s + K), saturating), the interior varying a little with the local noise.
+  const float coast = c.coast + c.continentalness * kCoastLocal;
+  col.coast = coast;
+  col.plate_edge = c.plate_edge;
+  col.convergence = c.convergence;
+  col.continent = c.continent;
+  float rise = 0.0f;
+  if (coast > 0.0f) {
+    rise = coast / (coast + kInlandRise);
+    const float local = Clamp01(0.5f + c.continentalness * 1.1f);
+    col.continentalness = rise * (0.7f + 0.3f * local);
+  } else {
+    col.continentalness = Clamp(coast * (1.0f / kSeaScale), -1.0f, 0.0f);
+  }
   col.erosion = Clamp(c.erosion * 2.2f, -1.0f, 1.0f);
   col.temperature = Clamp(c.temperature * 2.2f, -1.0f, 1.0f);
   col.humidity = Clamp(c.humidity * 2.2f, -1.0f, 1.0f);
@@ -225,15 +255,27 @@ Column TerrainGenerator::Finish(const Corner2& c) {
   const float plains = rest - forest;
   const float hill_amplitude = 6.0f * plains + 11.0f * forest + 4.0f * desert + 12.0f * snowy;
 
-  const float land = SmoothStep(-0.12f, 0.05f, cont);
+  // Land weight: zero at the coast (0.5 km offshore), full 4 km inland: hills and ranges do not
+  // reach out to sea.
+  const float land = SmoothStep(-500.0f, 4000.0f, coast);
   col.mountain = SmoothStep(0.05f, 0.4f, cont) * SmoothStep(-0.05f, -0.4f, col.erosion);
   // Kilometre-scale ranges on large landmasses; deep basins under large oceans.
   const float range = SmoothStep(0.15f, 0.55f, macro) * land * c.relief * c.relief;
-  const float basin = SmoothStep(-0.1f, -0.6f, macro);
   const float massif = SmoothStep(0.4f, 0.85f, macro);
-  col.height = Spline(kContinentHeight, cont) + c.hills * hill_amplitude * (0.35f + 0.65f * land) +
+  // The base: on land the coast's lowland rising to the continent's interior (its elevation); at
+  // sea the shelf out to its edge, the continental slope, and the abyss.
+  float base;
+  if (coast > 0.0f) {
+    base = Spline(kLandHeight, cont) + c.elevation * rise;
+  } else {
+    const float u = -coast / c.shelf;  // shelf widths offshore
+    const float abyss = kAbyssDepth + 300.0f * macro;
+    base = u <= kShelfEnd ? Spline(kShelfProfile, u)
+                          : Lerp(kShelfDepth, abyss, SmoothStep(kShelfEnd, kSlopeFoot, u));
+  }
+  col.height = base + c.hills * hill_amplitude * (0.35f + 0.65f * land) +
                col.mountain * (18.0f + c.ridges * 150.0f) +
-               range * (kMacroReliefHeight + massif * kMassifHeight) - basin * kMacroOceanDepth;
+               range * (kMacroReliefHeight + massif * kMassifHeight);
   col.mountain = std::max(col.mountain, SmoothStep(0.05f, 0.25f, range));
   col.overhang = 2.5f * land + 1.0f + 14.0f * col.mountain;
 
@@ -271,6 +313,12 @@ Column TerrainGenerator::Interp2(const Corner2 (&c)[4], int fx, int fz) {
   m.ridges = bi(&Corner2::ridges);
   m.macro = bi(&Corner2::macro);
   m.relief = bi(&Corner2::relief);
+  m.coast = bi(&Corner2::coast);
+  m.plate_edge = bi(&Corner2::plate_edge);
+  m.convergence = bi(&Corner2::convergence);
+  m.elevation = bi(&Corner2::elevation);
+  m.shelf = bi(&Corner2::shelf);
+  m.continent = c[(fx >= kLattice / 2 ? 1 : 0) + (fz >= kLattice / 2 ? 2 : 0)].continent;
   return Finish(m);
 }
 
@@ -281,6 +329,12 @@ Column TerrainGenerator::ColumnAt(std::int32_t x, std::int32_t z) const {
   Column col = Interp2(c, FloorMod(x, kLattice), FloorMod(z, kLattice));
   col.outside = !core::InsideWorldDisc(x, z);
   return col;
+}
+
+TerrainGenerator::LandSample TerrainGenerator::LandAt(std::int32_t x, std::int32_t z) const {
+  const MacroCorner m = continents_.At(x, z);
+  const float local = Fbm2(seeds_.continent, x, z, 1400, 5);
+  return {m.coast + local * kCoastLocal, m.continent, m.plate_edge, m.convergence};
 }
 
 // --- 3–4: density and caves -----------------------------------------------------------------
@@ -464,7 +518,8 @@ void TerrainGenerator::ChunkSurfaces(const std::vector<Column>& cols, std::int32
       bool have[kMaxLayers] = {};
       const auto layer = [&](std::int32_t j) -> const Corner3& {
         const std::int32_t n = j - jbase;
-        // The window holds every layer SurfaceOf can ask for (a band of at most 2 × overhang + 7 m).
+        // The window holds every layer SurfaceOf can ask for (a band of at most 2 × overhang + 7
+        // m).
         assert(n >= 0 && n < kMaxLayers);
         if (!have[n]) {
           const Corner3 c[4] = {corner(i, k, j), corner(i + 1, k, j), corner(i, k + 1, j),
@@ -1000,7 +1055,76 @@ core::LodBounds LodBoundsOf(ColumnOf&& column, std::int64_t cell) {
 }
 }  // namespace
 
-Column TerrainGenerator::ColumnLod(std::int64_t x, std::int64_t z, std::int64_t cell) const {
+namespace {
+// LOD layout anchors lie this many columns apart. A block of columns between four anchors is
+// interpolated only where the terrain hardly depends on the coast distance: the four lie wholly
+// inside one continent's interior (further than kLodInterior from its coast) or in the deep sea
+// (beyond the foot of any continental slope) with no island plate near. Anywhere else — coasts,
+// shelves, channels between continents, islands, whose coast detail is rougher than a block — every
+// column is evaluated exactly.
+constexpr int kLodLayoutStride = 4;
+constexpr float kLodInterior = 80'000.0f;
+constexpr float kLodDeepSea = -215'000.0f;
+}  // namespace
+
+void TerrainGenerator::LodLayout(std::int64_t origin_x, std::int64_t origin_z, std::int64_t cell,
+                                 int first, int count, std::vector<MacroCorner>& out) const {
+  const int kept = OctavesResolved(continents::kCoastWavelength, continents::kCoastOctaves, cell);
+  const auto exact = [&](int x, int z) {
+    return continents_.At(origin_x + x * cell + cell / 2, origin_z + z * cell + cell / 2, kept,
+                          false);
+  };
+  const int blocks = (count - 1 + kLodLayoutStride - 1) / kLodLayoutStride;
+  const int anchors = blocks + 1;
+  std::vector<MacroCorner> a(static_cast<std::size_t>(anchors * anchors));
+  for (int j = 0; j < anchors; ++j)
+    for (int i = 0; i < anchors; ++i) {
+      a[static_cast<std::size_t>(j * anchors + i)] =
+          exact(first + i * kLodLayoutStride, first + j * kLodLayoutStride);
+    }
+  out.assign(static_cast<std::size_t>(count * count), MacroCorner{});
+  for (int bj = 0; bj < blocks; ++bj)
+    for (int bi = 0; bi < blocks; ++bi) {
+      const MacroCorner* c[4] = {&a[static_cast<std::size_t>(bj * anchors + bi)],
+                                 &a[static_cast<std::size_t>(bj * anchors + bi + 1)],
+                                 &a[static_cast<std::size_t>((bj + 1) * anchors + bi)],
+                                 &a[static_cast<std::size_t>((bj + 1) * anchors + bi + 1)]};
+      bool interior = true, deep = true;
+      for (const MacroCorner* m : c) {
+        interior = interior && m->coast > kLodInterior && m->continent >= 0 &&
+                   m->continent == c[0]->continent;
+        deep = deep && m->coast < kLodDeepSea && m->continent != continents::kIslandId &&
+               !m->island_plates_near;
+      }
+      const bool plain = interior || deep;
+      for (int dj = 0; dj < kLodLayoutStride; ++dj)
+        for (int di = 0; di < kLodLayoutStride; ++di) {
+          const int i = bi * kLodLayoutStride + di, j = bj * kLodLayoutStride + dj;
+          if (i >= count || j >= count) continue;
+          MacroCorner& m = out[static_cast<std::size_t>(j * count + i)];
+          if (di == 0 && dj == 0) {
+            m = *c[0];
+          } else if (!plain) {
+            m = exact(first + i, first + j);
+          } else {
+            const float tx = static_cast<float>(di) * (1.0f / kLodLayoutStride);
+            const float tz = static_cast<float>(dj) * (1.0f / kLodLayoutStride);
+            const auto lerp = [&](float MacroCorner::*f) {
+              return Lerp(Lerp(c[0]->*f, c[1]->*f, tx), Lerp(c[2]->*f, c[3]->*f, tx), tz);
+            };
+            m.coast = lerp(&MacroCorner::coast);
+            m.elevation = lerp(&MacroCorner::elevation);
+            m.shelf = lerp(&MacroCorner::shelf);
+            m.continent =
+                c[(di >= kLodLayoutStride / 2 ? 1 : 0) + (dj >= kLodLayoutStride / 2 ? 2 : 0)]
+                    ->continent;
+          }
+        }
+    }
+}
+
+Column TerrainGenerator::ColumnLod(std::int64_t x, std::int64_t z, std::int64_t cell,
+                                   const MacroCorner* layout) const {
   const auto kept = [&](std::int32_t wavelength, int octaves) {
     return OctavesResolved(wavelength, octaves, cell);
   };
@@ -1013,6 +1137,27 @@ Column TerrainGenerator::ColumnLod(std::int64_t x, std::int64_t z, std::int64_t 
   c.ridges = Ridged2(seeds_.ridges, x, z, 360, 5, kept(360, 5));
   c.macro = Fbm2(seeds_.macro, x, z, kMacroWavelength, 4, kept(kMacroWavelength, 4));
   c.relief = Ridged2(seeds_.relief, x, z, kReliefWavelength, 4, kept(kReliefWavelength, 4));
+  // Mountains switch on where erosion is low and rise by the ridged field: both are thresholded,
+  // so a cell too wide for any of their octaves must not read their mean (zero erosion: no
+  // mountain; zero ridges: none of their height), which would flatten every interior from afar.
+  // It takes the means of what it cannot resolve, as measured over the world.
+  if (kept(700, 3) == 0) c.erosion = kLodErosion;
+  if (kept(360, 5) == 0) c.ridges = kLodRidges;
+  // The continent layout: from the lattice the chunks use, or at cells of its own spacing and
+  // wider evaluated at the cell's centre with the coast octaves it can resolve.
+  const MacroCorner m = layout ? *layout
+                        : cell >= continents::kMacroStep
+                            ? continents_.At(x, z,
+                                             OctavesResolved(continents::kCoastWavelength,
+                                                             continents::kCoastOctaves, cell),
+                                             false)
+                            : continents_.Sample(x, z);
+  c.coast = m.coast;
+  c.plate_edge = m.plate_edge;
+  c.convergence = m.convergence;
+  c.elevation = m.elevation;
+  c.shelf = m.shelf;
+  c.continent = m.continent;
   Column col = Finish(c);
   col.outside = !core::InsideWorldDisc64(x, z);
   return col;
@@ -1038,10 +1183,16 @@ core::LodBounds TerrainGenerator::LodBoundsAt(int level, std::int32_t i, std::in
   const core::LodOrigin o = core::LodSectionOrigin({level, i, 0, k});
   const std::int64_t cell = core::LodCellSize(level);
   std::vector<Column> cols(static_cast<std::size_t>(core::kLodPad * core::kLodPad));
+  std::vector<MacroCorner> layout;
+  const bool have_layout = cell >= continents::kMacroStep;
+  if (have_layout) LodLayout(o.x, o.z, cell, -1, core::kLodPad, layout);
   for (int z = -1; z <= core::kLodSectionCells; ++z)
     for (int x = -1; x <= core::kLodSectionCells; ++x) {
+      const MacroCorner* m =
+          have_layout ? &layout[static_cast<std::size_t>((z + 1) * core::kLodPad + x + 1)]
+                      : nullptr;
       cols[(z + 1) * core::kLodPad + x + 1] =
-          ColumnLod(o.x + x * cell + cell / 2, o.z + z * cell + cell / 2, cell);
+          ColumnLod(o.x + x * cell + cell / 2, o.z + z * cell + cell / 2, cell, m);
     }
   return LodBoundsOf(
       [&](int x, int z) -> const Column& { return cols[(z + 1) * core::kLodPad + x + 1]; }, cell);
@@ -1060,9 +1211,15 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
 
   // 1–2. Climate and base height at each column's centre.
   std::vector<Column> cols(static_cast<std::size_t>(kLodCols * kLodCols));
+  std::vector<MacroCorner> layout;
+  const bool have_layout = cell >= continents::kMacroStep;
+  if (have_layout) LodLayout(o.x, o.z, cell, -2, kLodCols, layout);
   for (int z = -2; z <= kLodSectionCells + 1; ++z)
-    for (int x = -2; x <= kLodSectionCells + 1; ++x)
-      cols[LodCol(x, z)] = ColumnLod(o.x + x * cell + half, o.z + z * cell + half, cell);
+    for (int x = -2; x <= kLodSectionCells + 1; ++x) {
+      const MacroCorner* m =
+          have_layout ? &layout[static_cast<std::size_t>((z + 2) * kLodCols + x + 2)] : nullptr;
+      cols[LodCol(x, z)] = ColumnLod(o.x + x * cell + half, o.z + z * cell + half, cell, m);
+    }
   const auto column = [&](int x, int z) -> const Column& { return cols[LodCol(x, z)]; };
   const core::LodKind kind = core::LodKindFromBounds(c, LodBoundsOf(column, cell));
   if (kind == core::LodKind::kEmpty) return kind;

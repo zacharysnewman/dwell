@@ -7,16 +7,20 @@
 
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
+#include "dwell/worldgen/continents.h"
 #include "dwell/worldgen/slopes.h"
 
-// Procedural terrain, generator version 5 (ARCHITECTURE.md §6.3). A chunk is a pure function of
+// Procedural terrain, generator version 6 (ARCHITECTURE.md §6.3). A chunk is a pure function of
 // (world seed, chunk coordinate): every stage reads only noise and hashes of world coordinates,
 // never another chunk's data, so chunks generate in any order, on any thread, natively or in WASM,
 // with bit-identical results (noise.h, ADR 0010).
 //
 // Pipeline per chunk:
-//   1. Climate (2D): continentalness, erosion, temperature, humidity → biome weights.
-//   2. Base height (2D): continentalness spline + biome-blended hills + ridged mountains.
+//   1. Climate (2D): the signed distance to the coast (continents.h), erosion, temperature,
+//      humidity → biome weights.
+//   2. Base height (2D): shelf / slope / abyss at sea and the inland rise on land, plus
+//   biome-blended
+//      hills and ridged mountains.
 //   3. Density (3D): (height − y) + overhang noise; solid where positive.
 //   4. Caves (3D): spaghetti tunnels and cheese caverns, faded out near the surface and bedrock.
 //   5. Surface and strata: grass/dirt, sand/sandstone, snow, gravel by biome and depth; water fills
@@ -33,6 +37,9 @@
 // planet-scale layer varies land, ocean and kilometre-scale relief across the disc; sea level is
 // 0; nothing is generated outside the disc. The terrain's content (biomes, materials, features) is
 // prototype (ARCHITECTURE.md §6.1).
+// Version 6 (ADR 0017, WORLD_GENERATION.md §2): land and sea come from a plate layout of 11–14
+// continents separated by open ocean, not from noise; continentalness is a signed distance to the
+// coast, from which the shelf, slope, abyss and inland rise follow.
 namespace dwell::worldgen {
 
 enum class Biome : std::uint8_t { kOcean, kBeach, kPlains, kForest, kDesert, kSnowy, kMountains };
@@ -40,8 +47,12 @@ const char* BiomeName(Biome b);
 
 // 2D fields of one column.
 struct Column {
-  float continentalness = 0;  // < 0 ocean, > 0 land
-  float erosion = 0;          // low erosion → mountains
+  float continentalness = 0;  // < 0 ocean, > 0 land: −1..1 from the coast distance
+  float coast = 0;            // signed distance to the coast (m): > 0 land, < 0 sea
+  float plate_edge = 0;       // land: distance (m) to the nearest internal plate edge
+  float convergence = 0;  // −1..1 at that edge (Phase 11: mountain belts along convergent ones)
+  std::int32_t continent = continents::kNoContinent;  // id (ContinentLayout::IdOf), or kIslandId
+  float erosion = 0;                                  // low erosion → mountains
   float temperature = 0;
   float humidity = 0;
   float mountain = 0;  // 0..1 weight of the mountain height term
@@ -86,6 +97,16 @@ class TerrainGenerator {
 
   // Point queries with exactly the chunk path's arithmetic (used by features, spawn, and tests).
   Column ColumnAt(std::int32_t x, std::int32_t z) const;
+  // The landmass layout alone (no terrain): the coast distance of ColumnAt, evaluated at the point
+  // itself rather than on the 4 m lattice, with the lattice-free fine octaves. For statistics, the
+  // inspect tool and the separation tests.
+  struct LandSample {
+    float coast = 0;  // signed distance to the coast (m): > 0 land
+    std::int32_t continent = continents::kNoContinent;
+    float plate_edge = 0, convergence = 0;
+  };
+  LandSample LandAt(std::int32_t x, std::int32_t z) const;
+  const ContinentLayout& Continents() const { return continents_; }
   // Terrain solidity after caves, before the stability pass and features.
   bool SolidAt(std::int32_t x, std::int32_t y, std::int32_t z) const;
   // Top voxel of the ground near the base height, if the surface is there (open air above it).
@@ -135,9 +156,13 @@ class TerrainGenerator {
     std::uint32_t continent, erosion, temperature, humidity, hills, ridges, overhang, spaghetti_a,
         spaghetti_b, cheese, trees, boulders, ores, macro, relief;
   } seeds_;
+  ContinentLayout continents_;
 
   struct Corner2 {
     float continentalness, erosion, temperature, humidity, hills, ridges, macro, relief;
+    // The continent layout (continents.h) at this point.
+    float coast, plate_edge, convergence, elevation, shelf;
+    std::int32_t continent;
   };
 
   struct Corner3 {
@@ -163,7 +188,17 @@ class TerrainGenerator {
                     std::int32_t y0,
                     std::array<core::MaterialId, core::kChunkVolume>& voxels) const;
   // Level of detail: a column's fields and a point's 3D noise at a cell size (octaves dropped).
-  Column ColumnLod(std::int64_t x, std::int64_t z, std::int64_t cell) const;
+  // `layout`: the continent layout at this column when the caller has it (LodLayout), else
+  // computed.
+  Column ColumnLod(std::int64_t x, std::int64_t z, std::int64_t cell,
+                   const MacroCorner* layout = nullptr) const;
+  // The continent layout at the cell centres of a LOD section's columns first..first+count−1 along
+  // each axis (row-major, z major), for cells of the macro lattice's spacing and wider: evaluated
+  // at anchors every kLodLayoutStride columns, with the columns between interpolated where the four
+  // anchors around them lie in the interior of one continent or in the deep sea, and evaluated
+  // exactly everywhere else (coasts, shelves, channels, islands).
+  void LodLayout(std::int64_t origin_x, std::int64_t origin_z, std::int64_t cell, int first,
+                 int count, std::vector<MacroCorner>& out) const;
   Corner3 NoiseLod(std::int64_t x, std::int64_t y, std::int64_t z, std::int64_t cell) const;
   static Column Interp2(const Corner2 (&c)[4], int fx, int fz);
   // 3D noise interpolation: bilinear in (x, z) within a lattice layer, then linear in y.

@@ -17,10 +17,13 @@
 #include "dwell/worldgen/noise.h"
 #include "dwell/worldgen/terrain.h"
 
+#include "biome_search.h"
+
 using namespace dwell;
 using core::Chunk;
 using core::ChunkCoord;
 using core::MaterialId;
+using testing::FindBiome;
 using worldgen::Biome;
 using worldgen::TerrainGenerator;
 namespace M = core::Materials;
@@ -36,17 +39,6 @@ Chunk Generated(const TerrainGenerator& gen, ChunkCoord c,
   Chunk chunk;
   gen.Generate(c, chunk, stages);
   return chunk;
-}
-
-// A point of each biome near the origin (seed 0), found on a coarse grid.
-std::optional<std::pair<int, int>> FindBiome(const TerrainGenerator& gen, Biome biome) {
-  for (int r = 0; r < 4000; r += 48)
-    for (int x = -r; x <= r; x += 48)
-      for (const int z : {-r, r}) {
-        if (gen.ColumnAt(x, z).biome == biome) return std::pair{x, z};
-        if (gen.ColumnAt(z, x).biome == biome) return std::pair{z, x};
-      }
-  return std::nullopt;
 }
 
 }  // namespace
@@ -382,7 +374,16 @@ TEST_SUITE("worldgen: terrain") {
         const int x = p->first + d, z = p->second;
         if (gen.ColumnAt(x, z).biome != b) continue;
         if (const auto g = gen.GroundY(x, z)) {
-          const MaterialId m = world.GetVoxel(x, *g, z);
+          // The topmost solid cell of the column near the ground: the surface, or a slope or slab
+          // of it standing on the ground's top voxel.
+          MaterialId m = world.GetVoxel(x, *g, z);
+          for (int y = *g + 2; y > *g; --y) {
+            const MaterialId above = world.GetVoxel(x, y, z);
+            if (above != M::kAir && above != M::kWater) {
+              m = above;
+              break;
+            }
+          }
           if (m == M::kLog || m == M::kLeaves || m == M::kStone)
             continue;  // trees, boulders, cliffs
           // The ground's top cell is the material or a slope or slab of it.
@@ -409,6 +410,18 @@ TEST_SUITE("worldgen: terrain") {
       for (int cx = cx0 - 15; cx <= cx0 + 15; ++cx) {
         const auto t = gen.TreeInCell(cx, cz);
         if (!t) continue;
+        // A boulder on the trunk's spot wins it (boulders are placed first; logs only replace air,
+        // leaves and shaped cells).
+        bool under_boulder = false;
+        for (int bz = worldgen::FloorDiv(t->z - 3, TerrainGenerator::kBoulderCell);
+             bz <= worldgen::FloorDiv(t->z + 3, TerrainGenerator::kBoulderCell); ++bz)
+          for (int bx = worldgen::FloorDiv(t->x - 3, TerrainGenerator::kBoulderCell);
+               bx <= worldgen::FloorDiv(t->x + 3, TerrainGenerator::kBoulderCell); ++bx)
+            if (const auto b = gen.BoulderInCell(bx, bz)) {
+              under_boulder |=
+                  std::abs(b->x - t->x) <= b->size + 1 && std::abs(b->z - t->z) <= b->size + 1;
+            }
+        if (under_boulder) continue;
         ++trees;
         CHECK(IsSolid(world.GetVoxel(t->x, t->y - 1, t->z)));
         for (int y = t->y; y < t->y + t->size; ++y) CHECK(world.GetVoxel(t->x, y, t->z) == M::kLog);
@@ -503,6 +516,21 @@ TEST_SUITE("worldgen: golden") {
         {0, {-249990, kSurface, -5}},
         {0, {3036, kSurface, 36828}},  // a massif's slopes, ~5.4 km up
     };
+    // The plate layout (Phase 10): a coast, the middle of an ocean gap between two continents (its
+    // seabed and the open water over it), an island, another continent's interior and the abyss.
+    for (const std::uint64_t seed : {std::uint64_t{0}, std::uint64_t{20260925}}) {
+      const auto lm = testing::FindLandmarks(TerrainGenerator(seed));
+      REQUIRE(lm.found);
+      const auto col = [&](std::pair<std::int32_t, std::int32_t> p, int y) {
+        return Case{seed, {worldgen::FloorDiv(p.first, S), y, worldgen::FloorDiv(p.second, S)}};
+      };
+      cases.push_back(col(lm.coast, kSurface));
+      cases.push_back(col(lm.gap, kSurface));
+      cases.push_back(col(lm.gap, -2));
+      cases.push_back(col(lm.island, kSurface));
+      cases.push_back(col(lm.interior, kSurface));
+      cases.push_back(col(lm.abyss, kSurface));
+    }
     std::vector<std::string> actual;
     for (auto& k : cases) {
       const TerrainGenerator gen(k.seed);
@@ -518,7 +546,7 @@ TEST_SUITE("worldgen: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 5\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 6\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);
