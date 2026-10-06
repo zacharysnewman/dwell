@@ -14,14 +14,17 @@ const yaw = (page: Page) =>
   page.evaluate<number>('globalThis.__dwell ? globalThis.__dwell.view().yaw : 0');
 
 type Point = { x: number; y: number; id: number };
+/** `timestamp`: the event's time (s since the epoch); unset, the browser stamps it on arrival. */
 async function touch(
   cdp: CDPSession,
   type: 'touchStart' | 'touchMove' | 'touchEnd',
   points: Point[],
+  timestamp?: number,
 ) {
   await cdp.send('Input.dispatchTouchEvent', {
     type,
     touchPoints: type === 'touchEnd' ? [] : points.map((p) => ({ x: p.x, y: p.y, id: p.id })),
+    ...(timestamp === undefined ? {} : { timestamp }),
   });
 }
 
@@ -83,9 +86,12 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
     )
     .toBe(true);
   const cdp = await page.context().newCDPSession(page);
+  // A tap lifts 50 ms after it lands. Stamped on arrival instead, a slow frame between the two
+  // events could stretch it past TAP_MS, and the game would rightly take it for a look drag.
   const tap = async (x: number, y: number, id: number) => {
-    await touch(cdp, 'touchStart', [{ x, y, id }]);
-    await touch(cdp, 'touchEnd', []);
+    const t = Date.now() / 1000;
+    await touch(cdp, 'touchStart', [{ x, y, id }], t);
+    await touch(cdp, 'touchEnd', [], t + 0.05);
   };
   const center = async (selector: string) => {
     const box = await page.locator(selector).boundingBox();
