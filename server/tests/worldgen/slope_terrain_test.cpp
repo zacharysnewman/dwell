@@ -40,8 +40,12 @@ std::optional<std::array<int, 4>> CornersOfVoxel(MaterialId m) {
   return std::array<int, 4>{c[0], c[1], c[2], c[3]};
 }
 
-// Sites with gentle ground, hills and mountains (seed 0): the origin and a mountain range.
-constexpr std::pair<int, int> kSteepSites[] = {{0, 0}, {512, 1536}};
+// Sites with gentle ground, hills and mountains (seed 0): the origin and the nearest mountains.
+std::vector<std::pair<int, int>> SteepSites(const TerrainGenerator& gen) {
+  std::vector<std::pair<int, int>> sites{{0, 0}};
+  if (const auto m = dwell::testing::FindBiome(gen, Biome::kMountains)) sites.push_back(*m);
+  return sites;
+}
 
 // The top terrain cell of a column near its surface (y and state), if it has a clean surface.
 std::optional<std::pair<int, MaterialId>> TopOf(VoxelWorld& world, const TerrainGenerator& gen,
@@ -72,8 +76,12 @@ TEST_SUITE("worldgen: slopes") {
     const TerrainGenerator gen(0);
     int shaped = 0, total_surface = 0;
     for (int cz = -2; cz <= 2; ++cz)
-      for (int cx = -2; cx <= 2; ++cx)
-        for (int cy = -1; cy <= 0; ++cy) {
+      for (int cx = -2; cx <= 2; ++cx) {
+        // The chunk layers around the surface (which, inland, lies well above sea level).
+        const int surface = dwell::worldgen::FloorDiv(
+            static_cast<int>(gen.ColumnAt(cx * kChunkSize + 16, cz * kChunkSize + 16).height),
+            kChunkSize);
+        for (int cy = surface - 1; cy <= surface; ++cy) {
           Chunk chunk;
           gen.Generate({cx, cy, cz}, chunk, TerrainGenerator::kAllStages);
           for (const MaterialId m : chunk.voxels()) {
@@ -84,6 +92,7 @@ TEST_SUITE("worldgen: slopes") {
             total_surface += m != Materials::kAir && m != Materials::kWater;
           }
         }
+      }
     MESSAGE(shaped << " shaped voxels of " << total_surface << " solid ones");
     CHECK(shaped > 2000);
   }
@@ -238,7 +247,7 @@ TEST_SUITE("worldgen: slopes") {
     const TerrainGenerator gen(0);
     VoxelWorld world = SlopeWorld(gen);
     int shaped = 0, unsupported = 0;
-    for (const auto& [cx, cz] : kSteepSites)
+    for (const auto& [cx, cz] : SteepSites(gen))
       for (int z = cz - 48; z < cz + 48; ++z)
         for (int x = cx - 48; x < cx + 48; ++x) {
           const auto top = TopOf(world, gen, x, z);
@@ -259,7 +268,7 @@ TEST_SUITE("worldgen: slopes") {
     const TerrainGenerator gen(0);
     VoxelWorld world = SlopeWorld(gen);
     int steps = 0, bare = 0;
-    for (const auto& [cx, cz] : kSteepSites)
+    for (const auto& [cx, cz] : SteepSites(gen))
       for (int z = cz - 48; z < cz + 48; ++z)
         for (int x = cx - 48; x < cx + 48; ++x) {
           const auto a = TopOf(world, gen, x, z);

@@ -9,6 +9,8 @@
 // player has no teleport). Positions come from the terrain generator's map for seed 7: a coast
 // 60 m east of the spawn, a forest edge 300 m west, a 190 m mountain range 1.2 km north-west.
 // Headless Chromium draws in software, slowly; each view waits for the world to finish loading.
+// For a quick look at the terrain alone (no trees, blocks or the game's lighting), use the native
+// `dwell_worldgen_inspect <seed> view out.png x y z yaw pitch`: a PNG in seconds, no browser.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from '@playwright/test';

@@ -6,6 +6,8 @@
 
 /** Biome colours, indexed by worldgen::Biome (ocean, beach, plains, forest, desert, snowy, mountains). */
 export const BIOME_COLORS = [0x2f5fa8, 0xd8cc8f, 0x7fb04a, 0x3e7a2e, 0xd9c17a, 0xeef2f5, 0x8a8580];
+/** River and lake water (Phase 11a), drawn over the biome where the ground lies below it. */
+export const WATER_COLOR = 0x3fa8d8;
 export const BIOME_NAMES = ['ocean', 'beach', 'plains', 'forest', 'desert', 'snowy', 'mountains'];
 
 /** Columns per map edge. */
@@ -45,6 +47,8 @@ export interface MapColumn {
   height: number;
   biome: number;
   outside: boolean;
+  /** Under river or lake water (not the sea): the ground is below the column's water level. */
+  river: boolean;
 }
 
 /** Column (i, j) of a map (i along +x, j along +z). */
@@ -55,6 +59,7 @@ export function mapColumn(bytes: Uint8Array, n: number, i: number, j: number): M
     height: raw >= 0x8000 ? raw - 0x10000 : raw,
     biome: bytes[o + 2] ?? 0,
     outside: ((bytes[o + 3] ?? 0) & 1) !== 0,
+    river: ((bytes[o + 3] ?? 0) & 2) !== 0,
   };
 }
 
@@ -78,7 +83,7 @@ export function mapPixels(
       const slope = (east - c.height) / Math.min(step, 256);
       let shade = 1 - Math.max(-0.35, Math.min(0.35, slope * 0.8));
       if (c.height < 0) shade *= Math.max(0.45, 1 + c.height / 400);
-      const color = BIOME_COLORS[c.biome] ?? 0xff00ff;
+      const color = c.river ? WATER_COLOR : (BIOME_COLORS[c.biome] ?? 0xff00ff);
       out[o] = ((color >> 16) & 0xff) * shade;
       out[o + 1] = ((color >> 8) & 0xff) * shade;
       out[o + 2] = (color & 0xff) * shade;

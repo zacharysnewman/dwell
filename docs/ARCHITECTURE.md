@@ -98,7 +98,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 6, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 7, §6.3) by
    default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
@@ -519,12 +519,13 @@ The pipeline structure below (deterministic stages, lattice-sampled fields, orde
 features) is architecture; its current *content* — the biomes, surface materials, ores, trees and
 boulders — is prototype (§6.1).
 
-**[built, Phases 7 and 10; planned, 11–12]** The world's look and shape are redesigned in
+**[built, Phases 7, 10 and 11a; planned, 11b–12]** The world's look and shape are redesigned in
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a first pass at a warm, colourful fantasy palette,
 lighting and sky, rendering only (Phase 7, built); continents from Voronoi plates with guaranteed
 ocean between them (Phase 10, built: *Continents from Voronoi plates* below); drainage-consistent
-terrain — rivers as noise contours in valley floors, water above sea level, climate, a biome table
-and colourful accent vegetation (Phase 11, planned); and a full hemispherical dome over the disc
+terrain — rivers as noise contours in valley floors, lakes and water above sea level (Phase 11a,
+built: *Rivers, lakes and water above sea level* below), then the mountain detail cascade, climate, a
+biome table and colourful accent vegetation (Phase 11b–c, planned); and a full hemispherical dome over the disc
 (radius 8,192 km) sparsely filled with sky islands, which raises the world's ceiling from 6,144 m
 to the dome, makes the LOD octree 3D above level 8 and changes `LodIndex` (Phase 12, planned).
 **[planned, Phase 13]** The world becomes **bifacial**: a
@@ -533,23 +534,32 @@ terrain and dome, and gravity toward the midplane on both sides ([`BIFACIAL_WORL
 Nothing below changes for the planned phases until they land; each updates this section, §6.6
 and §5 as it does.
 
-**Built (Phases 3a, 3c, 10):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
-`src/worldgen/`) is **generator version 6** (3c: the planet-scale world as version 3; Phase 4 adds
+**Built (Phases 3a, 3c, 10, 11a):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
+`src/worldgen/`) is **generator version 7** (3c: the planet-scale world as version 3; Phase 4 adds
 super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; Phase 10
 replaces the land/sea noise with the plate layout as version 6, whose slope rule the 0.4.1 patch
-fixes in place, below; versions 2–5 are retired — a world
+fixes in place, below; Phase 11a adds rivers, lakes and water above sea level as version 7;
+versions 2–6 are retired — a world
 saved with one loads as the flat world; the version launcher opens the build that saved it, §2.1) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
 tests and movement work. Players spawn at the generator's spawn point: the first level, open,
-tree-free land found in an 8 m spiral from the origin. A chunk takes ~1.2 ms to generate natively
-(Release) and ~1.5 ms in WASM, anywhere in the world (`dwell_worldgen_inspect`). Debug tooling:
+tree-free dry land found in an 8 m spiral — around the nearest river or lake within 288 m of the
+origin if there is one (a spawn beside water), else around the origin. A chunk takes ~1 ms to generate natively
+(Release; ~1.5 ms in WASM at Phase 10, not re-measured since), anywhere in the world (`dwell_worldgen_inspect`). Debug tooling:
 `dwell_worldgen_inspect [seed] [x] [z] [m/char] [slice]` prints an ASCII biome/height map (with
 biome shares, timings, and the spawn; blank beyond the rim) or a 1:1 vertical section, at any
 coordinates; **(Phase 10)** `dwell_worldgen_inspect [seed] disc out.ppm [km/px] [continents|height]`
 writes the whole disc as a PPM (land by continent id, islands, internal plate edges, the sea shaded by
 distance from the coast; or a hill-shaded height map from the full pipeline) and prints the
 continents' areas and the land share, `… [seed] stats [seeds]` tabulates the layout over many
-seeds, and `… [seed] bench` times chunk and LOD generation (reported in every worldgen change). In
+seeds, and `… [seed] bench` times chunk and LOD generation (reported in every worldgen change);
+**(Phase 11a)** `… [seed] map out.ppm x z [pixels] [m/px] [hillshade|biome|valley]` writes a local
+area as a PPM: relief lit from the north-west with rivers, lakes and the sea in blue (shaded by
+depth), the biomes, or the valley floor `V` with the channels' wetness; `… [seed] view out.png x y z yaw
+pitch [w h range fov]` is a first-person terrain screenshot without a browser — a multithreaded ray
+march of the generator's heightfield (relief, biome colours, water by depth, haze), ~1.5 s for
+800×450 — for reviewing generator changes; the browser script `client/scripts/shots.ts` stays for the
+game's own look (trees, blocks, lighting, LOD). In
 game (Phase 3e), F4 shows the terrain's biome/height map around the player — and, since Phase 10,
 `-` and `=` zoom it out and in, from 8 m per column (1 km across) to the whole disc (128 km per
 column) — and the F3 overlay the player's chunk regenerated and diffed against the world's; the overlay's **Copy
@@ -576,7 +586,8 @@ A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
   translations in double precision, and debug lines are drawn relative to their first point. The
   player controller suite, golden trace and netcode tests run both at the origin and ~8,000 km
   from it (`--dwell-origin-x=far`), natively and in WASM, with the same results.
-- **Scale of terrain:** (prototype content, §6.1) since generator version 6 (Phase 10), **12–13
+- **Scale of terrain:** (prototype content, §6.1) since generator version 6 (Phase 10; version 7 adds
+  rivers, lakes and valley floors on top, *Rivers, lakes and water above sea level* below), **12–13
   continents** of ~2–7.5 million km² in cells of 2,560 km — a quarter to a third of the disc is land —
   with at least 300 km of open ocean between any two, island chains in the ocean, an ocean ring
   512 km wide at the rim, and an ocean floor of continental shelf, slope and abyss (−1,200 to
@@ -624,6 +635,47 @@ come from a layout, a pure function of (seed, world coordinates) like every stag
   follows the shelf (to −150 m at its edge, 80–160 km out), the continental slope and the abyss.
   Hills and ranges begin 0.5 km offshore of the coast and are full 4 km inland.
 
+#### Rivers, lakes and water above sea level **[built, Phase 11a]**
+([ADR 0018](./adr/0018-drainage-consistent-terrain.md); design in
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.2–3.3; `worldgen/rivers.h`, `rivers.cpp`, and
+`Finish` in `terrain.cpp`.) Land is a **valley floor** `V` with relief standing away from the rivers:
+`height = V + D × relief − carve`.
+- **Rivers are the zero contours of three Perlin noises** (great river 200 km, river 6 km, stream
+  1.5 km wavelength), each on a hash-shifted lattice (Perlin is exactly zero at lattice points, which
+  would put every tier through the origin), the small ones displaced by a meander noise (700 m), the
+  great one by a 30 km one (2.5 km), and the small ones present only where a 12 km *spring* noise is
+  high (so they begin and end as gullies). Channels are carved into `V` with a `(1 − s)⁴` profile
+  (14 m, 6 m and 2.5 m deep), fading out where the undamped relief above `V` is large (streams above
+  ~0.6–1.8 km of relief, rivers ~0.15–0.8 km, great rivers on the 3–5.5 km massifs).
+- **`V` is smooth** (the layout's macro-lattice coast distance, never the local octaves): the shore's
+  2 m for the first 5 km, the coast's lowland and the continent's elevation from 5 to 30 km inland,
+  a slow rise `250 m × (s / (s + 150 km))²`, uplift belts along convergent plate edges (120 m of
+  `V`, 900 m of relief within 60 km) and 12 % of the ranges' relief. Great rivers therefore meet the
+  sea at sea level. The relief (the old hills — now never below zero, so the ground is never below `V`
+  — mountains, ranges, belts) is multiplied by **D**, the product over the tiers of a smoothstep of
+  |noise|: 0 in a bed, 1 away from every channel, so every river lies in a valley and ridges stand
+  between rivers.
+- **Water above sea level** is `Column::water`: open voxels below it are water (sea level, or the
+  surface of the river or lake in the column). A river's surface is a **terrace** of `V − 1 m`
+  (boundaries every 4 m, each moved by a hashed −1, 0 or +1: steps of 2–6 m; sea level below the
+  first), taken per column from the interpolated `V` and never interpolated itself, so the step
+  between two pools is a vertical face — a **waterfall**. Lakes (a 12 km grid, 35 % of cells, ≥ 20 km
+  inland, 0.7–2.0 km in radius) have a flat surface (the terrace of `V` at the centre less 3 m), a
+  bowl-shaped bed and a berm around the shore. Water is static; edits behave as before.
+- **Under water**: caves start 12 m deeper below any channel, lake or sea floor shallower than 40 m;
+  overhangs shrink to 1–2.5 m on most land (they were up to 17 m) and vanish in channels; beds are
+  gravel (deep) or sand.
+- **Level of detail**: `GenerateLod` samples the same fields at cell centres; a tier narrower than a
+  cell widens to one cell and the stream (16 m cells) and river (128 m) tiers drop out at coarser
+  levels, the great river and the lakes stay. `SkyFloor`/`IsAirChunk` and `LodBoundsAt` count water
+  above sea level as terrain.
+- **Checks** (`rivers_test.cpp`): beds are no higher than the ground 50–500 m to either side
+  (800 m–2.5 km for great rivers); great rivers' water is at sea level within 5 km of the coast
+  (12 mouths over 4 seeds); no water voxel has air below it and every horizontal water/air contact is
+  a step down to a lower pool (143,000 water voxels, 564 such contacts, 0 elsewhere); no cave air in
+  the 12 m under any water; the terrace steps are 2–6 m; chunks with water are never taken for air;
+  and the spawn is beside water where there is some.
+
 #### Generator pipeline **[built]**
 Executed per chunk. Every stage reads only noise and hashes of world coordinates, never another
 chunk's data, so chunks can be generated in any order and in parallel. 2D fields are sampled on a
@@ -637,23 +689,26 @@ arithmetic, so features placed by point queries agree with the chunks.
    (ocean, beach, plains, forest, desert, snowy, mountains) is the dominant one after height rules.
    Version 3 adds the planet-scale fields (a 262 km fBm that now modulates relief, a 49 km ridged
    fBm for ranges).
-2. **Base height (2D).** On land a continentalness spline (coast ~2 m → uplands ~40 m; sea level
-   0) plus the continent's elevation; at sea the shelf, slope and abyss profile of the coast
-   distance (ocean floor ~−1,500 m); plus biome-blended hills (fBm, amplitude 4–12 m by biome),
-   plus ridged fractal mountains where continentalness is high and erosion low (up to ~190 m),
-   plus the planet-scale ranges (1,800 m at a crest, 5,400 m where the 262 km field is highest:
-   the massifs of version 4).
+2. **Base height (2D).** On land the valley floor `V` (above: a smooth rise from the shore's 2 m
+   with the continent's elevation, belts and a share of the ranges) plus `D` × the relief — the
+   biome-blended hills (amplitude 4–12 m, never negative), ridged fractal mountains where
+   continentalness is high and erosion low (up to ~190 m) and the planet-scale ranges (1,800 m at a
+   crest, 5,400 m where the 262 km field is highest: the massifs of version 4) — less the rivers'
+   carve and with lakes cut in; at sea the shelf, slope and abyss profile of the coast distance
+   (ocean floor ~−1,500 m) plus the hills.
 3. **Density (3D).** `density = (height − y) + overhang × overhangNoise3D(x, y, z)`; solid where
-   `density > 0`. The overhang amplitude is ~3.5 m on land and up to ~17 m in mountains, giving
-   overhangs and cliffs.
+   `density > 0`. The overhang amplitude is 1–2.5 m on land and up to ~10 m on mountain faces (version
+   7; it was ~3.5 m and up to ~17 m), giving overhangs and cliffs, and zero in river channels and
+   lakes.
 4. **Caves (3D).** Carve "spaghetti" tunnels (`a² + b² < t` of two noises) and "cheese" caverns
-   (one noise above a threshold), faded in from 3 m to 15 m below the surface and out just above
-   the bedrock.
+   (one noise above a threshold), faded in from 3 m to 15 m below the surface (15 m to 27 m under a
+   river, a lake or a shallow sea floor) and out just above the bedrock.
 5. **Surface & strata.** A top-down column pass counts solid voxels below open sky or sea (cave
    air does not start a surface): grass over dirt (plains, forest, mountain slopes), snow over dirt
    (snowy; mountain tops above 900 m), sand over sandstone (desert, beach), sand or gravel under
-   water, bare stone on steep slopes; stone below. Open space below `SEA_LEVEL` fills with water;
-   the bottom `BEDROCK_LAYERS` are bedrock.
+   water, bare stone on steep slopes; stone below. Open space below the column's water level
+   (`Column::water`: sea level, or a river's or lake's surface) fills with water; the bottom
+   `BEDROCK_LAYERS` are bedrock.
 5b. **Slopes [built, Phase 9c]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §5). Each column has a
    *continuous surface*: the highest zero of its density going down from the sky, closed-form per
    lattice layer (density is linear in y between layers), valid only where solid cells lie under it
@@ -672,7 +727,7 @@ arithmetic, so features placed by point queries agree with the chunks.
    filled solid. Neighbouring cells, and chunks, share corners, so nothing reads a neighbour's data
    (a chunk computes the surface of every column next to one near it). Columns among whose nine
    columns one has no clean surface (a cave or overhang pocket at the surface) stay cubes. The
-   material is the column's surface material; shapes under `SEA_LEVEL` are flooded. Sampled over
+   material is the column's surface material; shapes below the column's water level are flooded. Sampled over
    generated terrain, 99.8 % of shaped columns lie within half a block of the continuous surface
    (worst 0.72 m); neighbouring shaped cells at the same level differ at their shared edge by at
    most half a block (in 5.7 % of pairs, where the nearest-piece rule bends a corner or a steep cell
@@ -686,7 +741,7 @@ arithmetic, so features placed by point queries agree with the chunks.
    the chunk path cell for cell across chunk borders. Slopes cost ~25 % more per chunk
    (10.5 ms against 8.4 ms, Debug).
 6. **Stability pass.** Solid components that do not touch a chunk face and have fewer than 48
-   voxels are removed (to water in open sea, otherwise air), so newly generated terrain does not
+   voxels are removed (to water in open water, otherwise air), so newly generated terrain does not
    collapse the first time a nearby voxel changes. The check is within the chunk: a piece that
    crosses a chunk border is kept. Large generated overhangs are allowed and are subject to normal
    integrity rules once edited.
@@ -714,7 +769,8 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   pipeline for two seeds — surface, caves, deep rock, bedrock, sky, the top of the world, ocean,
   mountains, the rim, terrain ~8,000 km out, and a massif ~5.4 km up — and, since Phase 10, for
   both seeds a coast, the middle of an ocean gap between two continents (its seabed and the water
-  over it), an island, another continent's interior and the abyss; CI runs it natively and under
+  over it), an island, another continent's interior and the abyss, and, since Phase 11a, a lake, a
+  stream, a river, a great river and a waterfall; CI runs it natively and under
   WASM (Node) and in the client's worldgen module.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
@@ -1153,13 +1209,19 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
   top, as `Downsample` keeps it (`lod: sea`). Every level draws water as the chunks do: a
   see-through surface (opacity 0.55, visible from both sides) 1/8 m below the cell grid, where the
-  chunks' water surface sits (the mesher's `waterDrop`, in cells), over the floor at its true
+  chunks' water surface sits (the mesher's `waterDrop`, in cells; river and lake water, whose
+  surface is a whole metre as the sea's is, sits the same way — Phase 11a), over the floor at its true
   depth — so near and distant water join without a step, a seam or a change of look. (Opaque
   water blocks, then a floor tinted as seen through water from level 3, came first; the tint
   showed a seam, a brighter band and a hard edge where it began, in playtests.) All LOD sections'
   water is one three.js `BatchedMesh` (`render/three/meshBatch.ts`): one draw call per pass,
   sorted and culled per section. Drawn per section it added ~25% more draw calls in a coastal
   view; batched it is within a few percent of the tinted floor's, for ~3–8% more triangles.
+- **Known limit (found in Phase 11a):** from level 8 (256 m cells) a section covers kilometres of the
+  ranges, whose finer octaves the level drops, so its columns' surfaces average ~60–120 m below a
+  point sample of the full-detail terrain inland in ranges (the test bounds the bias up to level 7,
+  `lod: column surfaces`). It predates 11a (measured with rivers off); 11b's detail cascade revisits
+  the octaves dropped by level.
 - **Column surfaces** (true heights at a distance): a cell counts as filled from its bottom voxel,
   so drawing each column's top cell to its top lifted the ground by up to a cell — ~220 m at level
   8, ~2 km at level 12 — and seas to +2,048 m (level 12) and +6,144 m (level 13): the horizon
@@ -2058,7 +2120,7 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 14 | ~~Own subdomain for the client~~ | **Deferred:** out of scope — see [`FUTURE.md`](./FUTURE.md) (ADR 0005) |
 | 15 | ~~Friend-world host migration~~ | **Resolved:** no migration; sessions end with the host — [ADR 0009](./adr/0009-friend-world-lifetime.md). Migration and paid cloud worlds in [`FUTURE.md`](./FUTURE.md) |
 | 16 | ~~Dedicated servers accepting WebRTC~~ | **Resolved** with #13 — [ADR 0008](./adr/0008-dedicated-server-transports.md) |
-| 17 | Water above sea level: terraced static water in river channels and lakes vs. other approaches | Terraced static water with waterfall steps; decide by ADR in Phase 11 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
+| 17 | ~~Water above sea level: terraced static water in river channels and lakes vs. other approaches~~ | **Resolved (Phase 11a):** rivers as noise contours in valley floors, static water at a terraced surface below the valley floor with waterfall steps, lakes with flat surfaces — [ADR 0018](./adr/0018-drainage-consistent-terrain.md), [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.3 |
 | 18 | Sky islands: archipelago layout and presence over altitude, the dome's surface (wall, kill boundary or visible shell), island anchors for integrity | Decided 2026-10-05: a full hemispherical dome over the whole disc (radius 8,192 km), the world's ceiling raised to it; islands from the Aether density field ([spec](./reference/aether-floating-islands.md)) in sparse archipelagos above the ground band, existing blocks only. The rest decided by ADRs in Phase 12 — [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.8 |
 | 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05): **resolved for identity by [ADR 0015](./adr/0015-block-registry.md) (Phase 8)**; `flooded` for slopes under water and the shapes are decided by Phase 9's ADR — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) |
 | 20 | ~~Release pipeline: versions loaded from tags, worlds locked to their compatibility line~~ | **Resolved:** one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`, SemVer 2.0.0 from `0.1.0`, worlds opening only in builds of their version's compatibility line at or after the version that last saved them, all rights reserved — [ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md) |

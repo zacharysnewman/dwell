@@ -81,6 +81,9 @@ constexpr Knot kShelfProfile[] = {{0.0f, 2.0f},   {0.005f, -1.0f}, {0.03f, -6.0f
 
 float Clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+// Amplitude (m) of the 3D overhang noise: a metre or two on most land, more on mountain faces.
+float OverhangAmplitude(float land, float mountain) { return 1.0f + 1.5f * land + 9.0f * mountain; }
+
 // Classification of one voxel before materials are assigned.
 enum Cell : std::uint8_t { kOpenAir, kWater, kCaveAir, kSolid };
 
@@ -91,14 +94,19 @@ Cell Classify(const Column& col, std::int32_t y, Noise&& noise) {
   if (col.outside || y < kWorldMinY || y >= kWorldMaxY) return kOpenAir;
   if (y < kWorldMinY + kBedrockLayers) return kSolid;
   const float fy = static_cast<float>(y);
-  // Above the reach of the overhang noise: open sky (or sea). No noise needed.
-  if (fy > col.height + col.overhang) return y < kSeaLevel ? kWater : kOpenAir;
+  // Above the reach of the overhang noise: open sky (or water). No noise needed.
+  if (fy > col.height + col.overhang) return y < col.water ? kWater : kOpenAir;
   const auto& n = noise();
   const float density = col.height - fy + n.overhang * col.overhang;
-  if (density <= 0.0f) return y < kSeaLevel ? kWater : kOpenAir;
-  // Caves fade in from 3 m to 15 m below the surface and fade out just above the bedrock.
+  if (density <= 0.0f) return y < col.water ? kWater : kOpenAir;
+  // Caves fade in from 3 m to 15 m below the surface and fade out just above the bedrock; under a
+  // river, a lake or a shallow sea they start kCaveClearance deeper, so none drains or breaches
+  // the water (rivers.h).
+  const bool under_water = col.wet > 0.0f || (col.height < static_cast<float>(col.water) &&
+                                              col.height > -rivers::kShallowSea);
   const float fade =
-      Clamp01((col.height - fy - 3.0f) * (1.0f / 12.0f)) *
+      Clamp01((col.height - fy - 3.0f - (under_water ? rivers::kCaveClearance : 0.0f)) *
+              (1.0f / 12.0f)) *
       Clamp01((fy - static_cast<float>(kWorldMinY + kBedrockLayers + 2)) * (1.0f / 12.0f));
   if (fade <= 0.0f) return kSolid;
   const float tunnel = n.spaghetti_a * n.spaghetti_a + n.spaghetti_b * n.spaghetti_b;
@@ -113,7 +121,7 @@ MaterialId SurfaceMaterial(const Column& col, int run, bool under_water, std::in
   if (run >= 8) return M::kStone;
   if (under_water) {
     if (run >= 3) return M::kStone;
-    return col.height < static_cast<float>(kSeaLevel - 8) ? M::kGravel : M::kSand;
+    return col.height < static_cast<float>(col.water - 8) ? M::kGravel : M::kSand;
   }
   const bool steep = slope >= 3.0f;
   switch (col.biome) {
@@ -187,7 +195,8 @@ const char* BiomeName(Biome b) {
   return "?";
 }
 
-TerrainGenerator::TerrainGenerator(std::uint64_t world_seed) : continents_(world_seed) {
+TerrainGenerator::TerrainGenerator(std::uint64_t world_seed)
+    : continents_(world_seed), river_seeds_(rivers::MakeSeeds(world_seed)) {
   std::uint32_t stream = 0;
   for (std::uint32_t* s :
        {&seeds_.continent, &seeds_.erosion, &seeds_.temperature, &seeds_.humidity, &seeds_.hills,
@@ -199,9 +208,28 @@ TerrainGenerator::TerrainGenerator(std::uint64_t world_seed) : continents_(world
 
 // --- 1–2: climate and base height -----------------------------------------------------------
 
+// A lake's surface from its centre: the terraced valley floor there, minus the freeboard — the
+// terrain's own valley floor at the centre (Finish without rivers), so a lake always lies in a
+// valley. No lake near the sea (inland by kLakeInland).
+struct TerrainGenerator::LakeOracle final : rivers::LevelOracle {
+  explicit LakeOracle(const TerrainGenerator& g) : gen(g) {}
+  float LakeLevel(std::int64_t x, std::int64_t z) const override {
+    const Column site = gen.Finish(gen.SampleBase(x, z));
+    if (site.coast < rivers::kLakeInland) return rivers::kNoLevel;
+    return rivers::TerraceSurface(gen.river_seeds_.terrace, site.valley - rivers::kLakeFreeboard);
+  }
+  const TerrainGenerator& gen;
+};
+
 TerrainGenerator::Corner2 TerrainGenerator::SampleCorner2(std::int32_t lx, std::int32_t lz) const {
   // World coordinates stay integers; noise splits them per octave (noise.h, ADR 0011).
   const std::int64_t x = std::int64_t{lx} * kLattice, z = std::int64_t{lz} * kLattice;
+  Corner2 c = SampleBase(x, z);
+  c.water = rivers::Sample(river_seeds_, x, z, 0, LakeOracle(*this));
+  return c;
+}
+
+TerrainGenerator::Corner2 TerrainGenerator::SampleBase(std::int64_t x, std::int64_t z) const {
   Corner2 c;
   c.continentalness = Fbm2(seeds_.continent, x, z, 1400, 5);
   c.erosion = Fbm2(seeds_.erosion, x, z, 700, 3);
@@ -221,7 +249,7 @@ TerrainGenerator::Corner2 TerrainGenerator::SampleCorner2(std::int32_t lx, std::
   return c;
 }
 
-Column TerrainGenerator::Finish(const Corner2& c) {
+Column TerrainGenerator::Finish(const Corner2& c) const {
   Column col;
   // Fractal Perlin sums rarely leave ±0.5; stretch the climate fields to about ±1.
   const float macro = Clamp(c.macro * 2.2f, -1.0f, 1.0f);
@@ -262,27 +290,109 @@ Column TerrainGenerator::Finish(const Corner2& c) {
   // Kilometre-scale ranges on large landmasses; deep basins under large oceans.
   const float range = SmoothStep(0.15f, 0.55f, macro) * land * c.relief * c.relief;
   const float massif = SmoothStep(0.4f, 0.85f, macro);
-  // The base: on land the coast's lowland rising to the continent's interior (its elevation); at
-  // sea the shelf out to its edge, the continental slope, and the abyss.
-  float base;
-  if (coast > 0.0f) {
-    base = Spline(kLandHeight, cont) + c.elevation * rise;
-  } else {
+  const float range_height = range * (kMacroReliefHeight + massif * kMassifHeight);
+  // At sea the shelf out to its edge, the continental slope, and the abyss.
+  if (coast <= 0.0f) {
     const float u = -coast / c.shelf;  // shelf widths offshore
     const float abyss = kAbyssDepth + 300.0f * macro;
-    base = u <= kShelfEnd ? Spline(kShelfProfile, u)
-                          : Lerp(kShelfDepth, abyss, SmoothStep(kShelfEnd, kSlopeFoot, u));
+    const float base = u <= kShelfEnd
+                           ? Spline(kShelfProfile, u)
+                           : Lerp(kShelfDepth, abyss, SmoothStep(kShelfEnd, kSlopeFoot, u));
+    col.valley = base;
+    col.height = base + c.hills * hill_amplitude * (0.35f + 0.65f * land);
+    col.water = kSeaLevel;
+    col.mountain = std::max(col.mountain, SmoothStep(0.05f, 0.25f, range));
+    col.overhang = OverhangAmplitude(land, col.mountain);
+    col.biome = col.height < static_cast<float>(kSeaLevel) - 1.0f ? Biome::kOcean : Biome::kBeach;
+    return col;
   }
-  col.height = base + c.hills * hill_amplitude * (0.35f + 0.65f * land) +
-               col.mountain * (18.0f + c.ridges * 150.0f) +
-               range * (kMacroReliefHeight + massif * kMassifHeight);
+
+  // On land (WORLD_GENERATION.md §3.2): the valley floor V — the coast's plain, the lowland rising
+  // to the continent's interior, a slow rise inland, uplift belts along convergent plate edges and
+  // a share of the ranges' relief — and the relief that stands on it, damped near the rivers
+  // (D = 0 in a channel's bed, 1 away from every channel), less the channels' carve.
+  const float belt = Clamp(c.convergence, 0.0f, 1.0f) *
+                     SmoothStep(rivers::kBeltReach, rivers::kBeltCore, c.plate_edge);
+  // V reads the layout's own (macro lattice) coast distance, not the local 1.4 km octaves that
+  // roughen continentalness: a valley floor must be smooth for a river to follow it, and the water
+  // surfaces cut from it flat (WORLD_GENERATION.md §3.2).
+  const float coast_v = c.coast > 0.0f ? c.coast : 0.0f;
+  const float rise_v = coast_v / (coast_v + kInlandRise);
+  const float inland = coast_v / (coast_v + rivers::kValleyHalf);
+  const float plain = SmoothStep(rivers::kPlainStart, rivers::kPlainEnd, coast_v);
+  const float lowland = Spline(kLandHeight, rise_v * 0.85f) - rivers::kCoastPlain +
+                        c.elevation * rise_v + rivers::kBeltValley * belt +
+                        rivers::kMountainValley * range_height;
+  const float valley =
+      rivers::kCoastPlain + lowland * plain + rivers::kValleyRise * inland * inland;
+  col.valley = valley;
+  const float hills_up = Clamp01(0.5f + c.hills * 0.9f);  // ≥ 0: the ground never dips below V
+  const float relief = hills_up * hill_amplitude * (0.35f + 0.65f * land) +
+                       col.mountain * (18.0f + c.ridges * 150.0f) +
+                       (1.0f - rivers::kMountainValley) * range_height +
+                       belt * rivers::kBeltRelief * c.ridges;
+
+  // Rivers: the distance factor and the channels' carve, tier by tier.
+  const float tier_noise[3] = {c.water.rg, c.water.r1, c.water.r2};
+  const float tier_widen[3] = {c.water.wg, c.water.w1, c.water.w2};
+  const rivers::Tier* const tiers[3] = {&rivers::kGreat, &rivers::kRiver, &rivers::kStream};
+  float distance = 1.0f, carve = 0.0f, river_wet = 0.0f;
+  // The lake's squared radius scales the rivers out near its shore.
+  const bool lake = c.water.lake_level > rivers::kNoLevel * 0.5f;
+  const float lake_clear =
+      lake ? SmoothStep(rivers::kLakeRiverZero, rivers::kLakeRiverFull, c.water.lake_q) : 1.0f;
+  for (int t = 0; t < 3; ++t) {
+    const rivers::Tier& tier = *tiers[t];
+    const float a = tier_noise[t] < 0.0f ? -tier_noise[t] : tier_noise[t];
+    // Away from the channel, banks and valley: no relief damping and no channel. A tier dropped for
+    // a level-of-detail cell reads 1 (rivers.h): the mean of its ramp.
+    if (a >= 1.0f) {
+      distance *= rivers::kDroppedFactor;
+      continue;
+    }
+    if (a < tier.full) distance *= SmoothStep(tier.core, tier.full, a);
+    // The channel, widened to a cell for the level of detail (the valley is not).
+    const float ac = a / tier_widen[t];
+    if (ac >= tier.bank) continue;
+    const float edge = 1.0f - SmoothStep(tier.core, tier.bank, ac);
+    const float edge2 = edge * edge;
+    static_assert(rivers::kProfileSharpness == 4, "the profile below is (1 − s)⁴");
+    const float channel = edge2 * edge2;
+    const float spring = SmoothStep(tier.spring_lo, tier.spring_hi, c.water.spring);
+    const float w = channel * SmoothStep(tier.fade_hi, tier.fade_lo, relief) * lake_clear * spring;
+    carve = std::max(carve, w * tier.depth);
+    river_wet = std::max(river_wet, w);
+  }
+  col.height = valley + distance * relief - carve;
+  col.wet = river_wet;
+  col.water = kSeaLevel;
+  if (river_wet > 0.0f) {
+    col.water = std::max(col.water, static_cast<std::int32_t>(rivers::TerraceSurface(
+                                        river_seeds_.terrace, valley - rivers::kFreeboard)));
+  }
+  // Lakes: a bowl below the lake's surface and, beyond the shore, a low berm that keeps the water
+  // from spilling over a lower shore. The shore line is the squared radius 1.
+  if (lake && c.water.lake_q < rivers::kBermTo) {
+    const float q = c.water.lake_q, level = c.water.lake_level;
+    if (q < 1.0f) {
+      const float bed = level - c.water.lake_depth * (1.0f - SmoothStep(0.0f, 1.0f, q));
+      col.height = std::min(col.height, bed);
+      col.water = static_cast<std::int32_t>(level);  // inside the shore the lake's own surface
+      col.lake = true;
+    } else {
+      const float berm = level + rivers::kBermHeight *
+                                     SmoothStep(rivers::kBermFrom, rivers::kBermPeak, q) *
+                                     SmoothStep(rivers::kBermTo, rivers::kBermPeak, q);
+      col.height = std::max(col.height, berm);
+    }
+    col.wet = 1.0f;
+  }
   col.mountain = std::max(col.mountain, SmoothStep(0.05f, 0.25f, range));
-  col.overhang = 2.5f * land + 1.0f + 14.0f * col.mountain;
+  col.mountain = std::max(col.mountain, SmoothStep(0.1f, 0.4f, belt * c.ridges));
+  col.overhang = OverhangAmplitude(land, col.mountain) * (1.0f - col.wet);
 
   const float h = col.height;
-  if (h < static_cast<float>(kSeaLevel) - 1.0f) {
-    col.biome = Biome::kOcean;
-  } else if (col.mountain > 0.45f) {
+  if (col.mountain > 0.45f) {
     col.biome = Biome::kMountains;
   } else if (snowy > 0.5f) {
     col.biome = Biome::kSnowy;
@@ -298,7 +408,7 @@ Column TerrainGenerator::Finish(const Corner2& c) {
   return col;
 }
 
-Column TerrainGenerator::Interp2(const Corner2 (&c)[4], int fx, int fz) {
+Column TerrainGenerator::Interp2(const Corner2 (&c)[4], int fx, int fz) const {
   const float tx = static_cast<float>(fx) * kLatticeStep,
               tz = static_cast<float>(fz) * kLatticeStep;
   const auto bi = [&](float Corner2::*f) {
@@ -319,6 +429,22 @@ Column TerrainGenerator::Interp2(const Corner2 (&c)[4], int fx, int fz) {
   m.elevation = bi(&Corner2::elevation);
   m.shelf = bi(&Corner2::shelf);
   m.continent = c[(fx >= kLattice / 2 ? 1 : 0) + (fz >= kLattice / 2 ? 2 : 0)].continent;
+  // Rivers: the noise is smooth, so it interpolates; a lake's surface is one value for the whole
+  // lake, taken from whichever corner has one (a corner with none carries kNoLevel).
+  const auto wi = [&](float rivers::Corner::*f) {
+    return Lerp(Lerp(c[0].water.*f, c[1].water.*f, tx), Lerp(c[2].water.*f, c[3].water.*f, tx), tz);
+  };
+  m.water.rg = wi(&rivers::Corner::rg);
+  m.water.r1 = wi(&rivers::Corner::r1);
+  m.water.r2 = wi(&rivers::Corner::r2);
+  m.water.wg = wi(&rivers::Corner::wg);
+  m.water.w1 = wi(&rivers::Corner::w1);
+  m.water.w2 = wi(&rivers::Corner::w2);
+  m.water.spring = wi(&rivers::Corner::spring);
+  m.water.lake_q = wi(&rivers::Corner::lake_q);
+  m.water.lake_depth = wi(&rivers::Corner::lake_depth);
+  m.water.lake_level = std::max(std::max(c[0].water.lake_level, c[1].water.lake_level),
+                                std::max(c[2].water.lake_level, c[3].water.lake_level));
   return Finish(m);
 }
 
@@ -329,6 +455,10 @@ Column TerrainGenerator::ColumnAt(std::int32_t x, std::int32_t z) const {
   Column col = Interp2(c, FloorMod(x, kLattice), FloorMod(z, kLattice));
   col.outside = !core::InsideWorldDisc(x, z);
   return col;
+}
+
+rivers::Corner TerrainGenerator::RiversAt(std::int32_t x, std::int32_t z) const {
+  return rivers::Sample(river_seeds_, x, z, 0, LakeOracle(*this));
 }
 
 TerrainGenerator::LandSample TerrainGenerator::LandAt(std::int32_t x, std::int32_t z) const {
@@ -654,10 +784,10 @@ void TerrainGenerator::ShapeSurface(const std::vector<Column>& cols,
         MaterialId* v = here ? &voxels[core::LocalIndex(x, ly, z)] : nullptr;
         if (piece.kind == slopes::Kind::kAir) {
           // A cube the surface lies below: removed (sea fills the hollow).
-          if (v && *v != M::kAir && *v != M::kWater) *v = y < kSeaLevel ? M::kWater : M::kAir;
+          if (v && *v != M::kAir && *v != M::kWater) *v = y < col.water ? M::kWater : M::kAir;
           continue;
         }
-        const bool flooded = y < kSeaLevel;
+        const bool flooded = y < col.water;
         if (v) {
           const MaterialId cube = SurfaceMaterial(col, run, flooded, y, slope);
           if (piece.kind == slopes::Kind::kShaped) {
@@ -702,7 +832,7 @@ std::optional<Feature> TerrainGenerator::TreeInCell(std::int32_t cx, std::int32_
   }
   if (Unit(Mix32(h ^ 0x5bd1e995u)) >= chance) return std::nullopt;
   const auto ground = GroundY(x, z);
-  if (!ground || *ground < kSeaLevel) return std::nullopt;
+  if (!ground || *ground < col.water) return std::nullopt;
   const std::uint32_t r = Mix32(h + 1u);
   const int size =
       kind == Feature::Kind::kOak ? 4 + static_cast<int>(r % 3u) : 6 + static_cast<int>(r % 4u);
@@ -734,7 +864,7 @@ std::optional<Feature> TerrainGenerator::BoulderInCell(std::int32_t cx, std::int
   }
   if (Unit(Mix32(h ^ 0x68e31da4u)) >= chance) return std::nullopt;
   const auto ground = GroundY(x, z);
-  if (!ground || *ground < kSeaLevel) return std::nullopt;
+  if (!ground || *ground < col.water) return std::nullopt;
   const std::uint32_t r = Mix32(h + 7u);
   return Feature{Feature::Kind::kBoulder, x, *ground, z, 1 + static_cast<int>(r % 2u), r};
 }
@@ -812,7 +942,9 @@ float TerrainGenerator::SkyFloor(const std::vector<Column>& cols) {
   // trees from neighbouring columns. Chunks starting above it (and not below sea level) are air.
   float top = -1e9f;
   for (const Column& col : cols) {
-    if (!col.outside) top = std::max(top, col.height + col.overhang);
+    if (!col.outside) {
+      top = std::max(top, std::max(col.height + col.overhang, static_cast<float>(col.water)));
+    }
   }
   return top + static_cast<float>(kTreeReach + 12);
 }
@@ -986,7 +1118,8 @@ void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint
       // Floating debris in open sea becomes water; anywhere else (sky, caves) air.
       for (const int idx : component) {
         const int x = idx & 31, y = (idx >> 5) & 31, z = idx >> 10;
-        const bool sea = y0 + y < kSeaLevel && column(x, z).height < static_cast<float>(kSeaLevel);
+        const Column& col = column(x, z);
+        const bool sea = y0 + y < col.water && col.height < static_cast<float>(col.water);
         voxels[idx] = sea ? M::kWater : M::kAir;
       }
     }
@@ -1094,6 +1227,7 @@ core::LodBounds LodBoundsOf(ColumnOf&& column, std::int64_t cell) {
       }
       b.any_inside = true;
       b.hi = std::max(b.hi, static_cast<double>(col.height + col.overhang + kLodFeatureReach));
+      b.hi = std::max(b.hi, static_cast<double>(col.water));  // river and lake water above the sea
       b.lo = std::min(b.lo, static_cast<double>(col.height - col.overhang * 1.1f -
                                                 static_cast<float>(kLodCaveCells * cell)));
     }
@@ -1207,6 +1341,7 @@ Column TerrainGenerator::ColumnLod(std::int64_t x, std::int64_t z, std::int64_t 
   c.elevation = m.elevation;
   c.shelf = m.shelf;
   c.continent = m.continent;
+  c.water = rivers::Sample(river_seeds_, x, z, cell, LakeOracle(*this));
   Column col = Finish(c);
   col.outside = !core::InsideWorldDisc64(x, z);
   return col;
@@ -1338,7 +1473,7 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
             // sampled (the cell is deeper than the sea) shows its water, as Downsample keeps it.
             const auto top = static_cast<std::int32_t>(
                 std::clamp<std::int64_t>(FloorToInt(col.height), a, a + cell - 1));
-            const bool sea = col.height < static_cast<float>(kSeaLevel);
+            const bool sea = col.height < static_cast<float>(col.water);
             cells[idx] = a + cell <= kWorldMinY + kBedrockLayers ? M::kBedrock
                          : !under_water && sea                   ? M::kWater
                                                : SurfaceMaterial(col, 0, under_water, top, slope);
@@ -1467,48 +1602,75 @@ bool TerrainGenerator::LevelSpawnY(std::int32_t x, std::int32_t z, std::int32_t&
 
 std::array<double, 3> TerrainGenerator::SpawnPoint() const {
   std::optional<std::array<double, 3>> fallback;
-  // Square spiral outwards from the origin in 8 m steps.
-  std::int32_t x = 0, z = 0, dx = 1, dz = 0, leg = 1, walked = 0, turns = 0;
-  for (int n = 0; n < 40000; ++n) {
-    const Column col = ColumnAt(x, z);
-    const bool land = col.height >= static_cast<float>(kSeaLevel + 2) && col.mountain < 0.05f &&
-                      col.biome != Biome::kBeach && col.biome != Biome::kOcean;
-    if (land) {
-      if (const auto g = GroundY(x, z)) {
-        const std::array<double, 3> cube_here{x + 0.5, *g + 1.0, z + 0.5};
-        if (!fallback) fallback = cube_here;
-        // Level ground, slopes included: a 5 × 5 patch whose surface corners lie within half a
-        // block of each other, standing on solid cells with two open cells above.
-        std::int32_t feet = 0;
-        const bool level = LevelSpawnY(x, z, feet);
-        bool clear = level;
-        for (std::int32_t cz = FloorDiv(z - 6, kTreeCell);
-             clear && cz <= FloorDiv(z + 6, kTreeCell); ++cz)
-          for (std::int32_t cx = FloorDiv(x - 6, kTreeCell);
-               clear && cx <= FloorDiv(x + 6, kTreeCell); ++cx)
-            if (const auto t = TreeInCell(cx, cz)) {
-              clear = std::max(std::abs(t->x - x), std::abs(t->z - z)) > 5;
+  // A square spiral outwards from (cx, cz) in 8 m steps, for level open ground.
+  const auto search = [&](std::int32_t cx, std::int32_t cz,
+                          int steps) -> std::optional<std::array<double, 3>> {
+    std::int32_t x = cx, z = cz, dx = 1, dz = 0, leg = 1, walked = 0, turns = 0;
+    for (int n = 0; n < steps; ++n) {
+      const Column col = ColumnAt(x, z);
+      const bool land = col.height >= static_cast<float>(col.water + 2) && col.mountain < 0.05f &&
+                        col.wet == 0.0f && col.biome != Biome::kBeach && col.biome != Biome::kOcean;
+      if (land) {
+        if (const auto g = GroundY(x, z)) {
+          const std::array<double, 3> cube_here{x + 0.5, *g + 1.0, z + 0.5};
+          if (!fallback) fallback = cube_here;
+          // Level ground, slopes included: a 5 × 5 patch whose surface corners lie within half a
+          // block of each other, standing on solid cells with two open cells above. No water in it
+          // (a bank can slope into a river at the patch's edge).
+          std::int32_t feet = 0;
+          bool clear = LevelSpawnY(x, z, feet);
+          for (int pz = -3; clear && pz <= 3; ++pz)
+            for (int px = -3; clear && px <= 3; ++px) {
+              clear = ColumnAt(x + px, z + pz).wet == 0.0f;
             }
-        for (std::int32_t cz = FloorDiv(z - 6, kBoulderCell);
-             clear && cz <= FloorDiv(z + 6, kBoulderCell); ++cz)
-          for (std::int32_t cx = FloorDiv(x - 6, kBoulderCell);
-               clear && cx <= FloorDiv(x + 6, kBoulderCell); ++cx)
-            if (const auto b = BoulderInCell(cx, cz)) {
-              clear = std::max(std::abs(b->x - x), std::abs(b->z - z)) > 6;
-            }
-        if (clear) return {x + 0.5, static_cast<double>(feet), z + 0.5};
+          for (std::int32_t tz = FloorDiv(z - 6, kTreeCell);
+               clear && tz <= FloorDiv(z + 6, kTreeCell); ++tz)
+            for (std::int32_t tx = FloorDiv(x - 6, kTreeCell);
+                 clear && tx <= FloorDiv(x + 6, kTreeCell); ++tx)
+              if (const auto t = TreeInCell(tx, tz)) {
+                clear = std::max(std::abs(t->x - x), std::abs(t->z - z)) > 5;
+              }
+          for (std::int32_t bz = FloorDiv(z - 6, kBoulderCell);
+               clear && bz <= FloorDiv(z + 6, kBoulderCell); ++bz)
+            for (std::int32_t bx = FloorDiv(x - 6, kBoulderCell);
+                 clear && bx <= FloorDiv(x + 6, kBoulderCell); ++bx)
+              if (const auto b = BoulderInCell(bx, bz)) {
+                clear = std::max(std::abs(b->x - x), std::abs(b->z - z)) > 6;
+              }
+          if (clear) return std::array<double, 3>{x + 0.5, static_cast<double>(feet), z + 0.5};
+        }
+      }
+      x += dx * 8;
+      z += dz * 8;
+      if (++walked == leg) {
+        walked = 0;
+        const std::int32_t t = dx;
+        dx = -dz;
+        dz = t;
+        if (++turns % 2 == 0) ++leg;
       }
     }
-    x += dx * 8;
-    z += dz * 8;
-    if (++walked == leg) {
-      walked = 0;
-      const std::int32_t t = dx;
-      dx = -dz;
-      dz = t;
-      if (++turns % 2 == 0) ++leg;
-    }
+    return std::nullopt;
+  };
+
+  // Near water if there is some close to the origin (a river or lake within kWaterSearch m, found
+  // on rings of 32 m steps): search around the nearest of it; else, and if that finds nothing,
+  // around the origin.
+  constexpr std::int32_t kWaterSearch = 288, kWaterRing = 32;
+  const auto nearest_water = [&]() -> std::optional<std::pair<std::int32_t, std::int32_t>> {
+    for (std::int32_t r = kWaterRing; r <= kWaterSearch; r += kWaterRing)
+      for (std::int32_t a = -r; a <= r; a += kWaterRing)
+        for (const auto& [px, pz] :
+             {std::pair{a, -r}, std::pair{a, r}, std::pair{-r, a}, std::pair{r, a}}) {
+          const Column c = ColumnAt(px, pz);
+          if (!c.outside && c.height < static_cast<float>(c.water)) return std::pair{px, pz};
+        }
+    return std::nullopt;
+  };
+  if (const auto water = nearest_water()) {
+    if (const auto s = search(water->first, water->second, 1000)) return *s;
   }
+  if (const auto s = search(0, 0, 40000)) return *s;
   return fallback.value_or(std::array<double, 3>{0.5, kSeaLevel + 1.0, 0.5});
 }
 

@@ -47,7 +47,8 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_create(std::uint32_t generator_version,
 
 // Biome/height map for the in-game overlay (Phase 3e debug tooling): n × n columns from (x0, z0)
 // every `step` metres, row-major along x then z, 4 bytes each — i16 base height (m), u8 biome
-// (worldgen::Biome), u8 flags (1 = beyond the world's disc). Null for generators without a
+// (worldgen::Biome), u8 flags (1 = beyond the world's disc, 2 = under river or lake water: the
+// ground lies below the column's water level, sea excluded — Phase 11a). Null for generators without a
 // terrain map. Valid until the next call.
 EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int step, int n) {
   if (!g_terrain || n <= 0 || n > 512 || step <= 0) return nullptr;
@@ -60,7 +61,8 @@ EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int 
       g_map[i] = static_cast<std::uint8_t>(h);
       g_map[i + 1] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(h) >> 8);
       g_map[i + 2] = static_cast<std::uint8_t>(c.biome);
-      g_map[i + 3] = c.outside ? 1 : 0;
+      g_map[i + 3] = static_cast<std::uint8_t>((c.outside ? 1 : 0) |
+                                               (c.height < static_cast<float>(c.water) && c.water > 0 ? 2 : 0));
     }
   }
   return g_map.data();
