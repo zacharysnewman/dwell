@@ -165,6 +165,12 @@ versioned:
 3. Navigate to `/dwell/v/<version>/` with the same query (minus `version`), by `location.replace`
    (no extra history entry), after checking that the version's `build.json` loads and names it.
 
+**Version page [planned, Phase 6b]:** `/dwell/?versions` lists every published build so players can
+choose one themselves; the main menu links to it. It lives in the launcher because published
+builds are immutable. A choice opens that build for the visit only, so Back to the menu still
+returns to the latest. Worlds stay locked to their line (§6), and the page shows which of the
+player's worlds each build can open.
+
 **Back to the menu always goes to `/dwell/`**, so a player is never stuck in an old version's
 menu. Links shared by players use `/dwell/?…`, never a version path, so they keep working.
 Missing or unreachable versions show a clear message with the choice to open the latest.
