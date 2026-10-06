@@ -41,14 +41,14 @@
 // 0; nothing is generated outside the disc. The terrain's content (biomes, materials, features) is
 // prototype (ARCHITECTURE.md §6.1).
 // Version 8 (ADR 0019): climate at continental scale — temperature and humidity noise of
-// ~1,200 km and ~600 km, a lapse rate (snow lies on high ground), and the mountains biome from relief
-// above the valley floor, so biomes come in regions rather than patches a few hundred metres across.
-// Version 7 (ADR 0018, WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain — three
-// tiers of rivers as noise contours, lakes, and static water above sea level at a terraced surface
-// (waterfall steps); the land is a valley floor V with the relief standing away from the channels.
-// Version 6 (ADR 0017, WORLD_GENERATION.md §2): land and sea come from a plate layout of 11–14
-// continents separated by open ocean, not from noise; continentalness is a signed distance to the
-// coast, from which the shelf, slope, abyss and inland rise follow.
+// ~1,200 km and ~600 km, a lapse rate (snow lies on high ground), and the mountains biome from
+// relief above the valley floor, so biomes come in regions rather than patches a few hundred metres
+// across. Version 7 (ADR 0018, WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain —
+// three tiers of rivers as noise contours, lakes, and static water above sea level at a terraced
+// surface (waterfall steps); the land is a valley floor V with the relief standing away from the
+// channels. Version 6 (ADR 0017, WORLD_GENERATION.md §2): land and sea come from a plate layout of
+// 11–14 continents separated by open ocean, not from noise; continentalness is a signed distance to
+// the coast, from which the shelf, slope, abyss and inland rise follow.
 namespace dwell::worldgen {
 
 enum class Biome : std::uint8_t { kOcean, kBeach, kPlains, kForest, kDesert, kSnowy, kMountains };
