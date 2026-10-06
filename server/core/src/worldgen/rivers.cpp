@@ -146,14 +146,13 @@ float Widen(std::int64_t cell) {
   return one_cell > T.core ? one_cell / T.core : 1.0f;
 }
 
-// Perlin noise (zero on the lattice's points, within ±~0.7) of one tier at (x, z), widened for a
-// cell; 1 (far from any channel) for a tier the cell is too wide to show. The tier is a template
-// argument so that the lattice's divisions are by constants.
+// Perlin noise (zero on the lattice's points, within ±~0.7) of one tier at (x, z); 1 (far from any
+// channel) for a tier the cell is too wide to show. The tier is a template argument so that the
+// lattice's divisions are by constants.
 template <const Tier& T>
 float TierNoise(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int64_t cell) {
   if (T.drop_cell > 0 && cell >= T.drop_cell) return 1.0f;
-  const float v = Perlin2(seed, Lattice(x, T.wavelength), Lattice(z, T.wavelength));
-  return cell <= 0 ? v : v / Widen<T>(cell);
+  return Perlin2(seed, Lattice(x, T.wavelength), Lattice(z, T.wavelength));
 }
 
 struct Meander {
@@ -168,6 +167,7 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
   if (cell >= kLakeSkipCell) {
     // Lakes (≤ 4 km across) and the great river's windings (2.5 km) are sub-cell here.
     c.rg = TierNoise<kGreat>(s.great, x + s.offset_x[0], z + s.offset_z[0], cell);
+    c.wg = Widen<kGreat>(cell);
     return c;
   }
   // From 256 m cells on, neighbouring samples lie in different lattice cells: evaluate directly.
@@ -178,6 +178,7 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
     const std::int64_t gx = FloorToInt(smooth.gx * kGreatMeanderAmplitude);
     const std::int64_t gz = FloorToInt(smooth.gz * kGreatMeanderAmplitude);
     c.rg = TierNoise<kGreat>(s.great, x + gx + s.offset_x[0], z + gz + s.offset_z[0], cell);
+    c.wg = Widen<kGreat>(cell);
   }
   // The two small tiers meander too: sampled at a position displaced by a gentle vector noise.
   const bool small_tiers = cell < kRiver.drop_cell;
@@ -191,6 +192,8 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
                      kMeanderAmplitude);
     c.r1 = TierNoise<kRiver>(s.river, x + m.x + s.offset_x[1], z + m.z + s.offset_z[1], cell);
     c.r2 = TierNoise<kStream>(s.stream, x + m.x + s.offset_x[2], z + m.z + s.offset_z[2], cell);
+    c.w1 = Widen<kRiver>(cell);
+    c.w2 = Widen<kStream>(cell);
     c.spring = smooth.spring;
   }
 

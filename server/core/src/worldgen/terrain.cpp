@@ -335,6 +335,7 @@ Column TerrainGenerator::Finish(const Corner2& c) const {
 
   // Rivers: the distance factor and the channels' carve, tier by tier.
   const float tier_noise[3] = {c.water.rg, c.water.r1, c.water.r2};
+  const float tier_widen[3] = {c.water.wg, c.water.w1, c.water.w2};
   const rivers::Tier* const tiers[3] = {&rivers::kGreat, &rivers::kRiver, &rivers::kStream};
   float distance = 1.0f, carve = 0.0f, river_wet = 0.0f;
   // The lake's squared radius scales the rivers out near its shore.
@@ -346,13 +347,15 @@ Column TerrainGenerator::Finish(const Corner2& c) const {
     const float a = tier_noise[t] < 0.0f ? -tier_noise[t] : tier_noise[t];
     // Away from the channel, banks and valley: no relief damping and no channel. A tier dropped for
     // a level-of-detail cell reads 1 (rivers.h): the mean of its ramp.
-    if (a >= tier.full) {
-      if (a >= 1.0f) distance *= rivers::kDroppedFactor;
+    if (a >= 1.0f) {
+      distance *= rivers::kDroppedFactor;
       continue;
     }
-    distance *= SmoothStep(tier.core, tier.full, a);
-    if (a >= tier.bank) continue;
-    const float edge = 1.0f - SmoothStep(tier.core, tier.bank, a);
+    if (a < tier.full) distance *= SmoothStep(tier.core, tier.full, a);
+    // The channel, widened to a cell for the level of detail (the valley is not).
+    const float ac = a / tier_widen[t];
+    if (ac >= tier.bank) continue;
+    const float edge = 1.0f - SmoothStep(tier.core, tier.bank, ac);
     const float edge2 = edge * edge;
     static_assert(rivers::kProfileSharpness == 4, "the profile below is (1 − s)⁴");
     const float channel = edge2 * edge2;
@@ -436,6 +439,9 @@ Column TerrainGenerator::Interp2(const Corner2 (&c)[4], int fx, int fz) const {
   m.water.rg = wi(&rivers::Corner::rg);
   m.water.r1 = wi(&rivers::Corner::r1);
   m.water.r2 = wi(&rivers::Corner::r2);
+  m.water.wg = wi(&rivers::Corner::wg);
+  m.water.w1 = wi(&rivers::Corner::w1);
+  m.water.w2 = wi(&rivers::Corner::w2);
   m.water.spring = wi(&rivers::Corner::spring);
   m.water.lake_q = wi(&rivers::Corner::lake_q);
   m.water.lake_depth = wi(&rivers::Corner::lake_depth);

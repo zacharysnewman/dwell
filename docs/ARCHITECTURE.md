@@ -1217,6 +1217,11 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   water is one three.js `BatchedMesh` (`render/three/meshBatch.ts`): one draw call per pass,
   sorted and culled per section. Drawn per section it added ~25% more draw calls in a coastal
   view; batched it is within a few percent of the tinted floor's, for ~3–8% more triangles.
+- **Known limit (found in Phase 11a):** from level 8 (256 m cells) a section covers kilometres of the
+  ranges, whose finer octaves the level drops, so its columns' surfaces average ~60–120 m below a
+  point sample of the full-detail terrain inland in ranges (the test bounds the bias up to level 7,
+  `lod: column surfaces`). It predates 11a (measured with rivers off); 11b's detail cascade revisits
+  the octaves dropped by level.
 - **Column surfaces** (true heights at a distance): a cell counts as filled from its bottom voxel,
   so drawing each column's top cell to its top lifted the ground by up to a cell — ~220 m at level
   8, ~2 km at level 12 — and seas to +2,048 m (level 12) and +6,144 m (level 13): the horizon

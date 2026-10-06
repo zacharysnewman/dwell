@@ -46,8 +46,9 @@ struct Tier {
 inline constexpr Tier kGreat{200'000, 0.0006f, 0.008f, 0.06f, 14.0f, 3000.0f, 5500.0f, 0, -2.0f, -1.0f};
 inline constexpr Tier kRiver{6'000, 0.006f, 0.10f, 0.15f, 6.0f, 150.0f, 800.0f, 128, -0.30f, -0.05f};
 inline constexpr Tier kStream{1'500, 0.004f, 0.06f, 0.10f, 2.5f, 600.0f, 1800.0f, 16, -0.10f, 0.15f};
-// The distance factor D of an unresolved tier (a dropped one): the mean of its ramp.
-inline constexpr float kDroppedFactor = 0.85f;
+// The distance factor D of an unresolved tier (a dropped one): the mean of its ramp, which is about
+// 0.78 for the river tier and 0.85 for the stream tier (measured over the world); one value.
+inline constexpr float kDroppedFactor = 0.81f;
 
 // Meanders: each tier samples its noise at a position displaced by a gentle vector noise (the two
 // small tiers share one).
@@ -111,7 +112,10 @@ float TerraceSurface(std::uint32_t seed, float v);
 
 // The raw fields at one point, before the terrain turns them into heights.
 struct Corner {
-  float rg = 1.0f, r1 = 1.0f, r2 = 1.0f;  // signed noise of each tier, divided by its widening
+  float rg = 1.0f, r1 = 1.0f, r2 = 1.0f;  // signed noise of each tier (1: dropped for the cell)
+  // Level of detail: the factor (≥ 1) a tier's channel is widened by for the cell (the valley, which
+  // the distance factor reads from the noise itself, is not).
+  float wg = 1.0f, w1 = 1.0f, w2 = 1.0f;
   float spring = 1.0f;                    // the small tiers' spring noise
   float lake_q = kNoLake;                 // squared radius of the nearest lake (≥ kNoLake: none)
   float lake_level = kNoLevel;            // m: the surface of that lake
