@@ -31,7 +31,12 @@ constexpr float kLatticeStep = 0.25f;  // 1 / kLattice, exact
 constexpr int kSurfacePad = 8;
 // Solid components smaller than this, not touching a chunk face, are removed (stability pass).
 constexpr int kMinComponent = 48;
-constexpr int kSnowLine = 900;
+// Altitude bands follow the ground's temperature (which the lapse rate lowers with height): snow
+// lies where it falls below kSnowTemperature, and above the tree line, where it falls below
+// kTreeLineTemperature, the ground is bare rock. At a sea-level temperature of 0 these are 1,080 m
+// and 620 m; in a colder region they are lower, in a hotter one higher.
+constexpr float kSnowTemperature = -0.35f;
+constexpr float kTreeLineTemperature = -0.2f;
 // Climate: the wavelength (m) of the continental temperature field (humidity's is half), and the
 // lapse rate — the temperature field's units drop this much per metre of height (one unit is about
 // 20 °C, so 6.5 °C per km).
@@ -123,7 +128,7 @@ Cell Classify(const Column& col, std::int32_t y, Noise&& noise) {
 }
 
 // Surface material for a solid voxel `run` voxels below open air or water (run 0 = the top voxel).
-MaterialId SurfaceMaterial(const Column& col, int run, bool under_water, std::int32_t y,
+MaterialId SurfaceMaterial(const Column& col, int run, bool under_water, std::int32_t /*y*/,
                            float slope) {
   if (run >= 8) return M::kStone;
   if (under_water) {
@@ -142,8 +147,8 @@ MaterialId SurfaceMaterial(const Column& col, int run, bool under_water, std::in
       if (steep) return M::kStone;
       return run == 0 ? M::kSnow : run < 4 ? M::kDirt : M::kStone;
     case Biome::kMountains:
-      if (y >= kSnowLine && run == 0 && slope < 4.0f) return M::kSnow;
-      if (steep || y >= kSnowLine) return M::kStone;
+      if (col.temperature < kSnowTemperature && run == 0 && slope < 4.0f) return M::kSnow;
+      if (steep || col.temperature < kTreeLineTemperature) return M::kStone;
       return run == 0 ? M::kGrass : run < 3 ? M::kDirt : M::kStone;
     case Biome::kPlains:
     case Biome::kForest:
@@ -416,13 +421,16 @@ Column TerrainGenerator::Finish(const Corner2& c) const {
   // ground and, in cold regions, everywhere.
   col.temperature = Clamp(col.temperature - kLapsePerMetre * std::max(h, 0.0f), -1.0f, 1.0f);
   const float snowy_here = SmoothStep(-0.3f, -0.5f, col.temperature);
+  // Desert too is a matter of the ground's temperature: hot dry plains, not hot dry mountaintops.
+  const float desert_here =
+      SmoothStep(0.1f, 0.3f, col.temperature) * SmoothStep(0.1f, -0.1f, col.humidity);
   if (h - valley > kMountainRelief) {
     col.biome = Biome::kMountains;
   } else if (snowy_here > 0.5f) {
     col.biome = Biome::kSnowy;
   } else if (h < static_cast<float>(kSeaLevel) + 2.0f && cont < 0.02f) {
     col.biome = Biome::kBeach;
-  } else if (desert > 0.5f) {
+  } else if (desert_here > 0.5f) {
     col.biome = Biome::kDesert;
   } else if (forest > plains) {
     col.biome = Biome::kForest;
@@ -848,7 +856,7 @@ std::optional<Feature> TerrainGenerator::TreeInCell(std::int32_t cx, std::int32_
       kind = Feature::Kind::kSpruce;
       break;
     case Biome::kMountains:
-      chance = col.height < 600.0f ? 0.12f : 0.0f;
+      chance = col.temperature > kTreeLineTemperature ? 0.12f : 0.0f;  // below the tree line
       kind = Feature::Kind::kSpruce;
       break;
     default:
