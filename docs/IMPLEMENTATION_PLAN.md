@@ -24,7 +24,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43, #44 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ✅ Complete — merged in #46 and #47 (the first run's fixes); `v0.1.0` released and the site deployed by the Release run on 2026-10-06 | #46, #47 |
-| 7 — Fantasy look: a first pass at colour (rendering only) | 🚧 In progress — built (shared look module, face tints, sky gradient with haze matched to it, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script); outstanding: the owner's review of the before/after screenshots, the frame-time check on a real GPU and a phone, and the full-disc view | — |
+| 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
 | 8 — Block registry: namespaced block states and palettes | ⏳ Not started | — |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
@@ -1227,10 +1227,9 @@ vegetation. Design, measured target palette and a full description of the refere
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1. (Colourful accent vegetation is in Phase 11c;
 clouds are in Phase 12.)
 
-**Status:** In progress — everything is built (branch `claude/phase-7-fantasy-look`, no PR yet);
-outstanding: the owner's review of the before/after screenshots, the frame-time check (headless
-software rendering here is not a GPU or a phone), and the full-disc view, which is in the script but
-not yet shot (a 24,000 km climb at a few frames a second).
+**Status:** ✅ Complete — merged in #48. The owner approved the before/after screenshots and the
+frame time on 2026-10-06. Not done: the full-disc view is in the screenshot script but was never shot
+(a 24,000 km climb at a few frames a second); shoot it with the next change that touches the look.
 
 **Deviations:** the screenshot script is `client/scripts/shots.ts` (run with Node's type stripping
 against a served build), not a Playwright spec: it drives one page through the views and writes
@@ -1246,19 +1245,19 @@ Deliverables
   material shaders, no extra pass).
 - [x] Sky gradient (zenith → horizon, sun glow) replacing the flat clear colour; height fog fades
   to the sky's colour in the view direction; turquoise water (chunk and LOD).
-- [ ] An e2e screenshot script for fixed views (spawn, forest edge, coast, distant mountains, the
+- [x] An e2e screenshot script for fixed views (spawn, forest edge, coast, distant mountains, the
   disc from the flight ceiling), run before and after.
-- [ ] `ARCHITECTURE.md` §5 (rendering) and §6.6 (LOD colours, fog) updated; `WORLD_GENERATION.md`
+- [x] `ARCHITECTURE.md` §5 (rendering) and §6.6 (LOD colours, fog) updated; `WORLD_GENERATION.md`
   §1 trimmed to what was built plus rationale.
 
 Exit criteria
-- [ ] The owner approves before/after screenshots of the fixed views as a step toward the
+- [x] The owner approves before/after screenshots of the fixed views as a step toward the
   reference's mood (manual).
 - [x] Unit tests: chunk and LOD faces of the same material and direction get identical colours;
   the tint table is warm on top and bluest underneath; the horizon fog colour equals the sky
   gradient's horizon colour (`render/look.test.ts`).
-- [ ] Worldgen golden hashes (chunks and LOD) unchanged — generation untouched.
-- [ ] Frame time within ±5 % of before on desktop and a phone (F3 readout).
+- [x] Worldgen golden hashes (chunks and LOD) unchanged — generation untouched.
+- [x] Frame time within ±5 % of before on desktop and a phone (F3 readout).
 
 ---
 
