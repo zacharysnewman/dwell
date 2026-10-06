@@ -25,7 +25,7 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ✅ Complete — merged in #46 and #47 (the first run's fixes); `v0.1.0` released and the site deployed by the Release run on 2026-10-06 | #46, #47 |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
-| 8 — Block registry: namespaced block states and palettes | 🚧 In progress — every deliverable built and verified natively and in the client (C++ suite, Vitest); outstanding: the checks that need the WASM build and a browser (golden world file, determinism goldens under WASM and the client module, the e2e palette test), run by CI on the PR. Needs a new compatibility line (owner raises `package.json`) | PR pending |
+| 8 — Block registry: namespaced block states and palettes | 🚧 In progress — every deliverable built and verified natively and in the client (C++ suite, Vitest); outstanding: the checks that need the WASM build and a browser (golden world file, determinism goldens under WASM and the client module, the e2e palette test), run by CI on the PR. Needs a new compatibility line (owner raises `package.json`) | #51 |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
@@ -1270,8 +1270,8 @@ files, and world files that store chunk palettes as strings, so content can chan
 saved worlds. The foundation for slopes (Phase 9), flooded blocks and new content. Design:
 [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
 
-**Status:** Built and tested natively and in the client; the WASM / browser checks (listed under the
-exit criteria) wait for CI, and no PR exists yet. No visible change in the game: same terrain, same
+**Status:** Built and tested natively and in the client (PR #51); the WASM / browser checks (listed under the
+exit criteria) wait for its CI. No visible change in the game: same terrain, same
 blocks. Breaking: the saved world format and the network protocol (v11) change, so the release needs
 a new compatibility line — the owner raises `package.json` ([`RELEASES.md`](./RELEASES.md)).
 
