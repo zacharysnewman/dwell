@@ -25,7 +25,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; the owner approved the before/after and the frame time (2026-10-06) |
-| 8 — Block registry: namespaced block states and palettes | 🚧 In progress — built and tested natively and in the client (`package.json` 0.2.0, the new compatibility line); outstanding: the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test); paletted in-memory chunks were measured and deferred |
+| 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash) |
 | 10 — Continents from Voronoi plates | ⏳ Not started |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started |
@@ -1307,11 +1307,10 @@ files, and world files that store chunk palettes as strings, so content can chan
 saved worlds. The foundation for slopes (Phase 9), flooded blocks and new content. Design:
 [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
 
-**Status:** In progress — built and tested natively and in the client; outstanding: the WASM /
-browser checks (listed under the exit criteria). No visible change in the game: same terrain, same
-blocks. Breaking: the saved world format and the network protocol (v11) change, so it starts a new
-compatibility line: `package.json` is raised to 0.2.0 by the owner's decision (2026-10-06)
-([`RELEASES.md`](./RELEASES.md)).
+**Status:** ✅ Complete (marked complete by the owner, 2026-10-06). No visible change in the game:
+same terrain, same blocks. Breaking: the saved world format and the network protocol (v11) change, so
+it starts a new compatibility line: `package.json` is raised to 0.2.0 by the owner's decision
+(2026-10-06) ([`RELEASES.md`](./RELEASES.md)).
 
 Deviations from the design ([ADR 0015](./adr/0015-block-registry.md)): state ids follow the
 declaration order of the data files, not a sort by name (appending a block keeps earlier ids); a
