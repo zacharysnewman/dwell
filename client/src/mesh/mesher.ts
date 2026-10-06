@@ -178,7 +178,10 @@ class Builder {
 
   /**
    * A convex polygon (counter-clockwise seen from outside) of `pts`, offset by (x, y, z). `normal`
-   * is its unit normal; uvs project the face along its dominant axis, in blocks.
+   * is its unit normal; uvs project the face along its dominant axis, in blocks. With `sideTop` (a
+   * vertical side face), v runs down from the face's top edge rather than the cell's top, so the
+   * top of the tile (a grass side's skirt) follows the edge: `sideTop` gives the edge's height
+   * (cell-local) above a vertex.
    */
   polygon(
     pts: readonly (readonly [number, number, number])[],
@@ -189,23 +192,27 @@ class Builder {
     tint: readonly [number, number, number],
     color: number,
     tile: TileRect,
+    sideTop?: (pt: readonly [number, number, number]) => number,
   ): void {
     const base = this.positions.length / 3;
     const r = (((color >> 16) & 0xff) / 255) * tint[0];
     const g = (((color >> 8) & 0xff) / 255) * tint[1];
     const b = ((color & 0xff) / 255) * tint[2];
     const [nx, ny, nz] = normal;
-    for (const [qx, qy, qz] of pts) {
+    for (const pt of pts) {
+      const [qx, qy, qz] = pt;
       const px = qx + x;
       const py = qy + y;
       const pz = qz + z;
+      // Texture height: from the face's top edge down (a side), else the world height.
+      const tv = sideTop ? y + qy - sideTop(pt) + 1 : py;
       this.positions.push(px, py, pz);
       this.normals.push(nx, ny, nz);
       this.colors.push(r, g, b);
       // The dominant axis of the normal: tops and bottoms (and slopes) in x/z, sides by height.
       if (Math.abs(ny) >= Math.abs(nx) && Math.abs(ny) >= Math.abs(nz)) this.uvs.push(px, pz);
-      else if (Math.abs(nx) >= Math.abs(nz)) this.uvs.push(pz, py);
-      else this.uvs.push(px, py);
+      else if (Math.abs(nx) >= Math.abs(nz)) this.uvs.push(pz, tv);
+      else this.uvs.push(px, tv);
       this.tiles.push(tile.u0, tile.v0, tile.u1 - tile.u0, tile.v1 - tile.v0);
     }
     for (let i = 1; i + 1 < pts.length; i++) this.indices.push(base, base + i, base + i + 1);
@@ -286,8 +293,28 @@ function shapedVoxel(
     const axis = f.tag < 6 ? Math.floor(f.tag / 2) : 1;
     const sign = f.tag < 6 ? (f.tag % 2 === 0 ? 1 : -1) : normal[1] >= 0 ? 1 : -1;
     const [color, tile] = surface(k.style, axis, sign);
-    b.polygon(f.pts, x, y, z, normal, tint, color, tile);
+    b.polygon(f.pts, x, y, z, normal, tint, color, tile, sideTopOf(def, f.tag));
   }
+}
+
+/** Side profile index (+X −X +Z −Z) of each cell face tag (+X −X +Y −Y +Z −Z); −1: not a side. */
+const SIDE_OF_TAG = [0, 1, -1, -1, 2, 3];
+
+/**
+ * The height of an upright piece's top edge along one of its side faces, at a vertex: the side
+ * profile runs linearly between its heights (halves) at the low and high running coordinate (z on
+ * ±X faces, x on ±Z). Undefined for other faces and for hanging pieces, whose sides meet the
+ * cell's top.
+ */
+function sideTopOf(
+  def: ShapeDef,
+  tag: number,
+): ((pt: readonly [number, number, number]) => number) | undefined {
+  const side = SIDE_OF_TAG[tag] ?? -1;
+  if (side < 0 || def.inverted) return undefined;
+  const [h0 = 2, h1 = 2] = def.sides[side] ?? [];
+  const run = side < 2 ? 2 : 0;
+  return (pt) => (h0 + (h1 - h0) * pt[run]) / 2;
 }
 
 /** Water in the open part of a flooded shaped cell: its faces, inset so the solid shows through. */

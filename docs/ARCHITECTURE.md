@@ -468,7 +468,10 @@ ladder, is targeted and seen as its whole cell), the **edit check** tests the
 capsule against the placed shape's true volume, and the controller's overlap test (uncrouching) uses
 the true surface. The exhaustive adjacency test checks that no pair of shapes leaves a hole on any
 side. The meshers draw polygons with their true normals and a face tint interpolated by the normal
-(`render/look.ts` `normalTint`, shared with the LOD). Water in a flooded shape: the server sets
+(`render/look.ts` `normalTint`, shared with the LOD). Sloped faces take the top tile, projected
+along their dominant axis; an upright piece's side faces take the side tile measured down from
+their own top edge, so its top (a grass side's fringe) runs along a slope's edge and a slab's top
+rather than the cell's top. Water in a flooded shape: the server sets
 `flooded` from the cell on placement (placed into water: flooded; anywhere else: dry — no water from
 nothing), breaking a flooded shape leaves water, and a flooded cell counts as water for swimming.
 
@@ -549,7 +552,11 @@ continents' areas and the land share, `… [seed] stats [seeds]` tabulates the l
 seeds, and `… [seed] bench` times chunk and LOD generation (reported in every worldgen change). In
 game (Phase 3e), F4 shows the terrain's biome/height map around the player — and, since Phase 10,
 `-` and `=` zoom it out and in, from 8 m per column (1 km across) to the whole disc (128 km per
-column) — and the F3 overlay the player's chunk regenerated and diffed against the world's; `dwell_world FILE
+column) — and the F3 overlay the player's chunk regenerated and diffed against the world's; the overlay's **Copy
+block info** button (or F6) copies the targeted block and the 5 × 5 × 5 cells around it as JSON
+(`debug/blockDump.ts`: canonical state strings by palette index, with the world's seed and generator
+version, the build, and the player's position and view) — or shows it to copy by hand where the
+clipboard is refused — so a spot can be regenerated and examined exactly; `dwell_world FILE
 diff` does the same for a world file (§6.4). **Built (Phase 3b):** streaming, the verification chunk, and the generation pools
 (below).
 

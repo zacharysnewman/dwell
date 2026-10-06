@@ -142,7 +142,9 @@ surface above — with the exact same arithmetic on both sides (ADR 0010 rules: 
 - Sloped faces are emitted as triangles or quads with their true normals; cube faces keep the
   greedy merge, and runs of identical wedges along their ridge axis may be merged later.
 - Textures: sloped faces use the material's **top** tile (grass on a grass slope), projected along
-  the slope's dominant axis so texels are not stretched badly; triangular sides use the side tile.
+  the slope's dominant axis so texels are not stretched badly; triangular sides use the side tile,
+  measured down from the side's top edge (built: the grass fringe follows a slope's edge and a
+  slab's top).
 - Shading: Phase 7's per-face tint table is keyed by axis; slopes use the same tint interpolated
   by the face normal (`normal.y` between top and side values), in the shared module both meshers
   import.

@@ -57,15 +57,15 @@ async function waitTerrain(page: Page): Promise<DebugState> {
 }
 
 /**
- * Holds W facing yaw 0 (+Z) for `ticks` predicted ticks (60 per simulated second). Counting ticks
- * rather than wall time keeps the distance independent of the frame rate, which CI's software
- * renderer (SwiftShader) holds well below 60 fps with a full view of streamed terrain.
+ * Holds W facing `yaw` (0: +Z) for `ticks` predicted ticks (60 per simulated second). Counting
+ * ticks rather than wall time keeps the distance independent of the frame rate, which CI's
+ * software renderer (SwiftShader) holds well below 60 fps with a full view of streamed terrain.
  */
-async function walkForward(page: Page, ticks: number): Promise<void> {
+async function walkForward(page: Page, ticks: number, yaw = 0): Promise<void> {
   const h = hooks.toString();
   const ticksNow = async () => Number(await page.evaluate(`(${h})()?.state()?.stats.ticks ?? 0`));
   const start = await ticksNow();
-  await page.evaluate(`(${h})()?.look(0, 0); (${h})()?.press('KeyW', true);`);
+  await page.evaluate(`(${h})()?.look(${String(yaw)}, 0); (${h})()?.press('KeyW', true);`);
   await expect
     .poll(ticksNow, { timeout: 20_000, intervals: [20] })
     .toBeGreaterThanOrEqual(start + ticks);
@@ -88,7 +88,13 @@ test('local mode streams terrain: Generated chunks, or every chunk explicitly on
   page,
 }) => {
   test.setTimeout(90_000);
-  for (const query of ['./?local=1', './?local=1&chunks=full']) {
+  // The second visit opens the same saved world where the first walk stopped, which varies with
+  // how long releasing the key takes. Ahead (+Z) the hill near the spawn of seed 0 steepens into
+  // steps too tall to walk up, so the second walk goes back the way the first came.
+  for (const [query, yaw] of [
+    ['./?local=1', 0],
+    ['./?local=1&chunks=full', 180],
+  ] as const) {
     await page.goto(query);
     await waitActive(page);
     // The whole view arrives (about 110 chunks), and meshes follow.
@@ -96,7 +102,7 @@ test('local mode streams terrain: Generated chunks, or every chunk explicitly on
     await expect
       .poll(async () => (await state(page))?.terrain.meshed ?? 0, { timeout: 20_000 })
       .toBeGreaterThan(50);
-    await walkForward(page, 60);
+    await walkForward(page, 60, yaw);
     const end = await state(page);
     expect(
       Math.hypot((end?.feet[0] ?? 0) - s.feet[0], (end?.feet[2] ?? 0) - s.feet[2]),

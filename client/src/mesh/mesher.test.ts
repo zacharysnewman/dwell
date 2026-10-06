@@ -272,6 +272,33 @@ describe('greedy chunk mesher', () => {
       expect(sawTop && sawSide).toBe(true);
     });
 
+    // Regression: side faces took the texture by world height, so the grass side's skirt (the top
+    // of the tile) stayed at the cell's top: a slab's sides were all dirt, and a slope's sides
+    // showed a horizontal grass band where they reached full height instead of along their edge.
+    it('runs the side tile down from each side face’s top edge, so grass follows a slope', () => {
+      const slab = stateId('dwell:grass_slab[flooded=false,half=bottom]');
+      // Wedge descending east: its top edge on a side is at 1 − x (cell-local x).
+      const cases: [number, (x: number, z: number) => number][] = [
+        [slab, () => 0.5],
+        [wedge('east', 'bottom', 'false', 'grass'), (x) => 1 - x],
+        [wedge('south', 'bottom', 'false', 'grass'), (_x, z) => 1 - z],
+      ];
+      for (const [state, top] of cases) {
+        const { opaque } = meshChunk(voxels([[1, 1, 1, state]]));
+        let sides = 0;
+        for (let v = 0; v < opaque.positions.length / 3; v++) {
+          if (Math.abs(opaque.normals[v * 3 + 1] ?? 1) > 1e-6) continue; // tops and slopes
+          const x = (opaque.positions[v * 3] ?? 0) - 1;
+          const y = (opaque.positions[v * 3 + 1] ?? 0) - 1;
+          const z = (opaque.positions[v * 3 + 2] ?? 0) - 1;
+          // The tile's top (v ≡ 1, the grass skirt) lies on the face's top edge.
+          expect(opaque.uvs[v * 2 + 1] ?? 0).toBeCloseTo(1 + y - top(x, z) + 1, 5);
+          sides++;
+        }
+        expect(sides).toBeGreaterThan(0);
+      }
+    });
+
     it('shades sloped faces by interpolating the face tints by their normal', () => {
       const { opaque } = meshChunk(voxels([[1, 1, 1, wedge('east', 'bottom', 'false', 'stone')]]));
       // Stone is textured: colours are the tint itself.
