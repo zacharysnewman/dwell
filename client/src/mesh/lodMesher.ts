@@ -6,6 +6,7 @@
 // dropped: the renderer shows a side's skirt when the neighbour there is not drawn at the same
 // level, which closes the cracks between levels. Pure data, so it runs in the meshing workers.
 import { LOD_PAD, LOD_VOLUME, SECTION_CELLS } from '../lod/grid';
+import { faceTint } from '../render/look';
 import { averageTileColor, srgbToLinear } from '../render/textures';
 import { materialStyle } from '../world/materials';
 
@@ -80,11 +81,11 @@ class Builder {
     const u = (axis + 1) % 3;
     const v = (axis + 2) % 3;
     const base = this.positions.length / 3;
-    const shade = axis === 1 ? (sign > 0 ? 1 : 0.55) : axis === 0 ? 0.8 : 0.7;
+    const tint = faceTint(axis, sign);
     // Linear, like the chunks' texels (their sRGB texture is decoded before lighting).
-    const r = srgbToLinear((color >> 16) & 0xff) * shade;
-    const g = srgbToLinear((color >> 8) & 0xff) * shade;
-    const b = srgbToLinear(color & 0xff) * shade;
+    const r = srgbToLinear((color >> 16) & 0xff) * tint[0];
+    const g = srgbToLinear((color >> 8) & 0xff) * tint[1];
+    const b = srgbToLinear(color & 0xff) * tint[2];
     const p = [0, 0, 0];
     for (const [cu, cv] of [
       [u0, v0],

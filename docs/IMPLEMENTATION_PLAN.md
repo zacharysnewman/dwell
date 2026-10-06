@@ -23,8 +23,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c), #13 (3d, 3e) |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43, #44 |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
-| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — everything built and tested locally (branch `claude/phase-6-versioned-releases`, PR pending); outstanding: the workflows' first real run, i.e. the owner's first release (`RELEASES.md` §8), and CI on the PR | — |
-| 7 — Fantasy look: a first pass at colour (rendering only) | ⏳ Not started | — |
+| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ✅ Complete — merged in #46 and #47 (the first run's fixes); `v0.1.0` released and the site deployed by the Release run on 2026-10-06 | #46, #47 |
+| 7 — Fantasy look: a first pass at colour (rendering only) | 🚧 In progress — built (shared look module, face tints, sky gradient with haze matched to it, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script); outstanding: the owner's review of the before/after screenshots, the frame-time check on a real GPU and a phone, and the full-disc view | — |
 | 8 — Block registry: namespaced block states and palettes | ⏳ Not started | — |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
@@ -55,7 +55,7 @@ phases, so terrain is tuned with slopes in place; continents before natural terr
 on coast distance and plate edges; sky islands after natural terrain (they use its biomes); the
 bifacial world after both, since face B repeats them, and before physics, so falling bodies handle
 both gravity directions from the start.
-Phase 7 can run in parallel with Phase 6, and Phase 12's dome bounds (12a) can go earlier.
+Phase 6 is complete; Phase 12's dome bounds (12a) can go earlier.
 
 ---
 
@@ -1152,12 +1152,11 @@ compatibility line** (SemVer) for now. The repository stays public under a restr
 chosen by the owner (a private-source split was considered and dropped to keep the free CI
 pipeline). Design and setup steps: [`RELEASES.md`](./RELEASES.md).
 
-**Status:** In progress — built and tested locally; branch `claude/phase-6-versioned-releases`, PR
-pending. The two release workflows (`release.yml`, `pages.yml`) have not run yet (GitHub runs them
-only once merged; their logic — version and tag rules, which releases the site holds, the manifest —
-is in unit-tested scripts, and the launcher was exercised end to end against a locally assembled
-site), so the exit criterion for a real release stays open until the owner's first release
-(`RELEASES.md` §8), as does a green CI run on the PR. Absorbs Phase 17's "versioned client builds"
+**Status:** Complete — merged in #46; the first real run of the release workflows (on that merge)
+published `v0.1.0-dev.1` but its site job failed on build metadata in `build.json`, and the launcher
+e2e raced a redirect; #47 fixed both, made the version follow the newest release, and released `0.1.0`
+as the first stable build (Release run 37405234222: tag, GitHub Release, site deployed).
+Absorbs Phase 17's "versioned client builds"
 for the web.
 
 **Deviations:** the launcher's source is `client/launcher/`, not a top-level `launcher/` (it shares
@@ -1201,8 +1200,9 @@ Deliverables
 - [x] `ARCHITECTURE.md` §2.1, §3.1, §6.4, §10.3 and §10.5 updated.
 
 Exit criteria
-- [ ] A release produces a tag and a GitHub Release holding the build and `build.json`, listed in
-  `versions.json` and served at `/dwell/v/<version>/`.
+- [x] A release produces a tag and a GitHub Release holding the build and `build.json`, listed in
+  `versions.json` and served at `/dwell/v/<version>/`. Verified by the Release run on #47's merge:
+  tag and Release `v0.1.0` exist, and its site deploy succeeded.
 - [x] e2e against a locally assembled two-version site: the launcher opens the latest stable;
   `?play=` opens a world in its own version; an invite opens the host's version; Back returns to
   `/dwell/`; other versions' worlds are listed with badges.
@@ -1227,16 +1227,24 @@ vegetation. Design, measured target palette and a full description of the refere
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1. (Colourful accent vegetation is in Phase 11c;
 clouds are in Phase 12.)
 
-**Status:** Not started.
+**Status:** In progress — everything is built (branch `claude/phase-7-fantasy-look`, no PR yet);
+outstanding: the owner's review of the before/after screenshots, the frame-time check (headless
+software rendering here is not a GPU or a phone), and the full-disc view, which is in the script but
+not yet shot (a 24,000 km climb at a few frames a second).
+
+**Deviations:** the screenshot script is `client/scripts/shots.ts` (run with Node's type stripping
+against a served build), not a Playwright spec: it drives one page through the views and writes
+PNGs, with no assertions. Shadows from the sun were suggested during the phase and are not part of
+it (a new render pass, against this phase's no-extra-pass rule).
 
 Deliverables
-- [ ] Material colours and procedural tiles of the existing materials retuned toward the measured
+- [x] Material colours and procedural tiles of the existing materials retuned toward the measured
   palette (§1.3–1.4); LOD colours follow via tile averages.
-- [ ] One shared per-face RGB tint table (warm top, cooler sides, blue bottom) used by both the
+- [x] One shared per-face RGB tint table (warm top, cooler sides, blue bottom) used by both the
   chunk mesher and the LOD mesher, replacing the scalar face shades.
-- [ ] Warm sun, re-coloured hemisphere light, tone mapping with an exposure setting (in the
+- [x] Warm sun, re-coloured hemisphere light, tone mapping with an exposure setting (in the
   material shaders, no extra pass).
-- [ ] Sky gradient (zenith → horizon, sun glow) replacing the flat clear colour; height fog fades
+- [x] Sky gradient (zenith → horizon, sun glow) replacing the flat clear colour; height fog fades
   to the sky's colour in the view direction; turquoise water (chunk and LOD).
 - [ ] An e2e screenshot script for fixed views (spawn, forest edge, coast, distant mountains, the
   disc from the flight ceiling), run before and after.
@@ -1246,9 +1254,9 @@ Deliverables
 Exit criteria
 - [ ] The owner approves before/after screenshots of the fixed views as a step toward the
   reference's mood (manual).
-- [ ] Unit tests: chunk and LOD faces of the same material and direction get identical colours;
+- [x] Unit tests: chunk and LOD faces of the same material and direction get identical colours;
   the tint table is warm on top and bluest underneath; the horizon fog colour equals the sky
-  gradient's horizon colour.
+  gradient's horizon colour (`render/look.test.ts`).
 - [ ] Worldgen golden hashes (chunks and LOD) unchanged — generation untouched.
 - [ ] Frame time within ±5 % of before on desktop and a phone (F3 readout).
 

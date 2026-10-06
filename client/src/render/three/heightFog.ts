@@ -1,29 +1,25 @@
 // Height fog in three.js materials (render/fog.ts has the model and its reference, `hazeAmount`):
 // three.js's fog chunks are replaced with the exponential atmosphere's optical depth along the view
 // ray. The ray comes from the view-space position, which three.js computes camera-relative, so it
-// stays precise from orbit, and it covers batched and instanced meshes alike.
-import { Vector3, type Material, type WebGLProgramParametersWithUniforms } from 'three';
+// stays precise from orbit, and it covers batched and instanced meshes alike. The haze's colour is
+// the sky's in the ray's direction (render/look.ts `dwellSky`, the same function that draws the
+// sky), so distant terrain dissolves into exactly the sky behind it.
+import { type Material, type WebGLProgramParametersWithUniforms } from 'three';
 import { World } from '../../protocol/constants.gen';
 import { fogSigma, type FogSettings } from '../fog';
+import { SKY_GLSL } from '../look';
 
 /** Shared by every fogged material: set once per change, uploaded with each draw. */
 export const fogUniforms = {
   dwellFogSigma: { value: 0 },
   dwellFogHeight: { value: 1 },
   dwellFogDensity: { value: 0 },
-  /** Output (sRGB) colour: the haze is mixed in after the colour-space conversion, as three's. */
-  dwellFogColor: { value: new Vector3() },
 };
 
-export function setFogUniforms(fog: FogSettings, skyHex: number): void {
+export function setFogUniforms(fog: FogSettings): void {
   fogUniforms.dwellFogSigma.value = fogSigma(fog.distanceM);
   fogUniforms.dwellFogHeight.value = fog.heightM;
   fogUniforms.dwellFogDensity.value = fog.density;
-  fogUniforms.dwellFogColor.value.set(
-    ((skyHex >> 16) & 0xff) / 255,
-    ((skyHex >> 8) & 0xff) / 255,
-    (skyHex & 0xff) / 255,
-  );
 }
 
 const PARS_VERTEX = 'varying vec3 vFogView;';
@@ -33,7 +29,7 @@ const PARS_FRAGMENT = [
   'uniform float dwellFogSigma;',
   'uniform float dwellFogHeight;',
   'uniform float dwellFogDensity;',
-  'uniform vec3 dwellFogColor;',
+  SKY_GLSL,
 ].join('\n');
 // fog.ts `hazeAmount`, per fragment (distances vary too much across a coarse triangle to
 // interpolate). viewMatrix[1] is world up in view space, so the ray's rise is a dot product.
@@ -46,7 +42,11 @@ const FRAGMENT = [
   '\tfloat fogBase = exp(min(80.0, -fogLow / dwellFogHeight));',
   '\tfloat fogAlong = fogK < 1e-4 ? 1.0 - fogK * 0.5 : (1.0 - exp(-fogK)) / fogK;',
   '\tfloat fogDepth = dwellFogSigma * fogDist * fogBase * fogAlong;',
-  '\tgl_FragColor.rgb = mix(gl_FragColor.rgb, dwellFogColor, dwellFogDensity * (1.0 - exp(-fogDepth)));',
+  // The haze is mixed in after tone mapping and the colour-space conversion, as three's fog is:
+  // the sky is drawn in output colour too. viewMatrix's rotation, transposed, turns the view-space
+  // ray into a world direction.
+  '\tvec3 fogDir = normalize(vFogView * mat3(viewMatrix));',
+  '\tgl_FragColor.rgb = mix(gl_FragColor.rgb, dwellSky(fogDir), dwellFogDensity * (1.0 - exp(-fogDepth)));',
   '}',
 ].join('\n');
 

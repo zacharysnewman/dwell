@@ -9,6 +9,7 @@ import {
   DoubleSide,
   EdgesGeometry,
   Group,
+  ACESFilmicToneMapping,
   HemisphereLight,
   LinearMipmapLinearFilter,
   LineBasicMaterial,
@@ -33,6 +34,7 @@ import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { DEFAULT_FOG, type FogSettings } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
+import { DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, SUN_DIRECTION, sanitizeExposure } from '../look';
 import { sharedAtlas } from '../textures';
 import {
   RendererUnavailableError,
@@ -42,11 +44,11 @@ import {
   type RenderStats,
 } from '../Renderer';
 import { setFogUniforms, withHeightFog } from './heightFog';
+import { Sky } from './sky';
 import { LodSectionGeometry, releaseOnUpload } from './lodSection';
 import { BatchedTerrain } from './batchedTerrain';
 import { type BatchHandle, geometryBytes, MeshBatch } from './meshBatch';
 
-const SKY = 0x87b5e0;
 /** Near/far depth split (§6.6): LOD beyond it in a far pass, then a depth clear and a near pass. */
 const NEAR_SPLIT = Lod.nearSplitM;
 const FAR_PLANE = 5e7;
@@ -135,6 +137,9 @@ interface PlayerMesh {
 export class ThreeRenderer implements Renderer {
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
+  /** The sky, drawn first in the far pass (look.ts, sky.ts). */
+  private readonly skyScene = new Scene();
+  private readonly sky = new Sky();
   private readonly camera = new PerspectiveCamera(VERTICAL_FOV, 1, 0.05, NEAR_SPLIT);
   /** Block textures: tiled-noise atlas (render/textures.ts), crisp up close, mipmapped far away. */
   private readonly atlas = ThreeRenderer.createAtlasTexture();
@@ -202,11 +207,18 @@ export class ThreeRenderer implements Renderer {
     }
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
     this.renderer.autoClear = false;
-    this.renderer.setClearColor(SKY);
+    this.renderer.setClearColor(new Color(...HORIZON_COLOR));
+    // Tone mapping runs in each material's shader (no extra pass); the haze and the sky are mixed
+    // in after it, in output colour.
+    this.renderer.toneMapping = ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = DEFAULT_EXPOSURE;
+    this.skyScene.add(this.sky.mesh);
     this.setFog(DEFAULT_FOG);
-    this.scene.add(new HemisphereLight(0xdfefff, 0x4a3b2a, 1.4));
-    const sun = new DirectionalLight(0xffffff, 1.6);
-    sun.position.set(0.4, 1, 0.25);
+    this.scene.add(
+      new HemisphereLight(LIGHT.hemisphereSky, LIGHT.hemisphereGround, LIGHT.hemisphereIntensity),
+    );
+    const sun = new DirectionalLight(LIGHT.sun, LIGHT.sunIntensity);
+    sun.position.set(...SUN_DIRECTION);
     this.scene.add(sun);
     this.outline.visible = false;
     this.scene.add(this.outline);
@@ -283,6 +295,9 @@ export class ThreeRenderer implements Renderer {
     far.near = Math.max(NEAR_SPLIT * 0.95, altitude * 0.8);
     far.updateProjectionMatrix();
     this.renderer.clear();
+    far.updateMatrixWorld();
+    this.sky.update(far);
+    this.renderer.render(this.skyScene, far);
     this.renderer.render(this.scene, far);
     const { calls, triangles } = this.renderer.info.render;
     this.renderer.clearDepth();
@@ -470,7 +485,11 @@ export class ThreeRenderer implements Renderer {
   }
 
   setFog(fog: FogSettings): void {
-    setFogUniforms(fog, SKY);
+    setFogUniforms(fog);
+  }
+
+  setExposure(exposure: number): void {
+    this.renderer.toneMappingExposure = sanitizeExposure(exposure);
   }
 
   setBlockOutline(cell: Vec3 | null, height = 1): void {

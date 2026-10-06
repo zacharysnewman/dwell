@@ -82,6 +82,13 @@ Every change that advances, completes, reopens, or re-scopes implementation work
 - The PR number(s) once a PR exists for the phase.
 - Follow-up work on a finished phase (playtest findings, tuning, fixes) is noted in its row and in
   the phase's `**Status:**` line until it merges.
+- **Events after the PR also update it.** Merges, deploys, releases, CI runs on `main` and
+  playtest or manual-check results happen after a change is written, so no PR can record them. When
+  you learn one has happened — the user says so, or you see it on GitHub — verify it (merged PRs,
+  releases, workflow runs), then update the table, the phase's `**Status:**` line and any checkboxes
+  it settles in a small docs-only change, in the same session. A merged PR's number goes into the row;
+  "PR pending" and "not yet run" never outlive the event. When asked about project status, check the
+  table against `main` and GitHub first, and correct it before answering.
 
 ## Requirement: every bug fix has a regression test
 

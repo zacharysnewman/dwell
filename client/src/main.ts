@@ -161,6 +161,7 @@ function start(): App {
   // Settings (top left): fog and full-detail distance, applied as the sliders move.
   app.settings = new SettingsMenu(document.body, prefersTouch(), (s) => {
     renderer.setFog(s.fog);
+    renderer.setExposure(s.exposure);
     app.game?.lod?.setDetailDistance(s.detail.distanceM);
     app.game?.lod?.setQuality(s.detail.pixelError, s.detail.memoryMb * 1048576);
   });

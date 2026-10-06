@@ -68,6 +68,8 @@ export interface Renderer {
   setLodLevelColors(on: boolean): void;
   /** Height fog (§6.6): the haze's distance, density and scale height (render/fog.ts). */
   setFog(fog: FogSettings): void;
+  /** Tone mapping exposure (render/look.ts): 1 leaves the lights as set. */
+  setExposure(exposure: number): void;
   /** Outlines the targeted block (§6.5): its min corner and box height (slabs 0.5), or none. */
   setBlockOutline(cell: Vec3 | null, height?: number): void;
   /** Adds, updates, or (null) removes a player. */

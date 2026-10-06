@@ -1,9 +1,11 @@
 // Settings menu: a button in the top-left corner opens a panel of sliders — the height fog
-// (render/fog.ts) and the detail settings (lod/detail.ts), ARCHITECTURE.md §6.6. The settings
+// (render/fog.ts), the detail settings (lod/detail.ts) and the tone-mapping exposure
+// (render/look.ts), ARCHITECTURE.md §5, §6.6. The settings
 // are kept in this browser. In a game the panel is also the game menu (Phase 5a): Resume and Quit
 // to main menu above the sliders; it opens when the pointer is released (Esc).
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from '../lod/detail';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from '../render/fog';
+import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from '../render/look';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -32,10 +34,12 @@ export function formatMetres(m: number): string {
 export interface Settings {
   fog: FogSettings;
   detail: DetailSettings;
+  /** Tone-mapping exposure (render/look.ts). */
+  exposure: number;
 }
 
 export function defaultSettings(mobile: boolean): Settings {
-  return { fog: { ...DEFAULT_FOG }, detail: defaultDetail(mobile) };
+  return { fog: { ...DEFAULT_FOG }, detail: defaultDetail(mobile), exposure: DEFAULT_EXPOSURE };
 }
 
 /** The settings as JSON to copy and share (rounded: whole metres, density to 0.01). */
@@ -51,12 +55,14 @@ export function settingsJson(s: Settings): string {
       pixelError: Math.round(s.detail.pixelError * 10) / 10,
       memoryMb: Math.round(s.detail.memoryMb),
     },
+    exposure: Math.round(s.exposure * 100) / 100,
   };
   return JSON.stringify(rounded, null, 2);
 }
 
 const FOG_KEY = 'dwell.fog';
 const DETAIL_KEY = 'dwell.detail';
+const EXPOSURE_KEY = 'dwell.exposure';
 
 function load(key: string): unknown {
   try {
@@ -74,6 +80,7 @@ export function loadSettings(mobile: boolean): Settings {
   return {
     fog: fog ? sanitizeFog(fog) : defaults.fog,
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
+    exposure: sanitizeExposure(load(EXPOSURE_KEY)),
   };
 }
 
@@ -81,6 +88,7 @@ function save(s: Settings): void {
   try {
     localStorage.setItem(FOG_KEY, JSON.stringify(s.fog));
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
+    localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -167,6 +175,20 @@ function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
           format: (v) => `${String(Math.round(v))} MB`,
           get: (s) => s.detail.memoryMb,
           with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
+        },
+      ],
+    },
+    {
+      title: 'Look',
+      sliders: [
+        {
+          label: 'Exposure',
+          hint: 'How bright the picture is after tone mapping',
+          ...EXPOSURE_LIMITS,
+          log: true,
+          format: (v) => `${v.toFixed(2)}×`,
+          get: (s) => s.exposure,
+          with: (s, v) => ({ ...s, exposure: v }),
         },
       ],
     },
