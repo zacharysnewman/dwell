@@ -201,6 +201,12 @@ export class ThreeRenderer implements Renderer {
     new LineBasicMaterial({ color: 0x101418, transparent: true, opacity: 0.8 }),
   );
 
+  /** The shape about to be placed (SLOPE_BLOCKS.md §6): its edges, lighter than the block outline. */
+  private readonly preview = new LineSegments(
+    new BufferGeometry(),
+    new LineBasicMaterial({ color: 0xfff6c8, transparent: true, opacity: 0.95 }),
+  );
+
   constructor(canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     if (!canvas.getContext('webgl2')) {
       throw new RendererUnavailableError('WebGL2 is not available on this device.');
@@ -222,6 +228,9 @@ export class ThreeRenderer implements Renderer {
     this.scene.add(sun);
     this.outline.visible = false;
     this.scene.add(this.outline);
+    this.preview.visible = false;
+    this.preview.frustumCulled = false;
+    this.scene.add(this.preview);
     this.lodWater.mesh.renderOrder = 1;
     this.scene.add(this.lodWater.mesh);
     this.batch = options.batched
@@ -498,6 +507,14 @@ export class ThreeRenderer implements Renderer {
     this.outline.position.set(cell[0] - 0.002, cell[1] - 0.002, cell[2] - 0.002);
     this.outline.scale.set(1, height, 1);
     ThreeRenderer.placed(this.outline);
+  }
+
+  setPlacementPreview(cell: Vec3 | null, edges?: Float32Array): void {
+    this.preview.visible = cell !== null && edges !== undefined;
+    if (!cell || !edges) return;
+    this.preview.geometry.setAttribute('position', new BufferAttribute(edges, 3));
+    this.preview.position.set(cell[0], cell[1], cell[2]);
+    ThreeRenderer.placed(this.preview);
   }
 
   setDebugLines(segments: readonly DebugSegment[] | null): void {

@@ -3,17 +3,17 @@ import { BlockEditAction, MessageType, Players } from '../protocol/constants.gen
 import type { Message, Vec3 } from '../protocol/messages';
 import { MATERIALS } from '../world/materials';
 import { BlockInteraction, ladderFor, PALETTE, viewDirection } from './blockInteraction';
+import { PIECES } from './shapes';
 
 const name = (id: number) => MATERIALS[id]?.name;
 const round = (v: Vec3) => v.map((x) => Math.round(x * 1000) / 1000 + 0);
 
 describe('block palette', () => {
-  it('offers every placeable material once, ladders as one slot (C++ Placeable)', () => {
+  it('offers every placeable material once, ladders as one slot; shapes are pieces, not slots', () => {
     expect(PALETTE.map((s) => s.name)).toEqual([
       'stone',
       'dirt',
       'grass',
-      'stone_slab',
       'ladder',
       'sand',
       'sandstone',
@@ -109,5 +109,66 @@ describe('BlockInteraction', () => {
     interaction.scroll(1);
     interaction.select(4);
     expect(seen).toEqual([PALETTE.length - 1, 0, 4]);
+  });
+
+  describe('shaped pieces', () => {
+    const slot = (n: string) => PALETTE.findIndex((s) => s.name === n);
+
+    it('cycles the piece for materials that come in shapes, and not for those that do not', () => {
+      const { interaction } = setup();
+      const seen: string[] = [];
+      interaction.onPiece = (p) => seen.push(p);
+      interaction.select(slot('stone'));
+      interaction.cyclePiece(1);
+      interaction.cyclePiece(1);
+      interaction.cyclePiece(-1);
+      expect(seen).toEqual(['slab', 'wedge', 'slab']);
+      interaction.select(slot('leaves'));
+      interaction.cyclePiece(1);
+      expect(seen).toHaveLength(3); // leaves come only as cubes
+      expect(interaction.effectivePiece).toBe('cube');
+      interaction.select(slot('stone'));
+      expect(interaction.effectivePiece).toBe('slab'); // the choice is kept
+      for (let i = 0; i < PIECES.length; i++) interaction.cyclePiece(1);
+      expect(interaction.piece).toBe('slab'); // a full lap
+    });
+
+    it('places a slope that rises away from the player, upright on a top, hanging from a ceiling', () => {
+      const { sent, interaction } = setup();
+      interaction.select(slot('stone'));
+      interaction.piece = 'wedge';
+      interaction.update([3.5, 1.6, 0], 0, 0); // looking +Z at the −Z face (5) of cell (3, 0, 4)
+      const placed = interaction.placement();
+      expect(placed?.cell).toEqual([3, 0, 3]);
+      expect(name(placed?.material ?? 0)).toBe(
+        'dwell:stone_slope[facing=north,flooded=false,half=top,shape=wedge]',
+      ); // the ray meets the face above its middle: hanging
+      interaction.update([3.5, 0.2, 0], 0, 0);
+      expect(name(interaction.placement()?.material ?? 0)).toBe(
+        'dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=wedge]',
+      );
+      interaction.update([3.5, 0.2, 0], 90, 0); // looking +X: the slope descends toward −X… west
+      expect(name(interaction.placement()?.material ?? 0)).toContain('facing=west');
+      interaction.act('place', 0);
+      const m = sent[0];
+      expect(m?.type === MessageType.BlockEditRequest && m.material).toBe(
+        interaction.placement()?.material,
+      );
+    });
+
+    it('places slabs and cubes, and always the cube for other materials', () => {
+      const { interaction } = setup();
+      interaction.update([3.5, 0.2, 0], 0, 0);
+      interaction.select(slot('stone'));
+      interaction.piece = 'slab';
+      expect(name(interaction.placement()?.material ?? 0)).toBe(
+        'dwell:stone_slab[flooded=false,half=bottom]',
+      );
+      interaction.piece = 'cube';
+      expect(name(interaction.placement()?.material ?? 0)).toBe('dwell:stone');
+      interaction.select(slot('coal_ore'));
+      interaction.piece = 'wedge';
+      expect(name(interaction.placement()?.material ?? 0)).toBe('dwell:coal_ore');
+    });
   });
 });

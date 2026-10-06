@@ -20,7 +20,7 @@
       "name": "grass", "density": 1400, "shape": "full", "placeable": true,
       "color": "#8dbf3f", "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
-    { "name": "stone_slab", "family": "slab", "of": "stone", "placeable": true },
+    { "name": "stone_slab", "family": "slab", "of": "stone" },
     {
       "name": "ladder", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
       "facingProperty": "facing",

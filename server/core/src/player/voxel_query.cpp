@@ -225,7 +225,9 @@ float VoxelQuery::SubmergedFraction(RVec3 center, float half_height) const {
   float wet = 0.0f;
   for (auto y = static_cast<std::int32_t>(std::floor(feet));
        y <= static_cast<std::int32_t>(std::floor(head)); ++y) {
-    if (!core::GetMaterial(Material(x, y, z)).liquid) continue;
+    // Water, or the water in the open part of a flooded shape (counted as the whole cell).
+    const core::MaterialInfo& cell = core::GetMaterial(Material(x, y, z));
+    if (!cell.liquid && !cell.flooded) continue;
     const float lo = std::max(feet, static_cast<float>(y));
     const float hi = std::min(head, static_cast<float>(y) + 1.0f);
     wet += std::max(0.0f, hi - lo);

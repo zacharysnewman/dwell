@@ -24,6 +24,7 @@ import { formatDebug, type Hud } from '../ui/hud';
 import type { ChunkStreamer, StreamStats } from '../world/chunkStream';
 import type { LodCamera } from '../lod/frustum';
 import { formatLodStats, type LodStats, type LodSystem } from '../lod/lodSystem';
+import { shapeEdges } from '../render/shapeEdges';
 import { SHAPES } from '../world/blocks';
 import { materialStyle } from '../world/materials';
 import { EyeCamera } from './eye';
@@ -82,6 +83,7 @@ export type ViewportInfo = () => { fovYDeg: number; aspect: number; heightPx: nu
 export class Game {
   private readonly remotes = new RemotePlayers();
   private readonly proxies = new Set<number>();
+  private readonly shapeEdges = new Map<number, Float32Array>();
   private readonly recent: InputFrame[] = [];
   private accumulator = 0;
   private lastFrameMs: number | null = null;
@@ -348,12 +350,31 @@ export class Game {
     const t = this.interaction?.update(eye, this.input.yaw, this.input.pitch) ?? null;
     if (!t) {
       this.renderer.setBlockOutline(null);
+      this.renderer.setPlacementPreview(null);
       return;
     }
     // The outline hugs the shape's top: slabs and low slopes are not a full cell tall.
     const style = materialStyle(this.voxel(...t.cell));
     const shape = style.look === 'shaped' ? SHAPES[style.shape] : undefined;
     this.renderer.setBlockOutline(t.cell, shape && !shape.inverted ? shape.maxY : 1);
+    // The shape about to be placed, when a piece other than the cube is picked.
+    const placing =
+      this.interaction?.effectivePiece !== 'cube' ? this.interaction?.placement() : null;
+    const edges = placing ? this.edgesOf(placing.material) : null;
+    this.renderer.setPlacementPreview(placing && edges ? placing.cell : null, edges ?? undefined);
+  }
+
+  /** The outline edges of a state's shape (cached per shape). */
+  private edgesOf(material: number): Float32Array | null {
+    const index = materialStyle(material).shape;
+    let edges = this.shapeEdges.get(index);
+    if (!edges) {
+      const shape = SHAPES[index];
+      if (!shape) return null;
+      edges = shapeEdges(shape);
+      this.shapeEdges.set(index, edges);
+    }
+    return edges;
   }
 
   private playerView(

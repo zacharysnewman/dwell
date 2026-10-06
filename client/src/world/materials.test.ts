@@ -46,11 +46,15 @@ describe('material styles', () => {
   });
 
   it('mark the placeable set of the C++ registry (Placeable, block_edit_test.cpp)', () => {
-    expect(PLACEABLE.map((id) => MATERIALS[id]?.name)).toEqual([
+    // The shaped families are all placeable (the shape key picks among them); the other states are
+    // the palette's slots.
+    const names = PLACEABLE.map((id) => MATERIALS[id]?.name ?? '');
+    const shaped = names.filter((n) => /_(slope|slab)\[/.test(n));
+    expect(shaped.length).toBe(8 * (144 + 4));
+    expect(names.filter((n) => !shaped.includes(n))).toEqual([
       'dwell:stone',
       'dwell:dirt',
       'dwell:grass',
-      'dwell:stone_slab[flooded=false,half=bottom]',
       'dwell:ladder[facing=north,flooded=false]',
       'dwell:ladder[facing=east,flooded=false]',
       'dwell:ladder[facing=south,flooded=false]',

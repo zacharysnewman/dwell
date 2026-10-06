@@ -3,6 +3,7 @@
 #include <doctest/doctest.h>
 
 #include "dwell/core/block_edit.h"
+#include "dwell/core/block_registry.h"
 #include "dwell/core/physics_world.h"
 #include "dwell/player/voxel_query.h"
 #include "server_fixture.h"
@@ -46,14 +47,19 @@ TEST_CASE("block edit: the palette (the registry's placeable states)") {
   for (MaterialId m = 0; m < Materials::kCount; ++m) {
     if (Placeable(m)) placeable.push_back(GetMaterial(m).name);
   }
+  // The shaped families (slopes and slabs) are placed through the shape selector, not slots: every
+  // state of them is placeable, and the hotbar draws one slot per material.
+  std::erase_if(placeable, [](std::string_view name) {
+    return name.find("_slope[") != std::string_view::npos ||
+           name.find("_slab[") != std::string_view::npos;
+  });
   CHECK(placeable ==
         std::vector<std::string_view>{
-            "dwell:stone", "dwell:dirt", "dwell:grass",
-            "dwell:stone_slab[flooded=false,half=bottom]",
-            "dwell:ladder[facing=north,flooded=false]", "dwell:ladder[facing=east,flooded=false]",
-            "dwell:ladder[facing=south,flooded=false]", "dwell:ladder[facing=west,flooded=false]",
-            "dwell:sand", "dwell:sandstone", "dwell:gravel", "dwell:snow", "dwell:log",
-            "dwell:leaves", "dwell:coal_ore", "dwell:iron_ore", "dwell:gold_ore"});
+            "dwell:stone", "dwell:dirt", "dwell:grass", "dwell:ladder[facing=north,flooded=false]",
+            "dwell:ladder[facing=east,flooded=false]", "dwell:ladder[facing=south,flooded=false]",
+            "dwell:ladder[facing=west,flooded=false]", "dwell:sand", "dwell:sandstone",
+            "dwell:gravel", "dwell:snow", "dwell:log", "dwell:leaves", "dwell:coal_ore",
+            "dwell:iron_ore", "dwell:gold_ore"});
   CHECK_FALSE(Placeable(Materials::kCount));
   CHECK_FALSE(Targetable(Materials::kAir));
   CHECK_FALSE(Targetable(Materials::kWater));
@@ -141,7 +147,7 @@ TEST_CASE("block edit: validation of reach, line of sight, materials, occupancy 
   CHECK(CheckBlockEdit(world, Break({3, 0, 0}, 1), eye, nobody).check == EditCheck::kUnbreakable);
   // Only the palette can be placed.
   for (const MaterialId m : {Materials::kAir, Materials::kWater, Materials::kBedrock,
-                             Materials::kLaunchPad, MaterialId{999}}) {
+                             Materials::kLaunchPad, MaterialId{65000}}) {
     CAPTURE(m);
     CHECK(CheckBlockEdit(world, Place({-2, -1, 0}, 2, m), eye, nobody).check ==
           EditCheck::kNotPlaceable);
@@ -174,6 +180,73 @@ TEST_CASE("block edit: placing into blocks or players is rejected") {
   const std::vector<EditCapsule> beside{{{-2.5, 0.9, 2.5}, 0.3f, 0.6f}};
   CHECK(CheckBlockEdit(world, Place({-1, -1, 2}, 2, Materials::kStone), eye, beside).check ==
         EditCheck::kOk);
+}
+
+TEST_CASE("block edit: every slope and slab state of a shapeable material is placeable") {
+  std::size_t shaped = 0;
+  for (MaterialId m = 0; m < Materials::kCount; ++m) {
+    const std::string name(StateString(m));
+    const bool family =
+        name.find("_slope[") != std::string::npos || name.find("_slab[") != std::string::npos;
+    if (family) {
+      CAPTURE(name);
+      CHECK(Placeable(m));
+      ++shaped;
+    }
+  }
+  CHECK(shaped == 8 * (144 + 4));
+  CHECK_FALSE(Placeable(Materials::kWater));
+}
+
+TEST_CASE(
+    "block edit: a shape placed into water is flooded, anywhere else dry; breaking leaves water") {
+  VoxelWorld world = Empty();
+  for (int x = -4; x <= 4; ++x)
+    for (int z = -4; z <= 8; ++z) world.SetVoxel(x, -1, z, Materials::kGrass);
+  const std::array<double, 3> eye{0.5, 1.62, 0.5};
+  const auto wedge = [](bool flooded) {
+    return *ParseState(std::string("dwell:stone_slope[facing=east,flooded=") +
+                       (flooded ? "true" : "false") + ",half=bottom,shape=wedge]");
+  };
+  // Into air: dry, even when the client asks for a flooded state (no water from nothing).
+  auto dry = CheckBlockEdit(world, Place({0, -1, 2}, 2, wedge(true)), eye, {});
+  REQUIRE(dry.check == EditCheck::kOk);
+  CHECK(dry.material == wedge(false));
+  // Into water: flooded, whichever state the client sent.
+  world.SetVoxel(-2, 0, 0, Materials::kWater);
+  for (const bool asked : {false, true}) {
+    const auto wet = CheckBlockEdit(world, Place({-2, -1, 0}, 2, wedge(asked)), eye, {});
+    REQUIRE(wet.check == EditCheck::kOk);
+    CHECK(wet.material == wedge(true));
+  }
+  // Breaking a flooded shape leaves water; a dry one leaves air.
+  world.SetVoxel(1, 0, 2, wedge(true));
+  world.SetVoxel(-1, 0, 2, wedge(false));
+  const auto leaves_water = CheckBlockEdit(world, Break({1, 0, 2}, 2), eye, {});
+  REQUIRE(leaves_water.check == EditCheck::kOk);
+  CHECK(leaves_water.material == Materials::kWater);
+  const auto leaves_air = CheckBlockEdit(world, Break({-1, 0, 2}, 2), eye, {});
+  REQUIRE(leaves_air.check == EditCheck::kOk);
+  CHECK(leaves_air.material == Materials::kAir);
+}
+
+TEST_CASE("block edit: a slope is checked against players by its true volume, not its cell") {
+  VoxelWorld world = Empty();
+  for (int x = -4; x <= 4; ++x)
+    for (int z = -4; z <= 8; ++z) world.SetVoxel(x, -1, z, Materials::kGrass);
+  const std::array<double, 3> eye{0.5, 1.62, 0.5};
+  const auto wedge =
+      *ParseState("dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=wedge]");
+  // A player standing 0.2 m past the low (east) edge of the cell (0, 0, 2): too close for a cube
+  // (its face is within the capsule's 0.3 m), clear of the wedge, whose edge there has no height.
+  const std::vector<EditCapsule> player{{{1.2, 0.9, 2.5}, 0.3f, 0.6f}};
+  CHECK(CheckBlockEdit(world, Place({0, -1, 2}, 2, Materials::kStone), eye, player).check ==
+        EditCheck::kIntoPlayer);
+  CHECK(CheckBlockEdit(world, Place({0, -1, 2}, 2, wedge), eye, player).check == EditCheck::kOk);
+  // On the high (west) side the wedge is as solid as a cube.
+  const std::vector<EditCapsule> high{{{-0.2, 0.9, 2.5}, 0.3f, 0.6f}};
+  CHECK(CheckBlockEdit(world, Place({0, -1, 2}, 2, wedge), eye, high).check ==
+        EditCheck::kIntoPlayer);
 }
 
 TEST_CASE("block edit: probes see a block placed into a chunk they read as open sky") {

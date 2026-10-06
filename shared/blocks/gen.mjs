@@ -44,6 +44,7 @@ const familyBlock = (base, kind, extra = {}) => {
     look: 'shaped',
     shape: 'shaped',
     slopeFamily: kind,
+    palette: 'all',
   };
   return kind === 'slope'
     ? {
@@ -156,6 +157,12 @@ if (shapeTable.length > 0xffff) fail('too many shapes');
 const defaultOf = (block) => Object.fromEntries(block.props.map((p) => [p.name, p.values[0]]));
 for (const block of blocks) {
   const { def } = block;
+  if (def.palette === 'all') {
+    // Every state is placeable (the shaped families: the client picks the piece, the facing and the
+    // half; the server normalises `flooded` from the cell).
+    for (const st of states) if (st.block === block) st.placeable = true;
+    continue;
+  }
   const entries = def.palette ?? (def.placeable ? [{}] : []);
   for (const entry of entries) {
     const want = { ...defaultOf(block), ...entry };

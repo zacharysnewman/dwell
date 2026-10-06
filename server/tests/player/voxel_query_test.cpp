@@ -114,6 +114,22 @@ bool ReferenceCast(const VoxelQuery& q, player::RVec3 origin, player::Vec3 dir, 
 }  // namespace
 
 TEST_SUITE("player: voxel query") {
+  TEST_CASE("a flooded shape counts as water for swimming, a dry one does not") {
+    PlayerTestWorld w;
+    const auto flooded = *ParseState("dwell:stone_slab[flooded=true,half=bottom]");
+    const auto dry = *ParseState("dwell:stone_slab[flooded=false,half=bottom]");
+    w.Set(0, 0, 0, flooded);
+    w.Set(4, 0, 0, dry);
+    w.Set(8, 0, 0, Materials::kWater);
+    VoxelQuery q(w.world, w.physics.system());
+    const auto submerged = [&](float x) {
+      return q.SubmergedFraction(ToWorld(player::Vec3(x + 0.5f, 0.9f, 0.5f)), 0.9f);
+    };
+    CHECK(submerged(8) == doctest::Approx(submerged(0)));  // as wet as plain water
+    CHECK(submerged(0) > 0.4f);
+    CHECK(submerged(4) == 0.0f);
+  }
+
   TEST_CASE("axis-aligned rays from grid points answer like the box cast") {
     PlayerTestWorld w;
     std::mt19937 rng(11);

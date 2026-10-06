@@ -1,5 +1,6 @@
 #include "dwell/core/block_edit.h"
 
+#include "dwell/core/block_registry.h"
 #include "dwell/core/block_shape.h"
 
 #include <algorithm>
@@ -152,7 +153,8 @@ EditOutcome CheckBlockEdit(VoxelWorld& world, const protocol::BlockEditRequest& 
   if (request.action == protocol::BlockEditAction::kBreak) {
     if (GetMaterial(target).indestructible) return {EditCheck::kUnbreakable};
     out.cell = c;
-    out.material = Materials::kAir;
+    // A flooded shape leaves the water that filled its open part.
+    out.material = GetMaterial(target).flooded ? Materials::kWater : Materials::kAir;
     return out;
   }
 
@@ -164,6 +166,13 @@ EditOutcome CheckBlockEdit(VoxelWorld& world, const protocol::BlockEditRequest& 
   }
   const MaterialId existing = world.GetVoxel(out.cell[0], out.cell[1], out.cell[2]);
   if (Targetable(existing)) return {EditCheck::kOccupied};
+  // Whether a state is flooded follows its cell, not the request: placed into water it holds the
+  // water in its open part, anywhere else none (no water from nothing).
+  if (StateProperty(out.material, "flooded")) {
+    const auto state =
+        WithProperty(out.material, "flooded", GetMaterial(existing).liquid ? "true" : "false");
+    if (state) out.material = *state;
+  }
   const MaterialInfo& placed = GetMaterial(out.material);
   if (placed.solid) {
     // Each player's vertical capsule axis against the placed shape's true surface, in the cell's
