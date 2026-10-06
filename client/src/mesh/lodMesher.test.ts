@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LOD_PAD, LOD_VOLUME, lodCell } from '../lod/grid';
+import { faceTint } from '../render/look';
 import { averageTileColor } from '../render/textures';
 import { lodColor, meshSection, SURFACE_STRIDE } from './lodMesher';
 
@@ -52,7 +53,7 @@ describe('LOD section mesher (§6.6)', () => {
   it('writes linear vertex colours: the textured chunks are sRGB, decoded before lighting', () => {
     // Regression (phone playtest): sRGB bytes used as linear colours drew distant land paler.
     const cells = new Uint16Array(LOD_VOLUME);
-    cells[lodCell(3, 4, 5)] = 4; // grass: its top face is lit at full shade
+    cells[lodCell(3, 4, 5)] = 4; // grass
     const m = meshSection(cells);
     const n = m.opaque.normals;
     let top = -1;
@@ -65,7 +66,10 @@ describe('LOD section mesher (§6.6)', () => {
     };
     const rgb = [(srgb >> 16) & 0xff, (srgb >> 8) & 0xff, srgb & 0xff];
     for (let ch = 0; ch < 3; ch++) {
-      expect(m.opaque.colors[top * 3 + ch]).toBeCloseTo(linear(rgb[ch] ?? 0), 4);
+      expect(m.opaque.colors[top * 3 + ch]).toBeCloseTo(
+        linear(rgb[ch] ?? 0) * (faceTint(1, 1)[ch] ?? 0),
+        4,
+      );
     }
   });
 

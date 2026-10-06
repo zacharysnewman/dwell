@@ -116,20 +116,26 @@ const mix = (a: Rgb, b: Rgb, t: number): Rgb => [
 ];
 const scale = (c: Rgb, s: number): Rgb => [c[0] * s, c[1] * s, c[2] * s];
 
-const GRASS = rgb(0x5e9c3a);
-const GRASS_DRY = rgb(0x8fae3f);
-const DIRT = rgb(0x7a5534);
-const STONE = rgb(0xa4a7ab);
-const STONE_COOL = rgb(0x959ca8);
+// Base colours target the measured palette (WORLD_GENERATION.md §1.3–1.4): vivid yellow-green
+// grass, warm red-brown dirt, warm grey rock with cream and violet flecks, turquoise water.
+const GRASS = rgb(0x8dbf3f);
+const GRASS_HIGH = rgb(0xb5cf4f);
+const GRASS_LOW = rgb(0x5f9a3a);
+const DIRT = rgb(0x8a5a3a);
+const STONE = rgb(0xbbafa6);
+const STONE_COOL = rgb(0x9c95a8);
+const STONE_FLECK = rgb(0xd6c6b4);
 
 function grass(x: number, y: number): Rgb {
   const n = tiledFbm(x, y, 11);
   const patches = tiledNoise(x, y, 4, 7, 12);
   const blade = hash(x, y, 9, 13); // per-texel speckle: darker and lighter blades
-  // Gentle: large features repeat once per block, so dry patches only tint.
-  let c = scale(mix(GRASS, GRASS_DRY, 0.35 * patches), 0.78 + 0.38 * n);
-  if (blade > 0.9) c = scale(c, 0.78);
-  else if (blade < 0.06) c = scale(c, 1.14);
+  // Gentle: large features repeat once per block, so bright patches only tint; noise runs from
+  // the deeper green in the hollows to the yellow-green highlights.
+  const lit = mix(GRASS, GRASS_HIGH, 0.55 * patches);
+  let c = mix(GRASS_LOW, lit, Math.min(1, 0.35 + 0.9 * n));
+  if (blade > 0.9) c = scale(c, 0.82);
+  else if (blade < 0.06) c = scale(c, 1.1);
   return c;
 }
 
@@ -153,19 +159,20 @@ function stone(x: number, y: number): Rgb {
   const tint = tiledNoise(x, y, 4, 2, 42);
   // Fine flecks rather than large features: at one tile per block, anything big repeats visibly.
   const fleck = hash(x, y, 5, 44);
-  let c = scale(mix(STONE, STONE_COOL, tint), 0.74 + 0.4 * n);
-  if (fleck > 0.92) c = scale(c, 0.82);
-  else if (fleck < 0.05) c = scale(c, 1.12);
+  let c = scale(mix(STONE, STONE_COOL, 0.8 * tint), 0.78 + 0.34 * n);
+  if (fleck > 0.92) c = mix(c, STONE_COOL, 0.5);
+  else if (fleck < 0.05) c = STONE_FLECK;
   return c;
 }
 
-const SAND = rgb(0xdbcf9a);
-const SANDSTONE = rgb(0xc9b37a);
-const GRAVEL = rgb(0x8c8580);
-const SNOW = rgb(0xf2f5f8);
-const BARK = rgb(0x6b4a2b);
-const WOOD = rgb(0xb08a55);
-const LEAVES = rgb(0x3f7d2c);
+const SAND = rgb(0xeed9a4);
+const SANDSTONE = rgb(0xe0be86);
+const GRAVEL = rgb(0xa3968e);
+const SNOW = rgb(0xfbf8f2);
+const BARK = rgb(0x7a5236);
+const WOOD = rgb(0xc09a62);
+const LEAVES = rgb(0x6fa83a);
+const LEAVES_HIGH = rgb(0xa9c94a);
 
 function sand(x: number, y: number): Rgb {
   const n = tiledFbm(x, y, 51);
@@ -214,7 +221,7 @@ function logTop(x: number, y: number): Rgb {
 function leaves(x: number, y: number): Rgb {
   const n = tiledFbm(x, y, 101);
   const gap = hash(x, y, 2, 102);
-  let c = scale(LEAVES, 0.7 + 0.45 * n);
+  let c = mix(scale(LEAVES, 0.8), LEAVES_HIGH, Math.max(0, n - 0.35) * 1.4);
   if (gap > 0.88) c = scale(c, 0.55); // dark gaps between leaves
   return c;
 }
@@ -230,8 +237,8 @@ function ore(color: number, seed: number): (x: number, y: number) => Rgb {
   };
 }
 
-const BEDROCK = rgb(0x4a4a50);
-const WATER = rgb(0x3f7fd8);
+const BEDROCK = rgb(0x4e4858);
+const WATER = rgb(0x3fb2d6);
 const RAIL = rgb(0xa0703a);
 const LAUNCH = rgb(0xe8792a);
 

@@ -40,21 +40,21 @@ const LOG: MaterialTextures = { top: 'logTop', side: 'logSide', bottom: 'logTop'
 
 export const MATERIALS: readonly MaterialStyle[] = [
   { name: 'air', look: 'cube', color: 0x000000, opacity: 0 },
-  { name: 'bedrock', look: 'cube', color: 0x2e2e33, opacity: 1, textures: all('bedrock') },
-  { name: 'stone', look: 'cube', color: 0x8a8d91, opacity: 1, textures: STONE, placeable: true },
+  { name: 'bedrock', look: 'cube', color: 0x4e4858, opacity: 1, textures: all('bedrock') },
+  { name: 'stone', look: 'cube', color: 0xbbafa6, opacity: 1, textures: STONE, placeable: true },
   {
     name: 'dirt',
     look: 'cube',
-    color: 0x7a5534,
+    color: 0x8a5a3a,
     opacity: 1,
     textures: all('dirt'),
     placeable: true,
   },
-  { name: 'grass', look: 'cube', color: 0x5e9c3a, opacity: 1, textures: GRASS, placeable: true },
+  { name: 'grass', look: 'cube', color: 0x8dbf3f, opacity: 1, textures: GRASS, placeable: true },
   {
     name: 'stone_slab',
     look: 'slab',
-    color: 0xa9adb2,
+    color: 0xc8bdb4,
     opacity: 1,
     textures: STONE,
     placeable: true,
@@ -63,13 +63,13 @@ export const MATERIALS: readonly MaterialStyle[] = [
   LADDER('ladder_e', 0),
   LADDER('ladder_s', 4),
   LADDER('ladder_w', 1),
-  { name: 'water', look: 'water', color: 0x2f6fd0, opacity: 0.55, textures: all('water') },
+  { name: 'water', look: 'water', color: 0x3fb2d6, opacity: 0.55, textures: all('water') },
   { name: 'launch_pad', look: 'cube', color: 0xe8792a, opacity: 1, textures: LAUNCH_PAD },
   // Terrain generator materials (Phase 3).
   {
     name: 'sand',
     look: 'cube',
-    color: 0xdbcf9a,
+    color: 0xeed9a4,
     opacity: 1,
     textures: all('sand'),
     placeable: true,
@@ -77,7 +77,7 @@ export const MATERIALS: readonly MaterialStyle[] = [
   {
     name: 'sandstone',
     look: 'cube',
-    color: 0xc9b37a,
+    color: 0xe0be86,
     opacity: 1,
     textures: all('sandstone'),
     placeable: true,
@@ -85,7 +85,7 @@ export const MATERIALS: readonly MaterialStyle[] = [
   {
     name: 'gravel',
     look: 'cube',
-    color: 0x8c8580,
+    color: 0xa3968e,
     opacity: 1,
     textures: all('gravel'),
     placeable: true,
@@ -93,16 +93,16 @@ export const MATERIALS: readonly MaterialStyle[] = [
   {
     name: 'snow',
     look: 'cube',
-    color: 0xf2f5f8,
+    color: 0xfbf8f2,
     opacity: 1,
     textures: all('snow'),
     placeable: true,
   },
-  { name: 'log', look: 'cube', color: 0x6b4a2b, opacity: 1, textures: LOG, placeable: true },
+  { name: 'log', look: 'cube', color: 0x7a5236, opacity: 1, textures: LOG, placeable: true },
   {
     name: 'leaves',
     look: 'cube',
-    color: 0x3f7d2c,
+    color: 0x6fa83a,
     opacity: 1,
     textures: all('leaves'),
     placeable: true,
@@ -110,7 +110,7 @@ export const MATERIALS: readonly MaterialStyle[] = [
   {
     name: 'coal_ore',
     look: 'cube',
-    color: 0x8a8d91,
+    color: 0xbbafa6,
     opacity: 1,
     textures: all('coalOre'),
     placeable: true,
@@ -118,7 +118,7 @@ export const MATERIALS: readonly MaterialStyle[] = [
   {
     name: 'iron_ore',
     look: 'cube',
-    color: 0x8a8d91,
+    color: 0xbbafa6,
     opacity: 1,
     textures: all('ironOre'),
     placeable: true,
@@ -126,7 +126,7 @@ export const MATERIALS: readonly MaterialStyle[] = [
   {
     name: 'gold_ore',
     look: 'cube',
-    color: 0x8a8d91,
+    color: 0xbbafa6,
     opacity: 1,
     textures: all('goldOre'),
     placeable: true,

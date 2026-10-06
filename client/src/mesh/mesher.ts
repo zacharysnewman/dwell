@@ -5,6 +5,7 @@
 // rectangle, and the chunk shader samples tile + fract(uv) × size (render/three). Pure data (no
 // WebGL), so it runs in the meshing workers and in tests.
 import { CHUNK_SIZE } from '../protocol/constants.gen';
+import { faceTint } from '../render/look';
 import { tileRect, type TileRect } from '../render/textures';
 import { materialStyle, type MaterialStyle } from '../world/materials';
 
@@ -19,7 +20,7 @@ export const paddedIndex = (x: number, y: number, z: number): number =>
 export interface MeshArrays {
   positions: Float32Array<ArrayBuffer>;
   normals: Float32Array<ArrayBuffer>;
-  /** Shading × (untextured) material colour; multiplies the texture. */
+  /** Face tint (render/look.ts) × (untextured) material colour; multiplies the texture. */
   colors: Float32Array<ArrayBuffer>;
   /** Texture coordinates in blocks: the shader repeats the tile once per unit. */
   uvs: Float32Array<ArrayBuffer>;
@@ -117,10 +118,10 @@ class Builder {
     const u = (axis + 1) % 3;
     const v = (axis + 2) % 3;
     const base = this.positions.length / 3;
-    const shade = axis === 1 ? (sign > 0 ? 1 : 0.55) : axis === 0 ? 0.8 : 0.7;
-    const r = (((color >> 16) & 0xff) / 255) * shade;
-    const g = (((color >> 8) & 0xff) / 255) * shade;
-    const b = ((color & 0xff) / 255) * shade;
+    const tint = faceTint(axis, sign);
+    const r = (((color >> 16) & 0xff) / 255) * tint[0];
+    const g = (((color >> 8) & 0xff) / 255) * tint[1];
+    const b = ((color & 0xff) / 255) * tint[2];
     const p = [0, 0, 0];
     for (const [cu, cv] of [
       [u0, v0],
