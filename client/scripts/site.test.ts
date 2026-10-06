@@ -90,6 +90,20 @@ describe('the manifest', () => {
     expect(m.schema).toBe(1);
   });
 
+  // The release workflow's first real run: a dev build's build.json carried `+<commit>` (the
+  // version the build embeds), which the manifest refused, so the site was never deployed.
+  it('takes a build whose build.json version carries build metadata, listing it without', () => {
+    const m = buildManifest(
+      new Map([
+        ['0.1.0-dev.1', build('0.1.0-dev.1+d9a097d')],
+        ['0.1.0', build('0.1.0')],
+      ]),
+      'now',
+    );
+    expect(m.versions.map((v) => v.version)).toEqual(['0.1.0', '0.1.0-dev.1']);
+    expect(m.latestDev).toBe('0.1.0-dev.1');
+  });
+
   it('has no latest for a channel with no builds', () => {
     const m = buildManifest(new Map([['0.1.0', build('0.1.0')]]), 'now');
     expect(m.latestDev).toBeNull();

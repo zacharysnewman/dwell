@@ -54,7 +54,8 @@ function releaseFiles(): Plugin {
         protocolVersion: number;
       };
       const buildJson = {
-        version,
+        // As the tag and the version directory name it: the commit is its own field.
+        version: withoutBuild(parsed),
         channel: isStable(parsed) ? 'stable' : 'dev',
         date: buildTime,
         commit: sha,

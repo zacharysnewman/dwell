@@ -114,7 +114,7 @@ jobs:
         run: |
           node -e '
             const b = JSON.parse(require("fs").readFileSync("dist/build.json", "utf8"));
-            if (b.version !== process.env.DWELL_VERSION) throw new Error("build.json says " + b.version);
+            if (b.version !== process.env.VERSION) throw new Error("build.json says " + b.version);
             const html = require("fs").readFileSync("dist/index.html", "utf8");
             if (!html.includes("/dwell/v/" + process.env.VERSION + "/")) throw new Error("index.html is not based at /dwell/v/<version>/");
             if (!require("fs").existsSync("dist/THIRD_PARTY_NOTICES.txt")) throw new Error("no THIRD_PARTY_NOTICES.txt");

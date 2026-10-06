@@ -2,7 +2,7 @@
 // versioned. It reads `versions.json`, picks the build the address needs (a world's, a host's or
 // the latest) and replaces itself with it, keeping the query. Everything else is an error page
 // that offers the latest version.
-import { parseManifest, type Manifest } from './manifest';
+import { isBuildOf, parseManifest, type Manifest } from './manifest';
 import { choose, forwardedSearch, latestBuild, type Channel } from './select';
 
 // Written by the game's menu (src/ui/channel.ts).
@@ -78,8 +78,7 @@ async function published(version: string): Promise<boolean> {
   try {
     const response = await fetch(new URL('build.json', buildUrl(version)), { cache: 'no-cache' });
     if (!response.ok) return false;
-    const build = (await response.json()) as { version?: unknown };
-    return build.version === version;
+    return isBuildOf(await response.json(), version);
   } catch {
     return false;
   }

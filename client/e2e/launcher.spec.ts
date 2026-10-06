@@ -18,9 +18,18 @@ function world(id: string, name: string, appVersion?: string) {
   };
 }
 
+/**
+ * Opens `/dwell/` and waits for the launcher's redirect to land: a navigation started while the
+ * redirect is still in flight is aborted.
+ */
+async function openLauncher(page: Page): Promise<void> {
+  await page.goto('./');
+  await page.waitForURL(/\/dwell\/v\/[^/]+\//);
+}
+
 /** Puts worlds in the browser's index (the launcher and every version share this origin). */
 async function seedWorlds(page: Page, worlds: unknown[]): Promise<void> {
-  await page.goto('./');
+  await openLauncher(page);
   await page.evaluate((w) => {
     localStorage.setItem('dwell.worlds', JSON.stringify(w));
   }, worlds);
@@ -118,7 +127,7 @@ test('says so for a version that is not published', async ({ page }) => {
 });
 
 test('falls back to the stable build when the dev channel has none', async ({ page }) => {
-  await page.goto('./');
+  await openLauncher(page);
   await page.evaluate(() => {
     localStorage.setItem('dwell.channel', 'dev');
   });
