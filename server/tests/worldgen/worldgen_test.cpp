@@ -18,6 +18,7 @@
 #include "dwell/worldgen/terrain.h"
 
 #include "biome_search.h"
+#include "water_search.h"
 
 using namespace dwell;
 using core::Chunk;
@@ -293,7 +294,7 @@ TEST_SUITE("worldgen: terrain") {
     }
   }
 
-  TEST_CASE("water only below sea level; small floating pieces are removed") {
+  TEST_CASE("water only below its column's surface level; small floating pieces are removed") {
     const TerrainGenerator gen(0);
     const auto ocean = FindBiome(gen, Biome::kOcean);
     const auto mountain = FindBiome(gen, Biome::kMountains);
@@ -310,7 +311,8 @@ TEST_SUITE("worldgen: terrain") {
             for (int x = 0; x < S; ++x)
               if (chunk.Get(x, y, z) == M::kWater) {
                 ++water;
-                CHECK(c.y * S + y < core::kSeaLevel);
+                // Sea level, or the surface of the river or lake in the column (Phase 11a).
+                CHECK(c.y * S + y < gen.ColumnAt(c.x * S + x, c.z * S + z).water);
               }
         // Every solid component touches a chunk face or has at least 48 voxels.
         std::vector<std::uint8_t> seen(core::kChunkVolume, 0);
@@ -372,15 +374,16 @@ TEST_SUITE("worldgen: terrain") {
       int found = 0;
       for (int d = 0; d < 64 && found < 5; ++d) {
         const int x = p->first + d, z = p->second;
-        if (gen.ColumnAt(x, z).biome != b) continue;
+        const auto column = gen.ColumnAt(x, z);
+        if (column.biome != b || column.wet > 0.0f) continue;  // rivers and lakes have beds
         if (const auto g = gen.GroundY(x, z)) {
           // The topmost solid cell of the column near the ground: the surface, or a slope or slab
           // of it standing on the ground's top voxel.
-          MaterialId m = world.GetVoxel(x, *g, z);
-          for (int y = *g + 2; y > *g; --y) {
-            const MaterialId above = world.GetVoxel(x, y, z);
-            if (above != M::kAir && above != M::kWater) {
-              m = above;
+          MaterialId m = M::kAir;
+          for (int y = *g + 2; y >= *g - 2; --y) {  // the slope stage can lower the surface a cell
+            const MaterialId here = world.GetVoxel(x, y, z);
+            if (here != M::kAir && here != M::kWater) {
+              m = here;
               break;
             }
           }
@@ -530,6 +533,12 @@ TEST_SUITE("worldgen: golden") {
       cases.push_back(col(lm.island, kSurface));
       cases.push_back(col(lm.interior, kSurface));
       cases.push_back(col(lm.abyss, kSurface));
+      // Water above sea level (Phase 11a): a lake, a stream, a river, a great river and a waterfall.
+      const auto wl = testing::FindWaterLandmarks(TerrainGenerator(seed));
+      REQUIRE(wl.found);
+      for (const testing::Point& p : {wl.lake, wl.stream, wl.river, wl.great, wl.waterfall}) {
+        cases.push_back(col({p.x, p.z}, kSurface));
+      }
     }
     std::vector<std::string> actual;
     for (auto& k : cases) {
@@ -546,7 +555,7 @@ TEST_SUITE("worldgen: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 6\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 7\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);

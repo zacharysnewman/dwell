@@ -3,6 +3,7 @@
 // (dwell_tests) and under Node (dwell_worldgen_tests.js, CI).
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -18,6 +19,7 @@
 #include "dwell/worldgen/terrain.h"
 
 #include "biome_search.h"
+#include "water_search.h"
 
 using namespace dwell;
 using core::Chunk;
@@ -286,11 +288,21 @@ TEST_SUITE("lod: generation") {
         sites.push_back({worldgen::BiomeName(biome), at->first, at->second});
       }
     }
-    CHECK(sites.size() == 7);
+    // Water above sea level (Phase 11a): a lake, a river and a great river.
+    {
+      const auto wl = testing::FindWaterLandmarks(gen);
+      REQUIRE(wl.found);
+      sites.push_back({"lake", wl.lake.x, wl.lake.z});
+      sites.push_back({"river", wl.river.x, wl.river.z});
+      sites.push_back({"great river", wl.great.x, wl.great.z});
+    }
+    CHECK(sites.size() == 10);
     double mean_sum = 0;
     int count = 0;
     for (const Site& site : sites) {
-      const auto h = static_cast<std::int64_t>(gen.ColumnAt(site.x, site.z).height);
+      const auto column = gen.ColumnAt(site.x, site.z);
+      const auto h = static_cast<std::int64_t>(
+          std::max(column.height, static_cast<float>(column.water)));
       for (int level = 1; level <= (site.name == "mountains" ? 3 : 2); ++level) {
         // The section holding the surface there.
         const LodCoord c = SectionAt(level, site.x, std::max<std::int64_t>(h, -1), site.z);
@@ -418,6 +430,23 @@ TEST_SUITE("lod: golden") {
         cases.push_back({seed, level, at(lm.island).first, 0, at(lm.island).second});
       cases.push_back({seed, 3, at(lm.interior).first, 0, at(lm.interior).second});
       cases.push_back({seed, 7, at(lm.abyss).first, -900, at(lm.abyss).second});
+      // Water above sea level (Phase 11a): where each lies, at the levels that still show it.
+      const TerrainGenerator gen(seed);
+      const auto wl = testing::FindWaterLandmarks(gen);
+      REQUIRE(wl.found);
+      const auto surface = [&](const testing::Point& p) {
+        const auto col = gen.ColumnAt(p.x, p.z);
+        return static_cast<std::int64_t>(std::max<float>(col.height, static_cast<float>(col.water)));
+      };
+      for (const int level : {1, 3})
+        cases.push_back({seed, level, wl.lake.x, surface(wl.lake), wl.lake.z});
+      for (const int level : {1, 2})
+        cases.push_back({seed, level, wl.stream.x, surface(wl.stream), wl.stream.z});
+      for (const int level : {1, 3})
+        cases.push_back({seed, level, wl.river.x, surface(wl.river), wl.river.z});
+      for (const int level : {2, 5})
+        cases.push_back({seed, level, wl.great.x, surface(wl.great), wl.great.z});
+      cases.push_back({seed, 1, wl.waterfall.x, surface(wl.waterfall), wl.waterfall.z});
     }
     std::vector<std::string> actual;
     for (const Case& k : cases) {
@@ -434,7 +463,7 @@ TEST_SUITE("lod: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 6\n";
+      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 7\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden LOD hashes written to " << path);
@@ -495,7 +524,11 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
     double error_cells = 0, error_surface = 0;
     int columns = 0, valid = 0;
     for (int s = 0; s < 6; ++s) {
-      const LodCoord c = SectionAt(level, 4000 + s * 37000, 0, 3000 + s * 23000);
+      // The section holding the ground there (inland the ground is well above sea level).
+      const std::int32_t px = 4000 + s * 37000, pz = 3000 + s * 23000;
+      const LodCoord c = SectionAt(
+          level, px, std::max<std::int64_t>(static_cast<std::int64_t>(gen.ColumnAt(px, pz).height), 0),
+          pz);
       LodCells cells;
       core::LodSurfaces surface;
       if (gen.GenerateLod(c, cells, &surface) != LodKind::kContent) continue;

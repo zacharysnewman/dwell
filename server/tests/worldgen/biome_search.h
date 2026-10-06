@@ -15,12 +15,17 @@ namespace dwell::testing {
 inline std::optional<std::pair<std::int32_t, std::int32_t>> FindBiome(
     const worldgen::TerrainGenerator& gen, worldgen::Biome biome) {
   using worldgen::Biome;
+  // A column of the biome that is dry ground (or sea): not in a river's or a lake's bed.
+  const auto is = [&](std::int32_t x, std::int32_t z) {
+    const worldgen::Column c = gen.ColumnAt(x, z);
+    return c.biome == biome && c.wet == 0.0f;
+  };
   if (biome != Biome::kOcean && biome != Biome::kBeach) {
     for (int r = 0; r < 4000; r += 48)
       for (int x = -r; x <= r; x += 48)
         for (const int z : {-r, r}) {
-          if (gen.ColumnAt(x, z).biome == biome) return std::pair{x, z};
-          if (gen.ColumnAt(z, x).biome == biome) return std::pair{z, x};
+          if (is(x, z)) return std::pair{x, z};
+          if (is(z, x)) return std::pair{z, x};
         }
   }
   // Around the coast met walking out from the origin in each of eight directions.
@@ -36,8 +41,8 @@ inline std::optional<std::pair<std::int32_t, std::int32_t>> FindBiome(
     for (int r = 0; r <= 6000; r += 48)
       for (int a = -r; a <= r; a += 48)
         for (const int b : {-r, r}) {
-          if (gen.ColumnAt(x + a, z + b).biome == biome) return std::pair{x + a, z + b};
-          if (gen.ColumnAt(x + b, z + a).biome == biome) return std::pair{x + b, z + a};
+          if (is(x + a, z + b)) return std::pair{x + a, z + b};
+          if (is(x + b, z + a)) return std::pair{x + b, z + a};
         }
   }
   return std::nullopt;

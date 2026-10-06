@@ -8,9 +8,10 @@
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
 #include "dwell/worldgen/continents.h"
+#include "dwell/worldgen/rivers.h"
 #include "dwell/worldgen/slopes.h"
 
-// Procedural terrain, generator version 6 (ARCHITECTURE.md §6.3). A chunk is a pure function of
+// Procedural terrain, generator version 7 (ARCHITECTURE.md §6.3). A chunk is a pure function of
 // (world seed, chunk coordinate): every stage reads only noise and hashes of world coordinates,
 // never another chunk's data, so chunks generate in any order, on any thread, natively or in WASM,
 // with bit-identical results (noise.h, ADR 0010).
@@ -39,6 +40,9 @@
 // planet-scale layer varies land, ocean and kilometre-scale relief across the disc; sea level is
 // 0; nothing is generated outside the disc. The terrain's content (biomes, materials, features) is
 // prototype (ARCHITECTURE.md §6.1).
+// Version 7 (ADR 0018, WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain — three tiers
+// of rivers as noise contours, lakes, and static water above sea level at a terraced surface
+// (waterfall steps); the land is a valley floor V with the relief standing away from the channels.
 // Version 6 (ADR 0017, WORLD_GENERATION.md §2): land and sea come from a plate layout of 11–14
 // continents separated by open ocean, not from noise; continentalness is a signed distance to the
 // coast, from which the shelf, slope, abyss and inland rise follow.
@@ -60,6 +64,12 @@ struct Column {
   float mountain = 0;  // 0..1 weight of the mountain height term
   float height = 0;    // base terrain height (m), before overhang noise
   float overhang = 0;  // amplitude (m) of the 3D overhang noise
+  float valley = 0;    // the valley floor V (m): the land's lowest ground, the rivers' reference
+  // Water: open voxels below `water` (y < water) are water. Sea level, or the surface of the river
+  // or lake in this column (a terrace of the valley floor).
+  std::int32_t water = 0;
+  float wet = 0;  // 0..1: how much a river channel (banks included) or a lake claims the column
+  bool lake = false;  // in a lake's bowl (inside its shore)
   Biome biome = Biome::kPlains;
   bool outside = false;  // beyond the world's disc: nothing is generated
 };
@@ -109,6 +119,9 @@ class TerrainGenerator {
   };
   LandSample LandAt(std::int32_t x, std::int32_t z) const;
   const ContinentLayout& Continents() const { return continents_; }
+  // The three river tiers' noise (rivers.h) at the point itself, for the inspect tool and tests:
+  // a river runs where a tier's value is zero.
+  rivers::Corner RiversAt(std::int32_t x, std::int32_t z) const;
   // Terrain solidity after caves, before the stability pass and features.
   bool SolidAt(std::int32_t x, std::int32_t y, std::int32_t z) const;
   // Top voxel of the ground near the base height, if the surface is there (open air above it).
@@ -160,23 +173,30 @@ class TerrainGenerator {
         spaghetti_b, cheese, trees, boulders, ores, macro, relief;
   } seeds_;
   ContinentLayout continents_;
+  rivers::Seeds river_seeds_;
+  // Lakes' surfaces from their centres (rivers.h); defined with the terrain.
+  struct LakeOracle;
 
   struct Corner2 {
     float continentalness, erosion, temperature, humidity, hills, ridges, macro, relief;
     // The continent layout (continents.h) at this point.
     float coast, plate_edge, convergence, elevation, shelf;
     std::int32_t continent;
+    // Rivers and lakes (rivers.h).
+    rivers::Corner water;
   };
 
   struct Corner3 {
     float overhang, spaghetti_a, spaghetti_b, cheese;
   };
   Corner2 SampleCorner2(std::int32_t lx, std::int32_t lz) const;
+  // Everything but the rivers, at a point (a lattice corner, or a lake's centre).
+  Corner2 SampleBase(std::int64_t x, std::int64_t z) const;
   // Columns of a chunk and one beyond each side ((S + 2)², row-major from (x0 − 1, z0 − 1)).
   void ChunkColumns(std::int32_t x0, std::int32_t z0, std::vector<Column>& cols) const;
   static float SkyFloor(const std::vector<Column>& cols);
   Corner3 SampleCorner3(std::int32_t lx, std::int32_t ly, std::int32_t lz) const;
-  static Column Finish(const Corner2& c);
+  Column Finish(const Corner2& c) const;
   // The continuous surface of one column from its fields and its 3D noise at lattice layers
   // (layer(j) = the column's noise at y = 4j).
   template <class Layer>
@@ -203,7 +223,7 @@ class TerrainGenerator {
   void LodLayout(std::int64_t origin_x, std::int64_t origin_z, std::int64_t cell, int first,
                  int count, std::vector<MacroCorner>& out) const;
   Corner3 NoiseLod(std::int64_t x, std::int64_t y, std::int64_t z, std::int64_t cell) const;
-  static Column Interp2(const Corner2 (&c)[4], int fx, int fz);
+  Column Interp2(const Corner2 (&c)[4], int fx, int fz) const;
   // 3D noise interpolation: bilinear in (x, z) within a lattice layer, then linear in y.
   static Corner3 Bilerp(const Corner3 (&c)[4], int fx, int fz);
   static Corner3 LerpY(const Corner3& a, const Corner3& b, int fy);

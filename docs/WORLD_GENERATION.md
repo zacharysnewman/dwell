@@ -1,6 +1,6 @@
 # Dwell — World Generation Plans: Look, Continents, Terrain, Sky Islands
 
-> **Status: [planned]; §1 (Phase 7) and §2 (Phase 10) are [built].** This is the design reference for implementation Phases 7 and 10–12
+> **Status: [planned]; §1 (Phase 7), §2 (Phase 10) and §3.2–3.3 (Phase 11a) are [built].** This is the design reference for implementation Phases 7 and 10–12
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). It describes what to build and why, in
 > enough detail that no outside material is needed. The reference image and the Epic Terrain mod
 > it was written from are **not** in the repository and will not be available when the phases are
@@ -28,9 +28,11 @@ Contents
 4. [Sky islands in a dome (Phase 12)](#4-sky-islands-in-a-dome-phase-12)
 5. [Cross-cutting rules for all four phases](#5-cross-cutting-rules-for-all-four-phases)
 
-Where things are today (generator version 6, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
+Where things are today (generator version 7, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
 at y = 0, the world from −2,048 to 6,144 m; 12–13 continents from Voronoi plates with a signed coast
-distance behind continentalness (§2, built); ridged mountains and 49 km ranges with 5.4 km massifs; biomes ocean, beach, plains, forest, desert, snowy,
+distance behind continentalness (§2, built); a smooth valley floor with rivers (three tiers of noise
+contours), lakes and terraced static water above sea level (§3.2–3.3, Phase 11a, built, §3.10);
+ridged mountains and 49 km ranges with 5.4 km massifs; biomes ocean, beach, plains, forest, desert, snowy,
 mountains; surfaces grass/dirt/sand/sandstone/gravel/snow/stone; oak and spruce trees, boulders.
 Colours come from `client/src/render/textures.ts` (procedural tiles) and `client/src/world/materials.ts`;
 LOD colours are tile averages (`averageTileColor`); faces get a fixed scalar shade in both meshers
@@ -572,6 +574,50 @@ with the biome table rather than Phase 7's colour pass:
 - Determinism goldens; chunk ≤ +25 % and LOD section ≤ +25 % of today's time; the LOD agreement
   thresholds still met.
 - Manual: walk a river from a spring to the sea; fly over a range; screenshots for the owner.
+
+### 3.10 What was built (Phase 11a), and where it differs from the design above
+
+[ADR 0018](./adr/0018-drainage-consistent-terrain.md) records the decisions; the code is
+`server/core/src/worldgen/rivers.cpp` (the river noise, terraces and lakes) and `Finish` in
+`terrain.cpp` (the height model). Each difference is for a reason found in building or testing it:
+
+- **`V` is the smooth part of the old base height.** It reads the layout's macro-lattice coast
+  distance, never the local 1.4 km octaves (those roughened it by ±3 m and put river beds above
+  their banks), and everything but the shore's 2 m is faded in from 5 to 30 km inland, so a great
+  river is at sea level within 5 km of the coast whatever ranges stand near. Its terms: the coast's
+  lowland and the continent's elevation, a slow rise `250 m × (s / (s + 150 km))²`, uplift belts
+  (120 m, within 60 km of a convergent plate edge) and 12 % of the ranges' relief, so valley floors
+  climb into the mountains and mountain streams have terraces — and waterfalls — often.
+- **`U` is the belts only** (900 m of relief within 60 km of a convergent edge, scaled by the
+  ridged field) plus the old ranges: the per-continent mountainousness is not in the layout's
+  `MacroCorner` and is left to 11b/11c.
+- **The hills never dip below `V`** (they are `0..1 ×` their amplitude, not `−1..1`): the ground
+  outside a channel is at least `V`, which is what keeps every river's water at least a metre below
+  its banks. Land near a coast is therefore a metre or so higher than the sea's side of the shore.
+- **The channel profile** is `(1 − s)⁴` of the smoothstep `s` between `core` and `bank`, not the bare
+  smoothstep: the bare form left a great river's water 5 km wide on its gentle banks. Great-river
+  `bank` is 0.008 (not 0.03); the thresholds are in `rivers.h`'s `Tier` table.
+- **Spring noise** (not in the design): the two small tiers exist only where a 12 km noise is high,
+  so streams and rivers begin and end (as dry gullies, the distance factor still carving the
+  valley) instead of looping everywhere. Without it a 130 km view was a maze of closed loops.
+- **Lattice offsets** (not in the design): Perlin noise is zero at its lattice points, so every
+  tier crossed at the origin in every world — a river junction at the spawn.
+- **Meanders** for the great river too (2.5 km at 30 km), so it is not a straight line across a
+  continent.
+- **Lakes** are on a 12.3 km grid (the design's 3–10 km cannot hold a 4 km lake and its berm
+  without neighbours' domains touching), 0.7–2.0 km in radius, 4–12 m deep. A lake's surface is the
+  terrace of `V` at its centre less 3 m; a 1.5 m berm rims the shore. **Rivers stop at a lake's
+  shore** and end in a step into it: they do not take the lake's surface through the lake.
+  **Wetland ponds** are left to 11c (they depend on the biome table).
+- **Closed loops remain** for the river tier: a zero contour of Perlin noise is mostly a loop of
+  about its wavelength. With the spring mask they are arcs that begin and end, but they do not run
+  from a source to the sea; only the great river does. A flow-aware network would need a hierarchy of
+  sources (ADR 0018, Consequences).
+- **Not done in 11a:** the great river widening toward the coast; rivers taking a lake's surface.
+- **Checks:** `rivers_test.cpp` — terraces 2–6 m; no tier through the origin; beds no higher than
+  the ground to either side; great-river mouths at sea level (12 over 4 seeds); no floating water and
+  every horizontal water/air contact a step down (143,000 water voxels, 564 contacts at steps, 0
+  elsewhere); no cave air in the 12 m under water; the spawn beside water.
 
 ---
 

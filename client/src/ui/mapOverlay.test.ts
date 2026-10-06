@@ -4,6 +4,7 @@ import {
   DISC_ZOOM,
   MAP_SIZE,
   MAP_ZOOMS,
+  WATER_COLOR,
   formatMapDistance,
   mapColumn,
   mapPixels,
@@ -29,7 +30,12 @@ describe('terrain map overlay', () => {
       [0, 2, 1],
       [12, 3, 0],
     ]);
-    expect(mapColumn(bytes, 2, 0, 0)).toEqual({ height: -540, biome: 0, outside: false });
+    expect(mapColumn(bytes, 2, 0, 0)).toEqual({
+      height: -540,
+      biome: 0,
+      outside: false,
+      river: false,
+    });
     expect(mapColumn(bytes, 2, 1, 0).height).toBe(1950);
     expect(mapColumn(bytes, 2, 0, 1).outside).toBe(true);
   });
@@ -54,6 +60,23 @@ describe('terrain map overlay', () => {
     const ocean = BIOME_COLORS[0] ?? 0;
     expect(px[8] ?? 0).toBeLessThan(((ocean >> 16) & 0xff) * 0.8);
     expect([px[12], px[13], px[14], px[15]]).toEqual([0, 0, 0, 255]);
+  });
+
+  it('draws river and lake water over the biome (flag 2), the sea by its biome', () => {
+    const bytes = map([
+      [120, 2, 2],
+      [120, 2, 0],
+    ]);
+    expect(mapColumn(bytes, 2, 0, 0).river).toBe(true);
+    expect(mapColumn(bytes, 2, 1, 0).river).toBe(false);
+    const px = mapPixels(bytes, 2, 8);
+    expect([px[0], px[1], px[2]]).toEqual([
+      (WATER_COLOR >> 16) & 0xff,
+      (WATER_COLOR >> 8) & 0xff,
+      WATER_COLOR & 0xff,
+    ]);
+    const plains = BIOME_COLORS[2] ?? 0;
+    expect(px[4]).toBe((plains >> 16) & 0xff);
   });
 
   it('zooms from the surroundings out to the whole disc, centred on the player until then', () => {

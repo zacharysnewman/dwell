@@ -28,7 +28,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review |
 | 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
-| 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started |
+| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`), tested natively; outstanding for 11a: the WASM suites and client-module goldens (CI), the manual river walk, the owner's review of the map images, and the compatibility line (`package.json` 0.5.0, the owner's decision); 11b–11d not started |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
 | 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started |
 | 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
@@ -1494,42 +1494,54 @@ lakes, terraced river water above sea level with waterfall steps; climate from a
 distance and rain shadows; biomes from a data table driven by the terrain, with colourful accent
 vegetation. Design: §3.
 
-**Status:** Not started. Planned sub-phases (each a generator version bump): **11a — height model,
-rivers, lakes, water above sea level**; **11b — mountain detail cascade**; **11c — climate, the biome
-table and colourful vegetation**; **11d — fantasy landforms** (karst spires, mesas; stretch, after
-the owner approves 11a–c).
+**Status:** In progress. Planned sub-phases (each a generator version bump): **11a — height model,
+rivers, lakes, water above sea level** (built: generator version 7, tested natively; outstanding: the
+WASM suites and client goldens in CI, the manual river walk, the owner's review of the map images and
+of the new compatibility line); **11b — mountain detail cascade** (not started); **11c — climate, the
+biome table and colourful vegetation** (not started); **11d — fantasy landforms** (karst spires,
+mesas; stretch, after the owner approves 11a–c). What 11a built, and where it differs from the
+design: `WORLD_GENERATION.md` §3.10.
 
 Deliverables
-- [ ] ADR: drainage-consistent terrain — rivers as noise contours, water above sea level as
-  terraced static water, and their effect on air chunks and LOD bounds.
-- [ ] 11a: valley floor `V`, uplift `U`, distance-from-rivers factor; three river tiers with
-  channel profiles that fade inland and with altitude; terraced river surfaces with waterfall
-  steps; lake cells and wetland ponds; caves suppressed under water; overhangs reduced.
-- [ ] 11a: `IsAirChunk`/`SkyFloor` and `LodBoundsAt` include water above sea level; spawn prefers
+- [x] ADR: drainage-consistent terrain — rivers as noise contours, water above sea level as
+  terraced static water, and their effect on air chunks and LOD bounds
+  ([ADR 0018](./adr/0018-drainage-consistent-terrain.md)).
+- [x] 11a: valley floor `V`, uplift `U` (the plate-convergence belts and the old ranges; the
+  per-continent mountainousness waits for 11b/11c), distance-from-rivers factor; three river tiers
+  with channel profiles that fade inland and with altitude; terraced river surfaces with waterfall
+  steps; lakes; caves suppressed under water; overhangs reduced. *Wetland ponds move to 11c (they
+  depend on the biome table).*
+- [x] 11a: `IsAirChunk`/`SkyFloor` and `LodBoundsAt` include water above sea level; spawn prefers
   land near water.
 - [ ] 11b: analytic-derivative gradient noise and the derivative-damped ridged cascade (§3.4),
   amplitude scaled by distance from rivers and uplift; LOD octave dropping.
 - [ ] 11c: temperature with a lapse rate, humidity with coast distance and rain shadow; the biome
-  table (base grid + terrain overrides + dithered borders); surface rules and trees from it.
+  table (base grid + terrain overrides + dithered borders); surface rules and trees from it;
+  wetland ponds in wet, low, flat ground (moved from 11a).
 - [ ] 11c: colourful vegetation (§3.7): leaf materials (bright, autumn, red, blossom, violet) and
   grass variants (meadow with flowers, golden), C++ table and TypeScript mirror, with tiles;
   blossom and autumn tree kinds; accent trees by a grove noise plus a per-tree hash so accents come
   in clumps, allowed set and share per biome; distant forests keep their colour — `GenerateLod`
   gives forested columns a canopy (leaf) surface above the tree-cell limit.
 - [ ] 11d (stretch): karst spire and mesa provinces.
-- [ ] Inspect tool: rivers, lakes and biomes on the map; a hillshade image mode.
-- [ ] Goldens regenerated per sub-phase, with river, lake, waterfall, alpine and coast entries;
-  LOD agreement tests gain river and lake sites.
-- [ ] `ARCHITECTURE.md` §6.3 (pipeline stages, water rule, surface rules) and §6.6 (LOD bounds)
-  updated.
+- [x] Inspect tool (11a): rivers and lakes on a local map image with a hillshade mode
+  (`dwell_worldgen_inspect <seed> map`, with `biome` and `valley` modes), and on the in-game F4 map.
+  *The biome table's new biomes join the map with 11c.*
+- [x] 11a: goldens regenerated (generator version 7) with a lake, a stream, a river, a great river and
+  a waterfall per seed, chunks and LOD; the LOD agreement test gains a lake, a river and a great
+  river site.
+- [ ] Goldens regenerated per later sub-phase, with alpine and coast entries.
+- [x] 11a: `ARCHITECTURE.md` §6.3 (pipeline stages, water rule) and §6.6 (LOD water) updated.
+- [ ] `ARCHITECTURE.md` §6.3 (surface rules, climate, biomes) updated for 11b–11c.
 
 Exit criteria
-- [ ] Rivers lie in valleys: sampled channel beds are no higher than the terrain 50–500 m to either
-  side.
-- [ ] Great rivers' water is at sea level within 5 km of the coast.
-- [ ] No floating water: every water voxel has water or solid below; horizontal water/air contacts
-  occur only at terrace steps.
-- [ ] No cave air within the suppression depth below water.
+- [x] Rivers lie in valleys: sampled channel beds are no higher than the terrain 50–500 m to either
+  side (800 m–2.5 km for great rivers, whose banks reach ~800 m): `rivers_test.cpp`.
+- [x] Great rivers' water is at sea level within 5 km of the coast (12 mouths over 4 seeds).
+- [x] No floating water: every water voxel has water or solid below; horizontal water/air contacts
+  occur only at terrace steps (143,000 water voxels around a lake, streams, rivers and a waterfall:
+  none with air below, 564 contacts all at steps, 0 elsewhere).
+- [x] No cave air within the suppression depth below water.
 - [ ] Snow only above the altitude its temperature implies; lee sides of ranges drier than
   windward sides.
 - [ ] Vegetation: new materials mirrored and placeable; accent trees clumped (nearest-neighbour
