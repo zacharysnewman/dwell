@@ -13,28 +13,28 @@ when its exit criteria pass and `ARCHITECTURE.md` reflects what was built.
 ## Progress
 
 Deliverables and exit criteria below are checkboxes, ticked in the same commit that completes
-them (see `CLAUDE.md`). This table summarizes each phase.
+them (see `CLAUDE.md`). This table summarizes the state of each phase on this branch.
 
-| Phase | Status | PR |
-|---|---|---|
-| 0 — Repository, tooling & Pages | ✅ Complete | #2 |
-| 1 — Server core, protocol, transports, local mode | ✅ Complete | #3 |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) | #4, #5, #6, #7, #8, #10 |
-| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain | #7 (3a), #9 (3b), #11 (re-scope), #12 (3c), #13 (3d, 3e) |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device | #14–#23, #28, #32, #33, #37, #41, #42, #43, #44 |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
-| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete: merged in #46 and #47, `v0.1.0` released and the site deployed by the Release run on 2026-10-06. 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing, merged in #52 and released as the dev build `v0.2.1-dev.7` (a stable release is the owner's call); outstanding: the phone-width check | #46, #47 (6a), #52 (6b) |
-| 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
-| 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the CI run on `main` for the merge failed in the storage WASM test and the touch e2e test (not yet fixed); the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred | #51 |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🔍 In review — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash) | — |
-| 10 — Continents from Voronoi plates | ⏳ Not started | — |
-| 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
-| 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
-| 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started | — |
-| 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
-| 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
-| 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) | — |
-| 17 — Dedicated servers & packaging | ⏳ Not started | — |
+| Phase | Status |
+|---|---|
+| 0 — Repository, tooling & Pages | ✅ Complete |
+| 1 — Server core, protocol, transports, local mode | ✅ Complete |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) |
+| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
+| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete: merged in #46 and #47, `v0.1.0` released and the site deployed by the Release run on 2026-10-06. 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing, merged in #52 and released as the dev build `v0.2.1-dev.7` (a stable release is the owner's call); outstanding: the phone-width check |
+| 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) |
+| 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the CI run on `main` for the merge failed in the storage WASM test and the touch e2e test (not yet fixed); the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash) |
+| 10 — Continents from Voronoi plates | ⏳ Not started |
+| 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started |
+| 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started |
+| 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
+| 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) |
+| 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) |
+| 17 — Dedicated servers & packaging | ⏳ Not started |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -1375,7 +1375,7 @@ walked on smoothly by the physics player controller with identical collision on 
 client, and used by the LOD to draw distant terrain as faceted slopes instead of terraces. Design,
 the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 
-**Status:** Built (9a–9d), in review. Sub-phases: **9a — shapes, slope families, meshing, collision
+**Status:** Built (9a–9d); verification outstanding. Sub-phases: **9a — shapes, slope families, meshing, collision
 and the controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
 (generator version 5); **9d — LOD slopes**. Runs after Phase 8 and before Phase 14, whose cluster
 shapes and integrity rules must know about slopes. Outstanding: everything that needs CI or a
@@ -1384,7 +1384,7 @@ browser e2e tests (including the new shape specs), the frame-time and generation
 a desktop and a phone, and the owner's manual review. **Breaking change:** generator version 5
 changes the terrain a seed generates and the registry hash changes with the new states, so this
 is a new compatibility line, so `client/package.json` is raised to 0.3.0 by the owner's decision
-(2026-10-06); merging to `main` releases it as stable.
+(2026-10-06).
 
 **Deviations:** `stone_slab` keeps its slot but the other materials' shaped blocks have no palette
 slot of their own (one slot per material plus a shape key); families use `palette: all`;

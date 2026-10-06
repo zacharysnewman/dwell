@@ -66,7 +66,7 @@ While implementing a phase of `docs/IMPLEMENTATION_PLAN.md`:
   criteria only once they are actually verified (automated test or a described manual check).
 - Never tick partially done work: split the item, or move the unfinished part to a later phase
   with a note.
-- Keep the plan's **Progress** table (phase status and PR) current, and the phase's `**Status:**`
+- Keep the plan's **Progress** table (phase status) current, and the phase's `**Status:**`
   line accurate, including anything outstanding.
 - Record deviations from the plan under the phase, with the reason.
 
@@ -75,20 +75,21 @@ While implementing a phase of `docs/IMPLEMENTATION_PLAN.md`:
 > Temporary: remove this section once every phase in `docs/IMPLEMENTATION_PLAN.md` is complete.
 
 Every change that advances, completes, reopens, or re-scopes implementation work updates the
-**Progress** table at the top of `docs/IMPLEMENTATION_PLAN.md` **in the same change**:
+**Progress** table at the top of `docs/IMPLEMENTATION_PLAN.md` **in the same change**. The table
+describes the state of the **work as it is on the branch**, not the history of branches, PRs or
+merges: each session works on its own branch, so a session that finds a change in `main` knows it
+is in, and nothing needs to record that it merged.
 
-- The phase's status (⏳ Not started, 🚧 In progress — naming the current sub-phase, 🔍 In review,
-  ✅ Complete) and anything still outstanding.
-- The PR number(s) once a PR exists for the phase.
+- The phase's status (⏳ Not started, 🚧 In progress — naming the current sub-phase, ✅ Complete) and
+  anything still outstanding. A phase is ✅ only when its deliverables and exit criteria are ticked,
+  which needs them actually done and verified, not merely merged. Work that is built but still
+  needs CI, a device or the owner's review stays 🚧, with that named as outstanding.
 - Follow-up work on a finished phase (playtest findings, tuning, fixes) is noted in its row and in
-  the phase's `**Status:**` line until it merges.
-- **Events after the PR also update it.** Merges, deploys, releases, CI runs on `main` and
-  playtest or manual-check results happen after a change is written, so no PR can record them. When
-  you learn one has happened — the user says so, or you see it on GitHub — verify it (merged PRs,
-  releases, workflow runs), then update the table, the phase's `**Status:**` line and any checkboxes
-  it settles in a small docs-only change, in the same session. A merged PR's number goes into the row;
-  "PR pending" and "not yet run" never outlive the event. When asked about project status, check the
-  table against `main` and GitHub first, and correct it before answering.
+  the phase's `**Status:**` line.
+- **Do not record PR numbers, merges, deploys or "in review".** Don't add them, and don't go to
+  GitHub to update the table after a merge. When asked about project status, read the table and the
+  checkboxes on the branch you are on; if a checkbox looks wrong, check it against the code and
+  tests, not against GitHub.
 
 ## Requirement: every bug fix has a regression test
 
