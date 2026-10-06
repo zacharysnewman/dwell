@@ -50,5 +50,6 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   expect(JSON.parse(copied)).toEqual({
     fog: { distanceM: 4000, density: 0.5, heightM: 1500 },
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
+    exposure: 1,
   });
 });

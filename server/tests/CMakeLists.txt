@@ -11,16 +11,21 @@ add_executable(dwell_tests
   hosting_test.cpp
   block_edit_test.cpp
   block_registry_test.cpp
+  block_shape_test.cpp
   lod_server_test.cpp
   storage/storage_test.cpp
   player/movement_test.cpp
   player/vertical_crouch_test.cpp
   player/platform_climb_swim_test.cpp
   player/flight_test.cpp
+  player/voxel_query_test.cpp
+  player/slope_test.cpp
   player/scenario_test.cpp
   player/netcode_test.cpp
   worldgen/worldgen_test.cpp
-  worldgen/lod_test.cpp)
+  worldgen/lod_test.cpp
+  worldgen/slopes_test.cpp
+  worldgen/slope_terrain_test.cpp)
 target_link_libraries(dwell_tests PRIVATE dwell_core dwell_net dwell_options doctest::doctest monocypher
                       dwell_sqlite)
 add_test(NAME dwell_tests COMMAND dwell_tests)

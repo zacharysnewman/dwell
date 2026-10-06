@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string_view>
 
@@ -10,8 +11,38 @@ namespace dwell::core {
 // Runtime id of a block state (dense, assigned at build time; never persisted as meaning).
 using MaterialId = std::uint16_t;
 
-// Collision shape of a voxel inside its 1 m cell (PLAYER_CONTROLLER.md §5).
-enum class VoxelShape : std::uint8_t { kEmpty, kFull, kSlabBottom };
+// Coarse class of a voxel's solid inside its 1 m cell (PLAYER_CONTROLLER.md §5). `kShaped` covers
+// every slab and slope; its exact geometry is `ShapeOf(state)` (block_shape.h).
+enum class VoxelShape : std::uint8_t { kEmpty, kFull, kShaped };
+
+// One convex polygon (3 or 4 vertices, outward-wound, cell coordinates) of a shape's surface. `tag`
+// is the cell face it lies on, mesher-style (0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z) or kSurfaceTag
+// for the sloped (or flat, partial-height) top.
+inline constexpr std::uint8_t kSurfaceTag = 6;
+struct ShapeFace {
+  std::uint8_t tag;
+  std::uint8_t count;
+  float v[4][3];
+};
+
+// Baked geometry of a voxel shape (docs/SLOPE_BLOCKS.md §1.2, shared/blocks/shapes.mjs). Heights
+// are halves of a cell (0..2) at the corners NW, NE, SE, SW (north = −Z, east = +X) of the solid's
+// flat side: the floor for upright pieces, the ceiling for inverted ones.
+struct ShapeInfo {
+  std::uint16_t first_face;
+  std::uint16_t face_count;
+  std::array<std::uint8_t, 4> corners;
+  bool inverted;
+  std::uint8_t diagonal;  // top-surface split: 0 NW–SE, 1 NE–SW
+  bool convex;
+  float volume;  // m³ (a full cell is 1)
+  // Side profiles for culling: heights (halves) at the lower and higher running coordinate (z for
+  // ±X, x for ±Z) of faces +X, −X, +Z, −Z.
+  std::array<std::array<std::uint8_t, 2>, 4> sides;
+  bool full_top;       // the cell's +Y face is entirely solid
+  bool full_bottom;    // the cell's −Y face is entirely solid
+  float min_y, max_y;  // extent of the solid in y
+};
 
 // Compass facing of directional materials (ladders). North = −Z, east = +X.
 enum class Facing : std::uint8_t { kNone, kNorth, kEast, kSouth, kWest };
@@ -23,6 +54,8 @@ struct MaterialInfo {
   bool solid;             // has collision (shape != kEmpty)
   bool indestructible;    // bedrock: the structural-integrity anchor (§6.3)
   VoxelShape shape = VoxelShape::kEmpty;
+  std::uint16_t shape_index = 0;  // into kShapes (0 = no solid)
+  bool flooded = false;           // water fills the open part of a shaped cell (§3.1)
   bool climbable = false;         // ladders, vines (PLAYER_CONTROLLER.md §6.3)
   Facing facing = Facing::kNone;  // climbable: direction the climbing side faces
   float climb_speed_scale = 1.0f;
@@ -47,10 +80,5 @@ struct BlockDef {
   std::uint16_t property_begin;  // into kProperties
   std::uint16_t property_count;
 };
-
-// Height of the solid part of a voxel shape within its cell (0 = empty, 1 = full cube).
-inline float ShapeHeight(VoxelShape shape) {
-  return shape == VoxelShape::kFull ? 1.0f : shape == VoxelShape::kSlabBottom ? 0.5f : 0.0f;
-}
 
 }  // namespace dwell::core

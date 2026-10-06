@@ -400,14 +400,14 @@ TEST_SUITE("player: collision mesh") {
 // Multi-player scenario (PPC Phase8Hardening / GoldenTrace): see scenario.h.
 
 TEST_SUITE("player: scenario") {
-  TEST_CASE("the four-player scenario is deterministic across runs") {
+  TEST_CASE("the five-player scenario is deterministic across runs") {
     const auto a = RecordTrace();
     const auto b = RecordTrace();
     REQUIRE(a.size() == static_cast<std::size_t>(kScenarioTicks * kScenarioPlayers));
     CHECK(a == b);
   }
 
-  TEST_CASE("the four-player scenario matches the golden trace") {
+  TEST_CASE("the five-player scenario matches the golden trace") {
     const auto actual = RecordTrace();
     const std::string path = DWELL_PLAYER_GOLDEN;
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");

@@ -29,6 +29,27 @@ export function faceTint(axis: number, sign: number): Rgb {
   return axis === 0 ? SIDE_X : SIDE_Z;
 }
 
+/**
+ * The tint of a face with unit normal (nx, ny, nz): the side tints blended by the horizontal part
+ * of the normal, then blended toward the top (or bottom) tint by how vertical it is. Equals
+ * `faceTint` on axis-aligned normals, so sloped faces shade continuously with the cubes beside
+ * them, at any distance (the chunk and LOD meshers both use it).
+ */
+export function normalTint(nx: number, ny: number, nz: number): Rgb {
+  const x2 = nx * nx;
+  const z2 = nz * nz;
+  const horizontal = x2 + z2;
+  const vertical = Math.min(1, Math.abs(ny));
+  const end = ny >= 0 ? TOP : BOTTOM;
+  const wx = horizontal > 0 ? x2 / horizontal : 0;
+  const wz = horizontal > 0 ? z2 / horizontal : 0;
+  return [
+    (SIDE_X[0] * wx + SIDE_Z[0] * wz) * (1 - vertical) + end[0] * vertical,
+    (SIDE_X[1] * wx + SIDE_Z[1] * wz) * (1 - vertical) + end[1] * vertical,
+    (SIDE_X[2] * wx + SIDE_Z[2] * wz) * (1 - vertical) + end[2] * vertical,
+  ];
+}
+
 /** Where the sun is (unit vector, toward the sun): ~45° up, upper left in the default spawn view. */
 export const SUN_DIRECTION: Rgb = (() => {
   const [x, y, z] = [0.62, 0.7, 0.35];

@@ -6,27 +6,59 @@ import type { Message, Vec3 } from '../protocol/messages';
 import type { BlockTarget } from '../sim/clientCore';
 import { BLOCK_DEFS, STATE_DEFS } from '../world/blocks';
 import { MATERIALS, PLACEABLE } from '../world/materials';
+import {
+  PIECES,
+  facingToward,
+  hasShapes,
+  hitFractionY,
+  pieceState,
+  placementHalf,
+  type Piece,
+} from './shapes';
 
 export type EditAction = 'break' | 'place';
+
+/** Offsets to the neighbour across each face: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z. */
+const FACE_DIRS: readonly Vec3[] = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
 
 /** A hotbar slot: one placeable material, or every ladder (the facing follows the placement). */
 export interface PaletteSlot {
   name: string;
+  /** Namespaced block id, e.g. `dwell:stone`. */
+  block: string;
   /** Material shown and placed (for ladders: the one facing north). */
   material: number;
   ladder: boolean;
+  /** Comes in slopes and slabs (the shape key picks the piece, SLOPE_BLOCKS.md §6). */
+  shapes: boolean;
 }
 
-/** The palette (§6.5): one slot per placeable block (its first palette state), ladders as one. */
+/**
+ * The palette (§6.5): one slot per placeable block (its first palette state), ladders as one. The
+ * shaped families (slopes, slabs) have no slots of their own: they are pieces of their material.
+ */
 export const PALETTE: readonly PaletteSlot[] = PLACEABLE.flatMap((id, i): PaletteSlot[] => {
   const style = MATERIALS[id];
   const state = STATE_DEFS[id];
-  if (!style || !state) return [];
+  if (!style || !state || style.look === 'shaped') return [];
   const previous = PLACEABLE[i - 1];
   if (previous !== undefined && STATE_DEFS[previous]?.block === state.block) return [];
   const block = BLOCK_DEFS[state.block]?.id ?? style.name;
   return [
-    { name: block.slice(block.indexOf(':') + 1), material: id, ladder: style.look === 'ladder' },
+    {
+      name: block.slice(block.indexOf(':') + 1),
+      block,
+      material: id,
+      ladder: style.look === 'ladder',
+      shapes: hasShapes(block),
+    },
   ];
 });
 
@@ -66,12 +98,18 @@ export interface TargetSource {
 export class BlockInteraction {
   /** Index into PALETTE. */
   selected = 0;
+  /** The shape piece placed from slots that come in shapes (the shape key cycles it). */
+  piece: Piece = 'cube';
   /** Touch: what a tap on the view does. */
   touchAction: EditAction = 'break';
   /** Called when the selection changes (the hotbar redraws). */
   onSelect: ((slot: number) => void) | null = null;
+  /** Called when the piece changes. */
+  onPiece: ((piece: Piece) => void) | null = null;
   private current: BlockTarget | null = null;
   private yaw = 0;
+  private eye: Vec3 = [0, 0, 0];
+  private dir: Vec3 = [0, 0, 1];
   private lastEditMs = -Infinity;
 
   constructor(
@@ -86,10 +124,48 @@ export class BlockInteraction {
   /** Re-targets from the eye along the view; a null eye clears the target (dead, loading). */
   update(eye: Vec3 | null, yawDeg: number, pitchDeg: number): BlockTarget | null {
     this.yaw = yawDeg;
-    this.current = eye
-      ? this.world.target(eye, viewDirection(yawDeg, pitchDeg), Players.reachDistance)
-      : null;
+    this.dir = viewDirection(yawDeg, pitchDeg);
+    if (eye) this.eye = eye;
+    this.current = eye ? this.world.target(eye, this.dir, Players.reachDistance) : null;
     return this.current;
+  }
+
+  /** Picks a piece directly (tests and automation). */
+  setPiece(piece: Piece): void {
+    this.piece = piece;
+    this.onPiece?.(piece);
+  }
+
+  /** The piece in effect: the chosen one for materials that come in shapes, else the cube. */
+  get effectivePiece(): Piece {
+    return PALETTE[this.selected]?.shapes ? this.piece : 'cube';
+  }
+
+  /** The shape key: the next (delta > 0) or previous piece. Does nothing on a material without shapes. */
+  cyclePiece(delta: number): void {
+    if (!PALETTE[this.selected]?.shapes || delta === 0) return;
+    const n = PIECES.length;
+    const at = PIECES.indexOf(this.piece);
+    this.piece = PIECES[(((at + Math.sign(delta)) % n) + n) % n] ?? 'cube';
+    this.onPiece?.(this.piece);
+  }
+
+  /** The state the selected slot places against the current target, and where; null with no target. */
+  placement(): { cell: Vec3; material: number } | null {
+    const t = this.current;
+    const slot = PALETTE[this.selected];
+    if (!t || !slot) return null;
+    const dir = FACE_DIRS[t.face] ?? [0, 0, 0];
+    const cell: Vec3 = [t.cell[0] + dir[0], t.cell[1] + dir[1], t.cell[2] + dir[2]];
+    if (slot.ladder) return { cell, material: ladderFor(t.face, this.yaw) };
+    const piece = this.effectivePiece;
+    const shaped = pieceState(
+      slot.block,
+      piece,
+      facingToward(this.yaw),
+      placementHalf(t.face, hitFractionY(this.eye, this.dir, t.cell, t.face)),
+    );
+    return { cell, material: shaped ?? slot.material };
   }
 
   select(slot: number): void {
@@ -111,9 +187,7 @@ export class BlockInteraction {
     const t = this.current;
     if (!t || nowMs - this.lastEditMs < Players.blockEditIntervalMs) return false;
     this.lastEditMs = nowMs;
-    const slot = PALETTE[this.selected];
-    const material =
-      action === 'break' || !slot ? 0 : slot.ladder ? ladderFor(t.face, this.yaw) : slot.material;
+    const material = action === 'break' ? 0 : (this.placement()?.material ?? 0);
     this.send({
       type: MessageType.BlockEditRequest,
       action: action === 'break' ? BlockEditAction.Break : BlockEditAction.Place,

@@ -7,3 +7,4 @@ public/wasm/
 test-results/
 playwright-report/
 src/world/blocks.gen.ts
+../docs/

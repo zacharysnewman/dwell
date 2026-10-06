@@ -21,6 +21,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0013](0013-master-server-on-cloudflare.md) | Master server on Cloudflare Workers + Durable Objects; Cloudflare TURN | Accepted |
 | [0014](0014-versioned-releases.md) | Versioned releases: builds as tagged GitHub Releases behind a launcher, worlds locked to their compatibility line | Accepted |
 | [0015](0015-block-registry.md) | Block registry: namespaced block states, generated registries, string palettes on disk | Accepted |
+| [0016](0016-slope-blocks.md) | Slope blocks: shaped block families, one baked shape table, shaped terrain | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

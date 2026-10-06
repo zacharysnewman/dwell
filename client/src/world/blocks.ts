@@ -4,16 +4,20 @@
 // lookup and string layer over them (C++: block_registry.h).
 import {
   BLOCK_DEFS,
+  PIECE_NEAREST,
   REGISTRY_HASH,
+  SHAPES,
   STATE_DEFS,
   type BlockDef,
   type MaterialLook,
   type MaterialTextures,
+  type ShapeDef,
+  type ShapeFace,
   type StateDef,
 } from './blocks.gen';
 
-export { BLOCK_DEFS, REGISTRY_HASH, STATE_DEFS };
-export type { BlockDef, MaterialLook, MaterialTextures, StateDef };
+export { BLOCK_DEFS, PIECE_NEAREST, REGISTRY_HASH, SHAPES, STATE_DEFS };
+export type { BlockDef, MaterialLook, MaterialTextures, ShapeDef, ShapeFace, StateDef };
 
 export const STATE_COUNT = STATE_DEFS.length;
 

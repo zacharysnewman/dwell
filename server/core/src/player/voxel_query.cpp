@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <limits>
 
+#include "dwell/core/block_shape.h"
 #include "dwell/core/physics_world.h"
 
 namespace dwell::player {
@@ -111,55 +112,35 @@ bool VoxelQuery::CastVoxels(RVec3 origin, Vec3 dir, float max_distance, ProbeHit
     }
   }
 
-  bool in_solid = true;  // a shape containing the origin doesn't count as a hit
   float t_cell = 0.0f;
-  int entry_axis = -1;
+  bool first_cell = true;  // a ray starting on a solid's surface does not enter it
   while (t_cell <= max_distance) {
     const float t_next = std::min({t_max[0], t_max[1], t_max[2]});
-    const auto& material =
-        core::GetMaterial(Material(base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]));
-    const float height = core::ShapeHeight(material.shape);
-    bool free_after = true;
-    if (height > 0.0f) {
-      // Ray vs. the shape box [cell, cell + (1, height, 1)].
-      float e0 = -kInf, e1 = kInf;
-      int axis0 = -1;
-      bool miss = false;
-      for (int i = 0; i < 3 && !miss; ++i) {
-        const float lo = static_cast<float>(cell[i]);
-        const float hi = lo + (i == 1 ? height : 1.0f);
-        if (d[i] == 0.0f) {
-          if (o[i] < lo || o[i] > hi) miss = true;
-          continue;
-        }
-        float a = (lo - o[i]) / d[i], b = (hi - o[i]) / d[i];
-        if (a > b) std::swap(a, b);
-        if (a > e0) {
-          e0 = a;
-          axis0 = i;
-        }
-        e1 = std::min(e1, b);
+    const std::int32_t cx = base[0] + cell[0], cy = base[1] + cell[1], cz = base[2] + cell[2];
+    const core::ShapeInfo& shape = core::ShapeOf(Material(cx, cy, cz));
+    if (shape.face_count > 0) {
+      // Faces against a solid neighbour are internal: a ray crossing them is already inside.
+      static constexpr int kStep[6][3] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                          {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+      const core::ShapeInfo* neighbours[6];
+      for (int face = 0; face < 6; ++face) {
+        neighbours[face] =
+            &core::ShapeOf(Material(cx + kStep[face][0], cy + kStep[face][1], cz + kStep[face][2]));
       }
-      e0 = std::max(e0, t_cell);
-      e1 = std::min(e1, t_next);
-      if (!miss && e0 <= e1) {
-        constexpr float kEps = 1e-6f;
-        const bool enters_from_free = e0 > t_cell + kEps || !in_solid;
-        if (enters_from_free) {
-          if (e0 > max_distance) return false;
-          const int axis = e0 > t_cell + kEps ? axis0 : entry_axis;
-          float n[3] = {0.0f, 0.0f, 0.0f};
-          if (axis >= 0) n[axis] = d[axis] > 0.0f ? -1.0f : 1.0f;
-          hit.distance = e0;
-          hit.point = origin + dir * e0;
-          hit.normal = Vec3(n[0], n[1], n[2]);
-          hit.ground = {GroundRef::kTerrain, 0};
-          return true;
-        }
-        free_after = e1 < t_next - kEps;
+      const float corner[3] = {static_cast<float>(cell[0]), static_cast<float>(cell[1]),
+                               static_cast<float>(cell[2])};
+      if (const auto entry = core::RayEnterShape(shape, corner, o, d, t_next, neighbours,
+                                                 /*min_t=*/first_cell ? 1e-6f : 0.0f)) {
+        if (entry->t > max_distance) return false;
+        hit.distance = entry->t;
+        hit.point = origin + dir * entry->t;
+        hit.normal = Vec3(entry->normal[0], entry->normal[1], entry->normal[2]);
+        hit.ground = {GroundRef::kTerrain, 0};
+        return true;
       }
     }
-    in_solid = !free_after;
+
+    first_cell = false;
 
     // Next cell.
     int axis = 0;
@@ -169,7 +150,6 @@ bool VoxelQuery::CastVoxels(RVec3 origin, Vec3 dir, float max_distance, ProbeHit
     t_cell = t_max[axis];
     t_max[axis] += t_delta[axis];
     cell[axis] += step[axis];
-    entry_axis = axis;
   }
   return false;
 }
@@ -206,14 +186,18 @@ float VoxelQuery::SegmentBoxDistance(const Capsule& c, RVec3 world_lo, RVec3 wor
 
 bool VoxelQuery::OverlapsVoxels(const Capsule& c) const {
   bool overlaps = false;
-  ForEachOverlappingCell(c,
-                         [&](std::int32_t x, std::int32_t y, std::int32_t z, core::MaterialId m) {
-                           const float height = core::ShapeHeight(core::GetMaterial(m).shape);
-                           if (overlaps || height <= 0.0f) return;
-                           const RVec3 lo(x, y, z);
-                           if (SegmentBoxDistance(c, lo, lo + Vec3(1.0f, height, 1.0f)) < c.radius)
-                             overlaps = true;
-                         });
+  ForEachOverlappingCell(c, [&](std::int32_t x, std::int32_t y, std::int32_t z,
+                                core::MaterialId m) {
+    const core::ShapeInfo& shape = core::ShapeOf(m);
+    if (overlaps || shape.face_count == 0) return;
+    // The capsule axis against the shape's surface in the cell's own coordinates, relative
+    // to the capsule centre (float is exact enough anywhere in the world).
+    const Vec3 rel(c.center - RVec3(x, y, z));
+    if (core::VerticalSegmentDistanceSq(shape, rel.GetX(), rel.GetZ(), rel.GetY() - c.half_cylinder,
+                                        rel.GetY() + c.half_cylinder) < c.radius * c.radius) {
+      overlaps = true;
+    }
+  });
   return overlaps;
 }
 
@@ -241,7 +225,9 @@ float VoxelQuery::SubmergedFraction(RVec3 center, float half_height) const {
   float wet = 0.0f;
   for (auto y = static_cast<std::int32_t>(std::floor(feet));
        y <= static_cast<std::int32_t>(std::floor(head)); ++y) {
-    if (!core::GetMaterial(Material(x, y, z)).liquid) continue;
+    // Water, or the water in the open part of a flooded shape (counted as the whole cell).
+    const core::MaterialInfo& cell = core::GetMaterial(Material(x, y, z));
+    if (!cell.liquid && !cell.flooded) continue;
     const float lo = std::max(feet, static_cast<float>(y));
     const float hi = std::min(head, static_cast<float>(y) + 1.0f);
     wet += std::max(0.0f, hi - lo);

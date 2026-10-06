@@ -30,10 +30,11 @@ TEST_CASE("streaming: a matching verification hash gets Generated chunks, neares
 
   const auto chunks = f.Chunks(1, 60);
   REQUIRE(!chunks.empty());
-  const auto feet = SpawnPointFor(kGeneratorTerrain, 99);
-  const ChunkCoord spawn = ChunkOf(static_cast<std::int32_t>(std::floor(feet[0])),
-                                   static_cast<std::int32_t>(std::floor(feet[1] + 0.9)),
-                                   static_cast<std::int32_t>(std::floor(feet[2])));
+  // Streaming centres on the player's chunk (players are spread around the spawn point).
+  const auto position = f.server.players().Position(*f.server.PlayerHandleOf(welcome.player_id));
+  const ChunkCoord spawn = ChunkOf(static_cast<std::int32_t>(std::floor(position.GetX())),
+                                   static_cast<std::int32_t>(std::floor(position.GetY())),
+                                   static_cast<std::int32_t>(std::floor(position.GetZ())));
   CHECK(CoordOf(chunks[0]) == spawn);
   int previous = 0;
   bool ordered = true;

@@ -10,10 +10,10 @@
 
 namespace dwell::core {
 
-inline constexpr std::size_t kBlockCount = 18;
-inline constexpr std::size_t kPropertyCount = 2;
+inline constexpr std::size_t kBlockCount = 33;
+inline constexpr std::size_t kPropertyCount = 50;
 // FNV-1a 64 over the canonical state strings (each followed by '\n') in runtime id order.
-inline constexpr std::uint64_t kRegistryHash = 0x160e5ffd3cc97380ull;
+inline constexpr std::uint64_t kRegistryHash = 0xc5d084d73c9dc746ull;
 
 // Runtime state ids, by name (non-default property values are appended to the name).
 namespace Materials {
@@ -23,40 +23,1439 @@ inline constexpr MaterialId kStone = 2;
 inline constexpr MaterialId kDirt = 3;
 inline constexpr MaterialId kGrass = 4;
 inline constexpr MaterialId kStoneSlab = 5;
-inline constexpr MaterialId kLadder = 6;
-inline constexpr MaterialId kLadderFloodedTrue = 7;
-inline constexpr MaterialId kLadderFacingEast = 8;
-inline constexpr MaterialId kLadderFacingEastFloodedTrue = 9;
-inline constexpr MaterialId kLadderFacingSouth = 10;
-inline constexpr MaterialId kLadderFacingSouthFloodedTrue = 11;
-inline constexpr MaterialId kLadderFacingWest = 12;
-inline constexpr MaterialId kLadderFacingWestFloodedTrue = 13;
-inline constexpr MaterialId kWater = 14;
-inline constexpr MaterialId kLaunchPad = 15;
-inline constexpr MaterialId kSand = 16;
-inline constexpr MaterialId kSandstone = 17;
-inline constexpr MaterialId kGravel = 18;
-inline constexpr MaterialId kSnow = 19;
-inline constexpr MaterialId kLog = 20;
-inline constexpr MaterialId kLeaves = 21;
-inline constexpr MaterialId kCoalOre = 22;
-inline constexpr MaterialId kIronOre = 23;
-inline constexpr MaterialId kGoldOre = 24;
-inline constexpr MaterialId kCount = 25;
+inline constexpr MaterialId kStoneSlabHalfTop = 6;
+inline constexpr MaterialId kStoneSlabFloodedTrue = 7;
+inline constexpr MaterialId kStoneSlabFloodedTrueHalfTop = 8;
+inline constexpr MaterialId kLadder = 9;
+inline constexpr MaterialId kLadderFloodedTrue = 10;
+inline constexpr MaterialId kLadderFacingEast = 11;
+inline constexpr MaterialId kLadderFacingEastFloodedTrue = 12;
+inline constexpr MaterialId kLadderFacingSouth = 13;
+inline constexpr MaterialId kLadderFacingSouthFloodedTrue = 14;
+inline constexpr MaterialId kLadderFacingWest = 15;
+inline constexpr MaterialId kLadderFacingWestFloodedTrue = 16;
+inline constexpr MaterialId kWater = 17;
+inline constexpr MaterialId kLaunchPad = 18;
+inline constexpr MaterialId kSand = 19;
+inline constexpr MaterialId kSandstone = 20;
+inline constexpr MaterialId kGravel = 21;
+inline constexpr MaterialId kSnow = 22;
+inline constexpr MaterialId kLog = 23;
+inline constexpr MaterialId kLeaves = 24;
+inline constexpr MaterialId kCoalOre = 25;
+inline constexpr MaterialId kIronOre = 26;
+inline constexpr MaterialId kGoldOre = 27;
+inline constexpr MaterialId kStoneSlope = 28;
+inline constexpr MaterialId kStoneSlopeShapeOuter = 29;
+inline constexpr MaterialId kStoneSlopeShapeInner = 30;
+inline constexpr MaterialId kStoneSlopeShapeGentleLow = 31;
+inline constexpr MaterialId kStoneSlopeShapeGentleHigh = 32;
+inline constexpr MaterialId kStoneSlopeShapeGentleOuterLow = 33;
+inline constexpr MaterialId kStoneSlopeShapeGentleOuterHigh = 34;
+inline constexpr MaterialId kStoneSlopeShapeGentleInnerLow = 35;
+inline constexpr MaterialId kStoneSlopeShapeGentleInnerHigh = 36;
+inline constexpr MaterialId kStoneSlopeHalfTop = 37;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeOuter = 38;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeInner = 39;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeGentleLow = 40;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeGentleHigh = 41;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeGentleOuterLow = 42;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeGentleOuterHigh = 43;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeGentleInnerLow = 44;
+inline constexpr MaterialId kStoneSlopeHalfTopShapeGentleInnerHigh = 45;
+inline constexpr MaterialId kStoneSlopeFloodedTrue = 46;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeOuter = 47;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeInner = 48;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeGentleLow = 49;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeGentleHigh = 50;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeGentleOuterLow = 51;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeGentleOuterHigh = 52;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeGentleInnerLow = 53;
+inline constexpr MaterialId kStoneSlopeFloodedTrueShapeGentleInnerHigh = 54;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTop = 55;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeOuter = 56;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeInner = 57;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeGentleLow = 58;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeGentleHigh = 59;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeGentleOuterLow = 60;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 61;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeGentleInnerLow = 62;
+inline constexpr MaterialId kStoneSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 63;
+inline constexpr MaterialId kStoneSlopeFacingEast = 64;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeOuter = 65;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeInner = 66;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeGentleLow = 67;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeGentleHigh = 68;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeGentleOuterLow = 69;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeGentleOuterHigh = 70;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeGentleInnerLow = 71;
+inline constexpr MaterialId kStoneSlopeFacingEastShapeGentleInnerHigh = 72;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTop = 73;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeOuter = 74;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeInner = 75;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeGentleLow = 76;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeGentleHigh = 77;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeGentleOuterLow = 78;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeGentleOuterHigh = 79;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeGentleInnerLow = 80;
+inline constexpr MaterialId kStoneSlopeFacingEastHalfTopShapeGentleInnerHigh = 81;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrue = 82;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeOuter = 83;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeInner = 84;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeGentleLow = 85;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeGentleHigh = 86;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeGentleOuterLow = 87;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 88;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeGentleInnerLow = 89;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 90;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTop = 91;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeOuter = 92;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeInner = 93;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 94;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 95;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 96;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 97;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 98;
+inline constexpr MaterialId kStoneSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 99;
+inline constexpr MaterialId kStoneSlopeFacingSouth = 100;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeOuter = 101;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeInner = 102;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeGentleLow = 103;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeGentleHigh = 104;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeGentleOuterLow = 105;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeGentleOuterHigh = 106;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeGentleInnerLow = 107;
+inline constexpr MaterialId kStoneSlopeFacingSouthShapeGentleInnerHigh = 108;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTop = 109;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeOuter = 110;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeInner = 111;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeGentleLow = 112;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeGentleHigh = 113;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeGentleOuterLow = 114;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeGentleOuterHigh = 115;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeGentleInnerLow = 116;
+inline constexpr MaterialId kStoneSlopeFacingSouthHalfTopShapeGentleInnerHigh = 117;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrue = 118;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeOuter = 119;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeInner = 120;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeGentleLow = 121;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeGentleHigh = 122;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 123;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 124;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 125;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 126;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTop = 127;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 128;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeInner = 129;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 130;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 131;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 132;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 133;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 134;
+inline constexpr MaterialId kStoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 135;
+inline constexpr MaterialId kStoneSlopeFacingWest = 136;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeOuter = 137;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeInner = 138;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeGentleLow = 139;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeGentleHigh = 140;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeGentleOuterLow = 141;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeGentleOuterHigh = 142;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeGentleInnerLow = 143;
+inline constexpr MaterialId kStoneSlopeFacingWestShapeGentleInnerHigh = 144;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTop = 145;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeOuter = 146;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeInner = 147;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeGentleLow = 148;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeGentleHigh = 149;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeGentleOuterLow = 150;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeGentleOuterHigh = 151;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeGentleInnerLow = 152;
+inline constexpr MaterialId kStoneSlopeFacingWestHalfTopShapeGentleInnerHigh = 153;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrue = 154;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeOuter = 155;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeInner = 156;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeGentleLow = 157;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeGentleHigh = 158;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeGentleOuterLow = 159;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 160;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeGentleInnerLow = 161;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 162;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTop = 163;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeOuter = 164;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeInner = 165;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 166;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 167;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 168;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 169;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 170;
+inline constexpr MaterialId kStoneSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 171;
+inline constexpr MaterialId kDirtSlope = 172;
+inline constexpr MaterialId kDirtSlopeShapeOuter = 173;
+inline constexpr MaterialId kDirtSlopeShapeInner = 174;
+inline constexpr MaterialId kDirtSlopeShapeGentleLow = 175;
+inline constexpr MaterialId kDirtSlopeShapeGentleHigh = 176;
+inline constexpr MaterialId kDirtSlopeShapeGentleOuterLow = 177;
+inline constexpr MaterialId kDirtSlopeShapeGentleOuterHigh = 178;
+inline constexpr MaterialId kDirtSlopeShapeGentleInnerLow = 179;
+inline constexpr MaterialId kDirtSlopeShapeGentleInnerHigh = 180;
+inline constexpr MaterialId kDirtSlopeHalfTop = 181;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeOuter = 182;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeInner = 183;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeGentleLow = 184;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeGentleHigh = 185;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeGentleOuterLow = 186;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeGentleOuterHigh = 187;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeGentleInnerLow = 188;
+inline constexpr MaterialId kDirtSlopeHalfTopShapeGentleInnerHigh = 189;
+inline constexpr MaterialId kDirtSlopeFloodedTrue = 190;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeOuter = 191;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeInner = 192;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeGentleLow = 193;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeGentleHigh = 194;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeGentleOuterLow = 195;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeGentleOuterHigh = 196;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeGentleInnerLow = 197;
+inline constexpr MaterialId kDirtSlopeFloodedTrueShapeGentleInnerHigh = 198;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTop = 199;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeOuter = 200;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeInner = 201;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeGentleLow = 202;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeGentleHigh = 203;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeGentleOuterLow = 204;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 205;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeGentleInnerLow = 206;
+inline constexpr MaterialId kDirtSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 207;
+inline constexpr MaterialId kDirtSlopeFacingEast = 208;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeOuter = 209;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeInner = 210;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeGentleLow = 211;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeGentleHigh = 212;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeGentleOuterLow = 213;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeGentleOuterHigh = 214;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeGentleInnerLow = 215;
+inline constexpr MaterialId kDirtSlopeFacingEastShapeGentleInnerHigh = 216;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTop = 217;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeOuter = 218;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeInner = 219;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeGentleLow = 220;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeGentleHigh = 221;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeGentleOuterLow = 222;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeGentleOuterHigh = 223;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeGentleInnerLow = 224;
+inline constexpr MaterialId kDirtSlopeFacingEastHalfTopShapeGentleInnerHigh = 225;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrue = 226;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeOuter = 227;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeInner = 228;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeGentleLow = 229;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeGentleHigh = 230;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeGentleOuterLow = 231;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 232;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeGentleInnerLow = 233;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 234;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTop = 235;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeOuter = 236;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeInner = 237;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 238;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 239;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 240;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 241;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 242;
+inline constexpr MaterialId kDirtSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 243;
+inline constexpr MaterialId kDirtSlopeFacingSouth = 244;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeOuter = 245;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeInner = 246;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeGentleLow = 247;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeGentleHigh = 248;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeGentleOuterLow = 249;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeGentleOuterHigh = 250;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeGentleInnerLow = 251;
+inline constexpr MaterialId kDirtSlopeFacingSouthShapeGentleInnerHigh = 252;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTop = 253;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeOuter = 254;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeInner = 255;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeGentleLow = 256;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeGentleHigh = 257;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeGentleOuterLow = 258;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeGentleOuterHigh = 259;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeGentleInnerLow = 260;
+inline constexpr MaterialId kDirtSlopeFacingSouthHalfTopShapeGentleInnerHigh = 261;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrue = 262;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeOuter = 263;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeInner = 264;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeGentleLow = 265;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeGentleHigh = 266;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 267;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 268;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 269;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 270;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTop = 271;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 272;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeInner = 273;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 274;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 275;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 276;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 277;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 278;
+inline constexpr MaterialId kDirtSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 279;
+inline constexpr MaterialId kDirtSlopeFacingWest = 280;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeOuter = 281;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeInner = 282;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeGentleLow = 283;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeGentleHigh = 284;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeGentleOuterLow = 285;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeGentleOuterHigh = 286;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeGentleInnerLow = 287;
+inline constexpr MaterialId kDirtSlopeFacingWestShapeGentleInnerHigh = 288;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTop = 289;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeOuter = 290;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeInner = 291;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeGentleLow = 292;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeGentleHigh = 293;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeGentleOuterLow = 294;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeGentleOuterHigh = 295;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeGentleInnerLow = 296;
+inline constexpr MaterialId kDirtSlopeFacingWestHalfTopShapeGentleInnerHigh = 297;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrue = 298;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeOuter = 299;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeInner = 300;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeGentleLow = 301;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeGentleHigh = 302;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeGentleOuterLow = 303;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 304;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeGentleInnerLow = 305;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 306;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTop = 307;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeOuter = 308;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeInner = 309;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 310;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 311;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 312;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 313;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 314;
+inline constexpr MaterialId kDirtSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 315;
+inline constexpr MaterialId kDirtSlab = 316;
+inline constexpr MaterialId kDirtSlabHalfTop = 317;
+inline constexpr MaterialId kDirtSlabFloodedTrue = 318;
+inline constexpr MaterialId kDirtSlabFloodedTrueHalfTop = 319;
+inline constexpr MaterialId kGrassSlope = 320;
+inline constexpr MaterialId kGrassSlopeShapeOuter = 321;
+inline constexpr MaterialId kGrassSlopeShapeInner = 322;
+inline constexpr MaterialId kGrassSlopeShapeGentleLow = 323;
+inline constexpr MaterialId kGrassSlopeShapeGentleHigh = 324;
+inline constexpr MaterialId kGrassSlopeShapeGentleOuterLow = 325;
+inline constexpr MaterialId kGrassSlopeShapeGentleOuterHigh = 326;
+inline constexpr MaterialId kGrassSlopeShapeGentleInnerLow = 327;
+inline constexpr MaterialId kGrassSlopeShapeGentleInnerHigh = 328;
+inline constexpr MaterialId kGrassSlopeHalfTop = 329;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeOuter = 330;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeInner = 331;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeGentleLow = 332;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeGentleHigh = 333;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeGentleOuterLow = 334;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeGentleOuterHigh = 335;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeGentleInnerLow = 336;
+inline constexpr MaterialId kGrassSlopeHalfTopShapeGentleInnerHigh = 337;
+inline constexpr MaterialId kGrassSlopeFloodedTrue = 338;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeOuter = 339;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeInner = 340;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeGentleLow = 341;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeGentleHigh = 342;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeGentleOuterLow = 343;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeGentleOuterHigh = 344;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeGentleInnerLow = 345;
+inline constexpr MaterialId kGrassSlopeFloodedTrueShapeGentleInnerHigh = 346;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTop = 347;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeOuter = 348;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeInner = 349;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeGentleLow = 350;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeGentleHigh = 351;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeGentleOuterLow = 352;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 353;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeGentleInnerLow = 354;
+inline constexpr MaterialId kGrassSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 355;
+inline constexpr MaterialId kGrassSlopeFacingEast = 356;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeOuter = 357;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeInner = 358;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeGentleLow = 359;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeGentleHigh = 360;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeGentleOuterLow = 361;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeGentleOuterHigh = 362;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeGentleInnerLow = 363;
+inline constexpr MaterialId kGrassSlopeFacingEastShapeGentleInnerHigh = 364;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTop = 365;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeOuter = 366;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeInner = 367;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeGentleLow = 368;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeGentleHigh = 369;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeGentleOuterLow = 370;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeGentleOuterHigh = 371;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeGentleInnerLow = 372;
+inline constexpr MaterialId kGrassSlopeFacingEastHalfTopShapeGentleInnerHigh = 373;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrue = 374;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeOuter = 375;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeInner = 376;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeGentleLow = 377;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeGentleHigh = 378;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeGentleOuterLow = 379;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 380;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeGentleInnerLow = 381;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 382;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTop = 383;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeOuter = 384;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeInner = 385;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 386;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 387;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 388;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 389;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 390;
+inline constexpr MaterialId kGrassSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 391;
+inline constexpr MaterialId kGrassSlopeFacingSouth = 392;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeOuter = 393;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeInner = 394;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeGentleLow = 395;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeGentleHigh = 396;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeGentleOuterLow = 397;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeGentleOuterHigh = 398;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeGentleInnerLow = 399;
+inline constexpr MaterialId kGrassSlopeFacingSouthShapeGentleInnerHigh = 400;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTop = 401;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeOuter = 402;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeInner = 403;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeGentleLow = 404;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeGentleHigh = 405;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeGentleOuterLow = 406;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeGentleOuterHigh = 407;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeGentleInnerLow = 408;
+inline constexpr MaterialId kGrassSlopeFacingSouthHalfTopShapeGentleInnerHigh = 409;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrue = 410;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeOuter = 411;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeInner = 412;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeGentleLow = 413;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeGentleHigh = 414;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 415;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 416;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 417;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 418;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTop = 419;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 420;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeInner = 421;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 422;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 423;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 424;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 425;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 426;
+inline constexpr MaterialId kGrassSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 427;
+inline constexpr MaterialId kGrassSlopeFacingWest = 428;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeOuter = 429;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeInner = 430;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeGentleLow = 431;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeGentleHigh = 432;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeGentleOuterLow = 433;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeGentleOuterHigh = 434;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeGentleInnerLow = 435;
+inline constexpr MaterialId kGrassSlopeFacingWestShapeGentleInnerHigh = 436;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTop = 437;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeOuter = 438;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeInner = 439;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeGentleLow = 440;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeGentleHigh = 441;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeGentleOuterLow = 442;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeGentleOuterHigh = 443;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeGentleInnerLow = 444;
+inline constexpr MaterialId kGrassSlopeFacingWestHalfTopShapeGentleInnerHigh = 445;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrue = 446;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeOuter = 447;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeInner = 448;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeGentleLow = 449;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeGentleHigh = 450;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeGentleOuterLow = 451;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 452;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeGentleInnerLow = 453;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 454;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTop = 455;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeOuter = 456;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeInner = 457;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 458;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 459;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 460;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 461;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 462;
+inline constexpr MaterialId kGrassSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 463;
+inline constexpr MaterialId kGrassSlab = 464;
+inline constexpr MaterialId kGrassSlabHalfTop = 465;
+inline constexpr MaterialId kGrassSlabFloodedTrue = 466;
+inline constexpr MaterialId kGrassSlabFloodedTrueHalfTop = 467;
+inline constexpr MaterialId kSandSlope = 468;
+inline constexpr MaterialId kSandSlopeShapeOuter = 469;
+inline constexpr MaterialId kSandSlopeShapeInner = 470;
+inline constexpr MaterialId kSandSlopeShapeGentleLow = 471;
+inline constexpr MaterialId kSandSlopeShapeGentleHigh = 472;
+inline constexpr MaterialId kSandSlopeShapeGentleOuterLow = 473;
+inline constexpr MaterialId kSandSlopeShapeGentleOuterHigh = 474;
+inline constexpr MaterialId kSandSlopeShapeGentleInnerLow = 475;
+inline constexpr MaterialId kSandSlopeShapeGentleInnerHigh = 476;
+inline constexpr MaterialId kSandSlopeHalfTop = 477;
+inline constexpr MaterialId kSandSlopeHalfTopShapeOuter = 478;
+inline constexpr MaterialId kSandSlopeHalfTopShapeInner = 479;
+inline constexpr MaterialId kSandSlopeHalfTopShapeGentleLow = 480;
+inline constexpr MaterialId kSandSlopeHalfTopShapeGentleHigh = 481;
+inline constexpr MaterialId kSandSlopeHalfTopShapeGentleOuterLow = 482;
+inline constexpr MaterialId kSandSlopeHalfTopShapeGentleOuterHigh = 483;
+inline constexpr MaterialId kSandSlopeHalfTopShapeGentleInnerLow = 484;
+inline constexpr MaterialId kSandSlopeHalfTopShapeGentleInnerHigh = 485;
+inline constexpr MaterialId kSandSlopeFloodedTrue = 486;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeOuter = 487;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeInner = 488;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeGentleLow = 489;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeGentleHigh = 490;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeGentleOuterLow = 491;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeGentleOuterHigh = 492;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeGentleInnerLow = 493;
+inline constexpr MaterialId kSandSlopeFloodedTrueShapeGentleInnerHigh = 494;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTop = 495;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeOuter = 496;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeInner = 497;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeGentleLow = 498;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeGentleHigh = 499;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeGentleOuterLow = 500;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 501;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeGentleInnerLow = 502;
+inline constexpr MaterialId kSandSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 503;
+inline constexpr MaterialId kSandSlopeFacingEast = 504;
+inline constexpr MaterialId kSandSlopeFacingEastShapeOuter = 505;
+inline constexpr MaterialId kSandSlopeFacingEastShapeInner = 506;
+inline constexpr MaterialId kSandSlopeFacingEastShapeGentleLow = 507;
+inline constexpr MaterialId kSandSlopeFacingEastShapeGentleHigh = 508;
+inline constexpr MaterialId kSandSlopeFacingEastShapeGentleOuterLow = 509;
+inline constexpr MaterialId kSandSlopeFacingEastShapeGentleOuterHigh = 510;
+inline constexpr MaterialId kSandSlopeFacingEastShapeGentleInnerLow = 511;
+inline constexpr MaterialId kSandSlopeFacingEastShapeGentleInnerHigh = 512;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTop = 513;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeOuter = 514;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeInner = 515;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeGentleLow = 516;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeGentleHigh = 517;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeGentleOuterLow = 518;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeGentleOuterHigh = 519;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeGentleInnerLow = 520;
+inline constexpr MaterialId kSandSlopeFacingEastHalfTopShapeGentleInnerHigh = 521;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrue = 522;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeOuter = 523;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeInner = 524;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeGentleLow = 525;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeGentleHigh = 526;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeGentleOuterLow = 527;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 528;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeGentleInnerLow = 529;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 530;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTop = 531;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeOuter = 532;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeInner = 533;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 534;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 535;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 536;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 537;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 538;
+inline constexpr MaterialId kSandSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 539;
+inline constexpr MaterialId kSandSlopeFacingSouth = 540;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeOuter = 541;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeInner = 542;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeGentleLow = 543;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeGentleHigh = 544;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeGentleOuterLow = 545;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeGentleOuterHigh = 546;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeGentleInnerLow = 547;
+inline constexpr MaterialId kSandSlopeFacingSouthShapeGentleInnerHigh = 548;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTop = 549;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeOuter = 550;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeInner = 551;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeGentleLow = 552;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeGentleHigh = 553;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeGentleOuterLow = 554;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeGentleOuterHigh = 555;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeGentleInnerLow = 556;
+inline constexpr MaterialId kSandSlopeFacingSouthHalfTopShapeGentleInnerHigh = 557;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrue = 558;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeOuter = 559;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeInner = 560;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeGentleLow = 561;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeGentleHigh = 562;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 563;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 564;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 565;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 566;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTop = 567;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 568;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeInner = 569;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 570;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 571;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 572;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 573;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 574;
+inline constexpr MaterialId kSandSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 575;
+inline constexpr MaterialId kSandSlopeFacingWest = 576;
+inline constexpr MaterialId kSandSlopeFacingWestShapeOuter = 577;
+inline constexpr MaterialId kSandSlopeFacingWestShapeInner = 578;
+inline constexpr MaterialId kSandSlopeFacingWestShapeGentleLow = 579;
+inline constexpr MaterialId kSandSlopeFacingWestShapeGentleHigh = 580;
+inline constexpr MaterialId kSandSlopeFacingWestShapeGentleOuterLow = 581;
+inline constexpr MaterialId kSandSlopeFacingWestShapeGentleOuterHigh = 582;
+inline constexpr MaterialId kSandSlopeFacingWestShapeGentleInnerLow = 583;
+inline constexpr MaterialId kSandSlopeFacingWestShapeGentleInnerHigh = 584;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTop = 585;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeOuter = 586;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeInner = 587;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeGentleLow = 588;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeGentleHigh = 589;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeGentleOuterLow = 590;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeGentleOuterHigh = 591;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeGentleInnerLow = 592;
+inline constexpr MaterialId kSandSlopeFacingWestHalfTopShapeGentleInnerHigh = 593;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrue = 594;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeOuter = 595;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeInner = 596;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeGentleLow = 597;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeGentleHigh = 598;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeGentleOuterLow = 599;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 600;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeGentleInnerLow = 601;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 602;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTop = 603;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeOuter = 604;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeInner = 605;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 606;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 607;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 608;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 609;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 610;
+inline constexpr MaterialId kSandSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 611;
+inline constexpr MaterialId kSandSlab = 612;
+inline constexpr MaterialId kSandSlabHalfTop = 613;
+inline constexpr MaterialId kSandSlabFloodedTrue = 614;
+inline constexpr MaterialId kSandSlabFloodedTrueHalfTop = 615;
+inline constexpr MaterialId kSandstoneSlope = 616;
+inline constexpr MaterialId kSandstoneSlopeShapeOuter = 617;
+inline constexpr MaterialId kSandstoneSlopeShapeInner = 618;
+inline constexpr MaterialId kSandstoneSlopeShapeGentleLow = 619;
+inline constexpr MaterialId kSandstoneSlopeShapeGentleHigh = 620;
+inline constexpr MaterialId kSandstoneSlopeShapeGentleOuterLow = 621;
+inline constexpr MaterialId kSandstoneSlopeShapeGentleOuterHigh = 622;
+inline constexpr MaterialId kSandstoneSlopeShapeGentleInnerLow = 623;
+inline constexpr MaterialId kSandstoneSlopeShapeGentleInnerHigh = 624;
+inline constexpr MaterialId kSandstoneSlopeHalfTop = 625;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeOuter = 626;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeInner = 627;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeGentleLow = 628;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeGentleHigh = 629;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeGentleOuterLow = 630;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeGentleOuterHigh = 631;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeGentleInnerLow = 632;
+inline constexpr MaterialId kSandstoneSlopeHalfTopShapeGentleInnerHigh = 633;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrue = 634;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeOuter = 635;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeInner = 636;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeGentleLow = 637;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeGentleHigh = 638;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeGentleOuterLow = 639;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeGentleOuterHigh = 640;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeGentleInnerLow = 641;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueShapeGentleInnerHigh = 642;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTop = 643;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeOuter = 644;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeInner = 645;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeGentleLow = 646;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeGentleHigh = 647;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeGentleOuterLow = 648;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 649;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeGentleInnerLow = 650;
+inline constexpr MaterialId kSandstoneSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 651;
+inline constexpr MaterialId kSandstoneSlopeFacingEast = 652;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeOuter = 653;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeInner = 654;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeGentleLow = 655;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeGentleHigh = 656;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeGentleOuterLow = 657;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeGentleOuterHigh = 658;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeGentleInnerLow = 659;
+inline constexpr MaterialId kSandstoneSlopeFacingEastShapeGentleInnerHigh = 660;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTop = 661;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeOuter = 662;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeInner = 663;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeGentleLow = 664;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeGentleHigh = 665;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeGentleOuterLow = 666;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeGentleOuterHigh = 667;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeGentleInnerLow = 668;
+inline constexpr MaterialId kSandstoneSlopeFacingEastHalfTopShapeGentleInnerHigh = 669;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrue = 670;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeOuter = 671;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeInner = 672;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeGentleLow = 673;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeGentleHigh = 674;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeGentleOuterLow = 675;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 676;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeGentleInnerLow = 677;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 678;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTop = 679;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeOuter = 680;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeInner = 681;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 682;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 683;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 684;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 685;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 686;
+inline constexpr MaterialId kSandstoneSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 687;
+inline constexpr MaterialId kSandstoneSlopeFacingSouth = 688;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeOuter = 689;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeInner = 690;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeGentleLow = 691;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeGentleHigh = 692;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeGentleOuterLow = 693;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeGentleOuterHigh = 694;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeGentleInnerLow = 695;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthShapeGentleInnerHigh = 696;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTop = 697;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeOuter = 698;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeInner = 699;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeGentleLow = 700;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeGentleHigh = 701;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeGentleOuterLow = 702;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeGentleOuterHigh = 703;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeGentleInnerLow = 704;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthHalfTopShapeGentleInnerHigh = 705;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrue = 706;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeOuter = 707;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeInner = 708;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeGentleLow = 709;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeGentleHigh = 710;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 711;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 712;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 713;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 714;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTop = 715;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 716;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeInner = 717;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 718;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 719;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 720;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 721;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 722;
+inline constexpr MaterialId kSandstoneSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 723;
+inline constexpr MaterialId kSandstoneSlopeFacingWest = 724;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeOuter = 725;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeInner = 726;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeGentleLow = 727;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeGentleHigh = 728;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeGentleOuterLow = 729;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeGentleOuterHigh = 730;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeGentleInnerLow = 731;
+inline constexpr MaterialId kSandstoneSlopeFacingWestShapeGentleInnerHigh = 732;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTop = 733;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeOuter = 734;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeInner = 735;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeGentleLow = 736;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeGentleHigh = 737;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeGentleOuterLow = 738;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeGentleOuterHigh = 739;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeGentleInnerLow = 740;
+inline constexpr MaterialId kSandstoneSlopeFacingWestHalfTopShapeGentleInnerHigh = 741;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrue = 742;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeOuter = 743;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeInner = 744;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeGentleLow = 745;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeGentleHigh = 746;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeGentleOuterLow = 747;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 748;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeGentleInnerLow = 749;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 750;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTop = 751;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeOuter = 752;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeInner = 753;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 754;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 755;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 756;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 757;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 758;
+inline constexpr MaterialId kSandstoneSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 759;
+inline constexpr MaterialId kSandstoneSlab = 760;
+inline constexpr MaterialId kSandstoneSlabHalfTop = 761;
+inline constexpr MaterialId kSandstoneSlabFloodedTrue = 762;
+inline constexpr MaterialId kSandstoneSlabFloodedTrueHalfTop = 763;
+inline constexpr MaterialId kGravelSlope = 764;
+inline constexpr MaterialId kGravelSlopeShapeOuter = 765;
+inline constexpr MaterialId kGravelSlopeShapeInner = 766;
+inline constexpr MaterialId kGravelSlopeShapeGentleLow = 767;
+inline constexpr MaterialId kGravelSlopeShapeGentleHigh = 768;
+inline constexpr MaterialId kGravelSlopeShapeGentleOuterLow = 769;
+inline constexpr MaterialId kGravelSlopeShapeGentleOuterHigh = 770;
+inline constexpr MaterialId kGravelSlopeShapeGentleInnerLow = 771;
+inline constexpr MaterialId kGravelSlopeShapeGentleInnerHigh = 772;
+inline constexpr MaterialId kGravelSlopeHalfTop = 773;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeOuter = 774;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeInner = 775;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeGentleLow = 776;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeGentleHigh = 777;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeGentleOuterLow = 778;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeGentleOuterHigh = 779;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeGentleInnerLow = 780;
+inline constexpr MaterialId kGravelSlopeHalfTopShapeGentleInnerHigh = 781;
+inline constexpr MaterialId kGravelSlopeFloodedTrue = 782;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeOuter = 783;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeInner = 784;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeGentleLow = 785;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeGentleHigh = 786;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeGentleOuterLow = 787;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeGentleOuterHigh = 788;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeGentleInnerLow = 789;
+inline constexpr MaterialId kGravelSlopeFloodedTrueShapeGentleInnerHigh = 790;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTop = 791;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeOuter = 792;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeInner = 793;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeGentleLow = 794;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeGentleHigh = 795;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeGentleOuterLow = 796;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 797;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeGentleInnerLow = 798;
+inline constexpr MaterialId kGravelSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 799;
+inline constexpr MaterialId kGravelSlopeFacingEast = 800;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeOuter = 801;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeInner = 802;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeGentleLow = 803;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeGentleHigh = 804;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeGentleOuterLow = 805;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeGentleOuterHigh = 806;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeGentleInnerLow = 807;
+inline constexpr MaterialId kGravelSlopeFacingEastShapeGentleInnerHigh = 808;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTop = 809;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeOuter = 810;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeInner = 811;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeGentleLow = 812;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeGentleHigh = 813;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeGentleOuterLow = 814;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeGentleOuterHigh = 815;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeGentleInnerLow = 816;
+inline constexpr MaterialId kGravelSlopeFacingEastHalfTopShapeGentleInnerHigh = 817;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrue = 818;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeOuter = 819;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeInner = 820;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeGentleLow = 821;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeGentleHigh = 822;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeGentleOuterLow = 823;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 824;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeGentleInnerLow = 825;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 826;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTop = 827;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeOuter = 828;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeInner = 829;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 830;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 831;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 832;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 833;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 834;
+inline constexpr MaterialId kGravelSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 835;
+inline constexpr MaterialId kGravelSlopeFacingSouth = 836;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeOuter = 837;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeInner = 838;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeGentleLow = 839;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeGentleHigh = 840;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeGentleOuterLow = 841;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeGentleOuterHigh = 842;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeGentleInnerLow = 843;
+inline constexpr MaterialId kGravelSlopeFacingSouthShapeGentleInnerHigh = 844;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTop = 845;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeOuter = 846;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeInner = 847;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeGentleLow = 848;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeGentleHigh = 849;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeGentleOuterLow = 850;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeGentleOuterHigh = 851;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeGentleInnerLow = 852;
+inline constexpr MaterialId kGravelSlopeFacingSouthHalfTopShapeGentleInnerHigh = 853;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrue = 854;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeOuter = 855;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeInner = 856;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeGentleLow = 857;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeGentleHigh = 858;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 859;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 860;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 861;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 862;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTop = 863;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 864;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeInner = 865;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 866;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 867;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 868;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 869;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 870;
+inline constexpr MaterialId kGravelSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 871;
+inline constexpr MaterialId kGravelSlopeFacingWest = 872;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeOuter = 873;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeInner = 874;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeGentleLow = 875;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeGentleHigh = 876;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeGentleOuterLow = 877;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeGentleOuterHigh = 878;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeGentleInnerLow = 879;
+inline constexpr MaterialId kGravelSlopeFacingWestShapeGentleInnerHigh = 880;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTop = 881;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeOuter = 882;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeInner = 883;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeGentleLow = 884;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeGentleHigh = 885;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeGentleOuterLow = 886;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeGentleOuterHigh = 887;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeGentleInnerLow = 888;
+inline constexpr MaterialId kGravelSlopeFacingWestHalfTopShapeGentleInnerHigh = 889;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrue = 890;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeOuter = 891;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeInner = 892;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeGentleLow = 893;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeGentleHigh = 894;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeGentleOuterLow = 895;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 896;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeGentleInnerLow = 897;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 898;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTop = 899;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeOuter = 900;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeInner = 901;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 902;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 903;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 904;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 905;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 906;
+inline constexpr MaterialId kGravelSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 907;
+inline constexpr MaterialId kGravelSlab = 908;
+inline constexpr MaterialId kGravelSlabHalfTop = 909;
+inline constexpr MaterialId kGravelSlabFloodedTrue = 910;
+inline constexpr MaterialId kGravelSlabFloodedTrueHalfTop = 911;
+inline constexpr MaterialId kSnowSlope = 912;
+inline constexpr MaterialId kSnowSlopeShapeOuter = 913;
+inline constexpr MaterialId kSnowSlopeShapeInner = 914;
+inline constexpr MaterialId kSnowSlopeShapeGentleLow = 915;
+inline constexpr MaterialId kSnowSlopeShapeGentleHigh = 916;
+inline constexpr MaterialId kSnowSlopeShapeGentleOuterLow = 917;
+inline constexpr MaterialId kSnowSlopeShapeGentleOuterHigh = 918;
+inline constexpr MaterialId kSnowSlopeShapeGentleInnerLow = 919;
+inline constexpr MaterialId kSnowSlopeShapeGentleInnerHigh = 920;
+inline constexpr MaterialId kSnowSlopeHalfTop = 921;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeOuter = 922;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeInner = 923;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeGentleLow = 924;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeGentleHigh = 925;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeGentleOuterLow = 926;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeGentleOuterHigh = 927;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeGentleInnerLow = 928;
+inline constexpr MaterialId kSnowSlopeHalfTopShapeGentleInnerHigh = 929;
+inline constexpr MaterialId kSnowSlopeFloodedTrue = 930;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeOuter = 931;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeInner = 932;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeGentleLow = 933;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeGentleHigh = 934;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeGentleOuterLow = 935;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeGentleOuterHigh = 936;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeGentleInnerLow = 937;
+inline constexpr MaterialId kSnowSlopeFloodedTrueShapeGentleInnerHigh = 938;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTop = 939;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeOuter = 940;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeInner = 941;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeGentleLow = 942;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeGentleHigh = 943;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeGentleOuterLow = 944;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 945;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeGentleInnerLow = 946;
+inline constexpr MaterialId kSnowSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 947;
+inline constexpr MaterialId kSnowSlopeFacingEast = 948;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeOuter = 949;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeInner = 950;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeGentleLow = 951;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeGentleHigh = 952;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeGentleOuterLow = 953;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeGentleOuterHigh = 954;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeGentleInnerLow = 955;
+inline constexpr MaterialId kSnowSlopeFacingEastShapeGentleInnerHigh = 956;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTop = 957;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeOuter = 958;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeInner = 959;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeGentleLow = 960;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeGentleHigh = 961;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeGentleOuterLow = 962;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeGentleOuterHigh = 963;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeGentleInnerLow = 964;
+inline constexpr MaterialId kSnowSlopeFacingEastHalfTopShapeGentleInnerHigh = 965;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrue = 966;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeOuter = 967;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeInner = 968;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeGentleLow = 969;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeGentleHigh = 970;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeGentleOuterLow = 971;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 972;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeGentleInnerLow = 973;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 974;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTop = 975;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeOuter = 976;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeInner = 977;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 978;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 979;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 980;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 981;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 982;
+inline constexpr MaterialId kSnowSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 983;
+inline constexpr MaterialId kSnowSlopeFacingSouth = 984;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeOuter = 985;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeInner = 986;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeGentleLow = 987;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeGentleHigh = 988;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeGentleOuterLow = 989;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeGentleOuterHigh = 990;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeGentleInnerLow = 991;
+inline constexpr MaterialId kSnowSlopeFacingSouthShapeGentleInnerHigh = 992;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTop = 993;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeOuter = 994;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeInner = 995;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeGentleLow = 996;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeGentleHigh = 997;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeGentleOuterLow = 998;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeGentleOuterHigh = 999;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeGentleInnerLow = 1000;
+inline constexpr MaterialId kSnowSlopeFacingSouthHalfTopShapeGentleInnerHigh = 1001;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrue = 1002;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeOuter = 1003;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeInner = 1004;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeGentleLow = 1005;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeGentleHigh = 1006;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 1007;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 1008;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 1009;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 1010;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTop = 1011;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 1012;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeInner = 1013;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 1014;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 1015;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 1016;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 1017;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 1018;
+inline constexpr MaterialId kSnowSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 1019;
+inline constexpr MaterialId kSnowSlopeFacingWest = 1020;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeOuter = 1021;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeInner = 1022;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeGentleLow = 1023;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeGentleHigh = 1024;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeGentleOuterLow = 1025;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeGentleOuterHigh = 1026;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeGentleInnerLow = 1027;
+inline constexpr MaterialId kSnowSlopeFacingWestShapeGentleInnerHigh = 1028;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTop = 1029;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeOuter = 1030;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeInner = 1031;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeGentleLow = 1032;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeGentleHigh = 1033;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeGentleOuterLow = 1034;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeGentleOuterHigh = 1035;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeGentleInnerLow = 1036;
+inline constexpr MaterialId kSnowSlopeFacingWestHalfTopShapeGentleInnerHigh = 1037;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrue = 1038;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeOuter = 1039;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeInner = 1040;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeGentleLow = 1041;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeGentleHigh = 1042;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeGentleOuterLow = 1043;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 1044;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeGentleInnerLow = 1045;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 1046;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTop = 1047;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeOuter = 1048;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeInner = 1049;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 1050;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 1051;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 1052;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 1053;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 1054;
+inline constexpr MaterialId kSnowSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 1055;
+inline constexpr MaterialId kSnowSlab = 1056;
+inline constexpr MaterialId kSnowSlabHalfTop = 1057;
+inline constexpr MaterialId kSnowSlabFloodedTrue = 1058;
+inline constexpr MaterialId kSnowSlabFloodedTrueHalfTop = 1059;
+inline constexpr MaterialId kLogSlope = 1060;
+inline constexpr MaterialId kLogSlopeShapeOuter = 1061;
+inline constexpr MaterialId kLogSlopeShapeInner = 1062;
+inline constexpr MaterialId kLogSlopeShapeGentleLow = 1063;
+inline constexpr MaterialId kLogSlopeShapeGentleHigh = 1064;
+inline constexpr MaterialId kLogSlopeShapeGentleOuterLow = 1065;
+inline constexpr MaterialId kLogSlopeShapeGentleOuterHigh = 1066;
+inline constexpr MaterialId kLogSlopeShapeGentleInnerLow = 1067;
+inline constexpr MaterialId kLogSlopeShapeGentleInnerHigh = 1068;
+inline constexpr MaterialId kLogSlopeHalfTop = 1069;
+inline constexpr MaterialId kLogSlopeHalfTopShapeOuter = 1070;
+inline constexpr MaterialId kLogSlopeHalfTopShapeInner = 1071;
+inline constexpr MaterialId kLogSlopeHalfTopShapeGentleLow = 1072;
+inline constexpr MaterialId kLogSlopeHalfTopShapeGentleHigh = 1073;
+inline constexpr MaterialId kLogSlopeHalfTopShapeGentleOuterLow = 1074;
+inline constexpr MaterialId kLogSlopeHalfTopShapeGentleOuterHigh = 1075;
+inline constexpr MaterialId kLogSlopeHalfTopShapeGentleInnerLow = 1076;
+inline constexpr MaterialId kLogSlopeHalfTopShapeGentleInnerHigh = 1077;
+inline constexpr MaterialId kLogSlopeFloodedTrue = 1078;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeOuter = 1079;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeInner = 1080;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeGentleLow = 1081;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeGentleHigh = 1082;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeGentleOuterLow = 1083;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeGentleOuterHigh = 1084;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeGentleInnerLow = 1085;
+inline constexpr MaterialId kLogSlopeFloodedTrueShapeGentleInnerHigh = 1086;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTop = 1087;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeOuter = 1088;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeInner = 1089;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeGentleLow = 1090;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeGentleHigh = 1091;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeGentleOuterLow = 1092;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeGentleOuterHigh = 1093;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeGentleInnerLow = 1094;
+inline constexpr MaterialId kLogSlopeFloodedTrueHalfTopShapeGentleInnerHigh = 1095;
+inline constexpr MaterialId kLogSlopeFacingEast = 1096;
+inline constexpr MaterialId kLogSlopeFacingEastShapeOuter = 1097;
+inline constexpr MaterialId kLogSlopeFacingEastShapeInner = 1098;
+inline constexpr MaterialId kLogSlopeFacingEastShapeGentleLow = 1099;
+inline constexpr MaterialId kLogSlopeFacingEastShapeGentleHigh = 1100;
+inline constexpr MaterialId kLogSlopeFacingEastShapeGentleOuterLow = 1101;
+inline constexpr MaterialId kLogSlopeFacingEastShapeGentleOuterHigh = 1102;
+inline constexpr MaterialId kLogSlopeFacingEastShapeGentleInnerLow = 1103;
+inline constexpr MaterialId kLogSlopeFacingEastShapeGentleInnerHigh = 1104;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTop = 1105;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeOuter = 1106;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeInner = 1107;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeGentleLow = 1108;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeGentleHigh = 1109;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeGentleOuterLow = 1110;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeGentleOuterHigh = 1111;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeGentleInnerLow = 1112;
+inline constexpr MaterialId kLogSlopeFacingEastHalfTopShapeGentleInnerHigh = 1113;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrue = 1114;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeOuter = 1115;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeInner = 1116;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeGentleLow = 1117;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeGentleHigh = 1118;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeGentleOuterLow = 1119;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeGentleOuterHigh = 1120;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeGentleInnerLow = 1121;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueShapeGentleInnerHigh = 1122;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTop = 1123;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeOuter = 1124;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeInner = 1125;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeGentleLow = 1126;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeGentleHigh = 1127;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterLow = 1128;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeGentleOuterHigh = 1129;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerLow = 1130;
+inline constexpr MaterialId kLogSlopeFacingEastFloodedTrueHalfTopShapeGentleInnerHigh = 1131;
+inline constexpr MaterialId kLogSlopeFacingSouth = 1132;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeOuter = 1133;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeInner = 1134;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeGentleLow = 1135;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeGentleHigh = 1136;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeGentleOuterLow = 1137;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeGentleOuterHigh = 1138;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeGentleInnerLow = 1139;
+inline constexpr MaterialId kLogSlopeFacingSouthShapeGentleInnerHigh = 1140;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTop = 1141;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeOuter = 1142;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeInner = 1143;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeGentleLow = 1144;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeGentleHigh = 1145;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeGentleOuterLow = 1146;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeGentleOuterHigh = 1147;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeGentleInnerLow = 1148;
+inline constexpr MaterialId kLogSlopeFacingSouthHalfTopShapeGentleInnerHigh = 1149;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrue = 1150;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeOuter = 1151;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeInner = 1152;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeGentleLow = 1153;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeGentleHigh = 1154;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeGentleOuterLow = 1155;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeGentleOuterHigh = 1156;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeGentleInnerLow = 1157;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueShapeGentleInnerHigh = 1158;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTop = 1159;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeOuter = 1160;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeInner = 1161;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeGentleLow = 1162;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeGentleHigh = 1163;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterLow = 1164;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeGentleOuterHigh = 1165;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerLow = 1166;
+inline constexpr MaterialId kLogSlopeFacingSouthFloodedTrueHalfTopShapeGentleInnerHigh = 1167;
+inline constexpr MaterialId kLogSlopeFacingWest = 1168;
+inline constexpr MaterialId kLogSlopeFacingWestShapeOuter = 1169;
+inline constexpr MaterialId kLogSlopeFacingWestShapeInner = 1170;
+inline constexpr MaterialId kLogSlopeFacingWestShapeGentleLow = 1171;
+inline constexpr MaterialId kLogSlopeFacingWestShapeGentleHigh = 1172;
+inline constexpr MaterialId kLogSlopeFacingWestShapeGentleOuterLow = 1173;
+inline constexpr MaterialId kLogSlopeFacingWestShapeGentleOuterHigh = 1174;
+inline constexpr MaterialId kLogSlopeFacingWestShapeGentleInnerLow = 1175;
+inline constexpr MaterialId kLogSlopeFacingWestShapeGentleInnerHigh = 1176;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTop = 1177;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeOuter = 1178;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeInner = 1179;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeGentleLow = 1180;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeGentleHigh = 1181;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeGentleOuterLow = 1182;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeGentleOuterHigh = 1183;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeGentleInnerLow = 1184;
+inline constexpr MaterialId kLogSlopeFacingWestHalfTopShapeGentleInnerHigh = 1185;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrue = 1186;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeOuter = 1187;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeInner = 1188;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeGentleLow = 1189;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeGentleHigh = 1190;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeGentleOuterLow = 1191;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeGentleOuterHigh = 1192;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeGentleInnerLow = 1193;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueShapeGentleInnerHigh = 1194;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTop = 1195;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeOuter = 1196;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeInner = 1197;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeGentleLow = 1198;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeGentleHigh = 1199;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterLow = 1200;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeGentleOuterHigh = 1201;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerLow = 1202;
+inline constexpr MaterialId kLogSlopeFacingWestFloodedTrueHalfTopShapeGentleInnerHigh = 1203;
+inline constexpr MaterialId kLogSlab = 1204;
+inline constexpr MaterialId kLogSlabHalfTop = 1205;
+inline constexpr MaterialId kLogSlabFloodedTrue = 1206;
+inline constexpr MaterialId kLogSlabFloodedTrueHalfTop = 1207;
+inline constexpr MaterialId kCount = 1208;
 }  // namespace Materials
 
-inline constexpr std::array<std::string_view, 6> kPropertyValues{{
+inline constexpr std::array<std::string_view, 174> kPropertyValues{{
+    "false",
+    "true",
+    "bottom",
+    "top",
     "north",
     "east",
     "south",
     "west",
     "false",
     "true",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "north",
+    "east",
+    "south",
+    "west",
+    "false",
+    "true",
+    "bottom",
+    "top",
+    "wedge",
+    "outer",
+    "inner",
+    "gentle_low",
+    "gentle_high",
+    "gentle_outer_low",
+    "gentle_outer_high",
+    "gentle_inner_low",
+    "gentle_inner_high",
+    "false",
+    "true",
+    "bottom",
+    "top",
 }};
 
-inline constexpr std::array<PropertyDef, 2> kProperties{{
-    {"facing", 0, 4},
-    {"flooded", 4, 2},
+inline constexpr std::array<PropertyDef, 50> kProperties{{
+    {"flooded", 0, 2},
+    {"half", 2, 2},
+    {"facing", 4, 4},
+    {"flooded", 8, 2},
+    {"facing", 10, 4},
+    {"flooded", 14, 2},
+    {"half", 16, 2},
+    {"shape", 18, 9},
+    {"facing", 27, 4},
+    {"flooded", 31, 2},
+    {"half", 33, 2},
+    {"shape", 35, 9},
+    {"flooded", 44, 2},
+    {"half", 46, 2},
+    {"facing", 48, 4},
+    {"flooded", 52, 2},
+    {"half", 54, 2},
+    {"shape", 56, 9},
+    {"flooded", 65, 2},
+    {"half", 67, 2},
+    {"facing", 69, 4},
+    {"flooded", 73, 2},
+    {"half", 75, 2},
+    {"shape", 77, 9},
+    {"flooded", 86, 2},
+    {"half", 88, 2},
+    {"facing", 90, 4},
+    {"flooded", 94, 2},
+    {"half", 96, 2},
+    {"shape", 98, 9},
+    {"flooded", 107, 2},
+    {"half", 109, 2},
+    {"facing", 111, 4},
+    {"flooded", 115, 2},
+    {"half", 117, 2},
+    {"shape", 119, 9},
+    {"flooded", 128, 2},
+    {"half", 130, 2},
+    {"facing", 132, 4},
+    {"flooded", 136, 2},
+    {"half", 138, 2},
+    {"shape", 140, 9},
+    {"flooded", 149, 2},
+    {"half", 151, 2},
+    {"facing", 153, 4},
+    {"flooded", 157, 2},
+    {"half", 159, 2},
+    {"shape", 161, 9},
+    {"flooded", 170, 2},
+    {"half", 172, 2},
 }};
 
 inline constexpr std::array<BlockDef, kBlockCount> kBlocks{{
@@ -65,47 +1464,1804 @@ inline constexpr std::array<BlockDef, kBlockCount> kBlocks{{
     {"dwell:stone", 2, 1, 0, 0},
     {"dwell:dirt", 3, 1, 0, 0},
     {"dwell:grass", 4, 1, 0, 0},
-    {"dwell:stone_slab", 5, 1, 0, 0},
-    {"dwell:ladder", 6, 8, 0, 2},
-    {"dwell:water", 14, 1, 2, 0},
-    {"dwell:launch_pad", 15, 1, 2, 0},
-    {"dwell:sand", 16, 1, 2, 0},
-    {"dwell:sandstone", 17, 1, 2, 0},
-    {"dwell:gravel", 18, 1, 2, 0},
-    {"dwell:snow", 19, 1, 2, 0},
-    {"dwell:log", 20, 1, 2, 0},
-    {"dwell:leaves", 21, 1, 2, 0},
-    {"dwell:coal_ore", 22, 1, 2, 0},
-    {"dwell:iron_ore", 23, 1, 2, 0},
-    {"dwell:gold_ore", 24, 1, 2, 0},
+    {"dwell:stone_slab", 5, 4, 0, 2},
+    {"dwell:ladder", 9, 8, 2, 2},
+    {"dwell:water", 17, 1, 4, 0},
+    {"dwell:launch_pad", 18, 1, 4, 0},
+    {"dwell:sand", 19, 1, 4, 0},
+    {"dwell:sandstone", 20, 1, 4, 0},
+    {"dwell:gravel", 21, 1, 4, 0},
+    {"dwell:snow", 22, 1, 4, 0},
+    {"dwell:log", 23, 1, 4, 0},
+    {"dwell:leaves", 24, 1, 4, 0},
+    {"dwell:coal_ore", 25, 1, 4, 0},
+    {"dwell:iron_ore", 26, 1, 4, 0},
+    {"dwell:gold_ore", 27, 1, 4, 0},
+    {"dwell:stone_slope", 28, 144, 4, 4},
+    {"dwell:dirt_slope", 172, 144, 8, 4},
+    {"dwell:dirt_slab", 316, 4, 12, 2},
+    {"dwell:grass_slope", 320, 144, 14, 4},
+    {"dwell:grass_slab", 464, 4, 18, 2},
+    {"dwell:sand_slope", 468, 144, 20, 4},
+    {"dwell:sand_slab", 612, 4, 24, 2},
+    {"dwell:sandstone_slope", 616, 144, 26, 4},
+    {"dwell:sandstone_slab", 760, 4, 30, 2},
+    {"dwell:gravel_slope", 764, 144, 32, 4},
+    {"dwell:gravel_slab", 908, 4, 36, 2},
+    {"dwell:snow_slope", 912, 144, 38, 4},
+    {"dwell:snow_slab", 1056, 4, 42, 2},
+    {"dwell:log_slope", 1060, 144, 44, 4},
+    {"dwell:log_slab", 1204, 4, 48, 2},
 }};
 
+inline constexpr std::array<ShapeFace, 474> kShapeFaces{{
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {2, 4, {{0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 4, {{1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 3, {{1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 3, {{1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {0, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}}},
+    {1, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.5f, 0.0f}}},
+    {0, 4, {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}}},
+    {3, 4, {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{0.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 3, {{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {0, 3, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 3, {{1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 3, {{0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 0.0f}, {1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.5f, 1.0f}, {0.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 3, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.5f, 1.0f}, {1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+    {1, 4, {{0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}}},
+    {0, 4, {{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+    {2, 4, {{0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {6, 3, {{1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}},
+    {5, 4, {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}},
+    {4, 4, {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}},
+}};
+
+inline constexpr std::array<ShapeInfo, 76> kShapes{{
+    {0, 0, {0, 0, 0, 0}, false, 0, true, 0.0f, {{{0, 0}, {0, 0}, {0, 0}, {0, 0}}}, false, false, 0.0f, 0.0f},
+    {0, 6, {2, 2, 2, 2}, false, 0, true, 1.0f, {{{2, 2}, {2, 2}, {2, 2}, {2, 2}}}, true, true, 0.0f, 1.0f},
+    {6, 6, {1, 1, 1, 1}, false, 0, true, 0.5f, {{{1, 1}, {1, 1}, {1, 1}, {1, 1}}}, false, true, 0.0f, 0.5f},
+    {12, 6, {1, 1, 1, 1}, true, 0, true, 0.5f, {{{1, 1}, {1, 1}, {1, 1}, {1, 1}}}, true, false, 0.5f, 1.0f},
+    {18, 6, {0, 0, 2, 2}, false, 1, true, 0.5f, {{{0, 2}, {0, 2}, {2, 2}, {0, 0}}}, false, true, 0.0f, 1.0f},
+    {24, 5, {0, 0, 0, 2}, false, 1, true, 0.3333333333333333f, {{{0, 0}, {0, 2}, {2, 0}, {0, 0}}}, false, true, 0.0f, 1.0f},
+    {29, 7, {2, 0, 2, 2}, false, 1, false, 0.6666666666666666f, {{{0, 2}, {2, 2}, {2, 2}, {2, 0}}}, false, true, 0.0f, 1.0f},
+    {36, 6, {0, 0, 1, 1}, false, 1, true, 0.25f, {{{0, 1}, {0, 1}, {1, 1}, {0, 0}}}, false, true, 0.0f, 0.5f},
+    {42, 7, {1, 1, 2, 2}, false, 1, true, 0.75f, {{{1, 2}, {1, 2}, {2, 2}, {1, 1}}}, false, true, 0.0f, 1.0f},
+    {49, 5, {0, 0, 0, 1}, false, 1, true, 0.16666666666666666f, {{{0, 0}, {0, 1}, {1, 0}, {0, 0}}}, false, true, 0.0f, 0.5f},
+    {54, 7, {1, 1, 1, 2}, false, 1, true, 0.6666666666666666f, {{{1, 1}, {1, 2}, {2, 1}, {1, 1}}}, false, true, 0.0f, 1.0f},
+    {61, 7, {1, 0, 1, 1}, false, 1, false, 0.3333333333333333f, {{{0, 1}, {1, 1}, {1, 1}, {1, 0}}}, false, true, 0.0f, 0.5f},
+    {68, 7, {2, 1, 2, 2}, false, 1, false, 0.8333333333333334f, {{{1, 2}, {2, 2}, {2, 2}, {2, 1}}}, false, true, 0.0f, 1.0f},
+    {75, 6, {0, 0, 2, 2}, true, 1, true, 0.5f, {{{0, 2}, {0, 2}, {2, 2}, {0, 0}}}, true, false, 0.0f, 1.0f},
+    {81, 5, {0, 0, 0, 2}, true, 1, true, 0.3333333333333333f, {{{0, 0}, {0, 2}, {2, 0}, {0, 0}}}, true, false, 0.0f, 1.0f},
+    {86, 7, {2, 0, 2, 2}, true, 1, false, 0.6666666666666666f, {{{0, 2}, {2, 2}, {2, 2}, {2, 0}}}, true, false, 0.0f, 1.0f},
+    {93, 6, {0, 0, 1, 1}, true, 1, true, 0.25f, {{{0, 1}, {0, 1}, {1, 1}, {0, 0}}}, true, false, 0.5f, 1.0f},
+    {99, 7, {1, 1, 2, 2}, true, 1, true, 0.75f, {{{1, 2}, {1, 2}, {2, 2}, {1, 1}}}, true, false, 0.0f, 1.0f},
+    {106, 5, {0, 0, 0, 1}, true, 1, true, 0.16666666666666666f, {{{0, 0}, {0, 1}, {1, 0}, {0, 0}}}, true, false, 0.5f, 1.0f},
+    {111, 7, {1, 1, 1, 2}, true, 1, true, 0.6666666666666666f, {{{1, 1}, {1, 2}, {2, 1}, {1, 1}}}, true, false, 0.0f, 1.0f},
+    {118, 7, {1, 0, 1, 1}, true, 1, false, 0.3333333333333333f, {{{0, 1}, {1, 1}, {1, 1}, {1, 0}}}, true, false, 0.5f, 1.0f},
+    {125, 7, {2, 1, 2, 2}, true, 1, false, 0.8333333333333334f, {{{1, 2}, {2, 2}, {2, 2}, {2, 1}}}, true, false, 0.0f, 1.0f},
+    {132, 6, {2, 0, 0, 2}, false, 0, true, 0.5f, {{{0, 0}, {2, 2}, {2, 0}, {2, 0}}}, false, true, 0.0f, 1.0f},
+    {138, 5, {2, 0, 0, 0}, false, 0, true, 0.3333333333333333f, {{{0, 0}, {2, 0}, {0, 0}, {2, 0}}}, false, true, 0.0f, 1.0f},
+    {143, 7, {2, 2, 0, 2}, false, 0, false, 0.6666666666666666f, {{{2, 0}, {2, 2}, {2, 0}, {2, 2}}}, false, true, 0.0f, 1.0f},
+    {150, 6, {1, 0, 0, 1}, false, 0, true, 0.25f, {{{0, 0}, {1, 1}, {1, 0}, {1, 0}}}, false, true, 0.0f, 0.5f},
+    {156, 7, {2, 1, 1, 2}, false, 0, true, 0.75f, {{{1, 1}, {2, 2}, {2, 1}, {2, 1}}}, false, true, 0.0f, 1.0f},
+    {163, 5, {1, 0, 0, 0}, false, 0, true, 0.16666666666666666f, {{{0, 0}, {1, 0}, {0, 0}, {1, 0}}}, false, true, 0.0f, 0.5f},
+    {168, 7, {2, 1, 1, 1}, false, 0, true, 0.6666666666666666f, {{{1, 1}, {2, 1}, {1, 1}, {2, 1}}}, false, true, 0.0f, 1.0f},
+    {175, 7, {1, 1, 0, 1}, false, 0, false, 0.3333333333333333f, {{{1, 0}, {1, 1}, {1, 0}, {1, 1}}}, false, true, 0.0f, 0.5f},
+    {182, 7, {2, 2, 1, 2}, false, 0, false, 0.8333333333333334f, {{{2, 1}, {2, 2}, {2, 1}, {2, 2}}}, false, true, 0.0f, 1.0f},
+    {189, 6, {2, 0, 0, 2}, true, 0, true, 0.5f, {{{0, 0}, {2, 2}, {2, 0}, {2, 0}}}, true, false, 0.0f, 1.0f},
+    {195, 5, {2, 0, 0, 0}, true, 0, true, 0.3333333333333333f, {{{0, 0}, {2, 0}, {0, 0}, {2, 0}}}, true, false, 0.0f, 1.0f},
+    {200, 7, {2, 2, 0, 2}, true, 0, false, 0.6666666666666666f, {{{2, 0}, {2, 2}, {2, 0}, {2, 2}}}, true, false, 0.0f, 1.0f},
+    {207, 6, {1, 0, 0, 1}, true, 0, true, 0.25f, {{{0, 0}, {1, 1}, {1, 0}, {1, 0}}}, true, false, 0.5f, 1.0f},
+    {213, 7, {2, 1, 1, 2}, true, 0, true, 0.75f, {{{1, 1}, {2, 2}, {2, 1}, {2, 1}}}, true, false, 0.0f, 1.0f},
+    {220, 5, {1, 0, 0, 0}, true, 0, true, 0.16666666666666666f, {{{0, 0}, {1, 0}, {0, 0}, {1, 0}}}, true, false, 0.5f, 1.0f},
+    {225, 7, {2, 1, 1, 1}, true, 0, true, 0.6666666666666666f, {{{1, 1}, {2, 1}, {1, 1}, {2, 1}}}, true, false, 0.0f, 1.0f},
+    {232, 7, {1, 1, 0, 1}, true, 0, false, 0.3333333333333333f, {{{1, 0}, {1, 1}, {1, 0}, {1, 1}}}, true, false, 0.5f, 1.0f},
+    {239, 7, {2, 2, 1, 2}, true, 0, false, 0.8333333333333334f, {{{2, 1}, {2, 2}, {2, 1}, {2, 2}}}, true, false, 0.0f, 1.0f},
+    {246, 6, {2, 2, 0, 0}, false, 1, true, 0.5f, {{{2, 0}, {2, 0}, {0, 0}, {2, 2}}}, false, true, 0.0f, 1.0f},
+    {252, 5, {0, 2, 0, 0}, false, 1, true, 0.3333333333333333f, {{{2, 0}, {0, 0}, {0, 0}, {0, 2}}}, false, true, 0.0f, 1.0f},
+    {257, 7, {2, 2, 2, 0}, false, 1, false, 0.6666666666666666f, {{{2, 2}, {2, 0}, {0, 2}, {2, 2}}}, false, true, 0.0f, 1.0f},
+    {264, 6, {1, 1, 0, 0}, false, 1, true, 0.25f, {{{1, 0}, {1, 0}, {0, 0}, {1, 1}}}, false, true, 0.0f, 0.5f},
+    {270, 7, {2, 2, 1, 1}, false, 1, true, 0.75f, {{{2, 1}, {2, 1}, {1, 1}, {2, 2}}}, false, true, 0.0f, 1.0f},
+    {277, 5, {0, 1, 0, 0}, false, 1, true, 0.16666666666666666f, {{{1, 0}, {0, 0}, {0, 0}, {0, 1}}}, false, true, 0.0f, 0.5f},
+    {282, 7, {1, 2, 1, 1}, false, 1, true, 0.6666666666666666f, {{{2, 1}, {1, 1}, {1, 1}, {1, 2}}}, false, true, 0.0f, 1.0f},
+    {289, 7, {1, 1, 1, 0}, false, 1, false, 0.3333333333333333f, {{{1, 1}, {1, 0}, {0, 1}, {1, 1}}}, false, true, 0.0f, 0.5f},
+    {296, 7, {2, 2, 2, 1}, false, 1, false, 0.8333333333333334f, {{{2, 2}, {2, 1}, {1, 2}, {2, 2}}}, false, true, 0.0f, 1.0f},
+    {303, 6, {2, 2, 0, 0}, true, 1, true, 0.5f, {{{2, 0}, {2, 0}, {0, 0}, {2, 2}}}, true, false, 0.0f, 1.0f},
+    {309, 5, {0, 2, 0, 0}, true, 1, true, 0.3333333333333333f, {{{2, 0}, {0, 0}, {0, 0}, {0, 2}}}, true, false, 0.0f, 1.0f},
+    {314, 7, {2, 2, 2, 0}, true, 1, false, 0.6666666666666666f, {{{2, 2}, {2, 0}, {0, 2}, {2, 2}}}, true, false, 0.0f, 1.0f},
+    {321, 6, {1, 1, 0, 0}, true, 1, true, 0.25f, {{{1, 0}, {1, 0}, {0, 0}, {1, 1}}}, true, false, 0.5f, 1.0f},
+    {327, 7, {2, 2, 1, 1}, true, 1, true, 0.75f, {{{2, 1}, {2, 1}, {1, 1}, {2, 2}}}, true, false, 0.0f, 1.0f},
+    {334, 5, {0, 1, 0, 0}, true, 1, true, 0.16666666666666666f, {{{1, 0}, {0, 0}, {0, 0}, {0, 1}}}, true, false, 0.5f, 1.0f},
+    {339, 7, {1, 2, 1, 1}, true, 1, true, 0.6666666666666666f, {{{2, 1}, {1, 1}, {1, 1}, {1, 2}}}, true, false, 0.0f, 1.0f},
+    {346, 7, {1, 1, 1, 0}, true, 1, false, 0.3333333333333333f, {{{1, 1}, {1, 0}, {0, 1}, {1, 1}}}, true, false, 0.5f, 1.0f},
+    {353, 7, {2, 2, 2, 1}, true, 1, false, 0.8333333333333334f, {{{2, 2}, {2, 1}, {1, 2}, {2, 2}}}, true, false, 0.0f, 1.0f},
+    {360, 6, {0, 2, 2, 0}, false, 0, true, 0.5f, {{{2, 2}, {0, 0}, {0, 2}, {0, 2}}}, false, true, 0.0f, 1.0f},
+    {366, 5, {0, 0, 2, 0}, false, 0, true, 0.3333333333333333f, {{{0, 2}, {0, 0}, {0, 2}, {0, 0}}}, false, true, 0.0f, 1.0f},
+    {371, 7, {0, 2, 2, 2}, false, 0, false, 0.6666666666666666f, {{{2, 2}, {0, 2}, {2, 2}, {0, 2}}}, false, true, 0.0f, 1.0f},
+    {378, 6, {0, 1, 1, 0}, false, 0, true, 0.25f, {{{1, 1}, {0, 0}, {0, 1}, {0, 1}}}, false, true, 0.0f, 0.5f},
+    {384, 7, {1, 2, 2, 1}, false, 0, true, 0.75f, {{{2, 2}, {1, 1}, {1, 2}, {1, 2}}}, false, true, 0.0f, 1.0f},
+    {391, 5, {0, 0, 1, 0}, false, 0, true, 0.16666666666666666f, {{{0, 1}, {0, 0}, {0, 1}, {0, 0}}}, false, true, 0.0f, 0.5f},
+    {396, 7, {1, 1, 2, 1}, false, 0, true, 0.6666666666666666f, {{{1, 2}, {1, 1}, {1, 2}, {1, 1}}}, false, true, 0.0f, 1.0f},
+    {403, 7, {0, 1, 1, 1}, false, 0, false, 0.3333333333333333f, {{{1, 1}, {0, 1}, {1, 1}, {0, 1}}}, false, true, 0.0f, 0.5f},
+    {410, 7, {1, 2, 2, 2}, false, 0, false, 0.8333333333333334f, {{{2, 2}, {1, 2}, {2, 2}, {1, 2}}}, false, true, 0.0f, 1.0f},
+    {417, 6, {0, 2, 2, 0}, true, 0, true, 0.5f, {{{2, 2}, {0, 0}, {0, 2}, {0, 2}}}, true, false, 0.0f, 1.0f},
+    {423, 5, {0, 0, 2, 0}, true, 0, true, 0.3333333333333333f, {{{0, 2}, {0, 0}, {0, 2}, {0, 0}}}, true, false, 0.0f, 1.0f},
+    {428, 7, {0, 2, 2, 2}, true, 0, false, 0.6666666666666666f, {{{2, 2}, {0, 2}, {2, 2}, {0, 2}}}, true, false, 0.0f, 1.0f},
+    {435, 6, {0, 1, 1, 0}, true, 0, true, 0.25f, {{{1, 1}, {0, 0}, {0, 1}, {0, 1}}}, true, false, 0.5f, 1.0f},
+    {441, 7, {1, 2, 2, 1}, true, 0, true, 0.75f, {{{2, 2}, {1, 1}, {1, 2}, {1, 2}}}, true, false, 0.0f, 1.0f},
+    {448, 5, {0, 0, 1, 0}, true, 0, true, 0.16666666666666666f, {{{0, 1}, {0, 0}, {0, 1}, {0, 0}}}, true, false, 0.5f, 1.0f},
+    {453, 7, {1, 1, 2, 1}, true, 0, true, 0.6666666666666666f, {{{1, 2}, {1, 1}, {1, 2}, {1, 1}}}, true, false, 0.0f, 1.0f},
+    {460, 7, {0, 1, 1, 1}, true, 0, false, 0.3333333333333333f, {{{1, 1}, {0, 1}, {1, 1}, {0, 1}}}, true, false, 0.5f, 1.0f},
+    {467, 7, {1, 2, 2, 2}, true, 0, false, 0.8333333333333334f, {{{2, 2}, {1, 2}, {2, 2}, {1, 2}}}, true, false, 0.0f, 1.0f},
+}};
+
+// Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves): see shared/blocks/gen.mjs.
+inline constexpr std::array<std::uint8_t, 81> kPieceNearest{{0, 1, 2, 3, 4, 8, 6, 8, 8, 9, 13, 2, 12, 13, 41, 24, 43, 26, 18, 18, 26, 24, 49, 26, 24, 26, 26, 27, 28, 56, 31, 31, 41, 6, 43, 44, 36, 37, 41, 39, 40, 41, 43, 43, 44, 72, 49, 74, 49, 49, 53, 52, 52, 53, 54, 56, 56, 54, 67, 62, 62, 62, 62, 72, 67, 68, 67, 67, 68, 78, 71, 71, 72, 74, 74, 76, 76, 77, 78, 79, 80}};
+
 inline constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{
-    {.name = "dwell:air", .density_kg_m3 = 0.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 0},  // 0
-    {.name = "dwell:bedrock", .density_kg_m3 = 3000.0f, .solid = true, .indestructible = true, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 1},  // 1
-    {.name = "dwell:stone", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 2},  // 2
-    {.name = "dwell:dirt", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 3},  // 3
-    {.name = "dwell:grass", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 4},  // 4
-    {.name = "dwell:stone_slab", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kSlabBottom, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 5},  // 5
-    {.name = "dwell:ladder[facing=north,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kNorth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 6
-    {.name = "dwell:ladder[facing=north,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kNorth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 7
-    {.name = "dwell:ladder[facing=east,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kEast, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 8
-    {.name = "dwell:ladder[facing=east,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kEast, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 9
-    {.name = "dwell:ladder[facing=south,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kSouth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 10
-    {.name = "dwell:ladder[facing=south,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kSouth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 11
-    {.name = "dwell:ladder[facing=west,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kWest, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 12
-    {.name = "dwell:ladder[facing=west,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = true, .facing = Facing::kWest, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 13
-    {.name = "dwell:water", .density_kg_m3 = 1000.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = true, .launch_speed = 0.0f, .placeable = false, .block = 7},  // 14
-    {.name = "dwell:launch_pad", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 14.0f, .placeable = false, .block = 8},  // 15
-    {.name = "dwell:sand", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 9},  // 16
-    {.name = "dwell:sandstone", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 10},  // 17
-    {.name = "dwell:gravel", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 11},  // 18
-    {.name = "dwell:snow", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 12},  // 19
-    {.name = "dwell:log", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 13},  // 20
-    {.name = "dwell:leaves", .density_kg_m3 = 200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 14},  // 21
-    {.name = "dwell:coal_ore", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 15},  // 22
-    {.name = "dwell:iron_ore", .density_kg_m3 = 3200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 16},  // 23
-    {.name = "dwell:gold_ore", .density_kg_m3 = 3600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 17},  // 24
+    {.name = "dwell:air", .density_kg_m3 = 0.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 0},  // 0
+    {.name = "dwell:bedrock", .density_kg_m3 = 3000.0f, .solid = true, .indestructible = true, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 1},  // 1
+    {.name = "dwell:stone", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 2},  // 2
+    {.name = "dwell:dirt", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 3},  // 3
+    {.name = "dwell:grass", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 4},  // 4
+    {.name = "dwell:stone_slab[flooded=false,half=bottom]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 5},  // 5
+    {.name = "dwell:stone_slab[flooded=false,half=top]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 5},  // 6
+    {.name = "dwell:stone_slab[flooded=true,half=bottom]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 5},  // 7
+    {.name = "dwell:stone_slab[flooded=true,half=top]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 5},  // 8
+    {.name = "dwell:ladder[facing=north,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = false, .climbable = true, .facing = Facing::kNorth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 9
+    {.name = "dwell:ladder[facing=north,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = true, .climbable = true, .facing = Facing::kNorth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 10
+    {.name = "dwell:ladder[facing=east,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = false, .climbable = true, .facing = Facing::kEast, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 11
+    {.name = "dwell:ladder[facing=east,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = true, .climbable = true, .facing = Facing::kEast, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 12
+    {.name = "dwell:ladder[facing=south,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = false, .climbable = true, .facing = Facing::kSouth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 13
+    {.name = "dwell:ladder[facing=south,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = true, .climbable = true, .facing = Facing::kSouth, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 14
+    {.name = "dwell:ladder[facing=west,flooded=false]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = false, .climbable = true, .facing = Facing::kWest, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 6},  // 15
+    {.name = "dwell:ladder[facing=west,flooded=true]", .density_kg_m3 = 600.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = true, .climbable = true, .facing = Facing::kWest, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 6},  // 16
+    {.name = "dwell:water", .density_kg_m3 = 1000.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = true, .launch_speed = 0.0f, .placeable = false, .block = 7},  // 17
+    {.name = "dwell:launch_pad", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 14.0f, .placeable = false, .block = 8},  // 18
+    {.name = "dwell:sand", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 9},  // 19
+    {.name = "dwell:sandstone", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 10},  // 20
+    {.name = "dwell:gravel", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 11},  // 21
+    {.name = "dwell:snow", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 12},  // 22
+    {.name = "dwell:log", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 13},  // 23
+    {.name = "dwell:leaves", .density_kg_m3 = 200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 14},  // 24
+    {.name = "dwell:coal_ore", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 15},  // 25
+    {.name = "dwell:iron_ore", .density_kg_m3 = 3200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 16},  // 26
+    {.name = "dwell:gold_ore", .density_kg_m3 = 3600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 17},  // 27
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 28
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 29
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 30
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 31
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 32
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 33
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 34
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 35
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 36
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 37
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 38
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 39
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 40
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 41
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 42
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 43
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 44
+    {.name = "dwell:stone_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 45
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 46
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 47
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 48
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 49
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 50
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 51
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 52
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 53
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 54
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 55
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 56
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 57
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 58
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 59
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 60
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 61
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 62
+    {.name = "dwell:stone_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 63
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 64
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 65
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 66
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 67
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 68
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 69
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 70
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 71
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 72
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 73
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 74
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 75
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 76
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 77
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 78
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 79
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 80
+    {.name = "dwell:stone_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 81
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 82
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 83
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 84
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 85
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 86
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 87
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 88
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 89
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 90
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 91
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 92
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 93
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 94
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 95
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 96
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 97
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 98
+    {.name = "dwell:stone_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 99
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 100
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 101
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 102
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 103
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 104
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 105
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 106
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 107
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 108
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 109
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 110
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 111
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 112
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 113
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 114
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 115
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 116
+    {.name = "dwell:stone_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 117
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 118
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 119
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 120
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 121
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 122
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 123
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 124
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 125
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 126
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 127
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 128
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 129
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 130
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 131
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 132
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 133
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 134
+    {.name = "dwell:stone_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 135
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 136
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 137
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 138
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 139
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 140
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 141
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 142
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 143
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 144
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 145
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 146
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 147
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 148
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 149
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 150
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 151
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 152
+    {.name = "dwell:stone_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 153
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 154
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 155
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 156
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 157
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 158
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 159
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 160
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 161
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 162
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 163
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 164
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 165
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 166
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 167
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 168
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 169
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 170
+    {.name = "dwell:stone_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 18},  // 171
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 172
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 173
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 174
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 175
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 176
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 177
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 178
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 179
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 180
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 181
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 182
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 183
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 184
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 185
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 186
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 187
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 188
+    {.name = "dwell:dirt_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 189
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 190
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 191
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 192
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 193
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 194
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 195
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 196
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 197
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 198
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 199
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 200
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 201
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 202
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 203
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 204
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 205
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 206
+    {.name = "dwell:dirt_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 207
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 208
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 209
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 210
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 211
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 212
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 213
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 214
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 215
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 216
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 217
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 218
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 219
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 220
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 221
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 222
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 223
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 224
+    {.name = "dwell:dirt_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 225
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 226
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 227
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 228
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 229
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 230
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 231
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 232
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 233
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 234
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 235
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 236
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 237
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 238
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 239
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 240
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 241
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 242
+    {.name = "dwell:dirt_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 243
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 244
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 245
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 246
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 247
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 248
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 249
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 250
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 251
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 252
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 253
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 254
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 255
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 256
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 257
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 258
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 259
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 260
+    {.name = "dwell:dirt_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 261
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 262
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 263
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 264
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 265
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 266
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 267
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 268
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 269
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 270
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 271
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 272
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 273
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 274
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 275
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 276
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 277
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 278
+    {.name = "dwell:dirt_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 279
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 280
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 281
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 282
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 283
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 284
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 285
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 286
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 287
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 288
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 289
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 290
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 291
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 292
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 293
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 294
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 295
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 296
+    {.name = "dwell:dirt_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 297
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 298
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 299
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 300
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 301
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 302
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 303
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 304
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 305
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 306
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 307
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 308
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 309
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 310
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 311
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 312
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 313
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 314
+    {.name = "dwell:dirt_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 19},  // 315
+    {.name = "dwell:dirt_slab[flooded=false,half=bottom]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 20},  // 316
+    {.name = "dwell:dirt_slab[flooded=false,half=top]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 20},  // 317
+    {.name = "dwell:dirt_slab[flooded=true,half=bottom]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 20},  // 318
+    {.name = "dwell:dirt_slab[flooded=true,half=top]", .density_kg_m3 = 1500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 20},  // 319
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 320
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 321
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 322
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 323
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 324
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 325
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 326
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 327
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 328
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 329
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 330
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 331
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 332
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 333
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 334
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 335
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 336
+    {.name = "dwell:grass_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 337
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 338
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 339
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 340
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 341
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 342
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 343
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 344
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 345
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 346
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 347
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 348
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 349
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 350
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 351
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 352
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 353
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 354
+    {.name = "dwell:grass_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 355
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 356
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 357
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 358
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 359
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 360
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 361
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 362
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 363
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 364
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 365
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 366
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 367
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 368
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 369
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 370
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 371
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 372
+    {.name = "dwell:grass_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 373
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 374
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 375
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 376
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 377
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 378
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 379
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 380
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 381
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 382
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 383
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 384
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 385
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 386
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 387
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 388
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 389
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 390
+    {.name = "dwell:grass_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 391
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 392
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 393
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 394
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 395
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 396
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 397
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 398
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 399
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 400
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 401
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 402
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 403
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 404
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 405
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 406
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 407
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 408
+    {.name = "dwell:grass_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 409
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 410
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 411
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 412
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 413
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 414
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 415
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 416
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 417
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 418
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 419
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 420
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 421
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 422
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 423
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 424
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 425
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 426
+    {.name = "dwell:grass_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 427
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 428
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 429
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 430
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 431
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 432
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 433
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 434
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 435
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 436
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 437
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 438
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 439
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 440
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 441
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 442
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 443
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 444
+    {.name = "dwell:grass_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 445
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 446
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 447
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 448
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 449
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 450
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 451
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 452
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 453
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 454
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 455
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 456
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 457
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 458
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 459
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 460
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 461
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 462
+    {.name = "dwell:grass_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 21},  // 463
+    {.name = "dwell:grass_slab[flooded=false,half=bottom]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 22},  // 464
+    {.name = "dwell:grass_slab[flooded=false,half=top]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 22},  // 465
+    {.name = "dwell:grass_slab[flooded=true,half=bottom]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 22},  // 466
+    {.name = "dwell:grass_slab[flooded=true,half=top]", .density_kg_m3 = 1400.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 22},  // 467
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 468
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 469
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 470
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 471
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 472
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 473
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 474
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 475
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 476
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 477
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 478
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 479
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 480
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 481
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 482
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 483
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 484
+    {.name = "dwell:sand_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 485
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 486
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 487
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 488
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 489
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 490
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 491
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 492
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 493
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 494
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 495
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 496
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 497
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 498
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 499
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 500
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 501
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 502
+    {.name = "dwell:sand_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 503
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 504
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 505
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 506
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 507
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 508
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 509
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 510
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 511
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 512
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 513
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 514
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 515
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 516
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 517
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 518
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 519
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 520
+    {.name = "dwell:sand_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 521
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 522
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 523
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 524
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 525
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 526
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 527
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 528
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 529
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 530
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 531
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 532
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 533
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 534
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 535
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 536
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 537
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 538
+    {.name = "dwell:sand_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 539
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 540
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 541
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 542
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 543
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 544
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 545
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 546
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 547
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 548
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 549
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 550
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 551
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 552
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 553
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 554
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 555
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 556
+    {.name = "dwell:sand_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 557
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 558
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 559
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 560
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 561
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 562
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 563
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 564
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 565
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 566
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 567
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 568
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 569
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 570
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 571
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 572
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 573
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 574
+    {.name = "dwell:sand_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 575
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 576
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 577
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 578
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 579
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 580
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 581
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 582
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 583
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 584
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 585
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 586
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 587
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 588
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 589
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 590
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 591
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 592
+    {.name = "dwell:sand_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 593
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 594
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 595
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 596
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 597
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 598
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 599
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 600
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 601
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 602
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 603
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 604
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 605
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 606
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 607
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 608
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 609
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 610
+    {.name = "dwell:sand_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 23},  // 611
+    {.name = "dwell:sand_slab[flooded=false,half=bottom]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 24},  // 612
+    {.name = "dwell:sand_slab[flooded=false,half=top]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 24},  // 613
+    {.name = "dwell:sand_slab[flooded=true,half=bottom]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 24},  // 614
+    {.name = "dwell:sand_slab[flooded=true,half=top]", .density_kg_m3 = 1600.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 24},  // 615
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 616
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 617
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 618
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 619
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 620
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 621
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 622
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 623
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 624
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 625
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 626
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 627
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 628
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 629
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 630
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 631
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 632
+    {.name = "dwell:sandstone_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 633
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 634
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 635
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 636
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 637
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 638
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 639
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 640
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 641
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 642
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 643
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 644
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 645
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 646
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 647
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 648
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 649
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 650
+    {.name = "dwell:sandstone_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 651
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 652
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 653
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 654
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 655
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 656
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 657
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 658
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 659
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 660
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 661
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 662
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 663
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 664
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 665
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 666
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 667
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 668
+    {.name = "dwell:sandstone_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 669
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 670
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 671
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 672
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 673
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 674
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 675
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 676
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 677
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 678
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 679
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 680
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 681
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 682
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 683
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 684
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 685
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 686
+    {.name = "dwell:sandstone_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 687
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 688
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 689
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 690
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 691
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 692
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 693
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 694
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 695
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 696
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 697
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 698
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 699
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 700
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 701
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 702
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 703
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 704
+    {.name = "dwell:sandstone_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 705
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 706
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 707
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 708
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 709
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 710
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 711
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 712
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 713
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 714
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 715
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 716
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 717
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 718
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 719
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 720
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 721
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 722
+    {.name = "dwell:sandstone_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 723
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 724
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 725
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 726
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 727
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 728
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 729
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 730
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 731
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 732
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 733
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 734
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 735
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 736
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 737
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 738
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 739
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 740
+    {.name = "dwell:sandstone_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 741
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 742
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 743
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 744
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 745
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 746
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 747
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 748
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 749
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 750
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 751
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 752
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 753
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 754
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 755
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 756
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 757
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 758
+    {.name = "dwell:sandstone_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 25},  // 759
+    {.name = "dwell:sandstone_slab[flooded=false,half=bottom]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 26},  // 760
+    {.name = "dwell:sandstone_slab[flooded=false,half=top]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 26},  // 761
+    {.name = "dwell:sandstone_slab[flooded=true,half=bottom]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 26},  // 762
+    {.name = "dwell:sandstone_slab[flooded=true,half=top]", .density_kg_m3 = 2200.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 26},  // 763
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 764
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 765
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 766
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 767
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 768
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 769
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 770
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 771
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 772
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 773
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 774
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 775
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 776
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 777
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 778
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 779
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 780
+    {.name = "dwell:gravel_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 781
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 782
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 783
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 784
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 785
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 786
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 787
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 788
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 789
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 790
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 791
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 792
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 793
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 794
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 795
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 796
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 797
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 798
+    {.name = "dwell:gravel_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 799
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 800
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 801
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 802
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 803
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 804
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 805
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 806
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 807
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 808
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 809
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 810
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 811
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 812
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 813
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 814
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 815
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 816
+    {.name = "dwell:gravel_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 817
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 818
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 819
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 820
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 821
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 822
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 823
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 824
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 825
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 826
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 827
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 828
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 829
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 830
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 831
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 832
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 833
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 834
+    {.name = "dwell:gravel_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 835
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 836
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 837
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 838
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 839
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 840
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 841
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 842
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 843
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 844
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 845
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 846
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 847
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 848
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 849
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 850
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 851
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 852
+    {.name = "dwell:gravel_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 853
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 854
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 855
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 856
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 857
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 858
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 859
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 860
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 861
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 862
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 863
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 864
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 865
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 866
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 867
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 868
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 869
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 870
+    {.name = "dwell:gravel_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 871
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 872
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 873
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 874
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 875
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 876
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 877
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 878
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 879
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 880
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 881
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 882
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 883
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 884
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 885
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 886
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 887
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 888
+    {.name = "dwell:gravel_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 889
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 890
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 891
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 892
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 893
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 894
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 895
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 896
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 897
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 898
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 899
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 900
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 901
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 902
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 903
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 904
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 905
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 906
+    {.name = "dwell:gravel_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 27},  // 907
+    {.name = "dwell:gravel_slab[flooded=false,half=bottom]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 28},  // 908
+    {.name = "dwell:gravel_slab[flooded=false,half=top]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 28},  // 909
+    {.name = "dwell:gravel_slab[flooded=true,half=bottom]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 28},  // 910
+    {.name = "dwell:gravel_slab[flooded=true,half=top]", .density_kg_m3 = 1800.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 28},  // 911
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 912
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 913
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 914
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 915
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 916
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 917
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 918
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 919
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 920
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 921
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 922
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 923
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 924
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 925
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 926
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 927
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 928
+    {.name = "dwell:snow_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 929
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 930
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 931
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 932
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 933
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 934
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 935
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 936
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 937
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 938
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 939
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 940
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 941
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 942
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 943
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 944
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 945
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 946
+    {.name = "dwell:snow_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 947
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 948
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 949
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 950
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 951
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 952
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 953
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 954
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 955
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 956
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 957
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 958
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 959
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 960
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 961
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 962
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 963
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 964
+    {.name = "dwell:snow_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 965
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 966
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 967
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 968
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 969
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 970
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 971
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 972
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 973
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 974
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 975
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 976
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 977
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 978
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 979
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 980
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 981
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 982
+    {.name = "dwell:snow_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 983
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 984
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 985
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 986
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 987
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 988
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 989
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 990
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 991
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 992
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 993
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 994
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 995
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 996
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 997
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 998
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 999
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1000
+    {.name = "dwell:snow_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1001
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1002
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1003
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1004
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1005
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1006
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1007
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1008
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1009
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1010
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1011
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1012
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1013
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1014
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1015
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1016
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1017
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1018
+    {.name = "dwell:snow_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1019
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1020
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1021
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1022
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1023
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1024
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1025
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1026
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1027
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1028
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1029
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1030
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1031
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1032
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1033
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1034
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1035
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1036
+    {.name = "dwell:snow_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1037
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1038
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1039
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1040
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1041
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1042
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1043
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1044
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1045
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1046
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1047
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1048
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1049
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1050
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1051
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1052
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1053
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1054
+    {.name = "dwell:snow_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 29},  // 1055
+    {.name = "dwell:snow_slab[flooded=false,half=bottom]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 30},  // 1056
+    {.name = "dwell:snow_slab[flooded=false,half=top]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 30},  // 1057
+    {.name = "dwell:snow_slab[flooded=true,half=bottom]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 30},  // 1058
+    {.name = "dwell:snow_slab[flooded=true,half=top]", .density_kg_m3 = 500.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 30},  // 1059
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1060
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1061
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1062
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1063
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1064
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1065
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1066
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1067
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1068
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1069
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1070
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1071
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1072
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1073
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1074
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1075
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1076
+    {.name = "dwell:log_slope[facing=north,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1077
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 4, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1078
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 5, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1079
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 6, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1080
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 7, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1081
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 8, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1082
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 9, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1083
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 10, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1084
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 11, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1085
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 12, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1086
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 13, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1087
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 14, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1088
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 15, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1089
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 16, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1090
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 17, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1091
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 18, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1092
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 19, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1093
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 20, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1094
+    {.name = "dwell:log_slope[facing=north,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 21, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1095
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1096
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1097
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1098
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1099
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1100
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1101
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1102
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1103
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1104
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1105
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1106
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1107
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1108
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1109
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1110
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1111
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1112
+    {.name = "dwell:log_slope[facing=east,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1113
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 22, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1114
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 23, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1115
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 24, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1116
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 25, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1117
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 26, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1118
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 27, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1119
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 28, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1120
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 29, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1121
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 30, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1122
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 31, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1123
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 32, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1124
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 33, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1125
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 34, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1126
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 35, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1127
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 36, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1128
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 37, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1129
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 38, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1130
+    {.name = "dwell:log_slope[facing=east,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 39, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1131
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1132
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1133
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1134
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1135
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1136
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1137
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1138
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1139
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1140
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1141
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1142
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1143
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1144
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1145
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1146
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1147
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1148
+    {.name = "dwell:log_slope[facing=south,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1149
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 40, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1150
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 41, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1151
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 42, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1152
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 43, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1153
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 44, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1154
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 45, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1155
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 46, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1156
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 47, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1157
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 48, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1158
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 49, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1159
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 50, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1160
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 51, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1161
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 52, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1162
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 53, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1163
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 54, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1164
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 55, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1165
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 56, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1166
+    {.name = "dwell:log_slope[facing=south,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 57, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1167
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1168
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1169
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1170
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1171
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1172
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1173
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1174
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1175
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1176
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1177
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1178
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1179
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1180
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1181
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1182
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1183
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1184
+    {.name = "dwell:log_slope[facing=west,flooded=false,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1185
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 58, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1186
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 59, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1187
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 60, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1188
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 61, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1189
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 62, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1190
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 63, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1191
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 64, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1192
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 65, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1193
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=bottom,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 66, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1194
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=wedge]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 67, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1195
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=outer]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 68, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1196
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=inner]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 69, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1197
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=gentle_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 70, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1198
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=gentle_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 71, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1199
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=gentle_outer_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 72, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1200
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=gentle_outer_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 73, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1201
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=gentle_inner_low]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 74, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1202
+    {.name = "dwell:log_slope[facing=west,flooded=true,half=top,shape=gentle_inner_high]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 75, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 31},  // 1203
+    {.name = "dwell:log_slab[flooded=false,half=bottom]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 32},  // 1204
+    {.name = "dwell:log_slab[flooded=false,half=top]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 32},  // 1205
+    {.name = "dwell:log_slab[flooded=true,half=bottom]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 2, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 32},  // 1206
+    {.name = "dwell:log_slab[flooded=true,half=top]", .density_kg_m3 = 700.0f, .solid = true, .indestructible = false, .shape = VoxelShape::kShaped, .shape_index = 3, .flooded = true, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = true, .block = 32},  // 1207
 }};
 
 }  // namespace dwell::core

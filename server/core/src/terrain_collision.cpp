@@ -7,36 +7,32 @@
 #include <algorithm>
 #include <cmath>
 
+#include "dwell/core/block_shape.h"
+
 namespace dwell::core {
 namespace {
 
-// Adds a quad on the plane `axis = plane`, spanning [u0, u1] × [v0, v1] on the other two axes
-// (u = axis + 1, v = axis + 2, cyclic), facing +axis when `sign` > 0 and −axis otherwise.
-void AddQuad(ChunkMesh& mesh, int axis, int sign, float plane, float u0, float u1, float v0,
-             float v1) {
-  const int u = (axis + 1) % 3;
-  const int v = (axis + 2) % 3;
-  auto corner = [&](float cu, float cv) {
-    float p[3];
-    p[axis] = plane;
-    p[u] = cu;
-    p[v] = cv;
-    return JPH::Float3(p[0], p[1], p[2]);
-  };
+// Adds a convex polygon (cell coordinates, outward-wound) at `offset`, as a triangle fan.
+void AddPolygon(ChunkMesh& mesh, const ShapeFace& face, const float (&offset)[3]) {
   const auto base = static_cast<JPH::uint32>(mesh.vertices.size());
-  mesh.vertices.push_back(corner(u0, v0));
-  mesh.vertices.push_back(corner(u1, v0));
-  mesh.vertices.push_back(corner(u1, v1));
-  mesh.vertices.push_back(corner(u0, v1));
-  // e_u × e_v = e_axis, so (0, 1, 2) winds counter-clockwise seen from +axis.
-  if (sign > 0) {
-    mesh.triangles.emplace_back(base, base + 1, base + 2);
+  for (int i = 0; i < face.count; ++i) {
+    mesh.vertices.push_back(
+        JPH::Float3(face.v[i][0] + offset[0], face.v[i][1] + offset[1], face.v[i][2] + offset[2]));
+  }
+  // A negative cell face's quad is listed (0, 3, 2, 1): its triangles go (0, 2, 1) then (0, 3, 2).
+  if (face.count == 4 && face.tag < kSurfaceTag && (face.tag & 1)) {
     mesh.triangles.emplace_back(base, base + 2, base + 3);
-  } else {
-    mesh.triangles.emplace_back(base, base + 2, base + 1);
-    mesh.triangles.emplace_back(base, base + 3, base + 2);
+    mesh.triangles.emplace_back(base, base + 1, base + 2);
+    return;
+  }
+  for (int i = 1; i + 1 < face.count; ++i) {
+    mesh.triangles.emplace_back(base, base + i, base + i + 1);
   }
 }
+
+// Offsets of the neighbour across each cell face (0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z).
+constexpr int kFaceStep[6][3] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                 {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
 
 }  // namespace
 
@@ -61,43 +57,29 @@ ChunkMesh BuildChunkMesh(VoxelWorld& world, const ChunkCoord& coord) {
     return world.GetVoxel(ox + lx, oy + ly, oz + lz);
   };
 
-  // Exposed faces of `shape` cells (full cubes: height 1, slabs: 0.5). A face is hidden by a full
-  // neighbour; slab side faces also by a slab neighbour; a slab's top face is always exposed.
-  auto shape_faces = [&](VoxelShape shape) {
-    const float height = ShapeHeight(shape);
-    auto covers = [&](MaterialId neighbour, int axis) {
-      const VoxelShape n = GetMaterial(neighbour).shape;
-      if (n == VoxelShape::kFull) return true;
-      return shape == VoxelShape::kSlabBottom && n == VoxelShape::kSlabBottom && axis != 1;
-    };
-    for (int lz = 0; lz < kChunkSize; ++lz) {
-      for (int ly = 0; ly < kChunkSize; ++ly) {
-        for (int lx = 0; lx < kChunkSize; ++lx) {
-          if (GetMaterial(chunk.Get(lx, ly, lz)).shape != shape) continue;
-          const float cell[3] = {static_cast<float>(lx), static_cast<float>(ly),
-                                 static_cast<float>(lz)};
-          for (int axis = 0; axis < 3; ++axis) {
-            const int u = (axis + 1) % 3;
-            const int v = (axis + 2) % 3;
-            for (int sign = -1; sign <= 1; sign += 2) {
-              const bool slab_top = shape == VoxelShape::kSlabBottom && axis == 1 && sign > 0;
-              if (!slab_top) {
-                int n[3] = {lx, ly, lz};
-                n[axis] += sign;
-                if (covers(at(n[0], n[1], n[2]), axis)) continue;
-              }
-              const float plane = cell[axis] + (sign > 0 ? (axis == 1 ? height : 1.0f) : 0.0f);
-              const float u1 = cell[u] + (u == 1 ? height : 1.0f);
-              const float v1 = cell[v] + (v == 1 ? height : 1.0f);
-              AddQuad(mesh, axis, sign, plane, cell[u], u1, cell[v], v1);
+  // The exposed surface of every solid cell: each polygon of its shape (block_shape.h), except the
+  // parts of its cell faces that the neighbour's opposite face completely covers. Sloped and
+  // partial-height surfaces are never culled.
+  for (int lz = 0; lz < kChunkSize; ++lz) {
+    for (int ly = 0; ly < kChunkSize; ++ly) {
+      for (int lx = 0; lx < kChunkSize; ++lx) {
+        const ShapeInfo& shape = ShapeOf(chunk.Get(lx, ly, lz));
+        if (shape.face_count == 0) continue;
+        const float cell[3] = {static_cast<float>(lx), static_cast<float>(ly),
+                               static_cast<float>(lz)};
+        for (const ShapeFace& face : FacesOf(shape)) {
+          if (face.tag != kSurfaceTag) {
+            const int* step = kFaceStep[face.tag];
+            if (FaceCovered(shape, face.tag,
+                            ShapeOf(at(lx + step[0], ly + step[1], lz + step[2])))) {
+              continue;
             }
           }
+          AddPolygon(mesh, face, cell);
         }
       }
     }
-  };
-  shape_faces(VoxelShape::kFull);
-  shape_faces(VoxelShape::kSlabBottom);
+  }
   return mesh;
 }
 

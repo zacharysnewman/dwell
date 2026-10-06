@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "dwell/core/block_registry.h"
 #include "dwell/core/voxel.h"
 #include "dwell/worldgen/noise.h"
 #include "dwell/worldgen/terrain.h"
@@ -353,6 +354,17 @@ TEST_SUITE("worldgen: terrain") {
     CHECK(water > 200);  // the ocean chunks hold sea
   }
 
+  // The material a voxel is made of: a slope or slab state reads as its plain block.
+  MaterialId SurfaceMaterialOf(MaterialId m) {
+    const std::string name(core::StateString(m));
+    for (const char* suffix : {"_slope[", "_slab["}) {
+      if (const auto at = name.find(suffix); at != std::string::npos) {
+        return *core::ParseState(name.substr(0, at));
+      }
+    }
+    return m;
+  }
+
   TEST_CASE("the biomes all occur, with surface materials to match") {
     const TerrainGenerator gen(0);
     for (const Biome b : {Biome::kOcean, Biome::kBeach, Biome::kPlains, Biome::kForest,
@@ -373,7 +385,8 @@ TEST_SUITE("worldgen: terrain") {
           const MaterialId m = world.GetVoxel(x, *g, z);
           if (m == M::kLog || m == M::kLeaves || m == M::kStone)
             continue;  // trees, boulders, cliffs
-          CHECK(m == expected);
+          // The ground's top cell is the material or a slope or slab of it.
+          CHECK(SurfaceMaterialOf(m) == expected);
           ++found;
         }
       }
@@ -505,7 +518,7 @@ TEST_SUITE("worldgen: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 4\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 5\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);

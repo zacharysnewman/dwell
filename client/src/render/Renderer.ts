@@ -72,6 +72,11 @@ export interface Renderer {
   setExposure(exposure: number): void;
   /** Outlines the targeted block (§6.5): its min corner and box height (slabs 0.5), or none. */
   setBlockOutline(cell: Vec3 | null, height?: number): void;
+  /**
+   * Outlines the shape about to be placed (SLOPE_BLOCKS.md §6): the cell's min corner and the
+   * shape's edges (render/shapeEdges.ts, six floats per segment, cell coordinates), or none.
+   */
+  setPlacementPreview(cell: Vec3 | null, edges?: Float32Array): void;
   /** Adds, updates, or (null) removes a player. */
   setPlayer(id: number, view: PlayerView | null): void;
   /** Places the camera at `eye`, looking along yaw/pitch (degrees; yaw 0 = +Z, pitch up > 0). */

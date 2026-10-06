@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, slabShape, slopeShape } from './shapes.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -18,16 +19,69 @@ const namespaces = files
   .sort((a, b) => (a.namespace < b.namespace ? -1 : a.namespace > b.namespace ? 1 : 0));
 
 const NAME = /^[a-z0-9_]+$/;
-const SHAPES = { empty: 'kEmpty', full: 'kFull', slab_bottom: 'kSlabBottom' };
+const SHAPES = { empty: 'kEmpty', full: 'kFull', shaped: 'kShaped' };
 const FACINGS = ['north', 'east', 'south', 'west'];
 // The face (mesher axis·2 + sign) a ladder's plate sits against, per facing (0 +X, 1 −X, 4 +Z, 5 −Z).
 const LADDER_FACE = { east: 0, west: 1, south: 4, north: 5 };
-const LOOKS = ['cube', 'slab', 'ladder', 'water'];
+const LOOKS = ['cube', 'shaped', 'ladder', 'water'];
 
 const pascal = (s) => s.replace(/(^|_)([a-z0-9])/g, (_, __, c) => c.toUpperCase());
 const fail = (m) => {
   throw new Error(`shared/blocks: ${m}`);
 };
+
+// Shape families (docs/SLOPE_BLOCKS.md §2): every material listed in `shapeFamilies` gets
+// `<m>_slope[facing, flooded, half, shape]` and `<m>_slab[flooded, half]`, linked to the base block
+// for look and behaviour. A block entry `{ "name", "family": "slab" | "slope", "of": "<m>" }` places
+// that family member at its own slot in the list (with its own `placeable` / `palette`); the rest
+// are appended after the explicit blocks, so adding a family keeps earlier ids.
+const familyBlock = (base, kind, extra = {}) => {
+  if (!base || base.shape !== 'full') fail(`shape family of ${base?.name}: not a full block`);
+  const common = {
+    density: base.density,
+    color: base.color,
+    textures: base.textures,
+    look: 'shaped',
+    shape: 'shaped',
+    slopeFamily: kind,
+    palette: 'all',
+  };
+  return kind === 'slope'
+    ? {
+        ...common,
+        name: `${base.name}_slope`,
+        properties: {
+          facing: SHAPE_FACINGS,
+          flooded: ['false', 'true'],
+          half: ['bottom', 'top'],
+          shape: Object.keys(SLOPE_SHAPES),
+        },
+        ...extra,
+      }
+    : {
+        ...common,
+        name: `${base.name}_slab`,
+        properties: { flooded: ['false', 'true'], half: ['bottom', 'top'] },
+        ...extra,
+      };
+};
+for (const ns of namespaces) {
+  const base = (name) => ns.blocks.find((b) => b.name === name);
+  const declared = new Set();
+  ns.blocks = ns.blocks.map((def) => {
+    if (!def.family) return def;
+    declared.add(`${def.of}:${def.family}`);
+    const { family, of, name, ...rest } = def;
+    return familyBlock(base(of), family, { ...rest, name });
+  });
+  const generated = [];
+  for (const m of ns.shapeFamilies ?? []) {
+    for (const kind of ['slope', 'slab']) {
+      if (!declared.has(`${m}:${kind}`)) generated.push(familyBlock(base(m), kind));
+    }
+  }
+  ns.blocks = [...ns.blocks, ...generated];
+}
 
 const blocks = []; // { id, def, props: [{name, values}], first, count }
 const states = []; // { id, block, string, values: {prop: value}, ... }
@@ -53,6 +107,7 @@ for (const ns of namespaces) {
       const p = props.find((q) => q.name === def.facingProperty);
       if (!p || p.values.some((v) => !FACINGS.includes(v))) fail(`${id}: facingProperty`);
     }
+    if (def.shape === 'shaped' && !def.slopeFamily) fail(`${id}: shaped blocks come from shapeFamilies`);
     const count = props.reduce((n, p) => n * p.values.length, 1);
     const block = { id, def, props, first: states.length, count, look };
     blocks.push(block);
@@ -75,11 +130,68 @@ for (const ns of namespaces) {
 if (states[0]?.string !== 'dwell:air') fail('dwell:air must be state 0');
 if (states.length > 0xffff) fail('too many states');
 
+// Shapes (shapes.mjs): one baked geometry per distinct (corners, inversion, diagonal); index 0 is
+// the empty shape. States of full blocks use the cube, shaped families derive theirs from their
+// properties.
+const shapeTable = [{ key: 'empty', shape: null }];
+const shapeIndexOf = (shape) => {
+  const key = JSON.stringify([shape.corners, shape.inverted, shape.diagonal]);
+  let i = shapeTable.findIndex((t) => t.key === key);
+  if (i < 0) {
+    i = shapeTable.length;
+    shapeTable.push({ key, shape });
+  }
+  return i;
+};
+for (const st of states) {
+  const d = st.block.def;
+  st.flooded = st.values.flooded === 'true';
+  if (d.shape === 'empty') st.shapeIndex = 0;
+  else if (d.shape === 'full') st.shapeIndex = shapeIndexOf(cubeShape());
+  else st.shapeIndex = shapeIndexOf((d.slopeFamily === 'slope' ? slopeShape : slabShape)(st.values));
+}
+if (shapeTable.length > 0xffff) fail('too many shapes');
+
+// The slope pieces terrain and the LOD pick for four corner heights (halves of a cell, NW NE SE SW):
+// a pattern with a piece of its own keeps it, any other maps to the nearest by total distance, the
+// higher on a tie, then the lower index. Pattern index = nw + 3·ne + 9·se + 27·sw. Both languages
+// read this table (SLOPE_BLOCKS.md §5), so terrain and LOD agree.
+const pieceAllowed = new Set([0, 1 + 3 + 9 + 27, 2 + 6 + 18 + 54]);
+for (const shape of Object.keys(SLOPE_SHAPES)) {
+  for (const facing of SHAPE_FACINGS) {
+    const c = slopeShape({ facing, half: 'bottom', shape }).corners;
+    pieceAllowed.add(c[0] + 3 * c[1] + 9 * c[2] + 27 * c[3]);
+  }
+}
+const patternCorners = (p) => [p % 3, Math.floor(p / 3) % 3, Math.floor(p / 9) % 3, Math.floor(p / 27) % 3];
+const pieceNearest = Array.from({ length: 81 }, (_, p) => {
+  const a = patternCorners(p);
+  let best = -1;
+  let bestKey = null;
+  for (const q of [...pieceAllowed].sort((x, y) => x - y)) {
+    const b = patternCorners(q);
+    const distance = a.reduce((n, v, i) => n + Math.abs(v - b[i]), 0);
+    const height = b.reduce((n, v) => n + v, 0);
+    // Smaller distance first, then taller; ties keep the lower index (iterated ascending).
+    if (best < 0 || distance < bestKey[0] || (distance === bestKey[0] && height > bestKey[1])) {
+      best = q;
+      bestKey = [distance, height];
+    }
+  }
+  return best;
+});
+
 // Palette (creative inventory) membership: a block's `palette` lists partial property assignments;
 // `placeable` alone means the default state.
 const defaultOf = (block) => Object.fromEntries(block.props.map((p) => [p.name, p.values[0]]));
 for (const block of blocks) {
   const { def } = block;
+  if (def.palette === 'all') {
+    // Every state is placeable (the shaped families: the client picks the piece, the facing and the
+    // half; the server normalises `flooded` from the cell).
+    for (const st of states) if (st.block === block) st.placeable = true;
+    continue;
+  }
   const entries = def.palette ?? (def.placeable ? [{}] : []);
   for (const entry of entries) {
     const want = { ...defaultOf(block), ...entry };
@@ -171,6 +283,33 @@ for (const b of blocks) {
 }
 cpp.push('}};');
 cpp.push('');
+const f = (v) => (Number.isInteger(v) ? `${v}.0f` : `${v}f`);
+const faceRows = [];
+const shapeRows = [];
+for (const t of shapeTable) {
+  const sh = t.shape;
+  const first = faceRows.length;
+  for (const face of sh?.faces ?? []) {
+    const pts = [...face.pts, ...Array(4 - face.pts.length).fill([0, 0, 0])];
+    faceRows.push(`    {${face.tag}, ${face.pts.length}, {${pts.map((p) => `{${p.map(f).join(', ')}}`).join(', ')}}},`);
+  }
+  shapeRows.push(
+    sh
+      ? `    {${first}, ${sh.faces.length}, {${sh.corners.join(', ')}}, ${sh.inverted}, ${sh.diagonal}, ${sh.convex}, ${f(sh.volume)}, {{${sh.sides.map((p) => `{${p.join(', ')}}`).join(', ')}}}, ${sh.fullTop}, ${sh.fullBottom}, ${f(sh.minY)}, ${f(sh.maxY)}},`
+      : `    {0, 0, {0, 0, 0, 0}, false, 0, true, 0.0f, {{{0, 0}, {0, 0}, {0, 0}, {0, 0}}}, false, false, 0.0f, 0.0f},`,
+  );
+}
+cpp.push(`inline constexpr std::array<ShapeFace, ${Math.max(faceRows.length, 1)}> kShapeFaces{{`);
+cpp.push(...faceRows);
+cpp.push('}};');
+cpp.push('');
+cpp.push(`inline constexpr std::array<ShapeInfo, ${shapeRows.length}> kShapes{{`);
+cpp.push(...shapeRows);
+cpp.push('}};');
+cpp.push('');
+cpp.push('// Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves): see shared/blocks/gen.mjs.');
+cpp.push(`inline constexpr std::array<std::uint8_t, 81> kPieceNearest{{${pieceNearest.join(', ')}}};`);
+cpp.push('');
 cpp.push('inline constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{');
 states.forEach((s, i) => {
   const d = s.block.def;
@@ -181,6 +320,8 @@ states.forEach((s, i) => {
     `.solid = ${d.shape !== 'empty'}`,
     `.indestructible = ${!!d.indestructible}`,
     `.shape = VoxelShape::${SHAPES[d.shape]}`,
+    `.shape_index = ${s.shapeIndex}`,
+    `.flooded = ${s.flooded}`,
     `.climbable = ${!!d.climbable}`,
     `.facing = ${facing}`,
     `.climb_speed_scale = ${num(d.climbSpeedScale ?? 1)}`,
@@ -202,7 +343,7 @@ const ts = [];
 ts.push(`// ${header}`);
 ts.push("import type { TileName } from '../render/textures';");
 ts.push('');
-ts.push("export type MaterialLook = 'cube' | 'slab' | 'ladder' | 'water';");
+ts.push("export type MaterialLook = 'cube' | 'shaped' | 'ladder' | 'water';");
 ts.push('');
 ts.push('/** Texture tiles (render/textures.ts) per face group; untextured materials use `color`. */');
 ts.push('export interface MaterialTextures {');
@@ -238,8 +379,36 @@ ts.push('  opacity: number;');
 ts.push('  textures?: MaterialTextures;');
 ts.push('  /** Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z). */');
 ts.push('  ladderFace?: number;');
+ts.push('  /** Index into SHAPES: the solid\'s geometry in its cell (0 = none). */');
+ts.push('  shape: number;');
+ts.push('  /** Shaped blocks only: water fills the open part of the cell (SLOPE_BLOCKS.md §3.1). */');
+ts.push('  flooded: boolean;');
 ts.push('  /** In the infinite creative palette (§6.5; C++ `Placeable`). */');
 ts.push('  placeable: boolean;');
+ts.push('}');
+ts.push('');
+ts.push('/** One polygon of a shape: convex, outward-wound, on cell face `tag` (0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z) or the sloped surface (6). */');
+ts.push('export interface ShapeFace {');
+ts.push('  tag: number;');
+ts.push('  pts: readonly (readonly [number, number, number])[];');
+ts.push('}');
+ts.push('');
+ts.push('/** Baked solid geometry of a voxel state inside its 1 m cell (shared/blocks/shapes.mjs). */');
+ts.push('export interface ShapeDef {');
+ts.push('  /** Top-surface corner heights in halves of a cell, NW NE SE SW. */');
+ts.push('  corners: readonly [number, number, number, number];');
+ts.push('  inverted: boolean;');
+ts.push('  /** Top-surface diagonal: 0 NW–SE, 1 NE–SW. */');
+ts.push('  diagonal: number;');
+ts.push('  convex: boolean;');
+ts.push('  volume: number;');
+ts.push('  /** Side profile heights (halves) at the face\'s low and high running coordinate, faces +X −X +Z −Z. */');
+ts.push('  sides: readonly (readonly [number, number])[];');
+ts.push('  fullTop: boolean;');
+ts.push('  fullBottom: boolean;');
+ts.push('  minY: number;');
+ts.push('  maxY: number;');
+ts.push('  faces: readonly ShapeFace[];');
 ts.push('}');
 ts.push('');
 ts.push('/** FNV-1a 64 over the canonical state strings (each followed by "\\n") in id order. */');
@@ -252,13 +421,31 @@ for (const b of blocks) {
 }
 ts.push('];');
 ts.push('');
+ts.push('/** Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves of a cell): shared/blocks/gen.mjs. */');
+ts.push(`export const PIECE_NEAREST: readonly number[] = [${pieceNearest.join(', ')}];`);
+ts.push('');
+ts.push('export const SHAPES: readonly ShapeDef[] = [');
+for (const t of shapeTable) {
+  const sh = t.shape;
+  if (!sh) {
+    ts.push("  { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0], [0, 0], [0, 0], [0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },");
+    continue;
+  }
+  const faces = sh.faces.map((fc) => `{ tag: ${fc.tag}, pts: [${fc.pts.map((p) => `[${p.join(', ')}]`).join(', ')}] }`);
+  ts.push(`  { corners: [${sh.corners.join(', ')}], inverted: ${sh.inverted}, diagonal: ${sh.diagonal}, convex: ${sh.convex}, volume: ${sh.volume}, sides: [${sh.sides.map((p) => `[${p.join(', ')}]`).join(', ')}], fullTop: ${sh.fullTop}, fullBottom: ${sh.fullBottom}, minY: ${sh.minY}, maxY: ${sh.maxY}, faces: [${faces.join(', ')}] },`);
+}
+ts.push('];');
+ts.push('');
 const tex = (t) => {
   if (!t) return null;
   const o = typeof t === 'string' ? { top: t, side: t, bottom: t } : t;
   return `{ top: '${o.top}', side: '${o.side}', bottom: '${o.bottom}' }`;
 };
-ts.push('export const STATE_DEFS: readonly StateDef[] = [');
-for (const s of states) {
+// Chunked: one literal of a thousand distinct object types is too complex for the type checker.
+const CHUNK = 128;
+for (let first = 0; first < states.length; first += CHUNK) {
+  ts.push(`const STATES_${first / CHUNK}: readonly StateDef[] = [`);
+  for (const s of states.slice(first, first + CHUNK)) {
   const d = s.block.def;
   const parts = [
     `id: ${s.id}`,
@@ -273,9 +460,16 @@ for (const s of states) {
   if (d.look === 'ladder' && d.facingProperty) {
     parts.push(`ladderFace: ${LADDER_FACE[s.values[d.facingProperty]]}`);
   }
+  parts.push(`shape: ${s.shapeIndex}`);
+  parts.push(`flooded: ${s.flooded}`);
   parts.push(`placeable: ${!!s.placeable}`);
   ts.push(`  { ${parts.join(', ')} },`);
+  }
+  ts.push('];');
+  ts.push('');
 }
+ts.push('export const STATE_DEFS: readonly StateDef[] = [');
+for (let first = 0; first < states.length; first += CHUNK) ts.push(`  ...STATES_${first / CHUNK},`);
 ts.push('];');
 ts.push('');
 writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.join('\n'));

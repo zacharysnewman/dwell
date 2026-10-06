@@ -13,6 +13,7 @@ add_library(dwell_core
   src/server.cpp
   src/terrain_collision.cpp
   src/block_registry.cpp
+  src/block_shape.cpp
   src/voxel.cpp
   src/worldgen_pool.cpp
   src/protocol/bytes.cpp
@@ -23,6 +24,7 @@ add_library(dwell_core
   src/player/voxel_query.cpp
   src/worldgen/noise.cpp
   src/worldgen/terrain.cpp
+  src/worldgen/slopes.cpp
   src/storage/world_db.cpp
   src/storage/world_store.cpp)
 if(EMSCRIPTEN)

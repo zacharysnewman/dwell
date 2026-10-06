@@ -863,6 +863,8 @@ export class LodSystem {
     const options = {
       surface: this.surfaceInCells(n),
       waterDrop: CHUNK_WATER_DROP_M / cellSize(n.coord[0]),
+      // Distant terrain as facets, not terraces (SLOPE_BLOCKS.md §3.2), at every level.
+      slopes: true,
     };
     void this.mesher.meshSection(cells, options).then((meshes) => {
       this.meshing--;

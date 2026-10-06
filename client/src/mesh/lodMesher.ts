@@ -4,10 +4,14 @@
 // its material's flat colour (the average of its texture) with the chunk mesher's face shading.
 // Faces on the section's border that the apron hides go to a per-side *skirt* instead of being
 // dropped: the renderer shows a side's skirt when the neighbour there is not drawn at the same
-// level, which closes the cracks between levels. Pure data, so it runs in the meshing workers.
+// level, which closes the cracks between levels. With `slopes`, the surface cells are drawn as the
+// slope pieces of the terrain generator (SLOPE_BLOCKS.md §3.2): the heights of the columns around a
+// corner decide its height, in halves of a cell, so distant hills read as facets, not terraces.
+// Pure data, so it runs in the meshing workers.
 import { LOD_PAD, LOD_VOLUME, SECTION_CELLS } from '../lod/grid';
-import { faceTint } from '../render/look';
+import { faceTint, normalTint } from '../render/look';
 import { averageTileColor, srgbToLinear } from '../render/textures';
+import { PATTERN_SHAPE, patternCorners, patternIndex, pieceFor } from '../world/slopePieces';
 import { materialStyle } from '../world/materials';
 
 export interface FlatMesh {
@@ -104,6 +108,71 @@ class Builder {
     else this.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
   }
 
+  /**
+   * A wall in the plane `axis = plane` (axis 0: u = y, v = z; axis 2: u = x, v = y) over the run
+   * [b0, b1] along the wall, from heights lo to hi that may differ at the two ends (a trapezoid).
+   */
+  wall(
+    axis: number,
+    sign: number,
+    plane: number,
+    b0: number,
+    b1: number,
+    lo: readonly [number, number],
+    hi: readonly [number, number],
+    color: number,
+  ): void {
+    const tint = faceTint(axis, sign);
+    const r = srgbToLinear((color >> 16) & 0xff) * tint[0];
+    const g = srgbToLinear((color >> 8) & 0xff) * tint[1];
+    const b = srgbToLinear(color & 0xff) * tint[2];
+    const base = this.positions.length / 3;
+    // The same corner order as `quad`: (u0, v0), (u1, v0), (u1, v1), (u0, v1).
+    const corners: [number, number, number][] =
+      axis === 0
+        ? [
+            [plane, lo[0], b0],
+            [plane, hi[0], b0],
+            [plane, hi[1], b1],
+            [plane, lo[1], b1],
+          ]
+        : [
+            [b0, lo[0], plane],
+            [b1, lo[1], plane],
+            [b1, hi[1], plane],
+            [b0, hi[0], plane],
+          ];
+    for (const [x, y, z] of corners) {
+      this.positions.push(x, y, z);
+      this.normals.push(axis === 0 ? sign : 0, 0, axis === 2 ? sign : 0);
+      this.colors.push(r, g, b);
+    }
+    if (sign > 0) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    else this.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  }
+
+  /** A convex polygon (counter-clockwise seen from outside) lit by its own normal. */
+  polygon(pts: readonly (readonly number[])[], color: number): void {
+    const [a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0]] = pts;
+    const e1 = [(b[0] ?? 0) - (a[0] ?? 0), (b[1] ?? 0) - (a[1] ?? 0), (b[2] ?? 0) - (a[2] ?? 0)];
+    const e2 = [(c[0] ?? 0) - (a[0] ?? 0), (c[1] ?? 0) - (a[1] ?? 0), (c[2] ?? 0) - (a[2] ?? 0)];
+    const nx = (e1[1] ?? 0) * (e2[2] ?? 0) - (e1[2] ?? 0) * (e2[1] ?? 0);
+    const ny = (e1[2] ?? 0) * (e2[0] ?? 0) - (e1[0] ?? 0) * (e2[2] ?? 0);
+    const nz = (e1[0] ?? 0) * (e2[1] ?? 0) - (e1[1] ?? 0) * (e2[0] ?? 0);
+    const len = Math.hypot(nx, ny, nz) || 1;
+    const tint = normalTint(nx / len, ny / len, nz / len);
+    const r = srgbToLinear((color >> 16) & 0xff) * tint[0];
+    const g = srgbToLinear((color >> 8) & 0xff) * tint[1];
+    const bl = srgbToLinear(color & 0xff) * tint[2];
+    const base = this.positions.length / 3;
+    for (const p of pts) {
+      this.positions.push(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0);
+      this.normals.push(nx / len, ny / len, nz / len);
+      this.colors.push(r, g, bl);
+    }
+    for (let i = 1; i + 1 < pts.length; i++) this.indices.push(base, base + i, base + i + 1);
+  }
+
   finish(): FlatMesh {
     return {
       positions: Float32Array.from(this.positions),
@@ -139,6 +208,12 @@ export interface MeshSectionOptions {
    * surface at 7/8 of a block, so at sea level it is 1/8 m below the LOD cells' grid.
    */
   waterDrop?: number;
+  /**
+   * Draw the surface cells as slope pieces from their corner heights (SLOPE_BLOCKS.md §3.2), at
+   * every level, with or without `surface` (a section without it uses each column's top solid
+   * cell). Off by default.
+   */
+  slopes?: boolean;
 }
 
 export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}): SectionMeshes {
@@ -149,7 +224,7 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
   const opaque = new Builder();
   const waterMesh = new Builder();
   const skirts = FACES.map(() => new Builder());
-  const special = findSurfaces(cells, surface);
+  const special = findSurfaces(cells, surface, options.slopes ?? false);
   // Merge key per slice cell: 0 none, else (material + 1) · 2 + (1 for a skirt face).
   const mask = new Int32Array(N * N);
   const cell = [0, 0, 0];
@@ -240,50 +315,149 @@ interface Surfaces {
   h: Float32Array;
   /** The surface cell's material (for a sea's floor drawn in a water cell, the floor's). */
   m: Uint16Array;
+  /**
+   * Sloped columns: the top's corner heights in halves above the cell's floor, NW NE SE SW (four
+   * per column); −1 in the first for a flat top at `h`.
+   */
+  q: Int8Array;
 }
 const NO_SURFACE = -1000;
+const FLAT = -1;
 
 /** Which cell of each column holds its surface, where the surface data says so. */
-function findSurfaces(cells: Uint16Array, surface: Float32Array | null): Surfaces {
+function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: boolean): Surfaces {
   const n = LOD_PAD * LOD_PAD;
   const out: Surfaces = {
     y: new Int16Array(n).fill(NO_SURFACE),
     h: new Float32Array(n),
     m: new Uint16Array(n),
+    q: new Int8Array(n * 4).fill(FLAT),
   };
-  if (!surface || surface.length < n * SURFACE_STRIDE) return out;
+  const data = surface && surface.length >= n * SURFACE_STRIDE ? surface : null;
   const top: number = SECTION_CELLS;
+  if (data) {
+    for (let z = -1; z <= top; z++) {
+      for (let x = -1; x <= top; x++) {
+        const c = col(x, z);
+        const flags = data[c * SURFACE_STRIDE + 2] ?? 0;
+        if (!(flags & SURFACE_VALID)) continue;
+        const h = data[c * SURFACE_STRIDE] ?? 0;
+        // The topmost solid cell (above it only air or liquid), and it must hold the surface.
+        let y: number = top;
+        for (; y >= -1; y--) {
+          const m = cells[cellIndex(x, y, z)] ?? 0;
+          if (m !== 0 && !isLiquid(m)) break;
+          // A sea's floor within one of its water cells (a cell taller than the sea is deep).
+          if (m !== 0 && flags & SURFACE_WET && h >= y && h <= y + 1) break;
+        }
+        if (y < -1 || y === top || h < y - 1e-3 || h > y + 1 + 1e-3) continue;
+        const m = cells[cellIndex(x, y, z)] ?? 0;
+        // In 1/SURFACE_STEPS of a cell (at most 1/4 cell off: a pixel or two, as cells are a few
+        // pixels on screen; finer steps cost far more triangles). At the cell's top the cell is
+        // drawn as usual (and merges).
+        let steps = Math.round(Math.min(Math.max(h - y, 0), 1) * SURFACE_STEPS);
+        if (steps === SURFACE_STEPS && !isLiquid(m)) continue;
+        // A sea floor is never drawn at its water cell's top, level with the water surface (only
+        // waterDrop, a sliver of a cell, from it: they z-fight) when that surface is this cell's.
+        if (isLiquid(m) && (cells[cellIndex(x, y + 1, z)] ?? 0) === 0)
+          steps = Math.min(steps, SURFACE_STEPS - 1);
+        out.y[c] = y;
+        out.h[c] = y + steps / SURFACE_STEPS;
+        out.m[c] = isLiquid(m) ? (data[c * SURFACE_STRIDE + 1] ?? m) : m;
+      }
+    }
+  }
+  if (slopes) applySlopes(cells, data, out);
+  return out;
+}
+
+/**
+ * Slope pieces for the surface cells (SLOPE_BLOCKS.md §3.2): each column has a surface height — the
+ * generated surface where the section carries it and the cell holds it, else the top of its topmost
+ * solid cell, which is also what a modified (downsampled) section has — and a corner's height is
+ * the mean of the four columns around it, rounded to a half. A column becomes sloped when its nine
+ * columns have a surface, its corners lie within a cell of each other (a cliff stays flat, with
+ * walls) and the piece is neither empty nor a full cell.
+ */
+function applySlopes(cells: Uint16Array, data: Float32Array | null, out: Surfaces): void {
+  const top: number = SECTION_CELLS;
+  const n = LOD_PAD * LOD_PAD;
+  const height = new Float32Array(n).fill(Number.NaN);
+  const cellY = new Int16Array(n).fill(NO_SURFACE);
   for (let z = -1; z <= top; z++) {
     for (let x = -1; x <= top; x++) {
       const c = col(x, z);
-      const flags = surface[c * SURFACE_STRIDE + 2] ?? 0;
-      if (!(flags & SURFACE_VALID)) continue;
-      const h = surface[c * SURFACE_STRIDE] ?? 0;
-      // The topmost solid cell (above it only air or liquid), and it must hold the surface.
+      const flags = data?.[c * SURFACE_STRIDE + 2] ?? 0;
+      if (flags & SURFACE_WET) continue; // a sea floor stays flat, under its water
       let y: number = top;
       for (; y >= -1; y--) {
         const m = cells[cellIndex(x, y, z)] ?? 0;
         if (m !== 0 && !isLiquid(m)) break;
-        // A sea's floor within one of its water cells (a cell taller than the sea is deep).
-        if (m !== 0 && flags & SURFACE_WET && h >= y && h <= y + 1) break;
       }
-      if (y < -1 || y === top || h < y - 1e-3 || h > y + 1 + 1e-3) continue;
-      const m = cells[cellIndex(x, y, z)] ?? 0;
-      // In 1/SURFACE_STEPS of a cell (at most 1/4 cell off: a pixel or two, as cells are a few
-      // pixels on screen; finer steps cost far more triangles). At the cell's top the cell is
-      // drawn as usual (and merges).
-      let steps = Math.round(Math.min(Math.max(h - y, 0), 1) * SURFACE_STEPS);
-      if (steps === SURFACE_STEPS && !isLiquid(m)) continue;
-      // A sea floor is never drawn at its water cell's top, level with the water surface (only
-      // waterDrop, a sliver of a cell, from it: they z-fight) when that surface is this cell's.
-      if (isLiquid(m) && (cells[cellIndex(x, y + 1, z)] ?? 0) === 0)
-        steps = Math.min(steps, SURFACE_STEPS - 1);
-      out.y[c] = y;
-      out.h[c] = y + steps / SURFACE_STEPS;
-      out.m[c] = isLiquid(m) ? (surface[c * SURFACE_STRIDE + 1] ?? m) : m;
+      if (y < -1 || y === top) continue;
+      let h = y + 1;
+      if (flags & SURFACE_VALID) {
+        const raw = data?.[c * SURFACE_STRIDE] ?? 0;
+        if (raw >= y - 1e-3 && raw <= y + 1 + 1e-3) h = raw;
+      }
+      height[c] = h;
+      cellY[c] = y;
     }
   }
-  return out;
+  const hs = [0, 0, 0, 0];
+  const h4 = [0, 0, 0, 0];
+  for (let z = 0; z < top; z++) {
+    for (let x = 0; x < top; x++) {
+      const c = col(x, z);
+      const y = cellY[c] ?? NO_SURFACE;
+      if (y === NO_SURFACE) continue;
+      // The corner at (x + a, z + b): the mean of columns (x + a − 1 … x + a) × (z + b − 1 … z + b).
+      let missing = 0; // columns around the cell with no surface
+      const corner = (a: number, b: number): number => {
+        const cx = x + a;
+        const cz = z + b;
+        hs[0] = height[col(cx - 1, cz - 1)] ?? Number.NaN;
+        hs[1] = height[col(cx, cz - 1)] ?? Number.NaN;
+        hs[2] = height[col(cx - 1, cz)] ?? Number.NaN;
+        hs[3] = height[col(cx, cz)] ?? Number.NaN;
+        if (Number.isNaN(hs[0] + hs[1] + hs[2] + hs[3])) missing++;
+        return Math.floor((hs[0] + hs[1] + hs[2] + hs[3]) * 0.5 + 0.5);
+      };
+      h4[0] = corner(0, 0); // NW
+      h4[1] = corner(1, 0); // NE
+      h4[2] = corner(1, 1); // SE
+      h4[3] = corner(0, 1); // SW
+      if (missing > 0) continue;
+      if (Math.max(...h4) - Math.min(...h4) > 2) continue; // a cliff
+      const q = h4.map((v) => Math.min(2, Math.max(0, v - 2 * y)));
+      const piece = pieceFor(q[0] ?? 0, q[1] ?? 0, q[2] ?? 0, q[3] ?? 0);
+      if (piece === 0 || piece === patternIndex(2, 2, 2, 2)) continue; // nothing, or a whole cell
+      const corners = patternCorners(piece);
+      out.y[c] = y;
+      out.m[c] = cells[cellIndex(x, y, z)] ?? 0;
+      if (corners[0] === corners[1] && corners[1] === corners[2] && corners[2] === corners[3]) {
+        out.h[c] = y + corners[0] / 2; // a slab: flat, as any partial cell
+        out.q.fill(FLAT, c * 4, c * 4 + 4);
+      } else {
+        out.h[c] = y + Math.max(...corners) / 2;
+        for (let i = 0; i < 4; i++) out.q[c * 4 + i] = corners[i] ?? 0;
+      }
+    }
+  }
+}
+
+/**
+ * Heights (in cells) of a column's top along one of its sides, in the order the wall runs: for
+ * ±X sides along z (north end first), for ±Z along x (west end first).
+ */
+function profile(s: Surfaces, c: number, axis: number, sign: number): readonly [number, number] {
+  const h = s.h[c] ?? 0;
+  if ((s.q[c * 4] ?? FLAT) === FLAT) return [h, h];
+  const y = s.y[c] ?? 0;
+  const at = (i: number): number => y + (s.q[c * 4 + i] ?? 0) / 2;
+  // Corners: 0 NW, 1 NE, 2 SE, 3 SW (north = −z, east = +x).
+  if (axis === 0) return sign > 0 ? [at(1), at(2)] : [at(0), at(3)];
+  return sign > 0 ? [at(3), at(2)] : [at(0), at(1)];
 }
 
 const SIDES: readonly (readonly [number, number, number])[] = [
@@ -298,15 +472,18 @@ const SIDES: readonly (readonly [number, number, number])[] = [
 interface Wall {
   target: number; // 0 opaque, else skirt face + 1
   sign: number;
-  lo: number;
-  hi: number;
+  lo: readonly [number, number];
+  hi: readonly [number, number];
   material: number;
 }
+
+const flatWall = (w: Wall): boolean => w.lo[0] === w.lo[1] && w.hi[0] === w.hi[1];
 
 /**
  * Tops at the surface height and the walls between columns (see meshSection), merged like the
  * rest: tops of equal height and material into rectangles, walls along a row into strips. A sea
- * floor drawn in a water cell gets that cell's water surface above it.
+ * floor drawn in a water cell gets that cell's water surface above it. Sloped columns draw their
+ * top piece's surface as triangles of their own, and their walls follow the slope's edge.
  */
 function emitSurfaces(
   cells: Uint16Array,
@@ -327,6 +504,24 @@ function emitSurfaces(
       const c = col(x, z);
       const y = s.y[c] ?? NO_SURFACE;
       if (y < 0) continue;
+      if ((s.q[c * 4] ?? FLAT) !== FLAT) {
+        // A sloped top: the piece's surface (its triangles, in cell coordinates over the cell).
+        const pattern = patternIndex(
+          s.q[c * 4] ?? 0,
+          s.q[c * 4 + 1] ?? 0,
+          s.q[c * 4 + 2] ?? 0,
+          s.q[c * 4 + 3] ?? 0,
+        );
+        const color = lodColor(s.m[c] ?? 0, 0);
+        for (const face of PATTERN_SHAPE[pattern]?.faces ?? []) {
+          if (face.tag !== 6) continue;
+          opaque.polygon(
+            face.pts.map((p) => [x + p[0], y + p[1], z + p[2]]),
+            color,
+          );
+        }
+        continue;
+      }
       // Height in 1/SURFACE_STEPS cells (integral) and material: exact in a double.
       topKey[z + N * x] = (Math.round((s.h[c] ?? y) * SURFACE_STEPS) + 1) * 0x10000 + (s.m[c] ?? 0);
     }
@@ -390,8 +585,8 @@ function emitSurfaces(
     }
   }
 
-  // Walls, per side and slot (see wallOf): computed per column, then runs of equal walls along
-  // the row merged.
+  // Walls, per side and slot (see wallOf): computed per column, then runs of equal flat walls
+  // along the row merged; sloped walls stand alone.
   for (const [axis, sign, faceIndex] of SIDES) {
     for (let slot = 0; slot < 2; slot++)
       for (let a = 0; a < N; a++) {
@@ -399,13 +594,18 @@ function emitSurfaces(
         let run: Wall | null = null;
         let runStart = 0;
         const flush = (bEnd: number): void => {
-          if (!run || run.hi - run.lo < 1e-4) return;
+          if (!run || (run.hi[0] - run.lo[0] < 1e-4 && run.hi[1] - run.lo[1] < 1e-4)) return;
           const plane = sign > 0 ? a + 1 : a;
-          // Axis x: u = y, v = z; axis z: u = x, v = y.
-          const color = lodColor(run.material, 1);
-          if (axis === 0)
-            builder(run.target).quad(0, run.sign, plane, run.lo, run.hi, runStart, bEnd, color);
-          else builder(run.target).quad(2, run.sign, plane, runStart, bEnd, run.lo, run.hi, color);
+          builder(run.target).wall(
+            axis,
+            run.sign,
+            plane,
+            runStart,
+            bEnd,
+            run.lo,
+            run.hi,
+            lodColor(run.material, 1),
+          );
         };
         for (let b = 0; b <= N; b++) {
           let wall: Wall | null = null;
@@ -417,10 +617,12 @@ function emitSurfaces(
           const same =
             wall &&
             run &&
+            flatWall(wall) &&
+            flatWall(run) &&
             wall.target === run.target &&
             wall.sign === run.sign &&
-            wall.lo === run.lo &&
-            wall.hi === run.hi &&
+            wall.lo[0] === run.lo[0] &&
+            wall.hi[0] === run.hi[0] &&
             wall.material === run.material;
           if (same) continue;
           flush(b);
@@ -453,7 +655,7 @@ function wallOf(
   const c = col(x, z);
   const y = s.y[c] ?? NO_SURFACE;
   if (y < 0) return null;
-  const h = s.h[c] ?? y + 1;
+  const ours = profile(s, c, axis, sign);
   const nx = axis === 0 ? x + sign : x;
   const nz = axis === 2 ? z + sign : z;
   const nc = col(nx, nz);
@@ -463,18 +665,29 @@ function wallOf(
   const nFilled = nSurfaceHere || (nm !== 0 && !isLiquid(nm));
   const material = s.m[c] ?? 0;
   const skirt = face + 1;
-  if (!nFilled) return slot === 0 ? { target: 0, sign, lo: y, hi: h, material } : null; // open
+  const floor: readonly [number, number] = [y, y];
+  if (!nFilled) return slot === 0 ? { target: 0, sign, lo: floor, hi: ours, material } : null; // open
   if (nSurfaceHere) {
     // Both surfaces in this row: the higher one's side shows down to the lower (and below that,
-    // on the border, a skirt).
-    const lo = Math.min(s.h[nc] ?? y + 1, h);
-    if (slot === 0) return lo < h ? { target: 0, sign, lo, hi: h, material } : null;
-    return border && lo > y ? { target: skirt, sign, lo: y, hi: lo, material } : null;
+    // on the border, a skirt). The neighbour's top along the same edge is its opposite side.
+    const theirs = profile(s, nc, axis, -sign);
+    const lo: readonly [number, number] = [
+      Math.min(theirs[0], ours[0]),
+      Math.min(theirs[1], ours[1]),
+    ];
+    if (slot === 0) {
+      return lo[0] < ours[0] || lo[1] < ours[1]
+        ? { target: 0, sign, lo, hi: ours, material }
+        : null;
+    }
+    return border && (lo[0] > y || lo[1] > y)
+      ? { target: skirt, sign, lo: floor, hi: lo, material }
+      : null;
   }
   // A full neighbour cell stands taller: its face towards us, above our surface (and on the
   // border, our side below as a skirt).
-  if (slot === 0) return { target: 0, sign: -sign, lo: h, hi: y + 1, material: nm };
-  return border ? { target: skirt, sign, lo: y, hi: h, material } : null;
+  if (slot === 0) return { target: 0, sign: -sign, lo: ours, hi: [y + 1, y + 1], material: nm };
+  return border ? { target: skirt, sign, lo: floor, hi: ours, material } : null;
 }
 
 /** The buffers of a result, for transferring it between threads. */

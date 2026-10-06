@@ -1,5 +1,8 @@
 #include "dwell/core/voxel.h"
 
+#include <string>
+
+#include "dwell/core/block_registry.h"
 #include "dwell/worldgen/terrain.h"
 
 namespace dwell::core {
@@ -15,6 +18,67 @@ MaterialId FlatMaterial(std::int32_t y) {
 }
 
 bool In(std::int32_t v, std::int32_t lo, std::int32_t hi) { return v >= lo && v <= hi; }
+
+// Slope pieces of the playground, by canonical string (the registry resolves them once).
+struct PlaygroundSlopes {
+  MaterialId wedge_north, gentle_low_north, gentle_high_north;
+  MaterialId wedge_south, wedge_east, wedge_west;
+  MaterialId outer_east, outer_south, outer_west, outer_north;  // high corner NW, NE, SE, SW
+};
+const PlaygroundSlopes& Slopes() {
+  static const PlaygroundSlopes slopes = [] {
+    const auto state = [](const char* facing, const char* shape) {
+      const std::string text =
+          std::string("dwell:stone_slope[facing=") + facing + ",shape=" + shape + "]";
+      const auto id = ParseState(text);
+      return id ? *id : Materials::kAir;
+    };
+    return PlaygroundSlopes{state("north", "wedge"),       state("north", "gentle_low"),
+                            state("north", "gentle_high"), state("south", "wedge"),
+                            state("east", "wedge"),        state("west", "wedge"),
+                            state("east", "outer"),        state("south", "outer"),
+                            state("west", "outer"),        state("north", "outer")};
+  }();
+  return slopes;
+}
+
+// Slope playground (x 18..34): a 45° ramp, a gentle ramp and a one-block hill with hips.
+MaterialId SlopePlayground(std::int32_t x, std::int32_t y, std::int32_t z) {
+  using namespace Materials;
+  const PlaygroundSlopes& s = Slopes();
+  // 45° ramp rising toward +z (x 18..20, z 6..9, four blocks up), then a platform (z 10..12).
+  if (In(x, 18, 20)) {
+    if (In(z, 6, 9)) {
+      const std::int32_t i = z - 6;
+      if (In(y, 0, i - 1)) return kStone;
+      if (y == i) return s.wedge_north;
+    }
+    if (In(z, 10, 12) && In(y, 0, 3)) return kStone;
+  }
+  // Gentle (1:2) ramp (x 22..24, z 6..11, three blocks up), then a platform (z 12..14).
+  if (In(x, 22, 24)) {
+    if (In(z, 6, 11)) {
+      const std::int32_t i = (z - 6) / 2;
+      if (In(y, 0, i - 1)) return kStone;
+      if (y == i) return (z - 6) % 2 == 0 ? s.gentle_low_north : s.gentle_high_north;
+    }
+    if (In(z, 12, 14) && In(y, 0, 2)) return kStone;
+  }
+  // A hill: 3 × 3 blocks (x 27..29, z 7..9) with sloped edges and hips at its corners.
+  if (In(x, 26, 30) && In(z, 6, 10) && y == 0) {
+    const bool west = x == 26, east = x == 30, north = z == 6, south = z == 10;
+    if (north && west) return s.outer_west;
+    if (north && east) return s.outer_north;
+    if (south && west) return s.outer_south;
+    if (south && east) return s.outer_east;
+    if (north) return s.wedge_north;
+    if (south) return s.wedge_south;
+    if (west) return s.wedge_west;
+    if (east) return s.wedge_east;
+    return kStone;
+  }
+  return kAir;
+}
 
 // Movement playground (generator version 1). Pure function of the voxel coordinate.
 MaterialId PlaygroundMaterial(std::int32_t x, std::int32_t y, std::int32_t z) {
@@ -37,6 +101,9 @@ MaterialId PlaygroundMaterial(std::int32_t x, std::int32_t y, std::int32_t z) {
   if (x == 9 && z == 9 && In(y, 0, 3)) return kLadderN;
   // Water pool, 2 m deep (x 12..15, z 6..9).
   if (In(x, 12, 15) && In(z, 6, 9) && In(y, -2, -1)) return kWater;
+  if (In(x, 18, 30) && In(z, 6, 14) && y >= 0) {
+    if (const MaterialId m = SlopePlayground(x, y, z); m != kAir) return m;
+  }
   // Launch pad flush with the ground at (0, −1, −6).
   if (x == 0 && z == -6 && y == -1) return kLaunchPad;
   return FlatMaterial(y);

@@ -104,6 +104,8 @@ export class KeyboardMouseInput {
   onDigit: ((code: string) => void) | null = null;
   /** Hotbar: the wheel turned (sign: +1 next slot, −1 previous). */
   onScroll: ((delta: number) => void) | null = null;
+  /** The shape key (R; Shift+R goes back): the next (+1) or previous (−1) piece to place. */
+  onShape: ((delta: number) => void) | null = null;
 
   constructor(private readonly target: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -162,6 +164,7 @@ export class KeyboardMouseInput {
     this.keys.add(e.code);
     if (e.code === 'Space' && !e.repeat) this.flight.jumpPressed(e.timeStamp);
     if (e.code.startsWith('Digit') && !e.repeat) this.onDigit?.(e.code);
+    if (e.code === 'KeyR' && !e.repeat) this.onShape?.(e.shiftKey ? -1 : 1);
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   };
 
