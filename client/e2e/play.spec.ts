@@ -159,9 +159,11 @@ test('two clients on a native server see each other move', async ({ browser }) =
     // B's own prediction runs over the simulated 150 ms link without snapping. A short walk: CI's
     // software renderer runs this page at well under 60 ticks/s, and the server repeats a starved
     // client's last input, so a long walk would diverge whatever the prediction does.
+    // (Relative to where B stood: the spawn lies wherever the terrain puts it, not at z = 0.)
+    const startB = await state(b);
     await walkForward(b, 15);
     const sb = await state(b);
-    expect(sb?.feet[2] ?? 0).toBeGreaterThan(0.5);
+    expect((sb?.feet[2] ?? 0) - (startB?.feet[2] ?? 0)).toBeGreaterThan(0.5);
     const stats = await b.evaluate(`(${hooks.toString()})()?.state()?.stats`);
     expect((stats as { snaps?: number } | undefined)?.snaps, JSON.stringify(stats)).toBe(0);
   } finally {
