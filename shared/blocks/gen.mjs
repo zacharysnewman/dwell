@@ -152,6 +152,35 @@ for (const st of states) {
 }
 if (shapeTable.length > 0xffff) fail('too many shapes');
 
+// The slope pieces terrain and the LOD pick for four corner heights (halves of a cell, NW NE SE SW):
+// a pattern with a piece of its own keeps it, any other maps to the nearest by total distance, the
+// higher on a tie, then the lower index. Pattern index = nw + 3·ne + 9·se + 27·sw. Both languages
+// read this table (SLOPE_BLOCKS.md §5), so terrain and LOD agree.
+const pieceAllowed = new Set([0, 1 + 3 + 9 + 27, 2 + 6 + 18 + 54]);
+for (const shape of Object.keys(SLOPE_SHAPES)) {
+  for (const facing of SHAPE_FACINGS) {
+    const c = slopeShape({ facing, half: 'bottom', shape }).corners;
+    pieceAllowed.add(c[0] + 3 * c[1] + 9 * c[2] + 27 * c[3]);
+  }
+}
+const patternCorners = (p) => [p % 3, Math.floor(p / 3) % 3, Math.floor(p / 9) % 3, Math.floor(p / 27) % 3];
+const pieceNearest = Array.from({ length: 81 }, (_, p) => {
+  const a = patternCorners(p);
+  let best = -1;
+  let bestKey = null;
+  for (const q of [...pieceAllowed].sort((x, y) => x - y)) {
+    const b = patternCorners(q);
+    const distance = a.reduce((n, v, i) => n + Math.abs(v - b[i]), 0);
+    const height = b.reduce((n, v) => n + v, 0);
+    // Smaller distance first, then taller; ties keep the lower index (iterated ascending).
+    if (best < 0 || distance < bestKey[0] || (distance === bestKey[0] && height > bestKey[1])) {
+      best = q;
+      bestKey = [distance, height];
+    }
+  }
+  return best;
+});
+
 // Palette (creative inventory) membership: a block's `palette` lists partial property assignments;
 // `placeable` alone means the default state.
 const defaultOf = (block) => Object.fromEntries(block.props.map((p) => [p.name, p.values[0]]));
@@ -278,6 +307,9 @@ cpp.push(`inline constexpr std::array<ShapeInfo, ${shapeRows.length}> kShapes{{`
 cpp.push(...shapeRows);
 cpp.push('}};');
 cpp.push('');
+cpp.push('// Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves): see shared/blocks/gen.mjs.');
+cpp.push(`inline constexpr std::array<std::uint8_t, 81> kPieceNearest{{${pieceNearest.join(', ')}}};`);
+cpp.push('');
 cpp.push('inline constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{');
 states.forEach((s, i) => {
   const d = s.block.def;
@@ -388,6 +420,9 @@ for (const b of blocks) {
   ts.push(`  { id: '${b.id}', first: ${b.first}, count: ${b.count}, properties: [${props.join(', ')}] },`);
 }
 ts.push('];');
+ts.push('');
+ts.push('/** Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves of a cell): shared/blocks/gen.mjs. */');
+ts.push(`export const PIECE_NEAREST: readonly number[] = [${pieceNearest.join(', ')}];`);
 ts.push('');
 ts.push('export const SHAPES: readonly ShapeDef[] = [');
 for (const t of shapeTable) {

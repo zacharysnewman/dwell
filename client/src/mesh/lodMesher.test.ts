@@ -220,4 +220,142 @@ describe('LOD section mesher (§6.6)', () => {
     }
     expect(covered(meshSection(cells, { surface }), -1)).toEqual([0, 0.5]);
   });
+
+  describe('slopes (SLOPE_BLOCKS.md §3.2)', () => {
+    /** A section whose column x has `top(x, z)` solid cells (y = 0 … top − 1) of grass. */
+    function terrain(top: (x: number, z: number) => number): Uint16Array {
+      const cells = new Uint16Array(LOD_VOLUME);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++)
+          for (let y = 0; y < top(x, z); y++) cells[lodCell(x, y, z)] = 4;
+      return cells;
+    }
+
+    /** Triangles of a mesh as (vertices, unit normal). */
+    function triangles(m: { positions: Float32Array; indices: Uint32Array }) {
+      const out: { v: number[][]; n: number[] }[] = [];
+      for (let t = 0; t < m.indices.length / 3; t++) {
+        const v = [0, 1, 2].map((k) => {
+          const i = m.indices[t * 3 + k] ?? 0;
+          return [
+            m.positions[i * 3] ?? 0,
+            m.positions[i * 3 + 1] ?? 0,
+            m.positions[i * 3 + 2] ?? 0,
+          ];
+        });
+        const e1 = v[1]!.map((c, i) => c - (v[0]?.[i] ?? 0)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+        const e2 = v[2]!.map((c, i) => c - (v[0]?.[i] ?? 0)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+        const n = [
+          (e1[1] ?? 0) * (e2[2] ?? 0) - (e1[2] ?? 0) * (e2[1] ?? 0),
+          (e1[2] ?? 0) * (e2[0] ?? 0) - (e1[0] ?? 0) * (e2[2] ?? 0),
+          (e1[0] ?? 0) * (e2[1] ?? 0) - (e1[1] ?? 0) * (e2[0] ?? 0),
+        ];
+        const len = Math.hypot(...n);
+        out.push({ v, n: len > 0 ? n.map((c) => c / len) : n });
+      }
+      return out;
+    }
+
+    /** The mesh's top surface height at (x, z): the highest upward triangle over the point. */
+    function heightAt(m: { positions: Float32Array; indices: Uint32Array }, x: number, z: number) {
+      let best = -Infinity;
+      for (const { v, n } of triangles(m)) {
+        if ((n[1] ?? 0) < 0.1) continue;
+        const [a, b, c] = v as [number[], number[], number[]];
+        const d =
+          ((b[2] ?? 0) - (c[2] ?? 0)) * ((a[0] ?? 0) - (c[0] ?? 0)) +
+          ((c[0] ?? 0) - (b[0] ?? 0)) * ((a[2] ?? 0) - (c[2] ?? 0));
+        if (Math.abs(d) < 1e-9) continue;
+        const l1 =
+          (((b[2] ?? 0) - (c[2] ?? 0)) * (x - (c[0] ?? 0)) +
+            ((c[0] ?? 0) - (b[0] ?? 0)) * (z - (c[2] ?? 0))) /
+          d;
+        const l2 =
+          (((c[2] ?? 0) - (a[2] ?? 0)) * (x - (c[0] ?? 0)) +
+            ((a[0] ?? 0) - (c[0] ?? 0)) * (z - (c[2] ?? 0))) /
+          d;
+        const l3 = 1 - l1 - l2;
+        if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+        best = Math.max(best, l1 * (a[1] ?? 0) + l2 * (b[1] ?? 0) + l3 * (c[1] ?? 0));
+      }
+      return best;
+    }
+
+    it('draws a staircase of cells as sloped facets, within half a cell of the line it climbs', () => {
+      // Column x holds top(x) cells: 5, 6, 7, 8 along +x (x 10 … 13), flat 5 before and 8 after: a
+      // ramp rising one cell per column, drawn without section data (as a modified, downsampled
+      // section is).
+      const top = (x: number) => (x < 10 ? 5 : x > 13 ? 8 : x - 5);
+      const cells = terrain((x) => top(x));
+      const plain = meshSection(cells);
+      const sloped = meshSection(cells, { slopes: true });
+      // Tilted faces rise towards +x (their normals lean to −x), none lean sideways.
+      const tilted = triangles(sloped.opaque).filter(
+        (t) => (t.n[1] ?? 0) > 0.5 && (t.n[1] ?? 0) < 0.99,
+      );
+      expect(tilted.length).toBeGreaterThan(0);
+      for (const t of tilted) {
+        expect(t.n[0]).toBeLessThan(-0.2);
+        expect(t.n[2]).toBeCloseTo(0, 3);
+      }
+      // A column's top is a piece within its own cell, so the surface stays within half a cell of
+      // the line through the column tops, y = x + 0.5 − 5.5.
+      for (let x = 11; x <= 12; x++) {
+        const h = heightAt(sloped.opaque, x + 0.5, 16.5);
+        expect(Math.abs(h - (x + 0.5 - 5.5))).toBeLessThanOrEqual(0.5);
+      }
+      expect(heightAt(sloped.opaque, 5.5, 16.5)).toBeCloseTo(5, 5); // the flat before is flat
+      expect(heightAt(sloped.opaque, 20.5, 16.5)).toBeCloseTo(8, 5);
+      // The terraced version is flat on each column, a half cell off the line in the middle of one.
+      const flat = heightAt(plain.opaque, 11.5, 16.5);
+      const steep = heightAt(plain.opaque, 11.1, 16.5);
+      expect(flat).toBeCloseTo(steep, 5);
+      expect(heightAt(sloped.opaque, 11.1, 16.5)).not.toBeCloseTo(
+        heightAt(sloped.opaque, 11.9, 16.5),
+        2,
+      );
+    });
+
+    it('leaves flat ground exactly as it was', () => {
+      const cells = terrain(() => 3);
+      const plain = meshSection(cells);
+      const sloped = meshSection(cells, { slopes: true });
+      expect(sloped.opaque.indices.length).toBe(plain.opaque.indices.length);
+      expect(Array.from(sloped.opaque.positions)).toEqual(Array.from(plain.opaque.positions));
+    });
+
+    it('keeps cliffs: a three-cell step stays a wall', () => {
+      const cells = terrain((x) => (x < 16 ? 2 : 5));
+      const m = meshSection(cells, { slopes: true });
+      const tilted = triangles(m.opaque).filter((t) => (t.n[1] ?? 0) > 0.1 && (t.n[1] ?? 0) < 0.99);
+      expect(tilted).toHaveLength(0);
+      // The wall faces −x at x = 16 from the low top up to the high one.
+      let wall = 0;
+      for (const t of triangles(m.opaque)) {
+        if ((t.n[0] ?? 0) < -0.99 && t.v.every((p) => p[0] === 16))
+          wall = Math.max(wall, ...t.v.map((p) => p[1] ?? 0));
+      }
+      expect(wall).toBe(5);
+    });
+
+    it("turns generated sections' surfaces into slopes too, with surface heights", () => {
+      // A gentle ground: the surface rises 0.5 cell per column across x 8 … 20, in cell 2.
+      const cells = terrain(() => 3);
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      const col = (x: number, z: number) => (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          const h = 2 + Math.min(1, Math.max(0, (x - 8) / 12));
+          surface[col(x, z)] = h;
+          surface[col(x, z) + 1] = 4;
+          surface[col(x, z) + 2] = 1;
+        }
+      const m = meshSection(cells, { surface, slopes: true });
+      for (let x = 9; x <= 19; x++) {
+        const h = heightAt(m.opaque, x + 0.5, 16.5);
+        const line = 2 + (x + 0.5 - 8.5) / 12; // the surface at the column's middle
+        expect(Math.abs(h - line)).toBeLessThanOrEqual(0.5);
+      }
+    });
+  });
 });

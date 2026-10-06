@@ -108,6 +108,9 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:log_slab', first: 1204, count: 4, properties: [{ name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }] },
 ];
 
+/** Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves of a cell): shared/blocks/gen.mjs. */
+export const PIECE_NEAREST: readonly number[] = [0, 1, 2, 3, 4, 8, 6, 8, 8, 9, 13, 2, 12, 13, 41, 24, 43, 26, 18, 18, 26, 24, 49, 26, 24, 26, 26, 27, 28, 56, 31, 31, 41, 6, 43, 44, 36, 37, 41, 39, 40, 41, 43, 43, 44, 72, 49, 74, 49, 49, 53, 52, 52, 53, 54, 56, 56, 54, 67, 62, 62, 62, 62, 72, 67, 68, 67, 67, 68, 78, 71, 71, 72, 74, 74, 76, 76, 77, 78, 79, 80];
+
 export const SHAPES: readonly ShapeDef[] = [
   { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0], [0, 0], [0, 0], [0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },
   { corners: [2, 2, 2, 2], inverted: false, diagonal: 0, convex: true, volume: 1, sides: [[2, 2], [2, 2], [2, 2], [2, 2]], fullTop: true, fullBottom: true, minY: 0, maxY: 1, faces: [{ tag: 1, pts: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, { tag: 0, pts: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] }, { tag: 3, pts: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, { tag: 2, pts: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] }, { tag: 5, pts: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] }, { tag: 4, pts: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] }] },

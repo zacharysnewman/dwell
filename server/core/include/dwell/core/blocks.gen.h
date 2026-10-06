@@ -2050,6 +2050,9 @@ inline constexpr std::array<ShapeInfo, 76> kShapes{{
     {467, 7, {1, 2, 2, 2}, true, 0, false, 0.8333333333333334f, {{{2, 2}, {1, 2}, {2, 2}, {1, 2}}}, true, false, 0.0f, 1.0f},
 }};
 
+// Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves): see shared/blocks/gen.mjs.
+inline constexpr std::array<std::uint8_t, 81> kPieceNearest{{0, 1, 2, 3, 4, 8, 6, 8, 8, 9, 13, 2, 12, 13, 41, 24, 43, 26, 18, 18, 26, 24, 49, 26, 24, 26, 26, 27, 28, 56, 31, 31, 41, 6, 43, 44, 36, 37, 41, 39, 40, 41, 43, 43, 44, 72, 49, 74, 49, 49, 53, 52, 52, 53, 54, 56, 56, 54, 67, 62, 62, 62, 62, 72, 67, 68, 67, 67, 68, 78, 71, 71, 72, 74, 74, 76, 76, 77, 78, 79, 80}};
+
 inline constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{
     {.name = "dwell:air", .density_kg_m3 = 0.0f, .solid = false, .indestructible = false, .shape = VoxelShape::kEmpty, .shape_index = 0, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 0},  // 0
     {.name = "dwell:bedrock", .density_kg_m3 = 3000.0f, .solid = true, .indestructible = true, .shape = VoxelShape::kFull, .shape_index = 1, .flooded = false, .climbable = false, .facing = Facing::kNone, .climb_speed_scale = 1.0f, .liquid = false, .launch_speed = 0.0f, .placeable = false, .block = 1},  // 1

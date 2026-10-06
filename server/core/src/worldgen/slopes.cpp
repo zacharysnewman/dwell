@@ -27,20 +27,6 @@ struct Tables {
   std::unordered_map<MaterialId, std::array<MaterialId, kPatterns * 2>> states;
 };
 
-int Distance(int a, int b) {
-  int d = 0;
-  for (int i = 0; i < 4; ++i) {
-    const int x = (a / (i == 0 ? 1 : i == 1 ? 3 : i == 2 ? 9 : 27)) % 3;
-    const int y = (b / (i == 0 ? 1 : i == 1 ? 3 : i == 2 ? 9 : 27)) % 3;
-    d += x > y ? x - y : y - x;
-  }
-  return d;
-}
-
-int Height(int pattern) {
-  return pattern % 3 + (pattern / 3) % 3 + (pattern / 9) % 3 + (pattern / 27) % 3;
-}
-
 const Tables& GetTables() {
   static const Tables tables = [] {
     Tables t;
@@ -65,19 +51,9 @@ const Tables& GetTables() {
       t.allowed[uniform] = true;
     }
     t.shape[PatternIndex(1, 1, 1, 1)] = "slab";
-    for (int p = 0; p < kPatterns; ++p) {
-      int best = -1;
-      for (int q = 0; q < kPatterns; ++q) {
-        if (!t.allowed[q]) continue;
-        if (best < 0) {
-          best = q;
-          continue;
-        }
-        const int dq = Distance(p, q), db = Distance(p, best);
-        if (dq < db || (dq == db && Height(q) > Height(best))) best = q;
-      }
-      t.nearest[p] = static_cast<std::uint8_t>(best);
-    }
+    // The piece for each pattern: generated with the registry (shared/blocks/gen.mjs), so terrain
+    // and the client's LOD mesher pick the same ones.
+    t.nearest = core::kPieceNearest;
     // States per cube material: the materials with `<id>_slope` and `<id>_slab` blocks.
     for (MaterialId cube = 0; cube < M::kCount; ++cube) {
       const core::BlockDef& block = core::BlockOf(cube);
