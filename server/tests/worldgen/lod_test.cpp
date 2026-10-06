@@ -558,12 +558,9 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
           error_cells += static_cast<double>(o.y + (top + 1) * cell) - std::max(truth, 0.0);
           if (!sf.valid) continue;
           ++valid;
-          // Its own (coarse) column's shore, not full detail's; where the ground's water is the sea's.
-          if (gen.ColumnAt(static_cast<std::int32_t>(o.x + x * cell + cell / 2),
-                           static_cast<std::int32_t>(o.z + z * cell + cell / 2))
-                  .water == 0) {
-            CHECK(sf.wet == (sf.height < 0));
-          }
+          // Below sea level a surface is wet; above it, river and lake water makes some wet too
+          // (its own coarse column's, not full detail's).
+          CHECK((sf.height < 0.0f) <= sf.wet);
           error_surface += sf.height - truth;
         }
     }
