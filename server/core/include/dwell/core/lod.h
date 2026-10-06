@@ -80,6 +80,9 @@ struct LodSurface {
   bool wet = false;    // under water: `height` is the floor, `material` the floor's
   float height = 0;    // metres
   MaterialId material = 0;
+  // Where wet: the water's surface (metres; open voxels below it are water) — the sea's, or a
+  // river's or lake's above sea level, which is not on the cells' grid.
+  float water = 0;
 };
 using LodSurfaces = std::vector<LodSurface>;  // kLodPad²
 

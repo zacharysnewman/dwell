@@ -665,10 +665,14 @@ come from a layout, a pure function of (seed, world coordinates) like every stag
 - **Under water**: caves start 12 m deeper below any channel, lake or sea floor shallower than 40 m;
   overhangs shrink to 1–2.5 m on most land (they were up to 17 m) and vanish in channels; beds are
   gravel (deep) or sand.
-- **Level of detail**: `GenerateLod` samples the same fields at cell centres; a tier narrower than a
-  cell widens to one cell and the stream (16 m cells) and river (128 m) tiers drop out at coarser
-  levels, the great river and the lakes stay. `SkyFloor`/`IsAirChunk` and `LodBoundsAt` count water
-  above sea level as terrain.
+- **Level of detail** ([ADR 0020](adr/0020-lod-rivers-at-their-width.md)): `GenerateLod` samples the
+  same fields at cell centres. A tier's *valley* (its distance factor) stays while the cell resolves
+  it — the stream's up to 512 m cells, the river's up to 1,024 m, the great river's always — and only
+  then takes the mean of its ramp. A *channel* (carve and water) is never widened: it is sampled at
+  its own width, so a cell is water where full detail is mostly water; the stream's, a thread a few
+  metres wide, is not drawn from 32 m cells (`rivers::Tier::channel_cell`). Each wet column's surface
+  carries its water's level for the client to draw it at (§6.6). `SkyFloor`/`IsAirChunk` and
+  `LodBoundsAt` count water above sea level as terrain.
 - **Checks** (`rivers_test.cpp`): beds are no higher than the ground 50–500 m to either side
   (800 m–2.5 km for great rivers); great rivers' water is at sea level within 5 km of the coast
   (12 mouths over 4 seeds); no water voxel has air below it and every horizontal water/air contact is
@@ -1213,24 +1217,31 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
   top, as `Downsample` keeps it (`lod: sea`). Every level draws water as the chunks do: a
   see-through surface (opacity 0.55, visible from both sides) 1/8 m below the cell grid, where the
-  chunks' water surface sits (the mesher's `waterDrop`, in cells; river and lake water, whose
-  surface is a whole metre as the sea's is, sits the same way — Phase 11a), over the floor at its true
-  depth — so near and distant water join without a step, a seam or a change of look. (Opaque
+  chunks' water surface sits (the mesher's `waterDrop`, in cells), over the floor at its true
+  depth. River and lake water stands above sea level at a whole metre that is not on the cells'
+  grid: the column surface carries each wet column's water level, and the mesher draws the water's
+  top — and its side faces up to it — there, not at its top liquid cell's top (which put a river at
+  121 m at 128 m in 16 m cells, over its banks, and at 512 m in 512 m cells), with a floor in that
+  cell kept strictly below it — so near and distant water join without a step, a seam or a change of look. (Opaque
   water blocks, then a floor tinted as seen through water from level 3, came first; the tint
   showed a seam, a brighter band and a hard edge where it began, in playtests.) All LOD sections'
   water is one three.js `BatchedMesh` (`render/three/meshBatch.ts`): one draw call per pass,
   sorted and culled per section. Drawn per section it added ~25% more draw calls in a coastal
   view; batched it is within a few percent of the tinted floor's, for ~3–8% more triangles.
-- **Known limit (found in Phase 11a):** from level 8 (256 m cells) a section covers kilometres of the
-  ranges, whose finer octaves the level drops, so its columns' surfaces average ~60–120 m below a
-  point sample of the full-detail terrain inland in ranges (the test bounds the bias up to level 7,
-  `lod: column surfaces`). It predates 11a (measured with rivers off); 11b's detail cascade revisits
-  the octaves dropped by level.
+- **Coarse columns keep the plate edges.** From level 8 (256 m cells) the continent layout is
+  evaluated per column (`TerrainGenerator::LodLayout`, interpolated across continental interiors);
+  it includes the internal plate edges, whose convergent ones raise the valley floor and the relief
+  (the uplift belts). (Without them, as until the LOD river fix, every coarse column lacked the
+  belts and its surface lay 55–80 m below full detail's on average — taken at first for a limit of
+  the dropped range octaves.) Coarse columns are unbiased within a few metres at every level and,
+  around rivers, within a metre up to 128 m cells and a few beyond (`lod: column surfaces`,
+  `lod: river valleys and their water`).
 - **Column surfaces** (true heights at a distance): a cell counts as filled from its bottom voxel,
   so drawing each column's top cell to its top lifted the ground by up to a cell — ~220 m at level
   8, ~2 km at level 12 — and seas to +2,048 m (level 12) and +6,144 m (level 13): the horizon
   stood too tall, with steps where levels met (playtest). `GenerateLod` therefore also returns
-  each column's exact surface (`core::LodSurface`: height, material, wet — a sea's floor), unbiased
+  each column's exact surface (`core::LodSurface`: height, material, wet — a sea's or a river's
+  floor — and the water's level), unbiased
   to a few metres at every level (`lod: column surfaces`); the client's worldgen worker passes it
   on, and the mesher draws the top of the column's surface cell at that height, in half-cell
   steps (at most 1/4 cell — a pixel or two — off; finer steps cost several times the triangles),

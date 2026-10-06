@@ -82,7 +82,9 @@ identical in chunks, point queries and the level of detail.
    stability pass, features (no trees in water), `SkyFloor`/`IsAirChunk` and `LodBoundsOf` (water
    above sea level counts as terrain), and the spawn (dry ground; near water when some lies within
    ~300 m of the origin).
-7. **Level of detail.** `GenerateLod` samples the same fields at cell centres: a tier narrower than
+7. **Level of detail** (amended by [0020](0020-lod-rivers-at-their-width.md): valleys kept while
+   resolved, channels at their own width, water drawn at its level). `GenerateLod` samples the same
+   fields at cell centres: a tier narrower than
    a cell *widens* to one cell (so great rivers and lakes remain from altitude), and tiers drop out
    at cell widths of 16 m (streams) and 128 m (rivers), their distance factor taking its mean. From
    4,096 m cells (level 12) the lakes and the great river's windings, smaller than a cell, are

@@ -11,6 +11,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "dwell/core/lod.h"
@@ -579,9 +580,14 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
           error_cells += static_cast<double>(o.y + (top + 1) * cell) - std::max(truth, 0.0);
           if (!sf.valid) continue;
           ++valid;
-          // Below sea level a surface is wet; above it, river and lake water makes some wet too
-          // (its own coarse column's, not full detail's).
-          CHECK((sf.height < 0.0f) <= sf.wet);
+          // Wet exactly where the floor lies below the water — the sea's, or a river's or a
+          // lake's above sea level, whose level the surface carries for the client to draw it at.
+          if (sf.wet) {
+            CHECK(sf.height < sf.water);
+            CHECK(sf.water >= 0.0f);
+          } else {
+            CHECK(sf.height >= 0.0f);
+          }
           error_surface += sf.height - truth;
         }
     }
@@ -592,12 +598,104 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
     // Levels 1–3 keep a whole cell where 3D noise raised the ground above the column's height
     // (overhangs, which grow with the mountains of a continent's interior).
     CHECK(valid >= columns * (level <= 2 ? 75 : level <= 3 ? 90 : 95) / 100);
-    // Unbiased within a few metres (coarse columns drop octaves finer than the cell).
-    // From level 8 (256 m cells) a section spans kilometres of ranges whose octaves are dropped:
-    // the mean relief then lies ~60–120 m below a point sample's (also without rivers; a known
-    // limit, see ARCHITECTURE.md §6.6), so the bound holds for levels up to 7.
-    if (level <= 7) {
-      CHECK(std::abs(error_surface / std::max(valid, 1)) < 8.0 + 0.002 * static_cast<double>(cell));
+    // Unbiased within a few metres (coarse columns drop octaves finer than the cell), at every
+    // level. (From 256 m cells the coarse columns lost the internal plate edges, and with them the
+    // uplift belts: their mean lay 55–80 m below a point sample's.)
+    CHECK(std::abs(error_surface / std::max(valid, 1)) < 8.0 + 0.002 * static_cast<double>(cell));
+  }
+}
+
+TEST_CASE("lod: river valleys and their water look the same from afar as up close") {
+  // Regression (playtest: distant rivers were wide water that turned into a dry gully with pools
+  // up close, and their valleys were hills from afar). A coarse column dropped the stream and river
+  // tiers whole — their valleys with their channels, so the relief they flatten came back — and
+  // widened every channel it kept to a cell, so a 3 m stream was 64 m of water at 64 m cells.
+  // Around the centrelines of each tier, every level must keep the ground where full detail has it
+  // and show water where most of the cell is water in full detail, and only there.
+  using testing::FindCentrelines;
+  using testing::Tier;
+  for (const std::uint64_t seed : {1u, 5u}) {
+    const TerrainGenerator gen(seed);
+    std::vector<testing::Point> sites;
+    for (const auto& [tier, half, step] :
+         {std::tuple{Tier::kStream, 12000, 200}, std::tuple{Tier::kRiver, 12000, 400},
+          std::tuple{Tier::kGreat, 240000, 8000}}) {
+      const auto found = FindCentrelines(gen, tier, 0, 0, half, step, 2);
+      sites.insert(sites.end(), found.begin(), found.end());
+    }
+    REQUIRE(sites.size() >= 4);
+    for (int level = 4; level <= 9; ++level) {
+      CAPTURE(seed);
+      CAPTURE(level);
+      const std::int64_t cell = core::LodCellSize(level);
+      // Full detail's wetness of a cell: the share of a k × k grid of its columns under water.
+      const int k = static_cast<int>(std::min<std::int64_t>(cell, 8));
+      double height_error = 0;
+      int columns = 0, wet_truth = 0, false_wet = 0, missed_wet = 0, level_checked = 0,
+          level_off = 0;
+      for (const testing::Point& p : sites) {
+        const auto ground = gen.ColumnAt(p.x, p.z);
+        const LodCoord mid = SectionAt(level, p.x, static_cast<std::int64_t>(ground.height), p.z);
+        // Each column's surface, from whichever row holds it.
+        core::LodSurfaces surface(static_cast<std::size_t>(core::kLodPad * core::kLodPad));
+        for (int dj = -1; dj <= 1; ++dj) {
+          LodCells cells;
+          core::LodSurfaces s;
+          LodCoord c = mid;
+          c.j += dj;
+          if (gen.GenerateLod(c, cells, &s) != LodKind::kContent) continue;
+          for (std::size_t n = 0; n < s.size(); ++n)
+            if (s[n].valid && !surface[n].valid) surface[n] = s[n];
+        }
+        const auto o = core::LodSectionOrigin(mid);
+        const int sx = static_cast<int>((p.x - o.x) / cell),
+                  sz = static_cast<int>((p.z - o.z) / cell);
+        for (int z = std::max(0, sz - 6); z <= std::min(N - 1, sz + 6); ++z)
+          for (int x = std::max(0, sx - 6); x <= std::min(N - 1, sx + 6); ++x) {
+            const auto& sf = surface[static_cast<std::size_t>((z + 1) * core::kLodPad + x + 1)];
+            const std::int64_t x0 = o.x + x * cell, z0 = o.z + z * cell;
+            const auto centre = gen.ColumnAt(static_cast<std::int32_t>(x0 + cell / 2),
+                                             static_cast<std::int32_t>(z0 + cell / 2));
+            if (!sf.valid || centre.outside || centre.coast <= 0.0f) continue;
+            int wet = 0;
+            for (int b = 0; b < k; ++b)
+              for (int a = 0; a < k; ++a) {
+                const auto col =
+                    gen.ColumnAt(static_cast<std::int32_t>(x0 + (2 * a + 1) * cell / (2 * k)),
+                                 static_cast<std::int32_t>(z0 + (2 * b + 1) * cell / (2 * k)));
+                wet += col.height < static_cast<float>(col.water);
+              }
+            ++columns;
+            height_error += std::abs(sf.height - centre.height);
+            // Clearly wet or clearly dry in full detail (cells about half under water may go
+            // either way).
+            // A wet column carries its water's level (the client draws the water there, not at
+            // its cell's top): full detail's at the cell's centre.
+            if (sf.wet && centre.height < static_cast<float>(centre.water)) {
+              ++level_checked;
+              level_off += sf.water != static_cast<float>(centre.water);
+            }
+            if (4 * wet >= 3 * k * k) {
+              ++wet_truth;
+              missed_wet += !sf.wet;
+            } else if (4 * wet <= k * k) {
+              false_wet += sf.wet;
+            }
+          }
+      }
+      REQUIRE(columns > 0);
+      MESSAGE("seed " << seed << " level " << level << ": |height| " << height_error / columns
+                      << " m over " << columns << " columns; wet " << wet_truth << ", missed "
+                      << missed_wet << ", false " << false_wet);
+      // The ground: within a metre or so up to 128 m cells (the valleys kept, the channels' carve
+      // at most a few metres), a few metres beyond (the octaves finer than a cell dropped).
+      CHECK(height_error / columns < (level <= 7 ? 1.5 : level == 8 ? 5.0 : 8.0));
+      // The water: no more than a sliver of columns wet that full detail shows dry, or dry that it
+      // shows wet.
+      CHECK(false_wet <= columns / 50);
+      CHECK(missed_wet <= std::max(1, wet_truth / 10));
+      MESSAGE("water levels: " << level_off << " of " << level_checked << " differ");
+      CHECK(level_off == 0);
     }
   }
 }

@@ -891,7 +891,10 @@ export class LodSystem {
     const out = new Float32Array(n.surface);
     const y0 = sectionOrigin(n.coord)[1];
     const size = cellSize(n.coord[0]);
-    for (let i = 0; i < out.length; i += SURFACE_STRIDE) out[i] = ((out[i] ?? 0) - y0) / size;
+    for (let i = 0; i < out.length; i += SURFACE_STRIDE) {
+      out[i] = ((out[i] ?? 0) - y0) / size;
+      out[i + 3] = ((out[i + 3] ?? 0) - y0) / size; // the water's level (where wet)
+    }
     return out;
   }
 

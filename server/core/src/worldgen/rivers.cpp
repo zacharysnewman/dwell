@@ -143,12 +143,10 @@ Seeds MakeSeeds(std::uint64_t world_seed) {
 
 namespace {
 
-// Factor a tier's noise is divided by so its channel is at least one cell wide (≥ 1).
+// 1 if a tier's channel is shown in cells `cell` wide (0: exact), else 0.
 template <const Tier& T>
-float Widen(std::int64_t cell) {
-  if (cell <= 0) return 1.0f;
-  const float one_cell = static_cast<float>(cell) / static_cast<float>(T.wavelength);
-  return one_cell > T.core ? one_cell / T.core : 1.0f;
+float Channel(std::int64_t cell) {
+  return T.channel_cell > 0 && cell >= T.channel_cell ? 0.0f : 1.0f;
 }
 
 // Perlin noise (zero on the lattice's points, within ±~0.7) of one tier at (x, z); 1 (far from any
@@ -172,7 +170,7 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
   if (cell >= kLakeSkipCell) {
     // Lakes (≤ 4 km across) and the great river's windings (2.5 km) are sub-cell here.
     c.rg = TierNoise<kGreat>(s.great, x + s.offset_x[0], z + s.offset_z[0], cell);
-    c.wg = Widen<kGreat>(cell);
+    c.cg = Channel<kGreat>(cell);
     return c;
   }
   // From 256 m cells on, neighbouring samples lie in different lattice cells: evaluate directly.
@@ -182,7 +180,7 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
     const std::int64_t gx = FloorToInt(smooth.gx * kGreatMeanderAmplitude);
     const std::int64_t gz = FloorToInt(smooth.gz * kGreatMeanderAmplitude);
     c.rg = TierNoise<kGreat>(s.great, x + gx + s.offset_x[0], z + gz + s.offset_z[0], cell);
-    c.wg = Widen<kGreat>(cell);
+    c.cg = Channel<kGreat>(cell);
   }
   // The two small tiers meander too: sampled at a position displaced by a gentle vector noise.
   const bool small_tiers = cell < kRiver.drop_cell;
@@ -196,8 +194,8 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
         kMeanderAmplitude);
     c.r1 = TierNoise<kRiver>(s.river, x + m.x + s.offset_x[1], z + m.z + s.offset_z[1], cell);
     c.r2 = TierNoise<kStream>(s.stream, x + m.x + s.offset_x[2], z + m.z + s.offset_z[2], cell);
-    c.w1 = Widen<kRiver>(cell);
-    c.w2 = Widen<kStream>(cell);
+    c.c1 = Channel<kRiver>(cell);
+    c.c2 = Channel<kStream>(cell);
     c.spring = smooth.spring;
   }
 

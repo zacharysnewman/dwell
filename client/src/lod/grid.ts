@@ -11,6 +11,11 @@ export const MAX_LEVEL = Lod.maxLevel;
 export const INDEX_LEVEL = Lod.indexLevel;
 export const LOD_PAD = SECTION_CELLS + 2;
 export const LOD_VOLUME = LOD_PAD * LOD_PAD * LOD_PAD;
+/**
+ * Floats per column of a generated section's surface (C++ core::LodSurface, worldgen_api.cpp):
+ * height, material, flags (1 valid, 2 wet), and where wet the water's level.
+ */
+export const SURFACE_STRIDE = 4;
 export const ORIGIN: Vec3 = [-(2 ** 23), World.worldMinY, -(2 ** 23)];
 
 /** [level, i, j, k]. */
