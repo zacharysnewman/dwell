@@ -19,13 +19,13 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 |---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes merged in #7, #8 and #10) |
-| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built: 3a–3e merged (3d block edits and meshing workers, 3e persistence and debug tooling, in #13). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight (merged in #14); playtest follow-ups — fog off, super tall mountains (generator version 4) — merged in #15; chunks shown first on slow devices (#16), no popping when turning and matching distant colours (#17), flight/HUD/transport fixes and the distant-water comparison (#18), distant terrain at its true height and tinted distant water (#19); seamless see-through distant water and no cracks at section borders (#20); z-fighting on distant water fixed (#21); height fog with a settings menu (#22); fog defaults from playtesting, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead (#23); a flight speed slider (protocol v9, #28); the slider as a true minimum near the ground (#32); caves deep underground drawn (#33), without requesting buried chunks, plus an FPS counter (#37); frame rate and memory falling/growing for minutes (playtest): the LOD view held within its cache budget, its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory as settings (#42); batched terrain behind `?batch=1` and a `?scale=` resolution switch, to compare on devices (#43); playtest: batching and scale faster, but periodic crashes in mobile Safari — a memory readout in F3 and a phone memory budget (#44); outstanding: the frame-rate check on a desktop and a mobile device |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
-| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete: merged in #46 and #47, `v0.1.0` released and the site deployed by the Release run on 2026-10-06. 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing, merged in #52 and released as the dev build `v0.2.1-dev.7` (a stable release is the owner's call); outstanding: the phone-width check |
-| 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) |
-| 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the CI run on `main` for the merge failed in the storage WASM test and the touch e2e test (not yet fixed); the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made) |
+| 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off, super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead, a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget; outstanding: the frame-rate check on a desktop and a mobile device |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
+| 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check |
+| 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; the owner approved the before/after and the frame time (2026-10-06) |
+| 8 — Block registry: namespaced block states and palettes | 🚧 In progress — built and tested natively and in the client (`package.json` 0.2.0, the new compatibility line); outstanding: the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test); paletted in-memory chunks were measured and deferred |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash) |
 | 10 — Continents from Voronoi plates | ⏳ Not started |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started |
@@ -62,7 +62,7 @@ Phase 12's dome bounds (12a) can go earlier.
 
 ## Phase 0 — Repository, Tooling & GitHub Pages Pipeline
 
-**Status:** complete — CI green and the Pages deployment live (PR #2).
+**Status:** complete — CI green and the Pages deployment live.
 
 **Goal:** A working monorepo skeleton that deploys a blank client to GitHub Pages on every
 push to the default branch.
@@ -91,7 +91,7 @@ Exit criteria
 
 ## Phase 1 — Server Core, Jolt, Headless Voxel Grid & Transport
 
-**Status:** complete (PR #3), including the manual Safari check.
+**Status:** complete, including the manual Safari check.
 
 | Exit criterion | Result |
 |---|---|
@@ -166,14 +166,14 @@ Exit criteria
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
 ragdoll and animation from `State` (Phase 15, see below). Playtested by a human (Open Decision
-#9): two findings, fixed in #7: forward/back looked faster than
+#9): two findings, fixed: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
-that tick's velocity (PLAYER_CONTROLLER.md §4). The fix merged in #8.
-Later finding (fixed, merged in #10): jumping over a lone block while pressed against it
+that tick's velocity (PLAYER_CONTROLLER.md §4). The fix is in.
+Later finding (fixed): jumping over a lone block while pressed against it
 launched the player forward, and one jump floated the player up a diagonal staircase of full
 blocks — the block's top edge deflected the forward drive upwards and the airborne vertical layer
 absorbed that as an external force (a second jump). That lift is no longer absorbed
@@ -280,16 +280,16 @@ Exit criteria
 ## Phase 3 — Static Terrain Streaming
 
 **Status:** in progress — all sub-phases built; two exit criteria await playtests (the long walk,
-and walking/jumping/swimming the terrain). Sub-phases: **3a — generator** (done, #7); **3b — streaming** (done,
-merged in #9: chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
+and walking/jumping/swimming the terrain). Sub-phases: **3a — generator** (done); **3b — streaming** (done:
+chunk encoding, `Generated`/`Explicit`, the verification chunk, interest management,
 server and client worldgen pools; the walking-without-hitches exit criterion awaits a playtest);
-**3c — scale foundations** (done, merged in #12: the planet-scale world of ADR 0011 — bounds and
+**3c — scale foundations** (done: the planet-scale world of ADR 0011 — bounds and
 the rim, double-precision physics with region-anchored terrain collision, protocol v4 positions,
 generator version 3, air chunks, spherical streaming; every 3c exit criterion verified);
-**3d — block edits** (done, merged in #13: protocol v5 edit loop, block interaction and infinite
+**3d — block edits** (done: protocol v5 edit loop, block interaction and infinite
 inventory on desktop and touch, revision gaps and resync, the greedy meshing worker pool; every 3d
 exit criterion verified);
-**3e — persistence and debug tooling** (done, merged in #13: SQLite + zstd world files natively and in
+**3e — persistence and debug tooling** (done: SQLite + zstd world files natively and in
 OPFS, autosave off the tick, migrations, crash-safe saves, settings and permissions from launch
 options; the in-game terrain map and regenerate-and-diff checks; every 3e exit criterion verified).
 3c comes before edits and persistence so the world's
@@ -543,18 +543,9 @@ Exit criteria
 
 **Status:** in progress — every deliverable built (4a grid and generation, 4b propagation and
 streaming, protocol v6, 4c the client's LOD system, rendering and creative flight — protocol v7),
-in PR #14 (merged); playtest follow-ups (fog off, super tall mountains) in PR #15; a fix for
-z-fighting on distant water in #21; height fog with a settings menu in #22; full-detail chunks
-beyond the view (`ChunkRequest`, protocol v8), a velocity lookahead and the playtested fog
-defaults in #23; a flight speed slider (protocol v9, #28); the slider as a true minimum near the
-ground (#32); caves deep underground drawn — the LOD walk no longer stops at buried sections
-before their streamed chunks (#33), without requesting buried chunks (#37); frame rate and memory
-(playtest: the frame rate fell for minutes, to 11–20 fps, and Chrome's memory kept growing): the
-LOD's view held within `LOD_CACHE_MB`, its pixel error in CSS pixels, one draw call per LOD
-section, static transforms and GPU-only vertex data (#41); the LOD's pixel error and memory
-budget as settings-menu sliders (#42); batched terrain behind `?batch=1` and `?scale=` to compare
-on devices (#43); a memory readout and phone memory budget after crashes in mobile Safari
-(merged in #44). Also
+with the playtest follow-ups listed in the Progress table (full-detail chunks beyond the view,
+`ChunkRequest`, protocol v8; a flight speed slider, protocol v9; the LOD view held within
+`LOD_CACHE_MB`; batched terrain and a memory budget for phones). Also
 outstanding: z-fighting reported high up, not reproduced here (see deviations).
 Outstanding: the frame-rate part of 4c's second exit criterion, which needs a desktop GPU and a
 phone (this sandbox renders with SwiftShader). Added 2026-09-29 with [ADR 0012](./adr/0012-lod-octree.md) (concepts from
@@ -884,16 +875,13 @@ TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloud
 §10). This phase takes the web parts of the former hosting phase (now Phase 17) ahead of the
 physics phases (6–8); see *Deviations* below.
 
-**Status:** In progress — 5a merged (#25); its exit criteria are covered by `e2e/menu.spec.ts`
-(passing in CI) and a manual phone check (outstanding). #25 broke one older e2e test that opened
-the bare page expecting a local world; fixed in #26. 5b complete (#27; deploy fix #29): the
-master runs at `https://dwell-master.dropkick.workers.dev`. 5c merged (#31) with its e2e test
-failing on a race in the test itself; fixed in #34 (the same fix also merged with #33). Outstanding: the manual phone
-checks, and the TURN key (manual setup; without it the master hands out STUN only). 5d merged
-(#36): dedicated servers register with the master (join codes, join by address, "On your
-network"); outstanding is its manual phone check. 5e (the lobby list, join receipts, the server
-browser) merged (#39): every sub-phase is built, and what remains of the phase is the manual
-checks and the TURN key.
+**Status:** In progress — every sub-phase is built. 5a's exit criteria are covered by
+`e2e/menu.spec.ts` and a manual phone check (outstanding). 5b: the master runs at
+`https://dwell-master.dropkick.workers.dev`. 5c (friend worlds) has its e2e test; its phone check is
+outstanding. 5d: dedicated servers register with the master (join codes, join by address, "On your
+network"); outstanding is its manual phone check. 5e: the lobby list, join receipts and the server
+browser. What remains of the phase is the manual phone checks and the TURN key (manual setup;
+without it the master hands out STUN only).
 
 ### 5a — Main menu & world management (client only)
 
@@ -1153,13 +1141,9 @@ compatibility line** (SemVer) for now. The repository stays public under a restr
 chosen by the owner (a private-source split was considered and dropped to keep the free CI
 pipeline). Design and setup steps: [`RELEASES.md`](./RELEASES.md).
 
-**Status:** In progress — 6a complete; 6b (version selector, added 2026-10-06) built and tested
-(unit, `npm run e2e:site`), merged in #52 and released as dev build `v0.2.1-dev.7`; outstanding: the
+**Status:** In progress — 6a complete (release pipeline, launcher, version-locked worlds, license);
+6b (version selector, added 2026-10-06) built and tested (unit, `npm run e2e:site`); outstanding: the
 phone-width check, and a stable release (owner's call) for the menu link to reach stable players.
-6a merged in #46; the first real run of the release workflows (on that merge)
-published `v0.1.0-dev.1` but its site job failed on build metadata in `build.json`, and the launcher
-e2e raced a redirect; #47 fixed both, made the version follow the newest release, and released `0.1.0`
-as the first stable build (Release run 37405234222: tag, GitHub Release, site deployed).
 Absorbs Phase 17's "versioned client builds"
 for the web.
 
@@ -1280,7 +1264,7 @@ vegetation. Design, measured target palette and a full description of the refere
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1. (Colourful accent vegetation is in Phase 11c;
 clouds are in Phase 12.)
 
-**Status:** ✅ Complete — merged in #48. The owner approved the before/after screenshots and the
+**Status:** ✅ Complete. The owner approved the before/after screenshots and the
 frame time on 2026-10-06. Not done: the full-disc view is in the screenshot script but was never shot
 (a 24,000 km climb at a few frames a second); shoot it with the next change that touches the look.
 
@@ -1323,11 +1307,11 @@ files, and world files that store chunk palettes as strings, so content can chan
 saved worlds. The foundation for slopes (Phase 9), flooded blocks and new content. Design:
 [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
 
-**Status:** Merged in #51 and released as `v0.2.0` (2026-10-06). Built and tested natively and in the client; the WASM / browser checks (listed under the
-exit criteria) wait for the CI run on `main` for the merge, which was still in progress when last checked. No visible change in the game: same terrain, same
+**Status:** In progress — built and tested natively and in the client; outstanding: the WASM /
+browser checks (listed under the exit criteria). No visible change in the game: same terrain, same
 blocks. Breaking: the saved world format and the network protocol (v11) change, so it starts a new
-compatibility line: `package.json` is raised to 0.2.0 by the owner's decision (2026-10-06), and a push of
-this to `main` released `v0.2.0` ([`RELEASES.md`](./RELEASES.md)).
+compatibility line: `package.json` is raised to 0.2.0 by the owner's decision (2026-10-06)
+([`RELEASES.md`](./RELEASES.md)).
 
 Deviations from the design ([ADR 0015](./adr/0015-block-registry.md)): state ids follow the
 declaration order of the data files, not a sort by name (appending a block keeps earlier ids); a
