@@ -326,6 +326,39 @@ TEST_SUITE("player: slopes") {
     }
   }
 
+  TEST_CASE("walking across generated sloped terrain: no hops, no launches, no getting stuck") {
+    // A stretch of the real terrain (generator version 5: its surface is made of slopes and slabs).
+    for (const bool run : {false, true}) {
+      CAPTURE(run);
+      PlayerTestWorld w(player::DefaultConfig(), core::GeneratorFor(core::kGeneratorTerrain, 0));
+      const auto spawn = core::SpawnPointFor(core::kGeneratorTerrain, 0);
+      const auto e = w.Spawn(Vec3(static_cast<float>(spawn[0]), static_cast<float>(spawn[1]),
+                                  static_cast<float>(spawn[2])));
+      w.input = [run](int, PlayerHandle) { return Move(0, 1, run, false, false, 90.0f); };  // +X
+      const float x0 = w.Pos(e).GetX();
+      int airborne = 0, longest_air = 0, streak = 0;
+      float max_rise = 0.0f, max_drop = 0.0f, prev = w.Feet(e);
+      for (int i = 0; i < Ticks(12.0f); ++i) {
+        w.Step();
+        streak = w.C(e).ground.grounded ? 0 : streak + 1;
+        airborne += !w.C(e).ground.grounded;
+        longest_air = std::max(longest_air, streak);
+        max_rise = std::max(max_rise, w.Feet(e) - prev);
+        max_drop = std::max(max_drop, prev - w.Feet(e));
+        prev = w.Feet(e);
+      }
+      const float travelled = w.Pos(e).GetX() - x0;
+      const float speed = run ? player::DefaultConfig().movement.run_speed
+                              : player::DefaultConfig().movement.walk_speed;
+      MESSAGE("travelled " << travelled << " m, airborne " << airborne << " ticks (longest "
+                           << longest_air << "), largest rise " << max_rise << " drop "
+                           << max_drop);
+      CHECK(travelled > speed * 12.0f * 0.5f);  // not stuck on a ledge (the terrain has cliffs)
+      // Steps up (0.5 m slabs) happen in one tick; nothing rises faster: never launched.
+      CHECK(max_rise <= player::DefaultConfig().movement.max_step_height + speed / 60.0f);
+    }
+  }
+
   TEST_CASE("the walkable slope limit leaves room for the 45° pitch of a standard slope") {
     // A standard slope's face is exactly 45°: the limit must not hinge on float rounding.
     CHECK(player::DefaultConfig().probes.max_slope_angle >= 49.9f);

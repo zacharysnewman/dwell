@@ -24,6 +24,7 @@ add_library(dwell_core
   src/player/voxel_query.cpp
   src/worldgen/noise.cpp
   src/worldgen/terrain.cpp
+  src/worldgen/slopes.cpp
   src/storage/world_db.cpp
   src/storage/world_store.cpp)
 if(EMSCRIPTEN)

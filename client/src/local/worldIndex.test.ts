@@ -145,7 +145,7 @@ describe('world index', () => {
       name: 'Old',
       type: 'terrain',
       seed: 1,
-      generatorVersion: 4,
+      generatorVersion: 5,
       createdAt: 1,
       lastPlayedAt: 1,
     };

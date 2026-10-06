@@ -21,7 +21,7 @@ describe('main menu text', () => {
       name: 'Home',
       type: 'terrain',
       seed: 42,
-      generatorVersion: 4,
+      generatorVersion: 5,
       createdAt: 0,
       lastPlayedAt: 0,
     };

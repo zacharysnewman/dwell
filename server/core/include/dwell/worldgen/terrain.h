@@ -7,8 +7,9 @@
 
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
+#include "dwell/worldgen/slopes.h"
 
-// Procedural terrain, generator version 4 (ARCHITECTURE.md §6.3). A chunk is a pure function of
+// Procedural terrain, generator version 5 (ARCHITECTURE.md §6.3). A chunk is a pure function of
 // (world seed, chunk coordinate): every stage reads only noise and hashes of world coordinates,
 // never another chunk's data, so chunks generate in any order, on any thread, natively or in WASM,
 // with bit-identical results (noise.h, ADR 0010).
@@ -20,6 +21,8 @@
 //   4. Caves (3D): spaghetti tunnels and cheese caverns, faded out near the surface and bedrock.
 //   5. Surface and strata: grass/dirt, sand/sandstone, snow, gravel by biome and depth; water fills
 //      open space below the sea level; bedrock at the bottom.
+//   5b. Slopes (version 5, SLOPE_BLOCKS.md §5): the surface cells become slope and slab pieces from
+//      the continuous surface's heights at their corners, shared by neighbouring cells.
 //   6. Stability: small solid components floating inside the chunk are removed.
 //   7. Ores: hashed vein blobs in stone.
 //   8. Features: trees and boulders at hashed positions per region cell.
@@ -65,7 +68,8 @@ class TerrainGenerator {
     kStageStability = 1,
     kStageOres = 2,
     kStageFeatures = 4,
-    kAllStages = 7
+    kStageSlopes = 8,
+    kAllStages = 15
   };
   void Generate(const core::ChunkCoord& coord, core::Chunk& chunk,
                 std::uint8_t stages = kAllStages) const;
@@ -85,7 +89,23 @@ class TerrainGenerator {
   // Terrain solidity after caves, before the stability pass and features.
   bool SolidAt(std::int32_t x, std::int32_t y, std::int32_t z) const;
   // Top voxel of the ground near the base height, if the surface is there (open air above it).
+  // The cube terrain's ground: slopes (stage 5b) lower or raise it by less than a cell.
   std::optional<std::int32_t> GroundY(std::int32_t x, std::int32_t z) const;
+
+  // The continuous surface of a column (SLOPE_BLOCKS.md §5): the height (m) where the terrain's
+  // density crosses zero going down from the sky, if the column has a clean surface there (solid
+  // below it, no cave or overhang pocket directly under it). The cube terrain's top voxel is
+  // ceil(height) − 1.
+  struct SurfaceColumn {
+    bool valid = false;
+    float height = 0.0f;
+  };
+  SurfaceColumn SurfaceAt(std::int32_t x, std::int32_t z) const;
+  // What the slope rule makes of cell (x, y, z), from point queries alone — exactly the chunk
+  // path's decision: the piece (air, a full cube, or a slope or slab with its corner heights), or
+  // nothing when the cell stays as the cube terrain has it (no clean surface around it, or a
+  // cliff).
+  std::optional<slopes::Piece> SlopePieceAt(std::int32_t x, std::int32_t y, std::int32_t z) const;
 
   // The feature rooted in a region cell, if any (cells are kTreeCell / kBoulderCell wide).
   std::optional<Feature> TreeInCell(std::int32_t cx, std::int32_t cz) const;
@@ -129,6 +149,19 @@ class TerrainGenerator {
   static float SkyFloor(const std::vector<Column>& cols);
   Corner3 SampleCorner3(std::int32_t lx, std::int32_t ly, std::int32_t lz) const;
   static Column Finish(const Corner2& c);
+  // The continuous surface of one column from its fields and its 3D noise at lattice layers
+  // (layer(j) = the column's noise at y = 4j).
+  template <class Layer>
+  static SurfaceColumn SurfaceOf(const Column& col, Layer&& layer);
+  // Surfaces of the columns −1..S around a chunk ((S + 2)², row-major from (x0 − 1, z0 − 1)).
+  void ChunkSurfaces(const std::vector<Column>& cols, std::int32_t x0, std::int32_t y0,
+                     std::int32_t z0, std::vector<SurfaceColumn>& out) const;
+  // A level spawn: the feet height standing on the 5 × 5 patch around (x, z), if there is one.
+  bool LevelSpawnY(std::int32_t x, std::int32_t z, std::int32_t& feet) const;
+  // Step 5b of the chunk path: shapes the surface cells.
+  void ShapeSurface(const std::vector<Column>& cols, const std::vector<SurfaceColumn>& surfaces,
+                    std::int32_t y0,
+                    std::array<core::MaterialId, core::kChunkVolume>& voxels) const;
   // Level of detail: a column's fields and a point's 3D noise at a cell size (octaves dropped).
   Column ColumnLod(std::int64_t x, std::int64_t z, std::int64_t cell) const;
   Corner3 NoiseLod(std::int64_t x, std::int64_t y, std::int64_t z, std::int64_t cell) const;

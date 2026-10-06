@@ -16,7 +16,7 @@ namespace {
 
 dwell::core::ChunkGenerator g_generator;
 std::unique_ptr<dwell::core::Chunk> g_chunk;
-std::unique_ptr<dwell::worldgen::TerrainGenerator> g_terrain;  // generator version 4 only
+std::unique_ptr<dwell::worldgen::TerrainGenerator> g_terrain;  // the terrain generator only
 std::vector<std::uint8_t> g_map;
 dwell::core::LodGenerator g_lod;
 dwell::core::LodBoundsFn g_lod_bounds;

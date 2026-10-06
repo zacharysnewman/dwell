@@ -98,13 +98,14 @@ void GenerateEmptyChunk(const ChunkCoord& coord, Chunk& chunk);
 void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk);
 
 // Generator versions announced in Welcome (§6.3): 0 = flat test world, 1 = playground,
-// 4 = procedural terrain (worldgen::TerrainGenerator, uses the world seed; 2 was the
-// pre-planet-scale terrain and 3 the terrain before super tall massifs, both retired). Unknown
+// 5 = procedural terrain (worldgen::TerrainGenerator, uses the world seed; 2 was the
+// pre-planet-scale terrain, 3 the terrain before super tall massifs and 4 the terrain before
+// slopes, all retired). Unknown
 // versions fall back to the flat world. Bump the terrain version for any change that alters its
 // output.
 inline constexpr std::uint32_t kGeneratorFlat = 0;
 inline constexpr std::uint32_t kGeneratorPlayground = 1;
-inline constexpr std::uint32_t kGeneratorTerrain = 4;
+inline constexpr std::uint32_t kGeneratorTerrain = 5;
 ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world_seed = 0);
 // The generator's all-air test. The terrain's caches per chunk column (not thread-safe: one per
 // thread).
