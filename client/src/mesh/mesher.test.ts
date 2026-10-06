@@ -4,6 +4,9 @@ import { stateId } from '../world/blocks';
 import { meshChunk, PADDED_VOLUME, paddedIndex, type MeshArrays } from './mesher';
 
 const WATER = stateId('dwell:water');
+const GRASS = stateId('dwell:grass');
+const LADDER_NORTH = stateId('dwell:ladder[facing=north,flooded=false]');
+const UNKNOWN = 65_000;
 
 /** Padded voxels with the given cells set (chunk-local, −1..32). */
 function voxels(cells: [number, number, number, number][]): Uint16Array {
@@ -136,7 +139,7 @@ describe('greedy chunk mesher', () => {
 
   it('draws a ladder as one plate near the back of its cell', () => {
     // ladder_n faces −Z (face 5): the plate is at z = 1 − 0.05.
-    const { opaque } = meshChunk(voxels([[0, 0, 0, 6]]));
+    const { opaque } = meshChunk(voxels([[0, 0, 0, LADDER_NORTH]]));
     expect(quads(opaque)).toBe(1);
     expect(opaque.positions[2]).toBeCloseTo(0.95);
     expect(opaque.normals[2]).toBe(-1);
@@ -145,8 +148,8 @@ describe('greedy chunk mesher', () => {
   it('textures faces by material and face: grass top and side, unknown ids plain magenta', () => {
     const { opaque } = meshChunk(
       voxels([
-        [0, 0, 0, 4],
-        [5, 0, 0, 999],
+        [0, 0, 0, GRASS],
+        [5, 0, 0, UNKNOWN],
       ]),
     );
     const tileOf = (q: number) => [opaque.tiles[q * 16] ?? 0, opaque.tiles[q * 16 + 1] ?? 0];

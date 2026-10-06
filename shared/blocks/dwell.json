@@ -1,6 +1,7 @@
 {
   "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). The content is prototype (ARCHITECTURE.md §6.1).",
   "namespace": "dwell",
+  "shapeFamilies": ["stone", "dirt", "grass", "sand", "sandstone", "gravel", "snow", "log"],
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
@@ -19,10 +20,7 @@
       "name": "grass", "density": 1400, "shape": "full", "placeable": true,
       "color": "#8dbf3f", "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
-    {
-      "name": "stone_slab", "density": 2400, "shape": "slab_bottom", "look": "slab", "placeable": true,
-      "color": "#c8bdb4", "textures": "stone"
-    },
+    { "name": "stone_slab", "family": "slab", "of": "stone", "placeable": true },
     {
       "name": "ladder", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
       "facingProperty": "facing",

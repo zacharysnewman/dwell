@@ -24,6 +24,7 @@ import { formatDebug, type Hud } from '../ui/hud';
 import type { ChunkStreamer, StreamStats } from '../world/chunkStream';
 import type { LodCamera } from '../lod/frustum';
 import { formatLodStats, type LodStats, type LodSystem } from '../lod/lodSystem';
+import { SHAPES } from '../world/blocks';
 import { materialStyle } from '../world/materials';
 import { EyeCamera } from './eye';
 import { isCrouched, isDead, RemotePlayers } from './remotes';
@@ -349,8 +350,10 @@ export class Game {
       this.renderer.setBlockOutline(null);
       return;
     }
-    const slab = materialStyle(this.voxel(...t.cell)).look === 'slab';
-    this.renderer.setBlockOutline(t.cell, slab ? 0.5 : 1);
+    // The outline hugs the shape's top: slabs and low slopes are not a full cell tall.
+    const style = materialStyle(this.voxel(...t.cell));
+    const shape = style.look === 'shaped' ? SHAPES[style.shape] : undefined;
+    this.renderer.setBlockOutline(t.cell, shape && !shape.inverted ? shape.maxY : 1);
   }
 
   private playerView(

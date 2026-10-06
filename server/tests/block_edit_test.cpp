@@ -48,7 +48,8 @@ TEST_CASE("block edit: the palette (the registry's placeable states)") {
   }
   CHECK(placeable ==
         std::vector<std::string_view>{
-            "dwell:stone", "dwell:dirt", "dwell:grass", "dwell:stone_slab",
+            "dwell:stone", "dwell:dirt", "dwell:grass",
+            "dwell:stone_slab[flooded=false,half=bottom]",
             "dwell:ladder[facing=north,flooded=false]", "dwell:ladder[facing=east,flooded=false]",
             "dwell:ladder[facing=south,flooded=false]", "dwell:ladder[facing=west,flooded=false]",
             "dwell:sand", "dwell:sandstone", "dwell:gravel", "dwell:snow", "dwell:log",

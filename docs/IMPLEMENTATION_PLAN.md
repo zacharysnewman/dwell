@@ -25,8 +25,8 @@ them (see `CLAUDE.md`). This table summarizes each phase.
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — 5a (main menu, world management, game menu) merged; e2e passing, phone check outstanding; a broken older e2e test fixed in #26. 5b (master Worker skeleton, signing, CI, deploy workflow) complete — deployed at `dwell-master.dropkick.workers.dev` (#27, #29). 5c (friend worlds: host from the browser, join by code) merged (#31); its e2e test fixed (#34; the same fix also merged with #33); phone checks and the TURN key outstanding. 5d (dedicated servers on the master, join by address, On your network) merged (#36); phone check outstanding. 5e (lobby list, receipts, server browser) merged (#39). Every sub-phase built; outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key | #25 (5a), #26 (fix), #27, #29 (5b), #31, #34 (5c), #36 (5d), #39 (5e) |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | ✅ Complete — merged in #46 and #47 (the first run's fixes); `v0.1.0` released and the site deployed by the Release run on 2026-10-06 | #46, #47 |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — released as `v0.1.1` once merged (`package.json` raised to 0.1.1); shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; the owner approved the before/after and the frame time (2026-10-06) | #48 |
-| 8 — Block registry: namespaced block states and palettes | 🚧 In progress — every deliverable built and verified natively and in the client (C++ suite, Vitest); outstanding: the checks that need the WASM build and a browser (golden world file, determinism goldens under WASM and the client module, the e2e palette test), run by CI on the PR. `package.json` raised to 0.2.0 (the new compatibility line, set by the owner); releases as `v0.2.0` once merged | #51 |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | ⏳ Not started | — |
+| 8 — Block registry: namespaced block states and palettes | ✅ Complete (merged) — merged in #51 and released as `v0.2.0` on 2026-10-06 (`package.json` 0.2.0, the new compatibility line); outstanding: the WASM/browser checks (golden world file, determinism goldens under WASM and the client module, the e2e palette test) wait for the CI run on `main` for the merge (in progress when checked), and paletted in-memory chunks were measured and deferred | #51 |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a started | — |
 | 10 — Continents from Voronoi plates | ⏳ Not started | — |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started | — |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 | — |
@@ -1270,11 +1270,11 @@ files, and world files that store chunk palettes as strings, so content can chan
 saved worlds. The foundation for slopes (Phase 9), flooded blocks and new content. Design:
 [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md).
 
-**Status:** Built and tested natively and in the client (PR #51); the WASM / browser checks (listed under the
-exit criteria) wait for its CI. No visible change in the game: same terrain, same
+**Status:** Merged in #51 and released as `v0.2.0` (2026-10-06). Built and tested natively and in the client; the WASM / browser checks (listed under the
+exit criteria) wait for the CI run on `main` for the merge, which was still in progress when last checked. No visible change in the game: same terrain, same
 blocks. Breaking: the saved world format and the network protocol (v11) change, so it starts a new
 compatibility line: `package.json` is raised to 0.2.0 by the owner's decision (2026-10-06), and a push of
-this to `main` releases `v0.2.0` ([`RELEASES.md`](./RELEASES.md)).
+this to `main` released `v0.2.0` ([`RELEASES.md`](./RELEASES.md)).
 
 Deviations from the design ([ADR 0015](./adr/0015-block-registry.md)): state ids follow the
 declaration order of the data files, not a sort by name (appending a block keeps earlier ids); a

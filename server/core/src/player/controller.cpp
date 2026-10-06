@@ -14,6 +14,7 @@
 #include <numbers>
 #include <optional>
 
+#include "dwell/core/block_shape.h"
 #include "dwell/core/physics_world.h"
 #include "dwell/core/terrain_collision.h"
 
@@ -584,7 +585,9 @@ bool Players::AutoJumpObstacle(Player& p) {
   const auto z = static_cast<std::int32_t>(std::floor(probe.GetZ()));
   const auto y = static_cast<std::int32_t>(std::floor(feet + cfg.movement.max_step_height + 0.05f));
   const float top =
-      static_cast<float>(y) + core::ShapeHeight(core::GetMaterial(query_.Material(x, y, z)).shape);
+      static_cast<float>(y) + core::SurfaceHeightAt(query_.Material(x, y, z),
+                                                    static_cast<float>(probe.GetX() - x),
+                                                    static_cast<float>(probe.GetZ() - z));
   if (top <= feet + cfg.movement.max_step_height || top > feet + 1.05f) return false;
   for (int above = 1; above <= 2; ++above) {
     if (core::GetMaterial(query_.Material(x, y + above, z)).shape != core::VoxelShape::kEmpty) {

@@ -97,7 +97,7 @@ TEST_CASE("block registry: properties are read and set by name") {
 TEST_CASE("block registry: behaviour comes from the data files") {
   CHECK(GetMaterial(Materials::kLadderFacingEast).climbable);
   CHECK(GetMaterial(Materials::kLadderFacingEast).facing == Facing::kEast);
-  CHECK(GetMaterial(Materials::kStoneSlab).shape == VoxelShape::kSlabBottom);
+  CHECK(GetMaterial(Materials::kStoneSlab).shape == VoxelShape::kShaped);
   CHECK(GetMaterial(Materials::kWater).liquid);
   CHECK(GetMaterial(Materials::kBedrock).indestructible);
   CHECK(GetMaterial(Materials::kLaunchPad).launch_speed == 14.0f);

@@ -1,5 +1,7 @@
 #include "dwell/core/block_edit.h"
 
+#include "dwell/core/block_shape.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -9,32 +11,13 @@ namespace {
 
 constexpr float kInf = std::numeric_limits<float>::infinity();
 
-// Height of a cell's targeting box (slabs: the bottom half).
-float BoxHeight(MaterialId m) {
-  return GetMaterial(m).shape == VoxelShape::kSlabBottom ? 0.5f : 1.0f;
-}
-
-// Ray (origin o, direction d; relative coordinates) against the box [lo, hi]: entry distance and
-// the axis entered through, or nothing. A box containing the origin is not hit.
-std::optional<std::pair<float, int>> EnterBox(const float (&o)[3], const float (&d)[3],
-                                              const float (&lo)[3], const float (&hi)[3]) {
-  float t_enter = -kInf, t_exit = kInf;
-  int axis = -1;
-  for (int i = 0; i < 3; ++i) {
-    if (d[i] == 0.0f) {
-      if (o[i] < lo[i] || o[i] > hi[i]) return std::nullopt;
-      continue;
-    }
-    float t0 = (lo[i] - o[i]) / d[i], t1 = (hi[i] - o[i]) / d[i];
-    if (t0 > t1) std::swap(t0, t1);
-    if (t0 > t_enter) {
-      t_enter = t0;
-      axis = i;
-    }
-    t_exit = std::min(t_exit, t1);
-  }
-  if (axis < 0 || t_enter > t_exit || t_enter < 0.0f) return std::nullopt;
-  return std::make_pair(t_enter, axis);
+// The cell face a surface normal points through: its dominant axis, with ties going to the
+// vertical (so a 45° slope's surface is "the top"). 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
+int FaceOfNormal(const float (&n)[3]) {
+  const float ax = std::fabs(n[0]), ay = std::fabs(n[1]), az = std::fabs(n[2]);
+  if (ay >= ax && ay >= az) return n[1] > 0.0f ? 2 : 3;
+  if (ax >= az) return n[0] > 0.0f ? 0 : 1;
+  return n[2] > 0.0f ? 4 : 5;
 }
 
 bool InWorldRows(std::int32_t y) { return y >= kWorldMinY && y < kWorldMaxY; }
@@ -71,15 +54,14 @@ std::optional<BlockHit> RaycastBlock(VoxelWorld& world, const std::array<double,
   for (float t_cell = 0.0f; t_cell <= max_distance;) {
     const MaterialId m = world.GetVoxel(base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]);
     if (Targetable(m)) {
-      const float lo[3] = {static_cast<float>(cell[0]), static_cast<float>(cell[1]),
-                           static_cast<float>(cell[2])};
-      const float hi[3] = {lo[0] + 1.0f, lo[1] + BoxHeight(m), lo[2] + 1.0f};
-      if (const auto hit = EnterBox(o, d, lo, hi); hit && hit->first <= max_distance) {
-        const int axis = hit->second;
+      const float corner[3] = {static_cast<float>(cell[0]), static_cast<float>(cell[1]),
+                               static_cast<float>(cell[2])};
+      if (const auto hit = RayEnterShape(ShapeOf(m), corner, o, d, max_distance);
+          hit && hit->t <= max_distance) {
         BlockHit out;
         for (int i = 0; i < 3; ++i) out.cell[i] = base[i] + cell[i];
-        out.face = axis * 2 + (d[axis] > 0.0f ? 1 : 0);  // entering +X-going: the −X face
-        out.distance = hit->first;
+        out.face = FaceOfNormal(hit->normal);
+        out.distance = hit->t;
         return out;
       }
     }
@@ -109,36 +91,60 @@ EditOutcome CheckBlockEdit(VoxelWorld& world, const protocol::BlockEditRequest& 
   const MaterialId target = world.GetVoxel(c[0], c[1], c[2]);
   if (!Targetable(target)) return {EditCheck::kNothingThere};
 
-  // Line of sight: the eye is in front of the targeted face, and a ray from it reaches the target
-  // cell first at the face's centre or one of four points near its corners.
   const auto& n = kFaceDirs[request.face];
-  const int axis = request.face / 2;
-  const float height = BoxHeight(target);
-  const double size[3] = {1.0, height, 1.0};
-  const double plane = c[axis] + (n[axis] > 0 ? size[axis] : 0.0);
-  if ((eye[axis] - plane) * n[axis] <= 0.0) return {EditCheck::kNoLineOfSight};
-  const int u = (axis + 1) % 3, v = (axis + 2) % 3;
-  constexpr double kSamples[5][2] = {
-      {0.5, 0.5}, {0.15, 0.15}, {0.85, 0.15}, {0.15, 0.85}, {0.85, 0.85}};
+
+  // Line of sight: the eye is in front of a surface of the target whose normal points through the
+  // requested face (a cell face, or a sloped face whose normal mostly does), and a ray from it
+  // reaches the target cell first at the polygon's centre or one of its corners' neighbourhoods.
+  const ShapeInfo& target_shape = ShapeOf(target);
   bool visible = false;
-  for (const auto& s : kSamples) {
-    std::array<double, 3> p;
-    p[axis] = plane + 0.01 * n[axis];
-    p[u] = c[u] + s[0] * size[u];
-    p[v] = c[v] + s[1] * size[v];
-    std::array<double, 3> delta{p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]};
-    const double length =
-        std::sqrt(delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]);
-    if (length <= 0.0) continue;
-    const std::array<float, 3> dir{static_cast<float>(delta[0] / length),
-                                   static_cast<float>(delta[1] / length),
-                                   static_cast<float>(delta[2] / length)};
-    // On past the point: a grazing ray needs a while to cross the 1 cm to the face, and past the
-    // plane it can only enter the target (the point lies well inside the face).
-    const auto hit = RaycastBlock(world, eye, dir, static_cast<float>(length) + 1.0f);
-    if (hit && hit->cell == c) {
-      visible = true;
-      break;
+  for (const ShapeFace& polygon : FacesOf(target_shape)) {
+    if (visible) break;
+    const float pts[4][3] = {{polygon.v[0][0], polygon.v[0][1], polygon.v[0][2]},
+                             {polygon.v[1][0], polygon.v[1][1], polygon.v[1][2]},
+                             {polygon.v[2][0], polygon.v[2][1], polygon.v[2][2]},
+                             {polygon.v[3][0], polygon.v[3][1], polygon.v[3][2]}};
+    float normal[3];  // cross(p1 − p0, p2 − p0)
+    {
+      const float e1[3] = {pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]};
+      const float e2[3] = {pts[2][0] - pts[0][0], pts[2][1] - pts[0][1], pts[2][2] - pts[0][2]};
+      normal[0] = e1[1] * e2[2] - e1[2] * e2[1];
+      normal[1] = e1[2] * e2[0] - e1[0] * e2[2];
+      normal[2] = e1[0] * e2[1] - e1[1] * e2[0];
+    }
+    const float length_n =
+        std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+    if (length_n <= 0.0f) continue;
+    for (float& v : normal) v /= length_n;
+    if (FaceOfNormal(normal) != request.face) continue;
+    // The eye must be on the outer side of the polygon's plane.
+    const double side = (eye[0] - (c[0] + pts[0][0])) * normal[0] +
+                        (eye[1] - (c[1] + pts[0][1])) * normal[1] +
+                        (eye[2] - (c[2] + pts[0][2])) * normal[2];
+    if (side <= 0.0) continue;
+    float centre[3] = {0, 0, 0};
+    for (int i = 0; i < polygon.count; ++i) {
+      for (int k = 0; k < 3; ++k) centre[k] += pts[i][k] / static_cast<float>(polygon.count);
+    }
+    for (int sample = -1; sample < polygon.count && !visible; ++sample) {
+      std::array<double, 3> p;
+      for (int k = 0; k < 3; ++k) {
+        // The centre, then 70 % of the way from it to each corner (the old 0.15 / 0.85 points).
+        const float local =
+            sample < 0 ? centre[k] : centre[k] + 0.7f * (pts[sample][k] - centre[k]);
+        p[k] = c[k] + static_cast<double>(local) + 0.01 * normal[k];
+      }
+      std::array<double, 3> delta{p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]};
+      const double length =
+          std::sqrt(delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]);
+      if (length <= 0.0) continue;
+      const std::array<float, 3> dir{static_cast<float>(delta[0] / length),
+                                     static_cast<float>(delta[1] / length),
+                                     static_cast<float>(delta[2] / length)};
+      // On past the point: a grazing ray needs a while to cross the 1 cm to the face, and past
+      // the plane it can only enter the target (the point lies well inside the face).
+      const auto hit = RaycastBlock(world, eye, dir, static_cast<float>(length) + 1.0f);
+      if (hit && hit->cell == c) visible = true;
     }
   }
   if (!visible) return {EditCheck::kNoLineOfSight};
@@ -160,20 +166,17 @@ EditOutcome CheckBlockEdit(VoxelWorld& world, const protocol::BlockEditRequest& 
   if (Targetable(existing)) return {EditCheck::kOccupied};
   const MaterialInfo& placed = GetMaterial(out.material);
   if (placed.solid) {
-    // Vertical capsule segment against the placed shape's box (exact: the closest points separate
-    // into the horizontal and vertical directions).
-    const double lo[3] = {static_cast<double>(out.cell[0]), static_cast<double>(out.cell[1]),
-                          static_cast<double>(out.cell[2])};
-    const double hi[3] = {lo[0] + 1.0, lo[1] + ShapeHeight(placed.shape), lo[2] + 1.0};
+    // Each player's vertical capsule axis against the placed shape's true surface, in the cell's
+    // own coordinates (the closest points of a vertical segment and a polygon never need the
+    // far-away absolute position).
+    const ShapeInfo& shape = ShapeOf(out.material);
     for (const EditCapsule& p : players) {
-      const auto gap = [](double v, double a, double b) {
-        return v < a ? a - v : v > b ? v - b : 0.0;
-      };
-      const double dx = gap(p.center[0], lo[0], hi[0]);
-      const double dz = gap(p.center[2], lo[2], hi[2]);
-      const double bottom = p.center[1] - p.half_cylinder, top = p.center[1] + p.half_cylinder;
-      const double dy = top < lo[1] ? lo[1] - top : bottom > hi[1] ? bottom - hi[1] : 0.0;
-      if (dx * dx + dy * dy + dz * dz < static_cast<double>(p.radius) * p.radius) {
+      const auto x = static_cast<float>(p.center[0] - out.cell[0]);
+      const auto z = static_cast<float>(p.center[2] - out.cell[2]);
+      const auto y = p.center[1] - out.cell[1];
+      const float bottom = static_cast<float>(y - p.half_cylinder);
+      const float top = static_cast<float>(y + p.half_cylinder);
+      if (VerticalSegmentDistanceSq(shape, x, z, bottom, top) < p.radius * p.radius) {
         return {EditCheck::kIntoPlayer};
       }
     }

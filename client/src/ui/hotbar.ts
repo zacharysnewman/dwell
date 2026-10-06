@@ -2,6 +2,7 @@
 // Number keys and the scroll wheel (desktop) or tapping a slot (touch) change the selection.
 import type { PaletteSlot } from '../interact/blockInteraction';
 import { sharedAtlas, TILE, tilePixels } from '../render/textures';
+import { SHAPES } from '../world/blocks';
 import { materialStyle } from '../world/materials';
 
 /** Key label of a slot: 1–9, then 0 for the tenth; later slots are reached by scrolling. */
@@ -87,6 +88,7 @@ function swatch(material: number): HTMLCanvasElement {
     ctx.fillStyle = `#${style.color.toString(16).padStart(6, '0')}`;
     ctx.fillRect(0, 0, TILE, TILE);
   }
-  if (style.look === 'slab') ctx.clearRect(0, 0, TILE, TILE / 2);
+  const shape = style.look === 'shaped' ? SHAPES[style.shape] : undefined;
+  if (shape && !shape.inverted) ctx.clearRect(0, 0, TILE, TILE * (1 - shape.maxY));
   return canvas;
 }
