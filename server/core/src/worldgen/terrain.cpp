@@ -31,7 +31,19 @@ constexpr float kLatticeStep = 0.25f;  // 1 / kLattice, exact
 constexpr int kSurfacePad = 8;
 // Solid components smaller than this, not touching a chunk face, are removed (stability pass).
 constexpr int kMinComponent = 48;
-constexpr int kSnowLine = 900;
+// Altitude bands follow the ground's temperature (which the lapse rate lowers with height): snow
+// lies where it falls below kSnowTemperature, and above the tree line, where it falls below
+// kTreeLineTemperature, the ground is bare rock. At a sea-level temperature of 0 these are 1,080 m
+// and 620 m; in a colder region they are lower, in a hotter one higher.
+constexpr float kSnowTemperature = -0.35f;
+constexpr float kTreeLineTemperature = -0.2f;
+// Climate: the wavelength (m) of the continental temperature field (humidity's is half), and the
+// lapse rate — the temperature field's units drop this much per metre of height (one unit is about
+// 20 °C, so 6.5 °C per km).
+constexpr std::int32_t kClimateWavelength = 1'200'000;
+constexpr float kLapsePerMetre = 0.000325f;
+// A land column is the mountains biome where its ground stands this far above its valley floor.
+constexpr float kMountainRelief = 200.0f;
 // Level of detail: erosion (raw) and ridges when the cell is wider than all their octaves — the
 // value whose mountain weight (0.28) and ridged height (0.61) are the fields' means (§6.6).
 constexpr float kLodErosion = -0.078f;
@@ -116,7 +128,7 @@ Cell Classify(const Column& col, std::int32_t y, Noise&& noise) {
 }
 
 // Surface material for a solid voxel `run` voxels below open air or water (run 0 = the top voxel).
-MaterialId SurfaceMaterial(const Column& col, int run, bool under_water, std::int32_t y,
+MaterialId SurfaceMaterial(const Column& col, int run, bool under_water, std::int32_t /*y*/,
                            float slope) {
   if (run >= 8) return M::kStone;
   if (under_water) {
@@ -135,8 +147,8 @@ MaterialId SurfaceMaterial(const Column& col, int run, bool under_water, std::in
       if (steep) return M::kStone;
       return run == 0 ? M::kSnow : run < 4 ? M::kDirt : M::kStone;
     case Biome::kMountains:
-      if (y >= kSnowLine && run == 0 && slope < 4.0f) return M::kSnow;
-      if (steep || y >= kSnowLine) return M::kStone;
+      if (col.temperature < kSnowTemperature && run == 0 && slope < 4.0f) return M::kSnow;
+      if (steep || col.temperature < kTreeLineTemperature) return M::kStone;
       return run == 0 ? M::kGrass : run < 3 ? M::kDirt : M::kStone;
     case Biome::kPlains:
     case Biome::kForest:
@@ -229,12 +241,25 @@ TerrainGenerator::Corner2 TerrainGenerator::SampleCorner2(std::int32_t lx, std::
   return c;
 }
 
+// Climate (generator version 8): temperature and humidity vary over continents, not over a few
+// hundred metres, so biomes come in regions of tens to hundreds of kilometres; a small local
+// octave pair keeps their borders from being smooth curves. `kept` (level of detail): octaves kept
+// of the local pair, −1 for all.
+float TerrainGenerator::Temperature(std::int64_t x, std::int64_t z, int kept) const {
+  return 0.95f * Fbm2(seeds_.temperature, x, z, kClimateWavelength, 2) +
+         0.05f * Fbm2(seeds_.temperature ^ 0x5bd1e995u, x, z, 1100, 2, kept);
+}
+float TerrainGenerator::Humidity(std::int64_t x, std::int64_t z, int kept) const {
+  return 0.95f * Fbm2(seeds_.humidity, x, z, kClimateWavelength / 2, 3) +
+         0.05f * Fbm2(seeds_.humidity ^ 0x68e31da4u, x, z, 900, 2, kept);
+}
+
 TerrainGenerator::Corner2 TerrainGenerator::SampleBase(std::int64_t x, std::int64_t z) const {
   Corner2 c;
   c.continentalness = Fbm2(seeds_.continent, x, z, 1400, 5);
   c.erosion = Fbm2(seeds_.erosion, x, z, 700, 3);
-  c.temperature = Fbm2(seeds_.temperature, x, z, 1100, 3);
-  c.humidity = Fbm2(seeds_.humidity, x, z, 900, 3);
+  c.temperature = Temperature(x, z, -1);
+  c.humidity = Humidity(x, z, -1);
   c.hills = Fbm2(seeds_.hills, x, z, 96, 4);
   c.ridges = Ridged2(seeds_.ridges, x, z, 360, 5);
   c.macro = Fbm2(seeds_.macro, x, z, kMacroWavelength, 4);
@@ -392,13 +417,20 @@ Column TerrainGenerator::Finish(const Corner2& c) const {
   col.overhang = OverhangAmplitude(land, col.mountain) * (1.0f - col.wet);
 
   const float h = col.height;
-  if (col.mountain > 0.45f) {
+  // The temperature at the ground: the lapse rate takes it down with height, so snow lies on high
+  // ground and, in cold regions, everywhere.
+  col.temperature = Clamp(col.temperature - kLapsePerMetre * std::max(h, 0.0f), -1.0f, 1.0f);
+  const float snowy_here = SmoothStep(-0.3f, -0.5f, col.temperature);
+  // Desert too is a matter of the ground's temperature: hot dry plains, not hot dry mountaintops.
+  const float desert_here =
+      SmoothStep(0.1f, 0.3f, col.temperature) * SmoothStep(0.1f, -0.1f, col.humidity);
+  if (h - valley > kMountainRelief) {
     col.biome = Biome::kMountains;
-  } else if (snowy > 0.5f) {
+  } else if (snowy_here > 0.5f) {
     col.biome = Biome::kSnowy;
   } else if (h < static_cast<float>(kSeaLevel) + 2.0f && cont < 0.02f) {
     col.biome = Biome::kBeach;
-  } else if (desert > 0.5f) {
+  } else if (desert_here > 0.5f) {
     col.biome = Biome::kDesert;
   } else if (forest > plains) {
     col.biome = Biome::kForest;
@@ -824,7 +856,7 @@ std::optional<Feature> TerrainGenerator::TreeInCell(std::int32_t cx, std::int32_
       kind = Feature::Kind::kSpruce;
       break;
     case Biome::kMountains:
-      chance = col.height < 600.0f ? 0.12f : 0.0f;
+      chance = col.temperature > kTreeLineTemperature ? 0.12f : 0.0f;  // below the tree line
       kind = Feature::Kind::kSpruce;
       break;
     default:
@@ -1314,8 +1346,8 @@ Column TerrainGenerator::ColumnLod(std::int64_t x, std::int64_t z, std::int64_t 
   Corner2 c;
   c.continentalness = Fbm2(seeds_.continent, x, z, 1400, 5, kept(1400, 5));
   c.erosion = Fbm2(seeds_.erosion, x, z, 700, 3, kept(700, 3));
-  c.temperature = Fbm2(seeds_.temperature, x, z, 1100, 3, kept(1100, 3));
-  c.humidity = Fbm2(seeds_.humidity, x, z, 900, 3, kept(900, 3));
+  c.temperature = Temperature(x, z, kept(1100, 2));
+  c.humidity = Humidity(x, z, kept(900, 2));
   c.hills = Fbm2(seeds_.hills, x, z, 96, 4, kept(96, 4));
   c.ridges = Ridged2(seeds_.ridges, x, z, 360, 5, kept(360, 5));
   c.macro = Fbm2(seeds_.macro, x, z, kMacroWavelength, 4, kept(kMacroWavelength, 4));

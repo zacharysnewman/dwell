@@ -28,7 +28,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review |
 | 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
-| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`), tested natively; outstanding for 11a: the WASM suites and client-module goldens (CI), the manual river walk, the owner's review of the map images, `package.json` raised to 0.5.0, the new compatibility line (generator v7); 11b–11d not started |
+| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`), tested natively; outstanding for 11a: the WASM suites and client-module goldens (CI), the manual river walk, the owner's review of the map images, `package.json` raised to 0.5.0, the new compatibility line (generator v7), then to 0.6.0 for the climate (generator v8); 11b–11d not started |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
 | 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started |
 | 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
@@ -1495,7 +1495,9 @@ distance and rain shadows; biomes from a data table driven by the terrain, with 
 vegetation. Design: §3.
 
 **Status:** In progress. Planned sub-phases (each a generator version bump): **11a — height model,
-rivers, lakes, water above sea level** (built: generator version 7, tested natively; outstanding: the
+rivers, lakes, water above sea level** (built: generator version 7, tested natively; the climate was then moved to continental scale as
+version 8 after a playtest found snow scattered everywhere — ADR 0019, the first part of 11c's
+temperature; outstanding: the
 WASM suites and client goldens in CI, the manual river walk, the owner's review of the map images and
 of the new compatibility line); **11b — mountain detail cascade** (not started); **11c — climate, the
 biome table and colourful vegetation** (not started); **11d — fantasy landforms** (karst spires,

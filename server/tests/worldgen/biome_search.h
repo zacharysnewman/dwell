@@ -28,6 +28,16 @@ inline std::optional<std::pair<std::int32_t, std::int32_t>> FindBiome(
           if (is(z, x)) return std::pair{z, x};
         }
   }
+  // Climate regions are hundreds of kilometres across (generator version 8): a land biome that is
+  // not within 192 km of the origin is looked for on a coarse grid of rings out to the rim.
+  if (biome != Biome::kOcean && biome != Biome::kBeach) {
+    for (std::int32_t r = 192'000; r <= 7'000'000; r += 24'000)
+      for (std::int32_t a = -r; a <= r; a += 24'000)
+        for (const std::int32_t b : {-r, r}) {
+          if (core::InsideWorldDisc(a, b) && is(a, b)) return std::pair{a, b};
+          if (core::InsideWorldDisc(b, a) && is(b, a)) return std::pair{b, a};
+        }
+  }
   // Around the coast met walking out from the origin in each of eight directions.
   constexpr int kDirs[8][2] = {{1, 0}, {0, 1},  {-1, 0}, {0, -1},
                                {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
