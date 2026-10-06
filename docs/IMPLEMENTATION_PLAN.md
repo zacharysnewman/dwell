@@ -1410,8 +1410,8 @@ Exit criteria
 - [ ] Controller slope scenarios pass natively (done, at the origin and ~8,000 km out) and in WASM
   (CI); the divergence check passes (CI); no slope launches, hops or sliding at rest.
 - [ ] Generated slopes within half a block of the continuous surface, shared corners agree, flooded
-  below water; LOD slopes within half a cell (all tested natively: 99.9 % within half a block,
-  worst 0.75 m since 0.3.1 / 0.4.1; every shaped cell on a full one); determinism goldens pass everywhere (native done; WASM and client module in CI).
+  below water; LOD slopes within half a cell (all tested natively: 99.8 % within half a block,
+  worst 0.72 m since 0.3.1 / 0.4.1; every shaped cell on a full one); determinism goldens pass everywhere (native done; WASM and client module in CI).
 - [ ] e2e: every shape in every orientation placed and broken, seen identically by a second client.
 - [ ] Frame time within budget on desktop and a phone; chunk generation and meshing times reported.
 - [ ] Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.

@@ -21,8 +21,8 @@
 >   cell, or a block from a half-height) are clamped to the cell holding the column's own surface,
 >   so steep ground and cliffs get a sloped lip on every step instead of cubes (§5 step 2's "the
 >   cell above is considered instead" stacked two pieces with a gap under the upper one in 0.3.0;
->   fixed in place, without a new generator version, by the owner's decision). 99.9 % of shaped columns lie within half a block of the surface (worst 0.75 m); shared
->   edges at the same level differ by half a block in 4.1 % of neighbouring pairs, never more.
+>   fixed in place, without a new generator version, by the owner's decision). 99.8 % of shaped columns lie within half a block of the surface (worst 0.72 m); shared
+>   edges at the same level differ by half a block in 5.7 % of neighbouring pairs, never more.
 > - LOD (§3.2): a column's piece is clamped to its own cell (a corner above the cell's top gives a
 >   gentler facet); sea floors stay flat; walls follow the slopes' edges.
 > - The creative palette (§6): one slot per material and a shape key (R, Shift+R, or the button beside

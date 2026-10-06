@@ -653,7 +653,9 @@ arithmetic, so features placed by point queries agree with the chunks.
    to a half. Each column has **one surface cell**, with solid cells under it and open cells over
    it (since the 0.3.1 and 0.4.1 patches): where the four corners fit one cell, that cell, exactly; where they
    span more (ground steeper than a block per cell, or a block from a half-height to the next), the
-   cell holding the column's own surface, within the corners' span, with the corners clamped to it
+   cell holding the column's own surface, within the corners' span (a column above or below all
+   its corners — a peak, a cliff's top, a pit — may keep a cube at its own height), with the
+   corners clamped to it
    — so a step of the surface carries a slope on top and a piece never rests on another piece's
    slope. The cell stays within a block of the column's own surface. Its piece comes from the
    (clamped) corner heights relative to its floor — the nine shapes in four orientations and the
@@ -663,9 +665,9 @@ arithmetic, so features placed by point queries agree with the chunks.
    (a chunk computes the surface of every column next to one near it). Columns among whose nine
    columns one has no clean surface (a cave or overhang pocket at the surface) stay cubes. The
    material is the column's surface material; shapes under `SEA_LEVEL` are flooded. Sampled over
-   generated terrain, 99.9 % of shaped columns lie within half a block of the continuous surface
-   (worst 0.75 m); neighbouring shaped cells at the same level differ at their shared edge by at
-   most half a block (in 4.1 % of pairs, where the nearest-piece rule bends a corner or a steep cell
+   generated terrain, 99.8 % of shaped columns lie within half a block of the continuous surface
+   (worst 0.72 m); neighbouring shaped cells at the same level differ at their shared edge by at
+   most half a block (in 5.7 % of pairs, where the nearest-piece rule bends a corner or a steep cell
    is clamped); every shaped cell stands on a full one; and of ~11,000 one-block steps sampled on
    gentle ground and in mountains, none is left as two bare cubes (0.3.0: 39 %, and 14 % of shaped
    cells hung over a gap). The fix changed the terrain within the generator version and the 0.3 and
