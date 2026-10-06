@@ -121,4 +121,24 @@ describe.skipIf(skip)('worldgen module (WASM)', () => {
     // Generators without a terrain map (flat, playground) have none.
     expect((await loadGenerator(GENERATORS.flat, 0n)).map(0, 0, 8, 4)).toBeNull();
   });
+
+  it('samples the whole disc (the map zoomed all the way out): land at the origin, mostly ocean, a void corner', async () => {
+    const gen = await loadGenerator(GENERATOR_TERRAIN, 0n);
+    const n = 32;
+    const step = (2 * World.worldRadius) / n;
+    const bytes = gen.map(-World.worldRadius, -World.worldRadius, step, n) ?? new Uint8Array(0);
+    expect(bytes.length).toBe(n * n * 4);
+    expect(mapColumn(bytes, n, n / 2, n / 2).biome).not.toBe(0); // the origin is on land
+    expect(mapColumn(bytes, n, 0, 0).outside).toBe(true); // the corner is beyond the rim
+    let ocean = 0;
+    let inside = 0;
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++) {
+        const c = mapColumn(bytes, n, i, j);
+        if (c.outside) continue;
+        inside++;
+        if (c.biome === 0) ocean++;
+      }
+    expect(ocean / inside).toBeGreaterThan(0.5); // the continents cover a quarter to a third
+  });
 });

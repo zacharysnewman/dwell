@@ -105,7 +105,7 @@ void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk);
 // output.
 inline constexpr std::uint32_t kGeneratorFlat = 0;
 inline constexpr std::uint32_t kGeneratorPlayground = 1;
-inline constexpr std::uint32_t kGeneratorTerrain = 5;
+inline constexpr std::uint32_t kGeneratorTerrain = 6;
 ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world_seed = 0);
 // The generator's all-air test. The terrain's caches per chunk column (not thread-safe: one per
 // thread).

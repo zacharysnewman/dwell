@@ -98,7 +98,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 5, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 6, §6.3) by
    default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
@@ -356,12 +356,12 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 |---|---|
 | `game/` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with the client sim, sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the sim, nudges its tick rate from the server's input buffer, streams terrain around the player (chunk data and voxel modifications to `world/`, mesh jobs within a per-frame budget), drives the first-person camera (per-tick eye height with crouch and step-up/down smoothing, `eye.ts`), block targeting and its outline, and the HUD. `RemotePlayers`: snapshot buffer, interpolation `INTERP_DELAY_MS` in the past. |
 | `sim/` **[built]** | `ClientCore`: the client's own instance of the sim-core WASM on the main thread (`dwell_client_*` exports): a streamed world holding the chunks the server sent (`setChunk` / `removeChunk`) and the voxel edits applied to them (`editChunk`), the C++ `Predictor` (prediction world with the local player, dead-reckoned remote proxies, terrain), its state block as 64 doubles (positions anywhere in the 8,192 km world), block targeting (`target`: the same `RaycastBlock` the server checks line of sight with, §6.5), and each chunk's voxels with a one-voxel apron for the meshing workers (`paddedChunk`). |
-| `predict/` **[built]** | Keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block); the creative-flight toggle (`flight.ts`, Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1); touch controls for phones and tablets (`touch.ts`: floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button top right toggling the F3 debug overlay, one captured Pointer Events pointer per control, merged into the same sampled input); and input quantization mirroring the C++ `QuantizeInput`. |
+| `predict/` **[built]** | Keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4 and its zoom `-`/`=`; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block); the creative-flight toggle (`flight.ts`, Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1); touch controls for phones and tablets (`touch.ts`: floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button top right toggling the F3 debug overlay, one captured Pointer Events pointer per control, merged into the same sampled input); and input quantization mirroring the C++ `QuantizeInput`. |
 | `net/` **[built]** | `Transport` interface; `WebTransportTransport` (cert-hash pinning, stream framing; a closing connection first reads the control stream to its end, up to 2 s, so the server's last message — a `Reject` such as `Replaced` — is not lost to a write racing the close; datagram writes never queue — one in flight and only the newest waiting per message type, `datagramSender.ts`, so slow frames cannot build input latency), `WebRtcTransport` (builds the ICE-lite server's answer from the invite), `LoopbackTransport`; `openTransport` picks WebTransport and falls back to WebRTC (`?transport=` forces one); invite parsing; `ClientSession` (handshake, reliable and datagram RTT, gameplay messages); `SimulatedTransport` (`?netsim=rtt,jitter,loss%`). **[built, Phase 5b–5c]** The master client (`master.ts`: signed requests, rooms, TURN credentials, the room socket URL; `roomSocket.ts`: the signaling WebSocket); `peer.ts`: `PeerTransport`, full WebRTC to a browser-hosted friend world negotiated through the room, and `HostPeer`, the host's side of one guest; `hosting.ts`: the host's relay between the room, its guests' peer connections and the local-mode worker (§10.2); `connectToRoom` joins by code (`joinCode.ts`). **[built, Phase 5d]** `connectToCode` resolves a code first: a dedicated server is joined like an invite link (`serverInvite`), a friend world through its room; the master client also resolves typed addresses and lists games on the player's network. **[built, Phase 6]** The master reports the host's app version: `connectToCode` throws `HostVersionError` for a host on another version line (§10.5), and the page then opens the launcher with `?code=…&v=<host version>`. **[built, Phase 5e]** The lobby list (`MasterClient.lobby`, with search and filters) and join receipts (`connectToCode` posts one once it has joined a dedicated server it resolved); `statusPing.ts` pings a server for the server browser (`StatusRequest` over a fresh transport, closed after the answer; 5 s timeout). |
 | `protocol/` **[built]** | Codecs mirroring the C++ ones (including the chunk palette + RLE, `chunkVoxels.ts`), constants generated from `shared/protocol`. |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
 | `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handles (the database, its journal, and a WAL for opening a dedicated server's file), opened by the worker before the core starts and handed to its VFS as `dwellFiles`; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. **[built, Phase 6]** The index records each world's `appVersion` and is a cross-version contract (append-only; unknown fields and unreadable records are preserved on rewrite); worlds without a version are listed apart; `worldAccess.ts` says whether this build may open a world (§6.4); `LocalCore.load` throws when the world file is locked to another version (`dwell_local_create` returns 3). |
-| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick, frame rate — `fps.ts`, per full second); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns at 8 m around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, the full-detail distance, §6.6, and the tone-mapping exposure — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices, and a Versions link to the launcher's version page (Phase 6b); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
+| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick, frame rate — `fps.ts`, per full second); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading; Phase 10: `-` and `=` zoom from 8 m per column out to the whole disc at 128 km, centred on the origin, with the player a dot on it); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, the full-detail distance, §6.6, and the tone-mapping exposure — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices, and a Versions link to the launcher's version page (Phase 6b); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | The block registry (`blocks.gen.ts` generated from `shared/blocks/`, `blocks.ts`: canonical strings, parse, properties, registry hash, §6.1; checked against the same vector as the C++ one) and, over it, the render styles and the placeable set (`materials.ts`). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
@@ -515,31 +515,39 @@ The pipeline structure below (deterministic stages, lattice-sampled fields, orde
 features) is architecture; its current *content* — the biomes, surface materials, ores, trees and
 boulders — is prototype (§6.1).
 
-**[planned, Phases 7, 10–12]** The world's look and shape are redesigned in
+**[built, Phases 7 and 10; planned, 11–12]** The world's look and shape are redesigned in
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a first pass at a warm, colourful fantasy palette,
-lighting and sky, rendering only (Phase 7); continents from Voronoi plates with guaranteed ocean
-between them (Phase 10); drainage-consistent terrain — rivers as noise contours in valley floors,
-water above sea level, climate, a biome table and colourful accent vegetation (Phase 11); and a full
-hemispherical dome over the disc (radius 8,192 km) sparsely filled with sky islands, which raises
-the world's ceiling from 6,144 m to the dome, makes the LOD octree 3D above level 8 and changes
-`LodIndex` (Phase 12). **[planned, Phase 13]** The world becomes **bifacial**: a
+lighting and sky, rendering only (Phase 7, built); continents from Voronoi plates with guaranteed
+ocean between them (Phase 10, built: *Continents from Voronoi plates* below); drainage-consistent
+terrain — rivers as noise contours in valley floors, water above sea level, climate, a biome table
+and colourful accent vegetation (Phase 11, planned); and a full hemispherical dome over the disc
+(radius 8,192 km) sparsely filled with sky islands, which raises the world's ceiling from 6,144 m
+to the dome, makes the LOD octree 3D above level 8 and changes `LodIndex` (Phase 12, planned).
+**[planned, Phase 13]** The world becomes **bifacial**: a
 second face on the disc's underside, mirrored about the midplane (y = −2,048), with its own
 terrain and dome, and gravity toward the midplane on both sides ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md)).
-Nothing below changes until those phases land; each updates this section, §6.6
+Nothing below changes for the planned phases until they land; each updates this section, §6.6
 and §5 as it does.
 
-**Built (Phases 3a, 3c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
-`src/worldgen/`) is **generator version 5** (3c: the planet-scale world as version 3; Phase 4 adds
-super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; versions 2–4
-are retired — a world saved with one loads as the flat world) and
+**Built (Phases 3a, 3c, 10):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
+`src/worldgen/`) is **generator version 6** (3c: the planet-scale world as version 3; Phase 4 adds
+super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; Phase 10
+replaces the land/sea noise with the plate layout as version 6; versions 2–5 are retired — a world
+saved with one loads as the flat world; the version launcher opens the build that saved it, §2.1) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
 tests and movement work. Players spawn at the generator's spawn point: the first level, open,
 tree-free land found in an 8 m spiral from the origin. A chunk takes ~1.2 ms to generate natively
 (Release) and ~1.5 ms in WASM, anywhere in the world (`dwell_worldgen_inspect`). Debug tooling:
 `dwell_worldgen_inspect [seed] [x] [z] [m/char] [slice]` prints an ASCII biome/height map (with
 biome shares, timings, and the spawn; blank beyond the rim) or a 1:1 vertical section, at any
-coordinates. In game (Phase 3e), F4 shows the terrain's biome/height map around the player and
-the F3 overlay the player's chunk regenerated and diffed against the world's; `dwell_world FILE
+coordinates; **(Phase 10)** `dwell_worldgen_inspect [seed] disc out.ppm [km/px] [continents|height]`
+writes the whole disc as a PPM (land by continent id, islands, internal plate edges, the sea shaded by
+distance from the coast; or a hill-shaded height map from the full pipeline) and prints the
+continents' areas and the land share, `… [seed] stats [seeds]` tabulates the layout over many
+seeds, and `… [seed] bench` times chunk and LOD generation (reported in every worldgen change). In
+game (Phase 3e), F4 shows the terrain's biome/height map around the player — and, since Phase 10,
+`-` and `=` zoom it out and in, from 8 m per column (1 km across) to the whole disc (128 km per
+column) — and the F3 overlay the player's chunk regenerated and diffed against the world's; `dwell_world FILE
 diff` does the same for a world file (§6.4). **Built (Phase 3b):** streaming, the verification chunk, and the generation pools
 (below).
 
@@ -559,17 +567,53 @@ A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
   translations in double precision, and debug lines are drawn relative to their first point. The
   player controller suite, golden trace and netcode tests run both at the origin and ~8,000 km
   from it (`--dwell-origin-x=far`), natively and in WASM, with the same results.
-- **Scale of terrain:** a placeholder planet-scale layer (prototype content, §6.1; generator
-  version 3, extended in 4): continents and oceans a few hundred kilometres across (a 262 km fBm
-  shifting continentalness), ranges up to ~1 950 m on large landmasses, **massifs** in the cores
-  of the largest ranges whose crests rise a further 3,600 m (peaks ~5.3–5.6 km, about 1 % of land
-  above 3 km; kept under `WORLD_MAX_Y` with room for trees), and basins to ~−540 m under large
-  oceans. The full-detail world (~5 × 10¹³ chunks) is never generated wholesale — distant terrain
-  comes from the LOD system (§6.6).
+- **Scale of terrain:** (prototype content, §6.1) since generator version 6 (Phase 10), **12–13
+  continents** of ~2–7.5 million km² in cells of 2,560 km — a quarter to a third of the disc is land —
+  with at least 300 km of open ocean between any two, island chains in the ocean, an ocean ring
+  512 km wide at the rim, and an ocean floor of continental shelf, slope and abyss (−1,200 to
+  −1,800 m; *Continents from Voronoi plates* below). On the landmasses a placeholder planet-scale
+  layer (generator versions 3–4; a 262 km fBm now only modulates relief): ranges up to ~1 950 m,
+  **massifs** in the cores of the largest ranges whose crests rise a further 3,600 m (peaks
+  ~5.3–5.6 km, about 1 % of land above 3 km; kept under `WORLD_MAX_Y` with room for trees). The
+  full-detail world (~5 × 10¹³ chunks) is never generated wholesale — distant terrain comes from the
+  LOD system (§6.6).
 
 Everywhere, the generator leaves everything below `WORLD_MIN_Y` (the void, which kills) and at or
 above `WORLD_MAX_Y` empty, and the bottom layers (`y < WORLD_MIN_Y + BEDROCK_LAYERS`) are
 indestructible **bedrock** — the primary anchor for structural integrity (§7.1).
+
+#### Continents from Voronoi plates **[built, Phase 10]**
+([ADR 0017](./adr/0017-continents-from-voronoi-plates.md); design and rationale in
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2; `worldgen/continents.h`.) The disc's land and sea
+come from a layout, a pure function of (seed, world coordinates) like every stage:
+- **Two Voronoi layers** on jittered grids centred on the origin: continent cells of 2,560 km and
+  plates of 256 km, one site per cell in the middle 60 % of it, both looked up at a domain-warped
+  point (a 76.8 km vector noise). A seed-hashed number (12–13) of continent cells are land — the
+  origin's always, with its site on the origin — the rest ocean; a plate is land when its cell is and
+  its site lies 90 km inside the border (a few edge plates are bays), sea otherwise, and 5 % of ocean
+  plates far from any continent are island plates, holding blob islands of 8–24 km radius.
+- **The signed coast distance** `s` (m, positive on land) is half the difference of the distances to
+  the nearest sea and land plate sites (zero on the bisectors between them; saturating at ±256 km),
+  plus fractal coast detail — nine octaves of noise from 400 km to 1.6 km, amplitude 100 km falling
+  ×0.65 per octave — that fades out far from the coast. The 1.4 km octaves of the old
+  continentalness stay on the 4 m lattice.
+- **Separation, guaranteed.** Land of a continent is clamped to stay `OCEAN_GAP` (300 km, widened by
+  the warp's stretch and a slack) from every other land cell's side of the border, so any two
+  continents are at least 300 km apart whatever the noise does; islands keep 750 km from land
+  cells' borders; nothing is land within 512 km of the rim. Tests check all three by sampling
+  (`continents_test.cpp`).
+- **Per continent** (hashed from its id, a cell): interior elevation, mountainousness, temperature
+  and humidity bias, wind direction and shelf width (`ContinentRecord`); and for land, the distance
+  to the nearest internal plate edge and its convergence, exported in `Column` for Phase 11.
+- **The macro lattice.** The layout's fields are exact at the corners of a 256 m lattice
+  (cached per thread) and bilinear between: chunks (through their 4 m lattice), point queries
+  (`ColumnAt` and the rest) and the level of detail read the same values, and the layout costs a
+  chunk about four lattice corners. `TerrainGenerator::LandAt` evaluates the layout at a point
+  exactly, without the lattice, for statistics and tools.
+- **Terrain from it:** on land, continentalness rises as `s / (s + 40 km)` and the base height rises
+  from the coastal lowland to the continent's interior (plus its elevation); at sea the base height
+  follows the shelf (to −150 m at its edge, 80–160 km out), the continental slope and the abyss.
+  Hills and ranges begin 0.5 km offshore of the coast and are full 4 km inland.
 
 #### Generator pipeline **[built]**
 Executed per chunk. Every stage reads only noise and hashes of world coordinates, never another
@@ -578,16 +622,18 @@ chunk's data, so chunks can be generated in any order and in parallel. 2D fields
 linear in y); the chunk path and the point queries (`ColumnAt`, `SolidAt`, `GroundY`) share that
 arithmetic, so features placed by point queries agree with the chunks.
 
-1. **Climate (2D).** Low-frequency fBm for continentalness, erosion, temperature, and humidity.
-   Biome weights (desert, snowy, forest, plains) blend smoothly across borders; the column's biome
+1. **Climate (2D).** Continentalness is the signed distance to the coast of the continent layout
+   (above), mapped to −1..1; low-frequency fBm gives erosion, temperature, and humidity. Biome
+   weights (desert, snowy, forest, plains) blend smoothly across borders; the column's biome
    (ocean, beach, plains, forest, desert, snowy, mountains) is the dominant one after height rules.
-   Version 3 adds the planet-scale fields (a 262 km fBm for land and ocean, a 49 km ridged fBm
-   for ranges).
-2. **Base height (2D).** A continentalness spline (deep ocean ~−42 m → coast ~2 m → uplands
-   ~40 m; sea level 0), plus biome-blended hills (fBm, amplitude 4–12 m by biome), plus ridged
-   fractal mountains where continentalness is high and erosion low (up to ~190 m), plus the
-   planet-scale ranges (1,800 m at a crest, 5,400 m where the 262 km field is highest: the
-   massifs of version 4) and basins.
+   Version 3 adds the planet-scale fields (a 262 km fBm that now modulates relief, a 49 km ridged
+   fBm for ranges).
+2. **Base height (2D).** On land a continentalness spline (coast ~2 m → uplands ~40 m; sea level
+   0) plus the continent's elevation; at sea the shelf, slope and abyss profile of the coast
+   distance (ocean floor ~−1,500 m); plus biome-blended hills (fBm, amplitude 4–12 m by biome),
+   plus ridged fractal mountains where continentalness is high and erosion low (up to ~190 m),
+   plus the planet-scale ranges (1,800 m at a crest, 5,400 m where the 262 km field is highest:
+   the massifs of version 4).
 3. **Density (3D).** `density = (height − y) + overhang × overhangNoise3D(x, y, z)`; solid where
    `density > 0`. The overhang amplitude is ~3.5 m on land and up to ~17 m in mountains, giving
    overhangs and cliffs.
@@ -637,11 +683,15 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
 - The generator lives in `server/core` (C++), and the client runs the **same code compiled to
   WASM** — there is no second TypeScript implementation.
 - Noise uses integer hashing for gradients and evaluates in strict IEEE float: only `+ − × /`
-  and comparisons, `-ffp-contract=off`, no `-ffast-math`, no library calls.
+  and comparisons, `-ffp-contract=off`, no `-ffast-math`, no library calls — but for the correctly
+  rounded `sqrt` of the continent layout, which IEEE 754 fixes to the last bit (x86-64 `sqrtsd`,
+  WebAssembly `f64.sqrt`; [ADR 0017](./adr/0017-continents-from-voronoi-plates.md) amends ADR 0010).
 - A golden test (`server/tests/worldgen/golden/chunk-hashes.txt`) hashes chunks across the
   pipeline for two seeds — surface, caves, deep rock, bedrock, sky, the top of the world, ocean,
-  mountains, the rim, terrain ~8,000 km out, and a massif ~5.4 km up; CI runs it natively and under WASM (Node) and in
-  the client's worldgen module.
+  mountains, the rim, terrain ~8,000 km out, and a massif ~5.4 km up — and, since Phase 10, for
+  both seeds a coast, the middle of an ocean gap between two continents (its seabed and the water
+  over it), an island, another continent's interior and the abyss; CI runs it natively and under
+  WASM (Node) and in the client's worldgen module.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
 - **[built, Phase 3c]** Planet-scale coordinates (ADR 0011): noise never converts a whole world
@@ -652,8 +702,9 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   split ones not.
 - **[built, Phase 4a]** `GenerateLod` (§6.6) follows the same rules and has its own golden
   hashes (`server/tests/worldgen/golden/lod-hashes.txt`: the surface near the spawn, mountains,
-  ocean, the rim, terrain ~8,000 km out, the index level and the root), checked natively, under
-  WASM (Node) and in the client's worldgen module.
+  ocean, the rim, terrain ~8,000 km out, the index level and the root, and — Phase 10 — a coast, an
+  ocean gap, an island, an interior and the abyss at several levels), checked natively, under WASM
+  (Node) and in the client's worldgen module.
 
 #### Authority, storage, and streaming **[built]**
 - **Server storage.** The server's `VoxelWorld` holds chunks only while they are needed: every 64
@@ -909,7 +960,12 @@ order (`EncodeLodCells`; `writeLodCells` in TypeScript); a terrain section near 
   cave air is never seen from afar, and leaving it solid keeps LOD meshes free of enclosed
   faces), trees only in cells up to 4 m and boulders up to 2 m (a cell takes a feature's
   material when the feature fills at least half of it), ores and the stability pass not at all;
-  surface materials follow the column's depth in metres. The apron below the world reads as
+  surface materials follow the column's depth in metres. **(Phase 10)** The continent layout
+  (§6.3) is read from the macro lattice in cells narrower than 256 m, and evaluated at the cell's
+  centre in wider ones with the coast octaves the cell can resolve — at anchors every 4 columns,
+  the columns between interpolated only inside a continent's interior or the deep sea, every column
+  exact at coasts, shelves and channels — and the thresholded erosion and ridged fields a cell is too
+  wide for read their world means, not zero (zero flattened every interior). The apron below the world reads as
   bedrock, so the world's floor is never drawn. Measured against the downsample of generated
   chunks at the spawn and a site of each biome (levels 1–2, 3 in the mountains): ≥ 96% of cells
   agree in class (air, liquid, solid) and ≥ 97% of columns' surfaces are within one cell

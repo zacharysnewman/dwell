@@ -22,6 +22,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0014](0014-versioned-releases.md) | Versioned releases: builds as tagged GitHub Releases behind a launcher, worlds locked to their compatibility line | Accepted |
 | [0015](0015-block-registry.md) | Block registry: namespaced block states, generated registries, string palettes on disk | Accepted |
 | [0016](0016-slope-blocks.md) | Slope blocks: shaped block families, one baked shape table, shaped terrain | Accepted |
+| [0017](0017-continents-from-voronoi-plates.md) | Continents from Voronoi plates: a plate layout, a separation clamp, a macro lattice, and `sqrt` | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

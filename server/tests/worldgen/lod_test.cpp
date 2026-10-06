@@ -17,6 +17,8 @@
 #include "dwell/protocol/messages.h"
 #include "dwell/worldgen/terrain.h"
 
+#include "biome_search.h"
+
 using namespace dwell;
 using core::Chunk;
 using core::ChunkCoord;
@@ -25,6 +27,7 @@ using core::LodCells;
 using core::LodCoord;
 using core::LodKind;
 using core::MaterialId;
+using testing::FindBiome;
 using worldgen::TerrainGenerator;
 namespace M = core::Materials;
 
@@ -57,18 +60,6 @@ LodCoord SectionAt(int level, std::int64_t x, std::int64_t y, std::int64_t z) {
     return static_cast<std::int32_t>(d >= 0 ? d / s : -((-d + s - 1) / s));
   };
   return {level, div(x, core::kLodOriginX), div(y, core::kLodOriginY), div(z, core::kLodOriginZ)};
-}
-
-// A column of each biome near the origin, on a coarse grid (as the worldgen tests find them).
-std::optional<std::pair<std::int32_t, std::int32_t>> FindBiome(const TerrainGenerator& gen,
-                                                               worldgen::Biome biome) {
-  for (int r = 0; r < 4000; r += 48)
-    for (int x = -r; x <= r; x += 48)
-      for (const int z : {-r, r}) {
-        if (gen.ColumnAt(x, z).biome == biome) return std::pair{x, z};
-        if (gen.ColumnAt(z, x).biome == biome) return std::pair{z, x};
-      }
-  return std::nullopt;
 }
 
 int ClassOf(MaterialId m) { return m == M::kAir ? 0 : core::LodSolid(m) ? 2 : 1; }
@@ -354,11 +345,10 @@ TEST_SUITE("lod: sea") {
     // Regression: at coarse levels a cell spans the sea floor and the sea; with liquids counted
     // apart from solids the floor won and oceans looked like dry land from afar.
     const TerrainGenerator gen(0);
-    // A deep ocean (a planet-scale basin), found on a coarse grid.
-    std::optional<std::pair<std::int32_t, std::int32_t>> ocean;
-    for (std::int32_t r = 0; !ocean && r < 600'000; r += 8192)
-      for (std::int32_t x = -r; !ocean && x <= r; x += 8192)
-        if (gen.ColumnAt(x, r).height < -200.0f) ocean = std::pair{x, r};
+    // The abyss: open ocean far from every coast, found on the layout.
+    const auto landmarks = testing::FindLandmarks(gen);
+    REQUIRE(landmarks.found);
+    const std::optional<std::pair<std::int32_t, std::int32_t>> ocean = landmarks.abyss;
     REQUIRE(ocean);
     for (const int level : {6, 8, 10}) {
       CAPTURE(level);
@@ -399,7 +389,7 @@ TEST_SUITE("lod: golden") {
       int level;
       std::int64_t x, y, z;  // a world point inside the section
     };
-    const std::vector<Case> cases = {
+    std::vector<Case> cases = {
         {0, 1, 0, 0, 0},
         {0, 2, 0, -64, 0},
         {0, 3, -440, 0, -1150},
@@ -414,6 +404,21 @@ TEST_SUITE("lod: golden") {
         {0, 6, 97152, 5400, 1178496},  // a massif's peak
         {0, 9, 97152, 5400, 1178496},
     };
+    // The plate layout (Phase 10): a coast, an ocean gap between two continents, an island, another
+    // continent's interior and the abyss, at several levels.
+    for (const std::uint64_t seed : {std::uint64_t{0}, std::uint64_t{20260925}}) {
+      const auto lm = testing::FindLandmarks(TerrainGenerator(seed));
+      REQUIRE(lm.found);
+      const auto at = [](std::pair<std::int32_t, std::int32_t> p) { return p; };
+      for (const int level : {1, 4, 8})
+        cases.push_back({seed, level, at(lm.coast).first, 0, at(lm.coast).second});
+      for (const int level : {6, 9})
+        cases.push_back({seed, level, at(lm.gap).first, -400, at(lm.gap).second});
+      for (const int level : {2, 5})
+        cases.push_back({seed, level, at(lm.island).first, 0, at(lm.island).second});
+      cases.push_back({seed, 3, at(lm.interior).first, 0, at(lm.interior).second});
+      cases.push_back({seed, 7, at(lm.abyss).first, -900, at(lm.abyss).second});
+    }
     std::vector<std::string> actual;
     for (const Case& k : cases) {
       const TerrainGenerator gen(k.seed);
@@ -429,7 +434,7 @@ TEST_SUITE("lod: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 5\n";
+      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 6\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden LOD hashes written to " << path);
@@ -521,8 +526,9 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
     MESSAGE("level " << level << ": cell tops " << error_cells / columns << " m above the surface, "
                      << "column surfaces " << (valid ? error_surface / valid : 0) << " m (" << valid
                      << "/" << columns << " columns)");
-    // Levels 1–2 keep a whole cell where 3D noise raised the ground above the column's height.
-    CHECK(valid >= columns * (level <= 2 ? 75 : 95) / 100);
+    // Levels 1–3 keep a whole cell where 3D noise raised the ground above the column's height
+    // (overhangs, which grow with the mountains of a continent's interior).
+    CHECK(valid >= columns * (level <= 2 ? 75 : level <= 3 ? 90 : 95) / 100);
     // Unbiased within a few metres (coarse columns drop octaves finer than the cell).
     CHECK(std::abs(error_surface / std::max(valid, 1)) < 8.0 + 0.002 * static_cast<double>(cell));
   }

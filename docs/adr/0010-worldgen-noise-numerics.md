@@ -1,6 +1,6 @@
 # 0010. Worldgen noise numerics: strict IEEE float with integer-hash gradients
 
-- Status: Accepted (extended by [0011](0011-planet-scale-world.md): noise coordinates at planet scale)
+- Status: Accepted (extended by [0011](0011-planet-scale-world.md): noise coordinates at planet scale; amended by [0017](0017-continents-from-voronoi-plates.md): a correctly rounded `sqrt` is allowed)
 - Date: 2026-09-25
 - Resolves: ARCHITECTURE.md Open Decisions #8
 

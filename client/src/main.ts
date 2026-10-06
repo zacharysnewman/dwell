@@ -43,7 +43,7 @@ import type { ChunkCoord } from './protocol/messages';
 import { PIECES } from './interact/shapes';
 import { Hotbar, slotForKey } from './ui/hotbar';
 import { Hud } from './ui/hud';
-import { MAP_SIZE, MAP_STEP, MapOverlay } from './ui/mapOverlay';
+import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
@@ -178,6 +178,8 @@ function start(): App {
   app.input.onToggle = (key) => {
     if (key === 'F3') app.hud.toggleDebug();
     if (key === 'F4') app.map.toggle();
+    if (key === 'Minus') app.map.zoomBy(1);
+    if (key === 'Equal') app.map.zoomBy(-1);
   };
   window.__dwell = {
     state: () => app.game?.debugState() ?? null,
@@ -418,6 +420,8 @@ function startDebugTools(
   game: Game,
 ): void {
   let busy = false;
+  let mapKey = '';
+  let mapBytes: Uint8Array<ArrayBuffer> | null = null;
   setInterval(() => {
     if (app.hud.debugVisible && app.memory) game.memoryNote = formatMemory(app.memory());
     const s = game.debugState();
@@ -425,12 +429,20 @@ function startDebugTools(
     const [x, y, z] = s.feet.map(Math.floor) as [number, number, number];
     const jobs: Promise<void>[] = [];
     if (app.map.visible) {
-      const half = (MAP_SIZE / 2) * MAP_STEP;
-      jobs.push(
-        pool.map({ x0: x - half, z0: z - half, step: MAP_STEP, n: MAP_SIZE }).then((bytes) => {
-          app.map.draw(bytes, app.input.yaw);
-        }),
-      );
+      const view = app.map.view(x, z);
+      const key = `${String(view.x0)},${String(view.z0)},${String(view.step)}`;
+      if (key === mapKey) {
+        // The same part of the world (the whole disc never changes): only the marker moves.
+        app.map.draw(mapBytes, app.input.yaw, view, x, z);
+      } else {
+        jobs.push(
+          pool.map({ ...view, n: MAP_SIZE }).then((bytes) => {
+            mapKey = key;
+            mapBytes = bytes;
+            app.map.draw(bytes, app.input.yaw, view, x, z);
+          }),
+        );
+      }
     }
     if (app.hud.debugVisible) {
       const c: ChunkCoord = [x >> 5, y >> 5, z >> 5];

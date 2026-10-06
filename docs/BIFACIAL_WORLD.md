@@ -76,7 +76,7 @@ player crosses in one of two ways:
    nothing at the midplane. A player who goes over the edge falls toward the midplane, is slowed in
    the flip band and floats there beside the wall; from there they climb, dig into or build up the
    wall on the other side. (Today the rim drops into a killing void; the bifacial rim replaces
-   that.) Phase 10 rings the rim with ~400 km of open ocean, so reaching the edge means crossing
+   that.) Phase 10 rings the rim with 512 km of open ocean, so reaching the edge means crossing
    that ocean (or flying).
 
 Spawn is always on face A (owner, 2026-10-05).
@@ -148,7 +148,7 @@ Decided (owner, 2026-10-05):
 - **No crossing routes:** only digging through the rock or going around the rim.
 - **Light:** a static sun (face A) and a static, counter-angled moon (face B).
 - **Spawn** always on face A; the **crust** stays ~4 km thick.
-- **The rim ocean stays:** Phase 10's ~400 km rim ocean is kept, so reaching the edge means crossing
+- **The rim ocean stays:** Phase 10's 512 km rim ocean is kept, so reaching the edge means crossing
   open water or flying.
 - **Face B reuses everything:** the same generator stages, biome table, palette and island design
   as face A, with its own seed streams; only its light (the moon) and night sky differ.

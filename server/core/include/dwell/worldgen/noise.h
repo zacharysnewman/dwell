@@ -4,7 +4,8 @@
 
 // Deterministic noise for world generation (ARCHITECTURE.md §6.3, ADR 0010). Gradients come from
 // integer hashing, and evaluation is strict IEEE float: only +, −, × and comparisons, compiled with
-// -ffp-contract=off and no fast-math, and no library calls (no sin, exp, pow). Native and WASM
+// -ffp-contract=off and no fast-math, and no library calls (no sin, exp, pow) but the correctly
+// rounded square root (ADR 0017, in continents.cpp). Native and WASM
 // builds therefore produce bit-identical results, which the worldgen golden test checks.
 namespace dwell::worldgen {
 
@@ -29,6 +30,14 @@ constexpr std::uint32_t Hash3(std::uint32_t seed, std::int32_t x, std::int32_t y
   return Mix32(seed ^ (static_cast<std::uint32_t>(x) * 0x27D4EB2Fu) ^
                (static_cast<std::uint32_t>(y) * 0xD3A2646Du) ^
                (static_cast<std::uint32_t>(z) * 0x165667B1u));
+}
+
+// A 32-bit seed for one noise stream of a world: the 64-bit world seed mixed with the stream
+// number.
+constexpr std::uint32_t SeedWord(std::uint64_t world_seed, std::uint32_t stream) {
+  const auto lo = static_cast<std::uint32_t>(world_seed);
+  const auto hi = static_cast<std::uint32_t>(world_seed >> 32);
+  return Mix32(Mix32(lo ^ Mix32(stream * 0x9E3779B9u)) ^ Mix32(hi + stream));
 }
 
 // Uniform [0, 1) from a hash (24 bits, exact in float).

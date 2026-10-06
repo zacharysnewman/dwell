@@ -94,7 +94,7 @@ export class KeyboardMouseInput {
   sensitivity = 0.12;
   /** Creative flight, toggled by double-tapping Space (or the touch Fly button). */
   readonly flight = new FlightToggle();
-  /** Debug toggles: F3 overlay, F4 terrain map. */
+  /** Debug toggles: F3 overlay, F4 terrain map; Minus and Equal zoom the map out and in. */
   onToggle: ((key: string) => void) | null = null;
   /** On-screen touch controls, merged into every sample (predict/touch.ts). */
   touch: TouchState | null = null;
@@ -158,6 +158,11 @@ export class KeyboardMouseInput {
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.code === 'F3' || e.code === 'F4') {
       e.preventDefault();
+      this.onToggle?.(e.code);
+      return;
+    }
+    // Map zoom (F4): the minus and equals keys, unless the browser's own zoom is meant.
+    if ((e.code === 'Minus' || e.code === 'Equal') && !e.ctrlKey && !e.metaKey) {
       this.onToggle?.(e.code);
       return;
     }

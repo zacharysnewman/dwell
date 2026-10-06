@@ -27,7 +27,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; the owner approved the before/after and the frame time (2026-10-06) |
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash) |
-| 10 — Continents from Voronoi plates | ⏳ Not started |
+| 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | ⏳ Not started |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
 | 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started |
@@ -1417,33 +1417,61 @@ two**, natural fractal coastlines, island chains, an ocean ring at the rim, and 
 character; continentalness becomes a signed distance to the coast. Design:
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2.
 
-**Status:** Not started.
+**Status:** Built, verified natively and in Vitest; outstanding: the WASM suites and the client
+module's goldens (CI: no Emscripten here), the F4 zoom in a browser, LOD generation within +10 % at
+coasts and channels (≈ 2× there; interiors and open sea are within), and the owner's review of
+whole-disc images. **Breaking change:** generator version 6 changes the terrain a seed generates, so
+this is a new compatibility line and `client/package.json` is raised to 0.4.0 by the owner's decision
+(2026-10-06). Design and what differs from it: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2 and
+§2.6; decisions: [ADR 0017](./adr/0017-continents-from-voronoi-plates.md).
+
+**Deviations:** 12–13 land cells chosen by a seed-hashed count and rank (not a 0.35 chance per cell:
+the design's 6–14 continents at 25–35 % land do not fit that chance); the grids are centred on the
+origin with jitter 0.2–0.8 (not 0.15–0.85); the coast distance is `(D_sea − D_land) / 2` (continuous
+where the bisector form jumps) and the separation clamp is relative to the point's continent; island
+clearance is 750 km (not 150 km) so islands pass the separation test; `PLATE_INSET` 90 km,
+`RIM_OCEAN` 512 km, shelf 80–160 km; the separation test runs 500 points per seed in CI (the
+10,000 of the exit criterion take 30 s natively and run on demand: `DWELL_SEPARATION_POINTS`);
+LOD sections of wide cells interpolate the layout between anchors in interiors and the deep sea.
 
 Deliverables
-- [ ] ADR: continents from Voronoi plates (layout, separation clamp, macro lattice), amending
-  ADR 0010 to allow correctly rounded `sqrt` (no other `<cmath>`), guarded by the goldens.
-- [ ] Continent and plate layers: bounded-jitter sites, land/ocean hashing, forced land at the
+- [x] ADR: continents from Voronoi plates (layout, separation clamp, macro lattice), amending
+  ADR 0010 to allow correctly rounded `sqrt` (no other `<cmath>`), guarded by the goldens
+  ([ADR 0017](./adr/0017-continents-from-voronoi-plates.md)).
+- [x] Continent and plate layers: bounded-jitter sites, land/ocean hashing, forced land at the
   origin, ocean beyond `WORLD_RADIUS − RIM_OCEAN`, bays, island plates with their blob layer.
-- [ ] Domain warp shared by both lookups; signed coast distance from plate bisectors plus
+- [x] Domain warp shared by both lookups; signed coast distance from plate bisectors plus
   scale-dependent coast fBm; the separation clamp (continents, islands, rim).
-- [ ] Shelf / slope / abyss and inland rise driven by the coast distance; per-continent record
+- [x] Shelf / slope / abyss and inland rise driven by the coast distance; per-continent record
   (elevation, mountainousness, climate bias, wind, shelf width); internal plate-edge distance and
   convergence exported for Phase 11.
-- [ ] Macro lattice (~256 m) shared by chunks, point queries and `GenerateLod`; per-column caching
-  where needed; chunk and LOD generation within +10 % of today.
-- [ ] Generator version bump; chunk and LOD goldens regenerated with coast, ocean-gap, island and
-  interior entries.
-- [ ] `dwell_worldgen_inspect` whole-disc image mode (continent ids, plate edges, height); the F4
-  map zooms out to the whole disc.
-- [ ] `ARCHITECTURE.md` §6.3 (climate, base height, world bounds' scale-of-terrain paragraph) updated.
+- [x] Macro lattice (256 m) shared by chunks, point queries and `GenerateLod`; per-thread caching
+  of lattice corners and plates; chunk generation within +10 % of today (+5 % on average over two
+  seeds; the layout is four cached corners a chunk) and LOD generation within +10 % in interiors
+  and open sea (`dwell_worldgen_inspect <seed> bench` against `main`: levels 1–12 within noise).
+- [ ] LOD generation within +10 % at coasts, shelves and channels, where every column's layout is
+  evaluated exactly: ≈ 1.2 ms more a section at levels 8–12 (about twice), because the coast detail
+  is rougher than a block of columns. Follow-up: share a section's layout between its bounds query
+  and its generation, or evaluate the plates once per section.
+- [x] Generator version bump (6); chunk and LOD goldens regenerated with coast, ocean-gap, island,
+  interior and abyss entries.
+- [x] `dwell_worldgen_inspect` whole-disc image mode (continent ids, plate edges, height; also
+  `stats` over many seeds and `bench` timings); the F4 map zooms out to the whole disc (`-` and `=`;
+  unit-tested view math, not yet run in a browser).
+- [x] `ARCHITECTURE.md` §6.3 (climate, base height, world bounds' scale-of-terrain paragraph),
+  §6.6, the client rows and `WORLD_GENERATION.md` §2.6 updated.
 
 Exit criteria
-- [ ] Separation test: for 8 seeds and ~10,000 land points each, every sample within
-  0.99 × `OCEAN_GAP` (64 directions × 4 radii) is sea or the same continent.
-- [ ] For 8 seeds: 6–14 continents; land fraction 0.25–0.35; the origin on land; no land within
-  `RIM_OCEAN` of the rim; coastline length grows ≥ 1.5× from a 16 km to a 1 km ruler.
-- [ ] Determinism goldens pass natively, under WASM and in the client module; timings reported.
-- [ ] Whole-disc images for 3 seeds reviewed by the owner (manual).
+- [x] Separation test: for 8 seeds and 10,000 land points each, every sample within
+  0.99 × `OCEAN_GAP` (64 directions × 4 radii: 20.5 million samples) is sea or the same continent
+  (0 violations; CI runs 500 points per seed).
+- [x] For 8 seeds: 6–14 continents (12–13); land fraction 0.25–0.35 (28.4–33.1 %; 25.9–33.4 % over
+  64 seeds); the origin on land (32 seeds); no land within `RIM_OCEAN` of the rim; coastline length
+  grows ≥ 1.5× from a 16 km to a 1 km ruler (1.9–2.3×).
+- [ ] Determinism goldens pass natively (done), under WASM and in the client module (CI); timings
+  reported (above).
+- [ ] Whole-disc images for 3 seeds reviewed by the owner (manual): generated with
+  `dwell_worldgen_inspect <seed> disc out.ppm 16`, review pending.
 
 ---
 
