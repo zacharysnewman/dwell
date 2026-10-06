@@ -45,6 +45,13 @@ collision, targeting, the edit check, the controller's probes, the generator and
    (`PIECE_NEAREST`, generated once for both languages). No neighbour data is read, so chunks agree
    with each other and with the point queries. This is a **breaking change** (the terrain a seed
    generates): a new compatibility line, raised by the owner in `package.json`.
+   **Amended (0.3.1, 0.4.1):** each column has one surface cell on solid cells. 0.3.0
+   shaped every cell the corners crossed, so where they spanned a block from a half-height two
+   pieces stacked with a gap under the upper one, and it left ground steeper than a block per cell
+   as cubes; 0.3.1 and 0.4.1 clamp such corners into the cell holding the column's own surface, so
+   steps carry a slope and nothing rests on a slope. The terrain a seed generates changes, but by
+   the owner's decision (2026-10-06) it ships as patches with the same generator versions: worlds take
+   the fix in chunks not yet edited; edited chunks keep the old slopes (a seam where they meet).
 6. **LOD.** The client's LOD mesher derives the same pieces from column heights (generated surface
    heights or top solid cells) without changing the LOD format; walls follow the slopes' edges.
 7. **Controller.** `maxSlopeAngle` 45° → 50°; the walkable face of a standard slope is exactly 45°

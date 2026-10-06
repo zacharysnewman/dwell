@@ -99,6 +99,34 @@ TEST_CASE("block edit: the targeting ray finds the first targetable cell and the
   }
 }
 
+// Regression (Phase 9a): the ray and the server's line of sight took every block's exact shape, and
+// a ladder has none (it is not solid): the crosshair passed through ladders, and an edit of one was
+// refused, so ladders could not be broken or built against.
+TEST_CASE("block edit: a ladder is targeted, broken and built against as its whole cell") {
+  for (const std::int32_t ox : {0, kFarOriginX}) {
+    CAPTURE(ox);
+    VoxelWorld world = Empty();
+    world.SetVoxel(ox, 0, 5, Materials::kStone);
+    world.SetVoxel(ox, 0, 3, Materials::kLadder);
+    const auto hit = RaycastBlock(world, {ox + 0.5, 0.5, 0.5}, {0, 0, 1}, 5.0f);
+    REQUIRE(hit);
+    CHECK(hit->cell == Cell{ox, 0, 3});
+    CHECK(hit->face == 5);
+    CHECK(hit->distance == doctest::Approx(2.5f));
+  }
+  VoxelWorld world = Empty();
+  world.SetVoxel(0, -1, 2, Materials::kGrass);
+  world.SetVoxel(0, 0, 2, Materials::kLadder);
+  const std::array<double, 3> eye{0.5, 1.62, 0.5};
+  const std::vector<EditCapsule> nobody;
+  auto ok = CheckBlockEdit(world, Break({0, 0, 2}, 5), eye, nobody);
+  CHECK(ok.check == EditCheck::kOk);
+  CHECK(ok.material == Materials::kAir);
+  ok = CheckBlockEdit(world, Place({0, 0, 2}, 2, Materials::kStone), eye, nobody);
+  CHECK(ok.check == EditCheck::kOk);
+  CHECK(ok.cell == Cell{0, 1, 2});
+}
+
 TEST_CASE("block edit: validation of reach, line of sight, materials, occupancy and players") {
   VoxelWorld world = Empty();
   for (int x = -4; x <= 4; ++x)

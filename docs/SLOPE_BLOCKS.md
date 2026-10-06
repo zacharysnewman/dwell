@@ -15,10 +15,14 @@
 > - `SurfaceHeightAt` of an inverted piece is the top of its solid (1 where it has thickness).
 > - Terrain (§5): the "continuous surface" is the highest zero of the density (closed form per
 >   lattice layer, so overhang noise is included); corner heights are the mean of four columns
->   rounded to a half; the piece is the exact shape or the nearest (`PIECE_NEAREST`); cliffs and
->   columns with caves or overhang pockets under their surface stay cubes. 99.7 % of shaped columns
->   lie within half a block of the surface (worst 0.87 m); shared edges differ by half a block in
->   3.9 % of neighbouring pairs, never more.
+>   rounded to a half; the piece is the exact shape or the nearest (`PIECE_NEAREST`); columns with
+>   caves or overhang pockets under their surface stay cubes. **Since 0.3.1 / 0.4.1:** one surface
+>   cell per column, on solid cells — corners that do not fit one cell (steeper than a block per
+>   cell, or a block from a half-height) are clamped to the cell holding the column's own surface,
+>   so steep ground and cliffs get a sloped lip on every step instead of cubes (§5 step 2's "the
+>   cell above is considered instead" stacked two pieces with a gap under the upper one in 0.3.0;
+>   fixed in place, without a new generator version, by the owner's decision). 99.8 % of shaped columns lie within half a block of the surface (worst 0.72 m); shared
+>   edges at the same level differ by half a block in 5.7 % of neighbouring pairs, never more.
 > - LOD (§3.2): a column's piece is clamped to its own cell (a corner above the cell's top gives a
 >   gentler facet); sea floors stay flat; walls follow the slopes' edges.
 > - The creative palette (§6): one slot per material and a shape key (R, Shift+R, or the button beside
@@ -204,7 +208,8 @@ cells agree without reading each other (no neighbour reads, §6.3):
    `flooded=true`, so lake and sea floors are sloped too.
 
 Gentle pieces appear on gentle ground and standard pieces on slopes near 45°; anything steeper
-stays a cliff of cubes with a shaped lip. Slopes are a generator stage like the others, so this is
+stays a cliff of cubes with a shaped lip (built in 0.3.1 / 0.4.1: every column's top cell is shaped,
+clamped to one cell, on solid cells). Slopes are a generator stage like the others, so this is
 a **generator version bump** with regenerated goldens; the point queries (`SolidAt`, `GroundY`)
 and `GenerateLod`'s surfaces follow the same rule. Islands (Phase 12) and cave floors keep cubes
 at first; extending the rule to them is a later tuning step.
