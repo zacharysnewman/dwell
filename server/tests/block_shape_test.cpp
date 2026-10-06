@@ -99,9 +99,9 @@ const Row kTable[] = {
 
 MaterialId Slope(const std::string& shape, const std::string& facing, const std::string& half,
                  bool flooded = false) {
-  const auto id = ParseState("dwell:stone_slope[facing=" + facing + ",flooded=" +
-                             (flooded ? "true" : "false") + ",half=" + half + ",shape=" + shape +
-                             "]");
+  const auto id =
+      ParseState("dwell:stone_slope[facing=" + facing + ",flooded=" + (flooded ? "true" : "false") +
+                 ",half=" + half + ",shape=" + shape + "]");
   REQUIRE(id.has_value());
   return *id;
 }
@@ -169,8 +169,8 @@ TEST_SUITE("block shapes") {
     // centre of the opposite side.
     const struct {
       const char* facing;
-      float fx, fz;      // the side it descends toward
-      float ox, oz;      // the opposite side
+      float fx, fz;  // the side it descends toward
+      float ox, oz;  // the opposite side
     } cases[] = {{"east", 1, 0.5f, 0, 0.5f},
                  {"west", 0, 0.5f, 1, 0.5f},
                  {"south", 0.5f, 1, 0.5f, 0},
@@ -193,9 +193,9 @@ TEST_SUITE("block shapes") {
     // Outer corner, east-facing: the faces rise 1 per 1 along x and z; the hip runs from the high
     // corner (0,0) to the low one (1,1): 1 over √2 = 35.26°.
     const MaterialId outer = Slope("outer", "east", "bottom");
-    CHECK(SurfaceHeightAt(outer, 0.5f, 0.0f) == doctest::Approx(0.5f));   // face: 45°
+    CHECK(SurfaceHeightAt(outer, 0.5f, 0.0f) == doctest::Approx(0.5f));  // face: 45°
     CHECK(SurfaceHeightAt(outer, 0.0f, 0.5f) == doctest::Approx(0.5f));
-    CHECK(SurfaceHeightAt(outer, 0.5f, 0.5f) == doctest::Approx(0.5f));   // on the hip
+    CHECK(SurfaceHeightAt(outer, 0.5f, 0.5f) == doctest::Approx(0.5f));  // on the hip
     CHECK(SurfaceHeightAt(outer, 1.0f, 1.0f) == doctest::Approx(0.0f));
     const double hip_angle = std::atan(1.0 / std::sqrt(2.0)) * 180.0 / 3.14159265358979;
     CHECK(hip_angle == doctest::Approx(35.264).epsilon(1e-4));
@@ -276,7 +276,7 @@ TEST_SUITE("block shapes") {
     CHECK(VerticalSegmentDistanceSq(s, 0.25f, 0.5f, 1.0f, 2.0f) ==
           doctest::Approx(0.25f * 0.25f * 0.5f).epsilon(0.05));  // ⟂ distance ≈ 0.177 → ²= 0.03125
     CHECK(VerticalSegmentDistanceSq(s, 0.25f, 0.5f, 0.5f, 2.0f) == 0.0f);  // crosses the surface
-    CHECK(VerticalSegmentDistanceSq(s, 0.9f, 0.5f, 0.2f, 0.3f) > 0.0f);   // over the low edge: air
+    CHECK(VerticalSegmentDistanceSq(s, 0.9f, 0.5f, 0.2f, 0.3f) > 0.0f);    // over the low edge: air
     CHECK(VerticalSegmentDistanceSq(s, 0.9f, 0.5f, -0.5f, 0.05f) == 0.0f);  // touches y ≤ 0.1
   }
 }
@@ -361,10 +361,9 @@ TEST_SUITE("block shapes: adjacency") {
               if (in_a != in_b) {
                 // Exposed solid surface: drawn exactly once (by the exposed side), no hole.
                 if (drawn != 1) {
-                  FAIL_CHECK("hole or overlap: shapes " << StateString(a) << " | "
-                                                        << StateString(b) << " face " << face
-                                                        << " at " << pu << "," << pv << " drawn "
-                                                        << drawn);
+                  FAIL_CHECK("hole or overlap: shapes " << StateString(a) << " | " << StateString(b)
+                                                        << " face " << face << " at " << pu << ","
+                                                        << pv << " drawn " << drawn);
                   return;
                 }
               } else if (!in_a && drawn != 0) {

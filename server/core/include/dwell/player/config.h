@@ -38,7 +38,7 @@ struct PlayerControllerConfig {
   struct Probes {
     float ground_probe_margin = 0.15f;
     float ceiling_probe_margin = 0.10f;
-    float max_slope_angle = 45.0f;  // degrees
+    float max_slope_angle = 50.0f;  // degrees: above the 45° pitch of a standard slope
   } probes;
   struct Jump {
     float height = 1.25f;
