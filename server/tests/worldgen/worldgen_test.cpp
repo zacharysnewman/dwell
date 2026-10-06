@@ -372,8 +372,9 @@ TEST_SUITE("worldgen: terrain") {
       const auto p = FindBiome(gen, b);
       REQUIRE(p);
       int found = 0;
-      for (int d = 0; d < 64 && found < 5; ++d) {
-        const int x = p->first + d, z = p->second;
+      // A 128 × 128 m patch around the site, in rows (a region's border or cliffs may take a few).
+      for (int d = 0; d < 128 * 128 && found < 5; ++d) {
+        const int x = p->first + d % 128 - 32, z = p->second + d / 128 - 32;
         const auto column = gen.ColumnAt(x, z);
         if (column.biome != b || column.wet > 0.0f) continue;  // rivers and lakes have beds
         if (const auto g = gen.GroundY(x, z)) {
@@ -387,8 +388,8 @@ TEST_SUITE("worldgen: terrain") {
               break;
             }
           }
-          if (m == M::kLog || m == M::kLeaves || m == M::kStone)
-            continue;  // trees, boulders, cliffs
+          if (m == M::kLog || m == M::kLeaves || SurfaceMaterialOf(m) == M::kStone)
+            continue;  // trees, boulders, cliffs (stone slopes too)
           // The ground's top cell is the material or a slope or slab of it.
           CHECK(SurfaceMaterialOf(m) == expected);
           ++found;
