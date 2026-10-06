@@ -27,7 +27,8 @@ add_executable(dwell_tests
   worldgen/lod_test.cpp
   worldgen/slopes_test.cpp
   worldgen/slope_terrain_test.cpp
-  worldgen/rivers_test.cpp)
+  worldgen/rivers_test.cpp
+  worldgen/climate_test.cpp)
 target_link_libraries(dwell_tests PRIVATE dwell_core dwell_net dwell_options doctest::doctest monocypher
                       dwell_sqlite)
 add_test(NAME dwell_tests COMMAND dwell_tests)

@@ -1495,7 +1495,9 @@ distance and rain shadows; biomes from a data table driven by the terrain, with 
 vegetation. Design: §3.
 
 **Status:** In progress. Planned sub-phases (each a generator version bump): **11a — height model,
-rivers, lakes, water above sea level** (built: generator version 7, tested natively; outstanding: the
+rivers, lakes, water above sea level** (built: generator version 7, tested natively; the climate was then moved to continental scale as
+version 8 after a playtest found snow scattered everywhere — ADR 0019, the first part of 11c's
+temperature; outstanding: the
 WASM suites and client goldens in CI, the manual river walk, the owner's review of the map images and
 of the new compatibility line); **11b — mountain detail cascade** (not started); **11c — climate, the
 biome table and colourful vegetation** (not started); **11d — fantasy landforms** (karst spires,

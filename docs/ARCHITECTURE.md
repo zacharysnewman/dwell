@@ -98,7 +98,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 7, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 8, §6.3) by
    default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
@@ -535,11 +535,11 @@ Nothing below changes for the planned phases until they land; each updates this 
 and §5 as it does.
 
 **Built (Phases 3a, 3c, 10, 11a):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
-`src/worldgen/`) is **generator version 7** (3c: the planet-scale world as version 3; Phase 4 adds
+`src/worldgen/`) is **generator version 8** (3c: the planet-scale world as version 3; Phase 4 adds
 super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; Phase 10
 replaces the land/sea noise with the plate layout as version 6, whose slope rule the 0.4.1 patch
-fixes in place, below; Phase 11a adds rivers, lakes and water above sea level as version 7;
-versions 2–6 are retired — a world
+fixes in place, below; Phase 11a adds rivers, lakes and water above sea level as version 7; version 8 puts the climate at
+continental scale ([ADR 0019](./adr/0019-continental-scale-climate.md), below); versions 2–7 are retired — a world
 saved with one loads as the flat world; the version launcher opens the build that saved it, §2.1) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
 tests and movement work. Players spawn at the generator's spawn point: the first level, open,
@@ -684,9 +684,13 @@ linear in y); the chunk path and the point queries (`ColumnAt`, `SolidAt`, `Grou
 arithmetic, so features placed by point queries agree with the chunks.
 
 1. **Climate (2D).** Continentalness is the signed distance to the coast of the continent layout
-   (above), mapped to −1..1; low-frequency fBm gives erosion, temperature, and humidity. Biome
-   weights (desert, snowy, forest, plains) blend smoothly across borders; the column's biome
-   (ocean, beach, plains, forest, desert, snowy, mountains) is the dominant one after height rules.
+   (above), mapped to −1..1; fBm gives erosion. **Since version 8** temperature is a 1,200 km noise
+   (95 %) and humidity a 600 km one, each with a small local pair, so climate zones are hundreds of
+   kilometres across ([ADR 0019](./adr/0019-continental-scale-climate.md)); the ground's temperature
+   falls 6.5 °C per km of height (the lapse rate), so snow lies on high ground and in cold regions.
+   Biome weights (desert, snowy, forest, plains) blend smoothly across borders; the column's biome
+   (ocean, beach, plains, forest, desert, snowy, mountains) is the dominant one after height rules —
+   mountains where the ground stands over 200 m above its valley floor.
    Version 3 adds the planet-scale fields (a 262 km fBm that now modulates relief, a 49 km ridged
    fBm for ranges).
 2. **Base height (2D).** On land the valley floor `V` (above: a smooth rise from the shore's 2 m

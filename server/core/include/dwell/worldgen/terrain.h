@@ -11,7 +11,7 @@
 #include "dwell/worldgen/rivers.h"
 #include "dwell/worldgen/slopes.h"
 
-// Procedural terrain, generator version 7 (ARCHITECTURE.md §6.3). A chunk is a pure function of
+// Procedural terrain, generator version 8 (ARCHITECTURE.md §6.3). A chunk is a pure function of
 // (world seed, chunk coordinate): every stage reads only noise and hashes of world coordinates,
 // never another chunk's data, so chunks generate in any order, on any thread, natively or in WASM,
 // with bit-identical results (noise.h, ADR 0010).
@@ -40,6 +40,9 @@
 // planet-scale layer varies land, ocean and kilometre-scale relief across the disc; sea level is
 // 0; nothing is generated outside the disc. The terrain's content (biomes, materials, features) is
 // prototype (ARCHITECTURE.md §6.1).
+// Version 8 (ADR 0019): climate at continental scale — temperature and humidity noise of
+// ~1,200 km and ~600 km, a lapse rate (snow lies on high ground), and the mountains biome from relief
+// above the valley floor, so biomes come in regions rather than patches a few hundred metres across.
 // Version 7 (ADR 0018, WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain — three
 // tiers of rivers as noise contours, lakes, and static water above sea level at a terraced surface
 // (waterfall steps); the land is a valley floor V with the relief standing away from the channels.
@@ -192,6 +195,9 @@ class TerrainGenerator {
   Corner2 SampleCorner2(std::int32_t lx, std::int32_t lz) const;
   // Everything but the rivers, at a point (a lattice corner, or a lake's centre).
   Corner2 SampleBase(std::int64_t x, std::int64_t z) const;
+  // Continental temperature and humidity noise (kept: local octaves kept, −1 all).
+  float Temperature(std::int64_t x, std::int64_t z, int kept) const;
+  float Humidity(std::int64_t x, std::int64_t z, int kept) const;
   // Columns of a chunk and one beyond each side ((S + 2)², row-major from (x0 − 1, z0 − 1)).
   void ChunkColumns(std::int32_t x0, std::int32_t z0, std::vector<Column>& cols) const;
   static float SkyFloor(const std::vector<Column>& cols);

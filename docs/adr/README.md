@@ -24,6 +24,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0016](0016-slope-blocks.md) | Slope blocks: shaped block families, one baked shape table, shaped terrain | Accepted |
 | [0017](0017-continents-from-voronoi-plates.md) | Continents from Voronoi plates: a plate layout, a separation clamp, a macro lattice, and `sqrt` | Accepted |
 | [0018](0018-drainage-consistent-terrain.md) | Drainage-consistent terrain: rivers as noise contours, terraced static water above sea level | Accepted |
+| [0019](0019-continental-scale-climate.md) | Climate at continental scale: biomes in regions, snow by temperature and height | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
