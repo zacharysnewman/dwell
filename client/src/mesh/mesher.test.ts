@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { tileRect } from '../render/textures';
-import { stateId } from '../world/blocks';
+import { faceTint, normalTint } from '../render/look';
+import { STATE_DEFS, stateId } from '../world/blocks';
 import { meshChunk, PADDED_VOLUME, paddedIndex, type MeshArrays } from './mesher';
 
 const WATER = stateId('dwell:water');
@@ -168,5 +169,153 @@ describe('greedy chunk mesher', () => {
     // Textured faces shade white (the texture carries the colour); unknown ids keep a flat colour.
     expect(opaque.colors[grassTop * 12]).toBe(1);
     expect(opaque.colors[unknown * 12 + 1]).toBe(0); // magenta
+  });
+
+  describe('slopes', () => {
+    const wedge = (facing: string, half = 'bottom', flooded = 'false', material = 'stone') =>
+      stateId(
+        `dwell:${material}_slope[facing=${facing},flooded=${flooded},half=${half},shape=wedge]`,
+      );
+
+    /** Geometric (winding) normal of triangle `t` of a mesh. */
+    const triangleNormal = (a: MeshArrays, t: number): number[] => {
+      const n = normalOf(
+        a.positions,
+        a.indices[t * 3] ?? 0,
+        a.indices[t * 3 + 1] ?? 0,
+        a.indices[t * 3 + 2] ?? 0,
+      );
+      const len = Math.hypot(n[0] ?? 0, n[1] ?? 0, n[2] ?? 0) || 1;
+      return n.map((v) => v / len);
+    };
+
+    it('draws a lone wedge with its sloped face lit by its true normal', () => {
+      const { opaque } = meshChunk(voxels([[1, 1, 1, wedge('east')]]));
+      // The wedge descends toward +X: the surface normal is (½√2, ½√2, 0).
+      const slopeTris: number[] = [];
+      for (let t = 0; t < opaque.indices.length / 3; t++) {
+        const i = opaque.indices[t * 3] ?? 0;
+        const ny = opaque.normals[i * 3 + 1] ?? 0;
+        if (ny > 0.1 && ny < 0.99) slopeTris.push(t);
+      }
+      expect(slopeTris.length).toBe(2); // the sloped quad
+      for (const t of slopeTris) {
+        const i = opaque.indices[t * 3] ?? 0;
+        expect(opaque.normals[i * 3]).toBeCloseTo(Math.SQRT1_2, 5);
+        expect(opaque.normals[i * 3 + 1]).toBeCloseTo(Math.SQRT1_2, 5);
+        expect(opaque.normals[i * 3 + 2]).toBeCloseTo(0, 5);
+      }
+      // 2 (slope) + 2 (back) + 2 (bottom) + 1 + 1 (triangular sides) triangles.
+      expect(opaque.indices.length / 3).toBe(8);
+    });
+
+    it('winds every polygon of every shape variant counter-clockwise, facing along its normal', () => {
+      const shapeStates = new Map<number, number>();
+      for (const s of STATE_DEFS)
+        if (s.shape !== 0 && !shapeStates.has(s.shape)) shapeStates.set(s.shape, s.id);
+      expect(shapeStates.size).toBeGreaterThanOrEqual(70);
+      for (const id of shapeStates.values()) {
+        const { opaque } = meshChunk(voxels([[1, 1, 1, id]]));
+        for (let t = 0; t < opaque.indices.length / 3; t++) {
+          const i = opaque.indices[t * 3] ?? 0;
+          const stored = [0, 1, 2].map((k) => opaque.normals[i * 3 + k] ?? 0);
+          const geometric = triangleNormal(opaque, t);
+          const dotted = stored.reduce((acc, v, k) => acc + v * (geometric[k] ?? 0), 0);
+          expect(dotted, STATE_DEFS[id]?.state).toBeGreaterThan(0.999);
+        }
+      }
+    });
+
+    it('culls the faces a neighbour covers and keeps the rest', () => {
+      // A cube west of an east-facing wedge: the wedge's full-height west side meets the cube's east
+      // face, which is hidden on both.
+      const alone = meshChunk(voxels([[1, 1, 1, wedge('east')]])).opaque.indices.length / 3;
+      const pair =
+        meshChunk(
+          voxels([
+            [0, 1, 1, 2],
+            [1, 1, 1, wedge('east')],
+          ]),
+        ).opaque.indices.length / 3;
+      // The cube alone is 6 quads (12 triangles); together each hides 2 triangles of one face.
+      expect(pair).toBe(alone + 12 - 2 - 2);
+      // On the low side the wedge's triangle is not covered by the cube's full face... it is the
+      // cube's face that stays: a cube east of the wedge keeps its west face.
+      const east =
+        meshChunk(
+          voxels([
+            [1, 1, 1, wedge('east')],
+            [2, 1, 1, 2],
+          ]),
+        ).opaque.indices.length / 3;
+      expect(east).toBe(alone + 12 - 0 - 0 - 0); // wedge's east side has no area: nothing hides
+    });
+
+    it('textures a grass slope: the surface takes the top tile, its sides the side tile', () => {
+      const { opaque } = meshChunk(voxels([[1, 1, 1, wedge('east', 'bottom', 'false', 'grass')]]));
+      const top = tileRect('grass');
+      const side = tileRect('grassSide');
+      const tileAt = (v: number) => [opaque.tiles[v * 4], opaque.tiles[v * 4 + 1]];
+      let sawTop = false;
+      let sawSide = false;
+      for (let t = 0; t < opaque.indices.length / 3; t++) {
+        const i = opaque.indices[t * 3] ?? 0;
+        const ny = opaque.normals[i * 3 + 1] ?? 0;
+        if (ny > 0.1 && ny < 0.99) {
+          expect(tileAt(i)).toEqual([top.u0, top.v0].map(Math.fround));
+          sawTop = true;
+        } else if (Math.abs(ny) < 1e-6) {
+          expect(tileAt(i)).toEqual([side.u0, side.v0].map(Math.fround));
+          sawSide = true;
+        }
+      }
+      expect(sawTop && sawSide).toBe(true);
+    });
+
+    it('shades sloped faces by interpolating the face tints by their normal', () => {
+      const { opaque } = meshChunk(voxels([[1, 1, 1, wedge('east', 'bottom', 'false', 'stone')]]));
+      // Stone is textured: colours are the tint itself.
+      for (let t = 0; t < opaque.indices.length / 3; t++) {
+        const i = opaque.indices[t * 3] ?? 0;
+        const n = [0, 1, 2].map((k) => opaque.normals[i * 3 + k] ?? 0) as [number, number, number];
+        const expected = normalTint(...n);
+        for (let k = 0; k < 3; k++) {
+          expect(opaque.colors[i * 3 + k]).toBeCloseTo(expected[k] ?? 0, 5);
+        }
+      }
+    });
+
+    it('normalTint equals faceTint on axis-aligned normals and blends in between', () => {
+      expect(normalTint(0, 1, 0)).toEqual(faceTint(1, 1));
+      expect(normalTint(0, -1, 0)).toEqual(faceTint(1, -1));
+      expect(normalTint(1, 0, 0)).toEqual(faceTint(0, 1));
+      expect(normalTint(0, 0, -1)).toEqual(faceTint(2, -1));
+      const mid = normalTint(Math.SQRT1_2, Math.SQRT1_2, 0);
+      const top = faceTint(1, 1);
+      const side = faceTint(0, 1);
+      for (let k = 0; k < 3; k++) {
+        expect(mid[k]).toBeGreaterThan(Math.min(top[k] ?? 0, side[k] ?? 0) - 1e-9);
+        expect(mid[k]).toBeLessThan(Math.max(top[k] ?? 0, side[k] ?? 0) + 1e-9);
+      }
+    });
+
+    it('draws water in the open part of a flooded slope and none in a dry one', () => {
+      const dry = meshChunk(voxels([[1, 1, 1, wedge('east')]]));
+      expect(dry.transparent.indices.length).toBe(0);
+      const wet = meshChunk(voxels([[1, 1, 1, wedge('east', 'bottom', 'true')]]));
+      expect(wet.transparent.indices.length).toBeGreaterThan(0);
+      expect(wet.opaque.indices.length).toBe(dry.opaque.indices.length);
+      // Water beside a flooded slope draws no face against it.
+      const pool = meshChunk(
+        voxels([
+          [0, 1, 1, WATER],
+          [1, 1, 1, wedge('east', 'bottom', 'true')],
+        ]),
+      );
+      const lone = meshChunk(voxels([[0, 1, 1, WATER]]));
+      expect(pool.transparent.indices.length).toBeLessThan(
+        lone.transparent.indices.length + wet.transparent.indices.length,
+      );
+    });
   });
 });

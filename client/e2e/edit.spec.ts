@@ -3,6 +3,7 @@
 // server.
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { stateId } from '../src/world/blocks';
 import { INVITE_FILE } from './global-setup';
 
 type Vec3 = [number, number, number];
@@ -105,8 +106,8 @@ test('an edit by one client appears for another on a native server', async ({ br
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
   await a.keyboard.press('Digit1'); // stone
   expect(await call<boolean>(a, `d.edit('place')`)).toBe(true);
-  await expect.poll(() => voxel(a, cell), { timeout: 5_000 }).toBe(2);
-  await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(2);
+  await expect.poll(() => voxel(a, cell), { timeout: 5_000 }).toBe(stateId('dwell:stone'));
+  await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(stateId('dwell:stone'));
 
   await a.waitForTimeout(120);
   await aim(a);
@@ -125,13 +126,14 @@ test('local mode: an edited world is saved in the browser and survives a reload'
   const target = await aim(page);
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
   await page.keyboard.press('Digit7'); // sandstone
+  const sandstone = stateId('dwell:sandstone');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
-  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(13);
+  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sandstone);
   // Local worlds save every few seconds (and when the page is hidden).
   await page.waitForTimeout(6_000);
   await page.reload();
   await ready(page);
-  await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(13);
+  await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(sandstone);
   // A different seed is a different world file: untouched there.
   await page.goto('./?world=flat&seed=8');
   await ready(page);

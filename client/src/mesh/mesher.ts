@@ -106,8 +106,10 @@ export function faceCovered(shape: ShapeDef, face: number, neighbour: ShapeDef |
   if (!neighbour) return false;
   if (face === 2) return !shape.fullTop || neighbour.fullBottom;
   if (face === 3) return !shape.fullBottom || neighbour.fullTop;
+  // Side profiles are indexed +X −X +Z −Z; the neighbour's face is the opposite one.
   const mine = shape.sides[face < 2 ? face : face - 2];
-  const theirs = neighbour.sides[face < 2 ? 1 - face : 5 - face];
+  const opposite = face ^ 1;
+  const theirs = neighbour.sides[opposite < 2 ? opposite : opposite - 2];
   if (!mine || !theirs) return false;
   if (mine[0] === 0 && mine[1] === 0) return true;
   if (shape.inverted === neighbour.inverted) return theirs[0] >= mine[0] && theirs[1] >= mine[1];
