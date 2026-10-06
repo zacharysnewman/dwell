@@ -1,5 +1,8 @@
 #include "dwell/worldgen/rivers.h"
 
+#include <cstddef>
+#include <cstdint>
+
 namespace dwell::worldgen::rivers {
 namespace {
 
