@@ -10,9 +10,21 @@ interface DebugState {
   target: { cell: Vec3; face: number } | null;
 }
 
-/** Runs a call on the page's test hooks (window.__dwell, see src/main.ts). */
-function call<T>(page: Page, expr: string): Promise<T> {
-  return page.evaluate<T>(`(() => { const d = globalThis.__dwell; return d ? ${expr} : null; })()`);
+/**
+ * Runs a call on the page's test hooks (window.__dwell, see src/main.ts); null while the page is
+ * navigating (the menu opens and leaves the game by navigation, and polls run across it).
+ */
+async function call<T>(page: Page, expr: string): Promise<T | null> {
+  try {
+    return await page.evaluate<T>(
+      `(() => { const d = globalThis.__dwell; return d ? ${expr} : null; })()`,
+    );
+  } catch (e) {
+    if (e instanceof Error && /Execution context was destroyed|navigat/i.test(e.message)) {
+      return null;
+    }
+    throw e;
+  }
 }
 const state = (page: Page) => call<DebugState | null>(page, 'd.state()');
 const voxel = (page: Page, c: Vec3) => call<number>(page, `d.voxel(${c.join(',')})`);

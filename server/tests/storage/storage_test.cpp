@@ -536,6 +536,10 @@ TEST_CASE("storage: a chunk's meaning is its strings, whatever the code's runtim
   CHECK_FALSE(reopened->LoadChunk({0, 0, 0}));
 }
 
+// Native only: the server opens a world with two connections (WorldStore: a reader and a writer,
+// in WAL mode). The browser opens one, with exclusive locking (wasm_api.cpp), under which a second
+// connection never sees the first's commits, so there is nothing to check there.
+#ifndef __EMSCRIPTEN__
 TEST_CASE("storage: a second connection's new states are visible to the first") {
   const std::string path = Scratch("twoconn");
   auto reader = OpenOrFail(path);
@@ -549,6 +553,7 @@ TEST_CASE("storage: a second connection's new states are visible to the first") 
   REQUIRE(chunk);
   CHECK(chunk->voxels == Filled(16));
 }
+#endif
 
 TEST_CASE("storage: the LOD cache is a cache: dropped when the registry hash changes") {
   const std::string path = Scratch("lodcache");

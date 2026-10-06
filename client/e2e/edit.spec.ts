@@ -60,6 +60,30 @@ async function aim(page: Page, pitch = -45): Promise<Target> {
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 
+const EYE_HEIGHT = 1.62;
+const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
+
+/**
+ * Looks at a point of `cell` (`height` up its side, so a slab or a slope's low part is hit too) and
+ * waits for the cell to be targeted. On sloped ground a fixed pitch can pass under a block just
+ * placed and target the slope below it instead.
+ */
+async function lookAt(page: Page, cell: Vec3, height = 0.25): Promise<void> {
+  const f = await feet(page);
+  const d = [cell[0] + 0.5 - f[0], cell[1] + height - f[1] - EYE_HEIGHT, cell[2] + 0.5 - f[2]];
+  const yaw = (Math.atan2(d[0] ?? 0, d[2] ?? 0) * 180) / Math.PI;
+  const pitch = (Math.atan2(d[1] ?? 0, Math.hypot(d[0] ?? 0, d[2] ?? 0)) * 180) / Math.PI;
+  await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
+  await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(cell.join());
+}
+
+/** The cardinal yaw (0, 90, 180, 270) facing most directly away from `other`. */
+async function yawAwayFrom(page: Page, other: Page): Promise<number> {
+  const [a, b] = await Promise.all([feet(page), feet(other)]);
+  const yaw = (Math.atan2(a[0] - b[0], a[2] - b[2]) * 180) / Math.PI;
+  return (((Math.round(yaw / 90) * 90) % 360) + 360) % 360;
+}
+
 test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
   page,
 }) => {
@@ -150,11 +174,14 @@ test('a placed slope shows as the same state to a second client on a native serv
   await ready(a);
   await ready(b);
   await a.keyboard.press('Digit1');
+  // Players spawn side by side: build away from the other one (the server refuses a block placed
+  // into a player).
+  const yaw = await yawAwayFrom(a, b);
   for (const piece of ['wedge', 'inner', 'gentle_outer_high', 'slab'] as const) {
     await call(a, `d.piece('${piece}')`);
-    await call(a, 'd.look(90, -45)');
+    await call(a, `d.look(${String(yaw)}, -45)`);
     await expect.poll(async () => (await state(a))?.target ?? null).not.toBeNull();
-    const expected = pieceState('dwell:stone', piece, facingToward(90), 'bottom');
+    const expected = pieceState('dwell:stone', piece, facingToward(yaw), 'bottom');
     await expect
       .poll(async () => (await call<Placement | null>(a, 'd.placement()'))?.material ?? -1)
       .toBe(expected);
@@ -163,9 +190,7 @@ test('a placed slope shows as the same state to a second client on a native serv
     expect(await call<boolean>(a, `d.edit('place')`)).toBe(true);
     await expect.poll(() => voxel(a, placement.cell), { timeout: 5_000 }).toBe(expected);
     await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(expected);
-    await expect
-      .poll(async () => (await state(a))?.target?.cell.join() ?? '')
-      .toBe(placement.cell.join());
+    await lookAt(a, placement.cell);
     await a.waitForTimeout(120);
     expect(await call<boolean>(a, `d.edit('break')`)).toBe(true);
     await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(0);
@@ -191,7 +216,7 @@ test('an edit by one client appears for another on a native server', async ({ br
   await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(stateId('dwell:stone'));
 
   await a.waitForTimeout(120);
-  await aim(a);
+  await lookAt(a, cell, 0.5);
   expect(await call<boolean>(a, `d.edit('break')`)).toBe(true);
   await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(0);
   // Closed so the pages stop rendering before later tests run.
@@ -206,7 +231,7 @@ test('local mode: an edited world is saved in the browser and survives a reload'
   await ready(page);
   const target = await aim(page);
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
-  await page.keyboard.press('Digit7'); // sandstone
+  await page.locator('.hotbar-slot[title="sandstone"]').click(); // not a fixed slot: the palette grows
   const sandstone = stateId('dwell:sandstone');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
   await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sandstone);
