@@ -126,8 +126,11 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
 
 - **Builds are releases** (`.github/workflows/release.yml`). A push to `main` builds a **dev** build,
   `v<next version>-dev.<run>` (a GitHub pre-release); a pushed `v<version>` tag, or the workflow run
-  by hand, builds the **stable** release of `client/package.json`'s version. `client/scripts/release.ts`
-  decides which, and the tag must match the version. Each build is made with `DWELL_VERSION` (read by
+  by hand, builds the **stable** release. `client/scripts/release.ts` decides which version: the next
+  patch after the newest published release, or `client/package.json`'s version if that is higher
+  (`package.json` is a floor, raised by hand only to start a new line; nothing is bumped after a
+  release), or one named in the manual run's *version* input or by the tag, which must be newer than
+  the newest release. Each build is made with `DWELL_VERSION` (read by
   `client/vite.config.ts` and `server/CMakeLists.txt`), with the WASM core (Emscripten) built for it,
   for the base `/dwell/v/<version>/`, and attached to its GitHub Release as `dwell-<version>.tar.gz`
   with its `build.json` (version, channel, date, commit, `protocolVersion`, generator versions,
@@ -1779,7 +1782,7 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
   no wire change, the `Reject` message text carries it.
 - **App version** ([ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md)):
   Semantic Versioning 2.0.0, one for the whole app, kept in `client/package.json` as the version the
-  next release will have, embedded in every build (client: `__APP_VERSION__`; C++:
+  next release can have at least (a floor, §2.1), embedded in every build (client: `__APP_VERSION__`; C++:
   `dwell::core::kAppVersion`) and recorded in `build.json`. The declared public API is the saved
   world format, the terrain a seed generates, the network protocols and the cross-version storage
   contract. Releases are stable (`0.1.0`); pushes to `main` are dev pre-releases

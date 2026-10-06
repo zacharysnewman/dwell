@@ -92,3 +92,14 @@ restrictive license. The constraint is the same as for the master (ADR 0013): fr
   that a deployed launcher cannot serve bumps it.
 - To reverse: serve a single build at `/dwell/` again (the build still works there; the launcher is
   an extra layer, and `go()` keeps working against a one-build site, as in Electron).
+
+## Amendment (2026-10-06): the version follows the newest release
+
+As first decided, `client/package.json` was "the version the next release will have" and had to be
+bumped by hand after each release, or later dev builds sorted below it. The first real release run
+made the cost clear, so the rule is now: **the next version is the next patch after the newest
+published release, or `package.json`'s version if that is higher.** `package.json` is a floor,
+raised by hand only to start a new line (a breaking change); the manual Release run can also name a
+version. Dev builds are pre-releases of the computed version. The decision is otherwise unchanged;
+the consequence about bumping `package.json` after a release no longer applies. Logic and tests:
+`client/scripts/release.ts`.

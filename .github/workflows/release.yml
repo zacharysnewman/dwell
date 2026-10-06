@@ -3,7 +3,10 @@ name: Release
 # Every build is a git tag with a GitHub Release holding the built files (RELEASES.md §3):
 #   - a push to main        → a dev build, `v<next version>-dev.<run>` (a GitHub pre-release);
 #   - a pushed `v<version>` tag, or this workflow run by hand
-#                           → the stable release of client/package.json's version.
+#                           → a stable release.
+# The version follows the newest release (its next patch), so nothing is bumped after a release;
+# client/package.json is a floor, raised by hand only for a breaking change, and the manual run
+# can name a higher version (client/scripts/release.ts, RELEASES.md §3).
 # Each build is made for its own path (`/dwell/v/<version>/`); the site is then assembled from the
 # releases by pages.yml, called at the end (a workflow's own GITHUB_TOKEN can't trigger another).
 on:
@@ -11,6 +14,11 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (empty: the next patch after the newest release; e.g. 0.2.0 for a breaking change)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -39,13 +47,18 @@ jobs:
           node-version: 22
       - id: plan
         working-directory: client
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUESTED: ${{ inputs.version }}
         run: |
+          gh release list --limit 500 --json tagName > "$RUNNER_TEMP/releases.json"
           case "$GITHUB_REF" in
             refs/tags/*) event=tag ;;
             refs/heads/*) if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then event=dispatch; else event=push; fi ;;
             *) echo "::error::unexpected ref $GITHUB_REF"; exit 1 ;;
           esac
-          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" | tee -a "$GITHUB_OUTPUT"
       - name: A release is made once
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,19 +67,9 @@ jobs:
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             if [ "$CHANNEL" = stable ]; then
-              echo "::error::$TAG is already released. Bump client/package.json to the next version first."
+              echo "::error::$TAG is already released."
               exit 1
             fi
-          fi
-      - name: Warn when main still carries a released version
-        if: steps.plan.outputs.channel == 'dev'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.plan.outputs.version }}
-        run: |
-          stable="v${VERSION%-dev.*}"
-          if gh release view "$stable" >/dev/null 2>&1; then
-            echo "::warning::$stable is already released, so this dev build sorts below it. Bump client/package.json to the next version (RELEASES.md §3)."
           fi
 
   build:

@@ -73,7 +73,11 @@ and linked from the menu's About screen) and beside the native server (copied ne
     commit hash with a leading zero would not be, so the hash only appears as build metadata).
   - **Tags:** `v<version>` without build metadata — `v0.1.0`, `v0.2.0-dev.42`.
   - The version lives in one place (the client's `package.json`), and the build embeds it; the
-    other manifests' own version fields are not the app version.
+    other manifests' own version fields are not the app version. **`package.json` is a floor, not a
+    counter:** the next release is the next patch after the newest published release, or
+    `package.json`'s version if that is higher (nothing is released yet, or a breaking change raised
+    it). So nobody bumps it after a release; it is raised by hand only to start a new line
+    (`0.1.x` → `0.2.0`), in the PR that makes the breaking change.
 - **Channels:** **stable** (a release: pushing a `v<version>` tag, or a manual "Release" workflow)
   and **dev** (every push to `main`). Both are published; the launcher defaults to stable and
   offers dev in settings.
@@ -92,19 +96,21 @@ and linked from the menu's About screen) and beside the native server (copied ne
 
 ### Releasing
 
-`client/package.json`'s `version` is the version the **next release** will have; pushes to `main`
-publish dev builds of it, pre-releases `v<version>-dev.<run>`.
+The next version is computed by `client/scripts/release.ts` from the published releases and
+`client/package.json` (§3): the next patch after the newest release, or `package.json`'s version if
+that is higher. Pushes to `main` publish dev builds of it, pre-releases `v<next>-dev.<run>`.
 
-1. To release, run the **Release** workflow by hand (Actions → Release → Run workflow, on `main`),
-   or push the tag: `git tag v<version> && git push origin v<version>` (the tag must name
-   `package.json`'s version, or the workflow stops with a message).
+1. To release, run the **Release** workflow by hand (Actions → Release → Run workflow, on `main`):
+   it releases the next version. To release a different one — a breaking change's `0.2.0` — type it
+   in the *version* box (it must be newer than the newest release and not below `package.json`'s).
+   Or push the tag yourself: `git tag v<version> && git push origin v<version>` (same rules; the
+   workflow stops with a message if they are broken).
 2. Check `https://dropkickarcade.com/dwell/` (the launcher opens the new stable build; the menu
    shows its version).
-3. **Right after**, bump `client/package.json` to the next version (MINOR for a breaking change,
-   PATCH otherwise, before `1.0.0`): later dev builds are pre-releases of *that*, and sort below the
-   release they follow if it is forgotten (the workflow warns).
-4. A change that breaks the public API (§3) also bumps `package.json`'s version in the same PR, so
-   its dev builds are on a new line and worlds of the old line stay with the old builds.
+3. Nothing to bump afterwards: later dev builds are pre-releases of the next patch.
+4. A change that breaks the public API (§3) raises `package.json`'s version (to the next MINOR,
+   before `1.0.0`) in the same PR, so its dev builds are on a new line and worlds of the old line
+   stay with the old builds; the next release then has that version.
 
 ## 4. The site, assembled from the tags
 
@@ -215,7 +221,7 @@ Missing or unreachable versions show a clear message with the choice to open the
    `https://dropkickarcade.com/dwell/` loads it through the launcher, the main menu works, and new
    worlds record the version. Until then the site serves the newest dev build (the launcher falls
    back to dev when there is no stable one).
-4. Bump `client/package.json` to the next version (**Releasing**, step 3).
+4. Nothing to bump afterwards (**Releasing**, step 3).
 
 ## 9. How the phase is checked
 
