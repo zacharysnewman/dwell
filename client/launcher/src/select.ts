@@ -3,6 +3,7 @@ import {
   canOpenWorld,
   compareVersionText,
   compatibilityLine,
+  isPreviewVersion,
   isVersion,
   sameLine,
 } from '../../src/version/semver';
@@ -36,11 +37,24 @@ export function latestBuild(manifest: Manifest, channel: Channel): BuildEntry | 
   return manifest.versions.find((e) => e.version === name) ?? null;
 }
 
-/** The newest published build that satisfies `ok`, ignoring builds this launcher cannot serve. */
-function newest(manifest: Manifest, ok: (version: string) => boolean): BuildEntry | null {
+/**
+ * The newest published build that satisfies `ok`, ignoring builds this launcher cannot serve and
+ * pull-request previews (RELEASES.md §3) — except `own`, the preview that saved the world or runs
+ * the host: a preview is only ever opened by asking for it.
+ */
+function newest(
+  manifest: Manifest,
+  ok: (version: string) => boolean,
+  own?: string,
+): BuildEntry | null {
   return (
     manifest.versions
-      .filter((e) => e.minLauncher <= LAUNCHER_VERSION && ok(e.version))
+      .filter(
+        (e) =>
+          e.minLauncher <= LAUNCHER_VERSION &&
+          (!isPreviewVersion(e.version) || e.version === own) &&
+          ok(e.version),
+      )
       .sort((a, b) => compareVersionText(b.version, a.version))[0] ?? null
   );
 }
@@ -66,7 +80,7 @@ export function choose(manifest: Manifest, req: Request): Choice {
   const play = params.get('play');
   const worldVersion = play ? req.worldVersion(play) : null;
   if (worldVersion && isVersion(worldVersion)) {
-    const e = newest(manifest, (v) => canOpenWorld(v, worldVersion));
+    const e = newest(manifest, (v) => canOpenWorld(v, worldVersion), worldVersion);
     return e
       ? open(e, 'world')
       : {
@@ -78,7 +92,7 @@ export function choose(manifest: Manifest, req: Request): Choice {
   // A host's version (an invite, a code that the game looked up): any build on its line can join.
   const host = params.get('v');
   if (host && isVersion(host)) {
-    const e = newest(manifest, (v) => sameLine(v, host));
+    const e = newest(manifest, (v) => sameLine(v, host), host);
     return e
       ? open(e, 'host')
       : {

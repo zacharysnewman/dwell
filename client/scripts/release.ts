@@ -1,12 +1,12 @@
 // What a run of the Release workflow builds (RELEASES.md §3), decided in one tested place:
-//   release.ts EVENT REF RUN SHA [RELEASES.json [REQUESTED]]   (EVENT: push | tag | dispatch),
+//   release.ts EVENT REF RUN SHA [RELEASES.json [REQUESTED]]   (EVENT: push | tag | dispatch | preview),
 // reading ./package.json and the releases (`gh release list --json tagName`)
 // prints `key=value` lines for $GITHUB_OUTPUT. Runs under Node's type stripping.
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { compareVersionText, isStable, parseVersion, sameLine } from '../src/version/semver.ts';
 
-export type ReleaseEvent = 'push' | 'tag' | 'dispatch';
+export type ReleaseEvent = 'push' | 'tag' | 'dispatch' | 'preview';
 
 export interface ReleasePlan {
   /** The release's version, as its tag and `versions.json` name it: no build metadata. */
@@ -63,6 +63,9 @@ export function nextVersion(floor: string, latest: string | null): string {
  *   release** (raising it is the deliberate act that starts a release: the baseline, or a new
  *   line); otherwise a dev build, a pre-release of the next version (`nextVersion`):
  *   `<next>-dev.<run>`, with the commit as build metadata.
+ * - `preview` (a pull request, `refs/pull/<n>/merge`): a pre-release of the next version,
+ *   `<next>-pr.<n>.<run>`, with the PR's head commit as build metadata. It is never a release,
+ *   whatever `package.json` says, and the launcher never picks it by itself (RELEASES.md §3).
  * - `dispatch` (the manual workflow): a stable release of the next version, or of `requested` (a
  *   minor or major bump that package.json does not carry yet).
  * - `tag` (pushing `v<version>`): a stable release of the version the tag names.
@@ -93,6 +96,20 @@ export function releasePlan(input: {
     );
   }
   const next = nextVersion(packageVersion, latest);
+  if (event === 'preview') {
+    const pr = /^refs\/pull\/([1-9]\d*)\//.exec(ref)?.[1];
+    if (!pr) throw new Error(`a preview is built for a pull request ref, not ${ref}`);
+    if (!Number.isInteger(run) || run < 1) throw new Error(`bad run number ${String(run)}`);
+    if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(`bad commit ${sha}`);
+    const version = `${next}-pr.${pr}.${String(run)}`;
+    return {
+      version,
+      buildVersion: `${version}+${sha.slice(0, 7)}`,
+      tag: `v${version}`,
+      channel: 'dev',
+      archive: `dwell-${version}.tar.gz`,
+    };
+  }
   const raised = latest === null || compareVersionText(packageVersion, latest) > 0;
   if (event === 'tag' || event === 'dispatch' || raised) {
     const named =
@@ -158,8 +175,10 @@ export function releasePlan(input: {
 
 function main(args: string[]): number {
   const [event, ref = '', run = '0', sha = '', releasesFile, requested] = args;
-  if (event !== 'push' && event !== 'tag' && event !== 'dispatch') {
-    console.error('usage: release.ts push|tag|dispatch REF RUN SHA [RELEASES.json [REQUESTED]]');
+  if (event !== 'push' && event !== 'tag' && event !== 'dispatch' && event !== 'preview') {
+    console.error(
+      'usage: release.ts push|tag|dispatch|preview REF RUN SHA [RELEASES.json [REQUESTED]]',
+    );
     return 2;
   }
   const { version: packageVersion } = JSON.parse(readFileSync('package.json', 'utf8')) as {

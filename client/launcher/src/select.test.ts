@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isPreviewVersion } from '../../src/version/semver';
 import { isBuildOf, LAUNCHER_VERSION, parseManifest, type Manifest } from './manifest';
 import {
   choose,
@@ -24,7 +25,9 @@ function manifest(versions: string[], minLauncher: Record<string, number> = {}):
     generated: '2026-10-06T00:00:00.000Z',
     versions: entries,
     latestStable: entries.find((e) => e.channel === 'stable')?.version ?? null,
-    latestDev: entries.find((e) => e.channel === 'dev')?.version ?? null,
+    // As scripts/site.ts writes it: a preview is never the latest dev build.
+    latestDev:
+      entries.find((e) => e.channel === 'dev' && !isPreviewVersion(e.version))?.version ?? null,
   };
 }
 
@@ -234,5 +237,34 @@ describe('the landing screen', () => {
       '?versions',
     ])
       expect(isPlainVisit(q)).toBe(false);
+  });
+});
+
+describe('previews of pull requests', () => {
+  const PREVIEWS = manifest(['0.2.1-pr.63.12', '0.2.0', '0.2.0-dev.7']);
+
+  it('are never chosen for the main menu or a world a release can open', () => {
+    expect(choose(PREVIEWS, request('', {}, 'dev'))).toMatchObject({ version: '0.2.0-dev.7' });
+    expect(choose(PREVIEWS, request('?play=a', { a: '0.2.0' }))).toMatchObject({
+      version: '0.2.0',
+    });
+  });
+
+  it('open the world they saved, and a game they host', () => {
+    expect(choose(PREVIEWS, request('?play=a', { a: '0.2.1-pr.63.12' }))).toMatchObject({
+      version: '0.2.1-pr.63.12',
+    });
+    expect(choose(PREVIEWS, request('?join=x&v=0.2.1-pr.63.12'))).toMatchObject({
+      version: '0.2.1-pr.63.12',
+    });
+  });
+
+  it('open when pinned, and are listed with the dev builds', () => {
+    expect(choose(PREVIEWS, request('?version=0.2.1-pr.63.12'))).toMatchObject({
+      version: '0.2.1-pr.63.12',
+      why: 'pinned',
+    });
+    expect(listBuilds(PREVIEWS, true, []).map((r) => r.version)).toContain('0.2.1-pr.63.12');
+    expect(listBuilds(PREVIEWS, false, []).map((r) => r.version)).toEqual(['0.2.0']);
   });
 });

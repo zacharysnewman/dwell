@@ -39,6 +39,14 @@ export function isStable(v: Version): boolean {
   return v.pre.length === 0;
 }
 
+/**
+ * A preview build of a pull request (`0.2.1-pr.63.9`, RELEASES.md §3): a pre-release like a dev
+ * build, but never chosen automatically — only by `?version=`, or to open a world it saved.
+ */
+export function isPreviewVersion(text: string): boolean {
+  return parseVersion(text)?.pre[0] === 'pr';
+}
+
 function comparePre(a: string[], b: string[]): number {
   // A release outranks its pre-releases (SemVer §11.3).
   if (a.length === 0 || b.length === 0) return a.length === 0 ? (b.length === 0 ? 0 : 1) : -1;

@@ -137,11 +137,18 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
   with its `build.json` (version, channel, date, commit, `protocolVersion`, generator versions,
   `minLauncher`). The version is Semantic Versioning 2.0.0, one for the whole app; before `1.0.0`
   breaking changes bump MINOR and compatible ones PATCH (§10.5).
+- **Previews of pull requests.** A pull request from this repository (opened, pushed to, reopened)
+  builds, in parallel with CI, a **preview**: a pre-release `v<next version>-pr.<number>.<run>`
+  (never a release, whatever `package.json` says), commented as a link on the PR. It is a dev
+  build to the launcher, but is never chosen by itself — not as the latest, not for a world a
+  release can open — only by `?version=` or to open a world or host it saved itself.
 - **The site is assembled from the releases** (`.github/workflows/pages.yml`, called at the end of
   each release and runnable by hand; `client/scripts/site.ts`): `index.html` (the launcher),
   `versions.json` (generated from each `build.json`) and `v/<version>/` for every stable release and
-  the newest 10 dev builds, each unpacked and immutable; older dev releases and their tags are
-  deleted. It is deployed with `actions/deploy-pages`, and its size is reported against Pages'
+  the newest 10 dev builds and the newest preview of each open pull request (at most 5), each
+  unpacked and immutable; older dev releases, superseded previews and those of closed PRs, and
+  their tags, are deleted. The unpacked builds are cached between runs, so a deploy downloads only
+  the builds it has not seen. It is deployed with `actions/deploy-pages`, and its size is reported against Pages'
   1 GB limit. Builds are same-origin directories because release assets carry no CORS headers or
   script content types, the CSP is `script-src 'self'` / `worker-src 'self'`, and all versions must
   share the origin's storage.

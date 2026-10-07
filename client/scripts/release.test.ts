@@ -238,3 +238,36 @@ describe('a patch of an older line', () => {
     expect(latestStable(tags)).toBe('0.4.0');
   });
 });
+
+describe('a preview of a pull request', () => {
+  const pr = {
+    ...base,
+    latestStable: '0.2.0',
+    event: 'preview' as const,
+    ref: 'refs/pull/63/merge',
+  };
+
+  it('is a pre-release of the next version, named by the PR and the run', () => {
+    expect(releasePlan(pr)).toEqual({
+      version: '0.2.1-pr.63.42',
+      buildVersion: '0.2.1-pr.63.42+ab12cd3',
+      tag: 'v0.2.1-pr.63.42',
+      channel: 'dev',
+      archive: 'dwell-0.2.1-pr.63.42.tar.gz',
+    });
+  });
+
+  it('is never a release, even when the PR raises package.json', () => {
+    expect(releasePlan({ ...pr, packageVersion: '0.3.0' })).toMatchObject({
+      version: '0.3.0-pr.63.42',
+      channel: 'dev',
+    });
+  });
+
+  it('needs a pull request ref, a run and a commit', () => {
+    expect(() => releasePlan({ ...pr, ref: 'refs/heads/main' })).toThrow('pull request');
+    expect(() => releasePlan({ ...pr, ref: 'refs/pull/0/merge' })).toThrow('pull request');
+    expect(() => releasePlan({ ...pr, run: 0 })).toThrow('run number');
+    expect(() => releasePlan({ ...pr, sha: 'main' })).toThrow('commit');
+  });
+});

@@ -4,6 +4,10 @@ name: Release
 #   - a push to main        → a dev build, `v<next version>-dev.<run>` (a GitHub pre-release) —
 #                             or, if the push raised client/package.json above the newest
 #                             release (the baseline, a new line), that version as a stable release;
+#   - a pull request from this repository (opened, pushed to, reopened)
+#                           → a preview, `v<next version>-pr.<number>.<run>` (a pre-release the launcher
+#                             never picks by itself; its link is commented on the PR). The site keeps
+#                             the newest build of each open PR, a few at most (client/scripts/site.ts);
 #   - a pushed `v<version>` tag, or this workflow run by hand
 #                           → a stable release.
 # The version follows the newest release (its next patch), so nothing is bumped after a release;
@@ -15,6 +19,8 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       version:
@@ -28,13 +34,16 @@ permissions:
   id-token: write
 
 # One release run at a time per ref; a later push waits (never cancel a half-published release).
+# A newer push to a pull request replaces its older preview instead.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   plan:
     name: Decide the version
+    # A fork's pull request has no token that can publish: no preview.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.plan.outputs.version }}
@@ -53,14 +62,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           REQUESTED: ${{ inputs.version }}
+          # A preview names the pull request's own head commit, not the merge commit it builds.
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           gh release list --limit 500 --json tagName > "$RUNNER_TEMP/releases.json"
           case "$GITHUB_REF" in
             refs/tags/*) event=tag ;;
+            refs/pull/*) event=preview ;;
             refs/heads/*) if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then event=dispatch; else event=push; fi ;;
             *) echo "::error::unexpected ref $GITHUB_REF"; exit 1 ;;
           esac
-          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" | tee -a "$GITHUB_OUTPUT"
+          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$COMMIT" "$RUNNER_TEMP/releases.json" "$REQUESTED" | tee -a "$GITHUB_OUTPUT"
       - name: A release is made once
         env:
           GH_TOKEN: ${{ github.token }}
@@ -152,12 +164,14 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
           ARCHIVE: ${{ needs.plan.outputs.archive }}
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           # `build.json` was uploaded from client/dist/, so it sits under client/dist/ here.
           files=("$ARCHIVE" client/dist/build.json)
           if [ "$CHANNEL" = dev ]; then
-            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --prerelease \
-              --title "Dwell $VERSION (dev)" --notes "Dev build of $GITHUB_SHA."
+            gh release create "$TAG" "${files[@]}" --target "$COMMIT" --prerelease \
+              --title "Dwell $VERSION (dev)" --notes "${PR:+Preview of pull request #$PR: }Dev build of $COMMIT."
           elif git ls-remote --exit-code --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" "${files[@]}" --verify-tag --title "Dwell $VERSION" --generate-notes
           else
@@ -172,3 +186,22 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/pages.yml
+
+  comment:
+    name: Link the preview on the pull request
+    if: github.event_name == 'pull_request'
+    needs: [plan, site]
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment (one comment, updated by each push)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          COMMIT: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh pr comment "$PR" --edit-last --create-if-none --body \
+            "Preview of \`${COMMIT:0:7}\` (a dev build; its worlds open only in it): https://dropkickarcade.com/dwell/?version=$VERSION"

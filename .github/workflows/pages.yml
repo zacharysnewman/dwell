@@ -4,7 +4,8 @@ name: Deploy site to GitHub Pages
 # Releases (RELEASES.md §4):
 #   /dwell/index.html          the launcher (client/launcher)
 #   /dwell/versions.json       the manifest of the builds below
-#   /dwell/v/<version>/…       every stable release and the newest dev builds, each unpacked
+#   /dwell/v/<version>/…       every stable release, the newest dev builds, and the newest preview of
+#                              each open pull request (a few at most), each unpacked
 # Called by release.yml after a release is published; run by hand to rebuild the site (e.g. after a
 # launcher change, or to re-deploy).
 on:
@@ -12,7 +13,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # prune old dev releases
+  contents: write # prune old dev releases and previews
+  pull-requests: read # which pull requests are open
   pages: write
   id-token: write
 
@@ -46,14 +48,31 @@ jobs:
         working-directory: client
         run: |
           gh release list --limit 500 --json tagName > "$RUNNER_TEMP/releases.json"
-          node --experimental-strip-types scripts/site.ts plan "$RUNNER_TEMP/releases.json" "$DEV_KEEP" | tee "$RUNNER_TEMP/plan.json"
+          gh pr list --state open --limit 200 --json number > "$RUNNER_TEMP/open-prs.json"
+          node --experimental-strip-types scripts/site.ts plan "$RUNNER_TEMP/releases.json" "$DEV_KEEP" "$RUNNER_TEMP/open-prs.json" | tee "$RUNNER_TEMP/plan.json"
+      # A published build never changes, so the unpacked ones are reused: a deploy downloads only
+      # the builds it has not seen. A rolling cache: each run saves its own, restoring the last.
+      - name: Restore the unpacked builds
+        uses: actions/cache@v4
+        with:
+          path: site/v
+          key: site-builds-${{ github.run_id }}
+          restore-keys: site-builds-
       - name: Download the builds
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          mkdir -p site/v
+          # Drop cached builds the plan no longer keeps (pruned dev builds, closed pull requests).
+          for dir in site/v/*/; do
+            name="$(basename "$dir")"
+            jq -e --arg t "v$name" '.keep | index($t)' "$RUNNER_TEMP/plan.json" >/dev/null || rm -rf "$dir"
+          done
           for tag in $(jq -r '.keep[]' "$RUNNER_TEMP/plan.json"); do
             dir="site/v/${tag#v}"
+            [ -f "$dir/build.json" ] && continue # unpacked by an earlier run
+            rm -rf "$dir"
             mkdir -p "$dir" "$RUNNER_TEMP/dl/$tag"
             gh release download "$tag" --pattern 'dwell-*.tar.gz' --dir "$RUNNER_TEMP/dl/$tag"
             tar -xzf "$RUNNER_TEMP/dl/$tag"/dwell-*.tar.gz -C "$dir"

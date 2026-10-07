@@ -8,6 +8,7 @@ import {
   planSite,
   readBuilds,
   sizeReport,
+  previewOf,
   tagVersion,
   type BuildJson,
 } from './site';
@@ -48,7 +49,7 @@ describe('which releases the site holds', () => {
         'v0.2.0',
         'latest',
       ),
-      2,
+      { devKeep: 2 },
     );
     expect(plan.keep).toEqual(['v0.2.0', 'v0.1.1', 'v0.1.0', 'v0.2.0-dev.11', 'v0.2.0-dev.10']);
     expect(plan.prune).toEqual(['v0.2.0-dev.9', 'v0.2.0-dev.8']);
@@ -56,15 +57,61 @@ describe('which releases the site holds', () => {
   });
 
   it('orders dev builds by version precedence, not by when they were made', () => {
-    const plan = planSite(tags('v0.2.0-dev.100', 'v0.2.0-dev.99', 'v0.3.0-dev.1'), 1);
+    const plan = planSite(tags('v0.2.0-dev.100', 'v0.2.0-dev.99', 'v0.3.0-dev.1'), { devKeep: 1 });
     expect(plan.keep).toEqual(['v0.3.0-dev.1']);
     expect(plan.prune).toEqual(['v0.2.0-dev.100', 'v0.2.0-dev.99']);
   });
 
   it('never prunes a stable release', () => {
     const many = tags(...Array.from({ length: 30 }, (_, i) => `v0.1.${String(i)}`));
-    expect(planSite(many, 0).prune).toEqual([]);
-    expect(planSite(many, 0).keep).toHaveLength(30);
+    expect(planSite(many, { devKeep: 0 }).prune).toEqual([]);
+    expect(planSite(many, { devKeep: 0 }).keep).toHaveLength(30);
+  });
+});
+
+describe('preview builds of pull requests', () => {
+  const releases = tags(
+    'v0.2.0',
+    'v0.2.1-dev.5',
+    'v0.2.1-pr.63.10',
+    'v0.2.1-pr.63.12',
+    'v0.2.1-pr.64.11',
+    'v0.2.1-pr.65.9',
+  );
+
+  it('are named by their PR and run', () => {
+    expect(previewOf('v0.2.1-pr.63.12')).toEqual({ pr: 63, run: 12 });
+    expect(previewOf('v0.2.1-dev.12')).toBeNull();
+    expect(previewOf('v0.2.1-pr.63')).toBeNull();
+  });
+
+  it('keep only the newest build of each open PR, and drop those of closed PRs', () => {
+    const plan = planSite(releases, { openPrs: [63, 65] });
+    expect(plan.keep).toEqual(['v0.2.0', 'v0.2.1-dev.5', 'v0.2.1-pr.63.12', 'v0.2.1-pr.65.9']);
+    expect(plan.prune).toEqual(['v0.2.1-pr.63.10', 'v0.2.1-pr.64.11']);
+  });
+
+  it('are capped to the most recently built, whatever the dev builds keep', () => {
+    const plan = planSite(releases, { previewKeep: 2, devKeep: 0 });
+    expect(plan.keep).toEqual(['v0.2.0', 'v0.2.1-pr.63.12', 'v0.2.1-pr.64.11']);
+    expect(plan.prune).toEqual(['v0.2.1-dev.5', 'v0.2.1-pr.63.10', 'v0.2.1-pr.65.9']);
+  });
+
+  it('never crowd out the dev builds', () => {
+    const plan = planSite(releases, { devKeep: 1, previewKeep: 0 });
+    expect(plan.keep).toEqual(['v0.2.0', 'v0.2.1-dev.5']);
+  });
+
+  it('are never the launcher’s latest dev build', () => {
+    const m = buildManifest(
+      new Map([
+        ['0.2.1-dev.5', build('0.2.1-dev.5')],
+        ['0.2.1-pr.63.12', build('0.2.1-pr.63.12')],
+      ]),
+      'now',
+    );
+    expect(m.versions.map((v) => v.version)).toEqual(['0.2.1-pr.63.12', '0.2.1-dev.5']);
+    expect(m.latestDev).toBe('0.2.1-dev.5');
   });
 });
 

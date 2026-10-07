@@ -1,5 +1,5 @@
 // The site's assembly (RELEASES.md §4), run by the Pages workflow and by `npm run site:fixture`:
-//   site.ts plan RELEASES.json [DEV_KEEP]   which releases the site holds, and which to prune
+//   site.ts plan RELEASES.json [DEV_KEEP [OPEN_PRS.json]]   which releases the site holds, and which to prune
 //   site.ts manifest SITE_DIR               writes SITE_DIR/versions.json from SITE_DIR/v/*/build.json
 //   site.ts size SITE_DIR                   the site's size against Pages' 1 GB limit
 // Runs under Node's type stripping (`node --experimental-strip-types`): erasable TypeScript only,
@@ -8,10 +8,18 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { BuildEntry, Manifest } from '../launcher/src/manifest.ts';
-import { compareVersionText, isStable, parseVersion, withoutBuild } from '../src/version/semver.ts';
+import {
+  compareVersionText,
+  isPreviewVersion,
+  isStable,
+  parseVersion,
+  withoutBuild,
+} from '../src/version/semver.ts';
 
 /** Dev pre-releases kept on the site and as releases; older ones and their tags are pruned. */
 export const DEV_KEEP = 10;
+/** Preview builds of pull requests kept on the site: the newest of each open PR, at most this many. */
+export const PREVIEW_KEEP = 5;
 /** The most a Pages site may hold. */
 export const PAGES_LIMIT_BYTES = 1_000_000_000;
 
@@ -22,7 +30,8 @@ export interface ReleaseInfo {
 export interface SitePlan {
   /** Tags whose builds go on the site: every stable release and the newest dev builds. */
   keep: string[];
-  /** Dev tags beyond `DEV_KEEP`: their releases and tags are deleted. */
+  /** Dev tags beyond `DEV_KEEP`, and previews that are superseded, over the cap or of a closed PR:
+   * their releases and tags are deleted. */
   prune: string[];
   /** Tags that are not `v<version>`, left alone. */
   ignored: string[];
@@ -36,22 +45,52 @@ export function tagVersion(tag: string): string | null {
   return parsed && parsed.build === null ? version : null;
 }
 
-export function planSite(releases: ReleaseInfo[], devKeep: number = DEV_KEEP): SitePlan {
+/** The pull request and run a preview tag names (`v0.2.1-pr.63.9` → 63, 9), or null. */
+export function previewOf(tag: string): { pr: number; run: number } | null {
+  const m = /^v\d+\.\d+\.\d+-pr\.([1-9]\d*)\.([1-9]\d*)$/.exec(tag);
+  return m ? { pr: Number(m[1]), run: Number(m[2]) } : null;
+}
+
+export interface PlanOptions {
+  devKeep?: number;
+  /** Numbers of the open pull requests; a preview of any other is pruned. Absent: all are open. */
+  openPrs?: number[];
+  previewKeep?: number;
+}
+
+export function planSite(releases: ReleaseInfo[], options: PlanOptions = {}): SitePlan {
+  const { devKeep = DEV_KEEP, openPrs, previewKeep = PREVIEW_KEEP } = options;
   const stable: string[] = [];
   const dev: string[] = [];
+  const previews: { tag: string; pr: number; run: number }[] = [];
   const ignored: string[] = [];
   for (const { tagName } of releases) {
     const version = tagVersion(tagName);
     const parsed = version ? parseVersion(version) : null;
+    const preview = previewOf(tagName);
     if (!version || !parsed) ignored.push(tagName);
+    else if (preview) previews.push({ tag: tagName, ...preview });
     else (isStable(parsed) ? stable : dev).push(tagName);
   }
   const newestFirst = (a: string, b: string) => compareVersionText(b.slice(1), a.slice(1));
   stable.sort(newestFirst);
   dev.sort(newestFirst);
+  // A preview stays while its pull request is open and it is the PR's newest build; the newest
+  // `previewKeep` of those are kept (previews come and go with their PRs, never with `devKeep`).
+  const live = new Map<number, { tag: string; run: number }>();
+  for (const p of previews) {
+    if (openPrs && !openPrs.includes(p.pr)) continue;
+    const seen = live.get(p.pr);
+    if (!seen || p.run > seen.run) live.set(p.pr, p);
+  }
+  const kept = [...live.values()].sort((a, b) => b.run - a.run).slice(0, previewKeep);
+  const keptTags = new Set(kept.map((p) => p.tag));
   return {
-    keep: [...stable, ...dev.slice(0, devKeep)],
-    prune: dev.slice(devKeep),
+    keep: [...stable, ...dev.slice(0, devKeep), ...kept.map((p) => p.tag)],
+    prune: [
+      ...dev.slice(devKeep),
+      ...previews.filter((p) => !keptTags.has(p.tag)).map((p) => p.tag),
+    ],
     ignored,
   };
 }
@@ -98,7 +137,9 @@ export function buildManifest(builds: Map<string, BuildJson>, generated: string)
     generated,
     versions,
     latestStable: versions.find((v) => v.channel === 'stable')?.version ?? null,
-    latestDev: versions.find((v) => v.channel === 'dev')?.version ?? null,
+    // A preview is a dev build the launcher never picks by itself.
+    latestDev:
+      versions.find((v) => v.channel === 'dev' && !isPreviewVersion(v.version))?.version ?? null,
   };
 }
 
@@ -135,10 +176,17 @@ export function sizeReport(bytes: number, builds: number): string {
 }
 
 function main(args: string[]): number {
-  const [command, arg, extra] = args;
+  const [command, arg, extra, openFile] = args;
   if (command === 'plan' && arg) {
     const releases = JSON.parse(readFileSync(arg, 'utf8')) as ReleaseInfo[];
-    console.log(JSON.stringify(planSite(releases, extra ? Number(extra) : DEV_KEEP), null, 2));
+    const openPrs = openFile
+      ? (JSON.parse(readFileSync(openFile, 'utf8')) as { number: number }[]).map((p) => p.number)
+      : undefined;
+    const plan = planSite(releases, {
+      devKeep: extra ? Number(extra) : DEV_KEEP,
+      ...(openPrs ? { openPrs } : {}),
+    });
+    console.log(JSON.stringify(plan, null, 2));
     return 0;
   }
   if (command === 'manifest' && arg) {
@@ -160,7 +208,9 @@ function main(args: string[]): number {
     }
     return 0;
   }
-  console.error('usage: site.ts plan RELEASES.json [DEV_KEEP] | manifest SITE_DIR | size SITE_DIR');
+  console.error(
+    'usage: site.ts plan RELEASES.json [DEV_KEEP [OPEN_PRS.json]] | manifest SITE_DIR | size SITE_DIR',
+  );
   return 2;
 }
 

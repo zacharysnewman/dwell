@@ -5,6 +5,7 @@ import {
   compareVersionText,
   compareVersions,
   compatibilityLine,
+  isPreviewVersion,
   isStable,
   parseVersion,
   sameLine,
@@ -68,5 +69,20 @@ describe('versions', () => {
     expect(sameLine('0.2.0-dev.1', '0.2.0-dev.1+x')).toBe(true);
     expect(sameLine('0.2.0-dev.1', '0.2.0-dev.2')).toBe(false);
     expect(sameLine('nope', 'nope')).toBe(false);
+  });
+});
+
+describe('preview versions', () => {
+  it('are the pull requests’ pre-releases, not dev builds or releases', () => {
+    expect(isPreviewVersion('0.2.1-pr.63.9')).toBe(true);
+    expect(isPreviewVersion('0.2.1-pr.63.9+ab12cd3')).toBe(true);
+    expect(isPreviewVersion('0.2.1-dev.9')).toBe(false);
+    expect(isPreviewVersion('0.2.1')).toBe(false);
+    expect(isPreviewVersion('pr')).toBe(false);
+  });
+
+  it('rank above dev builds of their version, so they must be skipped by name', () => {
+    expect(compareVersionText('0.2.1-pr.63.9', '0.2.1-dev.99')).toBe(1);
+    expect(compareVersionText('0.2.1-pr.63.9', '0.2.1')).toBe(-1);
   });
 });

@@ -71,7 +71,12 @@ and linked from the menu's About screen) and beside the native server (copied ne
     commit as build metadata: `0.2.0-dev.42+ab12cd3`. They sort correctly
     (`0.2.0-dev.41` < `0.2.0-dev.42` < `0.2.0`), and every identifier is valid (a purely numeric
     commit hash with a leading zero would not be, so the hash only appears as build metadata).
-  - **Tags:** `v<version>` without build metadata — `v0.1.0`, `v0.2.0-dev.42`.
+  - **Previews** are dev builds of a pull request, `0.2.1-pr.63.9` (PR 63, run 9) with the PR's
+    head commit as build metadata: pre-releases of the next version, never releases. They sort
+    above `-dev.N` builds, so the launcher and the manifest's `latestDev` skip them by name
+    (`isPreviewVersion`): a preview opens only when asked for (`?version=`), or to open a world or
+    host it saved itself.
+  - **Tags:** `v<version>` without build metadata — `v0.1.0`, `v0.2.0-dev.42`, `v0.2.1-pr.63.9`.
   - The version lives in one place (the client's `package.json`), and the build embeds it; the
     other manifests' own version fields are not the app version. **`package.json` is a floor, not a
     counter:** the next release is the next patch after the newest published release, or
@@ -79,8 +84,11 @@ and linked from the menu's About screen) and beside the native server (copied ne
     it). So nobody bumps it after a release; it is raised by hand only to start a new line
     (`0.1.x` → `0.2.0`), in the PR that makes the breaking change.
 - **Channels:** **stable** (a release: pushing a `v<version>` tag, or a manual "Release" workflow)
-  and **dev** (every push to `main`). Both are published; the launcher defaults to stable and
-  offers dev in settings.
+  and **dev** (every push to `main`, and a preview of every pull request from this repository).
+  Both are published; the launcher defaults to stable and offers dev in settings. A preview is
+  built when the PR is opened, pushed to or reopened, in parallel with CI (a newer push cancels the
+  older preview's run), and its link is commented on the PR: so a change can be tried before it
+  merges. A fork's pull request gets none (it cannot publish).
 - **Each build is built for its own path:** Vite `base: '/dwell/v/<version>/'`, the version
   embedded (shown in the HUD and the menu, replacing today's commit SHA overlay). Source maps may
   be published, since the source is public.
@@ -141,13 +149,22 @@ the site **from the releases** and deploys it with `actions/deploy-pages`, as to
 /dwell/v/<version>/...         each release's build, unpacked, immutable
 ```
 
-- **Which releases:** every stable release; the newest `DEV_KEEP` (≈ 10) dev pre-releases. Older
-  dev pre-releases and their tags are deleted by the workflow.
+- **Which releases:** every stable release; the newest `DEV_KEEP` (≈ 10) dev pre-releases; and
+  the newest preview of each **open** pull request, at most `PREVIEW_KEEP` (5) — previews never
+  count against `DEV_KEEP`. Older dev pre-releases, superseded previews and those of closed or
+  merged PRs, and their tags, are deleted by the workflow (a closed PR's preview goes at the next
+  deploy).
+- **Manual setup (previews):** the `github-pages` environment must allow deploys from pull
+  requests — Settings → Environments → github-pages → deployment branches: add `refs/pull/*/merge`
+  (or allow all branches) — as for `release/*` above; until then a preview's release is published
+  but its site update is refused.
 - **Size:** a Pages site is limited to 1 GB. At ~5–10 MB per build (measure) that is ~100+ builds.
   When it gets close, drop the oldest stable builds that no world or server uses (§6 counts them
   through the master).
 - **Caching:** version directories never change; the launcher and the manifest are small and
-  short-lived (Pages caches for ~10 minutes).
+  short-lived (Pages caches for ~10 minutes). The workflow keeps the unpacked directories in a
+  rolling Actions cache, so a deploy downloads only builds new since the last one (the Pages
+  artifact is still the whole site: it is replaced, not patched).
 - All of this runs in the public repository's free Actions minutes.
 
 **Why serve versions from Pages and not straight from release assets or a CDN by tag:** release
