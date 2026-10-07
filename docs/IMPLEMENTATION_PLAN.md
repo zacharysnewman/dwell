@@ -1693,10 +1693,10 @@ Deliverables
   (protocol bump if the snapshot needs a flag).
 - [x] Crossing without dedicated routes: a shaft dug through the core and going over the rim both
   work through the flip band (no generated wells, ledges or portals).
-- [ ] Lighting and rendering: a static sun (face A) and a counter-angled static moon (face B), each
+- [x] Lighting and rendering: a static sun (face A) and a counter-angled static moon (face B), each
   fragment lit only by its own face's light and ambient; camera up by face; face-B tops shaded as
   tops; face B's moonlit night sky and haze in the viewer's face frame.
-- [ ] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
+- [x] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
 
 Exit criteria
 - [ ] A face-B chunk equals the flip of its face-local chunk; face B's terrain differs from face A's;
@@ -1718,9 +1718,11 @@ Deviations (reasons in `BIFACIAL_WORLD.md` §10): sections up to level 6, not 7,
 face; the flip band accelerates a body moving toward the midplane (owner's decision) instead of settling it; the controller
 runs in a face-local mirror frame instead of a sign threaded through every probe, and the
 mirror-equivalence suite (`--dwell-face=b`) holds in every decision and to contact-solver precision
-in positions, not bit for bit. Still to do: tick the lighting/rendering and docs deliverables and the
-exit criteria once seen in a browser (the shaders and meshing are unit-tested, not yet looked at),
-and run the client worldgen module's goldens in CI.
+in positions, not bit for bit. Browser check (headless Chromium, local world, a player placed on
+face B): face B draws upright for its player under a moonlit night sky with the moon's glow, trees and
+terrain meshed right way up, face A unchanged under the sun; mouse-up looks up on both faces. Still to
+do: look at ceilings and the crossing's camera turn in a browser (exit criteria above stay unticked),
+the owner's review, and run the client worldgen module's goldens in CI.
 
 ## Phase 14 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
