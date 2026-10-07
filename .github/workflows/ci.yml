@@ -168,6 +168,7 @@ jobs:
         working-directory: server
         run: build/dev/tests/dwell_tests --dwell-origin-x=far -ts="player*,netcode*"
       - name: Player suites on face B, the mirror image of face A (ADR 0023)
+        working-directory: server
         run: |
           build/dev/tests/dwell_tests --dwell-face=b -ts="player*"
           build/dev/tests/dwell_tests --dwell-face=b --dwell-origin-x=far -ts="player*"
