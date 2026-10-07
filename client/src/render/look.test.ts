@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LOD_VOLUME, lodCell } from '../lod/grid';
+import { World } from '../protocol/constants.gen';
 import { lodColor, meshSection } from '../mesh/lodMesher';
 import { meshChunk, PADDED_VOLUME, paddedIndex } from '../mesh/mesher';
 import {
@@ -7,6 +8,10 @@ import {
   EXPOSURE_LIMITS,
   faceTint,
   HORIZON_COLOR,
+  LIGHT,
+  MOON_DIRECTION,
+  MOON_DIRECTION_WORLD,
+  NIGHT_SKY_STOPS,
   SKY_GLSL,
   SKY_STOPS,
   SUN_DIRECTION,
@@ -137,6 +142,71 @@ describe('the sky (WORLD_GENERATION.md §1.4)', () => {
       expect(SKY_GLSL).toContain(color.map((c) => c.toFixed(5)).join(', '));
     }
     expect(SKY_GLSL).toContain(SUN_DIRECTION.map((c) => c.toFixed(5)).join(', '));
+  });
+});
+
+describe('face B: a moonlit night sky and light (BIFACIAL_WORLD.md §6)', () => {
+  const luma = (c: Rgb): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+  it('puts the moon opposite the sun in the world, and above face B’s horizon in its own frame', () => {
+    SUN_DIRECTION.forEach((c, i) => {
+      expect(MOON_DIRECTION_WORLD[i]).toBeCloseTo(-c, 12);
+    });
+    // Face B's frame is the world mirrored: the moon is as high there as the sun is on face A.
+    expect(MOON_DIRECTION[1]).toBeCloseTo(SUN_DIRECTION[1], 12);
+    expect(MOON_DIRECTION[0]).toBeCloseTo(-SUN_DIRECTION[0], 12);
+    expect(MOON_DIRECTION[2]).toBeCloseTo(-SUN_DIRECTION[2], 12);
+  });
+
+  it('is evaluated in the viewer’s own frame: a face-B sky is the night gradient, upside down', () => {
+    // Overhead for a face-B player is −y; its horizon is the night haze's colour.
+    const overhead = skyColor([0, -1, 0], -1);
+    const horizon = skyColor([0.6, 0, -0.8], -1);
+    expect(horizon[2]).toBeCloseTo(NIGHT_SKY_STOPS[0]?.color[2] ?? 0, 2);
+    expect(luma(overhead)).toBeLessThan(luma(horizon)); // darker overhead, brighter near the horizon
+    // Dim: the night sky is darker than the day's at the same place.
+    expect(luma(overhead)).toBeLessThan(luma(skyColor([0, 1, 0], 1)) * 0.3);
+    // The same direction seen from face A is the day sky (the world's up is face A's).
+    expect(skyColor([0, 1, 0], 1)).not.toEqual(skyColor([0, -1, 0], -1));
+    // And face B's sky ignores what is above the disc: looking +y it is below the horizon.
+    expect(skyColor([0, 1, 0], -1)).toEqual(skyColor([0.6, 0.0, 0.8], -1));
+  });
+
+  it('glows cool and bright toward the moon', () => {
+    // Toward the moon in the world (its y negated is face B's frame).
+    const toMoon: Rgb = [MOON_DIRECTION[0], -MOON_DIRECTION[1], MOON_DIRECTION[2]];
+    const moon = skyColor(toMoon, -1);
+    const away = skyColor([-toMoon[0], -toMoon[1], -toMoon[2]], -1);
+    expect(luma(moon)).toBeGreaterThan(luma(away));
+    expect(moon[2]).toBeGreaterThan(moon[0]); // blue-white, not warm
+  });
+
+  it('dims the moon and the night’s ambient below the sun’s and the day’s', () => {
+    expect(LIGHT.moonIntensity).toBeLessThan(LIGHT.sunIntensity);
+    expect(LIGHT.moonHemisphereIntensity).toBeLessThanOrEqual(LIGHT.hemisphereIntensity);
+    // Cooler: more blue than red.
+    expect(LIGHT.moon & 0xff).toBeGreaterThan((LIGHT.moon >> 16) & 0xff);
+  });
+
+  it('is in the shader too, in the viewer’s frame: its night branch, and the face uniform', () => {
+    expect(SKY_GLSL).toContain('uniform float dwellFace;');
+    expect(SKY_GLSL).toContain('if (dwellFace < 0.0)');
+    for (const { color } of NIGHT_SKY_STOPS) {
+      expect(SKY_GLSL).toContain(color.map((c) => c.toFixed(5)).join(', '));
+    }
+    expect(SKY_GLSL).toContain(MOON_DIRECTION.map((c) => c.toFixed(5)).join(', '));
+  });
+
+  it('keeps each fragment to its own face’s light: the lights chunk is patched by side', () => {
+    const shader = { uniforms: {}, vertexShader: '', fragmentShader: '' };
+    shader.fragmentShader = '#include <fog_pars_fragment>\n#include <lights_fragment_begin>';
+    patchFogShader(shader as never);
+    const src = shader.fragmentShader;
+    expect(src).not.toContain('#include <lights_fragment_begin>'); // replaced by the chunk's text
+    expect(src).toContain('dwellFragA'); // the fragment's side of the midplane
+    expect(src).toContain('directLight.color *= dwellOwn(');
+    expect(src).toContain('hemisphereLights[ i ].direction');
+    expect(src).toContain(`dwellFragY >= ${World.midplaneY.toFixed(1)}`);
   });
 });
 

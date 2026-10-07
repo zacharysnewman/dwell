@@ -5,9 +5,9 @@ import type { ChunkCoord } from '../protocol/messages';
 export type ToWorldgen =
   | { t: 'init'; generatorVersion: number; worldSeed: bigint }
   | { t: 'generate'; id: number; coord: ChunkCoord }
-  | { t: 'map'; id: number; x0: number; z0: number; step: number; n: number }
+  | { t: 'map'; id: number; x0: number; z0: number; step: number; n: number; face?: number }
   /** The biome tint grid of a chunk's columns (mesh/mesher.ts TintField). */
-  | { t: 'tint'; id: number; cx: number; cz: number }
+  | { t: 'tint'; id: number; cx: number; cz: number; face: number }
   /** GenerateLod of a section, and a column of sections' bounds (§6.6). */
   | { t: 'lod'; id: number; coord: LodCoord }
   | { t: 'bounds'; id: number; level: number; i: number; k: number };
@@ -28,7 +28,17 @@ export type FromWorldgen =
       kind: LodKind;
       cells: Uint16Array<ArrayBuffer>;
       surface: Float32Array<ArrayBuffer> | null;
+      surfaceB: Float32Array<ArrayBuffer> | null;
     }
-  | { t: 'bounds'; id: number; lo: number; hi: number; anyInside: boolean }
+  | {
+      t: 'bounds';
+      id: number;
+      lo: number;
+      hi: number;
+      loB: number;
+      hiB: number;
+      anyInside: boolean;
+      bifacial: boolean;
+    }
   /** The worker's WebAssembly memory changed size (bytes); not an answer to a job. */
   | { t: 'memory'; bytes: number };

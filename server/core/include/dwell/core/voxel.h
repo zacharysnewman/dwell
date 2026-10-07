@@ -16,9 +16,15 @@
 // playground; the procedural terrain generator lives in dwell/worldgen (§6.3).
 namespace dwell::core {
 
-// World bounds and terrain constants (§6.3, §7.4).
-inline constexpr int kWorldMinY = protocol::kWorldMinY;  // below this: the void
-inline constexpr int kWorldMaxY = protocol::kWorldMaxY;  // generated terrain stays below this
+// World bounds and terrain constants (§6.3, §7.4). The world is bifacial (BIFACIAL_WORLD.md): face
+// A is the ground band [kMidplaneY, kWorldMaxY) with sea level kSeaLevel, face B its mirror image
+// below the midplane, [kWorldBottomY, kMidplaneY), with its own terrain. There is no void below
+// the world and no bedrock: the rock at the midplane is ordinary.
+inline constexpr int kMidplaneY = protocol::kMidplaneY;  // the halfway plane: face A starts here
+inline constexpr int kWorldBottomY = protocol::kWorldBottomY;  // face B's lowest voxel row
+inline constexpr int kWorldMaxY = protocol::kWorldMaxY;        // generated terrain stays below this
+// Layers of the flat and playground test worlds' floor at the bottom of face A (generated terrain
+// has none: its core is ordinary rock).
 inline constexpr int kBedrockLayers = 4;
 inline constexpr int kSeaLevel = protocol::kSeaLevel;  // terrain: water fills open space below
 inline constexpr int kWorldRadius = protocol::kWorldRadius;  // world disc radius (m); beyond: void
@@ -136,9 +142,31 @@ enum class DiscOverlap : std::uint8_t { kInside, kPartial, kOutside };
 // How a chunk column's 32 × 32 voxel columns lie relative to the disc.
 DiscOverlap ChunkDiscOverlap(std::int32_t cx, std::int32_t cz);
 
-// Chunk rows the world can hold anything in (kWorldMinY..kWorldMaxY); outside is air.
-inline constexpr int kMinChunkY = kWorldMinY / kChunkSize;
+// Chunk rows the world can hold anything in (kWorldBottomY..kWorldMaxY); outside is air.
+inline constexpr int kMinChunkY = kWorldBottomY / kChunkSize;
 inline constexpr int kMaxChunkY = kWorldMaxY / kChunkSize - 1;
+
+// The two faces of the disc (BIFACIAL_WORLD.md §2). Face A is the world at or above the midplane,
+// face B the mirror image below it. A voxel at y on face B corresponds to face-local height
+// kMirrorSum − y (voxels map onto voxels); a chunk row cy to kMirrorChunkSum − cy (chunks onto
+// chunks). The mirror is its own inverse.
+enum class Face : std::uint8_t { kA = 0, kB = 1 };
+inline constexpr int kMirrorSum = 2 * kMidplaneY - 1;  // −4097
+static_assert(kMidplaneY % kChunkSize == 0, "the midplane lies on a chunk boundary");
+inline constexpr int kMidplaneChunkY = kMidplaneY / kChunkSize;  // the first row of face A: −64
+inline constexpr int kMirrorChunkSum = 2 * kMidplaneChunkY - 1;  // −129
+inline Face FaceOfY(std::int64_t y) { return y >= kMidplaneY ? Face::kA : Face::kB; }
+inline Face FaceOfChunkY(std::int32_t cy) { return cy >= kMidplaneChunkY ? Face::kA : Face::kB; }
+inline std::int32_t MirrorY(std::int32_t y) { return kMirrorSum - y; }
+inline std::int32_t MirrorChunkY(std::int32_t cy) { return kMirrorChunkSum - cy; }
+// The face-local chunk a chunk of face B is the flip of (face A's chunks are their own).
+inline ChunkCoord FaceLocalChunk(const ChunkCoord& c) {
+  return FaceOfChunkY(c.y) == Face::kA ? c : ChunkCoord{c.x, MirrorChunkY(c.y), c.z};
+}
+// The state a block takes when turned upside down (vertical mirror): slabs and slopes swap
+// `half`; every other state is its own mirror. Used where face B's chunks are generated from
+// face-local ones.
+MaterialId MirrorMaterial(MaterialId m);
 
 // Chebyshev distance between chunk coordinates.
 inline int ChunkDistance(const ChunkCoord& a, const ChunkCoord& b) {

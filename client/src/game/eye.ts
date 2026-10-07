@@ -3,7 +3,9 @@
 // up to a body height when crouching or standing in mid-air (the head stays put, the feet move).
 // Each jump is folded into an offset that then decays, so the eye always moves continuously.
 // `EyeSmoother` runs once per sim tick; `EyeCamera` feeds it client states and interpolates its
-// last two results for each drawn frame.
+// last two results for each drawn frame. Heights are measured along the player's up (BIFACIAL_WORLD.md
+// §6): on face B the head points toward −y, so `up height = face × y`; the smoothing is the same
+// either way, and starts afresh when the player crosses to the other face.
 import { ControllerFlags } from '../protocol/constants.gen';
 import type { ClientState } from '../sim/clientCore';
 
@@ -18,10 +20,11 @@ const STEP_MIN = 0.1;
 const CROUCH_MAX = 2;
 
 export interface EyeSample {
-  /** Feet height (drawn position). */
+  /** Feet height along the player's up (drawn position). */
   feet: number;
   crouched: boolean;
   grounded: boolean;
+  /** Vertical velocity along the player's up. */
   velocityY: number;
   eyeHeight: number;
   crouchEyeHeight: number;
@@ -73,6 +76,7 @@ export type EyeState = Pick<
   | 'halfHeight'
   | 'velocity'
   | 'controllerFlags'
+  | 'face'
   | 'eyeHeight'
   | 'crouchEyeHeight'
   | 'maxStepHeight'
@@ -81,10 +85,10 @@ export type EyeState = Pick<
 /** Feet height from a state's own half height: the capsule centre moves when crouching. */
 export function eyeSampleOf(s: EyeState): EyeSample {
   return {
-    feet: s.position[1] + s.renderOffset[1] - s.halfHeight,
+    feet: s.face * (s.position[1] + s.renderOffset[1]) - s.halfHeight,
     crouched: (s.controllerFlags & ControllerFlags.crouching) !== 0,
     grounded: (s.controllerFlags & ControllerFlags.grounded) !== 0,
-    velocityY: s.velocity[1],
+    velocityY: s.face * s.velocity[1],
     eyeHeight: s.eyeHeight,
     crouchEyeHeight: s.crouchEyeHeight,
     maxStepHeight: s.maxStepHeight,
@@ -93,18 +97,26 @@ export function eyeSampleOf(s: EyeState): EyeSample {
 
 /** The first-person camera's eye height: smoothed per tick, interpolated per frame. */
 export class EyeCamera {
-  private readonly smoother = new EyeSmoother();
+  private smoother = new EyeSmoother();
   private previous: number | null = null;
   private current = 0;
+  private face = 1;
 
   /** Advances one sim tick of `dt` seconds with the newly predicted state. */
   tick(s: EyeState, dt: number): void {
-    const eye = this.smoother.tick(eyeSampleOf(s), dt);
+    if (s.face !== this.face) {
+      // Across the midplane: heights along the up restart on the other side.
+      this.smoother = new EyeSmoother();
+      this.previous = null;
+      this.face = s.face;
+    }
+    // Along the player's up, back to a world height.
+    const eye = s.face * this.smoother.tick(eyeSampleOf(s), dt);
     this.previous = this.previous === null ? eye : this.current;
     this.current = eye;
   }
 
-  /** Eye height drawn `alpha` ∈ [0, 1) of the way from the previous tick to the current one. */
+  /** Eye height (world y) drawn `alpha` ∈ [0, 1) of the way from the previous tick to the current. */
   draw(alpha: number): number {
     const previous = this.previous ?? this.current;
     return previous + (this.current - previous) * alpha;

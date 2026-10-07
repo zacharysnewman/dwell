@@ -81,6 +81,8 @@ export interface TouchState {
 export interface LookTarget {
   yaw: number;
   pitch: number;
+  /** +1 on face A, −1 on face B (predict/input.ts `turnSign`). */
+  turnSign?: number;
 }
 
 /** True on touch-first devices (phones, tablets). */
@@ -234,8 +236,9 @@ export class TouchControls {
     const dx = e.clientX - this.lookLast.x;
     const dy = e.clientY - this.lookLast.y;
     this.lookLast = { x: e.clientX, y: e.clientY };
-    // Right-handed, Y up: dragging right turns right, which decreases yaw.
-    this.look.yaw = (((this.look.yaw - dx * TOUCH_LOOK_SENSITIVITY) % 360) + 360) % 360;
+    // Right-handed, Y up: dragging right turns right, which decreases yaw (increases it upside down).
+    const turn = this.look.turnSign ?? 1;
+    this.look.yaw = (((this.look.yaw - turn * dx * TOUCH_LOOK_SENSITIVITY) % 360) + 360) % 360;
     this.look.pitch = Math.min(89, Math.max(-89, this.look.pitch - dy * TOUCH_LOOK_SENSITIVITY));
   };
 

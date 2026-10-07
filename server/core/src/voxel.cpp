@@ -3,14 +3,14 @@
 #include <string>
 
 #include "dwell/core/block_registry.h"
-#include "dwell/worldgen/terrain.h"
+#include "dwell/worldgen/bifacial.h"
 
 namespace dwell::core {
 namespace {
 
 MaterialId FlatMaterial(std::int32_t y) {
-  if (y < kWorldMinY) return Materials::kAir;
-  if (y < kWorldMinY + kBedrockLayers) return Materials::kBedrock;
+  if (y < kMidplaneY) return Materials::kAir;
+  if (y < kMidplaneY + kBedrockLayers) return Materials::kBedrock;
   if (y < -4) return Materials::kStone;
   if (y < -1) return Materials::kDirt;
   if (y == -1) return Materials::kGrass;
@@ -116,6 +116,23 @@ std::int32_t FloorDiv(std::int32_t a, std::int32_t b) {
 
 }  // namespace
 
+MaterialId MirrorMaterial(MaterialId m) {
+  // Slabs and slopes hang from the other side: the same state with `half` swapped. Built once.
+  static const std::vector<MaterialId> table = [] {
+    std::vector<MaterialId> t(Materials::kCount);
+    for (std::size_t i = 0; i < t.size(); ++i) {
+      const auto id = static_cast<MaterialId>(i);
+      t[i] = id;
+      const auto half = StateProperty(id, "half");
+      if (!half) continue;
+      const auto flipped = WithProperty(id, "half", *half == "bottom" ? "top" : "bottom");
+      if (flipped) t[i] = *flipped;
+    }
+    return t;
+  }();
+  return m < table.size() ? table[m] : m;
+}
+
 DiscOverlap ChunkDiscOverlap(std::int32_t cx, std::int32_t cz) {
   // Nearest and farthest voxel columns of the chunk from the origin, per axis.
   const auto nearest = [](std::int32_t c) -> std::int64_t {
@@ -169,7 +186,7 @@ void GenerateFlatChunk(const ChunkCoord& coord, Chunk& chunk) {
 namespace {
 bool FlatIsAir(const ChunkCoord& c) {
   const int y0 = c.y * kChunkSize;
-  return y0 >= 0 || y0 + kChunkSize <= kWorldMinY ||
+  return y0 >= 0 || y0 + kChunkSize <= kMidplaneY ||
          ChunkDiscOverlap(c.x, c.z) == DiscOverlap::kOutside;
 }
 }  // namespace
@@ -195,7 +212,7 @@ void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk) {
 
 ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world_seed) {
   if (generator_version == kGeneratorTerrain) {
-    auto terrain = std::make_shared<const worldgen::TerrainGenerator>(world_seed);
+    auto terrain = std::make_shared<const worldgen::BifacialTerrain>(world_seed);
     return [terrain](const ChunkCoord& coord, Chunk& chunk) { terrain->Generate(coord, chunk); };
   }
   return generator_version == kGeneratorPlayground ? ChunkGenerator(GeneratePlaygroundChunk)
@@ -204,25 +221,29 @@ ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world
 
 AirChunkTest AirTestFor(std::uint32_t generator_version, std::uint64_t world_seed) {
   if (generator_version == kGeneratorTerrain) {
-    // Sky floors are cached per chunk column (bounded: cleared when large).
+    // Sky floors are cached per chunk column and face (bounded: cleared when large). The key's y
+    // holds the face, so a column's two floors do not collide.
     struct Cache {
-      worldgen::TerrainGenerator terrain;
+      worldgen::BifacialTerrain terrain;
       std::unordered_map<ChunkCoord, float, ChunkCoordHash> sky_floor;
     };
-    auto cache = std::make_shared<Cache>(Cache{worldgen::TerrainGenerator(world_seed), {}});
+    auto cache = std::make_shared<Cache>(Cache{worldgen::BifacialTerrain(world_seed), {}});
     return [cache](const ChunkCoord& coord) {
-      const std::int32_t y0 = coord.y * kChunkSize;
+      const Face face = FaceOfChunkY(coord.y);
+      const ChunkCoord local = FaceLocalChunk(coord);
+      const std::int32_t y0 = local.y * kChunkSize;
       if (y0 < kSeaLevel || y0 >= kWorldMaxY ||
           ChunkDiscOverlap(coord.x, coord.z) == DiscOverlap::kOutside) {
         return cache->terrain.IsAirChunk(coord);
       }
-      const ChunkCoord column{coord.x, 0, coord.z};
+      const ChunkCoord column{coord.x, static_cast<std::int32_t>(face), coord.z};
       auto it = cache->sky_floor.find(column);
       if (it == cache->sky_floor.end()) {
         if (cache->sky_floor.size() >= 4096) cache->sky_floor.clear();
-        it = cache->sky_floor.emplace(column, cache->terrain.SkyFloorAt(coord.x, coord.z)).first;
+        it = cache->sky_floor.emplace(column, cache->terrain.SkyFloorAt(coord.x, coord.z, face))
+                 .first;
       }
-      return worldgen::TerrainGenerator::IsAirChunk(coord, it->second);
+      return worldgen::BifacialTerrain::IsAirChunk(coord, it->second);
     };
   }
   if (generator_version == kGeneratorPlayground) {
@@ -238,7 +259,7 @@ AirChunkTest AirTestFor(std::uint32_t generator_version, std::uint64_t world_see
 
 std::array<double, 3> SpawnPointFor(std::uint32_t generator_version, std::uint64_t world_seed) {
   if (generator_version == kGeneratorTerrain) {
-    return worldgen::TerrainGenerator(world_seed).SpawnPoint();
+    return worldgen::BifacialTerrain(world_seed).SpawnPoint();
   }
   return {0.5, 0.0, 0.5};
 }

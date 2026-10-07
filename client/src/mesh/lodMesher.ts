@@ -324,9 +324,55 @@ export interface MeshSectionOptions {
    * cell). Off by default.
    */
   slopes?: boolean;
+  /**
+   * A section of face B (BIFACIAL_WORLD.md §5): its terrain faces down, and the mesher's "top" is
+   * the up of the face. The section is meshed as its mirror image — cell rows reversed (r ↔ 31 − r,
+   * the apron's too), with `surface` in that mirrored frame — and the geometry turned back: y →
+   * 32 − y, triangles re-wound, the ±Y skirts swapped. Face tints stay: a face B's "top" faces take
+   * the top shading, as the chunks' do.
+   */
+  mirror?: boolean;
+}
+
+/** The rows of a section's cells reversed: row r ↔ row 31 − r, apron rows −1 and 32 included. */
+export function mirrorRows(cells: Uint16Array): Uint16Array {
+  const out = new Uint16Array(LOD_VOLUME);
+  const layer = LOD_PAD * LOD_PAD;
+  for (let y = -1; y <= SECTION_CELLS; y++) {
+    const from = (y + 1) * layer;
+    const to = (SECTION_CELLS - 1 - y + 1) * layer;
+    out.set(cells.subarray(from, from + layer), to);
+  }
+  return out;
+}
+
+/** A mesh in a section's cell units mirrored in y (about the section's middle): re-wound. */
+function flipMeshY(m: FlatMesh): FlatMesh {
+  const positions = new Float32Array(m.positions);
+  for (let i = 1; i < positions.length; i += 3) positions[i] = SECTION_CELLS - (positions[i] ?? 0);
+  const normals = new Float32Array(m.normals);
+  for (let i = 1; i < normals.length; i += 3) normals[i] = -(normals[i] ?? 0);
+  const indices = new Uint32Array(m.indices);
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const t = indices[i + 1] ?? 0;
+    indices[i + 1] = indices[i + 2] ?? 0;
+    indices[i + 2] = t;
+  }
+  return { positions, normals, colors: m.colors, indices };
 }
 
 export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}): SectionMeshes {
+  if (options.mirror) {
+    const meshes = meshSectionAbove(mirrorRows(cells), options);
+    const skirts = meshes.skirts.map(flipMeshY);
+    [skirts[2], skirts[3]] = [skirts[3] as FlatMesh, skirts[2] as FlatMesh];
+    return { opaque: flipMeshY(meshes.opaque), water: flipMeshY(meshes.water), skirts };
+  }
+  return meshSectionAbove(cells, options);
+}
+
+/** meshSection for a section whose terrain faces up (face A, or a mirrored face B). */
+function meshSectionAbove(cells: Uint16Array, options: MeshSectionOptions): SectionMeshes {
   const surface = options.surface ?? null;
   const waterDrop = options.waterDrop ?? 0;
   if (cells.length !== LOD_VOLUME) throw new RangeError('section cells must be LOD_VOLUME');

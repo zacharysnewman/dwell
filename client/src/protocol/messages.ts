@@ -33,6 +33,8 @@ export type ChunkCoord = [number, number, number];
 /** A modified section at LOD_INDEX_LEVEL (§6.6) and its lodRevision. */
 export interface LodIndexEntry {
   i: number;
+  /** The row, counted from −2²³ like i and k. */
+  j: number;
   k: number;
   revision: number;
 }
@@ -553,6 +555,7 @@ const lodForms = new Set<number>(Object.values(LodForm));
 function writeIndexEntries(w: ByteWriter, entries: LodIndexEntry[]): void {
   for (const e of entries) {
     w.i32(e.i);
+    w.i32(e.j);
     w.i32(e.k);
     w.u32(e.revision);
   }
@@ -560,7 +563,8 @@ function writeIndexEntries(w: ByteWriter, entries: LodIndexEntry[]): void {
 
 function readIndexEntries(r: ByteReader, count: number): LodIndexEntry[] {
   const out: LodIndexEntry[] = [];
-  for (let n = 0; n < count; n++) out.push({ i: r.i32(), k: r.i32(), revision: r.u32() });
+  for (let n = 0; n < count; n++)
+    out.push({ i: r.i32(), j: r.i32(), k: r.i32(), revision: r.u32() });
   return out;
 }
 

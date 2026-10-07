@@ -24,7 +24,9 @@ import {
   lodCell,
   lodChild,
   lodId,
+  isFaceBSection,
   lodInWorld,
+  mirrorSectionOrigin,
   LodKind,
   lodOfChunk,
   lodParent,
@@ -693,11 +695,11 @@ export class LodSystem {
 
   private onIndex(entries: LodIndexEntry[]): void {
     for (const e of entries) {
-      const key = lodId(INDEX_LEVEL, e.i, 0, e.k);
+      const key = lodId(INDEX_LEVEL, e.i, e.j, e.k);
       if (key < 0 || this.index.get(key) === e.revision) continue;
       this.index.set(key, e.revision);
       // The entry's section and its ancestors are (now differently) modified: ask again.
-      let c: LodCoord = [INDEX_LEVEL, e.i, 0, e.k];
+      let c: LodCoord = [INDEX_LEVEL, e.i, e.j, e.k];
       for (;;) {
         const id = lodId(...c);
         this.indexed.add(id);
@@ -841,7 +843,8 @@ export class LodSystem {
         n.generating = false;
         if (n.token !== token || n.modified || this.nodes.get(n.id) !== n) return;
         this.setCells(n, s.cells);
-        n.surface = s.surface ?? null;
+        // A face-B section's surfaces are face-local, those of its mirror image.
+        n.surface = (isFaceBSection(n.coord) ? s.surfaceB : s.surface) ?? null;
         n.remesh = true;
       },
       () => {
@@ -865,6 +868,8 @@ export class LodSystem {
       waterDrop: CHUNK_WATER_DROP_M / cellSize(n.coord[0]),
       // Distant terrain as facets, not terraces (SLOPE_BLOCKS.md §3.2), at every level.
       slopes: true,
+      // Face B's terrain faces down: meshed as its mirror image, turned back (lodMesher.ts).
+      mirror: isFaceBSection(n.coord),
     };
     void this.mesher.meshSection(cells, options).then((meshes) => {
       this.meshing--;
@@ -889,7 +894,7 @@ export class LodSystem {
   private surfaceInCells(n: Node): Float32Array<ArrayBuffer> | null {
     if (!n.surface || n.modified) return null;
     const out = new Float32Array(n.surface);
-    const y0 = sectionOrigin(n.coord)[1];
+    const y0 = isFaceBSection(n.coord) ? mirrorSectionOrigin(n.coord) : sectionOrigin(n.coord)[1];
     const size = cellSize(n.coord[0]);
     for (let i = 0; i < out.length; i += SURFACE_STRIDE) {
       out[i] = ((out[i] ?? 0) - y0) / size;

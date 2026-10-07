@@ -258,9 +258,9 @@ EMSCRIPTEN_KEEPALIVE void dwell_client_knockback(std::uint32_t input_seq, float 
 
 EMSCRIPTEN_KEEPALIVE void dwell_client_set_remote(std::uint32_t player_id, double x, double y,
                                                   double z, float vx, float vy, float vz,
-                                                  int crouched, float lead_seconds) {
+                                                  int crouched, float lead_seconds, int face_b) {
   g_client->predictor.SetRemote(static_cast<std::uint16_t>(player_id), JPH::RVec3(x, y, z),
-                                JPH::Vec3(vx, vy, vz), crouched != 0, lead_seconds);
+                                JPH::Vec3(vx, vy, vz), crouched != 0, lead_seconds, face_b != 0);
 }
 
 EMSCRIPTEN_KEEPALIVE void dwell_client_remove_remote(std::uint32_t player_id) {

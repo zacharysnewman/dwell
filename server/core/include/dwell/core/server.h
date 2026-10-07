@@ -326,7 +326,7 @@ class Server {
   // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
   // save (and those in saves in flight), and whether the saved cache must be dropped (rebuild).
   LodPropagation lod_;
-  std::unordered_map<std::uint64_t, protocol::LodIndexEntry> index_updates_;
+  std::unordered_map<LodCoord, protocol::LodIndexEntry, LodCoordHash> index_updates_;
   std::uint32_t next_index_update_tick_ = 0;
   std::unordered_set<LodCoord, LodCoordHash> lod_unsaved_;
   std::unordered_map<std::uint64_t, std::vector<LodCoord>> lod_in_flight_;

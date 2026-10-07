@@ -5,6 +5,7 @@ import { BlockEditAction, MessageType, Players } from '../protocol/constants.gen
 import type { Message, Vec3 } from '../protocol/messages';
 import type { BlockTarget } from '../sim/clientCore';
 import { BLOCK_DEFS, STATE_DEFS } from '../world/blocks';
+import { type FaceSign, viewForward } from '../world/face';
 import { MATERIALS, PLACEABLE } from '../world/materials';
 import {
   PIECES,
@@ -83,11 +84,12 @@ export function ladderFor(face: number, yawDeg: number): number {
   return LADDER_BY_FACING.get(facing) ?? 0;
 }
 
-/** Unit view direction for yaw/pitch in degrees (yaw 0 = +Z, pitch up > 0), as the camera looks. */
-export function viewDirection(yawDeg: number, pitchDeg: number): Vec3 {
-  const yaw = (yawDeg * Math.PI) / 180;
-  const pitch = (pitchDeg * Math.PI) / 180;
-  return [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+/**
+ * Unit view direction for yaw/pitch in degrees (yaw 0 = +Z, pitch toward the player's up > 0), as
+ * the camera looks: on face B up is −y (world/face.ts).
+ */
+export function viewDirection(yawDeg: number, pitchDeg: number, face: FaceSign = 1): Vec3 {
+  return viewForward(yawDeg, pitchDeg, face);
 }
 
 /** What the interaction needs from the client sim (ClientCore). */
@@ -122,9 +124,14 @@ export class BlockInteraction {
   }
 
   /** Re-targets from the eye along the view; a null eye clears the target (dead, loading). */
-  update(eye: Vec3 | null, yawDeg: number, pitchDeg: number): BlockTarget | null {
+  update(
+    eye: Vec3 | null,
+    yawDeg: number,
+    pitchDeg: number,
+    face: FaceSign = 1,
+  ): BlockTarget | null {
     this.yaw = yawDeg;
-    this.dir = viewDirection(yawDeg, pitchDeg);
+    this.dir = viewDirection(yawDeg, pitchDeg, face);
     if (eye) this.eye = eye;
     this.current = eye ? this.world.target(eye, this.dir, Players.reachDistance) : null;
     return this.current;

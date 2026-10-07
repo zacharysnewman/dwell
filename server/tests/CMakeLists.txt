@@ -10,6 +10,7 @@ add_executable(dwell_tests
   chunk_request_test.cpp
   hosting_test.cpp
   block_edit_test.cpp
+  bifacial_physics_test.cpp
   block_registry_test.cpp
   block_shape_test.cpp
   lod_server_test.cpp
@@ -20,9 +21,11 @@ add_executable(dwell_tests
   player/flight_test.cpp
   player/voxel_query_test.cpp
   player/slope_test.cpp
+  player/bifacial_test.cpp
   player/scenario_test.cpp
   player/netcode_test.cpp
   worldgen/worldgen_test.cpp
+  worldgen/bifacial_test.cpp
   worldgen/continents_test.cpp
   worldgen/lod_test.cpp
   worldgen/slopes_test.cpp

@@ -5,7 +5,7 @@
 #include <limits>
 #include <memory>
 
-#include "dwell/worldgen/terrain.h"
+#include "dwell/worldgen/bifacial.h"
 
 namespace dwell::core {
 
@@ -39,6 +39,7 @@ LodCoord LodAncestor(const LodCoord& c, int level) {
 namespace {
 constexpr std::int32_t kChunkOffsetXZ = static_cast<std::int32_t>(-kLodOriginX / kChunkSize);
 constexpr std::int32_t kChunkOffsetY = static_cast<std::int32_t>(-kLodOriginY / kChunkSize);
+static_assert(kChunkOffsetY == (std::int32_t{1} << 18));
 }  // namespace
 
 LodCoord LodOfChunk(const ChunkCoord& c) {
@@ -53,7 +54,7 @@ bool LodInWorld(const LodCoord& c) {
   if (c.level < 0 || c.level > kLodMaxLevel) return false;
   const std::int64_t across = LodSectionsAcross(c.level);
   if (c.i < 0 || c.k < 0 || c.i >= across || c.k >= across) return false;
-  if (c.j < 0 || c.j >= LodRows(c.level)) return false;
+  if (c.j < LodFirstRow(c.level) || c.j > LodLastRow(c.level)) return false;
   // The section's square against the disc: its point nearest the origin.
   const LodOrigin o = LodSectionOrigin(c);
   const std::int64_t s = LodSectionSize(c.level);
@@ -64,6 +65,16 @@ bool LodInWorld(const LodCoord& c) {
 }
 
 bool LodSolid(MaterialId m) { return m != M::kAir && !GetMaterial(m).liquid; }
+
+MaterialId DownsampleBlock(const MaterialId (&cells)[8], Face face) {
+  if (face == Face::kB) {
+    // Face B's surface faces down: the same rule with the block turned over (dy flipped).
+    MaterialId flipped[8];
+    for (int b = 0; b < 8; ++b) flipped[b] = cells[b ^ 2];
+    return DownsampleBlock(flipped);
+  }
+  return DownsampleBlock(cells);
+}
 
 MaterialId DownsampleBlock(const MaterialId (&cells)[8]) {
   // Filled (solid or liquid) at 4 of 8: liquids count, so a sea keeps its surface at levels
@@ -97,32 +108,37 @@ MaterialId DownsampleBlock(const MaterialId (&cells)[8]) {
   return best;
 }
 
-void DownsampleOctant(const std::function<MaterialId(int, int, int)>& child_at, int octant,
-                      LodCells& parent) {
+void DownsampleOctant(const std::function<MaterialId(int, int, int)>& child_at,
+                      const LodCoord& parent_coord, int octant, LodCells& parent) {
   constexpr int H = kLodSectionCells / 2;
   const int ox = (octant & 1) * H, oy = ((octant >> 1) & 1) * H, oz = ((octant >> 2) & 1) * H;
   MaterialId block[8];
-  for (int y = 0; y < H; ++y)
+  for (int y = 0; y < H; ++y) {
+    const Face face = LodRowFace(parent_coord, oy + y);
     for (int z = 0; z < H; ++z)
       for (int x = 0; x < H; ++x) {
         for (int b = 0; b < 8; ++b) {
           block[b] = child_at(2 * x + (b & 1), 2 * y + ((b >> 1) & 1), 2 * z + ((b >> 2) & 1));
         }
-        parent[static_cast<std::size_t>(LodCell(ox + x, oy + y, oz + z))] = DownsampleBlock(block);
+        parent[static_cast<std::size_t>(LodCell(ox + x, oy + y, oz + z))] =
+            DownsampleBlock(block, face);
       }
+  }
 }
 
-void DownsampleChunkOctant(const Chunk& chunk, int octant, LodCells& parent) {
+void DownsampleChunkOctant(const Chunk& chunk, const LodCoord& parent_coord, int octant,
+                           LodCells& parent) {
   const auto& v = chunk.voxels();
   DownsampleOctant(
-      [&](int x, int y, int z) { return v[static_cast<std::size_t>(LocalIndex(x, y, z))]; }, octant,
-      parent);
+      [&](int x, int y, int z) { return v[static_cast<std::size_t>(LocalIndex(x, y, z))]; },
+      parent_coord, octant, parent);
 }
 
-void DownsampleSectionOctant(const LodCells& child, int octant, LodCells& parent) {
+void DownsampleSectionOctant(const LodCells& child, const LodCoord& parent_coord, int octant,
+                             LodCells& parent) {
   DownsampleOctant(
       [&](int x, int y, int z) { return child[static_cast<std::size_t>(LodCell(x, y, z))]; },
-      octant, parent);
+      parent_coord, octant, parent);
 }
 
 std::uint64_t LodHash(LodKind kind, const LodCells& cells) {
@@ -139,15 +155,56 @@ std::uint64_t LodHash(LodKind kind, const LodCells& cells) {
   return h;
 }
 
+LodKind LodKindOfFace(int level, std::int64_t origin_y, double lo, double hi) {
+  const std::int64_t cell = LodCellSize(level);
+  // Cell rows −1..32 (with the apron) sample at their bottom voxel.
+  const double lowest = static_cast<double>(origin_y - cell);
+  const double highest = static_cast<double>(origin_y + kLodSectionCells * cell);
+  if (lowest > hi) return LodKind::kEmpty;
+  if (highest < lo) return LodKind::kBuried;
+  return LodKind::kContent;
+}
+
 LodKind LodKindFromBounds(const LodCoord& c, const LodBounds& b) {
   if (!LodInWorld(c) || !b.any_inside) return LodKind::kEmpty;
-  const LodOrigin o = LodSectionOrigin(c);
+  if (!b.bifacial) return LodKindOfFace(c.level, LodSectionOrigin(c).y, b.lo, b.hi);
   const std::int64_t cell = LodCellSize(c.level);
-  // Cell rows −1..32 (with the apron) sample at their bottom voxel.
-  const double lowest = static_cast<double>(o.y - cell);
-  const double highest = static_cast<double>(o.y + kLodSectionCells * cell);
-  if (lowest > b.hi) return LodKind::kEmpty;
-  if (highest < b.lo) return LodKind::kBuried;
+  // Rows −1..32 split at the midplane: face B owns the lower ones.
+  int first_a = kLodSectionCells + 1;  // the lowest row of face A (33: none)
+  for (int r = -1; r <= kLodSectionCells; ++r) {
+    if (LodRowFace(c, r) == Face::kA) {
+      first_a = r;
+      break;
+    }
+  }
+  const std::int64_t y0 = LodSectionOrigin(c).y;
+  bool empty = true, buried = true;
+  LodKind kinds[2] = {LodKind::kEmpty, LodKind::kEmpty};
+  int have = 0;
+  if (first_a <= kLodSectionCells) {
+    // Face A's rows first_a..32: the lowest sampled voxel is that of row first_a.
+    const double lowest = static_cast<double>(y0 + first_a * cell);
+    const double highest = static_cast<double>(y0 + kLodSectionCells * cell);
+    kinds[have++] = lowest > b.hi    ? LodKind::kEmpty
+                    : highest < b.lo ? LodKind::kBuried
+                                     : LodKind::kContent;
+  }
+  if (first_a >= 0) {
+    // Face B's rows −1..first_a − 1, mirrored: its face-local rows run from the mirror of the
+    // topmost B row's cell up to the mirror of row −1.
+    const int top_row = std::min(first_a - 1, kLodSectionCells);
+    const double lowest = static_cast<double>(LodMirrorRowBottom(y0 + top_row * cell, cell));
+    const double highest = static_cast<double>(LodMirrorRowBottom(y0 - cell, cell));
+    kinds[have++] = lowest > b.hi_b    ? LodKind::kEmpty
+                    : highest < b.lo_b ? LodKind::kBuried
+                                       : LodKind::kContent;
+  }
+  for (int i = 0; i < have; ++i) {
+    if (kinds[i] != LodKind::kEmpty) empty = false;
+    if (kinds[i] != LodKind::kBuried) buried = false;
+  }
+  if (empty) return LodKind::kEmpty;
+  if (buried) return LodKind::kBuried;
   return LodKind::kContent;
 }
 
@@ -155,7 +212,7 @@ namespace {
 
 // Surface strata of the flat world by depth below the top (m): grass, three of dirt, stone.
 MaterialId FlatMaterial(std::int64_t y, std::int64_t depth_m) {
-  if (y < kWorldMinY + kBedrockLayers) return M::kBedrock;
+  if (y < kMidplaneY + kBedrockLayers) return M::kBedrock;
   return depth_m == 0 ? M::kGrass : depth_m < 4 ? M::kDirt : M::kStone;
 }
 
@@ -165,7 +222,7 @@ void FillBuried(const LodCoord& c, LodCells& cells) {
   const std::int64_t cell = LodCellSize(c.level);
   for (int y = -1; y <= kLodSectionCells; ++y) {
     const std::int64_t a = o.y + y * cell;
-    const MaterialId m = a < kWorldMinY + kBedrockLayers ? M::kBedrock : M::kStone;
+    const MaterialId m = a < kMidplaneY + kBedrockLayers ? M::kBedrock : M::kStone;
     std::fill_n(cells.begin() + LodCell(-1, y, -1), kLodPad * kLodPad, m);
   }
 }
@@ -174,7 +231,7 @@ void FillBuried(const LodCoord& c, LodCells& cells) {
 
 LodBounds FlatLodBounds(int level, std::int32_t i, std::int32_t k) {
   // Solid below y = 0 inside the disc.
-  const LodCoord c{level, i, 0, k};
+  const LodCoord c{level, i, LodFirstRow(level), k};
   const LodOrigin o = LodSectionOrigin(c);
   const std::int64_t cell = LodCellSize(level), s = LodSectionSize(level);
   // The disc is convex: the corners of the section and its apron decide "all inside".
@@ -185,6 +242,7 @@ LodBounds FlatLodBounds(int level, std::int32_t i, std::int32_t k) {
   LodBounds b;
   b.hi = -1;
   b.lo = all_inside ? 0 : -std::numeric_limits<double>::infinity();
+  b.bifacial = false;
   b.any_inside = LodInWorld(c);
   return b;
 }
@@ -205,7 +263,7 @@ LodKind GenerateFlatLod(const LodCoord& c, LodCells& cells) {
       for (int y = -1; y <= kLodSectionCells; ++y) {
         const std::int64_t a = o.y + y * cell;
         MaterialId m = M::kAir;
-        if (a < kWorldMinY) {
+        if (a < kMidplaneY) {
           m = M::kBedrock;  // below the world: the apron reads solid, so the floor is not drawn
         } else if (a < 0) {
           // The top solid cell starts at or below −1; its depth in metres below the surface.
@@ -219,7 +277,7 @@ LodKind GenerateFlatLod(const LodCoord& c, LodCells& cells) {
 
 LodGenerator LodGeneratorFor(std::uint32_t generator_version, std::uint64_t world_seed) {
   if (generator_version == kGeneratorTerrain) {
-    auto terrain = std::make_shared<worldgen::TerrainGenerator>(world_seed);
+    auto terrain = std::make_shared<worldgen::BifacialTerrain>(world_seed);
     return [terrain](const LodCoord& c, LodCells& cells) { return terrain->GenerateLod(c, cells); };
   }
   return GenerateFlatLod;
@@ -227,7 +285,7 @@ LodGenerator LodGeneratorFor(std::uint32_t generator_version, std::uint64_t worl
 
 LodBoundsFn LodBoundsFor(std::uint32_t generator_version, std::uint64_t world_seed) {
   if (generator_version == kGeneratorTerrain) {
-    auto terrain = std::make_shared<worldgen::TerrainGenerator>(world_seed);
+    auto terrain = std::make_shared<worldgen::BifacialTerrain>(world_seed);
     return [terrain](int level, std::int32_t i, std::int32_t k) {
       return terrain->LodBoundsAt(level, i, k);
     };

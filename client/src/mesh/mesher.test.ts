@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tileRect } from '../render/textures';
+import { tileRect, type TileName } from '../render/textures';
 import { faceTint, normalTint } from '../render/look';
 import { STATE_DEFS, stateId } from '../world/blocks';
 import {
@@ -434,5 +434,79 @@ describe('greedy chunk mesher', () => {
       expect(vertices(opaque)).toBeGreaterThan(0);
       expect([...opaque.tints].filter((_, i) => i % 3 === 0).every((t) => t === 2)).toBe(true);
     });
+  });
+});
+
+describe('chunk mesher: face B (BIFACIAL_WORLD.md §6)', () => {
+  const tileOf = (m: MeshArrays, normalY: number): number[] | undefined => {
+    for (let i = 0; i < m.normals.length / 3; i++) {
+      if (m.normals[i * 3 + 1] === normalY) {
+        return [0, 1, 2, 3].map((c) => m.tiles[i * 4 + c] ?? NaN);
+      }
+    }
+    return undefined;
+  };
+  const rect = (name: TileName): number[] => {
+    const t = tileRect(name);
+    return [t.u0, t.v0, t.u1 - t.u0, t.v1 - t.v0];
+  };
+
+  it('puts the top texture and shading on the face toward the sky, which on face B is −Y', () => {
+    // A grass block at the top of face A's chunk, and the same block hanging at the bottom of a face-B
+    // chunk's row 0 (its sky is below).
+    const a = meshChunk(voxels([[5, 0, 5, GRASS]]));
+    const b = meshChunk(voxels([[5, 0, 5, GRASS]]), null, true);
+    expect(tileOf(a.opaque, 1)).toEqual(rect('grass'));
+    expect(tileOf(a.opaque, -1)).toEqual(rect('dirt'));
+    expect(tileOf(b.opaque, -1)).toEqual(rect('grass'));
+    expect(tileOf(b.opaque, 1)).toEqual(rect('dirt'));
+    // Shading: a face-B block's underside is lit as a top (warm), its upper face as a bottom.
+    const colour = (m: MeshArrays, ny: number): number[] => {
+      const i = [...m.normals].findIndex((v, n) => n % 3 === 1 && v === ny);
+      return [0, 1, 2].map((c) => m.colors[i - 1 + c] ?? NaN);
+    };
+    expect(colour(b.opaque, -1)).toEqual(colour(a.opaque, 1));
+    expect(colour(b.opaque, 1)).toEqual(colour(a.opaque, -1));
+  });
+
+  it('turns a slab over: a face-A bottom slab is a face-B top slab, hanging from the cell top', () => {
+    // Stored as the world has it on face B: a `half=top` slab hangs from its cell's ceiling — the
+    // mirror image of a bottom slab standing on a floor.
+    const TOP_SLAB = stateId('dwell:stone_slab[flooded=false,half=top]');
+    const standing = meshChunk(voxels([[5, 0, 5, SLAB]]));
+    const hanging = meshChunk(voxels([[5, 0, 5, TOP_SLAB]]), null, true);
+    // Both solids are 0.5 m thick: one at y 0…0.5 and the mirror image at 0.5…1 of its cell.
+    const extent = (m: MeshArrays): [number, number] => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 1; i < m.positions.length; i += 3) {
+        lo = Math.min(lo, m.positions[i] ?? 0);
+        hi = Math.max(hi, m.positions[i] ?? 0);
+      }
+      return [lo, hi];
+    };
+    expect(extent(standing.opaque)).toEqual([0, 0.5]);
+    // Mirrored about the chunk (32 m tall), the hanging slab's image of a standing one at row 0 is at
+    // the chunk's top row 31: its solid is the cell's upper half.
+    const [lo, hi] = extent(hanging.opaque);
+    expect(hi - lo).toBeCloseTo(0.5);
+  });
+
+  it('winds every face of the turned-over mesh to face its normal', () => {
+    const m = meshChunk(voxels([[5, 3, 5, GRASS]]), null, true).opaque;
+    for (let t = 0; t < m.indices.length; t += 3) {
+      const [i0 = 0, i1 = 0, i2 = 0] = [m.indices[t], m.indices[t + 1], m.indices[t + 2]];
+      const n = normalOf(m.positions, i0, i1, i2);
+      const given = [
+        m.normals[i0 * 3] ?? 0,
+        m.normals[i0 * 3 + 1] ?? 0,
+        m.normals[i0 * 3 + 2] ?? 0,
+      ];
+      const dot =
+        (n[0] ?? 0) * (given[0] ?? 0) +
+        (n[1] ?? 0) * (given[1] ?? 0) +
+        (n[2] ?? 0) * (given[2] ?? 0);
+      expect(dot).toBeGreaterThan(0);
+    }
   });
 });

@@ -131,6 +131,9 @@ TEST_SUITE("player: voxel query") {
   }
 
   TEST_CASE("axis-aligned rays from grid points answer like the box cast") {
+    // The ray caster itself, in world coordinates (and against slabs standing on the floor):
+    // nothing face-specific, so nothing for the mirrored frame to prove (--dwell-face=b).
+    if (FaceB()) return;
     PlayerTestWorld w;
     std::mt19937 rng(11);
     for (int z = -4; z <= 4; ++z) {
@@ -196,6 +199,7 @@ TEST_SUITE("player: voxel query") {
   }
 
   TEST_CASE("the exact-shape ray cast answers like the box cast on cubes and slabs") {
+    if (FaceB()) return;  // as above
     PlayerTestWorld w;
     std::mt19937 rng(7);
     for (int z = -6; z <= 6; ++z) {

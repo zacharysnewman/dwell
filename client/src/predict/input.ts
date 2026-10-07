@@ -90,6 +90,11 @@ export class KeyboardMouseInput {
   private readonly keys = new Set<string>();
   yaw = 0;
   pitch = 0;
+  /**
+   * +1 on face A; −1 on face B, where the player is upside down and turning right is turning the
+   * other way round in the world (BIFACIAL_WORLD.md §6): the heading's sign is the face's.
+   */
+  turnSign = 1;
   /** Degrees per pixel of mouse movement. */
   sensitivity = 0.12;
   /** Creative flight, toggled by double-tapping Space (or the touch Fly button). */
@@ -206,8 +211,9 @@ export class KeyboardMouseInput {
 
   private readonly onMouseMove = (e: MouseEvent): void => {
     if (!this.locked) return;
-    // Right-handed, Y up: facing +Z (yaw 0), right is −X, so turning right decreases yaw.
-    this.yaw = (((this.yaw - e.movementX * this.sensitivity) % 360) + 360) % 360;
+    // Right-handed, Y up: facing +Z (yaw 0), right is −X, so turning right decreases yaw (and on
+    // face B, with the head down, increases it).
+    this.yaw = (((this.yaw - this.turnSign * e.movementX * this.sensitivity) % 360) + 360) % 360;
     this.pitch = clamp(this.pitch - e.movementY * this.sensitivity, -89, 89);
   };
 }

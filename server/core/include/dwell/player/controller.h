@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "dwell/player/config.h"
+#include "dwell/player/face_frame.h"
 #include "dwell/player/voxel_query.h"
 
 // Physics player controller (PLAYER_CONTROLLER.md): a port of the PPC Quantum systems to C++/Jolt
@@ -146,6 +147,9 @@ struct PlayerController {
   FlyState fly;
   PlatformState platform;
   Vec3 target_velocity = Vec3::sZero();
+  // The face the layers' vertical quantities are in (face_frame.h): +1 face A, −1 face B, switched
+  // when the body crosses the midplane.
+  std::int8_t face = 1;
   std::uint32_t events = 0;
   float landed_speed = 0.0f;  // impact speed of this tick's Landed event
 
@@ -170,7 +174,8 @@ class Players {
   Players(const Players&) = delete;
   Players& operator=(const Players&) = delete;
 
-  // Spawns a player standing with its feet at `feet`. The config must outlive the player.
+  // Spawns a player standing with its feet at `feet` (on the face that position lies on: the head
+  // points away from the midplane). The config must outlive the player.
   PlayerHandle Spawn(const PlayerControllerConfig& config, RVec3 feet, float yaw_degrees = 0.0f);
   void Despawn(PlayerHandle handle);
   bool Exists(PlayerHandle handle) const;
@@ -192,6 +197,7 @@ class Players {
   JPH::BodyID body(PlayerHandle handle) const;
   RVec3 Position(PlayerHandle handle) const;  // capsule centre
   Vec3 Velocity(PlayerHandle handle) const;
+  // World heights of the feet and the head (a face-B player's feet are above its head).
   float Feet(PlayerHandle handle) const;
   float Head(PlayerHandle handle) const;
   float HalfHeight(PlayerHandle handle) const;
@@ -208,6 +214,17 @@ class Players {
   Player& Get(PlayerHandle handle);
   const Player& Get(PlayerHandle handle) const;
   void SetCrouchShape(Player& p, bool crouching);
+
+  // The player's face-local frame (face_frame.h) and the body in it: positions and velocities the
+  // passes read and write are local; Position() and Velocity() above are the world's.
+  Frame FrameFor(const Player& p) const;
+  RVec3 Pos(const Player& p) const;  // capsule centre
+  Vec3 Vel(const Player& p) const;
+  void SetPos(Player& p, RVec3 local);
+  void SetVel(Player& p, Vec3 local);
+  FaceQuery Q(const Player& p) const;
+  // Switches the face (and mirrors the layers' state) once the body is across the midplane.
+  void UpdateFace(Player& p);
 
   void StepInput(Player& p);
   void StepProbe(Player& p);

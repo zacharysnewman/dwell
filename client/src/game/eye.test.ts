@@ -117,11 +117,21 @@ describe('EyeCamera', () => {
       velocity: [0, vy, 0],
       controllerFlags:
         (crouched ? ControllerFlags.crouching : 0) | (grounded ? ControllerFlags.grounded : 0),
+      face: 1,
       eyeHeight: 1.62,
       crouchEyeHeight: 0.8,
       maxStepHeight: 0.55,
     };
   };
+  /** The state turned upside down (face B, BIFACIAL_WORLD.md §6): heights negated, head down. */
+  const mirrored = (s: EyeState): EyeState => ({
+    ...s,
+    position: [s.position[0], -s.position[1], s.position[2]],
+    renderOffset: [s.renderOffset[0], -s.renderOffset[1], s.renderOffset[2]],
+    velocity: [s.velocity[0], -s.velocity[1], s.velocity[2]],
+    controllerFlags: s.controllerFlags | ControllerFlags.faceB,
+    face: -1,
+  });
   /** The eye drawn on every frame while the states are ticked in turn. */
   function frames(states: EyeState[]): number[] {
     const camera = new EyeCamera();
@@ -175,5 +185,30 @@ describe('EyeCamera', () => {
     const states = Array.from({ length: 20 }, (_, i) => state(5 - 0.1 * i, { grounded: false }));
     const eyes = frames(states);
     expect(eyes.at(-FRAMES)).toBeCloseTo(eyeOf(sample(5 - 0.1 * 18)), 6);
+  });
+
+  it('on face B the eye is the mirror image: stairs, crouching and falls draw the same, upside down', () => {
+    const scenarios: EyeState[][] = [
+      [...hold(5, state(0)), ...hold(5, state(0.5)), ...hold(5, state(1))],
+      [...hold(5, state(0)), ...hold(2, state(0, { crouched: true })), ...hold(30, state(0))],
+      Array.from({ length: 20 }, (_, i) => state(5 - 0.1 * i, { grounded: false, vy: -6 })),
+    ];
+    for (const states of scenarios) {
+      const up = frames(states);
+      const down = frames(states.map(mirrored));
+      expect(down).toHaveLength(up.length);
+      up.forEach((y, i) => {
+        expect(down[i]).toBeCloseTo(-y, 6);
+      });
+    }
+  });
+
+  it('starts afresh across the midplane: no smoothing carried from the other face', () => {
+    const camera = new EyeCamera();
+    camera.tick(state(0), DT);
+    camera.tick(state(0.5), DT); // a step on face A: smoothed
+    camera.tick(mirrored(state(0)), DT);
+    // The first tick on face B is drawn as it is (the eye at the feet's up-height 0 + 1.62 below).
+    expect(camera.draw(0)).toBeCloseTo(-1.62, 6);
   });
 });

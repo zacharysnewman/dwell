@@ -9,6 +9,7 @@ import { CHUNK_SIZE } from '../protocol/constants.gen';
 import { faceTint, normalTint } from '../render/look';
 import { tileRect, type TileRect } from '../render/textures';
 import { SHAPES, stateId, type ShapeDef, type ShapeFace } from '../world/blocks';
+import { mirrorMaterial } from '../world/face';
 import { materialStyle, type MaterialStyle } from '../world/materials';
 
 /** Edge of the padded voxel block: the chunk plus one voxel on each side. */
@@ -411,13 +412,50 @@ function floodedWater(b: Builder, padded: Uint16Array, x: number, y: number, z: 
   }
 }
 
+/** The padded voxels of a chunk turned upside down: rows reversed, slabs and slopes turned over. */
+export function mirrorPadded(padded: Uint16Array): Uint16Array {
+  const out = new Uint16Array(PADDED_VOLUME);
+  const layer = PAD * PAD;
+  for (let y = 0; y < PAD; y++) {
+    const from = y * layer;
+    const to = (PAD - 1 - y) * layer;
+    for (let i = 0; i < layer; i++) out[to + i] = mirrorMaterial(padded[from + i] ?? 0);
+  }
+  return out;
+}
+
+/** A mesh in chunk-local units mirrored in y (about the chunk's middle): re-wound. */
+function flipArraysY(m: MeshArrays): MeshArrays {
+  const positions = new Float32Array(m.positions);
+  for (let i = 1; i < positions.length; i += 3) positions[i] = CHUNK_SIZE - (positions[i] ?? 0);
+  const normals = new Float32Array(m.normals);
+  for (let i = 1; i < normals.length; i += 3) normals[i] = -(normals[i] ?? 0);
+  const indices = new Uint32Array(m.indices);
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const t = indices[i + 1] ?? 0;
+    indices[i + 1] = indices[i + 2] ?? 0;
+    indices[i + 2] = t;
+  }
+  return { ...m, positions, normals, indices };
+}
+
 /**
  * Meshes a chunk from its padded voxels (PADDED_VOLUME materials, `paddedIndex` order) and, if it
  * has one, the biome tint grid of its columns (TINT_GRID_BYTES, `TintField`). Positions are
- * chunk-local.
+ * chunk-local. A chunk of face B (`mirror`; BIFACIAL_WORLD.md §6) is meshed as its mirror image and
+ * the geometry turned back: its faces toward the player's up take the top texture and shading, and
+ * its water surface lies 1/8 above the bottom of its cell.
  */
-export function meshChunk(padded: Uint16Array, tint: Uint8Array | null = null): ChunkMeshes {
+export function meshChunk(
+  padded: Uint16Array,
+  tint: Uint8Array | null = null,
+  mirror = false,
+): ChunkMeshes {
   if (padded.length !== PADDED_VOLUME) throw new RangeError('padded voxels must be PADDED_VOLUME');
+  if (mirror) {
+    const m = meshChunk(mirrorPadded(padded), tint, false);
+    return { opaque: flipArraysY(m.opaque), transparent: flipArraysY(m.transparent) };
+  }
   const field = new TintField(tint);
   const opaque = new Builder(field);
   const transparent = new Builder(field);

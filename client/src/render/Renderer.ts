@@ -7,6 +7,8 @@ import type { FogSettings } from './fog';
 export interface PlayerView {
   /** Feet position. */
   feet: Vec3;
+  /** The face the player stands on (default +1): −1 draws it upside down, head toward −y. */
+  face?: 1 | -1;
   /** Degrees; 0 = +Z. */
   yaw: number;
   crouched: boolean;
@@ -79,8 +81,13 @@ export interface Renderer {
   setPlacementPreview(cell: Vec3 | null, edges?: Float32Array): void;
   /** Adds, updates, or (null) removes a player. */
   setPlayer(id: number, view: PlayerView | null): void;
-  /** Places the camera at `eye`, looking along yaw/pitch (degrees; yaw 0 = +Z, pitch up > 0). */
-  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number): void;
+  /**
+   * Places the camera at `eye`, looking along yaw/pitch (degrees; yaw 0 = +Z, pitch toward the
+   * player's up > 0). `face` is the player's: +1 face A (up is +y), −1 face B (up is −y, the view
+   * is upside down); the view and the sky, light and haze it sees follow it. `roll` (radians, 0 at
+   * rest) turns the view about its axis: the camera turning over when the face changes.
+   */
+  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face?: 1 | -1, roll?: number): void;
   /** Debug line segments (pairs of points) with one colour each, or null to clear. */
   setDebugLines(segments: readonly { from: Vec3; to: Vec3; color: number }[] | null): void;
   /** The last frame's draw calls and triangles. */

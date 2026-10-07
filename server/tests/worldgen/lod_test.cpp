@@ -17,6 +17,7 @@
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
 #include "dwell/protocol/messages.h"
+#include "dwell/worldgen/bifacial.h"
 #include "dwell/worldgen/terrain.h"
 
 #include "biome_search.h"
@@ -47,9 +48,9 @@ LodCells DownsampledFromChunks(const core::ChunkGenerator& gen, const LodCoord& 
     if (child.level == 0) {
       Chunk chunk;
       gen(core::ChunkOfLod(child), chunk);
-      core::DownsampleChunkOctant(chunk, o, out);
+      core::DownsampleChunkOctant(chunk, c, o, out);
     } else {
-      core::DownsampleSectionOctant(DownsampledFromChunks(gen, child), o, out);
+      core::DownsampleSectionOctant(DownsampledFromChunks(gen, child), c, o, out);
     }
   }
   return out;
@@ -73,17 +74,19 @@ struct Agreement {
   double surface_mean = 0;    // mean |difference| of the top non-air cell, in cells
 };
 
-Agreement Compare(const LodCells& a, const LodCells& b) {
+// `face` B: the surface is the lowest non-air cell of a column (it faces down).
+Agreement Compare(const LodCells& a, const LodCells& b, core::Face face = core::Face::kA) {
   int same = 0, within = 0;
   double total = 0;
   for (int z = 0; z < N; ++z)
     for (int x = 0; x < N; ++x) {
       int ta = -1, tb = -1;
-      for (int y = 0; y < N; ++y) {
+      for (int yy = 0; yy < N; ++yy) {
+        const int y = face == core::Face::kA ? yy : N - 1 - yy;
         const auto i = static_cast<std::size_t>(LodCell(x, y, z));
         same += ClassOf(a[i]) == ClassOf(b[i]);
-        if (a[i] != M::kAir) ta = y;
-        if (b[i] != M::kAir) tb = y;
+        if (a[i] != M::kAir) ta = yy;
+        if (b[i] != M::kAir) tb = yy;
       }
       within += std::abs(ta - tb) <= 1;
       total += std::abs(ta - tb);
@@ -114,14 +117,38 @@ TEST_SUITE("lod: grid") {
     CHECK(core::LodAncestor(core::LodOfChunk({-256000, -64, 255999}), core::kLodMaxLevel) == root);
   }
 
-  TEST_CASE("from level 8 a section spans the world's height: one row") {
-    CHECK(core::LodRows(0) == 256);
-    CHECK(core::LodRows(7) == 2);
-    CHECK(core::LodRows(8) == 1);
-    CHECK(core::LodRows(19) == 1);
-    CHECK(core::LodInWorld({8, 1024, 0, 1024}));
-    CHECK_FALSE(core::LodInWorld({8, 1024, 1, 1024}));
-    CHECK_FALSE(core::LodInWorld({7, 2048, 2, 2048}));
+  TEST_CASE("the octree counts y from −2²³ too: rows cover both faces, one row from level 9") {
+    CHECK(core::kLodOriginY == -(std::int64_t{1} << 23));
+    // Rows of the world (kWorldBottomY = −10,240 up to kWorldMaxY = 6,144) at each level.
+    CHECK(core::LodLastRow(0) - core::LodFirstRow(0) + 1 == 512);  // 16,384 m of 32 m
+    CHECK(core::LodLastRow(6) - core::LodFirstRow(6) + 1 == 8);    // 2,048 m
+    CHECK(core::LodLastRow(8) - core::LodFirstRow(8) + 1 == 3);    // 8,192 m
+    CHECK(core::LodLastRow(19) == 0);
+    CHECK(core::LodFirstRow(19) == 0);
+    // The chunk rows of both faces are level-0 rows.
+    CHECK(core::LodOfChunk({0, core::kMinChunkY, 0}).j == core::LodFirstRow(0));
+    CHECK(core::LodOfChunk({0, core::kMaxChunkY, 0}).j == core::LodLastRow(0));
+    CHECK(core::LodInWorld(core::LodOfChunk({0, core::kMinChunkY, 0})));
+    CHECK_FALSE(core::LodInWorld(core::LodOfChunk({0, core::kMinChunkY - 1, 0})));
+    CHECK_FALSE(core::LodInWorld(core::LodOfChunk({0, core::kMaxChunkY + 1, 0})));
+    const int j8 = core::LodFirstRow(8);
+    CHECK(core::LodInWorld({8, 1024, j8, 1024}));
+    CHECK(core::LodInWorld({8, 1024, j8 + 2, 1024}));
+    CHECK_FALSE(core::LodInWorld({8, 1024, j8 - 1, 1024}));
+    CHECK_FALSE(core::LodInWorld({8, 1024, j8 + 3, 1024}));
+    // Up to level 6 a section lies wholly on one face of the midplane; from level 7 one holds it.
+    for (int level = 0; level <= 6; ++level) {
+      const LodCoord s = SectionAt(level, 0, core::kMidplaneY, 0);
+      CHECK(core::LodSectionOrigin(s).y == core::kMidplaneY);  // face A starts a section
+      CHECK(core::LodRowFace(s, -1) == core::Face::kB);        // only its apron is below
+      CHECK(core::LodRowFace(s, 0) == core::Face::kA);
+      const LodCoord below = SectionAt(level, 0, core::kMidplaneY - 1, 0);
+      CHECK(core::LodRowFace(below, 31) == core::Face::kB);
+      CHECK(core::LodRowFace(below, 32) == core::Face::kA);  // the apron above
+    }
+    const LodCoord straddle = SectionAt(8, 0, core::kMidplaneY, 0);
+    CHECK(core::LodRowFace(straddle, 0) == core::Face::kB);
+    CHECK(core::LodRowFace(straddle, 31) == core::Face::kA);
   }
 
   TEST_CASE("children nest in their parent and cover it") {
@@ -205,7 +232,7 @@ TEST_SUITE("lod: downsample") {
       for (int z = 0; z < 32; ++z) chunk.Set(7, y, z, M::kStone);
     for (int y = 0; y < 32; ++y) chunk.Set(20, y, 20, M::kLog);
     LodCells section(core::kLodVolume, M::kAir);
-    core::DownsampleChunkOctant(chunk, 5, section);
+    core::DownsampleChunkOctant(chunk, {1, 0, 0, 0}, 5, section);
     CHECK(section[LodCell(16 + 3, 0, 16 + 4)] == M::kStone);  // x 7 → cell 3 of the octant
     CHECK(section[LodCell(16 + 3, 15, 16 + 15)] == M::kStone);
     CHECK(section[LodCell(16 + 10, 5, 16 + 10)] == M::kAir);  // the pillar is gone
@@ -237,19 +264,21 @@ TEST_SUITE("lod: generation") {
   }
 
   TEST_CASE("GenerateLod is a pure function; bounds decide empty and buried sections exactly") {
-    const TerrainGenerator gen(0);
+    const worldgen::BifacialTerrain gen(0);
+    const TerrainGenerator& a = gen.Local(core::Face::kA);
     const auto ground = [&](std::int64_t x, std::int64_t z) {
       return static_cast<std::int64_t>(
-          gen.ColumnAt(static_cast<std::int32_t>(x), static_cast<std::int32_t>(z)).height);
+          a.ColumnAt(static_cast<std::int32_t>(x), static_cast<std::int32_t>(z)).height);
     };
-    for (int level : {1, 3, 5}) {
+    for (int level : {1, 3, 5, 8}) {
       const LodCoord c = SectionAt(level, 100, ground(100, -40), -40);
-      LodCells a, b;
-      CHECK(gen.GenerateLod(c, a) == LodKind::kContent);
-      CHECK(gen.GenerateLod(c, b) == LodKind::kContent);
-      CHECK(a == b);
+      LodCells first, second;
+      CHECK(gen.GenerateLod(c, first) == LodKind::kContent);
+      CHECK(gen.GenerateLod(c, second) == LodKind::kContent);
+      CHECK(first == second);
       const core::LodBounds bounds = gen.LodBoundsAt(level, c.i, c.k);
-      for (int j = 0; j < core::LodRows(level); j += 1 + core::LodRows(level) / 16) {
+      // Every row of the world, both faces: the kind the generator returns is the bounds' kind.
+      for (int j = core::LodFirstRow(level); j <= core::LodLastRow(level); ++j) {
         const LodCoord s{level, c.i, j, c.k};
         LodCells cells;
         const LodKind kind = gen.GenerateLod(s, cells);
@@ -257,15 +286,25 @@ TEST_SUITE("lod: generation") {
         if (kind == LodKind::kEmpty) {
           CHECK(std::all_of(cells.begin(), cells.end(), [](MaterialId m) { return m == M::kAir; }));
         }
+        if (kind == LodKind::kBuried) {
+          CHECK(
+              std::all_of(cells.begin(), cells.end(), [](MaterialId m) { return m == M::kStone; }));
+        }
       }
-      // Above the terrain's reach: empty; far below: buried.
-      CHECK(core::LodKindFromBounds({level, c.i, core::LodRows(level) - 1, c.k}, bounds) ==
-            (level < 8 ? LodKind::kEmpty : LodKind::kContent));
+      // Above the terrain's reach: empty; far below it, on either face: buried or content.
+      CHECK(core::LodKindFromBounds({level, c.i, core::LodLastRow(level) + 0, c.k}, bounds) !=
+            LodKind::kBuried);
     }
     // A buried section generated in full would indeed be all solid.
     const LodCoord deep = SectionAt(2, 64, -1500, 64);
     LodCells cells;
     CHECK(gen.GenerateLod(deep, cells) == LodKind::kBuried);
+    // … on face B too: the rock between the two seas.
+    const LodCoord core_b = SectionAt(2, 64, -3000, 64);
+    CHECK(gen.GenerateLod(core_b, cells) == LodKind::kBuried);
+    // Sky above face A and below face B (the dome hangs under the disc): empty.
+    CHECK(gen.GenerateLod(SectionAt(2, 64, 3000, 64), cells) == LodKind::kEmpty);
+    CHECK(gen.GenerateLod(SectionAt(2, 64, -9000, 64), cells) == LodKind::kEmpty);
   }
 
   TEST_CASE("a generated section agrees with the downsample of generated chunks") {
@@ -340,6 +379,60 @@ TEST_SUITE("lod: generation") {
       }
     }
     CHECK(mean_sum / count < 0.5);
+  }
+}
+
+TEST_SUITE("lod: face B") {
+  TEST_CASE("a section of face B agrees with the downsample of its generated chunks") {
+    // As face A's (above), mirrored: the surface is a column's lowest non-air cell, and Downsample
+    // reads face B's blocks upside down.
+    const worldgen::BifacialTerrain gen(0);
+    const auto chunks = core::GeneratorFor(core::kGeneratorTerrain, 0);
+    const TerrainGenerator& b = gen.Local(core::Face::kB);
+    const auto lm = testing::FindLandmarks(b);
+    REQUIRE(lm.found);
+    struct Site {
+      std::string name;
+      std::int32_t x, z;
+    };
+    const std::vector<Site> sites = {{"coast", lm.coast.first, lm.coast.second},
+                                     {"interior", lm.interior.first, lm.interior.second},
+                                     {"abyss", lm.abyss.first, lm.abyss.second},
+                                     {"spawn", 0, 0}};
+    for (const Site& site : sites) {
+      const auto col = b.ColumnAt(site.x, site.z);
+      // The face-local surface height h is world y = −4,096 − h; the section holds it.
+      const auto h = static_cast<std::int64_t>(std::max(col.height, static_cast<float>(col.water)));
+      for (int level = 1; level <= 2; ++level) {
+        const LodCoord c = SectionAt(level, site.x, -4096 - std::max<std::int64_t>(h, -1), site.z);
+        LodCells generated;
+        gen.GenerateLod(c, generated);
+        const Agreement a = Compare(generated, DownsampledFromChunks(chunks, c), core::Face::kB);
+        MESSAGE(site.name << " level " << level << ": classes " << a.class_match
+                          << ", surface within 1 cell " << a.surface_within << ", mean "
+                          << a.surface_mean);
+        CHECK(a.class_match >= 0.95);
+        CHECK(a.surface_within >= 0.95);
+      }
+    }
+  }
+
+  TEST_CASE("a face-B section and a straddling one keep each cell on its own face") {
+    const worldgen::BifacialTerrain gen(0);
+    // Level 8 (256 m cells): cell rows 24..31 are face A, 0..23 face B. Rock near the midplane is
+    // solid on both sides of it; the dome below face B is air.
+    const LodCoord c = SectionAt(8, 0, core::kMidplaneY, 0);
+    LodCells cells;
+    REQUIRE(gen.GenerateLod(c, cells) == LodKind::kContent);
+    const auto at = [&](int x, int y, int z) {
+      return cells[static_cast<std::size_t>(LodCell(x, y, z))];
+    };
+    // Over land at x = z = 0 the rock fills the rows next to the midplane, on both faces.
+    CHECK(core::LodSolid(at(16, 24, 16)));
+    CHECK(core::LodSolid(at(16, 23, 16)));
+    CHECK(core::LodSolid(at(16, 22, 16)));
+    // And the rows below face B's terrain, toward its dome, are air or sea.
+    CHECK(at(16, 0, 16) == M::kAir);
   }
 }
 
@@ -483,9 +576,28 @@ TEST_SUITE("lod: golden") {
         cases.push_back({seed, 4, site->first, top, site->second});
       }
     }
+    // Face B and the midplane (BIFACIAL_WORLD.md §5): sections wholly on face B (the surface near
+    // its sea level at y = −4,096, its own coast, gap and abyss), sections whose rows straddle the
+    // midplane (levels 7 and up: each cell takes the face of its centre), and the root.
+    for (const int level : {1, 3, 6}) cases.push_back({0, level, 0, -4100, 0});
+    for (const int level : {7, 8, 10, 12, 14}) cases.push_back({0, level, 0, -2048, 0});
+    cases.push_back({0, 2, 0, -2100, 0});
+    cases.push_back({0, 5, 1280, -2049, -380});
+    cases.push_back({20260925, 9, -7'990'000, -2048, 5000});
+    for (const std::uint64_t seed : {std::uint64_t{0}, std::uint64_t{20260925}}) {
+      const auto lm = testing::FindLandmarks(worldgen::BifacialTerrain(seed).Local(core::Face::kB));
+      REQUIRE(lm.found);
+      // Face-local height h is world y = −4,096 − h.
+      for (const int level : {1, 4, 8})
+        cases.push_back({seed, level, lm.coast.first, -4096, lm.coast.second});
+      for (const int level : {6, 9})
+        cases.push_back({seed, level, lm.gap.first, -4096 + 400, lm.gap.second});
+      cases.push_back({seed, 3, lm.interior.first, -4096, lm.interior.second});
+      cases.push_back({seed, 7, lm.abyss.first, -4096 + 900, lm.abyss.second});
+    }
     std::vector<std::string> actual;
     for (const Case& k : cases) {
-      const TerrainGenerator gen(k.seed);
+      const worldgen::BifacialTerrain gen(k.seed);
       const LodCoord c = SectionAt(k.level, k.x, k.y, k.z);
       LodCells cells;
       const LodKind kind = gen.GenerateLod(c, cells);
@@ -498,7 +610,7 @@ TEST_SUITE("lod: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 9\n";
+      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 11\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden LOD hashes written to " << path);

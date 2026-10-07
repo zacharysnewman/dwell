@@ -218,8 +218,10 @@ TEST_CASE("streaming: a server with worldgen threads streams to a full-mode clie
   CHECK(count >= 30);
 }
 
-TEST_CASE("world rim: walking off the edge of the disc falls into the void and kills") {
-  // The flat world near the rim, east of the origin: the last solid column is x = 8 191 999.
+TEST_CASE("world rim: walking off the edge of the disc falls toward the midplane and settles") {
+  // The flat world near the rim, east of the origin: the last solid column is x = 8 191 999. There
+  // is no void to fall into (BIFACIAL_WORLD.md §3): the body falls the 2 km to the midplane, is
+  // slowed by the flip band, and floats there beside the cliff.
   constexpr double kSpawnX = dwell::core::kWorldRadius - 9.5;
   Fixture f(ServerConfig{.generator_version = kGeneratorFlat,
                          .spawn = std::array<double, 3>{kSpawnX, 0.0, 0.5},
@@ -229,24 +231,37 @@ TEST_CASE("world rim: walking off the edge of the disc falls into the void and k
   dwell::player::Input walk_east;
   walk_east.move_y = 1.0f;
   walk_east.look_yaw = 90.0f;  // +X
+  walk_east.run = true;
   std::uint32_t seq = 0;
-  double last_x = 0, lowest_feet = 1e9;
-  bool died = false;
-  for (int tick = 0; tick < 60 * 60 && !died; ++tick) {
+  double last_x = 0, last_y = 0, lowest = 1e9;
+  int faces_seen = 0;
+  std::int8_t face = 1;
+  for (int tick = 0; tick < 60 * 90; ++tick) {
     PlayerInput input;
-    input.inputs.push_back(dwell::player::QuantizeInput(walk_east, ++seq));
+    if (tick < 120)
+      input.inputs.push_back(dwell::player::QuantizeInput(walk_east, ++seq));
+    else
+      input.inputs.push_back(dwell::player::QuantizeInput({}, ++seq));
     f.server.OnDatagram(1, Encode(input));
     f.server.Step();
     f.server.TakeOutbox();
     if (const auto h = f.server.PlayerHandleOf(welcome.player_id)) {
       last_x = f.server.players().Position(*h).GetX();
-      lowest_feet = std::min<double>(lowest_feet, f.server.players().Feet(*h));
+      last_y = f.server.players().Position(*h).GetY();
+      lowest = std::min(lowest, last_y);
+      if (f.server.players().controller(*h).face != face) {
+        face = f.server.players().controller(*h).face;
+        ++faces_seen;
+      }
     }
-    died = f.server.HealthOf(welcome.player_id) == 0;
   }
-  CHECK(died);
-  CHECK(last_x > dwell::core::kWorldRadius);     // it went over the edge …
-  CHECK(lowest_feet < dwell::core::kWorldMinY);  // … and fell past the bottom of the world
+  CHECK(f.server.HealthOf(welcome.player_id) >
+        0);                                   // not killed: the rim no longer drops into a void
+  CHECK(last_x > dwell::core::kWorldRadius);  // it went over the edge …
+  // … fell the 2 km to the midplane, braked on the way in (core/flip_band.h) and settled there.
+  CHECK(lowest > dwell::core::kMidplaneY - 5.0);  // the approach cushion: no swing through it
+  CHECK(std::abs(last_y - dwell::core::kMidplaneY) < 0.5);
+  CHECK(faces_seen <= 2);
 }
 
 TEST_CASE("streaming: after fast flight the chunks around the player all arrive") {

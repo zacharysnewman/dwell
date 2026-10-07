@@ -70,21 +70,26 @@ class PlayerTestWorld {
   void Fill(int x0, int y0, int z0, int x1, int y1, int z1, core::MaterialId m) {
     for (int z = z0; z <= z1; ++z)
       for (int y = y0; y <= y1; ++y)
-        for (int x = x0; x <= x1; ++x) world.SetVoxel(WorldCellX(x), y, z, m);
+        for (int x = x0; x <= x1; ++x) {
+          world.SetVoxel(WorldCellX(x), WorldCellY(y), z, WorldMaterial(m));
+        }
   }
   // A one-cell-thick floor whose top face is at `top_y`.
   void Floor(int top_y = 0, int half = 16) {
     Fill(-half, top_y - 1, -half, half - 1, top_y - 1, half - 1, core::Materials::kStone);
   }
-  void Set(int x, int y, int z, core::MaterialId m) { world.SetVoxel(WorldCellX(x), y, z, m); }
+  void Set(int x, int y, int z, core::MaterialId m) {
+    world.SetVoxel(WorldCellX(x), WorldCellY(y), z, WorldMaterial(m));
+  }
   void Remove(int x, int y, int z) { Set(x, y, z, core::Materials::kAir); }
 
   // --- bodies (Tier 1 layer) ---
   JPH::BodyID Box(Vec3 center, Vec3 half, JPH::Quat rotation = JPH::Quat::sIdentity(),
                   Vec3 velocity = Vec3::sZero(), float yaw_rate_deg = 0.0f) {
-    JPH::BodyCreationSettings s(new JPH::BoxShape(half, 0.0f), ToWorld(center), rotation,
-                                JPH::EMotionType::Kinematic, core::ObjectLayers::kTier1);
-    s.mLinearVelocity = velocity;
+    JPH::BodyCreationSettings s(new JPH::BoxShape(half, 0.0f), ToWorld(center),
+                                MirrorRotation(rotation), JPH::EMotionType::Kinematic,
+                                core::ObjectLayers::kTier1);
+    s.mLinearVelocity = MirrorVec(velocity);
     s.mAngularVelocity = Vec3(0, yaw_rate_deg * std::numbers::pi_v<float> / 180.0f, 0);
     return physics.bodies().CreateAndAddBody(s, JPH::EActivation::Activate);
   }
@@ -96,7 +101,7 @@ class PlayerTestWorld {
     s.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
     s.mMassPropertiesOverride.mMass = mass;
     s.mGravityFactor = 0.0f;
-    s.mLinearVelocity = velocity;
+    s.mLinearVelocity = MirrorVec(velocity);
     s.mLinearDamping = 0.0f;
     s.mAllowSleeping = false;
     if (lock_rotation) {
@@ -115,7 +120,14 @@ class PlayerTestWorld {
     return h;
   }
 
-  void Kick(int at_tick, PlayerHandle h, Vec3 dv) { kicks.push_back({at_tick, h, dv}); }
+  // Spawns at a world position (feet), untranslated: for tests that place things in the world.
+  PlayerHandle SpawnAt(JPH::RVec3 feet, float yaw = 0.0f) {
+    const PlayerHandle h = players.Spawn(config, feet, yaw);
+    if (h >= counts.size()) counts.resize(h + 1);
+    return h;
+  }
+
+  void Kick(int at_tick, PlayerHandle h, Vec3 dv) { kicks.push_back({at_tick, h, MirrorVec(dv)}); }
   void Explosion(int at_tick, Vec3 center, float radius, float speed, float bias) {
     explosions.push_back({at_tick, center, radius, speed, bias});
   }
@@ -123,7 +135,7 @@ class PlayerTestWorld {
   void Step(int n = 1) {
     for (int i = 0; i < n; ++i) {
       for (PlayerHandle h : players.handles()) {
-        if (input) players.SetInput(h, input(tick, h));
+        if (input) players.SetInput(h, InputFor(input(tick, h)));
       }
       players.Tick();
       for (PlayerHandle h : players.handles()) {
@@ -152,9 +164,9 @@ class PlayerTestWorld {
 
   const player::PlayerController& C(PlayerHandle h) const { return players.controller(h); }
   Vec3 Pos(PlayerHandle h) const { return ToLocal(players.Position(h)); }
-  Vec3 Vel(PlayerHandle h) const { return players.Velocity(h); }
-  float Feet(PlayerHandle h) const { return players.Feet(h); }
-  float Head(PlayerHandle h) const { return players.Head(h); }
+  Vec3 Vel(PlayerHandle h) const { return MirrorVec(players.Velocity(h)); }
+  float Feet(PlayerHandle h) const { return static_cast<float>(ToLocalY(players.Feet(h))); }
+  float Head(PlayerHandle h) const { return static_cast<float>(ToLocalY(players.Head(h))); }
   float HorizontalSpeed(PlayerHandle h) const {
     const Vec3 v = Vel(h);
     return std::sqrt(v.GetX() * v.GetX() + v.GetZ() * v.GetZ());
@@ -167,6 +179,19 @@ class PlayerTestWorld {
       best = std::max(best, Feet(h));
     }
     return best;
+  }
+
+  // On face B a right turn is the other way round in the world (an upside-down player's right is
+  // the frame's left): the test's local input is sent mirrored, so the controller's mirrored frame
+  // sees the input as written.
+  static Input InputFor(Input i) {
+    if (FaceB()) i.move_x = -i.move_x;
+    return i;
+  }
+  static double ToLocalY(double world_y) { return FaceB() ? kMirror - world_y : world_y; }
+  // The mirror image of a rotation about the midplane: yaw is kept, pitch and roll are reversed.
+  static JPH::Quat MirrorRotation(JPH::Quat q) {
+    return FaceB() ? JPH::Quat(-q.GetX(), q.GetY(), -q.GetZ(), q.GetW()) : q;
   }
 
   core::JoltRuntime runtime;

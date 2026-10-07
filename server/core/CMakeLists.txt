@@ -27,6 +27,7 @@ add_library(dwell_core
   src/worldgen/rivers.cpp
   src/worldgen/biomes.cpp
   src/worldgen/terrain.cpp
+  src/worldgen/bifacial.cpp
   src/worldgen/slopes.cpp
   src/storage/world_db.cpp
   src/storage/world_store.cpp)

@@ -54,7 +54,14 @@ const EMPTY_MESHES: SectionMeshes = {
   skirts: [0, 1, 2, 3, 4, 5].map(empty),
 };
 
-const flatBounds = (): LodBounds => ({ lo: 0, hi: -1, anyInside: true });
+const flatBounds = (): LodBounds => ({
+  lo: 0,
+  hi: -1,
+  loB: -Infinity,
+  hiB: -Infinity,
+  anyInside: true,
+  bifacial: false,
+});
 
 /** The flat world at LOD: stone where a cell's bottom is below 0. */
 function flatSection(c: LodCoord): GeneratedSection {
@@ -166,7 +173,7 @@ function pointInView(cam: LodCamera, random: () => number, range: number): Vec3 
     p[a] = (cam.position[a] ?? 0) + d * ((f[a] ?? 0) + sx * (r[a] ?? 0) + sy * (u[a] ?? 0));
   }
   const inside =
-    p[1] >= World.worldMinY &&
+    p[1] >= World.midplaneY &&
     p[1] < World.worldMaxY &&
     p[0] ** 2 + p[2] ** 2 < World.worldRadius ** 2;
   return inside ? p : null;
@@ -449,7 +456,9 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     const stats = lod.debugStats();
     expect(stats.cacheBytes).toBeLessThanOrEqual(budget);
     expect(stats.errorScale).toBeGreaterThan(1);
-    expect(stats.inUseBytes).toBeGreaterThan(budget * 0.5); // not needlessly coarse
+    // Not needlessly coarse (the flat ground now lies on a row boundary of the octree, so a few
+    // sections fewer are content than when the origin was the world's floor).
+    expect(stats.inUseBytes).toBeGreaterThan(budget * 0.4);
     expect(lod.lastSelection().drawn.length).toBeGreaterThan(0);
     // Settled: neither coarser nor finer from here.
     await run(low, 60_000);
@@ -588,7 +597,10 @@ describe('LOD requests (§6.6)', { timeout: 60_000 }, () => {
       state.revision = revision;
       const entry = sectionAt(8, site);
       lod.onMessage(
-        { type: MessageType.LodIndexUpdate, entries: [{ i: entry[1], k: entry[3], revision }] },
+        {
+          type: MessageType.LodIndexUpdate,
+          entries: [{ i: entry[1], j: entry[2], k: entry[3], revision }],
+        },
         15,
         0,
       );

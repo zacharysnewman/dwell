@@ -14,6 +14,7 @@
 
 #include "dwell/core/block_registry.h"
 #include "dwell/core/voxel.h"
+#include "dwell/worldgen/bifacial.h"
 #include "dwell/worldgen/noise.h"
 #include "dwell/worldgen/terrain.h"
 
@@ -37,6 +38,14 @@ bool IsSolid(MaterialId m) { return m != M::kAir && m != M::kWater; }
 
 Chunk Generated(const TerrainGenerator& gen, ChunkCoord c,
                 std::uint8_t stages = TerrainGenerator::kAllStages) {
+  Chunk chunk;
+  gen.Generate(c, chunk, stages);
+  return chunk;
+}
+
+// A chunk of the bifacial world (either face).
+Chunk GeneratedWorld(const worldgen::BifacialTerrain& gen, ChunkCoord c,
+                     std::uint8_t stages = TerrainGenerator::kAllStages) {
   Chunk chunk;
   gen.Generate(c, chunk, stages);
   return chunk;
@@ -197,25 +206,25 @@ TEST_SUITE("worldgen: terrain") {
     }
   }
 
-  TEST_CASE("world bounds: bedrock floor, void below, nothing at or above WORLD_MAX_Y") {
+  TEST_CASE("world bounds: stone floor (no bedrock), nothing below the face or at WORLD_MAX_Y") {
     const TerrainGenerator gen(5);
-    const int bottom = core::kWorldMinY / S;  // chunk y whose first layer is WORLD_MIN_Y
+    const int bottom = core::kMidplaneY / S;  // the face-local chunk row at the midplane
     const Chunk floor = Generated(gen, {0, bottom, 0});
     for (int z = 0; z < S; ++z)
       for (int x = 0; x < S; ++x)
-        for (int y = 0; y < core::kBedrockLayers; ++y) CHECK(floor.Get(x, y, z) == M::kBedrock);
+        for (int y = 0; y < 4; ++y) CHECK(floor.Get(x, y, z) == M::kStone);
     for (const int cy : {bottom - 1, core::kWorldMaxY / S}) {
       const Chunk empty = Generated(gen, {0, cy, 0});
       for (const MaterialId v : empty.voxels()) CHECK(v == M::kAir);
     }
   }
 
-  TEST_CASE("beyond the rim of the disc nothing is generated, not even bedrock") {
+  TEST_CASE("beyond the rim of the disc nothing is generated") {
     const TerrainGenerator gen(5);
     // A chunk column straddling the rim on the diagonal (x = z ≈ 5 792 km).
     const ChunkCoord column{181019, 0, 181019};
     REQUIRE(core::ChunkDiscOverlap(column.x, column.z) == core::DiscOverlap::kPartial);
-    const int bottom = core::kWorldMinY / S;
+    const int bottom = core::kMidplaneY / S;
     int inside = 0, outside = 0;
     for (const int cy : {bottom, 0}) {
       const Chunk chunk = Generated(gen, {column.x, cy, column.z});
@@ -226,8 +235,8 @@ TEST_SUITE("worldgen: terrain") {
           for (int y = 0; y < S; ++y) {
             if (!in) {
               CHECK(chunk.Get(x, y, z) == M::kAir);
-            } else if (cy == bottom && y < core::kBedrockLayers) {
-              CHECK(chunk.Get(x, y, z) == M::kBedrock);
+            } else if (cy == bottom && y < 4) {
+              CHECK(chunk.Get(x, y, z) == M::kStone);
             }
           }
         }
@@ -246,8 +255,8 @@ TEST_SUITE("worldgen: terrain") {
     }
     // Point queries agree.
     CHECK(gen.ColumnAt(256001 * S, 0).outside);
-    CHECK_FALSE(gen.SolidAt(256001 * S, core::kWorldMinY, 0));
-    CHECK(gen.SolidAt(255990 * S, core::kWorldMinY, 0));  // bedrock just inside the rim
+    CHECK_FALSE(gen.SolidAt(256001 * S, core::kMidplaneY, 0));
+    CHECK(gen.SolidAt(255990 * S, core::kMidplaneY, 0));  // rock just inside the rim
   }
 
   TEST_CASE("chunks the air test reports as air generate as all air, and sky is skipped") {
@@ -510,6 +519,7 @@ TEST_SUITE("worldgen: golden") {
     // rim of the disc; terrain ~8,000 km out (its surface chunk found from the column); and a
     // super tall massif.
     constexpr int kSurface = 1 << 20;  // y placeholder: the chunk holding the column's surface
+    constexpr int kSurfaceB = kSurface + 1;  // … of face B's terrain (a mirrored chunk row)
     std::vector<Case> cases = {
         {0, {0, 0, 0}},
         {0, {0, -1, 0}},
@@ -531,6 +541,22 @@ TEST_SUITE("worldgen: golden") {
         {20260925, {-3, kSurface, 249000}},
         {0, {-249990, kSurface, -5}},
         {0, {3036, kSurface, 36828}},  // a massif's slopes, ~5.4 km up
+        // Face B (BIFACIAL_WORLD.md §5): the chunk rows either side of the midplane (no bedrock),
+        // flipped caves and rock, the mirror image of face A's sea and sky, and surfaces of face
+        // B's own terrain, including shaped (flipped) slabs and slopes.
+        {0, {0, -65, 0}},
+        {0, {0, -66, 0}},
+        {0, {0, -100, 0}},
+        {0, {0, -129, 0}},
+        {0, {0, -130, 0}},
+        {0, {0, -191, 0}},
+        {0, {0, -320, 0}},
+        {20260925, {-2, -66, 9}},
+        {0, {0, kSurfaceB, 0}},
+        {0, {-14, kSurfaceB, -36}},
+        {20260925, {5, kSurfaceB, -3}},
+        {0, {181019, -65, 181019}},
+        {0, {249990, kSurfaceB, 10}},
     };
     // The plate layout (Phase 10): a coast, the middle of an ocean gap between two continents (its
     // seabed and the open water over it), an island, another continent's interior and the abyss.
@@ -565,20 +591,24 @@ TEST_SUITE("worldgen: golden") {
     }
     std::vector<std::string> actual;
     for (auto& k : cases) {
-      const TerrainGenerator gen(k.seed);
-      if (k.c.y == kSurface) {
-        k.c.y = worldgen::FloorDiv(static_cast<int>(gen.ColumnAt(k.c.x * S, k.c.z * S).height), S);
+      const worldgen::BifacialTerrain gen(k.seed);
+      if (k.c.y == kSurface || k.c.y == kSurfaceB) {
+        const bool b = k.c.y == kSurfaceB;
+        const auto& local = gen.Local(b ? core::Face::kB : core::Face::kA);
+        k.c.y =
+            worldgen::FloorDiv(static_cast<int>(local.ColumnAt(k.c.x * S, k.c.z * S).height), S);
+        if (b) k.c.y = core::MirrorChunkY(k.c.y);
       }
       std::ostringstream line;
       line << k.seed << ' ' << k.c.x << ' ' << k.c.y << ' ' << k.c.z << ' ' << std::hex
-           << ChunkHash(Generated(gen, k.c));
+           << ChunkHash(GeneratedWorld(gen, k.c));
       actual.push_back(line.str());
     }
     const std::string path = DWELL_WORLDGEN_GOLDEN;
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 9\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 11\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);

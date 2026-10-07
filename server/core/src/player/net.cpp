@@ -8,6 +8,7 @@ namespace {
 
 using protocol::ControllerFlags::kClimbing;
 using protocol::ControllerFlags::kCrouching;
+using protocol::ControllerFlags::kFaceB;
 using protocol::ControllerFlags::kFlying;
 using protocol::ControllerFlags::kGrounded;
 using protocol::ControllerFlags::kHasReleased;
@@ -78,7 +79,7 @@ protocol::ControllerState ToNet(const PlayerController& c, const GroundToNet& gr
       (c.ground.grounded ? kGrounded : 0) | (c.jump.jumping ? kJumping : 0) |
       (c.crouch.crouching ? kCrouching : 0) | (c.climb.climbing ? kClimbing : 0) |
       (c.climb.has_released ? kHasReleased : 0) | (c.swim.swimming ? kSwimming : 0) |
-      (c.fly.flying ? kFlying : 0));
+      (c.fly.flying ? kFlying : 0) | (c.face < 0 ? kFaceB : 0));
   s.current_x = c.horizontal.current.GetX();
   s.current_z = c.horizontal.current.GetZ();
   s.external_x = c.horizontal.external.GetX();
@@ -110,6 +111,7 @@ void FromNet(const protocol::ControllerState& s, const GroundFromNet& ground, Pl
   c.climb.has_released = (s.flags & kHasReleased) != 0;
   c.swim.swimming = (s.flags & kSwimming) != 0;
   c.fly.flying = (s.flags & kFlying) != 0;
+  c.face = (s.flags & kFaceB) != 0 ? -1 : 1;
   c.horizontal.current = Vec3(s.current_x, 0.0f, s.current_z);
   c.horizontal.external = Vec3(s.external_x, 0.0f, s.external_z);
   c.horizontal.contribution = Vec3(s.contribution_x, 0.0f, s.contribution_z);
@@ -133,7 +135,7 @@ std::uint8_t PlayerFlagsOf(const PlayerController& c, bool dead) {
   return static_cast<std::uint8_t>(
       (c.ground.grounded ? F::kGrounded : 0) | (c.crouch.crouching ? F::kCrouched : 0) |
       (c.climb.climbing ? F::kClimbing : 0) | (c.swim.swimming ? F::kSwimming : 0) |
-      (c.fly.flying ? F::kFlying : 0) | (dead ? F::kDead : 0));
+      (c.fly.flying ? F::kFlying : 0) | (c.face < 0 ? F::kFaceB : 0) | (dead ? F::kDead : 0));
 }
 
 }  // namespace dwell::player

@@ -28,18 +28,20 @@ function generate(msg: ToWorldgen, g: ChunkGenerator): void {
     const voxels = g.generate(msg.coord);
     scope.postMessage({ t: 'chunk', id: msg.id, voxels, hash: g.lastHash() }, [voxels.buffer]);
   } else if (msg.t === 'map') {
-    const bytes = g.map(msg.x0, msg.z0, msg.step, msg.n);
+    const bytes = g.map(msg.x0, msg.z0, msg.step, msg.n, msg.face ?? 0);
     scope.postMessage({ t: 'map', id: msg.id, bytes }, bytes ? [bytes.buffer] : []);
   } else if (msg.t === 'tint') {
-    const bytes = g.tint(msg.cx, msg.cz);
+    const bytes = g.tint(msg.cx, msg.cz, msg.face);
     scope.postMessage({ t: 'tint', id: msg.id, bytes }, bytes ? [bytes.buffer] : []);
   } else if (msg.t === 'lod') {
     const s = g.lod(msg.coord);
     const surface = s.surface ?? null;
-    scope.postMessage(
-      { t: 'lod', id: msg.id, kind: s.kind, cells: s.cells, surface },
-      surface ? [s.cells.buffer, surface.buffer] : [s.cells.buffer],
-    );
+    const surfaceB = s.surfaceB ?? null;
+    scope.postMessage({ t: 'lod', id: msg.id, kind: s.kind, cells: s.cells, surface, surfaceB }, [
+      s.cells.buffer,
+      ...(surface ? [surface.buffer] : []),
+      ...(surfaceB ? [surfaceB.buffer] : []),
+    ]);
   } else if (msg.t === 'bounds') {
     scope.postMessage({ t: 'bounds', id: msg.id, ...g.lodBounds(msg.level, msg.i, msg.k) });
   }

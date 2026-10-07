@@ -198,12 +198,12 @@ def lod_cells(cell):
 
 def lod_index(flags, entries):
     out = struct.pack("<BBI", T["LodIndex"], flags, len(entries))
-    return out + b"".join(struct.pack("<iiI", *e) for e in entries)
+    return out + b"".join(struct.pack("<iiiI", *e) for e in entries)
 
 
 def lod_update(entries):
     out = struct.pack("<BH", T["LodIndexUpdate"], len(entries))
-    return out + b"".join(struct.pack("<iiI", *e) for e in entries)
+    return out + b"".join(struct.pack("<iiiI", *e) for e in entries)
 
 
 def lod_request(sections):
@@ -267,10 +267,10 @@ vectors = {
     + struct.pack("<iiiiii", 0, -1, 2, 256000, 191, -256000),
     "chunk_request": struct.pack("<BH", T["ChunkRequest"], 2)
     + struct.pack("<iiiiii", 3, 0, -4, -250000, -64, 250000),
-    "lod_index": lod_index(1, [(1024, 1023, 7), (0, 2047, 4000000000)]),
+    "lod_index": lod_index(1, [(1024, 1023, 1023, 7), (0, 1024, 2047, 4000000000)]),
     "lod_index_empty": lod_index(1, []),
-    "lod_index_part": lod_index(0, [(-5, 3, 1)]),
-    "lod_index_update": lod_update([(5, 6, 9)]),
+    "lod_index_part": lod_index(0, [(-5, 1022, 3, 1)]),
+    "lod_index_update": lod_update([(5, 1024, 6, 9)]),
     "lod_request": lod_request([(3, (-4, 17, 8), 0), (19, (0, 0, 0), 12)]),
     "lod_data_generated": lod_head(LF["Generated"], 5, (100, 3, -2), 0),
     "lod_data_unchanged": lod_head(LF["Unchanged"], 12, (1, 0, 2), 77),
@@ -323,7 +323,7 @@ malformed = {
     "!voxel_mod_bad_index": voxel_modification(VR["Edit"], 1, [((0, 0, 0), 1, [(32768, 1)])]),
     "!voxel_mod_truncated": VOXEL_MOD[:-1],
     "!lod_index_bad_flags": lod_index(2, []),
-    "!lod_index_truncated": lod_index(1, [(1, 2, 3)])[:-1],
+    "!lod_index_truncated": lod_index(1, [(1, 2, 3, 4)])[:-1],
     "!lod_update_empty": lod_update([]),
     "!lod_request_empty": lod_request([]),
     "!lod_request_too_many": lod_request([(1, (0, 0, 0), 0)] * (c["lod"]["maxRequestSections"] + 1)),
