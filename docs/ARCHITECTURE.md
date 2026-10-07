@@ -301,7 +301,7 @@ a tick), runs the due 60 Hz steps (`FixedStep`: carries remainders, drops backlo
 steps), and sleeps until the next step or at most 2 ms. Physics steps with Jolt's thread pool.
 **Built (Phase 2):** each `Server::Step` takes one input per joined player from its jitter-buffered
 queue (§9.3), runs the player controller pipeline, applies its server-side consequences (fall
-damage, debug launch pads → knockback; there is no void: a body that leaves the disc falls toward the midplane and settles in the flip band, §6.3), steps physics, respawns dead
+damage, debug launch pads → knockback; there is no void: a body that leaves the disc falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps physics, respawns dead
 players after `RESPAWN_SECONDS`, and every 3rd tick sends each client a `PhysicsSnapshot`.
 **Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3); players
 spawn at the generator's spawn point. **Built (Phase 3b):** each step first integrates the chunks
@@ -583,7 +583,7 @@ A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
   the origin: a column (x, z) is inside when x² + z² < `WORLD_RADIUS`² (`InsideWorldDisc`).
   Columns outside it generate nothing, in every generator: the rim is a cliff about 4 km tall
   between the two seas, with nothing in front of it, and a body that goes over it falls toward the
-  midplane and settles in the flip band (*Bifacial world* below).
+  midplane and is carried across it by the flip band (*Bifacial world* below).
 - **Vertical:** `WORLD_BOTTOM_Y` = −10 240 to `WORLD_MAX_Y` = 6 144 (16,384 m, 512 chunk rows):
   **face A** (the top, today's terrain) from the midplane `MIDPLANE_Y` = −2 048 to `WORLD_MAX_Y`, with
   `SEA_LEVEL` = 0, and **face B** its mirror image below the midplane, [−10 240, −2 048). There is
@@ -633,11 +633,11 @@ player on face B stands upside down in the world.
 - **Gravity.** `PlayerController::face` (±1) is the side of the midplane the body is on; the
   controller works in the face-local frame (PLAYER_CONTROLLER.md §11) and gravity points to −y in
   it. Tier 1 bodies (Phase 14) get a Jolt gravity factor of their side (`PhysicsWorld::Step`). **The
-  flip band:** within `FLIP_BAND` (4 m) of the midplane gravity fades linearly to zero and a drag of
-  8/s (overdamped) settles the body there, and a player in the band moves as when swimming, without
-  buoyancy. A body moves toward the midplane no faster than `ApproachSpeedLimit` (`flip_band.h`)
-  allows, braking at 2 g from far above: a fall of the rim's 2 km arrives at 280 m/s, crossing the
-  eight-metre band in two ticks, and would swing through it for minutes without the cushion.
+  flip band:** within `FLIP_BAND` (4 m) of the midplane a player moves as when swimming, without
+  buoyancy or drag; a body moving toward the midplane is **accelerated** (2 g extra), carrying it
+  across rather than letting it hover, and moving away the pull fades linearly to zero at it. Nothing
+  brakes a body, so a fall of the rim's 2 km passes through at speed and gravity (toward the
+  midplane on both sides) draws it back: it swings across the midplane (BIFACIAL_WORLD.md §10).
 - **Crossing.** There are no crossing routes: a player digs down through the core or goes over the
   rim, and the face switches (with 5 cm of hysteresis) when the body is across the midplane; the
   controller state is mirrored with the frame and the camera turns over smoothly.
@@ -1552,7 +1552,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | **Terrain (§6.3)** | | |
 | `MIDPLANE_Y` | −2 048 | The halfway plane: face A starts here, face B's mirror image lies below (§6.3) |
 | `WORLD_BOTTOM_Y` / `WORLD_MAX_Y` | −10 240 / 6 144 | Vertical world bounds (16,384 m: face B and face A) |
-| `FLIP_BAND` | 4 m | Distance from the midplane within which gravity fades to zero and drag settles a body (§6.3) |
+| `FLIP_BAND` | 4 m | Distance from the midplane within which a body moving toward it is accelerated and one moving away feels a fading pull (§6.3) |
 | `CORE_ANCHOR_LAYERS` | 8 | Layers either side of the midplane that anchor both faces (Phase 14) |
 | `WORLD_RADIUS` | 8 192 000 m | Radius of the world disc; beyond it, the void |
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |

@@ -638,10 +638,10 @@ always toward the midplane (y = −2,048), so a face-B player stands upside down
   it. An upside-down player's right is the frame's left, so `move_x` is negated on face B (the
   heading `yaw` is a world azimuth and unchanged; the client turns its mouse the other way).
 - **The flip band.** In open air within `FLIP_BAND` (4 m) of the midplane a player moves as when
-  swimming (the swim layer), without buoyancy, drawn toward the midplane by `gravity · h / band`
-  and slowed by `band.drag` (8/s, overdamped): it settles at the midplane without oscillating.
-  `ApproachSpeedLimit` (`core/flip_band.h`) caps the speed toward the midplane (braking at
-  `band.brake_gravities` = 2 g) so a fall from the rim's 2 km does not cross the band in two ticks.
+  swimming (the swim layer), without buoyancy or drag. Moving toward the midplane it is accelerated
+  by `band.boost_gravities` (2) × gravity, so it is carried across; moving away, the midplane's pull
+  (`gravity · h / band`) fades to zero at it. The player's own jump/crouch/look input steers as in
+  water. Nothing slows the body, so it swings across the midplane under gravity.
 - **Crossing.** Digging through the core or going over the rim brings a player to the band; on the
   far side "down" points back, so the player presses jump (up, away from the midplane) to go on.
   `controllerFlags.faceB` / `playerFlags.faceB` (protocol v12) carry the face.

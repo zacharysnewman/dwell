@@ -129,57 +129,40 @@ TEST_SUITE("player: bifacial") {
     }
   }
 
-  TEST_CASE("the flip band: a body falling down a shaft to the midplane settles there, once") {
+  TEST_CASE("the flip band: a body falling down a shaft is accelerated across the midplane") {
     WORLD_FRAME;
-    PlayerTestWorld w;
-    BuildShaft(w);
-    // From the face-A side, 20 m above the midplane, falling.
-    const auto h = w.SpawnAt(JPH::RVec3(0.5, kMidplaneY + 20.0, 0.5));
-    CHECK(w.C(h).face == 1);
-    int sign_changes = 0, flips = 0;
-    float last_vy = 0.0f;
-    std::int8_t face = w.C(h).face;
-    for (int i = 0; i < 60 * 12; ++i) {
-      w.Step();
-      const float vy = w.players.Velocity(h).GetY();
-      if (std::abs(vy) > 0.02f) {
-        if (last_vy != 0.0f && (vy > 0.0f) != (last_vy > 0.0f)) ++sign_changes;
-        last_vy = vy;
+    for (const double side : {+1.0, -1.0}) {
+      CAPTURE(side);
+      PlayerTestWorld w;
+      BuildShaft(w);
+      const auto h = w.SpawnAt(JPH::RVec3(0.5, kMidplaneY + side * 20.0, 0.5));
+      CHECK(w.C(h).face == (side > 0 ? 1 : -1));
+      int flips = 0;
+      std::int8_t face = w.C(h).face;
+      float fastest_in_band = 0.0f;
+      for (int i = 0; i < 60 * 4; ++i) {
+        w.Step();
+        if (std::abs(w.players.Position(h).GetY() - kMidplaneY) < 4.0) {
+          fastest_in_band = std::max(fastest_in_band, std::abs(w.players.Velocity(h).GetY()));
+        }
+        if (w.C(h).face != face) {
+          ++flips;
+          face = w.C(h).face;
+        }
       }
-      if (w.C(h).face != face) {
-        ++flips;
-        face = w.C(h).face;
-      }
+      // Free fall over 20 m reaches 28 m/s; the band's acceleration adds to it.
+      CHECK(flips >= 1);
+      CHECK(fastest_in_band > 30.0f);
     }
-    const double y = w.players.Position(h).GetY();
-    // The pull fades to nothing at the midplane and the drag keeps it from swinging across it.
-    CHECK(std::abs(y - kMidplaneY) < 0.15);
-    CHECK(sign_changes <= 1);
-    CHECK(flips <= 2);
-    CHECK(w.C(h).swim.swimming);  // in the band a player moves as when swimming
-    CHECK(std::abs(w.players.Velocity(h).GetY()) < 0.05f);
   }
 
-  TEST_CASE("a body falling toward the midplane from face B settles the same way") {
-    WORLD_FRAME;
-    PlayerTestWorld w;
-    BuildShaft(w);
-    const auto h = w.SpawnAt(JPH::RVec3(0.5, kMidplaneY - 20.0, 0.5));
-    CHECK(w.C(h).face == -1);
-    for (int i = 0; i < 60 * 12; ++i) w.Step();
-    CHECK(std::abs(w.players.Position(h).GetY() - kMidplaneY) < 0.15);
-    CHECK(std::abs(w.players.Velocity(h).GetY()) < 0.05f);
-  }
-
-  TEST_CASE("crossing the midplane by swimming: the face switches once, and up is away from it") {
+  TEST_CASE("crossing the midplane by swimming: the face switches, and up is away from it") {
     WORLD_FRAME;
     PlayerTestWorld w;
     BuildShaft(w);
     const auto h = w.SpawnAt(JPH::RVec3(0.5, kMidplaneY + 6.0, 0.5));
-    // Settle in the band, then press down (crouch: toward the midplane) until across it; on the far
-    // side "down" points back, so the player presses up (jump) to go on — away from the midplane.
-    w.Step(60 * 6);
-    REQUIRE(std::abs(w.players.Position(h).GetY() - kMidplaneY) < 0.5);
+    // Press down (crouch: toward the midplane) until across it; on the far side "down" points
+    // back, so the player presses up (jump) to go on — away from the midplane.
     REQUIRE(w.C(h).face == 1);
     w.input = [&](int, player::PlayerHandle p) {
       const bool across = w.C(p).face < 0;
@@ -196,37 +179,30 @@ TEST_SUITE("player: bifacial") {
       }
       lowest = std::min(lowest, w.players.Position(h).GetY());
     }
-    CHECK(flips == 1);
-    CHECK(w.C(h).face == -1);
+    // Out of the band the pull is back toward the midplane, so the player may come back across.
+    CHECK(flips >= 1);
     // On, into the far side of the band (3 m/s for the best part of three seconds).
     CHECK(lowest < kMidplaneY - 3.0);
-    // Released, the pull is back toward the midplane and the player settles there.
-    w.input = [](int, player::PlayerHandle) { return Move(0, 0); };
-    w.Step(60 * 10);
-    CHECK(std::abs(w.players.Position(h).GetY() - kMidplaneY) < 0.2);
   }
 
   TEST_CASE("crossing keeps the motion: the layers' state is mirrored with the frame") {
     WORLD_FRAME;
     PlayerTestWorld w;
     BuildShaft(w);
-    // Just above the midplane, thrown down it at 20 m/s: drag slows the body as it crosses.
     const auto h = w.SpawnAt(JPH::RVec3(0.5, kMidplaneY + 0.5, 0.5));
     w.Step(1);
     w.players.AddVelocity(h, JPH::Vec3(0, -20.0f, 0));
-    float before = 0, after = 0, earlier = 0;
+    float before = 0, after = 0;
     std::int8_t face = w.C(h).face;
     for (int i = 0; i < 60 * 2 && after == 0.0f; ++i) {
-      earlier = before;
       before = w.players.Velocity(h).GetY();
       w.Step();
       if (w.C(h).face != face) after = w.players.Velocity(h).GetY();
     }
     REQUIRE(after != 0.0f);
-    // The same decay on both sides of the switch (the drag is 8 / s: 12.5 % a tick), not a
-    // reversal or a jump.
+    // Still moving the same way, at about the same speed: not reversed, not lost, by the switch.
     CHECK(before < 0.0f);
     CHECK(after < 0.0f);
-    CHECK(after / before == doctest::Approx(before / earlier).epsilon(0.05));
+    CHECK(std::abs(after - before) < 1.5f);
   }
 }

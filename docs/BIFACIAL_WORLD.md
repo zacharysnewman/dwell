@@ -134,7 +134,7 @@ the zone still holds both faces; bodies that fall off the rim settle in the flip
 - Controller: the mirror-equivalence suite (all scenarios, both origins, native and WASM); walking,
   jumping, swimming and climbing on face B; crossing by a dug shaft through the core and by going
   over the rim, with the face sign and camera turning over once.
-- Gravity: a body falling off the rim settles in the flip band (no endless oscillation); Jolt bodies
+- Gravity: a body falling off the rim is accelerated across the midplane by the flip band; Jolt bodies
   on face B fall toward the midplane.
 - Bounds: nothing generated outside the two domes and bands; streaming and LOD reach both domes;
   posfix round-trips positions at both extremes.
@@ -161,10 +161,12 @@ character of its own.
 - **Midplane alignment.** Sections up to level **6** (2,048 m) never straddle the midplane (§5 said
   7): −2,048 is a multiple of 2,048, not of 4,096. The LOD origin is −2²³ in all three axes; a
   level-8 column of the world is three rows, so `LodIndex` entries carry the row `j` (protocol v12).
-- **Approach cushion.** A 4 m band alone cannot catch a body falling the rim's 2 km (280 m/s is five
-  metres a tick, the band's width in two ticks). Bodies may not move toward the midplane faster than
-  `ApproachSpeedLimit` (`core/flip_band.h`): braking at 2 g from far above to `drag · band` at the
-  band's edge, which the drag then stops inside it. Players and Tier 1 bodies alike.
+- **The band accelerates instead of settling** (owner, 2026-10-07). The design had drag and a fade to
+  zero so a body settled at the midplane; as built, a body moving toward the midplane in the band is
+  accelerated (2 g extra) and carried across, and moving away the pull fades to zero at it; nothing
+  brakes it (no approach cushion, no drag). Gravity points toward the midplane on both sides, so a
+  body that crosses falls back: it swings across the midplane rather than hovering in the band.
+  Players and Tier 1 bodies alike.
 - **The controller** runs in a face-local mirror frame rather than threading a sign through 45
   places (PLAYER_CONTROLLER.md §11); the mirror-equivalence suite is `--dwell-face=b`, equal in every
   decision and to contact-solver precision in positions (not bit for bit).

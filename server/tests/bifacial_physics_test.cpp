@@ -54,62 +54,29 @@ TEST_SUITE("bifacial: body gravity") {
     CHECK(w.Y(b) == doctest::Approx(kMidplaneY - 500.0 + 4.905).epsilon(1e-4));
   }
 
-  TEST_CASE(
-      "a body reaching the midplane settles in the band, from either side, without swinging") {
+  TEST_CASE("the band accelerates a body moving toward the midplane and carries it across") {
     for (const double side : {+1.0, -1.0}) {
       CAPTURE(side);
       World w;
-      const JPH::BodyID id = w.Box(kMidplaneY + side * 30.0);
-      int sign_changes = 0;
-      float last = 0.0f;
-      for (int i = 0; i < 60 * 30; ++i) {
-        w.Run(1);
-        const float v = w.Vy(id);
-        if (std::abs(v) > 0.02f) {
-          if (last != 0.0f && (v > 0.0f) != (last > 0.0f)) ++sign_changes;
-          last = v;
-        }
-      }
-      CHECK(std::abs(w.Y(id) - kMidplaneY) < 0.1);
-      CHECK(std::abs(w.Vy(id)) < 0.02f);
-      // At most one change of direction: past the midplane the pull reverses it once.
-      CHECK(sign_changes <= 1);
-    }
-  }
-
-  TEST_CASE("a fall of 2 km (the rim's drop) is braked on the way in and settles at the midplane") {
-    for (const double side : {+1.0, -1.0}) {
-      CAPTURE(side);
-      World w;
-      const JPH::BodyID id = w.Box(kMidplaneY + side * 2048.0);
-      double deepest = 0;  // furthest across the midplane
+      const JPH::BodyID id = w.Box(kMidplaneY + side * 10.0);
+      // Free fall from 10 m reaches sqrt(2 g h) ≈ 14 m/s at the midplane; the band adds to it.
       float fastest = 0;
-      for (int i = 0; i < 60 * 60; ++i) {
+      bool crossed = false;
+      for (int i = 0; i < 60 * 6 && !crossed; ++i) {
         w.Run(1);
-        deepest = std::max(deepest, -side * (w.Y(id) - kMidplaneY));
         fastest = std::max(fastest, std::abs(w.Vy(id)));
+        crossed = side * (w.Y(id) - kMidplaneY) < 0.0;
       }
-      // Free fall would arrive at 200 m/s (4 m a tick, the band's width in two ticks) and swing
-      // through the midplane for minutes; braked, it crosses by at most a few metres.
-      CHECK(fastest < 200.0f);
-      CHECK(deepest < 3.0);
-      CHECK(std::abs(w.Y(id) - kMidplaneY) < 0.1);
-      CHECK(std::abs(w.Vy(id)) < 0.02f);
+      CHECK(crossed);
+      CHECK(fastest > 15.5f);
     }
   }
 
-  TEST_CASE("a body's own damping returns when it leaves the band") {
+  TEST_CASE("moving away from the midplane, nothing slows a body in the band") {
     World w;
-    const JPH::BodyID id = w.Box(kMidplaneY + 2.0, /*damping=*/0.3f);
-    w.Run(10);
-    CHECK(w.physics.bodies().GetLinearVelocity(id).Length() < 1.0f);
-    // Thrown out of the band: its own damping is back.
-    w.physics.bodies().SetLinearVelocity(id, JPH::Vec3(0, 200.0f, 0));
-    for (int i = 0; i < 60 && w.Y(id) < kMidplaneY + 6.0; ++i) w.Run(1);
-    REQUIRE(w.Y(id) >= kMidplaneY + 6.0);
+    const JPH::BodyID id = w.Box(kMidplaneY + 0.5);
+    w.physics.bodies().SetLinearVelocity(id, JPH::Vec3(0, 20.0f, 0));
     w.Run(1);
-    JPH::BodyLockRead lock(w.physics.system().GetBodyLockInterface(), id);
-    REQUIRE(lock.Succeeded());
-    CHECK(lock.GetBody().GetMotionProperties()->GetLinearDamping() == doctest::Approx(0.3f));
+    CHECK(w.Vy(id) > 19.0f);
   }
 }

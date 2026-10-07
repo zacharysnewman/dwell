@@ -8,7 +8,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <unordered_map>
 
 namespace dwell::core {
 
@@ -36,11 +35,10 @@ struct PhysicsConfig {
   JPH::uint max_contact_constraints = 16384;
   std::size_t temp_allocator_bytes = 16 * 1024 * 1024;
   float gravity_y = -9.81f;  // world gravity for Tier 1 bodies (players use their own; §9)
-  // The flip band (BIFACIAL_WORLD.md §3): within this distance of the midplane gravity fades to
-  // zero and a body's linear damping rises to `band_damping`, overdamped (c² ≥ 4 · g / band).
+  // The flip band (BIFACIAL_WORLD.md §3): within this distance of the midplane a body moving toward
+  // it is accelerated (this many gravities); moving away, gravity fades linearly to zero at it.
   float flip_band = 4.0f;
-  float band_damping = 8.0f;     // 1/s
-  float brake_gravities = 2.0f;  // approach cushion braking (flip_band.h), in gravities
+  float band_boost_gravities = 2.0f;
 };
 
 // The server's Jolt world. The host supplies the job system (thread pool natively, single-threaded
@@ -68,8 +66,6 @@ class PhysicsWorld {
   std::unique_ptr<JPH::TempAllocatorImpl> temp_;
   JPH::JobSystem& jobs_;
   PhysicsConfig config_;
-  // Linear damping of the bodies currently in the flip band, before the band's was set.
-  std::unordered_map<std::uint32_t, float> band_damping_;
 };
 
 }  // namespace dwell::core

@@ -34,10 +34,10 @@ forever and is killed.
    (`MirrorMaterial`: the same state with `half` swapped, an involution; every other state is its own
    mirror). Generation stays a pure function of `(seed, chunk)`. Spawn is always on face A.
 4. **Gravity points toward the midplane**: −y on face A, +y on face B. In open air within `FLIP_BAND`
-   (4 m) of the midplane gravity fades linearly to zero at the midplane and a drag damps vertical
-   motion, so a body reaching the midplane in the open settles there instead of oscillating (§3 of
-   `BIFACIAL_WORLD.md`). The disc's rim, a ~4 km cliff between the two seas, therefore no longer
-   kills: there is no void to fall into.
+   (4 m) of the midplane a body moves as when swimming, without buoyancy or drag; moving toward the
+   midplane it is accelerated (2 g extra) so it is carried across, and moving away the pull fades
+   linearly to zero at it (owner, 2026-10-07: accelerate rather than slow, so the band does not hold
+   a body). The disc's rim, a ~4 km cliff between the two seas, no longer kills: there is no void.
 5. **The controller takes a face sign** (±1) threaded through every vertical quantity and probe
    rather than a general gravity vector, with mirrored voxel queries; a mirror-equivalence suite proves
    that every scenario on face A and its image on face B give mirrored traces bit for bit.

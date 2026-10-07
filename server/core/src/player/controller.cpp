@@ -15,7 +15,6 @@
 #include <optional>
 
 #include "dwell/core/block_shape.h"
-#include "dwell/core/flip_band.h"
 #include "dwell/core/physics_world.h"
 #include "dwell/core/terrain_collision.h"
 
@@ -878,18 +877,22 @@ void Players::StepSwim(Player& p) {
       (forward * c.input.move_y + CameraRight(c.input.look_yaw) * c.input.move_x) * cfg.swim.speed;
   if (c.input.jump) wish.SetY(cfg.swim.speed);
   if (c.input.crouch) wish.SetY(-cfg.swim.speed);
-  // In the band the drag is the band's (overdamped), and the midplane draws the body with a pull
-  // that fades to zero at it; water brings its buoyancy as ever.
+  // In the band nothing slows the body: moving toward the midplane it is accelerated (band.boost
+  // gravities), carrying it across; moving away, the midplane's pull (fading to zero at it) acts as
+  // gravity does. The player's own input still steers (the swim layer's drag toward the wish).
   const bool dry = swim.submerged <= cfg.swim.enter_fraction;
-  const float drag = band && dry ? cfg.band.drag : cfg.swim.drag;
-  Vec3 velocity = body_velocity + (wish - body_velocity) * (1.0f - std::exp(-drag * kDt));
+  const bool steer = !band || !dry || c.input.jump || c.input.crouch;
+  if (band && dry && !steer) wish.SetY(body_velocity.GetY());
+  Vec3 velocity = body_velocity + (wish - body_velocity) * (1.0f - std::exp(-cfg.swim.drag * kDt));
   if (!dry || !band) {
     velocity +=
         Vec3::sAxisY() * (cfg.swim.buoyancy * (swim.submerged - cfg.swim.float_fraction) * kDt);
   }
   if (band) {
-    velocity -= Vec3::sAxisY() *
-                (cfg.body.gravity * (height / static_cast<float>(protocol::kFlipBand)) * kDt);
+    const float pull = body_velocity.GetY() < 0.0f
+                           ? cfg.band.boost_gravities
+                           : height / static_cast<float>(protocol::kFlipBand);
+    velocity -= Vec3::sAxisY() * (cfg.body.gravity * pull * kDt);
   }
   swim.velocity = velocity;
 
@@ -1148,12 +1151,6 @@ void Players::StepVertical(Player& p) {
       v.accumulated_y += external;
     }
     v.accumulated_y += gravity * kDt;
-    // The approach cushion: nothing arrives at the flip band faster than its drag can stop.
-    const auto height = static_cast<float>(Pos(p).GetY() - core::kMidplaneY);
-    const float limit =
-        core::ApproachSpeedLimit(height, static_cast<float>(protocol::kFlipBand), cfg.band.drag,
-                                 cfg.band.brake_gravities * cfg.body.gravity);
-    v.accumulated_y = std::max(v.accumulated_y, -limit);
   }
 
   if (!was_grounded && c.ground.grounded) {

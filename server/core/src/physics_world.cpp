@@ -4,7 +4,6 @@
 
 #include <cmath>
 
-#include "dwell/core/flip_band.h"
 #include "dwell/core/voxel.h"
 
 namespace dwell::core {
@@ -67,24 +66,12 @@ void PhysicsWorld::Step(float dt) {
     const float depth = static_cast<float>(std::abs(over));
     const bool in_band = depth < config_.flip_band;
     JPH::MotionProperties& mp = *body.GetMotionProperties();
-    mp.SetGravityFactor(side * (in_band ? depth / config_.flip_band : 1.0f));
-    // The approach cushion (flip_band.h): not toward the midplane faster than the band can stop.
-    const float limit = ApproachSpeedLimit(depth, config_.flip_band, config_.band_damping,
-                                           config_.brake_gravities * std::abs(config_.gravity_y));
-    const float toward = -side * mp.GetLinearVelocity().GetY();  // speed toward the midplane
-    if (toward > limit) {
-      JPH::Vec3 v = mp.GetLinearVelocity();
-      v.SetY(-side * limit);
-      mp.SetLinearVelocity(v);
-    }
-    const std::uint32_t key = id.GetIndexAndSequenceNumber();
-    if (in_band) {
-      band_damping_.try_emplace(key, mp.GetLinearDamping());  // the first tick in the band
-      mp.SetLinearDamping(config_.band_damping);
-    } else if (const auto it = band_damping_.find(key); it != band_damping_.end()) {
-      mp.SetLinearDamping(it->second);  // out again: the body's own
-      band_damping_.erase(it);
-    }
+    // Moving toward the midplane through the band a body is accelerated (carried across); moving
+    // away, the pull fades to zero at the midplane. Nothing slows it.
+    const bool toward = side * mp.GetLinearVelocity().GetY() < 0.0f;
+    const float fade =
+        in_band ? (toward ? config_.band_boost_gravities : depth / config_.flip_band) : 1.0f;
+    mp.SetGravityFactor(side * fade);
   }
   system_->Update(dt, /*collisionSteps=*/1, temp_.get(), &jobs_);
 }
