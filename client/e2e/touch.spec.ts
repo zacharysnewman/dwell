@@ -64,7 +64,9 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   const ground = (await read(page))?.feet[1] ?? 0;
   await touch(cdp, 'touchStart', [{ x: box.x + box.width / 2, y: box.y + box.height / 2, id: 3 }]);
   let peak = ground;
-  for (let i = 0; i < 10; i++) {
+  // Software rendering is slow and the sim keeps up with real time only roughly: sample for ~1 s,
+  // well past the jump's apex, rather than a fixed few frames.
+  for (let i = 0; i < 25; i++) {
     await page.waitForTimeout(40);
     peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
   }
