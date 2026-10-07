@@ -7,18 +7,19 @@
 
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
+#include "dwell/worldgen/biomes.h"
 #include "dwell/worldgen/continents.h"
 #include "dwell/worldgen/rivers.h"
 #include "dwell/worldgen/slopes.h"
 
-// Procedural terrain, generator version 8 (ARCHITECTURE.md §6.3). A chunk is a pure function of
+// Procedural terrain, generator version 10 (ARCHITECTURE.md §6.3). A chunk is a pure function of
 // (world seed, chunk coordinate): every stage reads only noise and hashes of world coordinates,
 // never another chunk's data, so chunks generate in any order, on any thread, natively or in WASM,
 // with bit-identical results (noise.h, ADR 0010).
 //
 // Pipeline per chunk:
 //   1. Climate (2D): the signed distance to the coast (continents.h), erosion, temperature,
-//      humidity → biome weights.
+//      humidity (continent biases, coast distance, rain shadow) → the biome (biomes.h).
 //   2. Base height (2D): shelf / slope / abyss at sea and the inland rise on land, plus
 //   biome-blended
 //      hills and ridged mountains.
@@ -40,19 +41,23 @@
 // planet-scale layer varies land, ocean and kilometre-scale relief across the disc; sea level is
 // 0; nothing is generated outside the disc. The terrain's content (biomes, materials, features) is
 // prototype (ARCHITECTURE.md §6.1).
-// Version 8 (ADR 0019): climate at continental scale — temperature and humidity noise of
-// ~1,200 km and ~600 km, a lapse rate (snow lies on high ground), and the mountains biome from
-// relief above the valley floor, so biomes come in regions rather than patches a few hundred metres
-// across. Version 7 (ADR 0018, WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain —
-// three tiers of rivers as noise contours, lakes, and static water above sea level at a terraced
-// surface (waterfall steps); the land is a valley floor V with the relief standing away from the
-// channels. Version 6 (ADR 0017, WORLD_GENERATION.md §2): land and sea come from a plate layout of
-// 11–14 continents separated by open ocean, not from noise; continentalness is a signed distance to
-// the coast, from which the shelf, slope, abyss and inland rise follow.
+// Version 10 (ADR 0022, WORLD_GENERATION.md §3.5–3.7, Phase 11c): the climate with the continents'
+// biases and rain shadows, the biome table (biomes.h) in place of seven fixed biomes, wetland
+// ponds, and colourful vegetation: accent leaves in groves, blossom and autumn trees, meadow and
+// golden grass, and a canopy for distant forests. Version 9 (WORLD_GENERATION.md §3.4, Phase 11b):
+// mountain detail from the derivative-damped ridged cascade (noise.h) — sharp crests, smooth
+// valleys and slopes — scaled by the distance from rivers and the uplift, in place of the ridged
+// field's contribution to the uplift belts and mountains. Version 8 (ADR 0019): climate at
+// continental scale — temperature and humidity noise of ~1,200 km and ~600 km, a lapse rate (snow
+// lies on high ground), and the mountains biome from relief above the valley floor, so biomes come
+// in regions rather than patches a few hundred metres across. Version 7 (ADR 0018,
+// WORLD_GENERATION.md §3, Phase 11a): drainage-consistent terrain — three tiers of rivers as noise
+// contours, lakes, and static water above sea level at a terraced surface (waterfall steps); the
+// land is a valley floor V with the relief standing away from the channels. Version 6 (ADR 0017,
+// WORLD_GENERATION.md §2): land and sea come from a plate layout of 11–14 continents separated by
+// open ocean, not from noise; continentalness is a signed distance to the coast, from which the
+// shelf, slope, abyss and inland rise follow.
 namespace dwell::worldgen {
-
-enum class Biome : std::uint8_t { kOcean, kBeach, kPlains, kForest, kDesert, kSnowy, kMountains };
-const char* BiomeName(Biome b);
 
 // 2D fields of one column.
 struct Column {
@@ -68,21 +73,26 @@ struct Column {
   float height = 0;    // base terrain height (m), before overhang noise
   float overhang = 0;  // amplitude (m) of the 3D overhang noise
   float valley = 0;    // the valley floor V (m): the land's lowest ground, the rivers' reference
+  float cascade = 0;   // 0..1: the mountain detail cascade (noise.h), 0 where nothing scales it
   // Water: open voxels below `water` (y < water) are water. Sea level, or the surface of the river
   // or lake in this column (a terrace of the valley floor).
   std::int32_t water = 0;
   float wet = 0;      // 0..1: how much a river channel (banks included) or a lake claims the column
   bool lake = false;  // in a lake's bowl (inside its shore)
-  Biome biome = Biome::kPlains;
+  bool pond = false;  // in a wetland pond's bowl (Phase 11c)
+  Biome biome = Biome::kMeadow;
   bool outside = false;  // beyond the world's disc: nothing is generated
 };
 
 // A tree or boulder; positions are world voxel coordinates.
 struct Feature {
-  enum class Kind : std::uint8_t { kOak, kSpruce, kBoulder } kind = Kind::kOak;
+  // kOak and kAutumn are the broadleaf shape (they differ in their default leaves), kBlossom a
+  // short tree with a wide round crown, kSpruce a cone.
+  enum class Kind : std::uint8_t { kOak, kSpruce, kBoulder, kBlossom, kAutumn } kind = Kind::kOak;
   std::int32_t x = 0, y = 0, z = 0;  // trunk base / boulder centre (first voxel above the ground)
   int size = 0;                      // trunk height, or boulder radius
   std::uint32_t hash = 0;            // per-feature randomness (leaf trimming)
+  core::MaterialId leaves = core::Materials::kLeaves;  // the crown's leaf material (§3.7)
 };
 
 class TerrainGenerator {
@@ -173,15 +183,22 @@ class TerrainGenerator {
  private:
   struct Seeds {
     std::uint32_t continent, erosion, temperature, humidity, hills, ridges, overhang, spaghetti_a,
-        spaghetti_b, cheese, trees, boulders, ores, macro, relief;
+        spaghetti_b, cheese, trees, boulders, ores, macro, relief, cascade, border_t, border_h,
+        grove, patch;
   } seeds_;
+  GroveSeeds grove_seeds_{};
   ContinentLayout continents_;
   rivers::Seeds river_seeds_;
+  // The cascade's lattice is shifted by a hashed offset (m): Perlin noise is zero at its lattice
+  // points, which coarse level-of-detail cells (centres on multiples of 4,096 m) would all sit on.
+  std::int64_t cascade_offset_x_ = 0, cascade_offset_z_ = 0;
   // Lakes' surfaces from their centres (rivers.h); defined with the terrain.
   struct LakeOracle;
 
   struct Corner2 {
-    float continentalness, erosion, temperature, humidity, hills, ridges, macro, relief;
+    float continentalness, erosion, temperature, humidity, hills, ridges, macro, relief, cascade;
+    // Small noise that roughens the borders between biomes (temperature and humidity units).
+    float border_t, border_h;
     // The continent layout (continents.h) at this point.
     float coast, plate_edge, convergence, elevation, shelf;
     std::int32_t continent;
@@ -198,6 +215,19 @@ class TerrainGenerator {
   // Continental temperature and humidity noise (kept: local octaves kept, −1 all).
   float Temperature(std::int64_t x, std::int64_t z, int kept) const;
   float Humidity(std::int64_t x, std::int64_t z, int kept) const;
+  // The climate fields of a corner at (x, z) given the continent layout there (§3.5): temperature
+  // and humidity with the continent's biases, humidity with coast distance and the rain shadow,
+  // and the border noise. `cell` (m, 1: exact) is a level-of-detail cell's width.
+  void SampleClimate(Corner2& c, const MacroCorner& m, std::int64_t x, std::int64_t z,
+                     std::int64_t cell) const;
+  // The smooth large-scale ground height (m) the rain shadow's barriers are read from: the valley
+  // floor's rise, the uplift belts and (two octaves of) the ranges.
+  float Barrier(std::int64_t x, std::int64_t z) const;
+  // How much the ground upwind of (x, z) shields it from rain, 0..1: the highest of the barriers
+  // 20, 60 and 150 km upwind over the ground here, interpolated between lattice points `step` m
+  // apart (cached per thread).
+  float RainShadow(std::int64_t x, std::int64_t z, std::int64_t step) const;
+  float RainShadowLattice(std::int64_t mx, std::int64_t mz, std::int64_t step) const;
   // Columns of a chunk and one beyond each side ((S + 2)², row-major from (x0 − 1, z0 − 1)).
   void ChunkColumns(std::int32_t x0, std::int32_t z0, std::vector<Column>& cols) const;
   static float SkyFloor(const std::vector<Column>& cols);

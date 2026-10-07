@@ -53,13 +53,29 @@ TEST_CASE("block edit: the palette (the registry's placeable states)") {
     return name.find("_slope[") != std::string_view::npos ||
            name.find("_slab[") != std::string_view::npos;
   });
-  CHECK(placeable ==
-        std::vector<std::string_view>{
-            "dwell:stone", "dwell:dirt", "dwell:grass", "dwell:ladder[facing=north,flooded=false]",
-            "dwell:ladder[facing=east,flooded=false]", "dwell:ladder[facing=south,flooded=false]",
-            "dwell:ladder[facing=west,flooded=false]", "dwell:sand", "dwell:sandstone",
-            "dwell:gravel", "dwell:snow", "dwell:log", "dwell:leaves", "dwell:coal_ore",
-            "dwell:iron_ore", "dwell:gold_ore"});
+  CHECK(placeable == std::vector<std::string_view>{"dwell:stone",
+                                                   "dwell:dirt",
+                                                   "dwell:grass",
+                                                   "dwell:grass_meadow",
+                                                   "dwell:grass_golden",
+                                                   "dwell:ladder[facing=north,flooded=false]",
+                                                   "dwell:ladder[facing=east,flooded=false]",
+                                                   "dwell:ladder[facing=south,flooded=false]",
+                                                   "dwell:ladder[facing=west,flooded=false]",
+                                                   "dwell:sand",
+                                                   "dwell:sandstone",
+                                                   "dwell:gravel",
+                                                   "dwell:snow",
+                                                   "dwell:log",
+                                                   "dwell:leaves",
+                                                   "dwell:leaves_bright",
+                                                   "dwell:leaves_autumn",
+                                                   "dwell:leaves_red",
+                                                   "dwell:leaves_blossom",
+                                                   "dwell:leaves_violet",
+                                                   "dwell:coal_ore",
+                                                   "dwell:iron_ore",
+                                                   "dwell:gold_ore"});
   CHECK_FALSE(Placeable(Materials::kCount));
   CHECK_FALSE(Targetable(Materials::kAir));
   CHECK_FALSE(Targetable(Materials::kWater));
@@ -222,7 +238,7 @@ TEST_CASE("block edit: every slope and slab state of a shapeable material is pla
       ++shaped;
     }
   }
-  CHECK(shaped == 8 * (144 + 4));
+  CHECK(shaped == 10 * (144 + 4));
   CHECK_FALSE(Placeable(Materials::kWater));
 }
 

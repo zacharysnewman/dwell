@@ -222,8 +222,8 @@ TEST_SUITE("block shapes") {
       if (name.find("_slope[") != std::string::npos) ++slopes;
       if (name.find("_slab[") != std::string::npos) ++slabs;
     }
-    CHECK(slopes == 8 * 144);  // 9 shapes × 4 facings × 2 halves × 2 flooded, per material
-    CHECK(slabs == 8 * 4);
+    CHECK(slopes == 10 * 144);  // 9 shapes × 4 facings × 2 halves × 2 flooded, per material
+    CHECK(slabs == 10 * 4);
     CHECK(*ParseState("dwell:stone_slope[shape=outer,facing=south,half=top,flooded=true]") ==
           *ParseState("dwell:stone_slope[facing=south,flooded=true,half=top,shape=outer]"));
     CHECK(StateString(*ParseState("dwell:stone_slope")) ==

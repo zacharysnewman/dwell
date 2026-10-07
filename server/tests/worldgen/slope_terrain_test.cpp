@@ -43,7 +43,7 @@ std::optional<std::array<int, 4>> CornersOfVoxel(MaterialId m) {
 // Sites with gentle ground, hills and mountains (seed 0): the origin and the nearest mountains.
 std::vector<std::pair<int, int>> SteepSites(const TerrainGenerator& gen) {
   std::vector<std::pair<int, int>> sites{{0, 0}};
-  if (const auto m = dwell::testing::FindBiome(gen, Biome::kMountains)) sites.push_back(*m);
+  if (const auto m = dwell::testing::FindMountain(gen)) sites.push_back(*m);
   return sites;
 }
 

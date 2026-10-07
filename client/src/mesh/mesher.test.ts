@@ -6,6 +6,7 @@ import { meshChunk, PADDED_VOLUME, paddedIndex, type MeshArrays } from './mesher
 
 const WATER = stateId('dwell:water');
 const GRASS = stateId('dwell:grass');
+const SLAB = stateId('dwell:stone_slab[flooded=false,half=bottom]');
 const LADDER_NORTH = stateId('dwell:ladder[facing=north,flooded=false]');
 const UNKNOWN = 65_000;
 
@@ -104,8 +105,8 @@ describe('greedy chunk mesher', () => {
   it('draws slabs half height, one quad per face, and keeps their tops open', () => {
     const { opaque } = meshChunk(
       voxels([
-        [0, 0, 0, 5],
-        [1, 0, 0, 5],
+        [0, 0, 0, SLAB],
+        [1, 0, 0, SLAB],
         [0, 1, 0, 2], // a block on a slab: the slab's top stays open
       ]),
     );

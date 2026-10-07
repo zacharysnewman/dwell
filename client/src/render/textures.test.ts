@@ -102,3 +102,65 @@ describe('texture atlas', () => {
     expect(mean('plain')).toEqual([255, 255, 255]);
   });
 });
+
+describe('colourful vegetation tiles (WORLD_GENERATION.md §3.7)', () => {
+  const atlas = buildAtlas();
+  const mean = (name: TileName): number[] => {
+    const r = tileRect(name);
+    const x0 = Math.round(r.u0 * ATLAS_SIZE);
+    const y0 = Math.round(r.v0 * ATLAS_SIZE);
+    const sum = [0, 0, 0];
+    for (let y = 0; y < TILE; y++) {
+      for (let x = 0; x < TILE; x++) {
+        texel(atlas, x0 + x, y0 + y).forEach((c, i) => (sum[i] = (sum[i] ?? 0) + c));
+      }
+    }
+    return sum.map((c) => c / (TILE * TILE));
+  };
+
+  it('paints each accent leaf in its colour: orange, rust, pink, violet and yellow-green', () => {
+    const [ar = 0, ag = 0, ab = 0] = mean('leavesAutumn');
+    expect(ar).toBeGreaterThan(ag); // orange: red over green over blue
+    expect(ag).toBeGreaterThan(ab);
+    const [rr = 0, rg = 0] = mean('leavesRed');
+    expect(rr).toBeGreaterThan(rg * 1.6); // rust: red well over green
+    expect(rr).toBeLessThan(ar); // darker than the autumn orange
+    const [br = 0, bg = 0, bb = 0] = mean('leavesBlossom');
+    expect(br).toBeGreaterThan(bg * 1.4); // pink
+    expect(bb).toBeGreaterThan(bg);
+    const [vr = 0, vg = 0, vb = 0] = mean('leavesViolet');
+    expect(vg).toBeLessThan(vr); // violet: green lowest
+    expect(vg).toBeLessThan(vb);
+    const [yr = 0, yg = 0, yb = 0] = mean('leavesBright');
+    const [gr = 0, gg = 0] = mean('leaves');
+    expect(yg).toBeGreaterThan(yb * 1.8); // yellow-green
+    expect(yr / yg).toBeGreaterThan(gr / gg); // yellower (more red per green) than the green
+  });
+
+  it('paints meadow grass with flower flecks and golden grass yellow', () => {
+    // The meadow's flecks are brighter and not green: some texels have blue or red over green.
+    const r = tileRect('grassMeadow');
+    const x0 = Math.round(r.u0 * ATLAS_SIZE);
+    const y0 = Math.round(r.v0 * ATLAS_SIZE);
+    let flowers = 0;
+    for (let y = 0; y < TILE; y++) {
+      for (let x = 0; x < TILE; x++) {
+        const [pr = 0, pg = 0, pb = 0] = texel(atlas, x0 + x, y0 + y);
+        if (pr > pg || pb > pg) flowers++;
+      }
+    }
+    expect(flowers).toBeGreaterThan(3);
+    expect(flowers).toBeLessThan(TILE * TILE * 0.1); // sparse
+    const [fr = 0, fg = 0] = mean('grassGolden');
+    const [er = 0, eg = 0] = mean('grass');
+    expect(fr / fg).toBeGreaterThan(er / eg + 0.2); // warmer than the green
+    // The side tiles carry the fringe over dirt, like the grass side.
+    for (const side of ['grassMeadowSide', 'grassGoldenSide'] as const) {
+      const sr = tileRect(side);
+      const sx = Math.round(sr.u0 * ATLAS_SIZE);
+      const sy = Math.round(sr.v0 * ATLAS_SIZE);
+      const bottom = texel(atlas, sx + 5, sy + 1);
+      expect(bottom[0] ?? 0).toBeGreaterThan(bottom[1] ?? 0); // dirt below the fringe
+    }
+  });
+});

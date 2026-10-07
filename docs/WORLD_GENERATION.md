@@ -28,12 +28,15 @@ Contents
 4. [Sky islands in a dome (Phase 12)](#4-sky-islands-in-a-dome-phase-12)
 5. [Cross-cutting rules for all four phases](#5-cross-cutting-rules-for-all-four-phases)
 
-Where things are today (generator version 7, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
+Where things are today (generator version 10, `ARCHITECTURE.md` §6.3): an 8,192 km disc, sea level
 at y = 0, the world from −2,048 to 6,144 m; 12–13 continents from Voronoi plates with a signed coast
 distance behind continentalness (§2, built); a smooth valley floor with rivers (three tiers of noise
 contours), lakes and terraced static water above sea level (§3.2–3.3, Phase 11a, built, §3.10);
-ridged mountains and 49 km ranges with 5.4 km massifs; biomes ocean, beach, plains, forest, desert, snowy,
-mountains; surfaces grass/dirt/sand/sandstone/gravel/snow/stone; oak and spruce trees, boulders.
+the mountains' detail from a derivative-damped ridged cascade (§3.4, Phase 11b, built, §3.11) on
+49 km ranges with 5.4 km massifs; a climate with continent biases, a lapse rate and rain shadows and
+a table of 19 biomes (§3.5–3.7, Phase 11c, built, §3.12); surfaces grass (and meadow and golden)
+/dirt/sand/sandstone/gravel/snow/stone; oak, spruce, blossom and autumn trees with accent colours,
+boulders and wetland ponds. (The text below is the design these were built from.)
 Colours come from `client/src/render/textures.ts` (procedural tiles) and `client/src/world/materials.ts`;
 LOD colours are tile averages (`averageTileColor`); faces get a fixed scalar shade in both meshers
 (top 1.0, ±X 0.8, ±Z 0.7, bottom 0.55); lights are a hemisphere (`0xdfefff` / `0x4a3b2a`, 1.4) and
@@ -618,6 +621,61 @@ with the biome table rather than Phase 7's colour pass:
   the ground to either side; great-river mouths at sea level (12 over 4 seeds); no floating water and
   every horizontal water/air contact a step down (143,000 water voxels, 564 contacts at steps, 0
   elsewhere); no cave air in the 12 m under water; the spawn beside water.
+
+### 3.11 What was built (Phase 11b), and where it differs from the design above
+
+[ADR 0021](./adr/0021-mountain-detail-cascade.md) records the decisions; the code is `Perlin2d` and
+`DampedRidges2` in `noise.h` / `noise.cpp` and `Finish` in `terrain.cpp`. Differences from §3.4:
+
+- **It replaces the ridged field's contribution rather than adding a layer.** `Hd = D × U × A` is
+  the existing relief terms with the cascade in place of `c.ridges`: the uplift belts (900 m), the
+  upland weight (18 m + 150 m) and, new, 300 m on the ranges. The relief stays non-negative (the
+  ground never dips below `V`, which keeps the rivers' freeboard).
+- **Octaves:** nine, from a 4 km wavelength to a 16 m lattice, damping `k = 0.6` over a 600 m
+  reference relief; `prev` is the coarser octaves' normalised result and 1 for the first octave.
+- **Cost control:** the cascade is evaluated at the 4 m lattice corners only on land where an uplift
+  weight is not zero (`CascadeWanted`); the level of detail keeps the octaves a cell resolves and
+  reads the cascade's mean (0.55) for cells that resolve fewer than two octaves (4 km and up). Its lattice is shifted by a hashed offset (as the river tiers' are): the coarse levels' cell centres would otherwise all sit on its zeros. A power-of-two wavelength splits
+  coordinates by shifts, not divisions.
+- **Checks** (`cascade_test.cpp`): the analytic gradient against central differences (worst error
+  0.0003); the cascade in [0, 1] with relief; stronger damping lowers the roughness; the finer
+  octaves add more over high coarse ground than over low; LOD octave dropping keeps the coarse shape
+  (correlation 0.9997); mountains are ~19 times rougher than lowland over 16 m; the mean cascade is
+  the level of detail's constant; channels stay near the valley floor (20 m of relief against 470 m
+  beside them).
+
+### 3.12 What was built (Phase 11c), and where it differs from the design above
+
+[ADR 0022](./adr/0022-climate-biome-table-vegetation.md) records the decisions; the code is
+`biomes.h` / `biomes.cpp` (the table), `SampleClimate`, `RainShadow` and `Finish` in `terrain.cpp`,
+the ponds in `rivers.cpp`, and the blocks in `shared/blocks/dwell.json`. Differences from §3.5–3.7:
+
+- **The rain shadow** is read from a *smooth ground height* of the layout (the valley floor's rise,
+  the uplift belts) plus two octaves of the planet-scale ranges, not from `V + U × A`, which is not
+  available per point cheaply; it is evaluated on an 8 km lattice (16 cells at the level of detail)
+  and interpolated, cached per thread — a pure function of the seed and the lattice point. The
+  barrier must stand 150 m over the ground here to cast a shadow and 2 km over it for a full one.
+- **Temperature gets a land offset** (+0.12) and the records' biases at 0.55: with the first
+  numbers snowfields covered 26 % of the land. The tree line, bare-rock and snow temperatures are
+  −0.28, −0.36 and −0.45 (design: tree line at 620 m at sea-level 0; now 860 m, bare rock 1,110 m,
+  snow 1,385 m), and the zone table's rows cover the diagram without gaps (a test).
+- **Borders** are roughened by two noises of 37 and 53 m wavelength and ±0.012 (field units), not a
+  hash per column: a per-column hash would speckle a 10–50 km transition band, and the existing
+  local noise pair (5 % of each field) already does so on a smaller scale.
+- **Ponds** are decided by the oracle at each cell's *centre* (wetland humidity, flat, inland), not
+  per column: every column of a pond agrees on its level without reading the biome table. A pond
+  never has terrace steps and never reaches a neighbouring cell. Wetland is 6–11 % of the land;
+  a pond is a handful of metres in 1–2 % of it.
+- **Tree kinds**: the blossom tree is a 3–4 m trunk with a crown of radius 3; the autumn tree is the
+  oak's shape with autumn leaves. `Feature::leaves` carries each tree's leaf material, so a tree's
+  colour is part of the generator's output (and of the goldens).
+- **Not built:** `frozen_ocean` is a label that changes the sea floor to gravel (there is no ice
+  block); the cliff biome by slope (steep ground is stone in every biome's row instead); per-
+  continent mountainousness (the record's `mountainousness` is still unused — 11d's karst
+  provinces would read it).
+- **Checks:** see `ARCHITECTURE.md` §6.3 *Climate, biomes and vegetation*. Cost against 11b (Release,
+  near the spawn, `bench`): a chunk 0.78 → 0.96 ms (+23 %), LOD sections +11–25 % (level 1
+  1.43 → 1.78 ms, level 5 1.47 → 1.79, level 8 1.70 → 2.02, level 12 0.79 → 0.88).
 
 ---
 

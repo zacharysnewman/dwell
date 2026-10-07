@@ -4,13 +4,15 @@ import { MATERIALS, materialStyle, PLACEABLE } from './materials';
 describe('material styles', () => {
   it('mirror the registry state for state, in id order', () => {
     // The explicit blocks first, then each shapeable material's slope and slab families.
-    const explicit = MATERIALS.map((m) => m.name).slice(0, 28);
+    const explicit = MATERIALS.map((m) => m.name).slice(0, 35);
     expect(explicit).toEqual([
       'dwell:air',
       'dwell:bedrock',
       'dwell:stone',
       'dwell:dirt',
       'dwell:grass',
+      'dwell:grass_meadow',
+      'dwell:grass_golden',
       'dwell:stone_slab[flooded=false,half=bottom]',
       'dwell:stone_slab[flooded=false,half=top]',
       'dwell:stone_slab[flooded=true,half=bottom]',
@@ -31,14 +33,30 @@ describe('material styles', () => {
       'dwell:snow',
       'dwell:log',
       'dwell:leaves',
+      'dwell:leaves_bright',
+      'dwell:leaves_autumn',
+      'dwell:leaves_red',
+      'dwell:leaves_blossom',
+      'dwell:leaves_violet',
       'dwell:coal_ore',
       'dwell:iron_ore',
       'dwell:gold_ore',
     ]);
-    const families = MATERIALS.slice(28).map((m) => m.name.replace(/\[.*$/, ''));
+    const families = MATERIALS.slice(35).map((m) => m.name.replace(/\[.*$/, ''));
     expect(new Set(families)).toEqual(
       new Set(
-        ['stone', 'dirt', 'grass', 'sand', 'sandstone', 'gravel', 'snow', 'log']
+        [
+          'stone',
+          'dirt',
+          'grass',
+          'grass_meadow',
+          'grass_golden',
+          'sand',
+          'sandstone',
+          'gravel',
+          'snow',
+          'log',
+        ]
           .flatMap((m) => [`dwell:${m}_slope`, `dwell:${m}_slab`])
           .filter((n) => n !== 'dwell:stone_slab'),
       ),
@@ -50,11 +68,13 @@ describe('material styles', () => {
     // the palette's slots.
     const names = PLACEABLE.map((id) => MATERIALS[id]?.name ?? '');
     const shaped = names.filter((n) => /_(slope|slab)\[/.test(n));
-    expect(shaped.length).toBe(8 * (144 + 4));
+    expect(shaped.length).toBe(10 * (144 + 4));
     expect(names.filter((n) => !shaped.includes(n))).toEqual([
       'dwell:stone',
       'dwell:dirt',
       'dwell:grass',
+      'dwell:grass_meadow',
+      'dwell:grass_golden',
       'dwell:ladder[facing=north,flooded=false]',
       'dwell:ladder[facing=east,flooded=false]',
       'dwell:ladder[facing=south,flooded=false]',
@@ -65,6 +85,11 @@ describe('material styles', () => {
       'dwell:snow',
       'dwell:log',
       'dwell:leaves',
+      'dwell:leaves_bright',
+      'dwell:leaves_autumn',
+      'dwell:leaves_red',
+      'dwell:leaves_blossom',
+      'dwell:leaves_violet',
       'dwell:coal_ore',
       'dwell:iron_ore',
       'dwell:gold_ore',

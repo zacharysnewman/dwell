@@ -283,8 +283,8 @@ TEST_SUITE("lod: generation") {
     };
     std::vector<Site> sites = {{"spawn", 0, 0}};
     for (const worldgen::Biome biome :
-         {worldgen::Biome::kForest, worldgen::Biome::kMountains, worldgen::Biome::kOcean,
-          worldgen::Biome::kBeach, worldgen::Biome::kDesert, worldgen::Biome::kSnowy}) {
+         {worldgen::Biome::kBroadleaf, worldgen::Biome::kBareRock, worldgen::Biome::kOcean,
+          worldgen::Biome::kBeach, worldgen::Biome::kDunes, worldgen::Biome::kSnowfield}) {
       if (const auto at = FindBiome(gen, biome)) {
         // A gentle spot of the biome near it: the first hit of a far region can lie on a cliff,
         // where a cell-centre sample and a downsample differ by design.
@@ -362,7 +362,9 @@ TEST_SUITE("lod: surface") {
             if (m == M::kAir || m == M::kWater) continue;
             ++tops;
             bedrock += m == M::kBedrock;
-            grassy += m == M::kGrass || m == M::kSand || m == M::kSnow || m == M::kGravel;
+            grassy += m == M::kGrass || m == M::kGrassMeadow || m == M::kGrassGolden ||
+                      m == M::kSand || m == M::kSnow || m == M::kGravel ||
+                      (m >= M::kLeaves && m <= M::kLeavesViolet);
             break;
           }
         }
@@ -469,6 +471,18 @@ TEST_SUITE("lod: golden") {
       for (const int level : {2, 5})
         cases.push_back({seed, level, wl.great.x, surface(wl.great), wl.great.z});
       cases.push_back({seed, 1, wl.waterfall.x, surface(wl.waterfall), wl.waterfall.z});
+      // Climate and vegetation (Phase 11c): alpine ground and snow, and forests, whose canopy
+      // above the 4 m cells is leaves.
+      for (const worldgen::Biome b : {worldgen::Biome::kAlpineMeadow, worldgen::Biome::kBareRock,
+                                      worldgen::Biome::kBroadleaf, worldgen::Biome::kBlossomGrove,
+                                      worldgen::Biome::kAutumnWoods}) {
+        const auto site = FindBiome(gen, b);
+        REQUIRE(site);
+        const auto col = gen.ColumnAt(site->first, site->second);
+        const auto top = static_cast<std::int64_t>(std::max<float>(col.height, 0.0f));
+        cases.push_back({seed, 1, site->first, top, site->second});
+        cases.push_back({seed, 4, site->first, top, site->second});
+      }
     }
     std::vector<std::string> actual;
     for (const Case& k : cases) {
@@ -485,7 +499,7 @@ TEST_SUITE("lod: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 7\n";
+      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 9\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden LOD hashes written to " << path);

@@ -12,33 +12,31 @@
 
 namespace dwell::testing {
 
-inline std::optional<std::pair<std::int32_t, std::int32_t>> FindBiome(
-    const worldgen::TerrainGenerator& gen, worldgen::Biome biome) {
-  using worldgen::Biome;
-  // A column of the biome that is dry ground (or sea): not in a river's or a lake's bed.
+// A dry column satisfying `pred`: on a coarse grid around the origin, then rings out to the rim
+// (climate regions are hundreds of kilometres across), then — for what only occurs at a coast, if
+// `coastal` — around the coast met walking out from the origin in each of eight directions.
+template <class Pred>
+std::optional<std::pair<std::int32_t, std::int32_t>> FindColumn(
+    const worldgen::TerrainGenerator& gen, Pred&& pred, bool coastal = false) {
   const auto is = [&](std::int32_t x, std::int32_t z) {
     const worldgen::Column c = gen.ColumnAt(x, z);
-    return c.biome == biome && c.wet == 0.0f;
+    return !c.outside && c.wet == 0.0f && pred(c);
   };
-  if (biome != Biome::kOcean && biome != Biome::kBeach) {
+  if (!coastal) {
     for (int r = 0; r < 4000; r += 48)
       for (int x = -r; x <= r; x += 48)
         for (const int z : {-r, r}) {
           if (is(x, z)) return std::pair{x, z};
           if (is(z, x)) return std::pair{z, x};
         }
-  }
-  // Climate regions are hundreds of kilometres across (generator version 8): a land biome that is
-  // not within 192 km of the origin is looked for on a coarse grid of rings out to the rim.
-  if (biome != Biome::kOcean && biome != Biome::kBeach) {
     for (std::int32_t r = 192'000; r <= 7'000'000; r += 24'000)
       for (std::int32_t a = -r; a <= r; a += 24'000)
         for (const std::int32_t b : {-r, r}) {
           if (core::InsideWorldDisc(a, b) && is(a, b)) return std::pair{a, b};
           if (core::InsideWorldDisc(b, a) && is(b, a)) return std::pair{b, a};
         }
+    return std::nullopt;
   }
-  // Around the coast met walking out from the origin in each of eight directions.
   constexpr int kDirs[8][2] = {{1, 0}, {0, 1},  {-1, 0}, {0, -1},
                                {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
   for (const auto& d : kDirs) {
@@ -56,6 +54,24 @@ inline std::optional<std::pair<std::int32_t, std::int32_t>> FindBiome(
         }
   }
   return std::nullopt;
+}
+
+// A dry column of the biome. The sea's biomes and the land's climate biomes are found on the grid
+// of FindColumn; beaches and sea cliffs, which only occur at a coast, around the coasts.
+inline std::optional<std::pair<std::int32_t, std::int32_t>> FindBiome(
+    const worldgen::TerrainGenerator& gen, worldgen::Biome biome) {
+  using worldgen::Biome;
+  const auto is = [&](const worldgen::Column& c) { return c.biome == biome; };
+  const bool coastal = biome == Biome::kBeach || biome == Biome::kSeaCliff;
+  return FindColumn(gen, is, coastal);
+}
+
+// A dry column where the ground stands over 200 m above its valley floor: mountains.
+inline std::optional<std::pair<std::int32_t, std::int32_t>> FindMountain(
+    const worldgen::TerrainGenerator& gen) {
+  return FindColumn(gen, [](const worldgen::Column& c) {
+    return c.coast > 5000.0f && c.height - c.valley > 200.0f;
+  });
 }
 
 // Landmarks of the plate layout (WORLD_GENERATION.md §2), found by scanning the layout alone: where

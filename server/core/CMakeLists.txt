@@ -25,6 +25,7 @@ add_library(dwell_core
   src/worldgen/noise.cpp
   src/worldgen/continents.cpp
   src/worldgen/rivers.cpp
+  src/worldgen/biomes.cpp
   src/worldgen/terrain.cpp
   src/worldgen/slopes.cpp
   src/storage/world_db.cpp
