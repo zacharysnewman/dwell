@@ -30,7 +30,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
-| 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band and approach cushion, `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; outstanding: the new compatibility line (owner raises `package.json`), a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review |
 | 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
 | 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) |
 | 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) |
@@ -1670,28 +1670,28 @@ anchored for integrity by position, no bedrock; face B mirrors face A's structur
 (different seed streams) and its own dome of sky islands — so the world is a two-sided, sphere-like
 object. Down is always toward the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).
 
-**Status:** Not started. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
+**Status:** In progress — everything below is built and tested except what is unticked. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
 (2026-10-05): no crossing routes (dig through or go around the rim), a static sun for face A and a
 counter-angled static moon for face B, spawn on face A, a ~4 km crust, the rim ocean kept, and
 face B reusing face A's generator, biomes, palette and islands (`BIFACIAL_WORLD.md` §9). No open
 questions.
 
 Deliverables
-- [ ] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, the core
+- [x] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, the core
   anchor zone (no bedrock), gravity toward the midplane and the flip band, crossing by digging or
   around the rim, sun and moon; supersedes ADR 0011's vertical bounds
   and Phase 12's single dome.
-- [ ] Bounds: no bedrock and no void below — a diggable core with a positional anchor zone
+- [x] Bounds: no bedrock and no void below — a diggable core with a positional anchor zone
   (`CORE_ANCHOR_LAYERS`); face B's ground band and dome; the LOD origin at −2²³
   in y; streaming, air chunks, edits and the flight limits on both sides.
-- [ ] Generation in face-local coordinates with per-face seed streams; face-B chunks as flipped
+- [x] Generation in face-local coordinates with per-face seed streams; face-B chunks as flipped
   face-local chunks; point queries by face; LOD cells by their side of the midplane; per-face
   water.
-- [ ] Gravity: per-face direction, the flip band with drag, Jolt gravity factors by side.
-- [ ] Player controller: a face sign through every vertical quantity and probe; mirrored voxel
+- [x] Gravity: per-face direction, the flip band with drag, Jolt gravity factors by side.
+- [x] Player controller: a face sign through every vertical quantity and probe; mirrored voxel
   queries; the mirror-equivalence suite; crossing the flip band with a smooth camera turn
   (protocol bump if the snapshot needs a flag).
-- [ ] Crossing without dedicated routes: a shaft dug through the core and going over the rim both
+- [x] Crossing without dedicated routes: a shaft dug through the core and going over the rim both
   work through the flip band (no generated wells, ledges or portals).
 - [ ] Lighting and rendering: a static sun (face A) and a counter-angled static moon (face B), each
   fragment lit only by its own face's light and ambient; camera up by face; face-B tops shaded as
@@ -1713,6 +1713,14 @@ Exit criteria
 - [ ] Manual: face B walked, a crossing made, both domes seen, reviewed by the owner.
 
 ---
+
+Deviations (reasons in `BIFACIAL_WORLD.md` §10): sections up to level 6, not 7, lie wholly on one
+face; an approach cushion (`ApproachSpeedLimit`) brakes bodies before the flip band; the controller
+runs in a face-local mirror frame instead of a sign threaded through every probe, and the
+mirror-equivalence suite (`--dwell-face=b`) holds in every decision and to contact-solver precision
+in positions, not bit for bit. Still to do: tick the lighting/rendering and docs deliverables and the
+exit criteria once seen in a browser (the shaders and meshing are unit-tested, not yet looked at),
+and run the client worldgen module's goldens in CI.
 
 ## Phase 14 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 

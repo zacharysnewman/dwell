@@ -1642,7 +1642,7 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v11):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v12):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
@@ -1654,7 +1654,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
 reference encoder, including half floats). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
 `controllerFlags`, `welcomeFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
@@ -1821,10 +1821,10 @@ Death:   u8 cause
 `u8 level, i32×3 (i, j, k)` counted from the LOD grid's corner.
 ```
 S→C LodIndex 0x13       (lod) u8 flags (1 = last), u32 count (≤ 16384),
-                              repeat: i32 i, i32 k, u32 lodRevision
-                              // modified sections at LOD_INDEX_LEVEL (one row, so no j);
+                              repeat: i32 i, i32 j, i32 k, u32 lodRevision
+                              // modified sections at LOD_INDEX_LEVEL (j: Phase 13, protocol v12);
                               // may span several messages, the last flagged; count 0 allowed
-S→C LodIndexUpdate 0x14 (lod) u16 count (1..16384), repeat: i32 i, i32 k, u32 lodRevision
+S→C LodIndexUpdate 0x14 (lod) u16 count (1..16384), repeat: i32 i, i32 j, i32 k, u32 lodRevision
                               // coalesced, at most one per LOD_INDEX_UPDATE_MS
 C→S LodRequest 0x4C (control) u8 count (1..32), repeat: u8 level (1..19), i32×3 section,
                               u32 knownRevision (0 = none)
