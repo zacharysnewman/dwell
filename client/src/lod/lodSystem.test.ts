@@ -141,6 +141,10 @@ class View implements LodView {
   showLodSections(visible: ReadonlyMap<number, number>): void {
     this.shown = new Map(visible);
   }
+  standIns: { id: number; lo: Vec3; hi: Vec3 }[] = [];
+  showLodStandIns(standIns: readonly { id: number; lo: Vec3; hi: Vec3 }[]): void {
+    this.standIns = [...standIns];
+  }
 }
 
 function camera(position: Vec3, yawDeg: number, pitchDeg: number): LodCamera {
@@ -265,7 +269,7 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     const random = rng(3);
     const noOverlaps = (at: LodCamera): void => {
       const s = lod.lastSelection();
-      const leaves = [...s.drawn, ...s.empty, ...s.chunks];
+      const leaves = [...s.drawn, ...s.empty, ...s.chunks, ...s.standIns.map((x) => x.hole)];
       for (let n = 0; n < 100; n++) {
         const p = pointInView(at, random, 3e6);
         if (p) expect(leaves.filter((c) => contains(c, p)).length).toBeLessThanOrEqual(1);
@@ -286,10 +290,48 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     ] as ChunkCoord[]) {
       expect(lod.chunkVisible(c)).toBe(true);
     }
-    // Coarse sections are not drawn over the chunks (unready ones are holes); drawn ones have meshes.
+    // Coarse sections are not drawn over the chunks (unready ones are stand-ins); drawn ones have meshes.
     for (const c of lod.lastSelection().drawn) expect(view.meshed.has(lodId(...c))).toBe(true);
     expect(lod.chunkVisible([40, 0, 0])).toBe(false); // not streamed
   });
+
+  it('fills the holes of the forced path with clipped ancestors: no mountain is cut off', async () => {
+    // Regression (phone playtest, 2026-10-07): with level-0/1 jobs lagging and the chunks streamed
+    // as a sphere, the forced path to the chunks left the unready sections around them undrawn:
+    // peaks vanished (loaded, collidable, hidden) and the section below showed a flat cut.
+    const jobs = new Jobs();
+    jobs.stuckBelow = 2;
+    const view = new View();
+    const loaded = (c: ChunkCoord) => c[0] * c[0] + c[1] * c[1] + c[2] * c[2] <= 9 + 3;
+    const lod = new LodSystem(jobs, jobs, view, { drawable: loaded }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 64 * 1048576,
+      maxGenerationJobs: 16,
+      maxMeshJobs: 8,
+    });
+    lod.setDetailDistance(128);
+    const cam = camera([0.5, 1.6, 0.5], 0, -10);
+    for (let frame = 1; frame <= 1500; frame++) {
+      lod.update(cam, frame * 50);
+      await jobs.finish(() => 0, 1);
+    }
+    const s = lod.lastSelection();
+    expect(s.standIns.length).toBeGreaterThan(0);
+    const leaves = [...s.drawn, ...s.empty, ...s.chunks, ...s.standIns.map((x) => x.hole)];
+    for (let x = -200; x <= 200; x += 4)
+      for (let z = -200; z <= 200; z += 4)
+        for (const y of [-1, 1]) {
+          const p: Vec3 = [x + 0.5, y, z + 0.5];
+          expect(leaves.filter((c) => contains(c, p)).length).toBe(1);
+        }
+    // Each stand-in's source is a meshed ancestor of its hole.
+    for (const { hole, from } of s.standIns) {
+      expect(view.meshed.has(lodId(...from))).toBe(true);
+      expect(from[0]).toBeGreaterThan(hole[0]);
+      expect(contains(from, sectionOrigin(hole))).toBe(true);
+    }
+    expect(view.standIns.length).toBe(s.standIns.length);
+  }, 120_000);
 
   it('draws the streamed chunks inside buried sections: caves deep underground', async () => {
     // Regression (phone playtest): the LOD treats rock well below the surface as buried (solid,

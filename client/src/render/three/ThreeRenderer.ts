@@ -52,6 +52,7 @@ import {
   type RenderStats,
 } from '../Renderer';
 import { setFogUniforms, setViewFace, withHeightFog } from './heightFog';
+import { boxClipPlanes } from './clipBox';
 import { Sky } from './sky';
 import { LodSectionGeometry, releaseOnUpload } from './lodSection';
 import { BatchedTerrain } from './batchedTerrain';
@@ -60,6 +61,8 @@ import { type BatchHandle, geometryBytes, MeshBatch } from './meshBatch';
 /** Near/far depth split (§6.6): LOD beyond it in a far pass, then a depth clear and a near pass. */
 const NEAR_SPLIT = Lod.nearSplitM;
 const FAR_PLANE = 5e7;
+/** Most LOD stand-ins drawn per frame (clipped ancestor meshes, §6.6). */
+const MAX_STAND_INS = 64;
 
 function flatGeometry(m: FlatMesh): BufferGeometry | null {
   if (m.indices.length === 0) return null;
@@ -180,6 +183,9 @@ export class ThreeRenderer implements Renderer {
   private chunkVisible: ((coord: ChunkCoord) => boolean) | null = null;
   private readonly lod = new Map<number, LodEntry>();
   private lodShown: ReadonlyMap<number, number> = new Map();
+  private lodStandIns: readonly { id: number; lo: Vec3; hi: Vec3 }[] = [];
+  private readonly standInSlots: Mesh[] = [];
+  private warnedStandIns = false;
   private readonly lodMaterial = withHeightFog(new MeshLambertMaterial({ vertexColors: true }));
   /** Like the chunks' water (see-through from both sides, at their opacity), untextured. */
   private readonly lodWaterMaterial = withHeightFog(
@@ -231,6 +237,7 @@ export class ThreeRenderer implements Renderer {
     }
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
     this.renderer.autoClear = false;
+    this.renderer.localClippingEnabled = true; // LOD stand-ins are clipped to their holes
     this.renderer.setClearColor(new Color(...HORIZON_COLOR));
     // Tone mapping runs in each material's shader (no extra pass); the haze and the sky are mixed
     // in after it, in output colour.
@@ -324,6 +331,7 @@ export class ThreeRenderer implements Renderer {
       if (shown) l.section?.setSkirts(mask);
     }
     this.batch?.update(this.chunkVisible, this.lodShown);
+    this.placeStandIns();
     // Two passes (§6.6): the far one for everything beyond the split (its near plane pushed out
     // with altitude, where nothing is closer), then a depth clear and the near one.
     // Heights are the viewer's face-local ones (face B's sky is below the disc).
@@ -396,6 +404,45 @@ export class ThreeRenderer implements Renderer {
 
   showLodSections(visible: ReadonlyMap<number, number>): void {
     this.lodShown = visible;
+  }
+
+  showLodStandIns(standIns: readonly { id: number; lo: Vec3; hi: Vec3 }[]): void {
+    this.lodStandIns = standIns;
+  }
+
+  /** Draws each stand-in: its source section's geometry, clipped to the hole's box (§6.6). */
+  private placeStandIns(): void {
+    let used = 0;
+    for (const entry of this.lodStandIns) {
+      const l = this.lod.get(entry.id);
+      if (!l?.section || !l.mesh) continue;
+      if (used >= MAX_STAND_INS) {
+        if (!this.warnedStandIns) console.warn('LOD: more stand-ins than slots; drawing a subset');
+        this.warnedStandIns = true;
+        break;
+      }
+      let slot = this.standInSlots[used];
+      if (!slot) {
+        slot = new Mesh(
+          new BufferGeometry(),
+          withHeightFog(new MeshLambertMaterial({ vertexColors: true })),
+        );
+        this.scene.add(slot);
+        this.standInSlots.push(slot);
+      }
+      used++;
+      slot.geometry = l.section.geometry; // owned by the section: never disposed here
+      slot.position.copy(l.mesh.position);
+      slot.scale.copy(l.mesh.scale);
+      ThreeRenderer.placed(slot);
+      (slot.material as MeshLambertMaterial).clippingPlanes = boxClipPlanes(entry.lo, entry.hi);
+      slot.visible = true;
+      l.section.setSkirts(0); // its own mesh is not shown this frame, it was refined
+    }
+    for (let i = used; i < this.standInSlots.length; i++) {
+      const slot = this.standInSlots[i];
+      if (slot) slot.visible = false;
+    }
   }
 
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void {

@@ -45,6 +45,8 @@ export interface LodView {
   setLodSection(id: number, origin: Vec3, cellSize: number, meshes: SectionMeshes | null): void;
   /** The sections to draw this frame, with the sides (bit per face index) whose skirt shows. */
   showLodSections(visible: ReadonlyMap<number, number>): void;
+  /** Ancestor meshes drawn clipped to boxes (world metres) this frame; [] for none. */
+  showLodStandIns(standIns: readonly { id: number; lo: Vec3; hi: Vec3 }[]): void;
 }
 
 /** Which streamed chunks can stand in for level 0 (loaded, and meshed or all air). */
@@ -97,6 +99,15 @@ export interface Selection {
   empty: LodCoord[];
   /** Level-1 sections whose 8 chunks are drawn instead. */
   chunks: LodCoord[];
+  /** Holes filled by an ancestor's mesh clipped to them (see visit). */
+  standIns: StandIn[];
+}
+
+export interface StandIn {
+  /** The region with nothing ready to draw (its box is what gets drawn). */
+  hole: LodCoord;
+  /** The nearest ready, meshed, non-buried ancestor whose mesh is drawn clipped to `hole`. */
+  from: LodCoord;
 }
 
 interface Node {
@@ -191,7 +202,7 @@ export class LodSystem {
   private requestCredit: number;
   private lastRequestMs: number | null = null;
   private readonly received: { at: number; bytes: number }[] = [];
-  private selection: Selection = { drawn: [], empty: [], chunks: [] };
+  private selection: Selection = { drawn: [], empty: [], chunks: [], standIns: [] };
   private readonly refined = new Set<number>();
   /**
    * Level-1 sections around the camera whose 8 chunks are drawable, and all their ancestors: the
@@ -326,13 +337,13 @@ export class LodSystem {
     this.due = [];
     this.remeshed = [];
     this.inUse = 0;
-    const selection: Selection = { drawn: [], empty: [], chunks: [] };
+    const selection: Selection = { drawn: [], empty: [], chunks: [], standIns: [] };
     this.refined.clear();
     this.findCovered(camera.position, nowMs);
     const root = this.node(ROOT, null);
     this.touch(root);
     this.active = this.ready(root);
-    if (this.active) this.visit(root, frustum, selection);
+    if (this.active) this.visit(root, frustum, selection, null);
     else this.wanted.push(root);
     this.selection = selection;
 
@@ -348,6 +359,9 @@ export class LodSystem {
       visible.set(lodId(...c), mask);
     }
     this.view.showLodSections(visible);
+    this.view.showLodStandIns(
+      selection.standIns.map((s) => ({ id: lodId(...s.from), ...this.box(s.hole) })),
+    );
 
     this.schedule(frustum);
     this.sendRequests(nowMs);
@@ -383,9 +397,11 @@ export class LodSystem {
     if (n.remesh) this.remeshed.push(n);
   }
 
-  private visit(node: Node, frustum: Frustum, selection: Selection): void {
+  private visit(node: Node, frustum: Frustum, selection: Selection, fallback: Node | null): void {
     // A node that is not ready is only reached on the way down to the covered chunks.
     const ready = this.ready(node);
+    // Where this branch leaves a hole, the nearest ready mesh above it is drawn clipped to it.
+    const next = ready && node.kind === LodKind.Content && node.meshed ? node : fallback;
     if (ready && node.kind === LodKind.Empty) {
       selection.empty.push(node.coord);
       return;
@@ -404,12 +420,15 @@ export class LodSystem {
         this.refined.add(node.id);
       } else if (ready) {
         this.draw(node, selection);
+      } else if (fallback) {
+        this.standIn(node, fallback, selection);
       }
       return;
     }
     if (!ready) {
-      // On the way to the covered chunks: descend; everything else here waits (a hole).
-      if (this.coveredAncestors.has(node.id)) this.visitKids(node, frustum, selection);
+      // On the way to the covered chunks: descend; everything else here is a stand-in.
+      if (this.coveredAncestors.has(node.id)) this.visitKids(node, frustum, selection, next);
+      else if (fallback) this.standIn(node, fallback, selection);
       return;
     }
     if (!this.refine(node, frustum)) {
@@ -434,13 +453,18 @@ export class LodSystem {
     if (!allReady) {
       // Coarse until the children are ready — unless that would hide the player's surroundings.
       if (this.coveredAncestors.has(node.id)) {
-        for (const kid of node.kids) this.visit(kid, frustum, selection);
+        for (const kid of node.kids) this.visit(kid, frustum, selection, next);
       } else {
         this.draw(node, selection);
       }
       return;
     }
-    for (const kid of node.kids) this.visit(kid, frustum, selection);
+    for (const kid of node.kids) this.visit(kid, frustum, selection, next);
+  }
+
+  private standIn(hole: Node, from: Node, selection: Selection): void {
+    this.touch(from); // keeps it in the cache while it stands in
+    selection.standIns.push({ hole: hole.coord, from: from.coord });
   }
 
   /**
@@ -482,14 +506,19 @@ export class LodSystem {
       }
     }
     if (allReady || this.coveredAncestors.has(node.id)) {
-      for (const kid of node.kids) this.visit(kid, frustum, selection);
+      for (const kid of node.kids) this.visit(kid, frustum, selection, null);
     } else {
       selection.empty.push(node.coord); // undrawn as a whole until the children are known
     }
   }
 
   /** Visits the children of a node that is not ready itself (on the way to covered chunks). */
-  private visitKids(node: Node, frustum: Frustum, selection: Selection): void {
+  private visitKids(
+    node: Node,
+    frustum: Frustum,
+    selection: Selection,
+    fallback: Node | null,
+  ): void {
     if (!node.kids) {
       node.kids = [];
       for (let o = 0; o < 8; o++) {
@@ -500,7 +529,7 @@ export class LodSystem {
     for (const kid of node.kids) {
       this.touch(kid);
       if (!this.ready(kid)) this.wanted.push(kid);
-      this.visit(kid, frustum, selection);
+      this.visit(kid, frustum, selection, fallback);
     }
   }
 

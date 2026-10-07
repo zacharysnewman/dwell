@@ -1250,8 +1250,11 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   detail — chunks included — loads ahead of a moving player. **The player's surroundings never wait for coarse levels:** a level-1
   section around the camera whose chunks have been drawable for `FORCE_CHUNKS_AFTER_MS` (1 s)
   is always reached — the walk descends to it through ancestors whose children are not all
-  ready, drawing the ready siblings and leaving the unready ones empty (sky) until they are,
-  never drawing a coarse section over the chunks. A device that keeps up never takes this path;
+  ready, drawing the ready siblings and drawing, for each unready one, its nearest ready ancestor's mesh
+  **clipped to the unready section's box** (a *stand-in*: local clipping planes in the renderer,
+  so a loaded peak is never hidden and no flat cut shows; not drawn in the experimental
+  `?batch=1` path, and without water, so a lake may be missing for the moment its section takes
+  to load; a buried region gets none), never drawing a coarse section over the chunks. A device that keeps up never takes this path;
   one whose LOD generation is slow or stalled still shows the world around the player.
 - A parent stays drawn until **all its children** are ready (meshed, or known empty or buried),
   then they swap in; unused children are evicted only as whole sibling sets, least recently used

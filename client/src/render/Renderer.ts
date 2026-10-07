@@ -64,6 +64,11 @@ export interface Renderer {
   setLodSection(id: number, origin: Vec3, cellSize: number, meshes: SectionMeshes | null): void;
   /** The LOD sections to draw from now on, each with the sides (bit per face) whose skirt shows. */
   showLodSections(visible: ReadonlyMap<number, number>): void;
+  /**
+   * Ancestor sections drawn clipped to boxes (world metres) where the traversal has nothing ready
+   * (§6.6); `id` is the source section's. [] for none.
+   */
+  showLodStandIns(standIns: readonly { id: number; lo: Vec3; hi: Vec3 }[]): void;
   /** Which terrain chunks are drawn (LOD draws instead of the others); null: all of them. */
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void;
   /** Debug: tint LOD sections by level. */
