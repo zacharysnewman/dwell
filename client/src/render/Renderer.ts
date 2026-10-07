@@ -2,6 +2,7 @@ import type { SectionMeshes } from '../mesh/lodMesher';
 import type { ChunkMeshes } from '../mesh/mesher';
 import type { ChunkCoord, Vec3 } from '../protocol/messages';
 import type { FogSettings } from './fog';
+import type { SkyFrame } from './skyFrame';
 
 /** A player drawn by the renderer (remote players, and the local one when dead). */
 export interface PlayerView {
@@ -74,6 +75,11 @@ export interface Renderer {
   /** Debug: tint LOD sections by level. */
   setLodLevelColors(on: boolean): void;
   /** Height fog (§6.6): the haze's distance, density and scale height (render/fog.ts). */
+  /**
+   * Turns the sky (render/skyFrame.ts): the day sky's zenith, the sun and the moon, and the lights
+   * that follow them. At `SKY_REST` it is the static sky.
+   */
+  setSkyFrame(frame: SkyFrame): void;
   setFog(fog: FogSettings): void;
   /** Tone mapping exposure (render/look.ts): 1 leaves the lights as set. */
   setExposure(exposure: number): void;

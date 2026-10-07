@@ -112,13 +112,17 @@ Spawn is always on face A (owner, 2026-10-05).
   and forth across the midplane, and each crossing turns the heading round again (no hysteresis). The flip is
   predicted like any other movement; if the local player's state needs a flag for it, it goes in
   `PhysicsSnapshot` (a protocol bump).
-- **Light: a sun and a moon** (owner, 2026-10-05), both **static** for now. The sun is Phase 7's
+- **Light: a sun and a moon** (owner, 2026-10-05), **static** at rest, and turnable as a unit with
+  the sky (below). The sun is Phase 7's
   directional light, lighting face A; the **moon** is a second directional light pointing the
   opposite way (`moon direction = −sun direction`, "counter-angled"), lighting face B with a
   cooler, dimmer moonlight. With no shadows, each light would also reach the other face's
   ceilings, so each fragment takes only its own face's light (chosen by its side of the midplane),
   and the hemisphere/ambient light is per face too. Colours and intensities live in Phase 7's
-  palette module as tunables.
+  palette module as tunables. The sky is **one sphere** graded from day to night (a sky frame: the
+  day zenith, the sun and the moon), which first turns as a whole about a horizontal axis — the
+  sun's elevation changes, π swaps day and night — client-side only (`?skyrot`, `?skyspin`, a
+  settings slider); the lights are weighted smoothly by their height over each face's horizon.
 - **Rendering:** the camera's up vector follows the face; the meshers' per-face shading (Phase 7's
   tint table) treats a face-B chunk's −y faces as its tops; the sky gradient (face B: a moonlit
   night sky with the moon's glow where the sun's is on face A) and haze are evaluated in the

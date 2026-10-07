@@ -9,18 +9,22 @@ import {
   faceTint,
   HORIZON_COLOR,
   LIGHT,
-  MOON_DIRECTION,
+  gradient,
   MOON_DIRECTION_WORLD,
+  MOON_GLOW,
   NIGHT_SKY_STOPS,
   SKY_GLSL,
+  SKY_SPHERE_STOPS,
   SKY_STOPS,
+  SUN_GLOW,
   SUN_DIRECTION,
   sanitizeExposure,
   skyColor,
   type Rgb,
 } from './look';
 import { srgbToLinear } from './textures';
-import { patchFogShader } from './three/heightFog';
+import { skyFrame } from './skyFrame';
+import { lightWeight, patchFogShader } from './three/heightFog';
 
 const GRASS = 4;
 /** Axis and sign of the face a vertex normal points along. */
@@ -99,10 +103,14 @@ describe('the sky (WORLD_GENERATION.md §1.4)', () => {
     const n = Math.hypot(sx, sz);
     return [(-sx / n) * h, y, (-sz / n) * h];
   };
+  const close = (a: Rgb, b: Rgb, tol: number): void => {
+    for (let i = 0; i < 3; i++) expect(Math.abs((a[i] ?? 0) - (b[i] ?? 0))).toBeLessThan(tol);
+  };
 
   it("is the gradient's horizon colour at and below the horizon, away from the sun", () => {
-    expect(skyColor(away(0))).toEqual(HORIZON_COLOR);
-    expect(skyColor(away(-0.5))).toEqual(HORIZON_COLOR);
+    // (Within the moon's faint halo, which lies opposite the sun.)
+    close(skyColor(away(0)), HORIZON_COLOR, 2e-3);
+    close(skyColor(away(-0.5)), HORIZON_COLOR, 2e-3);
     // The gradient's first stop is that colour: the haze at the horizon is the sky's there.
     expect(SKY_STOPS[0]?.color).toEqual(HORIZON_COLOR);
   });
@@ -137,25 +145,107 @@ describe('the sky (WORLD_GENERATION.md §1.4)', () => {
     patchFogShader(shader as never);
     expect(shader.fragmentShader).toContain(SKY_GLSL);
     expect(shader.fragmentShader).toContain('dwellSky(fogDir)');
-    // The shader's stops are the gradient's.
-    for (const { color } of SKY_STOPS) {
+    // The shader's stops are the gradient's, and its directions are the sky frame's uniforms.
+    for (const { color } of SKY_SPHERE_STOPS) {
       expect(SKY_GLSL).toContain(color.map((c) => c.toFixed(5)).join(', '));
     }
-    expect(SKY_GLSL).toContain(SUN_DIRECTION.map((c) => c.toFixed(5)).join(', '));
+    for (const u of ['dwellFace', 'dwellDayPole', 'dwellSun', 'dwellMoon']) {
+      expect(SKY_GLSL).toContain(`uniform ${u === 'dwellFace' ? 'float' : 'vec3'} ${u};`);
+    }
+  });
+
+  describe('the sphere, at rest: the static sky of each face', () => {
+    // Elevations from the horizon band up, on both faces, against the old day and night gradients.
+    for (const face of [1, -1] as const) {
+      it(`matches face ${face > 0 ? 'A' : 'B'}'s gradient from 0.12 up, and within 0.09 below`, () => {
+        const stops = face > 0 ? SKY_STOPS : NIGHT_SKY_STOPS;
+        const [sx, , sz] = SUN_DIRECTION;
+        const n = Math.hypot(sx, sz);
+        const glowAt = (g: typeof SUN_GLOW, light: Rgb, dir: Rgb): number => {
+          const dot = Math.max(0, dir[0] * light[0] + dir[1] * light[1] + dir[2] * light[2]);
+          return Math.min(1, g.tight * dot ** g.tightPower + g.broad * dot ** g.broadPower);
+        };
+        for (let e = 0; e <= 1.0001; e += 0.01) {
+          const h = Math.sqrt(Math.max(0, 1 - e * e));
+          const dir: Rgb = [(-sx / n) * h, face * e, (-sz / n) * h];
+          // The old sky: the face's gradient and its light's glow. The sphere also lets the other
+          // light's glow show where it is in the sky (a faint halo opposite the sun by day).
+          let old = gradient(stops, Math.min(1, e));
+          old = mix3(old, SUN_GLOW.color, glowAt(SUN_GLOW, SUN_DIRECTION, dir));
+          old = mix3(old, MOON_GLOW.color, glowAt(MOON_GLOW, MOON_DIRECTION_WORLD, dir));
+          close(skyColor(dir, face), old, e >= 0.12 ? 1e-6 : 0.09);
+        }
+      });
+    }
+  });
+
+  describe('the sky frame turns the sky as a unit', () => {
+    const random = (() => {
+      let a = 12345;
+      return () => {
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    })();
+    const unit = (): Rgb => {
+      const v: Rgb = [random() * 2 - 1, random() * 2 - 1, random() * 2 - 1];
+      const n = Math.hypot(...v) || 1;
+      return [v[0] / n, v[1] / n, v[2] / n];
+    };
+
+    it('is continuous in the angle', () => {
+      for (let i = 0; i < 100; i++) {
+        const dir = unit();
+        const angle = random() * Math.PI * 2;
+        for (const face of [1, -1] as const) {
+          const a = skyColor(dir, face, skyFrame(angle));
+          const b = skyColor(dir, face, skyFrame(angle + 0.001));
+          close(a, b, 0.01);
+        }
+      }
+    });
+
+    it('turns day to night: at π a face-A viewer sees the night zenith, at π/2 the twilight', () => {
+      close(
+        skyColor([0, 1, 0], 1, skyFrame(Math.PI)),
+        SKY_SPHERE_STOPS[0]?.color ?? HORIZON_COLOR,
+        0.03,
+      );
+      close(
+        skyColor([0, 1, 0], 1, skyFrame(Math.PI / 2)),
+        SKY_SPHERE_STOPS[3]?.color ?? HORIZON_COLOR,
+        0.05,
+      );
+    });
+
+    it('at π the viewer on face B has the day sky overhead', () => {
+      close(
+        skyColor([0, -1, 0], -1, skyFrame(Math.PI)),
+        SKY_STOPS[SKY_STOPS.length - 1]?.color ?? HORIZON_COLOR,
+        0.03,
+      );
+    });
   });
 });
 
+const mix3 = (a: Rgb, b: Rgb, t: number): Rgb => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+
 describe('face B: a moonlit night sky and light (BIFACIAL_WORLD.md §6)', () => {
+  const close = (a: Rgb, b: Rgb, tol: number): void => {
+    for (let i = 0; i < 3; i++) expect(Math.abs((a[i] ?? 0) - (b[i] ?? 0))).toBeLessThan(tol);
+  };
   const luma = (c: Rgb): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
-  it('puts the moon opposite the sun in the world, and above face B’s horizon in its own frame', () => {
+  it('puts the moon opposite the sun in the world', () => {
     SUN_DIRECTION.forEach((c, i) => {
       expect(MOON_DIRECTION_WORLD[i]).toBeCloseTo(-c, 12);
     });
-    // Face B's frame is the world mirrored: the moon is as high there as the sun is on face A.
-    expect(MOON_DIRECTION[1]).toBeCloseTo(SUN_DIRECTION[1], 12);
-    expect(MOON_DIRECTION[0]).toBeCloseTo(-SUN_DIRECTION[0], 12);
-    expect(MOON_DIRECTION[2]).toBeCloseTo(-SUN_DIRECTION[2], 12);
   });
 
   it('is evaluated in the viewer’s own frame: a face-B sky is the night gradient, upside down', () => {
@@ -169,14 +259,17 @@ describe('face B: a moonlit night sky and light (BIFACIAL_WORLD.md §6)', () => 
     // The same direction seen from face A is the day sky (the world's up is face A's).
     expect(skyColor([0, 1, 0], 1)).not.toEqual(skyColor([0, -1, 0], -1));
     // And face B's sky ignores what is above the disc: looking +y it is below the horizon.
-    expect(skyColor([0, 1, 0], -1)).toEqual(skyColor([0.6, 0.0, 0.8], -1));
+    const flat = skyColor([0.6, 0, 0.8], -1);
+    const deeper = Math.hypot(0.6, 0.5, 0.8);
+    close(skyColor([0.6 / deeper, 0.5 / deeper, 0.8 / deeper], -1), flat, 1e-9);
   });
 
   it('glows cool and bright toward the moon', () => {
-    // Toward the moon in the world (its y negated is face B's frame).
-    const toMoon: Rgb = [MOON_DIRECTION[0], -MOON_DIRECTION[1], MOON_DIRECTION[2]];
-    const moon = skyColor(toMoon, -1);
-    const away = skyColor([-toMoon[0], -toMoon[1], -toMoon[2]], -1);
+    const moon = skyColor(MOON_DIRECTION_WORLD, -1);
+    const away = skyColor(
+      [-MOON_DIRECTION_WORLD[0], MOON_DIRECTION_WORLD[1], -MOON_DIRECTION_WORLD[2]],
+      -1,
+    );
     expect(luma(moon)).toBeGreaterThan(luma(away));
     expect(moon[2]).toBeGreaterThan(moon[0]); // blue-white, not warm
   });
@@ -188,13 +281,8 @@ describe('face B: a moonlit night sky and light (BIFACIAL_WORLD.md §6)', () => 
     expect(LIGHT.moon & 0xff).toBeGreaterThan((LIGHT.moon >> 16) & 0xff);
   });
 
-  it('is in the shader too, in the viewer’s frame: its night branch, and the face uniform', () => {
-    expect(SKY_GLSL).toContain('uniform float dwellFace;');
-    expect(SKY_GLSL).toContain('if (dwellFace < 0.0)');
-    for (const { color } of NIGHT_SKY_STOPS) {
-      expect(SKY_GLSL).toContain(color.map((c) => c.toFixed(5)).join(', '));
-    }
-    expect(SKY_GLSL).toContain(MOON_DIRECTION.map((c) => c.toFixed(5)).join(', '));
+  it('is in the shader too, in the viewer’s frame: the face uniform', () => {
+    expect(SKY_GLSL).toContain('vec3 up = vec3(0.0, dwellFace, 0.0);');
   });
 
   it('keeps each fragment to its own face’s light: the lights chunk is patched by side', () => {
@@ -207,6 +295,21 @@ describe('face B: a moonlit night sky and light (BIFACIAL_WORLD.md §6)', () => 
     expect(src).toContain('directLight.color *= dwellOwn(');
     expect(src).toContain('hemisphereLights[ i ].direction');
     expect(src).toContain(`dwellFragY >= ${World.midplaneY.toFixed(1)}`);
+  });
+
+  it('weights a light by its height over the fragment’s own horizon, smoothly', () => {
+    expect(lightWeight(0.7, 1)).toBe(1); // the sun high over face A
+    expect(lightWeight(-0.7, 1)).toBe(0); // the moon under it
+    expect(lightWeight(-0.7, -1)).toBe(1);
+    expect(lightWeight(0.7, -1)).toBe(0);
+    expect(lightWeight(0, 1)).toBeCloseTo(0.5, 12);
+    expect(lightWeight(0, -1)).toBeCloseTo(0.5, 12);
+    let last = -1;
+    for (let y = -0.3; y <= 0.3; y += 0.01) {
+      const w = lightWeight(y, 1);
+      expect(w).toBeGreaterThanOrEqual(last);
+      last = w;
+    }
   });
 });
 

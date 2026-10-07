@@ -33,14 +33,8 @@ import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { DEFAULT_FOG, type FogSettings } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
-import {
-  DEFAULT_EXPOSURE,
-  HORIZON_COLOR,
-  LIGHT,
-  MOON_DIRECTION_WORLD,
-  SUN_DIRECTION,
-  sanitizeExposure,
-} from '../look';
+import { DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, sanitizeExposure } from '../look';
+import { SKY_REST, type SkyFrame } from '../skyFrame';
 import { sharedAtlas } from '../textures';
 import {
   RendererUnavailableError,
@@ -49,7 +43,12 @@ import {
   type RendererOptions,
   type RenderStats,
 } from '../Renderer';
-import { setFogUniforms, setViewFace, withHeightFog } from './heightFog';
+import {
+  setFogUniforms,
+  setSkyFrame as setFrameUniforms,
+  setViewFace,
+  withHeightFog,
+} from './heightFog';
 import { aimCamera } from './aimCamera';
 import { boxClipPlanes } from './clipBox';
 import { Sky } from './sky';
@@ -181,6 +180,22 @@ export class ThreeRenderer implements Renderer {
   private readonly chunkCoords = new Map<string, ChunkCoord>();
   private chunkVisible: ((coord: ChunkCoord) => boolean) | null = null;
   private readonly lod = new Map<number, LodEntry>();
+  /** The lights that follow the sky frame (setSkyFrame): positions are directions toward them. */
+  private readonly skyLights = {
+    dayAmbient: new HemisphereLight(
+      LIGHT.hemisphereSky,
+      LIGHT.hemisphereGround,
+      LIGHT.hemisphereIntensity,
+    ),
+    sun: new DirectionalLight(LIGHT.sun, LIGHT.sunIntensity),
+    // Its "sky" is the night's pole, opposite the day's.
+    nightAmbient: new HemisphereLight(
+      LIGHT.moonHemisphereSky,
+      LIGHT.moonHemisphereGround,
+      LIGHT.moonHemisphereIntensity,
+    ),
+    moon: new DirectionalLight(LIGHT.moon, LIGHT.moonIntensity),
+  };
   private lodShown: ReadonlyMap<number, number> = new Map();
   private lodStandIns: readonly { id: number; lo: Vec3; hi: Vec3 }[] = [];
   private readonly standInSlots: Mesh[] = [];
@@ -247,22 +262,9 @@ export class ThreeRenderer implements Renderer {
     // Face A: the sun and a day sky's ambient; face B: the counter-angled moon and a night's. Each
     // fragment takes only its own face's pair (three/heightFog.ts), chosen by its side of the
     // midplane: the lights have no shadows, so a ceiling would otherwise take the other face's.
-    this.scene.add(
-      new HemisphereLight(LIGHT.hemisphereSky, LIGHT.hemisphereGround, LIGHT.hemisphereIntensity),
-    );
-    const sun = new DirectionalLight(LIGHT.sun, LIGHT.sunIntensity);
-    sun.position.set(...SUN_DIRECTION);
-    this.scene.add(sun);
-    const nightAmbient = new HemisphereLight(
-      LIGHT.moonHemisphereSky,
-      LIGHT.moonHemisphereGround,
-      LIGHT.moonHemisphereIntensity,
-    );
-    nightAmbient.position.set(0, -1, 0); // its "sky" is below the disc
-    this.scene.add(nightAmbient);
-    const moon = new DirectionalLight(LIGHT.moon, LIGHT.moonIntensity);
-    moon.position.set(...MOON_DIRECTION_WORLD);
-    this.scene.add(moon);
+    this.scene.add(this.skyLights.dayAmbient, this.skyLights.sun);
+    this.scene.add(this.skyLights.nightAmbient, this.skyLights.moon);
+    this.setSkyFrame(SKY_REST);
     this.outline.visible = false;
     this.scene.add(this.outline);
     this.preview.visible = false;
@@ -566,6 +568,16 @@ export class ThreeRenderer implements Renderer {
     this.face = face;
     setViewFace(face);
     aimCamera(this.camera, eye, yawDeg, pitchDeg, face, flip);
+  }
+
+  setSkyFrame(frame: SkyFrame): void {
+    setFrameUniforms(frame);
+    const l = this.skyLights;
+    l.sun.position.set(...frame.sun);
+    l.moon.position.set(...frame.moon);
+    l.dayAmbient.position.set(...frame.dayPole);
+    l.nightAmbient.position.set(-frame.dayPole[0], -frame.dayPole[1], -frame.dayPole[2]);
+    for (const light of Object.values(l)) light.updateMatrixWorld();
   }
 
   setFog(fog: FogSettings): void {
