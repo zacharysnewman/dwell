@@ -9,6 +9,7 @@ import type { LodCamera } from './frustum';
 import {
   cellSize,
   kindFromBounds,
+  LOD_PAD,
   LOD_VOLUME,
   lodAncestor,
   lodCell,
@@ -18,6 +19,7 @@ import {
   sectionAt,
   sectionOrigin,
   sectionSize,
+  SURFACE_STRIDE,
   type LodBounds,
   type LodCoord,
 } from './grid';
@@ -379,6 +381,47 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     }
     expect(Math.min(...cellSizes)).toBeLessThanOrEqual(2); // near levels...
     expect(Math.max(...cellSizes)).toBeGreaterThanOrEqual(256); // ...and coarse ones
+  });
+
+  it("hands the mesher each column's water level in cells, as its surface height", async () => {
+    // Regression (playtest: distant rivers drawn above their banks): the mesher draws water at
+    // the surface data's water level, which must reach it in cells from the section's bottom like
+    // the ground's height — left in metres it lies outside the cell, and the water falls back to
+    // its cell's top. A river: floor 118 m, water 121 m, in every column of every section.
+    class RiverJobs extends Jobs {
+      override lod(c: LodCoord): Promise<GeneratedSection> {
+        return super.lod(c).then((g) => {
+          const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+          for (let i = 0; i < surface.length; i += SURFACE_STRIDE) {
+            surface[i] = 118;
+            surface[i + 1] = 12;
+            surface[i + 2] = 1 | 2;
+            surface[i + 3] = 121;
+          }
+          return { ...g, surface };
+        });
+      }
+    }
+    const jobs = new RiverJobs();
+    const lod = new LodSystem(jobs, jobs, new View(), { drawable: () => false }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 64 * 1048576,
+      maxGenerationJobs: 64,
+      maxMeshJobs: 64,
+    });
+    for (let i = 0; i < 200; i++) {
+      lod.update(camera([0, 300, 0], 0, -30), i * 16);
+      if (jobs.pending.length === 0 && lod.active) break;
+      await jobs.finish(() => 0, 1);
+    }
+    const surfaces = jobs.options.filter((o) => o.surface);
+    expect(surfaces.length).toBeGreaterThan(0);
+    for (const o of surfaces) {
+      const size = 0.125 / (o.waterDrop ?? 0); // the section's cell size (m)
+      const s = o.surface ?? new Float32Array(0);
+      // 3 m of water over the floor, in cells.
+      expect(((s[3] ?? 0) - (s[0] ?? 0)) * size).toBeCloseTo(3, 3);
+    }
   });
 
   it('keeps the sections the view uses within the cache budget: coarser rather than over it', async () => {

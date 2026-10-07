@@ -134,6 +134,99 @@ describe('LOD section mesher (§6.6)', () => {
     expect(quads(m.water)).toBe(1);
   });
 
+  describe("water above sea level (rivers and lakes: not on the cells' grid)", () => {
+    // Regression (playtest: distant rivers flooded their banks, and from the coarsest levels hung
+    // as sheets hundreds of metres up): a liquid's top was drawn at its cell's top — right for the
+    // sea, whose level is a cell boundary at every level, but a river at y = 121 in a 16 m cell
+    // (112..128) was drawn at 128, and in a 512 m cell at 512. The surface data carries each wet
+    // column's water level (4th float, in cells), and the water is drawn there.
+    const waterDrop = 0.125 / 16; // level 4
+    const ys = (f: { positions: Float32Array; normals: Float32Array }, axis: number, sign = 1) => {
+      const out = new Set<number>();
+      for (let v = 0; v < f.positions.length / 3; v++)
+        if ((f.normals[v * 3 + axis] ?? 0) === sign) out.add(f.positions[v * 3 + 1] ?? 0);
+      return [...out].sort((a, b) => a - b);
+    };
+    const surfaceOf = (
+      at: (x: number, z: number) => { h: number; m: number; wet: boolean; water: number },
+    ) => {
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
+          const s = at(x, z);
+          surface[c] = s.h;
+          surface[c + 1] = s.m;
+          surface[c + 2] = 1 | (s.wet ? 2 : 0);
+          surface[c + 3] = s.water;
+        }
+      return surface;
+    };
+
+    it('draws a river over a floor in its cell at the water level, not the cell top', () => {
+      // Floor 118 m and water 121 m in the cell 112..128: 0.375 and 0.5625 of a cell.
+      const cells = new Uint16Array(LOD_VOLUME);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          cells[lodCell(x, -1, z)] = 12;
+          cells[lodCell(x, 0, z)] = WATER;
+        }
+      const surface = surfaceOf(() => ({ h: 0.375, m: 12, wet: true, water: 0.5625 }));
+      const m = meshSection(cells, { surface, waterDrop });
+      expect(ys(m.water, 1)).toEqual([0.5625 - waterDrop]);
+      expect(Math.max(...ys(m.opaque, 1))).toBeLessThan(0.5625 - waterDrop);
+    });
+
+    it('caps a column of water cells at the water level', () => {
+      // A lake 1.25 cells deep over a full sand cell: water cells at y = 1 and 2, the surface at 2.25.
+      const cells = new Uint16Array(LOD_VOLUME);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          cells[lodCell(x, 0, z)] = 12;
+          cells[lodCell(x, 1, z)] = WATER;
+          cells[lodCell(x, 2, z)] = WATER;
+        }
+      const surface = surfaceOf(() => ({ h: 1, m: 12, wet: true, water: 2.25 }));
+      const m = meshSection(cells, { surface, waterDrop });
+      expect(ys(m.water, 1)).toEqual([2.25 - waterDrop]);
+    });
+
+    it('keeps a floor that rounds up to half a cell below shallow water', () => {
+      // Floor 0.28, water 0.3 of the cell: the floor's half-cell step (0.5) would cover the water.
+      const cells = new Uint16Array(LOD_VOLUME);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          cells[lodCell(x, -1, z)] = 12;
+          cells[lodCell(x, 0, z)] = WATER;
+        }
+      const surface = surfaceOf(() => ({ h: 0.28, m: 12, wet: true, water: 0.3 }));
+      const m = meshSection(cells, { surface, waterDrop });
+      // (0.3 as the Float32 surface data holds it.)
+      const [top = Number.NaN, ...more] = ys(m.water, 1);
+      expect(more).toEqual([]);
+      expect(top).toBeCloseTo(0.3 - waterDrop, 6);
+      expect(Math.max(...ys(m.opaque, 1))).toBeLessThan(top);
+    });
+
+    it("ends water's side faces at the water level", () => {
+      // A pool (x < 16: a water cell over a sand cell, the surface half way up it) beside
+      // lower dry ground (x ≥ 16: the sand cell only): the pool's +X face stands from its cell's
+      // bottom to the water level, not to the cell's top.
+      const cells = new Uint16Array(LOD_VOLUME);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          cells[lodCell(x, 0, z)] = 12;
+          if (x < 16) cells[lodCell(x, 1, z)] = WATER;
+        }
+      const surface = surfaceOf((x) =>
+        x < 16 ? { h: 0.75, m: 12, wet: true, water: 1.5 } : { h: 1, m: 12, wet: false, water: 0 },
+      );
+      const m = meshSection(cells, { surface, waterDrop });
+      expect(ys(m.water, 1)).toEqual([1.5 - waterDrop]);
+      expect(Math.max(...ys(m.water, 0, 1))).toBeCloseTo(1.5 - waterDrop, 6);
+    });
+  });
+
   it('never draws a sea floor in the water surface or over the cell below', () => {
     // Regression (playtest: z-fighting on distant water): a floor inside a water cell, rounded to
     // half cells, landed on the cell's bottom — a second top over the solid cell's own — or on its

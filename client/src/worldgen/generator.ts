@@ -2,7 +2,14 @@
 // one worldgen worker (§5.1, §6.3). Also used directly by tests under Node.
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import type { ChunkCoord } from '../protocol/messages';
-import { LOD_PAD, LOD_VOLUME, type LodBounds, type LodCoord, type LodKind } from '../lod/grid';
+import {
+  LOD_PAD,
+  LOD_VOLUME,
+  type LodBounds,
+  type LodCoord,
+  type LodKind,
+  SURFACE_STRIDE,
+} from '../lod/grid';
 import { wasmUrl } from '../sim/wasmUrl';
 
 /** Module surface of dwell_worldgen.js (-sMODULARIZE -sEXPORT_ES6). */
@@ -29,8 +36,9 @@ export interface GeneratedSection {
   kind: LodKind;
   cells: Uint16Array<ArrayBuffer>;
   /**
-   * Each column's exact surface (C++ core::LodSurface), 34² × 3 floats in (z + 1) · 34 + (x + 1)
-   * order: height (m), material, flags (1 valid, 2 wet). Null when the generator has none.
+   * Each column's exact surface (C++ core::LodSurface), 34² × SURFACE_STRIDE floats in
+   * (z + 1) · 34 + (x + 1) order: height (m), material, flags (1 valid, 2 wet), and where wet the
+   * water's level (m). Null when the generator has none.
    */
   surface?: Float32Array<ArrayBuffer> | null;
 }
@@ -87,7 +95,9 @@ export class ChunkGenerator {
     const ptr = this.m._dwell_worldgen_lod_cells();
     const cells = this.m.HEAPU16.slice(ptr >> 1, (ptr >> 1) + LOD_VOLUME);
     const sp = this.m._dwell_worldgen_lod_surface();
-    const surface = sp ? this.m.HEAPF32.slice(sp >> 2, (sp >> 2) + LOD_PAD * LOD_PAD * 3) : null;
+    const surface = sp
+      ? this.m.HEAPF32.slice(sp >> 2, (sp >> 2) + LOD_PAD * LOD_PAD * SURFACE_STRIDE)
+      : null;
     return { kind, cells, surface };
   }
 

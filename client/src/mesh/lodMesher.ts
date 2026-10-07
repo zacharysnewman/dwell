@@ -8,7 +8,7 @@
 // slope pieces of the terrain generator (SLOPE_BLOCKS.md §3.2): the heights of the columns around a
 // corner decide its height, in halves of a cell, so distant hills read as facets, not terraces.
 // Pure data, so it runs in the meshing workers.
-import { LOD_PAD, LOD_VOLUME, SECTION_CELLS } from '../lod/grid';
+import { LOD_PAD, LOD_VOLUME, SECTION_CELLS, SURFACE_STRIDE } from '../lod/grid';
 import { faceTint, normalTint } from '../render/look';
 import { averageTileColor, srgbToLinear } from '../render/textures';
 import { PATTERN_SHAPE, patternCorners, patternIndex, pieceFor } from '../world/slopePieces';
@@ -183,8 +183,7 @@ class Builder {
   }
 }
 
-/** Floats per column of a section's surface (height in cells, material, flags). */
-export const SURFACE_STRIDE = 3;
+export { SURFACE_STRIDE };
 /** Surface heights are drawn in steps of 1/SURFACE_STEPS of a cell. */
 export const SURFACE_STEPS = 2;
 const SURFACE_VALID = 1;
@@ -196,9 +195,11 @@ const SURFACE_WET = 2;
  *
  * `surface` (optional; generated sections): each column's exact surface, 34² × SURFACE_STRIDE
  * floats in (z + 1) · 34 + (x + 1) order — height in cells from the section's bottom, material,
- * flags (1 valid, 2 wet). A cell is filled from its bottom voxel, so its top lifts the ground by
- * up to a cell (kilometres far away); where a column's topmost solid cell holds its surface, that
- * cell's top is drawn at the surface instead, with walls down to lower neighbours.
+ * flags (1 valid, 2 wet), and where wet the water's level in cells. A cell is filled from its
+ * bottom voxel, so its top lifts the ground by up to a cell (kilometres far away); where a column's
+ * topmost solid cell holds its surface, that cell's top is drawn at the surface instead, with walls
+ * down to lower neighbours. Likewise a column's water is drawn at its level, not at its top liquid
+ * cell's top: the sea's level is a cell boundary at every level, but a river's or a lake's is not.
  */
 export interface MeshSectionOptions {
   /** Column surfaces (see above). */
@@ -251,12 +252,26 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
           // Under a sea floor drawn in the water cell above, the top is covered — and where the
           // floor lies on the cell's bottom, in the same plane (two tops there z-fight).
           if (face === 2 && sy === (cell[1] ?? 0) + 1) continue;
+          // The top liquid cell of a column with a water level: its top is drawn at the level
+          // (emitSurfaces), its sides up to it (below).
+          const wc = col(cell[0] ?? 0, cell[2] ?? 0);
+          const atLevel = special.wy[wc] === cell[1];
+          if (atLevel && face === 2) continue;
           cell[axis] = d + sign;
           const n = cells[cellIndex(cell[0] ?? 0, cell[1] ?? 0, cell[2] ?? 0)] ?? 0;
           const liquid = isLiquid(m);
           const nSolid = n !== 0 && !isLiquid(n);
           const hidden = nSolid || (liquid && n !== 0);
           if (hidden && (!border || liquid)) continue;
+          if (atLevel && axis !== 1) {
+            const y = cell[1] ?? 0;
+            const lid = (special.w[wc] ?? y + 1) - waterDrop;
+            const plane = sign > 0 ? d + 1 : d;
+            const color = lodColor(m, group);
+            if (axis === 0) waterMesh.quad(0, sign, plane, y, lid, j, j + 1, color);
+            else waterMesh.quad(2, sign, plane, i, i + 1, y, lid, color);
+            continue;
+          }
           mask[i + N * j] = (m + 1) * 2 + (hidden ? 1 : 0);
           any = true;
         }
@@ -320,6 +335,10 @@ interface Surfaces {
    * per column); −1 in the first for a flat top at `h`.
    */
   q: Int8Array;
+  /** The column's topmost liquid cell (with air above it), whose top is drawn at `w`; else NO_SURFACE. */
+  wy: Int16Array;
+  /** Its water level in cells from the section's bottom (within that cell). */
+  w: Float32Array;
 }
 const NO_SURFACE = -1000;
 const FLAT = -1;
@@ -332,10 +351,28 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
     h: new Float32Array(n),
     m: new Uint16Array(n),
     q: new Int8Array(n * 4).fill(FLAT),
+    wy: new Int16Array(n).fill(NO_SURFACE),
+    w: new Float32Array(n),
   };
   const data = surface && surface.length >= n * SURFACE_STRIDE ? surface : null;
   const top: number = SECTION_CELLS;
   if (data) {
+    // Water levels: a wet column's topmost cell, if liquid, has its top at the water's level (which
+    // lies within it: the cell above would be water too if the level were higher).
+    for (let z = -1; z <= top; z++) {
+      for (let x = -1; x <= top; x++) {
+        const c = col(x, z);
+        const flags = data[c * SURFACE_STRIDE + 2] ?? 0;
+        if (!(flags & SURFACE_VALID) || !(flags & SURFACE_WET)) continue;
+        let y: number = top;
+        while (y >= -1 && (cells[cellIndex(x, y, z)] ?? 0) === 0) y--;
+        if (y < -1 || !isLiquid(cells[cellIndex(x, y, z)] ?? 0)) continue;
+        const level = data[c * SURFACE_STRIDE + 3] ?? 0;
+        if (level <= y + 1e-6 || level > y + 1 + 1e-4) continue; // not this cell's: its top
+        out.wy[c] = y;
+        out.w[c] = Math.min(level, y + 1);
+      }
+    }
     for (let z = -1; z <= top; z++) {
       for (let x = -1; x <= top; x++) {
         const c = col(x, z);
@@ -352,15 +389,17 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
         }
         if (y < -1 || y === top || h < y - 1e-3 || h > y + 1 + 1e-3) continue;
         const m = cells[cellIndex(x, y, z)] ?? 0;
+        const level = out.wy[c] === y ? (out.w[c] ?? y + 1) : y + 1;
         // In 1/SURFACE_STEPS of a cell (at most 1/4 cell off: a pixel or two, as cells are a few
         // pixels on screen; finer steps cost far more triangles). At the cell's top the cell is
         // drawn as usual (and merges).
         let steps = Math.round(Math.min(Math.max(h - y, 0), 1) * SURFACE_STEPS);
         if (steps === SURFACE_STEPS && !isLiquid(m)) continue;
-        // A sea floor is never drawn at its water cell's top, level with the water surface (only
-        // waterDrop, a sliver of a cell, from it: they z-fight) when that surface is this cell's.
+        // A sea floor is never drawn at or over its water's surface (only waterDrop, a sliver of a
+        // cell, from it: they z-fight; above it the floor hides the water) when that surface is
+        // this cell's: the highest step strictly below the level.
         if (isLiquid(m) && (cells[cellIndex(x, y + 1, z)] ?? 0) === 0)
-          steps = Math.min(steps, SURFACE_STEPS - 1);
+          steps = Math.min(steps, Math.max(0, Math.ceil((level - y) * SURFACE_STEPS) - 1));
         out.y[c] = y;
         out.h[c] = y + steps / SURFACE_STEPS;
         out.m[c] = isLiquid(m) ? (data[c * SURFACE_STRIDE + 1] ?? m) : m;
@@ -548,38 +587,51 @@ function emitSurfaces(
     }
   }
 
-  // The water surface over floors drawn inside water cells.
+  // Water surfaces at their level: over floors drawn inside water cells, and over the top liquid
+  // cell of any column with a water level (rivers and lakes above sea level).
   {
     // Greedy rectangles over (z, x) of equal water level and liquid.
+    const level = new Float32Array(N * N);
     for (let z = 0; z < N; z++) {
       for (let x = 0; x < N; x++) {
         const c = col(x, z);
-        const y = s.y[c] ?? NO_SURFACE;
         topKey[z + N * x] = 0;
-        if (y < 0) continue;
-        const m = cells[cellIndex(x, y, z)] ?? 0;
-        const above = cells[cellIndex(x, y + 1, z)] ?? 0;
-        if (!isLiquid(m) || above !== 0) continue;
-        topKey[z + N * x] = (y + 1) * 0x10000 + m;
+        let y = s.wy[c] ?? NO_SURFACE;
+        let w = s.w[c] ?? 0;
+        if (y === NO_SURFACE) {
+          // A floor drawn in a water cell with no level of its own (a sea): the cell's top.
+          y = s.y[c] ?? NO_SURFACE;
+          if (y < 0) continue;
+          const m = cells[cellIndex(x, y, z)] ?? 0;
+          const above = cells[cellIndex(x, y + 1, z)] ?? 0;
+          if (!isLiquid(m) || above !== 0) continue;
+          w = y + 1;
+        }
+        if (y < 0 || y >= N) continue;
+        topKey[z + N * x] = (cells[cellIndex(x, y, z)] ?? 0) + 1;
+        level[z + N * x] = w;
       }
     }
+    const same = (a: number, b: number): boolean =>
+      topKey[a] === topKey[b] && level[a] === level[b];
     for (let x = 0; x < N; x++) {
       for (let z = 0; z < N;) {
-        const key = topKey[z + N * x] ?? 0;
+        const at = z + N * x;
+        const key = topKey[at] ?? 0;
         if (key === 0) {
           z++;
           continue;
         }
         let w = 1;
-        while (z + w < N && topKey[z + w + N * x] === key) w++;
+        while (z + w < N && same(z + w + N * x, at)) w++;
         let d = 1;
         grow: while (x + d < N) {
-          for (let k = 0; k < w; k++) if (topKey[z + k + N * (x + d)] !== key) break grow;
+          for (let k = 0; k < w; k++) if (!same(z + k + N * (x + d), at)) break grow;
           d++;
         }
+        const top = level[at] ?? 0;
         for (let dx = 0; dx < d; dx++) topKey.fill(0, z + N * (x + dx), z + w + N * (x + dx));
-        const top = Math.floor(key / 0x10000);
-        waterMesh.quad(1, 1, top - waterDrop, z, z + w, x, x + d, lodColor(key % 0x10000, 0));
+        waterMesh.quad(1, 1, top - waterDrop, z, z + w, x, x + d, lodColor(key - 1, 0));
         z += w;
       }
     }
