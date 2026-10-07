@@ -1699,17 +1699,17 @@ Deliverables
 - [x] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
 
 Exit criteria
-- [ ] A face-B chunk equals the flip of its face-local chunk; face B's terrain differs from face A's;
+- [x] A face-B chunk equals the flip of its face-local chunk; face B's terrain differs from face A's;
   goldens with face-B chunks and midplane-straddling LOD sections pass natively, in WASM and in the
   client module.
 - [ ] Mirror-equivalence: every controller scenario mirrored onto face B gives the mirrored trace,
   natively and in WASM, at both origins.
-- [ ] A player walks, jumps, swims and climbs on face B, and crosses between the faces by digging
+- [x] A player walks, jumps, swims and climbs on face B, and crosses between the faces by digging
   through the core and by going over the rim, the face sign and camera turning over once.
 - [ ] Face A is lit only by the sun and face B only by the moon (ceilings included).
-- [ ] A body falling off the rim is accelerated through the flip band; bodies on face B fall toward the
+- [x] A body falling off the rim is accelerated through the flip band; bodies on face B fall toward the
   midplane.
-- [ ] Nothing generated outside the two bands and domes; streaming and LOD reach both domes.
+- [x] Nothing generated outside the two bands and domes; streaming and LOD reach both domes.
 - [ ] Manual: face B walked, a crossing made, both domes seen, reviewed by the owner.
 
 ---
@@ -1720,9 +1720,14 @@ runs in a face-local mirror frame instead of a sign threaded through every probe
 mirror-equivalence suite (`--dwell-face=b`) holds in every decision and to contact-solver precision
 in positions, not bit for bit. Browser check (headless Chromium, local world, a player placed on
 face B): face B draws upright for its player under a moonlit night sky with the moon's glow, trees and
-terrain meshed right way up, face A unchanged under the sun; mouse-up looks up on both faces. Still to
-do: look at ceilings and the crossing's camera turn in a browser (exit criteria above stay unticked),
-the owner's review, and run the client worldgen module's goldens in CI.
+terrain meshed right way up, face A unchanged under the sun; mouse-up looks up on both faces. Exit criteria ticked as
+each passed in CI or in the browser: chunk flip and goldens (native suite, WASM worldgen suite, client
+module test), controller on face B and crossings (native `bifacial` suites, the `--dwell-face=b` run, the
+flip-roll test), the rim and Tier-1 gravity, and the two bands and domes. Still open: the mirror-equivalence
+criterion until CI has run the native face-B steps at both origins (the step was missing its working
+directory in an earlier run; the same commands pass locally), ceilings' lighting and the crossing's camera
+turn in a browser, and the owner's review. The F4 map and debug overlays show face A only; straddling LOD
+levels (7+) draw face B at cell resolution, shaded as undersides.
 
 ## Phase 14 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
