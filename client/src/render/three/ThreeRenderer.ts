@@ -23,12 +23,10 @@ import {
   Scene,
   SRGBColorSpace,
   Vector2,
-  Vector3,
   WebGLRenderer,
   type MeshLambertMaterialParameters,
 } from 'three';
 import type { ChunkCoord, Vec3 } from '../../protocol/messages';
-import { viewForward } from '../../world/face';
 import type { FlatMesh, SectionMeshes } from '../../mesh/lodMesher';
 import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
 import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
@@ -52,6 +50,7 @@ import {
   type RenderStats,
 } from '../Renderer';
 import { setFogUniforms, setViewFace, withHeightFog } from './heightFog';
+import { aimCamera } from './aimCamera';
 import { boxClipPlanes } from './clipBox';
 import { Sky } from './sky';
 import { LodSectionGeometry, releaseOnUpload } from './lodSection';
@@ -563,18 +562,10 @@ export class ThreeRenderer implements Renderer {
     ThreeRenderer.placed(p.group);
   }
 
-  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face: 1 | -1 = 1, roll = 0): void {
+  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face: 1 | -1 = 1, flip = 0): void {
     this.face = face;
     setViewFace(face);
-    this.camera.position.set(...eye);
-    this.camera.up.set(0, face, 0); // a face-B player's head points toward −y
-    this.camera.updateMatrixWorld();
-    this.camera.lookAt(
-      this.camera.position.clone().add(new Vector3(...viewForward(yawDeg, pitchDeg, face))),
-    );
-    // The camera turning over across the midplane: the view is the new face's at once, rolled back
-    // toward the old one and easing out (game/flipRoll.ts).
-    if (roll !== 0) this.camera.rotateZ(roll);
+    aimCamera(this.camera, eye, yawDeg, pitchDeg, face, flip);
   }
 
   setFog(fog: FogSettings): void {

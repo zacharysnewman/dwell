@@ -640,7 +640,8 @@ player on face B stands upside down in the world.
   midplane on both sides) draws it back: it swings across the midplane (BIFACIAL_WORLD.md §10).
 - **Crossing.** There are no crossing routes: a player digs down through the core or goes over the
   rim, and the face switches (with 5 cm of hysteresis) when the body is across the midplane; the
-  controller state is mirrored with the frame and the camera turns over smoothly.
+  controller state is mirrored with the frame and the camera turns over smoothly (a half forward
+  somersault about its right axis, the heading turned by 180°; PLAYER_CONTROLLER.md §9).
 - **Light.** A static sun lights face A and a static, counter-angled, cooler moon face B; each
   fragment takes only the lights and the ambient of its own side of the midplane (§5).
 

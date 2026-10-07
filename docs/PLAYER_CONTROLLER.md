@@ -636,7 +636,9 @@ always toward the midplane (y = −2,048), so a face-B player stands upside down
   `Feet` and `Head` stay in the world (`Feet` is above `Head` on face B). The face switches when
   the body centre is more than 5 cm across the midplane; the layers' vertical state is mirrored with
   it. An upside-down player's right is the frame's left, so `move_x` is negated on face B (the
-  heading `yaw` is a world azimuth and unchanged; the client turns its mouse the other way).
+  heading `yaw` is a world azimuth and unchanged as far as the controller goes; the client turns its
+  mouse the other way, and turns its heading by 180° when its face changes, so the server only sees
+  the inputs).
 - **The flip band.** In open air within `FLIP_BAND` (4 m) of the midplane a player moves as when
   swimming (the swim layer), without buoyancy or drag. Moving toward the midplane it is accelerated
   by `band.boost_gravities` (2) × gravity, so it is carried across; moving away, the midplane's pull
@@ -653,4 +655,7 @@ always toward the midplane (y = −2,048), so a face-B player stands upside down
   the five-player golden trace agrees to 0.1 mm for the first second and within 0.2 m after ten (the
   scenario's jumps amplify a sub-millimetre push-out difference); states match on every row.
 - **Camera and look** (§9): eye height is measured along the player's up; the view's pitch is toward
-  that up; the camera turns over through a roll of π over 0.5 s when the face changes.
+  that up; the camera turns over when the face changes: the heading turns by 180° and the view is drawn rotated
+  about the camera's right axis by π, easing to 0 over 0.5 s (a half forward somersault, nose first;
+  `game/faceFlip.ts`, `render/three/aimCamera.ts`). In the flip band a body can swing across the
+  midplane and back, and each crossing turns the heading round again (no hysteresis).

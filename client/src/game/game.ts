@@ -28,7 +28,7 @@ import { shapeEdges } from '../render/shapeEdges';
 import { SHAPES } from '../world/blocks';
 import { materialStyle } from '../world/materials';
 import { EyeCamera } from './eye';
-import { FlipRoll } from './flipRoll';
+import { FaceFlip } from './faceFlip';
 import { isCrouched, isDead, isFaceB, RemotePlayers } from './remotes';
 
 const TICK_MS = 1000 / SIM_HZ;
@@ -98,8 +98,8 @@ export class Game {
   private deathFeet: Vec3 = [0, 0, 0];
   private previous: ClientState | null = null;
   private current: ClientState;
-  /** The camera turning over when the player crosses the midplane (flipRoll.ts). */
-  private readonly flip = new FlipRoll();
+  /** The camera turning over when the player crosses the midplane (faceFlip.ts). */
+  private readonly flip = new FaceFlip();
   private lastDrawMs: number | null = null;
   private readonly eye = new EyeCamera();
   /** Extra line for the debug overlay (the regenerate-and-diff check, main.ts). */
@@ -123,6 +123,7 @@ export class Game {
     private readonly voxel: (x: number, y: number, z: number) => number = () => 0,
   ) {
     this.current = core.state();
+    this.flip.tick(this.current.face); // joining on face B does not turn the player
     this.eye.tick(this.current, 1 / SIM_HZ);
   }
 
@@ -176,7 +177,10 @@ export class Game {
           this.proxies.delete(id);
         }
       }
-      if (!this.current.active) this.current = this.core.state();
+      if (!this.current.active) {
+        this.current = this.core.state();
+        this.flip.tick(this.current.face);
+      }
       return;
     }
     // PlayerEvent.
@@ -247,6 +251,9 @@ export class Game {
     });
     this.previous = this.current;
     this.current = this.core.state();
+    // Crossing the midplane turns the heading round (a half somersault, faceFlip.ts).
+    const turn = this.flip.tick(this.current.face);
+    if (turn !== 0) this.input.yaw = (this.input.yaw + turn) % 360;
     this.eye.tick(this.current, 1 / SIM_HZ);
     this.input.turnSign = this.current.face;
     // The camera turns with rotating ground (PPC yawDelta).
@@ -256,7 +263,7 @@ export class Game {
   private draw(nowMs: number): void {
     const c = this.current;
     const face = c.face;
-    const roll = this.flip.update(
+    const flip = this.flip.draw(
       face,
       this.lastDrawMs === null ? 0 : (nowMs - this.lastDrawMs) / 1000,
     );
@@ -311,7 +318,7 @@ export class Game {
       this.showHudText();
       // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
       const eye: Vec3 = [center[0], this.eye.draw(alpha), center[2]];
-      this.renderer.setCamera(eye, this.input.yaw, this.input.pitch, face, roll);
+      this.renderer.setCamera(eye, this.input.yaw, this.input.pitch, face, flip);
       this.target(this.terrainReady() ? eye : null);
     }
     if (this.dead) this.target(null);

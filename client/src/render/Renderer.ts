@@ -89,10 +89,11 @@ export interface Renderer {
   /**
    * Places the camera at `eye`, looking along yaw/pitch (degrees; yaw 0 = +Z, pitch toward the
    * player's up > 0). `face` is the player's: +1 face A (up is +y), −1 face B (up is −y, the view
-   * is upside down); the view and the sky, light and haze it sees follow it. `roll` (radians, 0 at
-   * rest) turns the view about its axis: the camera turning over when the face changes.
+   * is upside down); the view and the sky, light and haze it sees follow it. `flip` (radians, 0 at
+   * rest) pitches the view over about its right axis, nose first: the camera turning over when the
+   * face changes (the heading has already turned by 180°, so a flip of π is the view before).
    */
-  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face?: 1 | -1, roll?: number): void;
+  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face?: 1 | -1, flip?: number): void;
   /** Debug line segments (pairs of points) with one colour each, or null to clear. */
   setDebugLines(segments: readonly { from: Vec3; to: Vec3; color: number }[] | null): void;
   /** The last frame's draw calls and triangles. */

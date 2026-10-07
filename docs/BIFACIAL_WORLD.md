@@ -105,7 +105,11 @@ Spawn is always on face A (owner, 2026-10-05).
   lookups for face B. A **mirror-equivalence suite** proves it: every controller scenario run on
   face A and its mirror image on face B gives mirrored traces bit for bit, natively and in WASM.
 - **Crossing the band** (in a dug shaft, or beside the rim wall): the face sign switches at the midplane;
-  the camera turns over smoothly (a roll through 180° over ~0.5 s) instead of snapping. The flip is
+  the camera turns over smoothly instead of snapping: a half forward somersault. The heading turns by
+  180° at once (the client only; the server sees the inputs) and the view is drawn rotated about the
+  camera's right axis by π, easing to 0 over 0.5 s, so it starts exactly at the old view, turns over
+  nose first (toward the midplane) and keeps left and right. In the flip band a body can swing back
+  and forth across the midplane, and each crossing turns the heading round again (no hysteresis). The flip is
   predicted like any other movement; if the local player's state needs a flag for it, it goes in
   `PhysicsSnapshot` (a protocol bump).
 - **Light: a sun and a moon** (owner, 2026-10-05), both **static** for now. The sun is Phase 7's
