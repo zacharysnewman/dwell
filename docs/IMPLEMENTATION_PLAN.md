@@ -1532,6 +1532,10 @@ Deliverables
   in clumps, allowed set and share per biome; distant forests keep their colour — `GenerateLod`
   gives forested columns a canopy (leaf) surface above the tree-cell limit. The in-game F4 map and
   the inspect tool know the 19 biomes.
+- [ ] 11c follow-up (owner's question, 2026-10-07; undecided): are the seven colour variants (five
+  leaves, two grasses) separate blocks, a `colour` / `variant` property of `leaves` and `grass`, or
+  no block at all — a tint the biome and grove give a plain block at render time? Built as separate
+  blocks (ADR 0022); see its *Open question*. Decide before the real block set replaces the prototype.
 - [ ] 11d (stretch): karst spire and mesa provinces.
 - [x] Inspect tool (11a): rivers and lakes on a local map image with a hillshade mode
   (`dwell_worldgen_inspect <seed> map`, with `biome` and `valley` modes), and on the in-game F4 map.

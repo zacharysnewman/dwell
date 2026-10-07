@@ -65,3 +65,17 @@ blocks.
   conifer 4–8 %, riverbank 1.5–2 %, alpine meadow and bare rock about 1.5 % each.
 - Chunk generation costs ~23 % more than 11b's, LOD sections 11–25 % (`bench`, near the spawn).
 - Reversal: replace the zone table and the rows; the climate fields stay.
+
+## Open question (owner, 2026-10-07): blocks, properties or tint?
+
+The variants are built as separate blocks because that needed no change to the registry, the
+meshers, the protocol or the level of detail. Alternatives, undecided:
+- **A property** (`leaves[colour=autumn]`, `grass[variant=meadow]`): the same number of states (each
+  shaped grass family triples either way), one palette slot per block, the family kept together; needs
+  per-state textures in `gen.mjs` and the slope families to carry the property.
+- **No block: a tint from the biome** (grass by the column's climate; leaves by the grove): fewest
+  blocks and no placeable clutter, and a replaced block takes the local colour — but the voxel no
+  longer says what colour it is, so the client needs per-column (and, for per-tree accents, per-tree)
+  tint data for generated, edited and distant terrain, and builders lose the coloured leaves.
+A split is likely best: grass tinted by climate, leaves kept as blocks or a property.
+
