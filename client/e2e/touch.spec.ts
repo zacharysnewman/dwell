@@ -29,6 +29,8 @@ async function touch(
 }
 
 test('touch controls: stick, look, and jump', async ({ page }) => {
+  // CI's software rendering is slow: the steps before the jump alone take ~20 s there.
+  test.setTimeout(90_000);
   await page.goto('./?local=1');
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
