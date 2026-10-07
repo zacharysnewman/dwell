@@ -1255,7 +1255,13 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - Meshes are greedy-merged with one flat colour per material (the average of its texture tile in
   linear light, per face group, as a mipmapped sRGB texture averages from afar) and face shading,
   written as linear vertex colours like the chunks' decoded texels (sRGB values used directly drew
-  distant land paler than the chunks — playtest), in cell units (a group scaled by the cell size). Border faces
+  distant land paler than the chunks — playtest), in cell units (a group scaled by the cell size).
+  A column's top is tinted toward its material's **side colour** by its gradient (its height
+  against its four neighbours'), a third of it up to one half, in eighths: full detail shows the
+  sides of one-block steps on a hillside — measured over generated terrain, 5 % of the surface at
+  a gradient of 0.2, 15 % at 0.5, ~40 % on the steepest cells, alike at 16–64 m cells — which a
+  distant cell's smooth top lacks, so hillsides read as pure grass from afar (playtest; ~7 % more
+  triangles, as tops of different tints do not merge). Border faces
   the apron hides go to a per-side **skirt**, shown when the neighbour on that side is not
   drawn at the same level (and not buried), closing cracks between levels. The surface and the
   six skirts are one geometry (`render/three/lodSection.ts`) whose index lists the surface's
@@ -1320,6 +1326,12 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   to a few metres at every level (`lod: column surfaces`); the client's worldgen worker passes it
   on, and the mesher draws the top of the column's surface cell at that height, in half-cell
   steps (at most 1/4 cell — a pixel or two — off; finer steps cost several times the triangles),
+  except on **shores**: a dry column beside a wet one (by the wet flag, or a liquid topmost cell —
+  the sea in the apron row of a section whose bottom is sea level) is drawn at its exact height
+  and never as a slope piece, since against flat water a quarter cell shows — half-cell steps
+  put a bank a metre above a river under its water (121.5 m drawn at 120 m in 16 m cells) and
+  beaches flush with the sea, or raised it to its cell's top, sand standing metres out of the
+  water (playtest on 0.6.1-dev.18; ~10 % more triangles over a typical landscape),
   with walls to lower neighbours, tops of equal height merged into rectangles and walls into
   strips (1.2–2× the triangles of plain cell tops). A sea floor inside a water cell (a cell
   taller than the sea is deep) is drawn at its depth, with the water's surface above it — never

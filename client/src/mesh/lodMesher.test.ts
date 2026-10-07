@@ -227,6 +227,134 @@ describe('LOD section mesher (§6.6)', () => {
     });
   });
 
+  describe('step sides on slopes (SIDE_SHARE)', () => {
+    // Regression (playtest on 0.6.1-dev.18: everything turned green grass farther away): full
+    // detail shows the dirt sides of one-block steps on hillsides — measured, about a third of the
+    // gradient as a share of the surface (5 % at 0.2, 15 % at 0.5, 40 % on the steepest cells) —
+    // while distant cells drew their slopes in the top colour alone. Tops are tinted toward the
+    // material's side colour by the column's gradient.
+    const GRASS = 4;
+    const topColours = (gradient: number): Set<string> => {
+      // A ramp along x rising `gradient` cells per cell, grass on stone, surfaces given.
+      const cells = new Uint16Array(LOD_VOLUME);
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          const h = 4 + gradient * (x + 1);
+          const top = Math.floor(h);
+          for (let y = -1; y < top; y++) cells[lodCell(x, y, z)] = 2;
+          cells[lodCell(x, top, z)] = GRASS;
+          surface.set(
+            [Math.min(h, top + 1), GRASS, 1, 0],
+            (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE,
+          );
+        }
+      const m = meshSection(cells, { surface, slopes: true });
+      const out = new Set<string>();
+      const { normals: n, colors: c } = m.opaque;
+      for (let v = 0; v < n.length / 3; v++)
+        if ((n[v * 3 + 1] ?? 0) > 0.5)
+          out.add([0, 1, 2].map((k) => (c[v * 3 + k] ?? 0).toFixed(4)).join(','));
+      return out;
+    };
+    it('draws flat ground in the top colour alone', () => {
+      expect(topColours(0).size).toBe(1);
+    });
+
+    it('tints sloped ground toward the side colour, more where steeper', () => {
+      const flat = [...topColours(0)][0] ?? '';
+      const gentle = [...topColours(0.25)];
+      const steep = [...topColours(1)];
+      // No top of a sloped ramp is drawn in the flat top colour.
+      expect(gentle.includes(flat)).toBe(false);
+      expect(steep.includes(flat)).toBe(false);
+      // Grass's side (dirt) is redder and less green than its top: steeper, less green.
+      const green = (k: string) => Number(k.split(',')[1]);
+      expect(Math.max(...steep.map(green))).toBeLessThan(Math.min(...gentle.map(green)));
+    });
+  });
+
+  describe('shores (the ground beside water at its true height)', () => {
+    // Regression (playtest on 0.6.1-dev.18: river and lake shores were swallowed by the water
+    // beyond full detail, and sand stuck up out of it where there is none): surface heights are
+    // drawn in half-cell steps, so a bank a metre above the water could round down under it (a
+    // 121.5 m bank at 120 m in a 16 m cell, beside water at 121 m) or up to its cell's top (at
+    // 128 m: 7 m of sand that is not there). Beside water the ground is drawn at its height.
+    const waterDrop = 0.125 / 16;
+    const LEVEL = 0.5625; // 121 m in the cell 112..128
+    const at = (h: number) => {
+      const cells = new Uint16Array(LOD_VOLUME);
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
+          cells[lodCell(x, -1, z)] = 12;
+          if (x < 16) {
+            cells[lodCell(x, 0, z)] = WATER; // the river: floor 118 m, water 121 m
+            surface.set([0.375, 12, 1 | 2, LEVEL], c);
+          } else {
+            cells[lodCell(x, 0, z)] = 12; // the bank: sand at h
+            surface.set([h, 12, 1, 0], c);
+          }
+        }
+      const m = meshSection(cells, { surface, waterDrop, slopes: true });
+      // The highest upward face over the centre of the column beside the river (16.5, 10.5).
+      let top = -Infinity;
+      const { positions: p, normals: n, indices } = m.opaque;
+      for (let t = 0; t < indices.length; t += 3) {
+        const vs = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0];
+        if ((n[(vs[0] ?? 0) * 3 + 1] ?? 0) <= 0.5) continue;
+        const xs = vs.map((v) => p[v * 3] ?? 0);
+        const zs = vs.map((v) => p[v * 3 + 2] ?? 0);
+        if (Math.min(...xs) > 16.5 || Math.max(...xs) < 16.5) continue;
+        if (Math.min(...zs) > 10.5 || Math.max(...zs) < 10.5) continue;
+        top = Math.max(top, ...vs.map((v) => p[v * 3 + 1] ?? 0));
+      }
+      return top;
+    };
+
+    it('does not round a bank just above the water down under it', () => {
+      // 121.6 m: half-cell steps put it at 120 m.
+      expect(at(0.6)).toBeCloseTo(0.6, 5);
+    });
+
+    it("does not round a bank just above the water up to its cell's top", () => {
+      // 124.8 m: half-cell steps put it at 128 m.
+      expect(at(0.8)).toBeCloseTo(0.8, 5);
+    });
+
+    it('keeps a beach above the sea in the section above it', () => {
+      // A section whose bottom is sea level: the sea is the apron row below (the section below's
+      // top cells), so this section's surface data has no wet column. A beach 0.8 m up in a 16 m
+      // cell (0.05) rounded to the cell's bottom, flush with the sea, and looked swallowed.
+      const cells = new Uint16Array(LOD_VOLUME);
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          if (x < 16) {
+            cells[lodCell(x, -1, z)] = WATER; // the sea's top cell, below the section
+          } else {
+            cells[lodCell(x, -1, z)] = 12;
+            cells[lodCell(x, 0, z)] = 12; // the beach
+            surface.set([0.05, 12, 1, 0], (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE);
+          }
+        }
+      const m = meshSection(cells, { surface, waterDrop, slopes: true });
+      let top = -Infinity;
+      const { positions: p, normals: n, indices } = m.opaque;
+      for (let t = 0; t < indices.length; t += 3) {
+        const vs = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0];
+        if ((n[(vs[0] ?? 0) * 3 + 1] ?? 0) <= 0.5) continue;
+        const xs = vs.map((v) => p[v * 3] ?? 0);
+        const zs = vs.map((v) => p[v * 3 + 2] ?? 0);
+        if (Math.min(...xs) > 16.5 || Math.max(...xs) < 16.5) continue;
+        if (Math.min(...zs) > 10.5 || Math.max(...zs) < 10.5) continue;
+        top = Math.max(top, ...vs.map((v) => p[v * 3 + 1] ?? 0));
+      }
+      expect(top).toBeCloseTo(0.05, 5);
+    });
+  });
+
   it('never draws a sea floor in the water surface or over the cell below', () => {
     // Regression (playtest: z-fighting on distant water): a floor inside a water cell, rounded to
     // half cells, landed on the cell's bottom — a second top over the solid cell's own — or on its

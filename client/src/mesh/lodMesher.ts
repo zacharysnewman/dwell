@@ -125,6 +125,37 @@ export class LodTint {
 
 const NO_TINT = new LodTint(null);
 
+/**
+ * Step sides on slopes: full detail shows the side faces of one-block steps on a hillside, about a
+ * third of the gradient as a share of its surface (measured over generated terrain: 5 % at a
+ * gradient of 0.2, 15 % at 0.5, ~40 % on the steepest cells, alike at 16–64 m cells), which a
+ * distant cell's smooth top does not have. Tops are tinted toward the material's side colour by
+ * that share, in TINT_STEPS steps (so equal tops still merge).
+ */
+export const SIDE_SHARE_PER_GRADIENT = 1 / 3;
+export const SIDE_SHARE_MAX = 0.5;
+const TINT_STEPS = 8;
+
+const tops = new Map<number, number>();
+/** A material's top colour with `tint` (0..TINT_STEPS) eighths of its side colour mixed in. */
+function lodTop(m: number, tint: number): number {
+  if (tint === 0) return lodColor(m, 0);
+  const key = m * (TINT_STEPS + 1) + tint;
+  let c = tops.get(key);
+  if (c === undefined) {
+    const a = lodColor(m, 0);
+    const b = lodColor(m, 1);
+    const f = tint / TINT_STEPS;
+    c = 0;
+    for (const shift of [16, 8, 0]) {
+      const v = Math.round(((a >> shift) & 0xff) * (1 - f) + ((b >> shift) & 0xff) * f);
+      c |= v << shift;
+    }
+    tops.set(key, c);
+  }
+  return c;
+}
+
 class Builder {
   private readonly positions: number[] = [];
   private readonly normals: number[] = [];
@@ -351,7 +382,9 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
             else waterMesh.quad(2, sign, plane, i, i + 1, y, lid, color);
             continue;
           }
-          mask[i + N * j] = (m + 1) * 2 + (hidden ? 1 : 0);
+          // An exposed top takes its column's tint (tintSlopes).
+          const tint = face === 2 && n === 0 && !liquid ? (special.t[wc] ?? 0) : 0;
+          mask[i + N * j] = ((m + 1) * (TINT_STEPS + 1) + tint) * 2 + (hidden ? 1 : 0);
           any = true;
         }
       }
@@ -371,7 +404,8 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
             h++;
           }
           for (let dv = 0; dv < h; dv++) mask.fill(0, i + N * (j + dv), i + w + N * (j + dv));
-          const m = (key >> 1) - 1;
+          const tint = (key >> 1) % (TINT_STEPS + 1);
+          const m = Math.floor((key >> 1) / (TINT_STEPS + 1)) - 1;
           const skirt = (key & 1) === 1;
           const target = skirt ? skirts[face] : isLiquid(m) ? waterMesh : opaque;
           // Water's surface where the chunks draw it (waterDrop below the cell's top).
@@ -384,7 +418,7 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
             i + w,
             j,
             j + h,
-            lodColor(m, group),
+            group === 0 && tint > 0 ? lodTop(m, tint) : lodColor(m, group),
             m,
           );
           i += w;
@@ -419,6 +453,10 @@ interface Surfaces {
   wy: Int16Array;
   /** Its water level in cells from the section's bottom (within that cell). */
   w: Float32Array;
+  /** 1 where the column or a neighbour is wet: its ground is drawn at its exact height. */
+  shore: Uint8Array;
+  /** The column's top tint toward its side colour, in TINT_STEPS steps (see SIDE_SHARE). */
+  t: Uint8Array;
 }
 const NO_SURFACE = -1000;
 const FLAT = -1;
@@ -433,6 +471,8 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
     q: new Int8Array(n * 4).fill(FLAT),
     wy: new Int16Array(n).fill(NO_SURFACE),
     w: new Float32Array(n),
+    shore: new Uint8Array(n),
+    t: new Uint8Array(n),
   };
   const data = surface && surface.length >= n * SURFACE_STRIDE ? surface : null;
   const top: number = SECTION_CELLS;
@@ -451,6 +491,35 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
         if (level <= y + 1e-6 || level > y + 1 + 1e-4) continue; // not this cell's: its top
         out.wy[c] = y;
         out.w[c] = Math.min(level, y + 1);
+      }
+    }
+    // Shores: dry columns beside wet ones. Half-cell steps would put a bank a metre above the water
+    // under it, or up to its cell's top (a cell is metres to kilometres tall), so their ground is
+    // drawn at its exact height. A column is wet with the wet flag, or when its topmost filled
+    // cell is liquid — as the sea in the apron row below a section whose bottom is sea level (its
+    // floor is the section below's, so this section's surface data has no wet column there).
+    const wet = new Uint8Array(n);
+    for (let z = -1; z <= top; z++) {
+      for (let x = -1; x <= top; x++) {
+        const c = col(x, z);
+        let y: number = top;
+        while (y >= -1 && (cells[cellIndex(x, y, z)] ?? 0) === 0) y--;
+        if (((data[c * SURFACE_STRIDE + 2] ?? 0) & SURFACE_WET) !== 0) wet[c] = 1;
+        else if (y >= -1 && isLiquid(cells[cellIndex(x, y, z)] ?? 0)) wet[c] = 1;
+      }
+    }
+    for (let z = -1; z <= top; z++) {
+      for (let x = -1; x <= top; x++) {
+        const c = col(x, z);
+        if (wet[c]) continue;
+        let beside = false;
+        for (let dz = -1; dz <= 1 && !beside; dz++)
+          for (let dx = -1; dx <= 1 && !beside; dx++) {
+            const nx = x + dx;
+            const nz = z + dz;
+            beside = nx >= -1 && nx <= top && nz >= -1 && nz <= top && wet[col(nx, nz)] === 1;
+          }
+        if (beside) out.shore[c] = 1;
       }
     }
     for (let z = -1; z <= top; z++) {
@@ -473,6 +542,14 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
         // In 1/SURFACE_STEPS of a cell (at most 1/4 cell off: a pixel or two, as cells are a few
         // pixels on screen; finer steps cost far more triangles). At the cell's top the cell is
         // drawn as usual (and merges).
+        if (out.shore[c] && !isLiquid(m)) {
+          // A bank beside water: at its height (a full cell is drawn as usual, and merges).
+          if (h >= y + 1 - 1e-3) continue;
+          out.y[c] = y;
+          out.h[c] = Math.max(h, y);
+          out.m[c] = m;
+          continue;
+        }
         let steps = Math.round(Math.min(Math.max(h - y, 0), 1) * SURFACE_STEPS);
         if (steps === SURFACE_STEPS && !isLiquid(m)) continue;
         // A sea floor is never drawn at or over its water's surface (only waterDrop, a sliver of a
@@ -487,7 +564,53 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
     }
   }
   if (slopes) applySlopes(cells, data, out);
+  tintSlopes(cells, out);
   return out;
+}
+
+/** Each dry column's top tint from its gradient: its height against its four neighbours'. */
+function tintSlopes(cells: Uint16Array, out: Surfaces): void {
+  const top: number = SECTION_CELLS;
+  const height = new Float32Array(LOD_PAD * LOD_PAD).fill(Number.NaN);
+  for (let z = -1; z <= top; z++) {
+    for (let x = -1; x <= top; x++) {
+      const c = col(x, z);
+      const sy = out.y[c] ?? NO_SURFACE;
+      if (sy !== NO_SURFACE) {
+        if ((out.q[c * 4] ?? FLAT) !== FLAT) {
+          let sum = 0;
+          for (let i = 0; i < 4; i++) sum += out.q[c * 4 + i] ?? 0;
+          height[c] = sy + sum / 8; // the mean of the corners (halves)
+        } else {
+          height[c] = out.h[c] ?? sy + 1;
+        }
+        continue;
+      }
+      let y: number = top;
+      while (y >= -1 && (cells[cellIndex(x, y, z)] ?? 0) === 0) y--;
+      if (y < -1 || isLiquid(cells[cellIndex(x, y, z)] ?? 0)) continue; // none, or under water
+      height[c] = y + 1;
+    }
+  }
+  for (let z = 0; z < top; z++) {
+    for (let x = 0; x < top; x++) {
+      const c = col(x, z);
+      const h = height[c] ?? Number.NaN;
+      if (Number.isNaN(h)) continue;
+      let gradient = 0;
+      for (const [dx, dz] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const n = height[col(x + dx, z + dz)] ?? Number.NaN;
+        if (!Number.isNaN(n)) gradient = Math.max(gradient, Math.abs(n - h));
+      }
+      const share = Math.min(SIDE_SHARE_MAX, gradient * SIDE_SHARE_PER_GRADIENT);
+      out.t[c] = Math.round(share * TINT_STEPS);
+    }
+  }
 }
 
 /**
@@ -530,6 +653,7 @@ function applySlopes(cells: Uint16Array, data: Float32Array | null, out: Surface
       const c = col(x, z);
       const y = cellY[c] ?? NO_SURFACE;
       if (y === NO_SURFACE) continue;
+      if (out.shore[c]) continue; // beside water: flat at its exact height (findSurfaces)
       // The corner at (x + a, z + b): the mean of columns (x + a − 1 … x + a) × (z + b − 1 … z + b).
       let missing = 0; // columns around the cell with no surface
       const corner = (a: number, b: number): number => {
@@ -618,6 +742,7 @@ function emitSurfaces(
 
   // Tops: greedy rectangles over (z, x) of equal height and material.
   const topKey = new Float64Array(N * N);
+  const topH = new Float32Array(N * N);
   for (let z = 0; z < N; z++) {
     for (let x = 0; x < N; x++) {
       const c = col(x, z);
@@ -631,7 +756,7 @@ function emitSurfaces(
           s.q[c * 4 + 2] ?? 0,
           s.q[c * 4 + 3] ?? 0,
         );
-        const color = lodColor(s.m[c] ?? 0, 0);
+        const color = lodTop(s.m[c] ?? 0, s.t[c] ?? 0);
         for (const face of PATTERN_SHAPE[pattern]?.faces ?? []) {
           if (face.tag !== 6) continue;
           opaque.polygon(
@@ -642,28 +767,32 @@ function emitSurfaces(
         }
         continue;
       }
-      // Height in 1/SURFACE_STEPS cells (integral) and material: exact in a double.
-      topKey[z + N * x] = (Math.round((s.h[c] ?? y) * SURFACE_STEPS) + 1) * 0x10000 + (s.m[c] ?? 0);
+      // Material and height (half-cell steps, or exact beside water): merged where both match.
+      topKey[z + N * x] = ((s.m[c] ?? 0) + 1) * (TINT_STEPS + 1) + (s.t[c] ?? 0);
+      topH[z + N * x] = s.h[c] ?? y;
     }
   }
+  const sameTop = (a: number, b: number): boolean => topKey[a] === topKey[b] && topH[a] === topH[b];
   for (let x = 0; x < N; x++) {
     for (let z = 0; z < N;) {
-      const key = topKey[z + N * x] ?? 0;
+      const at = z + N * x;
+      const key = topKey[at] ?? 0;
       if (key === 0) {
         z++;
         continue;
       }
       let w = 1;
-      while (z + w < N && topKey[z + w + N * x] === key) w++;
+      while (z + w < N && sameTop(z + w + N * x, at)) w++;
       let d = 1;
       grow: while (x + d < N) {
-        for (let k = 0; k < w; k++) if (topKey[z + k + N * (x + d)] !== key) break grow;
+        for (let k = 0; k < w; k++) if (!sameTop(z + k + N * (x + d), at)) break grow;
         d++;
       }
+      const h = topH[at] ?? 0;
       for (let dx = 0; dx < d; dx++) topKey.fill(0, z + N * (x + dx), z + w + N * (x + dx));
-      const h = (Math.floor(key / 0x10000) - 1) / SURFACE_STEPS;
       // The top: axis y, u = z, v = x.
-      opaque.quad(1, 1, h, z, z + w, x, x + d, lodColor(key % 0x10000, 0), key % 0x10000);
+      const material = Math.floor(key / (TINT_STEPS + 1)) - 1;
+      opaque.quad(1, 1, h, z, z + w, x, x + d, lodTop(material, key % (TINT_STEPS + 1)), material);
       z += w;
     }
   }
