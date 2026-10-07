@@ -27,11 +27,11 @@ export interface DwellWorldgenModule {
   _dwell_worldgen_create(generatorVersion: number, seedLo: number, seedHi: number): number;
   _dwell_worldgen_generate(cx: number, cy: number, cz: number): number;
   _dwell_worldgen_hash(outPtr: number): void;
-  _dwell_worldgen_map(x0: number, z0: number, step: number, n: number): number;
-  _dwell_worldgen_tint(cx: number, cz: number): number;
+  _dwell_worldgen_map(x0: number, z0: number, step: number, n: number, face: number): number;
+  _dwell_worldgen_tint(cx: number, cz: number, face: number): number;
   _dwell_worldgen_lod(level: number, i: number, j: number, k: number): number;
   _dwell_worldgen_lod_cells(): number;
-  _dwell_worldgen_lod_surface(): number;
+  _dwell_worldgen_lod_surface(face: number): number;
   _dwell_worldgen_lod_bounds(level: number, i: number, k: number, outPtr: number): void;
 }
 
@@ -42,9 +42,14 @@ export interface GeneratedSection {
   /**
    * Each column's exact surface (C++ core::LodSurface), 34² × SURFACE_STRIDE floats in
    * (z + 1) · 34 + (x + 1) order: height (m), material, flags (1 valid, 2 wet), and where wet the
-   * water's level (m). Null when the generator has none.
+   * water's level (m). Null when the generator has none. Face A's, in world terms.
    */
   surface?: Float32Array<ArrayBuffer> | null;
+  /**
+   * The same for face B, in face-local terms (heights as on face A: sea level 0, sky toward +h;
+   * the section's rows mirrored): null where the section has no rows of face B.
+   */
+  surfaceB?: Float32Array<ArrayBuffer> | null;
 }
 
 export type DwellWorldgenFactory = (options?: {
@@ -86,19 +91,21 @@ export class ChunkGenerator {
 
   /**
    * The terrain's biome/height map (n × n columns from (x0, z0) every `step` m, 4 bytes each:
-   * i16 height, u8 biome, u8 flags), or null for generators without one.
+   * i16 height, u8 biome, u8 flags) of a face (0 = A, 1 = B; heights are face-local), or null for
+   * generators without one.
    */
-  map(x0: number, z0: number, step: number, n: number): Uint8Array<ArrayBuffer> | null {
-    const ptr = this.m._dwell_worldgen_map(x0, z0, step, n);
+  map(x0: number, z0: number, step: number, n: number, face = 0): Uint8Array<ArrayBuffer> | null {
+    const ptr = this.m._dwell_worldgen_map(x0, z0, step, n, face);
     return ptr ? this.m.HEAPU8.slice(ptr, ptr + n * n * 4) : null;
   }
 
   /**
-   * The biome tint of chunk column (cx, cz): TINT_GRID_BYTES (3 × 3 points 16 m apart, each the
-   * grass then the foliage colour as r, g, b in 1/64), or null for generators without biomes.
+   * The biome tint of chunk column (cx, cz) of a face (0 = A, 1 = B): TINT_GRID_BYTES (3 × 3
+   * points 16 m apart, each the grass then the foliage colour as r, g, b in 1/64), or null for
+   * generators without biomes.
    */
-  tint(cx: number, cz: number): Uint8Array<ArrayBuffer> | null {
-    const ptr = this.m._dwell_worldgen_tint(cx, cz);
+  tint(cx: number, cz: number, face = 0): Uint8Array<ArrayBuffer> | null {
+    const ptr = this.m._dwell_worldgen_tint(cx, cz, face);
     return ptr ? this.m.HEAPU8.slice(ptr, ptr + TINT_GRID_BYTES) : null;
   }
 
@@ -107,16 +114,20 @@ export class ChunkGenerator {
     const kind = this.m._dwell_worldgen_lod(c[0], c[1], c[2], c[3]) as LodKind;
     const ptr = this.m._dwell_worldgen_lod_cells();
     const cells = this.m.HEAPU16.slice(ptr >> 1, (ptr >> 1) + LOD_VOLUME);
-    const sp = this.m._dwell_worldgen_lod_surface();
-    const surface = sp
-      ? this.m.HEAPF32.slice(sp >> 2, (sp >> 2) + LOD_PAD * LOD_PAD * SURFACE_STRIDE)
-      : null;
-    return { kind, cells, surface };
+    const read = (face: number): Float32Array<ArrayBuffer> | null => {
+      const sp = this.m._dwell_worldgen_lod_surface(face);
+      return sp
+        ? this.m.HEAPF32.slice(sp >> 2, (sp >> 2) + LOD_PAD * LOD_PAD * SURFACE_STRIDE)
+        : null;
+    };
+    const surface = read(0);
+    const surfaceB = read(1);
+    return { kind, cells, surface, surfaceB };
   }
 
   /** Height bounds of the column of sections (level, i, ·, k). */
   lodBounds(level: number, i: number, k: number): LodBounds {
-    const out = this.m._malloc(24);
+    const out = this.m._malloc(48);
     try {
       this.m._dwell_worldgen_lod_bounds(level, i, k, out);
       const f = this.m.HEAPF64;
@@ -124,6 +135,9 @@ export class ChunkGenerator {
         lo: f[out >> 3] ?? 0,
         hi: f[(out >> 3) + 1] ?? 0,
         anyInside: (f[(out >> 3) + 2] ?? 0) !== 0,
+        loB: f[(out >> 3) + 3] ?? 0,
+        hiB: f[(out >> 3) + 4] ?? 0,
+        bifacial: (f[(out >> 3) + 5] ?? 1) !== 0,
       };
     } finally {
       this.m._free(out);

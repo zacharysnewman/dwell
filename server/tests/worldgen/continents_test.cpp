@@ -451,7 +451,7 @@ TEST_SUITE("worldgen: continents") {
       CHECK(inland_near > 5);
       CHECK(inland_far > 200);
       CHECK(far_sum / inland_far > near_sum / inland_near + 0.3);  // the interior is more inland
-      CHECK(deepest > static_cast<float>(core::kWorldMinY + 100));
+      CHECK(deepest > static_cast<float>(core::kMidplaneY + 100));
     }
   }
 

@@ -28,6 +28,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0020](0020-lod-rivers-at-their-width.md) | Level-of-detail rivers at their own width; water drawn at its level | Accepted |
 | [0021](0021-mountain-detail-cascade.md) | Mountain detail from a derivative-damped ridged cascade | Accepted |
 | [0022](0022-climate-biome-table-vegetation.md) | Climate with continent biases and rain shadows, the biome table, wetland ponds and biome-tinted vegetation | Accepted |
+| [0023](0023-bifacial-world.md) | The bifacial world: two faces, gravity toward the midplane | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

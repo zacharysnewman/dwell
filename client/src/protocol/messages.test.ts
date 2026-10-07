@@ -336,17 +336,20 @@ const expected: Record<string, Message> = {
     type: MessageType.LodIndex,
     last: true,
     entries: [
-      { i: 1024, k: 1023, revision: 7 },
-      { i: 0, k: 2047, revision: 4000000000 },
+      { i: 1024, j: 1023, k: 1023, revision: 7 },
+      { i: 0, j: 1024, k: 2047, revision: 4000000000 },
     ],
   },
   lod_index_empty: { type: MessageType.LodIndex, last: true, entries: [] },
   lod_index_part: {
     type: MessageType.LodIndex,
     last: false,
-    entries: [{ i: -5, k: 3, revision: 1 }],
+    entries: [{ i: -5, j: 1022, k: 3, revision: 1 }],
   },
-  lod_index_update: { type: MessageType.LodIndexUpdate, entries: [{ i: 5, k: 6, revision: 9 }] },
+  lod_index_update: {
+    type: MessageType.LodIndexUpdate,
+    entries: [{ i: 5, j: 1024, k: 6, revision: 9 }],
+  },
   lod_request: {
     type: MessageType.LodRequest,
     sections: [

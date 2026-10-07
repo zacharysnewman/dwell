@@ -10,20 +10,39 @@
 
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
-#include "dwell/worldgen/terrain.h"
+#include "dwell/worldgen/bifacial.h"
 
 namespace {
 
 dwell::core::ChunkGenerator g_generator;
 std::unique_ptr<dwell::core::Chunk> g_chunk;
-std::unique_ptr<dwell::worldgen::TerrainGenerator> g_terrain;  // the terrain generator only
+std::unique_ptr<dwell::worldgen::BifacialTerrain> g_terrain;  // the terrain generator only
 std::vector<std::uint8_t> g_map;
 dwell::worldgen::TerrainGenerator::TintGridData g_tint;
 dwell::core::LodGenerator g_lod;
 dwell::core::LodBoundsFn g_lod_bounds;
 dwell::core::LodCells g_lod_cells;
 dwell::core::LodSurfaces g_lod_surface;
+dwell::core::LodSurfaces g_lod_surface_b;
 std::vector<float> g_lod_surface_out;
+std::vector<float> g_lod_surface_b_out;
+
+const float* LodSurfaceOut(const dwell::core::LodSurfaces& surfaces,
+                                  std::vector<float>& out) {
+  if (surfaces.empty()) return nullptr;
+  constexpr std::size_t kStride = 6;
+  out.resize(surfaces.size() * kStride);
+  for (std::size_t n = 0; n < surfaces.size(); ++n) {
+    const auto& s = surfaces[n];
+    out[n * kStride] = s.height;
+    out[n * kStride + 1] = static_cast<float>(s.material);
+    out[n * kStride + 2] = static_cast<float>((s.valid ? 1 : 0) | (s.wet ? 2 : 0));
+    out[n * kStride + 3] = s.water;
+    out[n * kStride + 4] = static_cast<float>(s.tint_grass);
+    out[n * kStride + 5] = static_cast<float>(s.tint_foliage);
+  }
+  return out.data();
+}
 
 }  // namespace
 
@@ -40,8 +59,7 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_create(std::uint32_t generator_version,
   g_lod = dwell::core::LodGeneratorFor(generator_version, seed);
   g_lod_bounds = dwell::core::LodBoundsFor(generator_version, seed);
   if (generator_version == dwell::core::kGeneratorTerrain) {
-    g_terrain = std::make_unique<dwell::worldgen::TerrainGenerator>(
-        (static_cast<std::uint64_t>(seed_hi) << 32) | seed_lo);
+    g_terrain = std::make_unique<dwell::worldgen::BifacialTerrain>(seed);
   }
   return 1;
 }
@@ -49,15 +67,18 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_create(std::uint32_t generator_version,
 // Biome/height map for the in-game overlay (Phase 3e debug tooling): n × n columns from (x0, z0)
 // every `step` metres, row-major along x then z, 4 bytes each — i16 base height (m), u8 biome
 // (worldgen::Biome), u8 flags (1 = beyond the world's disc, 2 = under river or lake water: the
-// ground lies below the column's water level, sea excluded — Phase 11a). Null for generators
-// without a terrain map. Valid until the next call.
-EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int step, int n) {
+// ground lies below the column's water level, sea excluded — Phase 11a), of face `face` (0 = A, 1
+// = B; heights are face-local). Null for generators without a terrain map. Valid until the next
+// call.
+EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int step, int n,
+                                                            int face) {
   if (!g_terrain || n <= 0 || n > 512 || step <= 0) return nullptr;
   g_map.assign(static_cast<std::size_t>(n) * n * 4, 0);
+  const auto& terrain = g_terrain->Local(face == 1 ? dwell::core::Face::kB : dwell::core::Face::kA);
   std::size_t i = 0;
   for (int j = 0; j < n; ++j) {
     for (int k = 0; k < n; ++k, i += 4) {
-      const auto c = g_terrain->ColumnAt(x0 + k * step, z0 + j * step);
+      const auto c = terrain.ColumnAt(x0 + k * step, z0 + j * step);
       const auto h = static_cast<std::int16_t>(std::clamp(c.height, -32768.0f, 32767.0f));
       g_map[i] = static_cast<std::uint8_t>(h);
       g_map[i + 1] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(h) >> 8);
@@ -70,11 +91,13 @@ EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int 
 }
 
 // The tint of the grass and the leaves around the columns of chunk (cx, cz) (TerrainGenerator::
-// TintGrid): 3 × 3 points at x, z = 0, 16, 32 m, each 6 bytes (grass r, g, b, foliage r, g, b in
-// 1/64), valid until the next call; null for generators without terrain.
-EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_tint(int cx, int cz) {
+// TintGrid) of face `face` (0 = A, 1 = B): 3 × 3 points at x, z = 0, 16, 32 m, each 6 bytes (grass
+// r, g, b, foliage r, g, b in 1/64), valid until the next call; null for generators without
+// terrain.
+EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_tint(int cx, int cz, int face) {
   if (!g_terrain) return nullptr;
-  g_tint = g_terrain->TintGrid(cx, cz);
+  g_tint = g_terrain->Local(face == 1 ? dwell::core::Face::kB : dwell::core::Face::kA)
+               .TintGrid(cx, cz);
   return g_tint.data();
 }
 
@@ -98,39 +121,34 @@ EMSCRIPTEN_KEEPALIVE void dwell_worldgen_hash(std::uint32_t* out) {
 // until the next call.
 EMSCRIPTEN_KEEPALIVE int dwell_worldgen_lod(int level, int i, int j, int k) {
   g_lod_surface.clear();
+  g_lod_surface_b.clear();
   if (g_terrain) {
-    return static_cast<int>(g_terrain->GenerateLod({level, i, j, k}, g_lod_cells, &g_lod_surface));
+    return static_cast<int>(
+        g_terrain->GenerateLod({level, i, j, k}, g_lod_cells, &g_lod_surface, &g_lod_surface_b));
   }
   return static_cast<int>(g_lod({level, i, j, k}, g_lod_cells));
 }
 // The last section's column surfaces (core::LodSurface), 34² × 6 floats: height (m), material,
 // flags (1 valid, 2 wet), where wet the water's level (m), and the grass and foliage tints
 // (0xRRGGBB in 1/64 units; exact in a float). Null when the generator has none (flat worlds: their
-// cells are exact). client/src/lod/grid.ts SURFACE_STRIDE.
-EMSCRIPTEN_KEEPALIVE const float* dwell_worldgen_lod_surface() {
-  if (g_lod_surface.empty()) return nullptr;
-  constexpr std::size_t kStride = 6;
-  g_lod_surface_out.resize(g_lod_surface.size() * kStride);
-  for (std::size_t n = 0; n < g_lod_surface.size(); ++n) {
-    const auto& s = g_lod_surface[n];
-    g_lod_surface_out[n * kStride] = s.height;
-    g_lod_surface_out[n * kStride + 1] = static_cast<float>(s.material);
-    g_lod_surface_out[n * kStride + 2] = static_cast<float>((s.valid ? 1 : 0) | (s.wet ? 2 : 0));
-    g_lod_surface_out[n * kStride + 3] = s.water;
-    g_lod_surface_out[n * kStride + 4] = static_cast<float>(s.tint_grass);
-    g_lod_surface_out[n * kStride + 5] = static_cast<float>(s.tint_foliage);
-  }
-  return g_lod_surface_out.data();
+// cells are exact). client/src/lod/grid.ts SURFACE_STRIDE. `face` 0 is face A's, in world terms;
+// 1 is face B's, in face-local terms (null where the section has no rows of face B).
+EMSCRIPTEN_KEEPALIVE const float* dwell_worldgen_lod_surface(int face) {
+  return face == 1 ? LodSurfaceOut(g_lod_surface_b, g_lod_surface_b_out)
+                   : LodSurfaceOut(g_lod_surface, g_lod_surface_out);
 }
 EMSCRIPTEN_KEEPALIVE const std::uint16_t* dwell_worldgen_lod_cells() { return g_lod_cells.data(); }
 
-// Height bounds of the column of sections (level, i, ·, k): f64 lo, hi, and 1.0 when any of its
-// columns is inside the world's disc, written at `out`.
+// Height bounds of the column of sections (level, i, ·, k): f64 lo, hi (face A), 1.0 when any of its
+// columns is inside the world's disc, and lo, hi of face B (face-local), written at `out` (6 f64: …, hi_b, 1.0 when bifacial).
 EMSCRIPTEN_KEEPALIVE void dwell_worldgen_lod_bounds(int level, int i, int k, double* out) {
   const dwell::core::LodBounds b = g_lod_bounds(level, i, k);
   out[0] = b.lo;
   out[1] = b.hi;
   out[2] = b.any_inside ? 1.0 : 0.0;
+  out[3] = b.lo_b;
+  out[4] = b.hi_b;
+  out[5] = b.bifacial ? 1.0 : 0.0;
 }
 
 }  // extern "C"

@@ -1,10 +1,11 @@
 // The client's own instance of the sim core (PLAYER_CONTROLLER.md §8): prediction and
 // reconciliation of the local player, remote-player proxies, the streamed chunks (§6.3), and
 // terrain faces for rendering. Wraps the dwell_client_* exports of server/wasm/wasm_api.cpp.
-import type { GroundKind, PlayerState } from '../protocol/constants.gen';
+import { ControllerFlags, type GroundKind, type PlayerState } from '../protocol/constants.gen';
 import { PADDED_VOLUME } from '../mesh/mesher';
 import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import type { ChunkCoord, InputFrame, Vec3 } from '../protocol/messages';
+import type { FaceSign } from '../world/face';
 import { withHeapBytes, type DwellCoreFactory, type DwellCoreModule } from './module';
 
 export interface PredictionStats {
@@ -32,6 +33,8 @@ export interface ClientState {
   state: PlayerState;
   /** ControllerFlags. */
   controllerFlags: number;
+  /** The face the player stands on: 1 face A (head up), −1 face B (head down). */
+  face: FaceSign;
   /** Controller events (player::Events bits) since the previous read. */
   events: number;
   landedSpeed: number;
@@ -141,6 +144,7 @@ export class ClientCore {
     velocity: Vec3,
     crouched: boolean,
     leadSeconds = 0,
+    faceB = false,
   ): void {
     this.m._dwell_client_set_remote(
       playerId,
@@ -152,6 +156,7 @@ export class ClientCore {
       velocity[2],
       crouched ? 1 : 0,
       leadSeconds,
+      faceB ? 1 : 0,
     );
   }
 
@@ -172,6 +177,7 @@ export class ClientCore {
       halfHeight: at(10),
       state: at(11) as PlayerState,
       controllerFlags: at(12),
+      face: (at(12) & ControllerFlags.faceB) !== 0 ? -1 : 1,
       events: at(13),
       landedSpeed: at(14),
       platformYawDelta: at(15),

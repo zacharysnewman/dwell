@@ -1,5 +1,11 @@
 #include "dwell/core/physics_world.h"
 
+#include <Jolt/Physics/Body/BodyLock.h>
+
+#include <cmath>
+
+#include "dwell/core/voxel.h"
+
 namespace dwell::core {
 
 bool LayersCollide(JPH::ObjectLayer a, JPH::ObjectLayer b) {
@@ -36,7 +42,8 @@ PhysicsWorld::PhysicsWorld(JPH::JobSystem& jobs, const PhysicsConfig& config)
     : layers_(std::make_unique<Layers>()),
       system_(std::make_unique<JPH::PhysicsSystem>()),
       temp_(std::make_unique<JPH::TempAllocatorImpl>(config.temp_allocator_bytes)),
-      jobs_(jobs) {
+      jobs_(jobs),
+      config_(config) {
   system_->Init(config.max_bodies, /*numBodyMutexes=*/0, config.max_body_pairs,
                 config.max_contact_constraints, *layers_, *layers_, *layers_);
   system_->SetGravity(JPH::Vec3(0.0f, config.gravity_y, 0.0f));
@@ -45,6 +52,27 @@ PhysicsWorld::PhysicsWorld(JPH::JobSystem& jobs, const PhysicsConfig& config)
 PhysicsWorld::~PhysicsWorld() = default;
 
 void PhysicsWorld::Step(float dt) {
+  // Gravity by side (BIFACIAL_WORLD.md §3): toward the midplane, fading to zero across the band.
+  JPH::BodyIDVector active;
+  system_->GetActiveBodies(JPH::EBodyType::RigidBody, active);
+  JPH::BodyInterface& bi = system_->GetBodyInterface();
+  for (const JPH::BodyID id : active) {
+    if (bi.GetObjectLayer(id) != ObjectLayers::kTier1) continue;
+    JPH::BodyLockWrite lock(system_->GetBodyLockInterface(), id);
+    if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) continue;
+    JPH::Body& body = lock.GetBody();
+    const double over = body.GetCenterOfMassPosition().GetY() - kMidplaneY;
+    const float side = over >= 0.0 ? 1.0f : -1.0f;
+    const float depth = static_cast<float>(std::abs(over));
+    const bool in_band = depth < config_.flip_band;
+    JPH::MotionProperties& mp = *body.GetMotionProperties();
+    // Moving toward the midplane through the band a body is accelerated (carried across); moving
+    // away, the pull fades to zero at the midplane. Nothing slows it.
+    const bool toward = side * mp.GetLinearVelocity().GetY() < 0.0f;
+    const float fade =
+        in_band ? (toward ? config_.band_boost_gravities : depth / config_.flip_band) : 1.0f;
+    mp.SetGravityFactor(side * fade);
+  }
   system_->Update(dt, /*collisionSteps=*/1, temp_.get(), &jobs_);
 }
 

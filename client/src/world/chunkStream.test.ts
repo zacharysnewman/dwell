@@ -334,9 +334,14 @@ describe('ChunkStreamer', () => {
 describe('ChunkStreamer: biome tint (§3.7)', () => {
   /** A source with a tint job the test completes by hand. */
   class TintSource extends ManualSource {
-    tints: { cx: number; cz: number; resolve: (b: Uint8Array<ArrayBuffer> | null) => void }[] = [];
-    tint(cx: number, cz: number): Promise<Uint8Array<ArrayBuffer> | null> {
-      return new Promise((resolve) => this.tints.push({ cx, cz, resolve }));
+    tints: {
+      cx: number;
+      cz: number;
+      face: number;
+      resolve: (b: Uint8Array<ArrayBuffer> | null) => void;
+    }[] = [];
+    tint(cx: number, cz: number, face: number): Promise<Uint8Array<ArrayBuffer> | null> {
+      return new Promise((resolve) => this.tints.push({ cx, cz, face, resolve }));
     }
   }
   class SpyMesher extends InlineMesher {
@@ -356,6 +361,18 @@ describe('ChunkStreamer: biome tint (§3.7)', () => {
     voxels: new Uint16Array(CHUNK_VOLUME).fill(2),
   });
 
+  it("asks for a face B column's grid from face B's own terrain", () => {
+    const source = new TintSource();
+    const streamer = new ChunkStreamer(new FakeStore(), source, new SpyMesher(), new FakeView());
+    streamer.onChunkData(explicit([3, 0, 4]));
+    streamer.onChunkData(explicit([3, -70, 4]));
+    streamer.meshDirty([0, 0, 0], 100);
+    expect(source.tints.map((t) => [t.cx, t.cz, t.face]).sort()).toEqual([
+      [3, 4, 0],
+      [3, 4, 1],
+    ]);
+  });
+
   it('asks once for a column and meshes its chunks when the grid arrives, with it', async () => {
     const source = new TintSource();
     const mesher = new SpyMesher();
@@ -366,7 +383,7 @@ describe('ChunkStreamer: biome tint (§3.7)', () => {
     streamer.onChunkData(explicit([3, 2, 4]));
     // Not meshed while the column's tint is out; the column is asked for once.
     expect(streamer.meshDirty([0, 0, 0], 100)).toBe(0);
-    expect(source.tints.map((t) => [t.cx, t.cz])).toEqual([[3, 4]]);
+    expect(source.tints.map((t) => [t.cx, t.cz, t.face])).toEqual([[3, 4, 0]]);
     const grid = new Uint8Array([1, 2, 3]);
     source.tints[0]?.resolve(grid);
     await flush();

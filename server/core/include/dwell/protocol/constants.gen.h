@@ -7,7 +7,7 @@
 
 namespace dwell::protocol {
 
-inline constexpr std::uint16_t kProtocolVersion = 11;
+inline constexpr std::uint16_t kProtocolVersion = 12;
 inline constexpr int kSimHz = 60;
 inline constexpr int kSnapshotHz = 20;
 inline constexpr std::size_t kMaxDatagramBytes = 1200;
@@ -27,8 +27,11 @@ inline constexpr int kFlightCeiling = 24000000;
 inline constexpr int kFlySpeedShift = 4;
 inline constexpr int kFlySpeedMaxLevel = 39;
 
-inline constexpr int kWorldMinY = -2048;
+inline constexpr int kMidplaneY = -2048;
+inline constexpr int kWorldBottomY = -10240;
 inline constexpr int kWorldMaxY = 6144;
+inline constexpr int kCoreAnchorLayers = 8;
+inline constexpr int kFlipBand = 4;
 inline constexpr int kSeaLevel = 0;
 inline constexpr int kWorldRadius = 8192000;
 inline constexpr int kPositionFixedScale = 256;
@@ -204,7 +207,8 @@ inline constexpr std::uint8_t kClimbing = 4;
 inline constexpr std::uint8_t kSwimming = 8;
 inline constexpr std::uint8_t kDead = 16;
 inline constexpr std::uint8_t kFlying = 32;
-inline constexpr std::uint8_t kAll = 63;
+inline constexpr std::uint8_t kFaceB = 64;
+inline constexpr std::uint8_t kAll = 127;
 }  // namespace PlayerFlags
 
 namespace ControllerFlags {
@@ -215,7 +219,8 @@ inline constexpr std::uint8_t kClimbing = 8;
 inline constexpr std::uint8_t kHasReleased = 16;
 inline constexpr std::uint8_t kSwimming = 32;
 inline constexpr std::uint8_t kFlying = 64;
-inline constexpr std::uint8_t kAll = 127;
+inline constexpr std::uint8_t kFaceB = 128;
+inline constexpr std::uint8_t kAll = 255;
 }  // namespace ControllerFlags
 
 namespace WelcomeFlags {

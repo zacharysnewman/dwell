@@ -57,8 +57,9 @@ class Predictor {
   // snapshot `lead_seconds` older than the local player's predicted present; the proxy is
   // extrapolated to the present and dead-reckoned until the next update (at most
   // kMaxDeadReckoning).
+  // `face_b`: the player is upside down (its feet are above its capsule's centre).
   void SetRemote(std::uint16_t player_id, JPH::RVec3 feet, JPH::Vec3 velocity, bool crouched,
-                 float lead_seconds);
+                 float lead_seconds, bool face_b = false);
   void RemoveRemote(std::uint16_t player_id);
 
   // --- outputs ---

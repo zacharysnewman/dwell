@@ -135,7 +135,9 @@ void Predictor::Reset(const protocol::PhysicsSnapshot& snapshot) {
   const auto& l = snapshot.local;
   const RVec3 center = ToRVec3(l.position);
   if (!handle_) {
-    handle_ = players_->Spawn(config_, center - Vec3(0, config_.HalfHeight(false), 0));
+    // The capsule's head points away from the midplane: its feet are above the centre on face B.
+    const float face = (l.controller.flags & protocol::ControllerFlags::kFaceB) ? -1.0f : 1.0f;
+    handle_ = players_->Spawn(config_, center - Vec3(0, face * config_.HalfHeight(false), 0));
   }
   PlayerController c;
   FromNet(l.controller, [this](auto kind, auto id) { return GroundFromNet(kind, id); }, c);
@@ -230,11 +232,11 @@ void Predictor::OnKnockback(std::uint32_t input_seq, Vec3 delta_v) {
 }
 
 void Predictor::SetRemote(std::uint16_t player_id, RVec3 feet, Vec3 velocity, bool crouched,
-                          float lead_seconds) {
+                          float lead_seconds, bool face_b) {
   auto& bodies = physics_->bodies();
   const float half = config_.HalfHeight(crouched);
   const float lead = std::clamp(lead_seconds, 0.0f, kMaxDeadReckoning);
-  const RVec3 center = feet + Vec3(0, half, 0) + velocity * lead;
+  const RVec3 center = feet + Vec3(0, face_b ? -half : half, 0) + velocity * lead;
   auto it = remotes_.find(player_id);
   if (it == remotes_.end()) {
     JPH::BodyCreationSettings s(crouched ? remote_crouched_ : remote_standing_, center,

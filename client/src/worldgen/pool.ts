@@ -17,10 +17,11 @@ export interface GeneratedChunk {
 export interface ChunkSource {
   generate(coord: ChunkCoord): Promise<GeneratedChunk>;
   /**
-   * The biome tint grid of the columns of chunk (cx, cz) for the mesher (mesh/mesher.ts
-   * TintField), or null for generators without biomes. Optional: sources without it mesh untinted.
+   * The biome tint grid of the columns of chunk (cx, cz) of a face (0 = A, 1 = B) for the mesher
+   * (mesh/mesher.ts TintField), or null for generators without biomes. Optional: sources without
+   * it mesh untinted.
    */
-  tint?(cx: number, cz: number): Promise<Uint8Array<ArrayBuffer> | null>;
+  tint?(cx: number, cz: number, face: number): Promise<Uint8Array<ArrayBuffer> | null>;
   /** Drops a queued job; its promise never settles. False if it already started. */
   cancel(coord: ChunkCoord): boolean;
   /** Jobs queued or running. */
@@ -46,6 +47,8 @@ export interface MapRequest {
   z0: number;
   step: number;
   n: number;
+  /** 0 = face A (the default), 1 = face B. */
+  face?: number;
 }
 
 interface Job {
@@ -144,8 +147,8 @@ export class WorldgenPool implements ChunkSource, SectionSource {
   }
 
   /** The tint grid of the chunk column (cx, cz): see ChunkSource.tint. */
-  tint(cx: number, cz: number): Promise<Uint8Array<ArrayBuffer> | null> {
-    return this.submit<Uint8Array<ArrayBuffer> | null>(this.queue, { t: 'tint', cx, cz });
+  tint(cx: number, cz: number, face: number): Promise<Uint8Array<ArrayBuffer> | null> {
+    return this.submit<Uint8Array<ArrayBuffer> | null>(this.queue, { t: 'tint', cx, cz, face });
   }
 
   /** GenerateLod of a section (§6.6). */
@@ -216,8 +219,15 @@ export class WorldgenPool implements ChunkSource, SectionSource {
           : msg.t === 'map' || msg.t === 'tint'
             ? msg.bytes
             : msg.t === 'lod'
-              ? { kind: msg.kind, cells: msg.cells, surface: msg.surface }
-              : { lo: msg.lo, hi: msg.hi, anyInside: msg.anyInside },
+              ? { kind: msg.kind, cells: msg.cells, surface: msg.surface, surfaceB: msg.surfaceB }
+              : {
+                  lo: msg.lo,
+                  hi: msg.hi,
+                  loB: msg.loB,
+                  hiB: msg.hiB,
+                  anyInside: msg.anyInside,
+                  bifacial: msg.bifacial,
+                },
       );
     }
     this.dispatch();

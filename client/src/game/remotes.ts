@@ -136,3 +136,5 @@ export class RemotePlayers {
 
 export const isDead = (v: RemoteView): boolean => (v.flags & PlayerFlags.dead) !== 0;
 export const isCrouched = (v: RemoteView): boolean => (v.flags & PlayerFlags.crouched) !== 0;
+/** On face B: upside down, its feet above its head (BIFACIAL_WORLD.md §6). */
+export const isFaceB = (v: RemoteView): boolean => (v.flags & PlayerFlags.faceB) !== 0;

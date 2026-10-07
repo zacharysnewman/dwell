@@ -158,9 +158,10 @@ struct ChunkRequest {
 
 // --- Level of detail (Phase 4b, §6.6, §8.3) ---
 
-// A section at LOD_INDEX_LEVEL (one row, so no j) holding modified chunks, and its lodRevision.
+// A section at LOD_INDEX_LEVEL holding modified chunks, and its lodRevision. The row j counts from
+// −2²³ like i and k (the world is two faces tall: a level-8 column of the world is three rows).
 struct LodIndexEntry {
-  std::int32_t i = 0, k = 0;
+  std::int32_t i = 0, j = 0, k = 0;
   std::uint32_t revision = 0;
   bool operator==(const LodIndexEntry&) const = default;
 };

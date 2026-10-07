@@ -620,3 +620,37 @@ builds).
 golden trace and the performance gate pass there unchanged, natively and in WASM (CI runs both).
 World-level tests cover the rest: walking off the rim of the disc into the void kills
 (`streaming_test.cpp`).
+
+## 11. The bifacial world (Phase 13) **[built]**
+
+([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §3, §6.) Down is
+always toward the midplane (y = −2,048), so a face-B player stands upside down.
+
+- **The face-local frame** (`player/face_frame.h`). The controller is written for an upright player.
+  `PlayerController::face` (±1) says which side the body is on; for face B every pass runs in the
+  *mirror image* of the world — heights y → −4,096 − y (voxel rows y → −4,097 − y, the frame the
+  face's terrain is generated in), vertical velocities and contact normals negated, slabs and
+  slopes turned over — where gravity points to −y as ever. `Players::Pos/Vel/SetPos/SetVel` and
+  `FaceQuery` (the voxel queries) cross the boundary; on face A the maps are the identity, so face A
+  is bit-identical to before (the golden trace is unchanged). `Players::Position`, `Velocity`,
+  `Feet` and `Head` stay in the world (`Feet` is above `Head` on face B). The face switches when
+  the body centre is more than 5 cm across the midplane; the layers' vertical state is mirrored with
+  it. An upside-down player's right is the frame's left, so `move_x` is negated on face B (the
+  heading `yaw` is a world azimuth and unchanged; the client turns its mouse the other way).
+- **The flip band.** In open air within `FLIP_BAND` (4 m) of the midplane a player moves as when
+  swimming (the swim layer), without buoyancy or drag. Moving toward the midplane it is accelerated
+  by `band.boost_gravities` (2) × gravity, so it is carried across; moving away, the midplane's pull
+  (`gravity · h / band`) fades to zero at it. The player's own jump/crouch/look input steers as in
+  water. Nothing slows the body, so it swings across the midplane under gravity.
+- **Crossing.** Digging through the core or going over the rim brings a player to the band; on the
+  far side "down" points back, so the player presses jump (up, away from the midplane) to go on.
+  `controllerFlags.faceB` / `playerFlags.faceB` (protocol v12) carry the face.
+- **Mirror equivalence.** `dwell_tests --dwell-face=b` puts the controller suites' local frame on
+  face B (`test_origin.h`: geometry, spawns, velocities, inputs and rotations mirrored) and every
+  case holds, natively and under WASM, at the origin and ~8,000 km out (the VoxelQuery ray-cast
+  tests, which test world-frame geometry, are skipped). Controller decisions are identical; Jolt's
+  contact solver is not bit-symmetric where a capsule rests against a face at exactly its radius, so
+  the five-player golden trace agrees to 0.1 mm for the first second and within 0.2 m after ten (the
+  scenario's jumps amplify a sub-millimetre push-out difference); states match on every row.
+- **Camera and look** (§9): eye height is measured along the player's up; the view's pitch is toward
+  that up; the camera turns over through a roll of π over 0.5 s when the face changes.

@@ -45,6 +45,8 @@ constexpr float kLadderInset = 0.10f;      // PPCClimbSystem: slightly inside to
 // A voxel ladder is a thin plate on the cell's back face (PLAYER_CONTROLLER.md §6.3).
 constexpr float kLadderPlateHalfDepth = 0.05f;
 constexpr float kLadderTopReach = 0.6f;  // climbable region above a column's top cell
+// How far past the midplane (m) a body has to be before the face switches.
+constexpr double kFaceHysteresis = 0.05;
 
 Vec3 Flat(Vec3 v) { return Vec3(v.GetX(), 0.0f, v.GetZ()); }
 
@@ -199,9 +201,11 @@ PlayerHandle Players::Spawn(const PlayerControllerConfig& config, RVec3 feet, fl
   p->c.input.look_yaw = yaw;
   p->pending.look_yaw = yaw;
 
-  JPH::BodyCreationSettings s(p->standing, feet + Vec3(0, config.HalfHeight(false), 0),
-                              JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic,
-                              core::ObjectLayers::kCharacter);
+  // The face is the side of the midplane the feet are on; the head points away from it.
+  p->c.face = feet.GetY() >= core::kMidplaneY ? 1 : -1;
+  JPH::BodyCreationSettings s(
+      p->standing, feet + Vec3(0, static_cast<float>(p->c.face) * config.HalfHeight(false), 0),
+      JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, core::ObjectLayers::kCharacter);
   // Rotation locked, no physics gravity, frictionless, never sleeps (PLAYER_CONTROLLER.md §2).
   s.mAllowedDOFs = JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY |
                    JPH::EAllowedDOFs::TranslationZ;
@@ -262,10 +266,10 @@ float Players::HalfHeight(PlayerHandle h) const {
   return p.cfg->HalfHeight(p.c.crouch.crouching);
 }
 float Players::Feet(PlayerHandle h) const {
-  return static_cast<float>(Position(h).GetY()) - HalfHeight(h);
+  return static_cast<float>(Position(h).GetY()) - static_cast<float>(Get(h).c.face) * HalfHeight(h);
 }
 float Players::Head(PlayerHandle h) const {
-  return static_cast<float>(Position(h).GetY()) + HalfHeight(h);
+  return static_cast<float>(Position(h).GetY()) + static_cast<float>(Get(h).c.face) * HalfHeight(h);
 }
 
 std::vector<PlayerHandle> Players::handles() const {
@@ -274,6 +278,48 @@ std::vector<PlayerHandle> Players::handles() const {
     if (players_[h]) out.push_back(h);
   }
   return out;
+}
+
+Frame Players::FrameFor(const Player& p) const { return Frame{p.c.face}; }
+
+RVec3 Players::Pos(const Player& p) const {
+  return FrameFor(p).P(physics_.bodies().GetCenterOfMassPosition(p.body));
+}
+Vec3 Players::Vel(const Player& p) const {
+  return FrameFor(p).V(physics_.bodies().GetLinearVelocity(p.body));
+}
+void Players::SetPos(Player& p, RVec3 local) {
+  physics_.bodies().SetPosition(p.body, FrameFor(p).P(local), JPH::EActivation::Activate);
+}
+void Players::SetVel(Player& p, Vec3 local) {
+  physics_.bodies().SetLinearVelocity(p.body, FrameFor(p).V(local));
+}
+FaceQuery Players::Q(const Player& p) const { return FaceQuery(query_, FrameFor(p)); }
+
+// The layers' state is in the face-local frame; across the midplane it is mirrored with the frame.
+void Players::UpdateFace(Player& p) {
+  PlayerController& c = p.c;
+  const double y = physics_.bodies().GetCenterOfMassPosition(p.body).GetY();
+  // A little hysteresis, so a body resting on the midplane does not flip every tick.
+  const double over = y - core::kMidplaneY;
+  const std::int8_t face =
+      c.face > 0 ? (over < -kFaceHysteresis ? -1 : 1) : (over > kFaceHysteresis ? 1 : -1);
+  if (face == c.face) return;
+  // Every vertical quantity of the previous frame (the rest is horizontal, or recomputed by the
+  // passes of this tick before it is read).
+  c.vertical.accumulated_y = -c.vertical.accumulated_y;
+  c.vertical.platform_y = -c.vertical.platform_y;
+  c.vertical.last_platform_y = -c.vertical.last_platform_y;
+  c.vertical.target_y = -c.vertical.target_y;
+  c.platform.ground_velocity.SetY(-c.platform.ground_velocity.GetY());
+  c.platform.base_velocity.SetY(-c.platform.base_velocity.GetY());
+  c.climb.velocity.SetY(-c.climb.velocity.GetY());
+  c.swim.velocity.SetY(-c.swim.velocity.GetY());
+  c.fly.velocity.SetY(-c.fly.velocity.GetY());
+  c.target_velocity.SetY(-c.target_velocity.GetY());
+  c.climb.ladder.y = core::MirrorY(c.climb.ladder.y);
+  c.climb.released.y = core::MirrorY(c.climb.released.y);
+  c.face = face;
 }
 
 void Players::SetCrouchShape(Player& p, bool crouching) {
@@ -310,9 +356,10 @@ void Players::AddExplosion(RVec3 center, float radius, float speed, float upward
     const Vec3 offset(Position(h) - center);
     const float distance = offset.Length();
     if (distance > radius) continue;
-    const Vec3 direction = distance > 1e-3f ? offset / distance : Vec3::sAxisY();
+    const Vec3 up = FrameFor(Get(h)).WorldUp();
+    const Vec3 direction = distance > 1e-3f ? offset / distance : up;
     const float falloff = 1.0f - distance / radius;
-    AddVelocity(h, (direction + Vec3::sAxisY() * upward_bias) * (speed * falloff));
+    AddVelocity(h, (direction + up * upward_bias) * (speed * falloff));
   }
 }
 
@@ -378,6 +425,9 @@ void Players::StepInput(Player& p) {
   PlayerController& c = p.c;
   c.previous_input = c.input;
   c.input = p.pending;
+  UpdateFace(p);
+  // A face-B player is upside down: its right is the face-local frame's left.
+  if (c.face < 0) c.input.move_x = -c.input.move_x;
   const float length_sq = c.input.move_x * c.input.move_x + c.input.move_y * c.input.move_y;
   if (length_sq > 1.0f) {
     const float length = std::sqrt(length_sq);
@@ -395,14 +445,15 @@ bool Players::RingCast(const Player& p, RVec3 center, Vec3 dir, float distance, 
   const auto& ring = Ring();
   // One broad-phase check for the whole ring; usually no moving body is near and only the voxel
   // grid is walked.
+  const FaceQuery query = Q(p);
   const RVec3 end = center + dir * distance;
   const Vec3 pad(radius, 0.0f, radius);
   const bool bodies =
-      query_.BodiesNear(RVec3::sMin(center, end) - pad, RVec3::sMax(center, end) + pad, p.body);
+      query.BodiesNear(RVec3::sMin(center, end) - pad, RVec3::sMax(center, end) + pad, p.body);
   for (int i = -1; i < kRingRays; ++i) {
     const RVec3 origin = i < 0 ? center : center + ring[i] * radius;
     ProbeHit hit;
-    if (!query_.CastRay(origin, dir, distance, p.body, hit, bodies)) continue;
+    if (!query.CastRay(origin, dir, distance, p.body, hit, bodies)) continue;
     if (!closest) return true;  // only "hit or not" was asked
     if (!found || hit.distance < best) {
       best = hit.distance;
@@ -418,7 +469,7 @@ void Players::StepProbe(Player& p) {
   PlayerController& c = p.c;
   const PlayerControllerConfig& cfg = *p.cfg;
   GroundInfo& g = c.ground;
-  const RVec3 center = physics_.bodies().GetCenterOfMassPosition(p.body);
+  const RVec3 center = Pos(p);
   const float half_height = cfg.HalfHeight(c.crouch.crouching);
   const float ring_radius = cfg.body.radius * cfg.advanced.probe_ring_radius;
 
@@ -461,8 +512,8 @@ void Players::StepProbe(Player& p) {
   static const Vec3 kWallDirs[4] = {Vec3(0, 0, 1), Vec3(0, 0, -1), Vec3(-1, 0, 0), Vec3(1, 0, 0)};
   for (const Vec3& dir : kWallDirs) {
     ProbeHit wall;
-    if (query_.CastRay(center + dir * ring_radius, dir, cfg.advanced.wall_check_distance, p.body,
-                       wall) &&
+    if (Q(p).CastRay(center + dir * ring_radius, dir, cfg.advanced.wall_check_distance, p.body,
+                     wall) &&
         SlopeAngle(wall.normal) > kWallMinAngle) {
       g.touching_wall = true;
       g.wall_normal = wall.normal;
@@ -492,7 +543,7 @@ void Players::StepPlatform(Player& p) {
     JPH::BodyLockRead lock(physics_.system().GetBodyLockInterface(), JPH::BodyID(ground.id));
     if (lock.Succeeded()) {
       const JPH::Body& body = lock.GetBody();
-      velocity = body.GetPointVelocity(position);
+      velocity = FrameFor(p).V(body.GetPointVelocity(position));
       yaw_delta = body.GetAngularVelocity().GetY() * kDt * kRadToDeg;
     }
   }
@@ -509,15 +560,14 @@ bool Players::FitsStanding(const Player& p, RVec3 center) const {
   const float radius = p.cfg->body.radius;
   const Capsule capsule{center, radius - kCrouchSkin,
                         std::max(0.0f, p.cfg->HalfHeight(false) - radius - kCrouchSkin)};
-  return !query_.OverlapsSolid(capsule, p.body);
+  return !Q(p).OverlapsSolid(capsule, p.body);
 }
 
 // 4 — PPCCrouchSystem
 void Players::StepCrouch(Player& p) {
   PlayerController& c = p.c;
   const PlayerControllerConfig& cfg = *p.cfg;
-  auto& bodies = physics_.bodies();
-  const RVec3 position = bodies.GetCenterOfMassPosition(p.body);
+  const RVec3 position = Pos(p);
   const float delta = cfg.CrouchHeightDelta();
 
   auto try_stand = [&] {
@@ -535,7 +585,7 @@ void Players::StepCrouch(Player& p) {
     } else {
       return;
     }
-    bodies.SetPosition(p.body, stand_at, JPH::EActivation::Activate);
+    SetPos(p, stand_at);
     SetCrouchShape(p, false);
     c.events |= Events::kCrouchChanged;
   };
@@ -547,8 +597,7 @@ void Players::StepCrouch(Player& p) {
   if (c.CrouchPressed() && !c.crouch.crouching) {
     // Grounded: keep the feet where they are. Airborne: keep the head, pull the feet up.
     const bool grounded = c.ground.grounded;
-    bodies.SetPosition(p.body, position + Vec3(0, grounded ? -delta : delta, 0),
-                       JPH::EActivation::Activate);
+    SetPos(p, position + Vec3(0, grounded ? -delta : delta, 0));
     SetCrouchShape(p, true);
     if (!grounded && cfg.crouch.mid_air_boost > 0.0f) {
       c.vertical.accumulated_y += cfg.crouch.mid_air_boost;
@@ -578,19 +627,20 @@ bool Players::AutoJumpObstacle(Player& p) {
   const PlayerControllerConfig& cfg = *p.cfg;
   const Vec3 flat = Flat(MoveDirection(c.input));
   if (flat.Length() < kInputDeadzone) return false;
-  const RVec3 center = physics_.bodies().GetCenterOfMassPosition(p.body);
+  const RVec3 center = Pos(p);
+  const FaceQuery query = Q(p);
   const float feet = static_cast<float>(center.GetY()) - cfg.HalfHeight(c.crouch.crouching);
   const RVec3 probe = center + SafeNormalized(flat) * (cfg.body.radius + 0.2f);
   const auto x = static_cast<std::int32_t>(std::floor(probe.GetX()));
   const auto z = static_cast<std::int32_t>(std::floor(probe.GetZ()));
   const auto y = static_cast<std::int32_t>(std::floor(feet + cfg.movement.max_step_height + 0.05f));
   const float top =
-      static_cast<float>(y) + core::SurfaceHeightAt(query_.Material(x, y, z),
+      static_cast<float>(y) + core::SurfaceHeightAt(query.Material(x, y, z),
                                                     static_cast<float>(probe.GetX() - x),
                                                     static_cast<float>(probe.GetZ() - z));
   if (top <= feet + cfg.movement.max_step_height || top > feet + 1.05f) return false;
   for (int above = 1; above <= 2; ++above) {
-    if (core::GetMaterial(query_.Material(x, y + above, z)).shape != core::VoxelShape::kEmpty) {
+    if (core::GetMaterial(query.Material(x, y + above, z)).shape != core::VoxelShape::kEmpty) {
       return false;
     }
   }
@@ -610,7 +660,7 @@ void Players::StepJump(Player& p) {
   if (!grounded && c.ground.was_grounded && !j.jumping) {
     j.coyote_ticks = p.cfg->jump.coyote_ticks;  // walked off an edge
   }
-  if (grounded && j.jumping && physics_.bodies().GetLinearVelocity(p.body).GetY() <= 0.0f) {
+  if (grounded && j.jumping && Vel(p).GetY() <= 0.0f) {
     j.jumping = false;
   }
 
@@ -643,13 +693,14 @@ LadderFrame FrameOf(const Cell& cell, core::MaterialId material) {
 
 bool Players::FindLadder(const Player& p, Cell& ladder, bool& in_released_column) const {
   const PlayerController& c = p.c;
-  const RVec3 center = physics_.bodies().GetCenterOfMassPosition(p.body);
+  const RVec3 center = Pos(p);
+  const FaceQuery query = Q(p);
   const float radius = p.cfg->body.radius;
   const Capsule capsule{center, radius,
                         std::max(0.0f, p.cfg->HalfHeight(c.crouch.crouching) - radius)};
   bool found = false;
   in_released_column = false;
-  query_.ForEachOverlappingCell(
+  query.ForEachOverlappingCell(
       capsule, [&](std::int32_t x, std::int32_t y, std::int32_t z, core::MaterialId m) {
         if (!core::GetMaterial(m).climbable) return;
         // A contiguous ladder column counts as one ladder for `released`.
@@ -673,8 +724,8 @@ bool Players::FindLadder(const Player& p, Cell& ladder, bool& in_released_column
        z <= static_cast<std::int32_t>(std::floor(center.GetZ() + radius)); ++z) {
     for (auto x = static_cast<std::int32_t>(std::floor(center.GetX() - radius));
          x <= static_cast<std::int32_t>(std::floor(center.GetX() + radius)); ++x) {
-      if (!core::GetMaterial(query_.Material(x, y, z)).climbable ||
-          core::GetMaterial(query_.Material(x, y + 1, z)).climbable) {
+      if (!core::GetMaterial(query.Material(x, y, z)).climbable ||
+          core::GetMaterial(query.Material(x, y + 1, z)).climbable) {
         continue;
       }
       const RVec3 lo(x, -1e6, z);
@@ -712,7 +763,8 @@ void Players::StepClimb(Player& p) {
     c.events |= Events::kClimbStarted;
   }
 
-  const RVec3 position = physics_.bodies().GetCenterOfMassPosition(p.body);
+  const RVec3 position = Pos(p);
+  const FaceQuery query = Q(p);
   auto release = [&](bool jump_off) {
     climb.climbing = false;
     climb.has_released = true;
@@ -721,7 +773,7 @@ void Players::StepClimb(Player& p) {
     c.vertical.accumulated_y = 0.0f;
     if (jump_off) {
       const LadderFrame frame =
-          FrameOf(climb.ladder, query_.Material(climb.ladder.x, climb.ladder.y, climb.ladder.z));
+          FrameOf(climb.ladder, query.Material(climb.ladder.x, climb.ladder.y, climb.ladder.z));
       const float depth = Vec3(position - frame.plate).Dot(frame.facing);
       const Vec3 away = depth >= 0.0f ? frame.facing : -frame.facing;
       c.horizontal.current = away * cfg.climb.jump_off_away;
@@ -742,7 +794,7 @@ void Players::StepClimb(Player& p) {
   }
   climb.ladder = ladder;
 
-  const core::MaterialId material = query_.Material(ladder.x, ladder.y, ladder.z);
+  const core::MaterialId material = query.Material(ladder.x, ladder.y, ladder.z);
   const float speed = cfg.climb.speed * core::GetMaterial(material).climb_speed_scale;
   float vertical = c.input.move_y;
   if (c.input.look_pitch < -cfg.climb.look_down_threshold) vertical = -vertical;
@@ -751,7 +803,7 @@ void Players::StepClimb(Player& p) {
   // Over the top (Dwell): near the column's top, climbing up also moves onto what it leans on.
   std::int32_t top = ladder.y;
   for (int i = 0;
-       i < 256 && core::GetMaterial(query_.Material(ladder.x, top + 1, ladder.z)).climbable; ++i) {
+       i < 256 && core::GetMaterial(query.Material(ladder.x, top + 1, ladder.z)).climbable; ++i) {
     ++top;
   }
   const float feet = static_cast<float>(position.GetY()) - cfg.HalfHeight(c.crouch.crouching);
@@ -781,18 +833,22 @@ void Players::StepSwim(Player& p) {
   PlayerController& c = p.c;
   const PlayerControllerConfig& cfg = *p.cfg;
   SwimState& swim = c.swim;
-  auto& bodies = physics_.bodies();
-  const RVec3 position = bodies.GetCenterOfMassPosition(p.body);
-  swim.submerged = query_.SubmergedFraction(position, cfg.HalfHeight(c.crouch.crouching));
+  const RVec3 position = Pos(p);
+  swim.submerged = Q(p).SubmergedFraction(position, cfg.HalfHeight(c.crouch.crouching));
   if (c.climb.climbing || c.fly.flying) return;
 
-  const Vec3 body_velocity = bodies.GetLinearVelocity(p.body);
+  // The flip band: in open air within kFlipBand of the midplane the player moves as when swimming
+  // (the face-local frame's midplane is at the same height, kMidplaneY, on either face).
+  const float height = std::max(0.0f, static_cast<float>(position.GetY() - core::kMidplaneY));
+  const bool band = height < static_cast<float>(protocol::kFlipBand) && !c.ground.grounded;
+
+  const Vec3 body_velocity = Vel(p);
   if (!swim.swimming) {
-    if (swim.submerged <= cfg.swim.enter_fraction) return;
+    if (swim.submerged <= cfg.swim.enter_fraction && !band) return;
     swim.swimming = true;
     c.jump.jumping = false;
     c.events |= Events::kSwimStarted;
-  } else if (swim.submerged < cfg.swim.exit_fraction) {
+  } else if (swim.submerged < cfg.swim.exit_fraction && !band) {
     // Hand back to the normal layers with the current velocity (not an external force).
     swim.swimming = false;
     swim.velocity = Vec3::sZero();
@@ -821,9 +877,23 @@ void Players::StepSwim(Player& p) {
       (forward * c.input.move_y + CameraRight(c.input.look_yaw) * c.input.move_x) * cfg.swim.speed;
   if (c.input.jump) wish.SetY(cfg.swim.speed);
   if (c.input.crouch) wish.SetY(-cfg.swim.speed);
+  // In the band nothing slows the body: moving toward the midplane it is accelerated (band.boost
+  // gravities), carrying it across; moving away, the midplane's pull (fading to zero at it) acts as
+  // gravity does. The player's own input still steers (the swim layer's drag toward the wish).
+  const bool dry = swim.submerged <= cfg.swim.enter_fraction;
+  const bool steer = !band || !dry || c.input.jump || c.input.crouch;
+  if (band && dry && !steer) wish.SetY(body_velocity.GetY());
   Vec3 velocity = body_velocity + (wish - body_velocity) * (1.0f - std::exp(-cfg.swim.drag * kDt));
-  velocity +=
-      Vec3::sAxisY() * (cfg.swim.buoyancy * (swim.submerged - cfg.swim.float_fraction) * kDt);
+  if (!dry || !band) {
+    velocity +=
+        Vec3::sAxisY() * (cfg.swim.buoyancy * (swim.submerged - cfg.swim.float_fraction) * kDt);
+  }
+  if (band) {
+    const float pull = body_velocity.GetY() < 0.0f
+                           ? cfg.band.boost_gravities
+                           : height / static_cast<float>(protocol::kFlipBand);
+    velocity -= Vec3::sAxisY() * (cfg.body.gravity * pull * kDt);
+  }
   swim.velocity = velocity;
 
   c.horizontal.current = Vec3::sZero();
@@ -842,8 +912,7 @@ void Players::StepFly(Player& p) {
   PlayerController& c = p.c;
   const PlayerControllerConfig& cfg = *p.cfg;
   FlyState& fly = c.fly;
-  auto& bodies = physics_.bodies();
-  const Vec3 body_velocity = bodies.GetLinearVelocity(p.body);
+  const Vec3 body_velocity = Vel(p);
   if (!fly.flying) {
     if (!c.input.fly) return;
     fly.flying = true;
@@ -865,7 +934,7 @@ void Players::StepFly(Player& p) {
     return;
   }
 
-  const RVec3 position = bodies.GetCenterOfMassPosition(p.body);
+  const RVec3 position = Pos(p);
   const double feet = position.GetY() - cfg.HalfHeight(c.crouch.crouching);
   const float above_sea = static_cast<float>(std::max(0.0, feet - core::kSeaLevel));
   const float base = cfg.fly.speed * (c.input.run ? cfg.fly.run_factor : 1.0f);
@@ -904,16 +973,15 @@ Vec3 Players::TryStep(Player& p, Vec3 move_direction) {
   const PlayerControllerConfig& cfg = *p.cfg;
   const Vec3 flat = Flat(move_direction);
   if (flat.Length() < kMinDirection) return Vec3::sZero();
-  auto& bodies = physics_.bodies();
-  const RVec3 center = bodies.GetCenterOfMassPosition(p.body);
+  const RVec3 center = Pos(p);
   const float half_height = cfg.HalfHeight(c.crouch.crouching);
   const float feet = static_cast<float>(center.GetY()) - half_height;
   RVec3 origin = center + flat.Normalized() * (cfg.body.radius + cfg.advanced.step_probe_distance);
   origin.SetY(
       std::max(static_cast<float>(center.GetY()), feet + cfg.movement.max_step_height + 0.05f));
   ProbeHit hit;
-  if (!query_.CastRay(origin, -Vec3::sAxisY(),
-                      static_cast<float>(origin.GetY()) - feet + half_height, p.body, hit)) {
+  if (!Q(p).CastRay(origin, -Vec3::sAxisY(), static_cast<float>(origin.GetY()) - feet + half_height,
+                    p.body, hit)) {
     return Vec3::sZero();
   }
   const float step_height = static_cast<float>(hit.point.GetY()) - feet;
@@ -923,8 +991,7 @@ Vec3 Players::TryStep(Player& p, Vec3 move_direction) {
     // the slim voxel capsule the ring would otherwise still see the lower floor and snap back.
     const float ring = cfg.body.radius * cfg.advanced.probe_ring_radius;
     const float nudge = cfg.body.radius + cfg.advanced.step_probe_distance - ring + 0.01f;
-    bodies.SetPosition(p.body, center + Vec3(0, step_height, 0) + flat.Normalized() * nudge,
-                       JPH::EActivation::Activate);
+    SetPos(p, center + Vec3(0, step_height, 0) + flat.Normalized() * nudge);
     p.c.vertical.step_grace = kStepGraceTicks;
     return flat.Normalized() * nudge;
   }
@@ -936,7 +1003,7 @@ Vec3 Players::TryStep(Player& p, Vec3 move_direction) {
 void Players::ApplyEdgeGuard(Player& p) {
   PlayerController& c = p.c;
   const PlayerControllerConfig& cfg = *p.cfg;
-  const RVec3 center = physics_.bodies().GetCenterOfMassPosition(p.body);
+  const RVec3 center = Pos(p);
   const float half_height = cfg.HalfHeight(true);
   const float ring_radius = cfg.body.radius * cfg.advanced.probe_ring_radius;
   const float reach = half_height + cfg.movement.max_step_height;
@@ -966,7 +1033,7 @@ void Players::StepHorizontal(Player& p) {
   if (c.Exclusive()) return;
 
   // External forces: whatever moved the body away from what it was driven to last tick.
-  const Vec3 actual = Flat(physics_.bodies().GetLinearVelocity(p.body));
+  const Vec3 actual = Flat(Vel(p));
   Vec3 external_delta = actual - h.contribution;
   // Dwell: velocity a contact removed because the player pushed into it (a wall, a block) is not
   // an external force. Absorbing it (as the PPC does) leaves a phantom push-back that, in the air,
@@ -975,7 +1042,7 @@ void Players::StepHorizontal(Player& p) {
   // the step being left, and its sideways push-out must not become momentum either.
   const Vec3 driven = h.contribution + Vec3(0.0f, c.vertical.target_y, 0.0f);
   for (int i = 0; i < p.contact_count; ++i) {
-    const Vec3 normal = p.contact_normals[i];
+    const Vec3 normal = FrameFor(p).V(p.contact_normals[i]);
     // Driving forward into a contact that faces partly up (a block's top edge under the rounded
     // bottom of the capsule) deflects part of that drive upwards; StepVertical must not take it
     // for an external force either.
@@ -1043,7 +1110,7 @@ void Players::StepVertical(Player& p) {
   const PlayerControllerConfig& cfg = *p.cfg;
   VerticalLayer& v = c.vertical;
   const float gravity = -cfg.body.gravity;
-  const float body_y = physics_.bodies().GetLinearVelocity(p.body).GetY();
+  const float body_y = Vel(p).GetY();
   if (v.step_grace > 0) --v.step_grace;
   if (c.Exclusive()) return;
 
@@ -1107,7 +1174,7 @@ void Players::StepAggregate(Player& p) {
     target = c.horizontal.contribution + Vec3(0, c.vertical.target_y, 0);
   }
   c.target_velocity = target;
-  physics_.bodies().SetLinearVelocity(p.body, target);
+  SetVel(p, target);
 }
 
 // 11 — PPCStateSystem

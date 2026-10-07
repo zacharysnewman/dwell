@@ -28,7 +28,8 @@ import { shapeEdges } from '../render/shapeEdges';
 import { SHAPES } from '../world/blocks';
 import { materialStyle } from '../world/materials';
 import { EyeCamera } from './eye';
-import { isCrouched, isDead, RemotePlayers } from './remotes';
+import { FlipRoll } from './flipRoll';
+import { isCrouched, isDead, isFaceB, RemotePlayers } from './remotes';
 
 const TICK_MS = 1000 / SIM_HZ;
 const MAX_TICKS_PER_FRAME = 5;
@@ -54,6 +55,8 @@ export interface InputSource {
   sample(): PlayerInputState;
   yaw: number;
   pitch: number;
+  /** +1 on face A, −1 on face B: which way a right turn turns the heading (predict/input.ts). */
+  turnSign?: number;
 }
 
 /** What automated tests read through `window.__dwell` (see main.ts). */
@@ -95,6 +98,9 @@ export class Game {
   private deathFeet: Vec3 = [0, 0, 0];
   private previous: ClientState | null = null;
   private current: ClientState;
+  /** The camera turning over when the player crosses the midplane (flipRoll.ts). */
+  private readonly flip = new FlipRoll();
+  private lastDrawMs: number | null = null;
   private readonly eye = new EyeCamera();
   /** Extra line for the debug overlay (the regenerate-and-diff check, main.ts). */
   debugNote = '';
@@ -161,7 +167,7 @@ export class Game {
       for (const r of this.remotes.latest()) {
         if (isDead(r)) continue;
         seen.add(r.playerId);
-        this.core.setRemote(r.playerId, r.feet, r.velocity, isCrouched(r));
+        this.core.setRemote(r.playerId, r.feet, r.velocity, isCrouched(r), 0, isFaceB(r));
         this.proxies.add(r.playerId);
       }
       for (const id of this.proxies) {
@@ -201,7 +207,7 @@ export class Game {
     return {
       playerId: this.playerId,
       active: c.active,
-      feet: [c.position[0], c.position[1] - c.halfHeight, c.position[2]],
+      feet: [c.position[0], c.position[1] - c.face * c.halfHeight, c.position[2]],
       health: this.health,
       dead: this.dead,
       remotes: this.remotes
@@ -242,12 +248,19 @@ export class Game {
     this.previous = this.current;
     this.current = this.core.state();
     this.eye.tick(this.current, 1 / SIM_HZ);
+    this.input.turnSign = this.current.face;
     // The camera turns with rotating ground (PPC yawDelta).
     this.input.yaw += this.current.platformYawDelta;
   }
 
   private draw(nowMs: number): void {
     const c = this.current;
+    const face = c.face;
+    const roll = this.flip.update(
+      face,
+      this.lastDrawMs === null ? 0 : (nowMs - this.lastDrawMs) / 1000,
+    );
+    this.lastDrawMs = nowMs;
     const p = this.previous ?? c;
     const alpha = this.accumulator / TICK_MS;
     const lerp = (a: number, b: number) => a + (b - a) * alpha;
@@ -265,7 +278,15 @@ export class Game {
       drawn.add(v.playerId);
       this.renderer.setPlayer(
         v.playerId,
-        this.playerView(v.playerId, v.feet, v.yaw, isCrouched(v), isDead(v), c),
+        this.playerView(
+          v.playerId,
+          v.feet,
+          v.yaw,
+          isCrouched(v),
+          isDead(v),
+          c,
+          isFaceB(v) ? -1 : 1,
+        ),
       );
     }
     for (const id of this.remotes.ids()) if (!drawn.has(id)) this.renderer.setPlayer(id, null);
@@ -274,14 +295,15 @@ export class Game {
     if (this.dead) {
       this.renderer.setPlayer(
         this.playerId,
-        this.playerView(this.playerId, this.deathFeet, this.input.yaw, false, true, c),
+        this.playerView(this.playerId, this.deathFeet, this.input.yaw, false, true, c, face),
       );
       const yaw = (this.input.yaw * Math.PI) / 180;
       const [x, y, z] = this.deathFeet;
       this.renderer.setCamera(
-        [x - Math.sin(yaw) * 4, y + 2.5, z - Math.cos(yaw) * 4],
+        [x - Math.sin(yaw) * 4, y + face * 2.5, z - Math.cos(yaw) * 4],
         this.input.yaw,
         -25,
+        face,
       );
       this.showHudText();
     } else {
@@ -289,7 +311,7 @@ export class Game {
       this.showHudText();
       // Eye height is smoothed per tick (steps, crouching; see eye.ts), then interpolated.
       const eye: Vec3 = [center[0], this.eye.draw(alpha), center[2]];
-      this.renderer.setCamera(eye, this.input.yaw, this.input.pitch);
+      this.renderer.setCamera(eye, this.input.yaw, this.input.pitch, face, roll);
       this.target(this.terrainReady() ? eye : null);
     }
     if (this.dead) this.target(null);
@@ -337,7 +359,8 @@ export class Game {
     const camera: LodCamera = {
       position,
       yawDeg: this.input.yaw,
-      pitchDeg: this.input.pitch,
+      // The world pitch: a face-B player's up is −y.
+      pitchDeg: c.face * this.input.pitch,
       ...this.viewport(),
     };
     // Detail loads ahead of where the player is heading (§6.6).
@@ -347,7 +370,8 @@ export class Game {
 
   /** Targets the block under the crosshair from `eye` and outlines it (none while not playing). */
   private target(eye: Vec3 | null): void {
-    const t = this.interaction?.update(eye, this.input.yaw, this.input.pitch) ?? null;
+    const t =
+      this.interaction?.update(eye, this.input.yaw, this.input.pitch, this.current.face) ?? null;
     if (!t) {
       this.renderer.setBlockOutline(null);
       this.renderer.setPlacementPreview(null);
@@ -384,9 +408,11 @@ export class Game {
     crouched: boolean,
     dead: boolean,
     c: ClientState,
+    face: 1 | -1 = 1,
   ): PlayerView {
     return {
       feet,
+      face,
       yaw,
       crouched,
       dead,
@@ -401,7 +427,7 @@ export class Game {
     const lines: { from: Vec3; to: Vec3; color: number }[] = [];
     const grounded = (c.controllerFlags & ControllerFlags.grounded) !== 0;
     const ring = c.radius * 0.9;
-    const down = c.halfHeight + (grounded ? c.maxStepHeight : 0.15);
+    const down = c.face * (c.halfHeight + (grounded ? c.maxStepHeight : 0.15));
     for (let i = -1; i < 16; i++) {
       const a = (i * Math.PI * 2) / 16;
       const o: Vec3 =

@@ -3,10 +3,98 @@ import { LOD_PAD, LOD_VOLUME, lodCell } from '../lod/grid';
 import { faceTint } from '../render/look';
 import { averageTileColor } from '../render/textures';
 import { stateId } from '../world/blocks';
-import { lodColor, LodTint, meshSection, SURFACE_STRIDE } from './lodMesher';
+import { lodColor, LodTint, meshSection, mirrorRows, SURFACE_STRIDE } from './lodMesher';
 
 const WATER = stateId('dwell:water');
 const quads = (m: { indices: Uint32Array }): number => m.indices.length / 6;
+
+describe('LOD section mesher: face B (BIFACIAL_WORLD.md §5)', () => {
+  /** A solid slab of grass over rows [lo, hi] of a section whose apron is solid sideways. */
+  const slab = (lo: number, hi: number): Uint16Array => {
+    const cells = new Uint16Array(LOD_VOLUME);
+    for (let y = lo; y <= hi; y++) {
+      for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) cells[lodCell(x, y, z)] = 4;
+    }
+    return cells;
+  };
+
+  it('reverses the rows of a section, apron included, and back', () => {
+    const cells = new Uint16Array(LOD_VOLUME);
+    cells[lodCell(3, -1, 5)] = 7;
+    cells[lodCell(1, 0, 2)] = 8;
+    cells[lodCell(4, 31, 6)] = 9;
+    cells[lodCell(5, 32, 7)] = 10;
+    const m = mirrorRows(cells);
+    expect(m[lodCell(3, 32, 5)]).toBe(7);
+    expect(m[lodCell(1, 31, 2)]).toBe(8);
+    expect(m[lodCell(4, 0, 6)]).toBe(9);
+    expect(m[lodCell(5, -1, 7)]).toBe(10);
+    expect(mirrorRows(m)).toEqual(cells);
+  });
+
+  it('meshes a ceiling as the turned-over image of a floor, with the top shading on its underside', () => {
+    // Face A: a floor of rows 0..9 (its top at y = 10). Face B: the same slab as the world has it,
+    // rows 22..31 (its underside at y = 22 faces down — it is a face-B "floor").
+    const a = meshSection(slab(0, 9));
+    const b = meshSection(slab(22, 31), { mirror: true });
+    expect(quads(b.opaque)).toBe(quads(a.opaque));
+    // A's top (+Y at y = 10) ↔ B's underside (−Y at y = 22), and A's bottom at y = 0 ↔ B's top at 32.
+    const ys = (m: { positions: Float32Array; normals: Float32Array }, ny: number) => {
+      const out = new Set<number>();
+      for (let i = 0; i < m.normals.length; i += 3) {
+        if (m.normals[i + 1] === ny) out.add(m.positions[i + 1] ?? NaN);
+      }
+      return [...out];
+    };
+    expect(ys(a.opaque, 1)).toEqual([10]);
+    expect(ys(b.opaque, -1)).toEqual([22]);
+    expect(ys(a.opaque, -1)).toEqual([0]);
+    expect(ys(b.opaque, 1)).toEqual([32]);
+    // The colour of A's top is B's underside; A's bottom, B's top.
+    const colour = (m: { normals: Float32Array; colors: Float32Array }, ny: number) => {
+      const i = [...m.normals].findIndex((v, n) => n % 3 === 1 && v === ny);
+      return [0, 1, 2].map((c) => m.colors[i - 1 + c]);
+    };
+    expect(colour(b.opaque, -1)).toEqual(colour(a.opaque, 1));
+    expect(colour(b.opaque, 1)).toEqual(colour(a.opaque, -1));
+  });
+
+  it('winds the turned-over faces to face the way their normals point, and swaps the ±Y skirts', () => {
+    const b = meshSection(slab(22, 31), { mirror: true });
+    const p = b.opaque.positions;
+    const idx = b.opaque.indices;
+    type V3 = [number, number, number];
+    const vec = (arr: Float32Array, i: number): V3 => [
+      arr[i * 3] ?? 0,
+      arr[i * 3 + 1] ?? 0,
+      arr[i * 3 + 2] ?? 0,
+    ];
+    const sub = (u: V3, v: V3): V3 => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+    for (let t = 0; t < idx.length; t += 3) {
+      const i0 = idx[t] ?? 0;
+      const a = vec(p, i0);
+      const e1 = sub(vec(p, idx[t + 1] ?? 0), a);
+      const e2 = sub(vec(p, idx[t + 2] ?? 0), a);
+      const cross: V3 = [
+        e1[1] * e2[2] - e1[2] * e2[1],
+        e1[2] * e2[0] - e1[0] * e2[2],
+        e1[0] * e2[1] - e1[1] * e2[0],
+      ];
+      const n = vec(b.opaque.normals, i0);
+      const dot = cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2];
+      expect(dot).toBeGreaterThan(0); // counter-clockwise seen from the normal's side
+    }
+    // A floor in rows −1..0 (a skirt on its −Y border row hides against the apron): the skirt a
+    // mirrored section shows on its bottom is the original's top.
+    const rim = new Uint16Array(LOD_VOLUME);
+    for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) rim[lodCell(x, 31, z)] = 4;
+    rim[lodCell(5, 32, 5)] = 4; // solid above the top row: the −Y border face of row 31 is hidden
+    const m = meshSection(rim, { mirror: true });
+    const plain = meshSection(mirrorRows(rim));
+    expect(quads(m.skirts[2] ?? m.opaque)).toBe(quads(plain.skirts[3] ?? m.opaque));
+    expect(quads(m.skirts[3] ?? m.opaque)).toBe(quads(plain.skirts[2] ?? m.opaque));
+  });
+});
 
 describe('LOD section mesher (§6.6)', () => {
   it('draws a lone cell as six faces, in cell units', () => {

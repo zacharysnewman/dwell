@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { World } from '../protocol/constants.gen';
 import type { ChunkCoord } from '../protocol/messages';
+import { FACE_A, FACE_B } from '../world/face';
 import {
   chunkOfLod,
   kindFromBounds,
   lodAncestor,
   lodCell,
   lodChild,
+  lodId,
   lodInWorld,
   LodKind,
   lodOfChunk,
   lodParent,
-  lodRows,
+  lodFirstRow,
+  lodLastRow,
+  lodRowFace,
   MAX_LEVEL,
+  ORIGIN,
   sectionAt,
   sectionOrigin,
   sectionSize,
@@ -41,9 +46,43 @@ describe('LOD grid (mirrors lod.h)', () => {
     ]);
   });
 
-  it('has one row from level 8, and children nest in their parent', () => {
-    expect([lodRows(0), lodRows(7), lodRows(8), lodRows(19)]).toEqual([256, 2, 1, 1]);
-    expect(lodInWorld([8, 1024, 1, 1024])).toBe(false);
+  it('counts y from −2²³ too: rows cover both faces, one row from level 9', () => {
+    expect(ORIGIN).toEqual([-(2 ** 23), -(2 ** 23), -(2 ** 23)]);
+    const rows = (level: number): number => lodLastRow(level) - lodFirstRow(level) + 1;
+    expect([rows(0), rows(6), rows(8), rows(19)]).toEqual([512, 8, 3, 1]);
+    expect(lodFirstRow(19)).toBe(0);
+    expect(lodOfChunk([0, World.worldBottomY / 32, 0])[2]).toBe(lodFirstRow(0));
+    expect(lodInWorld(lodOfChunk([0, World.worldBottomY / 32, 0]))).toBe(true);
+    expect(lodInWorld(lodOfChunk([0, World.worldBottomY / 32 - 1, 0]))).toBe(false);
+    expect(lodInWorld(lodOfChunk([0, World.worldMaxY / 32, 0]))).toBe(false);
+    const j8 = lodFirstRow(8);
+    expect(lodInWorld([8, 1024, j8, 1024])).toBe(true);
+    expect(lodInWorld([8, 1024, j8 + 2, 1024])).toBe(true);
+    expect(lodInWorld([8, 1024, j8 - 1, 1024])).toBe(false);
+    expect(lodInWorld([8, 1024, j8 + 3, 1024])).toBe(false);
+    // Up to level 6 a section lies wholly on one face; a coarser one holds the midplane.
+    for (let level = 0; level <= 6; level++) {
+      const s = sectionAt(level, [0, World.midplaneY, 0]);
+      expect(sectionOrigin(s)[1]).toBe(World.midplaneY);
+      expect(lodRowFace(s, -1)).toBe(FACE_B); // only its apron is below
+      expect(lodRowFace(s, 0)).toBe(FACE_A);
+    }
+    const straddle = sectionAt(8, [0, World.midplaneY, 0]);
+    expect(lodRowFace(straddle, 0)).toBe(FACE_B);
+    expect(lodRowFace(straddle, 31)).toBe(FACE_A);
+  });
+
+  it('numbers sections uniquely: ids differ across rows and fall outside the world', () => {
+    const ids = new Set<number>();
+    for (let j = lodFirstRow(0); j <= lodLastRow(0); j++) ids.add(lodId(0, 262144, j, 262144));
+    expect(ids.size).toBe(512);
+    expect(ids.has(-1)).toBe(false);
+    expect(lodId(0, 262144, lodFirstRow(0) - 1, 262144)).toBe(-1);
+    expect(lodId(0, 262144, lodLastRow(0) + 1, 262144)).toBe(-1);
+    expect(Number.isSafeInteger(lodId(0, 2 ** 19 - 1, lodLastRow(0), 2 ** 19 - 1))).toBe(true);
+  });
+
+  it('has children nest in their parent', () => {
     const p = [5, 1000, 3, 1001] as const;
     for (let o = 0; o < 8; o++) {
       const c = lodChild(p, o);
@@ -62,14 +101,15 @@ describe('LOD grid (mirrors lod.h)', () => {
     expect(lodCell(-1, -1, -1)).toBe(0);
     expect(lodCell(0, 0, 0)).toBe(1 + 34 + 34 * 34);
     const c = sectionAt(2, [0, 0, 0]);
-    expect(kindFromBounds(c, { lo: -40, hi: 60, anyInside: true })).toBe(LodKind.Content);
-    expect(kindFromBounds(sectionAt(2, [0, 300, 0]), { lo: -40, hi: 60, anyInside: true })).toBe(
-      LodKind.Empty,
-    );
-    expect(kindFromBounds(sectionAt(2, [0, -500, 0]), { lo: -40, hi: 60, anyInside: true })).toBe(
-      LodKind.Buried,
-    );
-    expect(kindFromBounds(c, { lo: 0, hi: 0, anyInside: false })).toBe(LodKind.Empty);
-    expect(World.worldMinY).toBe(-2048);
+    const b = { lo: -40, hi: 60, loB: -40, hiB: 60, anyInside: true, bifacial: true };
+    expect(kindFromBounds(c, b)).toBe(LodKind.Content);
+    expect(kindFromBounds(sectionAt(2, [0, 300, 0]), b)).toBe(LodKind.Empty);
+    expect(kindFromBounds(sectionAt(2, [0, -500, 0]), b)).toBe(LodKind.Buried);
+    expect(kindFromBounds(c, { ...b, anyInside: false })).toBe(LodKind.Empty);
+    // Face B: its terrain's face-local bounds, mirrored — rock toward the midplane, sky below.
+    expect(kindFromBounds(sectionAt(2, [0, -3000, 0]), b)).toBe(LodKind.Buried);
+    expect(kindFromBounds(sectionAt(2, [0, -9000, 0]), b)).toBe(LodKind.Empty);
+    expect(kindFromBounds(sectionAt(2, [0, -4100, 0]), b)).toBe(LodKind.Content);
+    expect(World.midplaneY).toBe(-2048);
   });
 });

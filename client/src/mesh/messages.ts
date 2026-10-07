@@ -10,6 +10,8 @@ export type ToMesher =
       voxels: Uint16Array<ArrayBuffer>;
       /** The chunk column's biome tint grid (mesher.ts TintField), copied; null: untinted. */
       tint: Uint8Array | null;
+      /** A chunk of face B: meshed as its mirror image (mesher.ts `meshChunk`). */
+      mirror: boolean;
     }
   /** A LOD section's 34³ cells (lodMesher.ts), transferred. */
   | {

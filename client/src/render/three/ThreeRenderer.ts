@@ -28,13 +28,21 @@ import {
   type MeshLambertMaterialParameters,
 } from 'three';
 import type { ChunkCoord, Vec3 } from '../../protocol/messages';
+import { viewForward } from '../../world/face';
 import type { FlatMesh, SectionMeshes } from '../../mesh/lodMesher';
 import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
 import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { DEFAULT_FOG, type FogSettings } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
-import { DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, SUN_DIRECTION, sanitizeExposure } from '../look';
+import {
+  DEFAULT_EXPOSURE,
+  HORIZON_COLOR,
+  LIGHT,
+  MOON_DIRECTION_WORLD,
+  SUN_DIRECTION,
+  sanitizeExposure,
+} from '../look';
 import { sharedAtlas } from '../textures';
 import {
   RendererUnavailableError,
@@ -43,7 +51,7 @@ import {
   type RendererOptions,
   type RenderStats,
 } from '../Renderer';
-import { setFogUniforms, withHeightFog } from './heightFog';
+import { setFogUniforms, setViewFace, withHeightFog } from './heightFog';
 import { Sky } from './sky';
 import { LodSectionGeometry, releaseOnUpload } from './lodSection';
 import { BatchedTerrain } from './batchedTerrain';
@@ -202,6 +210,8 @@ export class ThreeRenderer implements Renderer {
   /** The far pass's camera (the main camera is the near pass's). */
   private readonly farCamera = new PerspectiveCamera(VERTICAL_FOV, 1, NEAR_SPLIT, FAR_PLANE);
   private readonly players = new Map<number, PlayerMesh>();
+  /** The face of the player the camera is on (setCamera). */
+  private face: 1 | -1 = 1;
   private debug: LineSegments<BufferGeometry, LineBasicMaterial> | null = null;
   /** Outline of the targeted block (§6.5): a unit box's edges, scaled for slabs. */
   private readonly outline = new LineSegments(
@@ -228,12 +238,25 @@ export class ThreeRenderer implements Renderer {
     this.renderer.toneMappingExposure = DEFAULT_EXPOSURE;
     this.skyScene.add(this.sky.mesh);
     this.setFog(DEFAULT_FOG);
+    // Face A: the sun and a day sky's ambient; face B: the counter-angled moon and a night's. Each
+    // fragment takes only its own face's pair (three/heightFog.ts), chosen by its side of the
+    // midplane: the lights have no shadows, so a ceiling would otherwise take the other face's.
     this.scene.add(
       new HemisphereLight(LIGHT.hemisphereSky, LIGHT.hemisphereGround, LIGHT.hemisphereIntensity),
     );
     const sun = new DirectionalLight(LIGHT.sun, LIGHT.sunIntensity);
     sun.position.set(...SUN_DIRECTION);
     this.scene.add(sun);
+    const nightAmbient = new HemisphereLight(
+      LIGHT.moonHemisphereSky,
+      LIGHT.moonHemisphereGround,
+      LIGHT.moonHemisphereIntensity,
+    );
+    nightAmbient.position.set(0, -1, 0); // its "sky" is below the disc
+    this.scene.add(nightAmbient);
+    const moon = new DirectionalLight(LIGHT.moon, LIGHT.moonIntensity);
+    moon.position.set(...MOON_DIRECTION_WORLD);
+    this.scene.add(moon);
     this.outline.visible = false;
     this.scene.add(this.outline);
     this.preview.visible = false;
@@ -303,7 +326,10 @@ export class ThreeRenderer implements Renderer {
     this.batch?.update(this.chunkVisible, this.lodShown);
     // Two passes (§6.6): the far one for everything beyond the split (its near plane pushed out
     // with altitude, where nothing is closer), then a depth clear and the near one.
-    const altitude = this.camera.position.y - World.worldMaxY;
+    // Heights are the viewer's face-local ones (face B's sky is below the disc).
+    const localY =
+      this.face > 0 ? this.camera.position.y : 2 * World.midplaneY - this.camera.position.y;
+    const altitude = localY - World.worldMaxY;
     const far = this.farCamera;
     far.position.copy(this.camera.position);
     far.quaternion.copy(this.camera.quaternion);
@@ -477,6 +503,8 @@ export class ThreeRenderer implements Renderer {
     p.body.material.color.setHex(view.dead ? 0x6b6b6b : view.color);
     p.group.position.set(...view.feet);
     p.group.rotation.set(0, (view.yaw * Math.PI) / 180, 0);
+    // A face-B player stands upside down: its body hangs from the feet toward −y.
+    p.group.scale.set(1, view.face ?? 1, 1);
     if (view.dead) {
       // Cosmetic death pose: lying on the ground.
       p.body.rotation.set(Math.PI / 2, 0, 0);
@@ -488,17 +516,18 @@ export class ThreeRenderer implements Renderer {
     ThreeRenderer.placed(p.group);
   }
 
-  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number): void {
-    const yaw = (yawDeg * Math.PI) / 180;
-    const pitch = (pitchDeg * Math.PI) / 180;
+  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face: 1 | -1 = 1, roll = 0): void {
+    this.face = face;
+    setViewFace(face);
     this.camera.position.set(...eye);
+    this.camera.up.set(0, face, 0); // a face-B player's head points toward −y
     this.camera.updateMatrixWorld();
-    const forward = new Vector3(
-      Math.sin(yaw) * Math.cos(pitch),
-      Math.sin(pitch),
-      Math.cos(yaw) * Math.cos(pitch),
+    this.camera.lookAt(
+      this.camera.position.clone().add(new Vector3(...viewForward(yawDeg, pitchDeg, face))),
     );
-    this.camera.lookAt(this.camera.position.clone().add(forward));
+    // The camera turning over across the midplane: the view is the new face's at once, rolled back
+    // toward the old one and easing out (game/flipRoll.ts).
+    if (roll !== 0) this.camera.rotateZ(roll);
   }
 
   setFog(fog: FogSettings): void {

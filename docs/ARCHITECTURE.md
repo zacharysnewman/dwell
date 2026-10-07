@@ -98,7 +98,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 10, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 11, §6.3) by
    default; `?world=playground|flat` and `?seed=N` (local mode) or
    `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
    **playground** (version 1) is the flat world plus movement test features near the spawn.
@@ -301,7 +301,7 @@ a tick), runs the due 60 Hz steps (`FixedStep`: carries remainders, drops backlo
 steps), and sleeps until the next step or at most 2 ms. Physics steps with Jolt's thread pool.
 **Built (Phase 2):** each `Server::Step` takes one input per joined player from its jitter-buffered
 queue (§9.3), runs the player controller pipeline, applies its server-side consequences (fall
-damage, the void below `WORLD_MIN_Y`, debug launch pads → knockback), steps physics, respawns dead
+damage, debug launch pads → knockback; there is no void: a body that leaves the disc falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps physics, respawns dead
 players after `RESPAWN_SECONDS`, and every 3rd tick sends each client a `PhysicsSnapshot`.
 **Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3); players
 spawn at the generator's spawn point. **Built (Phase 3b):** each step first integrates the chunks
@@ -529,14 +529,14 @@ built: step 2 of *Generator pipeline* below), and the climate, a
 biome table and biome-tinted vegetation (Phase 11c, built: *Climate, biomes and vegetation* below); and a full hemispherical dome over the disc
 (radius 8,192 km) sparsely filled with sky islands, which raises the world's ceiling from 6,144 m
 to the dome, makes the LOD octree 3D above level 8 and changes `LodIndex` (Phase 12, planned).
-**[planned, Phase 13]** The world becomes **bifacial**: a
-second face on the disc's underside, mirrored about the midplane (y = −2,048), with its own
-terrain and dome, and gravity toward the midplane on both sides ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md)).
-Nothing below changes for the planned phases until they land; each updates this section, §6.6
-and §5 as it does.
+**[built, Phase 13]** The world is **bifacial**: a second face on the disc's underside, mirrored
+about the midplane (y = −2,048), with its own terrain, and gravity toward the midplane on both
+sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md);
+*Bifacial world* below). The dome of sky islands (Phase 12) is not built yet; it will repeat on
+both faces. Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 10, 11a, 11b, 11c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
-`src/worldgen/`) is **generator version 10** (3c: the planet-scale world as version 3; Phase 4 adds
+`src/worldgen/`) is **generator version 11** (3c: the planet-scale world as version 3; Phase 4 adds
 super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; Phase 10
 replaces the land/sea noise with the plate layout as version 6, whose slope rule the 0.4.1 patch
 fixes in place, below; Phase 11a adds rivers, lakes and water above sea level as version 7; version 8 puts the climate at
@@ -544,6 +544,8 @@ continental scale ([ADR 0019](./adr/0019-continental-scale-climate.md), below); 
 mountains' detail from the derivative-damped ridged cascade ([ADR 0021](./adr/0021-mountain-detail-cascade.md));
 version 10 (Phase 11c) adds the climate's continent biases and rain shadows, the biome table, wetland
 ponds and biome-tinted vegetation ([ADR 0022](./adr/0022-climate-biome-table-vegetation.md));
+version 11 (Phase 13) takes bedrock out of the bottom of face A and adds face B, a second terrain
+below the midplane ([ADR 0023](./adr/0023-bifacial-world.md), *Bifacial world* below);
 versions 2–9 are retired — a world
 saved with one loads as the flat world; the version launcher opens the build that saved it, §2.1) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
@@ -579,10 +581,13 @@ diff` does the same for a world file (§6.4). **Built (Phase 3b):** streaming, t
 A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
 - **Horizontal:** a disc of `WORLD_RADIUS` = 8 192 000 m (8,192 km, ≈ 2.108 × 10⁸ km²) centred on
   the origin: a column (x, z) is inside when x² + z² < `WORLD_RADIUS`² (`InsideWorldDisc`).
-  Columns outside it generate nothing — not even bedrock, in every generator — so the rim drops
-  into the void, which kills (a later phase will develop the edge).
-- **Vertical:** `WORLD_MIN_Y` = −2 048 to `WORLD_MAX_Y` = 6 144 (8,192 m, 256 chunk rows), with
-  `SEA_LEVEL` = 0: three quarters of the height above sea level, one quarter below.
+  Columns outside it generate nothing, in every generator: the rim is a cliff about 4 km tall
+  between the two seas, with nothing in front of it, and a body that goes over it falls toward the
+  midplane and is carried across it by the flip band (*Bifacial world* below).
+- **Vertical:** `WORLD_BOTTOM_Y` = −10 240 to `WORLD_MAX_Y` = 6 144 (16,384 m, 512 chunk rows):
+  **face A** (the top, today's terrain) from the midplane `MIDPLANE_Y` = −2 048 to `WORLD_MAX_Y`, with
+  `SEA_LEVEL` = 0, and **face B** its mirror image below the midplane, [−10 240, −2 048). There is
+  no void below the world and no bedrock (below).
 - **Precision:** float32 steps by 0.5 m at 8,192 km, so Jolt is built with
   `JPH_DOUBLE_PRECISION` on the server and in every WASM build (`RVec3` world positions through the
   controller, probes and prediction; terrain collision in regions, §6.1); wire positions are f64 or
@@ -603,9 +608,41 @@ A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
   full-detail world (~5 × 10¹³ chunks) is never generated wholesale — distant terrain comes from the
   LOD system (§6.6).
 
-Everywhere, the generator leaves everything below `WORLD_MIN_Y` (the void, which kills) and at or
-above `WORLD_MAX_Y` empty, and the bottom layers (`y < WORLD_MIN_Y + BEDROCK_LAYERS`) are
-indestructible **bedrock** — the primary anchor for structural integrity (§7.1).
+The terrain generators leave everything below `WORLD_BOTTOM_Y` and at or above `WORLD_MAX_Y`
+empty. The terrain has **no bedrock**: the rock at the midplane is ordinary stone and can be dug
+through; the flat and playground test worlds keep `BEDROCK_LAYERS` = 4 of indestructible bedrock at
+the bottom of face A, and no face B. The anchor for structural integrity (§7.1) is the core zone
+of `CORE_ANCHOR_LAYERS` (8) either side of the midplane, by position (Phase 14).
+
+#### Bifacial world **[built, Phase 13]**
+([ADR 0023](./adr/0023-bifacial-world.md); design in [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).)
+The disc has a second inhabited face on its underside; **down is always toward the midplane**, so a
+player on face B stands upside down in the world.
+- **The mirror.** A voxel at height `y` on face B is the face-local voxel `h = −4 097 − y`
+  (`MirrorY`), a chunk row `cy` is face-local row `−129 − cy` (`MirrorChunkY`): voxels map onto
+  voxels and chunks onto chunks. Face B's sea surface is `y = −4 096` and its dome (Phase 12) will
+  hang below the disc. `core::Face`, `FaceOfY` and `FaceLocalChunk` (`voxel.h`), and `client/src/
+  world/face.ts`, are the one mapping.
+- **Generation.** `worldgen::BifacialTerrain` (`bifacial.h`) holds two `TerrainGenerator`s working
+  in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
+  `FaceSeed(seed, B)`, a hash through streams no stage uses — its own continents, rivers, climate and
+  features. A chunk of face B is the face-local chunk flipped vertically (`MirrorMaterial`: slabs and
+  slopes swap `half`, every other state is its own mirror). Generation stays a pure function of
+  `(seed, version, chunk)`. Air chunks, the sky floor and the disc are per face; spawn is on face A;
+  streaming, edits and the chunk rows cover both (`kMinChunkY` = −320).
+- **Gravity.** `PlayerController::face` (±1) is the side of the midplane the body is on; the
+  controller works in the face-local frame (PLAYER_CONTROLLER.md §11) and gravity points to −y in
+  it. Tier 1 bodies (Phase 14) get a Jolt gravity factor of their side (`PhysicsWorld::Step`). **The
+  flip band:** within `FLIP_BAND` (4 m) of the midplane a player moves as when swimming, without
+  buoyancy or drag; a body moving toward the midplane is **accelerated** (2 g extra), carrying it
+  across rather than letting it hover, and moving away the pull fades linearly to zero at it. Nothing
+  brakes a body, so a fall of the rim's 2 km passes through at speed and gravity (toward the
+  midplane on both sides) draws it back: it swings across the midplane (BIFACIAL_WORLD.md §10).
+- **Crossing.** There are no crossing routes: a player digs down through the core or goes over the
+  rim, and the face switches (with 5 cm of hysteresis) when the body is across the midplane; the
+  controller state is mirrored with the frame and the camera turns over smoothly.
+- **Light.** A static sun lights face A and a static, counter-angled, cooler moon face B; each
+  fragment takes only the lights and the ambient of its own side of the midplane (§5).
 
 #### Continents from Voronoi plates **[built, Phase 10]**
 ([ADR 0017](./adr/0017-continents-from-voronoi-plates.md); design and rationale in
@@ -783,14 +820,14 @@ arithmetic, so features placed by point queries agree with the chunks.
    lakes.
 4. **Caves (3D).** Carve "spaghetti" tunnels (`a² + b² < t` of two noises) and "cheese" caverns
    (one noise above a threshold), faded in from 3 m to 15 m below the surface (15 m to 27 m under a
-   river, a lake or a shallow sea floor) and out just above the bedrock.
+   river, a lake or a shallow sea floor) and out just above the bottom of the face (the core is solid).
 5. **Surface & strata.** A top-down column pass counts solid voxels below open sky or sea (cave
    air does not start a surface): the biome's layers (grass, meadow or golden grass over dirt;
    snow over dirt on snowfields; sand over sandstone on dunes and beaches; gravel on bare rock and
    riverbanks), sand or gravel under water (gravel in frozen seas, whose top water voxel is `ice`), the biome's steep-ground rule
    (stone; sandstone on dunes) on steep slopes; stone below. Open space below the column's water level
-   (`Column::water`: sea level, or a river's or lake's surface) fills with water; the bottom
-   `BEDROCK_LAYERS` are bedrock.
+   (`Column::water`: sea level, or a river's or lake's surface) fills with water; the bottom four
+   layers are stone (there is no bedrock: face A's rock continues into face B's).
 5b. **Slopes [built, Phase 9c]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §5). Each column has a
    *continuous surface*: the highest zero of its density going down from the sky, closed-form per
    lattice layer (density is linear in y between layers), valid only where solid cells lie under it
@@ -848,11 +885,13 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   rounded `sqrt` of the continent layout, which IEEE 754 fixes to the last bit (x86-64 `sqrtsd`,
   WebAssembly `f64.sqrt`; [ADR 0017](./adr/0017-continents-from-voronoi-plates.md) amends ADR 0010).
 - A golden test (`server/tests/worldgen/golden/chunk-hashes.txt`) hashes chunks across the
-  pipeline for two seeds — surface, caves, deep rock, bedrock, sky, the top of the world, ocean,
+  pipeline for two seeds — surface, caves, deep rock, the core (the rows either side of the midplane), sky, the top of the world, ocean,
   mountains, the rim, terrain ~8,000 km out, and a massif ~5.4 km up — and, since Phase 10, for
   both seeds a coast, the middle of an ocean gap between two continents (its seabed and the water
   over it), an island, another continent's interior and the abyss, and, since Phase 11a, a lake, a
-  stream, a river, a great river and a waterfall; CI runs it natively and under
+  stream, a river, a great river and a waterfall, and, since Phase 13, chunks of face B (the rows
+  either side of the midplane, flipped caves and rock, its sea and its surfaces with turned-over
+  slopes); CI runs it natively and under
   WASM (Node) and in the client's worldgen module.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
@@ -1047,7 +1086,7 @@ Players break and place blocks. Server-authoritative like every voxel change
   view of the eye (checked first, so a far request reads nothing); a targetable cell; the eye in
   front of the targeted face and a ray to its centre or one of four points near its corners
   reaching the target first (line of sight; on a shape, the sample points lie on the polygons whose
-  normal points through the requested face); Break — not indestructible (bedrock), leaving water
+  normal points through the requested face); Break — not indestructible (bedrock, in the flat test worlds), leaving water
   where a flooded shape stood; Place — a placeable state, into an air or liquid cell inside the
   world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
   player's capsule, tested against the shape's true volume. Accepted edits of a step are batched into one
@@ -1058,7 +1097,7 @@ Players break and place blocks. Server-authoritative like every voxel change
   are counted per session (`SessionStats`), with the last reason.
 - **Inventory:** creative-style and infinite — every *placeable* material in the (prototype, §6.1)
   material table is always available: all but air, liquids (water), the indestructible anchor
-  (bedrock: placed bedrock could never be removed) and debug materials (the launch pad); nothing is
+  (bedrock, which only the test worlds have: placed bedrock could never be removed) and debug materials (the launch pad); nothing is
   consumed or collected. Ladders are one hotbar slot: placed against a side face the ladder is
   mounted on that block, facing out of it; on a top or bottom face it faces the player. A hotbar
   HUD shows the palette with the selected block highlighted; number keys (1–9, 0) and the scroll
@@ -1081,10 +1120,16 @@ high above the disc — is drawn, at a detail that drops with distance.
 
 **Grid.** A 3D octree of **sections**. At level L a cell is a 2^L m cube and a section is 32³
 cells (32 × 2^L m on a side); **level 0 is the chunk grid**. Section coordinates `(L, i, j, k)`
-count from the corner (−2²³, `WORLD_MIN_Y`, −2²³), so cells of consecutive levels nest exactly
-and one root section at `LOD_MAX_LEVEL` = 19 (16 777 km) holds the whole disc. From level 8
-(8,192 m sections) upward a section spans the world's full height, so those levels have a single
-row and the octree behaves as a quadtree.
+count from the corner (−2²³, −2²³, −2²³), so cells of consecutive levels nest exactly and one
+root section at `LOD_MAX_LEVEL` = 19 (16 777 km) holds the whole disc and both domes. The world's
+height is 16,384 m: from level 9 a section spans all of it (one row of the octree). **Phase 13:**
+sections up to level 6 (2,048 m) lie wholly on one face of the midplane, a row belonging to the face
+of its centre; coarser ones straddle it, and each cell takes the face of its centre. A face-B section
+is generated as the mirror image of a face-local section (rows reversed, `GenerateLodAt` on face B's
+generator), downsampled with the block read upside down, and meshed as its mirror image
+(`meshSection({ mirror })`) then turned back, so the surface it draws is the one facing down.
+Column bounds carry both faces (`LodBounds`: `lo`/`hi` and, in face-local terms, `lo_b`/`hi_b`);
+`LodKindFromBounds` judges each face over the rows it owns.
 
 | Level | Cell | Section | Drawn at distances of about (1080p, 75° FOV, 4 px) |
 |---|---|---|---|
@@ -1129,8 +1174,8 @@ order (`EncodeLodCells`; `writeLodCells` in TypeScript); a terrain section near 
   centre in wider ones with the coast octaves the cell can resolve — at anchors every 4 columns,
   the columns between interpolated only inside a continent's interior or the deep sea, every column
   exact at coasts, shelves and channels — and the thresholded erosion and ridged fields a cell is too
-  wide for read their world means, not zero (zero flattened every interior). The apron below the world reads as
-  bedrock, so the world's floor is never drawn. Measured against the downsample of generated
+  wide for read their world means, not zero (zero flattened every interior). The apron below a face
+  reads as stone (the other face's rock), so the midplane is never drawn. Measured against the downsample of generated
   chunks at the spawn and a site of each biome (levels 1–2, 3 on bare rock): ≥ 96% of cells
   agree in class (air, liquid, solid) and ≥ 97% of columns' surfaces are within one cell
   (`lod: generation` tests the tolerance: 95%, 95%, mean under half a cell).
@@ -1165,8 +1210,8 @@ test, an edit reaches the root within 19 ticks and a far client's index 8 ticks 
 
 **Streaming** (§8.3) **[built on the server, Phase 4b; client 4c]**. After `WorldgenCheck`, the server sends the **LOD index**: every modified
 section at `LOD_INDEX_LEVEL` = 8 with its revision (`LodIndex`), then changes as propagation writes
-them (`LodIndexUpdate`, coalesced to at most one per `LOD_INDEX_UPDATE_MS`). From the index the
-client knows exactly which sections at level ≥ 8 are modified, and that any section below an
+them (`LodIndexUpdate`, coalesced to at most one per `LOD_INDEX_UPDATE_MS`). From the index (entries carry the row `j` since Phase 13: a level-8 column of the world is three
+rows) the client knows exactly which sections at level ≥ 8 are modified, and that any section below an
 unindexed level-8 section is not; it generates all unmodified sections itself. For the rest it
 sends `LodRequest(L, coord, knownRevision)` and receives `LodData` — `Generated`, `Explicit`, or
 `Unchanged` — on the `lod` stream within `LOD_BYTES_PER_SECOND` (a byte credit per tick, like
@@ -1409,12 +1454,13 @@ Triggered when the server registers an explosion, a block removal, or a structur
    `VoxelModification` is queued for all interested clients; affected chunk collision meshes
    are rebuilt (server) / re-meshed (client).
 3. **Structural integrity.** Starting from solid voxels adjacent to the removed region, the
-   server flood-fills (6-connectivity) looking for an **anchor** (bedrock layer, or any voxel
+   server flood-fills (6-connectivity) looking for an **anchor** (the core zone, or any voxel
    flagged as grounded). Components that reach an anchor stay static. Components that do not
    are **detached**.
-   **[planned, Phase 13]** The bifacial world removes the bedrock layer: the anchor becomes a
-   positional core zone around the midplane, whose voxels can be dug
-   ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §2).
+   **[Phase 13 decided, built in Phase 14]** The bifacial world has no bedrock: the anchor is a
+   positional core zone of `CORE_ANCHOR_LAYERS` (8) either side of the midplane, whose voxels can be
+   dug — what remains in the zone still holds both faces
+   ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §2, §7).
    - The search is budgeted (max voxels visited per tick). A component that exceeds the
      budget is treated as anchored for this tick and re-queued, so a single event can never
      stall the tick.
@@ -1501,16 +1547,19 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `REACH_DISTANCE` | 5 m | Block break/place reach from the eye (§6.5; the server allows 1 m more for latency) |
 | `BLOCK_EDIT_INTERVAL_MS` | 100 ms | Minimum time between a player's block edits (§6.5; server: token bucket, bursts of 3) |
 | `MAX_RESYNC_CHUNKS` | 64 | Chunks per `ChunkResync` or `ChunkRequest` message |
-| `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~192 KB, under SCTP's 256 KiB) |
+| `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~256 KB; 16 bytes each since Phase 13) |
 | `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
 | **Terrain (§6.3)** | | |
-| `WORLD_MIN_Y` / `WORLD_MAX_Y` | −2 048 / 6 144 | Vertical world bounds (8,192 m, ¾ above sea level) |
+| `MIDPLANE_Y` | −2 048 | The halfway plane: face A starts here, face B's mirror image lies below (§6.3) |
+| `WORLD_BOTTOM_Y` / `WORLD_MAX_Y` | −10 240 / 6 144 | Vertical world bounds (16,384 m: face B and face A) |
+| `FLIP_BAND` | 4 m | Distance from the midplane within which a body moving toward it is accelerated and one moving away feels a fading pull (§6.3) |
+| `CORE_ANCHOR_LAYERS` | 8 | Layers either side of the midplane that anchor both faces (Phase 14) |
 | `WORLD_RADIUS` | 8 192 000 m | Radius of the world disc; beyond it, the void |
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
 | `FLIGHT_CEILING` | 24 000 000 m | Highest feet position in creative flight (§9.1; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
 | `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 39 / 4 | Flight speed slider: highest level (2^19.5 × `fly.speed`) and its bit position in `PlayerInput.buttons` (§9.1) |
-| `BEDROCK_LAYERS` | 4 | Indestructible anchor layers at the bottom |
+| `BEDROCK_LAYERS` | 4 | Indestructible layers at the bottom of the flat and playground test worlds only (the terrain has no bedrock) |
 | `SEA_LEVEL` | 0 | Water fill height |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
 | `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
@@ -1593,7 +1642,7 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v11):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v12):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
@@ -1605,7 +1654,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12) — layouts pinned by `shared/protocol/vectors.txt` (C++, TypeScript, and the Python
 reference encoder, including half floats). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
 `controllerFlags`, `welcomeFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
@@ -1772,10 +1821,10 @@ Death:   u8 cause
 `u8 level, i32×3 (i, j, k)` counted from the LOD grid's corner.
 ```
 S→C LodIndex 0x13       (lod) u8 flags (1 = last), u32 count (≤ 16384),
-                              repeat: i32 i, i32 k, u32 lodRevision
-                              // modified sections at LOD_INDEX_LEVEL (one row, so no j);
+                              repeat: i32 i, i32 j, i32 k, u32 lodRevision
+                              // modified sections at LOD_INDEX_LEVEL (j: Phase 13, protocol v12);
                               // may span several messages, the last flagged; count 0 allowed
-S→C LodIndexUpdate 0x14 (lod) u16 count (1..16384), repeat: i32 i, i32 k, u32 lodRevision
+S→C LodIndexUpdate 0x14 (lod) u16 count (1..16384), repeat: i32 i, i32 j, i32 k, u32 lodRevision
                               // coalesced, at most one per LOD_INDEX_UPDATE_MS
 C→S LodRequest 0x4C (control) u8 count (1..32), repeat: u8 level (1..19), i32×3 section,
                               u32 knownRevision (0 = none)

@@ -445,6 +445,7 @@ void WriteIndexEntries(ByteWriter& w, const std::vector<LodIndexEntry>& entries,
                        std::size_t count) {
   for (std::size_t i = 0; i < count; ++i) {
     w.I32(entries[i].i);
+    w.I32(entries[i].j);
     w.I32(entries[i].k);
     w.U32(entries[i].revision);
   }
@@ -488,6 +489,7 @@ std::vector<LodIndexEntry> ReadIndexEntries(ByteReader& r, std::uint32_t count) 
   for (std::uint32_t i = 0; i < count && r.ok(); ++i) {
     LodIndexEntry e;
     e.i = r.I32();
+    e.j = r.I32();
     e.k = r.I32();
     e.revision = r.U32();
     out.push_back(e);

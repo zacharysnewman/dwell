@@ -48,9 +48,10 @@ bool WithinRadius(const ChunkCoord& a, const ChunkCoord& b, int r) {
   return dx * dx + dy * dy + dz * dz <= std::int64_t{r} * r + r;
 }
 
-std::uint64_t IndexKey(std::int32_t i, std::int32_t k) {
-  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(i)) << 32) |
-         static_cast<std::uint32_t>(k);
+// The world height of a player's feet: below the capsule's centre on face A, above it on face B.
+double FeetY(const player::Players& players, PlayerHandle h) {
+  return players.Position(h).GetY() -
+         static_cast<double>(players.controller(h).face) * players.HalfHeight(h);
 }
 
 ChunkCoord ChunkAt(double x, double y, double z) {
@@ -384,7 +385,7 @@ void Server::Kill(Session& s, DamageCause cause) {
   if (!s.handle) return;
   const RVec3 p = players_.Position(*s.handle);
   s.death_position[0] = p.GetX();
-  s.death_position[1] = p.GetY() - players_.HalfHeight(*s.handle);
+  s.death_position[1] = FeetY(players_, *s.handle);
   s.death_position[2] = p.GetZ();
   players_.Despawn(*s.handle);
   s.handle.reset();
@@ -400,7 +401,7 @@ void Server::Kill(Session& s, DamageCause cause) {
   BroadcastWorld(e);
 }
 
-// Server-side effects of the controller tick: fall damage, the void, and debug launch pads.
+// Server-side effects of the controller tick: fall damage and debug launch pads.
 void Server::AfterControllerTick(Session& s) {
   if (!s.handle) return;
   const PlayerHandle h = *s.handle;
@@ -416,20 +417,19 @@ void Server::AfterControllerTick(Session& s) {
     }
   }
   const RVec3 p = players_.Position(h);
+  // There is no void to fall into: a body that leaves the disc falls toward the midplane and
+  // settles in the flip band (BIFACIAL_WORLD.md §3).
   const float feet = players_.Feet(h);
-  if (feet < static_cast<float>(kWorldMinY - 16)) {
-    Kill(s, DamageCause::kFall);
-    return;
-  }
+  const auto face = static_cast<float>(c.face);
   // Debug launch pad (Phase 2): a server-originated knockback, predicted by replay on the client.
   if (c.ground.grounded && c.ground.ground.kind == player::GroundRef::kTerrain &&
       tick_ >= s.launch_ready_tick) {
     const auto x = static_cast<std::int32_t>(std::floor(p.GetX()));
-    const auto y = static_cast<std::int32_t>(std::floor(feet - 0.05f));
+    const auto y = static_cast<std::int32_t>(std::floor(feet - face * 0.05f));
     const auto z = static_cast<std::int32_t>(std::floor(p.GetZ()));
     const float launch = GetMaterial(world_.GetVoxel(x, y, z)).launch_speed;
     if (launch > 0.0f) {
-      Knockback(s.player_id, Vec3(0, launch - players_.Velocity(h).GetY(), 0));
+      Knockback(s.player_id, Vec3(0, face * (launch - face * players_.Velocity(h).GetY()), 0));
       s.launch_ready_tick = tick_ + kLaunchCooldownTicks;
     }
   }
@@ -774,7 +774,8 @@ std::array<double, 3> Server::EyeOf(const Session& s) const {
   const auto& body = player_config_.body;
   const float eye =
       players_.controller(h).crouch.crouching ? body.crouch_eye_height : body.eye_height;
-  return {p.GetX(), p.GetY() - players_.HalfHeight(h) + eye, p.GetZ()};
+  const auto face = static_cast<float>(players_.controller(h).face);
+  return {p.GetX(), p.GetY() - face * players_.HalfHeight(h) + face * eye, p.GetZ()};
 }
 
 void Server::ApplyEdits() {
@@ -862,7 +863,7 @@ void Server::SendSnapshots() {
       const RVec3 p = players_.Position(*s.handle);
       const Vec3 v = players_.Velocity(*s.handle);
       r.position[0] = p.GetX();
-      r.position[1] = p.GetY() - players_.HalfHeight(*s.handle);  // feet
+      r.position[1] = FeetY(players_, *s.handle);  // feet
       r.position[2] = p.GetZ();
       r.velocity[0] = v.GetX();
       r.velocity[1] = v.GetY();
@@ -962,7 +963,7 @@ void Server::UpdateLod() {
   for (const LodCoord& c : lod_.TakeWritten()) {
     lod_unsaved_.insert(c);
     if (c.level == kLodIndexLevel) {
-      index_updates_[IndexKey(c.i, c.k)] = {c.i, c.k, lod_.Find(c)->revision};
+      index_updates_[c] = {c.i, c.j, c.k, lod_.Find(c)->revision};
     }
   }
   // Index changes, coalesced to at most one LodIndexUpdate per LOD_INDEX_UPDATE_MS.
@@ -997,7 +998,7 @@ void Server::UpdateLod() {
 void Server::SendLodIndex(SessionId id, Session& s) {
   std::vector<LodIndexEntry> entries;
   for (const auto& [c, section] : lod_.sections()) {
-    if (c.level == kLodIndexLevel) entries.push_back({c.i, c.k, section.revision});
+    if (c.level == kLodIndexLevel) entries.push_back({c.i, c.j, c.k, section.revision});
   }
   std::size_t from = 0;
   do {
@@ -1104,7 +1105,7 @@ storage::PlayerRecord Server::RecordOf(const Session& s) const {
   p.health = s.handle ? s.health : 0;
   if (s.handle) {
     const RVec3 at = players_.Position(*s.handle);
-    p.feet = {at.GetX(), at.GetY() - players_.HalfHeight(*s.handle), at.GetZ()};
+    p.feet = {at.GetX(), FeetY(players_, *s.handle), at.GetZ()};
   } else {
     p.feet = {s.death_position[0], s.death_position[1], s.death_position[2]};
   }

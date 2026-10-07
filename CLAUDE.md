@@ -132,6 +132,21 @@ that touches the public API, a release or the workflows:
 - **Licence notices:** adding or upgrading a dependency that ships in a build updates
   `shared/licenses` and `THIRD_PARTY_NOTICES` (`python3 shared/licenses/gen.py`; CI checks it).
 
+## Known CI failures (e2e, not caused by feature work)
+
+Check these before chasing an e2e failure; they are red on `main` too:
+
+- `e2e/touch.spec.ts` "touch controls: stick, look, and jump": on CI the jump peak reads exactly
+  0.4158 m against a 0.5 m bar (every run, `main` included, deterministic there; it passes locally).
+  Not caused by Phase 13. Cause not found yet: if you fix it, find why CI's jump stops at 0.4158 m
+  rather than only widening the wait.
+- `e2e/play.spec.ts` "two clients on a native server see each other move": one run showed a single
+  prediction snap (`snaps: 1`, `lastCorrection` ~2.1 m) and passed on other runs of the same code and
+  4 of 4 locally. Treat as an intermittent timing failure on loaded runners; if it fails twice in a row
+  on one commit, it is real.
+- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (14); update it when the palette
+  changes.
+
 ## Building without sqlite.org
 
 The server and WASM builds fetch the SQLite amalgamation from `www.sqlite.org`

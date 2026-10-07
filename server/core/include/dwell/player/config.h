@@ -65,6 +65,13 @@ struct PlayerControllerConfig {
     float buoyancy = 12.0f;       // m/s² per unit of submersion off float_fraction
     float drag = 2.0f;            // 1/s
   } swim;
+  // The flip band (BIFACIAL_WORLD.md §3, ◆ Dwell addition): in open air within kFlipBand of the
+  // midplane a player moves as when swimming, without buoyancy or drag. Moving toward the midplane
+  // it is accelerated (boost_gravities × gravity), so it is carried across rather than hovering;
+  // moving away, the midplane's pull fades linearly to zero at it.
+  struct Band {
+    float boost_gravities = 2.0f;
+  } band;
   struct Fly {                // ◆ Dwell addition: creative flight (PLAYER_CONTROLLER.md §6.7)
     float speed = 11.0f;      // m/s near the ground, walking
     float run_factor = 2.5f;  // while running

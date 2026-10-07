@@ -87,9 +87,9 @@ LodPropagation::Result LodPropagation::Run(const LodGenerator& generator, const 
             [&](int x, int y, int z) {
               return child[static_cast<std::size_t>(LocalIndex(x, y, z))];
             },
-            o, cells);
+            job.coord, o, cells);
       } else {
-        DownsampleSectionOctant(child, o, cells);
+        DownsampleSectionOctant(child, job.coord, o, cells);
       }
     }
   }

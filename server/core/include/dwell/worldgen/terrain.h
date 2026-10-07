@@ -185,6 +185,13 @@ class TerrainGenerator {
   // With `surface`, also each column's exact surface (core::LodSurface).
   core::LodKind GenerateLod(const core::LodCoord& c, core::LodCells& cells,
                             core::LodSurfaces* surface = nullptr) const;
+  // The same for the face-local section whose cell rows start at face-local height `origin_y` (x, z
+  // and the level from `c`): a face's generator works in its own frame, so the bifacial world asks
+  // face B's for the mirror image of a section (bifacial.h). The kind is this face's alone.
+  // `bounds_out` receives the section's column bounds (lo, hi: this face's).
+  core::LodKind GenerateLodAt(const core::LodCoord& c, std::int64_t origin_y, core::LodCells& cells,
+                              core::LodSurfaces* surface = nullptr,
+                              core::LodBounds* bounds_out = nullptr) const;
   // The column bounds GenerateLod classifies sections by (core::LodKindFromBounds).
   core::LodBounds LodBoundsAt(int level, std::int32_t i, std::int32_t k) const;
 

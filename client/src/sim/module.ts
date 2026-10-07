@@ -52,6 +52,7 @@ export interface DwellCoreModule {
     vz: number,
     crouched: number,
     leadSeconds: number,
+    faceB: number,
   ): void;
   _dwell_client_remove_remote(playerId: number): void;
   _dwell_client_state(): number;

@@ -9,8 +9,9 @@ import { CHUNK_VOLUME } from '../protocol/chunkVoxels';
 import { CHUNK_SIZE, ChunkForm, World } from '../protocol/constants.gen';
 import type { ChunkChanges, ChunkCoord, Vec3 } from '../protocol/messages';
 import type { ChunkSource } from '../worldgen/pool';
+import { FACE_B, faceOfChunkY } from './face';
 
-export const MIN_CHUNK_Y = Math.floor(World.worldMinY / CHUNK_SIZE);
+export const MIN_CHUNK_Y = Math.floor(World.worldBottomY / CHUNK_SIZE);
 export const MAX_CHUNK_Y = World.worldMaxY / CHUNK_SIZE - 1;
 
 /** What the streamer needs from the client sim (ClientCore). */
@@ -206,7 +207,11 @@ export class ChunkStreamer {
       const token = ++this.token;
       this.meshing.set(key, token);
       void this.mesher
-        .mesh(this.store.paddedChunk(c[0], c[1], c[2]), this.tintOf(c) ?? null)
+        .mesh(
+          this.store.paddedChunk(c[0], c[1], c[2]),
+          this.tintOf(c) ?? null,
+          faceOfChunkY(c[1]) === FACE_B,
+        )
         .then((meshes) => {
           if (this.meshing.get(key) !== token) return; // unloaded meanwhile
           this.meshing.delete(key);
@@ -230,11 +235,12 @@ export class ChunkStreamer {
    */
   private tintOf(c: ChunkCoord): Uint8Array | null | undefined {
     if (!this.source.tint) return null;
-    const key = `${String(c[0])},${String(c[2])}`;
+    const face = faceOfChunkY(c[1]);
+    const key = `${String(face)},${String(c[0])},${String(c[2])}`;
     if (this.tints.has(key)) return this.tints.get(key);
     if (!this.tintsPending.has(key)) {
       this.tintsPending.add(key);
-      this.source.tint(c[0], c[2]).then(
+      this.source.tint(c[0], c[2], face).then(
         (bytes) => {
           this.tintsPending.delete(key);
           this.tints.set(key, bytes);

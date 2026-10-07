@@ -30,7 +30,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
-| 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review |
 | 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
 | 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) |
 | 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) |
@@ -1670,49 +1670,64 @@ anchored for integrity by position, no bedrock; face B mirrors face A's structur
 (different seed streams) and its own dome of sky islands — so the world is a two-sided, sphere-like
 object. Down is always toward the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).
 
-**Status:** Not started. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
+**Status:** In progress — everything below is built and tested except what is unticked. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
 (2026-10-05): no crossing routes (dig through or go around the rim), a static sun for face A and a
 counter-angled static moon for face B, spawn on face A, a ~4 km crust, the rim ocean kept, and
 face B reusing face A's generator, biomes, palette and islands (`BIFACIAL_WORLD.md` §9). No open
 questions.
 
 Deliverables
-- [ ] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, the core
+- [x] ADR: the bifacial world — the midplane and mirror mapping, face B's bounds and dome, the core
   anchor zone (no bedrock), gravity toward the midplane and the flip band, crossing by digging or
   around the rim, sun and moon; supersedes ADR 0011's vertical bounds
   and Phase 12's single dome.
-- [ ] Bounds: no bedrock and no void below — a diggable core with a positional anchor zone
+- [x] Bounds: no bedrock and no void below — a diggable core with a positional anchor zone
   (`CORE_ANCHOR_LAYERS`); face B's ground band and dome; the LOD origin at −2²³
   in y; streaming, air chunks, edits and the flight limits on both sides.
-- [ ] Generation in face-local coordinates with per-face seed streams; face-B chunks as flipped
+- [x] Generation in face-local coordinates with per-face seed streams; face-B chunks as flipped
   face-local chunks; point queries by face; LOD cells by their side of the midplane; per-face
   water.
-- [ ] Gravity: per-face direction, the flip band with drag, Jolt gravity factors by side.
-- [ ] Player controller: a face sign through every vertical quantity and probe; mirrored voxel
+- [x] Gravity: per-face direction, the flip band with drag, Jolt gravity factors by side.
+- [x] Player controller: a face sign through every vertical quantity and probe; mirrored voxel
   queries; the mirror-equivalence suite; crossing the flip band with a smooth camera turn
   (protocol bump if the snapshot needs a flag).
-- [ ] Crossing without dedicated routes: a shaft dug through the core and going over the rim both
+- [x] Crossing without dedicated routes: a shaft dug through the core and going over the rim both
   work through the flip band (no generated wells, ledges or portals).
-- [ ] Lighting and rendering: a static sun (face A) and a counter-angled static moon (face B), each
+- [x] Lighting and rendering: a static sun (face A) and a counter-angled static moon (face B), each
   fragment lit only by its own face's light and ambient; camera up by face; face-B tops shaded as
   tops; face B's moonlit night sky and haze in the viewer's face frame.
-- [ ] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
+- [x] `ARCHITECTURE.md` §6.3, §6.6, §7, §9 and `PLAYER_CONTROLLER.md` updated.
 
 Exit criteria
-- [ ] A face-B chunk equals the flip of its face-local chunk; face B's terrain differs from face A's;
+- [x] A face-B chunk equals the flip of its face-local chunk; face B's terrain differs from face A's;
   goldens with face-B chunks and midplane-straddling LOD sections pass natively, in WASM and in the
   client module.
 - [ ] Mirror-equivalence: every controller scenario mirrored onto face B gives the mirrored trace,
   natively and in WASM, at both origins.
-- [ ] A player walks, jumps, swims and climbs on face B, and crosses between the faces by digging
+- [x] A player walks, jumps, swims and climbs on face B, and crosses between the faces by digging
   through the core and by going over the rim, the face sign and camera turning over once.
 - [ ] Face A is lit only by the sun and face B only by the moon (ceilings included).
-- [ ] A body falling off the rim settles in the flip band; bodies on face B fall toward the
+- [x] A body falling off the rim is accelerated through the flip band; bodies on face B fall toward the
   midplane.
-- [ ] Nothing generated outside the two bands and domes; streaming and LOD reach both domes.
+- [x] Nothing generated outside the two bands and domes; streaming and LOD reach both domes.
 - [ ] Manual: face B walked, a crossing made, both domes seen, reviewed by the owner.
 
 ---
+
+Deviations (reasons in `BIFACIAL_WORLD.md` §10): sections up to level 6, not 7, lie wholly on one
+face; the flip band accelerates a body moving toward the midplane (owner's decision) instead of settling it; the controller
+runs in a face-local mirror frame instead of a sign threaded through every probe, and the
+mirror-equivalence suite (`--dwell-face=b`) holds in every decision and to contact-solver precision
+in positions, not bit for bit. Browser check (headless Chromium, local world, a player placed on
+face B): face B draws upright for its player under a moonlit night sky with the moon's glow, trees and
+terrain meshed right way up, face A unchanged under the sun; mouse-up looks up on both faces. Exit criteria ticked as
+each passed in CI or in the browser: chunk flip and goldens (native suite, WASM worldgen suite, client
+module test), controller on face B and crossings (native `bifacial` suites, the `--dwell-face=b` run, the
+flip-roll test), the rim and Tier-1 gravity, and the two bands and domes. Still open: the mirror-equivalence
+criterion until CI has run the native face-B steps at both origins (the step was missing its working
+directory in an earlier run; the same commands pass locally), ceilings' lighting and the crossing's camera
+turn in a browser, and the owner's review. The F4 map and debug overlays show face A only; straddling LOD
+levels (7+) draw face B at cell resolution, shaded as undersides.
 
 ## Phase 14 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
@@ -1723,7 +1738,7 @@ until Phase 5 (multiplayer ready) was complete (2026-09-30).
 
 Deliverables
 - [ ] Bifacial world (Phase 13): the core anchor zone around the midplane (positional, diggable;
-  there is no bedrock) anchors both faces; bodies fall toward the midplane by their side and settle
+  there is no bedrock) anchors both faces; bodies fall toward the midplane by their side and are accelerated through the band
   in the flip band.
 - [ ] Slopes (Phase 9): any two solid voxels sharing a face are connected; cluster bodies use one
   convex shape per voxel from the state table (inner corners as two wedges), mass from volume

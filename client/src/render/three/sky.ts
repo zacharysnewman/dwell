@@ -11,6 +11,7 @@ import {
   type PerspectiveCamera,
 } from 'three';
 import { SKY_GLSL } from '../look';
+import { fogUniforms } from './heightFog';
 
 const VERTEX = [
   'varying vec2 vNdc;',
@@ -50,6 +51,7 @@ export class Sky {
         dwellUp: { value: new Vector3() },
         dwellForward: { value: new Vector3() },
         dwellTan: { value: { x: 1, y: 1 } },
+        dwellFace: fogUniforms.dwellFace,
       },
       depthTest: false,
       depthWrite: false,

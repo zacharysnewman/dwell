@@ -35,6 +35,10 @@ struct PhysicsConfig {
   JPH::uint max_contact_constraints = 16384;
   std::size_t temp_allocator_bytes = 16 * 1024 * 1024;
   float gravity_y = -9.81f;  // world gravity for Tier 1 bodies (players use their own; §9)
+  // The flip band (BIFACIAL_WORLD.md §3): within this distance of the midplane a body moving toward
+  // it is accelerated (this many gravities); moving away, gravity fades linearly to zero at it.
+  float flip_band = 4.0f;
+  float band_boost_gravities = 2.0f;
 };
 
 // The server's Jolt world. The host supplies the job system (thread pool natively, single-threaded
@@ -47,6 +51,9 @@ class PhysicsWorld {
   PhysicsWorld(const PhysicsWorld&) = delete;
   PhysicsWorld& operator=(const PhysicsWorld&) = delete;
 
+  // Steps the world. First sets each active Tier 1 body's gravity by its side of the midplane (the
+  // world keeps one gravity vector, pointing −y: a body on face B gets a factor of −1), faded to
+  // zero over the flip band with a damping that settles it there instead of swinging across it.
   void Step(float dt);
 
   JPH::PhysicsSystem& system() { return *system_; }
@@ -58,6 +65,7 @@ class PhysicsWorld {
   std::unique_ptr<JPH::PhysicsSystem> system_;
   std::unique_ptr<JPH::TempAllocatorImpl> temp_;
   JPH::JobSystem& jobs_;
+  PhysicsConfig config_;
 };
 
 }  // namespace dwell::core

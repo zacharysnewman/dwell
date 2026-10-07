@@ -1,6 +1,6 @@
 # Dwell — The Bifacial World: Two Faces, Gravity Toward the Middle
 
-> **Status: [planned]** — the design for implementation **Phase 13**
+> **Status: [built]** — the design for implementation **Phase 13** (as built: [ADR 0023](./adr/0023-bifacial-world.md))
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). As it lands, the built parts move into
 > [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.3 world bounds and generation, §6.6 LOD, §7 physics,
 > §9 players) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md), with an ADR superseding the
@@ -134,7 +134,7 @@ the zone still holds both faces; bodies that fall off the rim settle in the flip
 - Controller: the mirror-equivalence suite (all scenarios, both origins, native and WASM); walking,
   jumping, swimming and climbing on face B; crossing by a dug shaft through the core and by going
   over the rim, with the face sign and camera turning over once.
-- Gravity: a body falling off the rim settles in the flip band (no endless oscillation); Jolt bodies
+- Gravity: a body falling off the rim is accelerated across the midplane by the flip band; Jolt bodies
   on face B fall toward the midplane.
 - Bounds: nothing generated outside the two domes and bands; streaming and LOD reach both domes;
   posfix round-trips positions at both extremes.
@@ -155,3 +155,25 @@ Decided (owner, 2026-10-05):
 
 Later (not part of this phase): a day/night cycle with a moving sun and moon, and giving face B a
 character of its own.
+
+## 10. As built — where the implementation differs from the design above
+
+- **Midplane alignment.** Sections up to level **6** (2,048 m) never straddle the midplane (§5 said
+  7): −2,048 is a multiple of 2,048, not of 4,096. The LOD origin is −2²³ in all three axes; a
+  level-8 column of the world is three rows, so `LodIndex` entries carry the row `j` (protocol v12).
+- **The band accelerates instead of settling** (owner, 2026-10-07). The design had drag and a fade to
+  zero so a body settled at the midplane; as built, a body moving toward the midplane in the band is
+  accelerated (2 g extra) and carried across, and moving away the pull fades to zero at it; nothing
+  brakes it (no approach cushion, no drag). Gravity points toward the midplane on both sides, so a
+  body that crosses falls back: it swings across the midplane rather than hovering in the band.
+  Players and Tier 1 bodies alike.
+- **The controller** runs in a face-local mirror frame rather than threading a sign through 45
+  places (PLAYER_CONTROLLER.md §11); the mirror-equivalence suite is `--dwell-face=b`, equal in every
+  decision and to contact-solver precision in positions (not bit for bit).
+- **Rendering.** Face-B chunks and LOD sections are meshed as their mirror image and turned back, so
+  the face toward the player's up takes the top texture and shading. Lights are picked per fragment
+  by its side of the midplane (`three/heightFog.ts`); the sky and haze are evaluated in the viewer's
+  face-local frame with a night gradient and the moon's glow. Straddling LOD sections (levels ≥ 7) mesh
+  both faces from one grid: face B's part is at cell resolution, shaded as undersides.
+- **Not done here:** Tier 1 bodies' Jolt factors are built and tested, but clusters arrive in Phase 14;
+  the F4 terrain map and the debug overlays show face A.

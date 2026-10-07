@@ -21,7 +21,7 @@ int FaceOfNormal(const float (&n)[3]) {
   return n[2] > 0.0f ? 4 : 5;
 }
 
-bool InWorldRows(std::int32_t y) { return y >= kWorldMinY && y < kWorldMaxY; }
+bool InWorldRows(std::int32_t y) { return y >= kWorldBottomY && y < kWorldMaxY; }
 
 }  // namespace
 

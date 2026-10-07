@@ -63,9 +63,9 @@ describe('height fog', () => {
       for (const distanceM of [FOG_LIMITS.distanceM.min, FOG_LIMITS.distanceM.max]) {
         const fog = { distanceM, density: 1, heightM };
         for (const [cam, point] of [
-          [Players.flightCeiling, World.worldMinY],
-          [World.worldMinY, World.worldMinY],
-          [World.worldMinY, Players.flightCeiling],
+          [Players.flightCeiling, World.midplaneY],
+          [World.midplaneY, World.midplaneY],
+          [World.midplaneY, Players.flightCeiling],
         ] as const) {
           const haze = hazeAmount(fog, cam, point, 2 * World.worldRadius);
           expect(Number.isFinite(haze)).toBe(true);

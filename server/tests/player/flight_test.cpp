@@ -58,6 +58,31 @@ TEST_SUITE("player: flight") {
     CHECK(std::abs(w.Vel(e).GetY()) < 0.5f);
   }
 
+  TEST_CASE("flying around the outside: down through the midplane, on past it to face B and back") {
+    PlayerTestWorld w;
+    const auto e = w.SpawnAt(JPH::RVec3(0.0, core::kMidplaneY + 30.0, 0.0));
+    REQUIRE(w.C(e).face == 1);
+    // Down (toward the midplane) until across, then up in the new frame (away from it) for a while.
+    w.input = [&](int, PlayerHandle p) {
+      const bool across = w.C(p).face < 0;
+      return Fly(0, 0, false, across, !across);
+    };
+    int flips = 0;
+    std::int8_t face = w.C(e).face;
+    double lowest = core::kMidplaneY;
+    for (int i = 0; i < Ticks(6.0f); ++i) {
+      w.Step();
+      if (w.C(e).face != face) {
+        ++flips;
+        face = w.C(e).face;
+      }
+      lowest = std::min(lowest, w.players.Position(e).GetY());
+      CHECK(w.C(e).fly.flying);
+    }
+    CHECK(flips >= 1);
+    CHECK(lowest < core::kMidplaneY - 30.0);  // well out onto face B's side
+  }
+
   TEST_CASE("speed grows with height; the terrain band has a cap; the sky has a ceiling") {
     const auto cfg = player::DefaultConfig();
     auto speed_at = [](float feet) {
