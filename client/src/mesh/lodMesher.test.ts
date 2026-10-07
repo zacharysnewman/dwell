@@ -706,6 +706,19 @@ describe('LOD section mesher (§6.6)', () => {
       expect([...stone.opaque.colors]).toEqual([...stoneNone.opaque.colors]);
     });
 
+    it('takes the tints from `tint` when given, whatever the surface', () => {
+      const tint = tinted(pack(128, 64, 32), pack(64, 64, 64));
+      const cells = floor(GRASS);
+      const viaTint = meshSection(cells, { surface: null, tint });
+      const viaSurface = meshSection(cells, { surface: tint });
+      expect([...viaTint.opaque.colors]).toEqual([...viaSurface.opaque.colors]);
+      expect([...viaTint.opaque.colors]).not.toEqual([...meshSection(cells).opaque.colors]);
+      // An explicit null tint overrides the surface's.
+      expect([...meshSection(cells, { surface: tint, tint: null }).opaque.colors]).toEqual([
+        ...meshSection(cells).opaque.colors,
+      ]);
+    });
+
     it('does nothing without surface data, or for columns with no tint', () => {
       const cells = floor(GRASS);
       expect([...meshSection(cells, { surface: null }).opaque.colors]).toEqual([

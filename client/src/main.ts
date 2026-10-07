@@ -29,6 +29,7 @@ import { loadRecent, rememberServer } from './ui/recentServers';
 import { parseNetConditions } from './net/netsim';
 import type { ClientSession, SessionState, SessionStats } from './net/session';
 import { KeyboardMouseInput } from './predict/input';
+import { skyAngle, skyFrame, skySwitches } from './render/skyFrame';
 import { prefersTouch, TouchControls } from './predict/touch';
 import {
   createRenderer,
@@ -168,10 +169,15 @@ function start(): App {
   };
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
+  // The sky turns as a unit (render/skyFrame.ts): the settings slider, `?skyrot=` and `?skyspin=`.
+  const skyDebug = skySwitches(location.search);
+  let skySettingDeg = 0;
+  const skyStart = performance.now();
   // Settings (top left): fog and full-detail distance, applied as the sliders move.
   app.settings = new SettingsMenu(document.body, prefersTouch(), (s) => {
     renderer.setFog(s.fog);
     renderer.setExposure(s.exposure);
+    skySettingDeg = s.skyRotation;
     app.game?.lod?.setDetailDistance(s.detail.distanceM);
     app.game?.lod?.setQuality(s.detail.pixelError, s.detail.memoryMb * 1048576);
   });
@@ -270,6 +276,7 @@ function start(): App {
   const frame = (now: number): void => {
     app.fps.frame(now);
     app.game?.frame(now);
+    renderer.setSkyFrame(skyFrame(skyAngle(skySettingDeg, skyDebug, (now - skyStart) / 1000)));
     renderer.renderFrame((now - last) / 1000);
     last = now;
     requestAnimationFrame(frame);

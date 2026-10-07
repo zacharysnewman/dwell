@@ -4,10 +4,16 @@
 // stays precise from orbit, and it covers batched and instanced meshes alike. The haze's colour is
 // the sky's in the ray's direction (render/look.ts `dwellSky`, the same function that draws the
 // sky), so distant terrain dissolves into exactly the sky behind it.
-import { ShaderChunk, type Material, type WebGLProgramParametersWithUniforms } from 'three';
+import {
+  ShaderChunk,
+  Vector3,
+  type Material,
+  type WebGLProgramParametersWithUniforms,
+} from 'three';
 import { World } from '../../protocol/constants.gen';
 import { fogSigma, type FogSettings } from '../fog';
 import { SKY_GLSL } from '../look';
+import type { SkyFrame } from '../skyFrame';
 
 /** Shared by every fogged material: set once per change, uploaded with each draw. */
 export const fogUniforms = {
@@ -16,7 +22,18 @@ export const fogUniforms = {
   dwellFogDensity: { value: 0 },
   /** The viewer's face: +1 A, −1 B (sky, haze and light are evaluated in its frame). */
   dwellFace: { value: 1 },
+  /** The sky frame (render/skyFrame.ts): the day sky's zenith, the sun and the moon, in the world. */
+  dwellDayPole: { value: new Vector3(0, 1, 0) },
+  dwellSun: { value: new Vector3(0, 1, 0) },
+  dwellMoon: { value: new Vector3(0, -1, 0) },
 };
+
+/** Sets the sky frame the sky, the haze and (through the lights' positions) the lighting use. */
+export function setSkyFrame(frame: SkyFrame): void {
+  fogUniforms.dwellDayPole.value.set(...frame.dayPole);
+  fogUniforms.dwellSun.value.set(...frame.sun);
+  fogUniforms.dwellMoon.value.set(...frame.moon);
+}
 
 /** Sets the face the camera's player is on (heightFog and the sky read it). */
 export function setViewFace(face: 1 | -1): void {
@@ -33,11 +50,12 @@ const PARS_VERTEX = 'varying vec3 vFogView;';
 const VERTEX = 'vFogView = mvPosition.xyz;';
 const PARS_FRAGMENT = [
   'varying vec3 vFogView;',
-  // Whether a light belongs to a fragment's face: the sun and the day's hemisphere light point up
-  // (toward the sun, the sky) in the world, the moon's and the night's point down; a fragment takes
-  // the lights of its own side of the midplane only (BIFACIAL_WORLD.md §6).
+  // How much a light belongs to a fragment's face: its height over that face's horizon, smoothly
+  // (the light's world y against the face's up, ±y): a fragment takes the lights above its own
+  // face's horizon (BIFACIAL_WORLD.md §6). `lightWeight` is its TS twin.
   'float dwellOwn(float lightUp, float fragOnA) {',
-  '\treturn (lightUp > 0.0) == (fragOnA > 0.5) ? 1.0 : 0.0;',
+  '\tfloat faceUp = fragOnA > 0.5 ? 1.0 : -1.0;',
+  '\treturn smoothstep(-0.1, 0.1, lightUp * faceUp);',
   '}',
   'uniform float dwellFogSigma;',
   'uniform float dwellFogHeight;',
@@ -105,4 +123,10 @@ export function withHeightFog<M extends Material>(material: M, key = 'plain'): M
   };
   material.customProgramCacheKey = () => `dwell-fog-${key}`;
   return material;
+}
+
+/** `dwellOwn` in TypeScript: a light's weight for a fragment whose face's up is `faceUp` (±1). */
+export function lightWeight(lightUp: number, faceUp: 1 | -1): number {
+  const t = Math.min(1, Math.max(0, (lightUp * faceUp + 0.1) / 0.2));
+  return t * t * (3 - 2 * t);
 }

@@ -332,6 +332,8 @@ export interface MeshSectionOptions {
    * the top shading, as the chunks' do.
    */
   mirror?: boolean;
+  /** Column tints (the surface layout; only its tint values are read); default: `surface`. */
+  tint?: Float32Array | null;
 }
 
 /** The rows of a section's cells reversed: row r ↔ row 31 − r, apron rows −1 and 32 included. */
@@ -377,7 +379,7 @@ function meshSectionAbove(cells: Uint16Array, options: MeshSectionOptions): Sect
   const waterDrop = options.waterDrop ?? 0;
   if (cells.length !== LOD_VOLUME) throw new RangeError('section cells must be LOD_VOLUME');
   const N = SECTION_CELLS;
-  const tint = new LodTint(surface);
+  const tint = new LodTint(options.tint !== undefined ? options.tint : surface);
   const opaque = new Builder(tint);
   const waterMesh = new Builder();
   const skirts = FACES.map(() => new Builder(tint));

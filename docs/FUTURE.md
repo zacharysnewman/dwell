@@ -56,6 +56,15 @@ registered dedicated servers (e.g. `<id>.servers.dropkickarcade.com`, ACME DNS-0
 **Why it's optional:** reachability no longer depends on it (ADR 0008: WebRTC fallback with DTLS
 fingerprints). It would only add stable, human-readable addresses. Needs programmatic DNS.
 
+## Sun and moon moving separately (sky phase 2)
+
+**Today:** the sky is one sphere whose frame (day zenith, sun, moon) turns as a unit, client-side
+only (`render/skyFrame.ts`).
+
+**Idea:** the sun and the moon move separately, with the gradient weighted toward each; the
+meshers' baked face shading (warm tops, cool sides, blue undersides) moves into the shader so it
+follows the light; and the angle comes from the server's tick, so every player shares it.
+
 ## World upgrades across app versions
 
 **Today (planned, Phase 6):** a world records the app version that saved it and opens only in

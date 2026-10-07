@@ -105,16 +105,24 @@ Spawn is always on face A (owner, 2026-10-05).
   lookups for face B. A **mirror-equivalence suite** proves it: every controller scenario run on
   face A and its mirror image on face B gives mirrored traces bit for bit, natively and in WASM.
 - **Crossing the band** (in a dug shaft, or beside the rim wall): the face sign switches at the midplane;
-  the camera turns over smoothly (a roll through 180° over ~0.5 s) instead of snapping. The flip is
+  the camera turns over smoothly instead of snapping: a half forward somersault. The heading turns by
+  180° at once (the client only; the server sees the inputs) and the view is drawn rotated about the
+  camera's right axis by π, easing to 0 over 0.5 s, so it starts exactly at the old view, turns over
+  nose first (toward the midplane) and keeps left and right. In the flip band a body can swing back
+  and forth across the midplane, and each crossing turns the heading round again (no hysteresis). The flip is
   predicted like any other movement; if the local player's state needs a flag for it, it goes in
   `PhysicsSnapshot` (a protocol bump).
-- **Light: a sun and a moon** (owner, 2026-10-05), both **static** for now. The sun is Phase 7's
+- **Light: a sun and a moon** (owner, 2026-10-05), **static** at rest, and turnable as a unit with
+  the sky (below). The sun is Phase 7's
   directional light, lighting face A; the **moon** is a second directional light pointing the
   opposite way (`moon direction = −sun direction`, "counter-angled"), lighting face B with a
   cooler, dimmer moonlight. With no shadows, each light would also reach the other face's
   ceilings, so each fragment takes only its own face's light (chosen by its side of the midplane),
   and the hemisphere/ambient light is per face too. Colours and intensities live in Phase 7's
-  palette module as tunables.
+  palette module as tunables. The sky is **one sphere** graded from day to night (a sky frame: the
+  day zenith, the sun and the moon), which first turns as a whole about a horizontal axis — the
+  sun's elevation changes, π swaps day and night — client-side only (`?skyrot`, `?skyspin`, a
+  settings slider); the lights are weighted smoothly by their height over each face's horizon.
 - **Rendering:** the camera's up vector follows the face; the meshers' per-face shading (Phase 7's
   tint table) treats a face-B chunk's −y faces as its tops; the sky gradient (face B: a moonlit
   night sky with the moon's glow where the sun's is on face A) and haze are evaluated in the
@@ -175,5 +183,8 @@ character of its own.
   by its side of the midplane (`three/heightFog.ts`); the sky and haze are evaluated in the viewer's
   face-local frame with a night gradient and the moon's glow. Straddling LOD sections (levels ≥ 7) mesh
   both faces from one grid: face B's part is at cell resolution, shaded as undersides.
+  The LOD does not load or draw the other face (beyond 512 m, except near the rim), and a straddling
+  section is meshed for the viewer's face alone (the other face's rows become stone, the tints are the
+  viewer's face's).
 - **Not done here:** Tier 1 bodies' Jolt factors are built and tested, but clusters arrive in Phase 14;
   the F4 terrain map and the debug overlays show face A.

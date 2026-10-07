@@ -1,6 +1,6 @@
 # Fix spec: LOD holes, the other face's LOD, the sky sphere, the forward flip
 
-> Status: **specified, not implemented** (written 2026-10-07 from a playtest on a phone, build
+> Status: **implemented** on this branch, all four items (specified 2026-10-07 from a playtest on a phone, build
 > `0.8.0 · 3361024`). This document tells an implementer exactly what to change. The diagnosis
 > behind each fix is summarised in its section; do not re-litigate it, but do run every "red first"
 > test against the unfixed code before fixing, as CLAUDE.md requires.

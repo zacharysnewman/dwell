@@ -2,6 +2,7 @@ import type { SectionMeshes } from '../mesh/lodMesher';
 import type { ChunkMeshes } from '../mesh/mesher';
 import type { ChunkCoord, Vec3 } from '../protocol/messages';
 import type { FogSettings } from './fog';
+import type { SkyFrame } from './skyFrame';
 
 /** A player drawn by the renderer (remote players, and the local one when dead). */
 export interface PlayerView {
@@ -64,11 +65,21 @@ export interface Renderer {
   setLodSection(id: number, origin: Vec3, cellSize: number, meshes: SectionMeshes | null): void;
   /** The LOD sections to draw from now on, each with the sides (bit per face) whose skirt shows. */
   showLodSections(visible: ReadonlyMap<number, number>): void;
+  /**
+   * Ancestor sections drawn clipped to boxes (world metres) where the traversal has nothing ready
+   * (§6.6); `id` is the source section's. [] for none.
+   */
+  showLodStandIns(standIns: readonly { id: number; lo: Vec3; hi: Vec3 }[]): void;
   /** Which terrain chunks are drawn (LOD draws instead of the others); null: all of them. */
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void;
   /** Debug: tint LOD sections by level. */
   setLodLevelColors(on: boolean): void;
   /** Height fog (§6.6): the haze's distance, density and scale height (render/fog.ts). */
+  /**
+   * Turns the sky (render/skyFrame.ts): the day sky's zenith, the sun and the moon, and the lights
+   * that follow them. At `SKY_REST` it is the static sky.
+   */
+  setSkyFrame(frame: SkyFrame): void;
   setFog(fog: FogSettings): void;
   /** Tone mapping exposure (render/look.ts): 1 leaves the lights as set. */
   setExposure(exposure: number): void;
@@ -84,10 +95,11 @@ export interface Renderer {
   /**
    * Places the camera at `eye`, looking along yaw/pitch (degrees; yaw 0 = +Z, pitch toward the
    * player's up > 0). `face` is the player's: +1 face A (up is +y), −1 face B (up is −y, the view
-   * is upside down); the view and the sky, light and haze it sees follow it. `roll` (radians, 0 at
-   * rest) turns the view about its axis: the camera turning over when the face changes.
+   * is upside down); the view and the sky, light and haze it sees follow it. `flip` (radians, 0 at
+   * rest) pitches the view over about its right axis, nose first: the camera turning over when the
+   * face changes (the heading has already turned by 180°, so a flip of π is the view before).
    */
-  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face?: 1 | -1, roll?: number): void;
+  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face?: 1 | -1, flip?: number): void;
   /** Debug line segments (pairs of points) with one colour each, or null to clear. */
   setDebugLines(segments: readonly { from: Vec3; to: Vec3; color: number }[] | null): void;
   /** The last frame's draw calls and triangles. */

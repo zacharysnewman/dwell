@@ -23,26 +23,18 @@ import {
   Scene,
   SRGBColorSpace,
   Vector2,
-  Vector3,
   WebGLRenderer,
   type MeshLambertMaterialParameters,
 } from 'three';
 import type { ChunkCoord, Vec3 } from '../../protocol/messages';
-import { viewForward } from '../../world/face';
 import type { FlatMesh, SectionMeshes } from '../../mesh/lodMesher';
 import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
 import { CHUNK_SIZE, Lod, World } from '../../protocol/constants.gen';
 import { debugLineArrays, type DebugSegment } from '../debugLines';
 import { DEFAULT_FOG, type FogSettings } from '../fog';
 import { VERTICAL_FOV, verticalFov } from '../fov';
-import {
-  DEFAULT_EXPOSURE,
-  HORIZON_COLOR,
-  LIGHT,
-  MOON_DIRECTION_WORLD,
-  SUN_DIRECTION,
-  sanitizeExposure,
-} from '../look';
+import { DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, sanitizeExposure } from '../look';
+import { SKY_REST, type SkyFrame } from '../skyFrame';
 import { sharedAtlas } from '../textures';
 import {
   RendererUnavailableError,
@@ -51,7 +43,14 @@ import {
   type RendererOptions,
   type RenderStats,
 } from '../Renderer';
-import { setFogUniforms, setViewFace, withHeightFog } from './heightFog';
+import {
+  setFogUniforms,
+  setSkyFrame as setFrameUniforms,
+  setViewFace,
+  withHeightFog,
+} from './heightFog';
+import { aimCamera } from './aimCamera';
+import { boxClipPlanes } from './clipBox';
 import { Sky } from './sky';
 import { LodSectionGeometry, releaseOnUpload } from './lodSection';
 import { BatchedTerrain } from './batchedTerrain';
@@ -60,6 +59,8 @@ import { type BatchHandle, geometryBytes, MeshBatch } from './meshBatch';
 /** Near/far depth split (§6.6): LOD beyond it in a far pass, then a depth clear and a near pass. */
 const NEAR_SPLIT = Lod.nearSplitM;
 const FAR_PLANE = 5e7;
+/** Most LOD stand-ins drawn per frame (clipped ancestor meshes, §6.6). */
+const MAX_STAND_INS = 64;
 
 function flatGeometry(m: FlatMesh): BufferGeometry | null {
   if (m.indices.length === 0) return null;
@@ -179,7 +180,26 @@ export class ThreeRenderer implements Renderer {
   private readonly chunkCoords = new Map<string, ChunkCoord>();
   private chunkVisible: ((coord: ChunkCoord) => boolean) | null = null;
   private readonly lod = new Map<number, LodEntry>();
+  /** The lights that follow the sky frame (setSkyFrame): positions are directions toward them. */
+  private readonly skyLights = {
+    dayAmbient: new HemisphereLight(
+      LIGHT.hemisphereSky,
+      LIGHT.hemisphereGround,
+      LIGHT.hemisphereIntensity,
+    ),
+    sun: new DirectionalLight(LIGHT.sun, LIGHT.sunIntensity),
+    // Its "sky" is the night's pole, opposite the day's.
+    nightAmbient: new HemisphereLight(
+      LIGHT.moonHemisphereSky,
+      LIGHT.moonHemisphereGround,
+      LIGHT.moonHemisphereIntensity,
+    ),
+    moon: new DirectionalLight(LIGHT.moon, LIGHT.moonIntensity),
+  };
   private lodShown: ReadonlyMap<number, number> = new Map();
+  private lodStandIns: readonly { id: number; lo: Vec3; hi: Vec3 }[] = [];
+  private readonly standInSlots: Mesh[] = [];
+  private warnedStandIns = false;
   private readonly lodMaterial = withHeightFog(new MeshLambertMaterial({ vertexColors: true }));
   /** Like the chunks' water (see-through from both sides, at their opacity), untextured. */
   private readonly lodWaterMaterial = withHeightFog(
@@ -231,6 +251,7 @@ export class ThreeRenderer implements Renderer {
     }
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
     this.renderer.autoClear = false;
+    this.renderer.localClippingEnabled = true; // LOD stand-ins are clipped to their holes
     this.renderer.setClearColor(new Color(...HORIZON_COLOR));
     // Tone mapping runs in each material's shader (no extra pass); the haze and the sky are mixed
     // in after it, in output colour.
@@ -241,22 +262,9 @@ export class ThreeRenderer implements Renderer {
     // Face A: the sun and a day sky's ambient; face B: the counter-angled moon and a night's. Each
     // fragment takes only its own face's pair (three/heightFog.ts), chosen by its side of the
     // midplane: the lights have no shadows, so a ceiling would otherwise take the other face's.
-    this.scene.add(
-      new HemisphereLight(LIGHT.hemisphereSky, LIGHT.hemisphereGround, LIGHT.hemisphereIntensity),
-    );
-    const sun = new DirectionalLight(LIGHT.sun, LIGHT.sunIntensity);
-    sun.position.set(...SUN_DIRECTION);
-    this.scene.add(sun);
-    const nightAmbient = new HemisphereLight(
-      LIGHT.moonHemisphereSky,
-      LIGHT.moonHemisphereGround,
-      LIGHT.moonHemisphereIntensity,
-    );
-    nightAmbient.position.set(0, -1, 0); // its "sky" is below the disc
-    this.scene.add(nightAmbient);
-    const moon = new DirectionalLight(LIGHT.moon, LIGHT.moonIntensity);
-    moon.position.set(...MOON_DIRECTION_WORLD);
-    this.scene.add(moon);
+    this.scene.add(this.skyLights.dayAmbient, this.skyLights.sun);
+    this.scene.add(this.skyLights.nightAmbient, this.skyLights.moon);
+    this.setSkyFrame(SKY_REST);
     this.outline.visible = false;
     this.scene.add(this.outline);
     this.preview.visible = false;
@@ -324,6 +332,7 @@ export class ThreeRenderer implements Renderer {
       if (shown) l.section?.setSkirts(mask);
     }
     this.batch?.update(this.chunkVisible, this.lodShown);
+    this.placeStandIns();
     // Two passes (§6.6): the far one for everything beyond the split (its near plane pushed out
     // with altitude, where nothing is closer), then a depth clear and the near one.
     // Heights are the viewer's face-local ones (face B's sky is below the disc).
@@ -396,6 +405,45 @@ export class ThreeRenderer implements Renderer {
 
   showLodSections(visible: ReadonlyMap<number, number>): void {
     this.lodShown = visible;
+  }
+
+  showLodStandIns(standIns: readonly { id: number; lo: Vec3; hi: Vec3 }[]): void {
+    this.lodStandIns = standIns;
+  }
+
+  /** Draws each stand-in: its source section's geometry, clipped to the hole's box (§6.6). */
+  private placeStandIns(): void {
+    let used = 0;
+    for (const entry of this.lodStandIns) {
+      const l = this.lod.get(entry.id);
+      if (!l?.section || !l.mesh) continue;
+      if (used >= MAX_STAND_INS) {
+        if (!this.warnedStandIns) console.warn('LOD: more stand-ins than slots; drawing a subset');
+        this.warnedStandIns = true;
+        break;
+      }
+      let slot = this.standInSlots[used];
+      if (!slot) {
+        slot = new Mesh(
+          new BufferGeometry(),
+          withHeightFog(new MeshLambertMaterial({ vertexColors: true })),
+        );
+        this.scene.add(slot);
+        this.standInSlots.push(slot);
+      }
+      used++;
+      slot.geometry = l.section.geometry; // owned by the section: never disposed here
+      slot.position.copy(l.mesh.position);
+      slot.scale.copy(l.mesh.scale);
+      ThreeRenderer.placed(slot);
+      (slot.material as MeshLambertMaterial).clippingPlanes = boxClipPlanes(entry.lo, entry.hi);
+      slot.visible = true;
+      l.section.setSkirts(0); // its own mesh is not shown this frame, it was refined
+    }
+    for (let i = used; i < this.standInSlots.length; i++) {
+      const slot = this.standInSlots[i];
+      if (slot) slot.visible = false;
+    }
   }
 
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void {
@@ -516,18 +564,20 @@ export class ThreeRenderer implements Renderer {
     ThreeRenderer.placed(p.group);
   }
 
-  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face: 1 | -1 = 1, roll = 0): void {
+  setCamera(eye: Vec3, yawDeg: number, pitchDeg: number, face: 1 | -1 = 1, flip = 0): void {
     this.face = face;
     setViewFace(face);
-    this.camera.position.set(...eye);
-    this.camera.up.set(0, face, 0); // a face-B player's head points toward −y
-    this.camera.updateMatrixWorld();
-    this.camera.lookAt(
-      this.camera.position.clone().add(new Vector3(...viewForward(yawDeg, pitchDeg, face))),
-    );
-    // The camera turning over across the midplane: the view is the new face's at once, rolled back
-    // toward the old one and easing out (game/flipRoll.ts).
-    if (roll !== 0) this.camera.rotateZ(roll);
+    aimCamera(this.camera, eye, yawDeg, pitchDeg, face, flip);
+  }
+
+  setSkyFrame(frame: SkyFrame): void {
+    setFrameUniforms(frame);
+    const l = this.skyLights;
+    l.sun.position.set(...frame.sun);
+    l.moon.position.set(...frame.moon);
+    l.dayAmbient.position.set(...frame.dayPole);
+    l.nightAmbient.position.set(-frame.dayPole[0], -frame.dayPole[1], -frame.dayPole[2]);
+    for (const light of Object.values(l)) light.updateMatrixWorld();
   }
 
   setFog(fog: FogSettings): void {
