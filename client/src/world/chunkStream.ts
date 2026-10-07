@@ -60,6 +60,8 @@ const NEIGHBOURS: ChunkCoord[] = [
 
 /** Mesh jobs in flight at once when the mesher does not say. */
 const DEFAULT_MESH_JOBS = 8;
+/** Chunk columns whose tint grids are kept. */
+const TINT_CACHE = 4096;
 
 export class ChunkStreamer {
   /** Loaded chunks and their revisions (Air chunks: revision 0). */
@@ -74,6 +76,9 @@ export class ChunkStreamer {
   private readonly meshed = new Set<string>();
   /** Mesh jobs in flight, by key → token (a newer job or an unload supersedes). */
   private readonly meshing = new Map<string, number>();
+  /** Biome tint grids of chunk columns (null: none), and the columns being fetched. */
+  private readonly tints = new Map<string, Uint8Array | null>();
+  private readonly tintsPending = new Set<string>();
   /** Chunks asked for again after a revision gap, until they arrive. */
   private readonly resyncing = new Set<string>();
   private resyncs = 0;
@@ -190,7 +195,8 @@ export class ChunkStreamer {
       .filter(
         ([key, c]) =>
           !this.meshing.has(key) &&
-          !NEIGHBOURS.some((d) => this.generating.has(chunkKey(add(c, d)))),
+          !NEIGHBOURS.some((d) => this.generating.has(chunkKey(add(c, d)))) &&
+          this.tintOf(c) !== undefined,
       )
       .sort((a, b) => distance(a[1]) - distance(b[1]));
     let count = 0;
@@ -199,21 +205,49 @@ export class ChunkStreamer {
       this.dirty.delete(key);
       const token = ++this.token;
       this.meshing.set(key, token);
-      void this.mesher.mesh(this.store.paddedChunk(c[0], c[1], c[2])).then((meshes) => {
-        if (this.meshing.get(key) !== token) return; // unloaded meanwhile
-        this.meshing.delete(key);
-        if (!this.loaded.has(key) || this.air.has(key)) return;
-        this.view.setTerrainChunk(
-          key,
-          [c[0] * CHUNK_SIZE, c[1] * CHUNK_SIZE, c[2] * CHUNK_SIZE],
-          meshes,
-        );
-        this.meshed.add(key);
-      });
+      void this.mesher
+        .mesh(this.store.paddedChunk(c[0], c[1], c[2]), this.tintOf(c) ?? null)
+        .then((meshes) => {
+          if (this.meshing.get(key) !== token) return; // unloaded meanwhile
+          this.meshing.delete(key);
+          if (!this.loaded.has(key) || this.air.has(key)) return;
+          this.view.setTerrainChunk(
+            key,
+            [c[0] * CHUNK_SIZE, c[1] * CHUNK_SIZE, c[2] * CHUNK_SIZE],
+            meshes,
+          );
+          this.meshed.add(key);
+        });
       count++;
       if (now() >= deadline) break;
     }
     return count;
+  }
+
+  /**
+   * The tint grid of the chunk's column (§3.7): the cached one, null where the generator has none,
+   * or undefined while it is being asked for (the chunk is meshed on a later call).
+   */
+  private tintOf(c: ChunkCoord): Uint8Array | null | undefined {
+    if (!this.source.tint) return null;
+    const key = `${String(c[0])},${String(c[2])}`;
+    if (this.tints.has(key)) return this.tints.get(key);
+    if (!this.tintsPending.has(key)) {
+      this.tintsPending.add(key);
+      this.source.tint(c[0], c[2]).then(
+        (bytes) => {
+          this.tintsPending.delete(key);
+          this.tints.set(key, bytes);
+          // A bounded cache (a few hundred bytes a column): the oldest go first.
+          if (this.tints.size > TINT_CACHE) this.tints.delete(this.tints.keys().next().value ?? '');
+        },
+        () => {
+          this.tintsPending.delete(key);
+          this.tints.set(key, null);
+        },
+      );
+    }
+    return undefined;
   }
 
   stats(): StreamStats {

@@ -4,7 +4,7 @@ import { MATERIALS, materialStyle, PLACEABLE } from './materials';
 describe('material styles', () => {
   it('mirror the registry state for state, in id order', () => {
     // The explicit blocks first, then each shapeable material's slope and slab families.
-    const explicit = MATERIALS.map((m) => m.name).slice(0, 28);
+    const explicit = MATERIALS.map((m) => m.name).slice(0, 29);
     expect(explicit).toEqual([
       'dwell:air',
       'dwell:bedrock',
@@ -29,13 +29,14 @@ describe('material styles', () => {
       'dwell:sandstone',
       'dwell:gravel',
       'dwell:snow',
+      'dwell:ice',
       'dwell:log',
       'dwell:leaves',
       'dwell:coal_ore',
       'dwell:iron_ore',
       'dwell:gold_ore',
     ]);
-    const families = MATERIALS.slice(28).map((m) => m.name.replace(/\[.*$/, ''));
+    const families = MATERIALS.slice(29).map((m) => m.name.replace(/\[.*$/, ''));
     expect(new Set(families)).toEqual(
       new Set(
         ['stone', 'dirt', 'grass', 'sand', 'sandstone', 'gravel', 'snow', 'log']
@@ -63,6 +64,7 @@ describe('material styles', () => {
       'dwell:sandstone',
       'dwell:gravel',
       'dwell:snow',
+      'dwell:ice',
       'dwell:log',
       'dwell:leaves',
       'dwell:coal_ore',

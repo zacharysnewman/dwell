@@ -105,6 +105,25 @@ float Fbm3(std::uint32_t seed, std::int64_t x, std::int64_t y, std::int64_t z, s
 float Ridged2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
               int octaves, int kept = -1);
 
+// Gradient noise with its analytic gradient (WORLD_GENERATION.md §3.4): the value and the partial
+// derivatives with respect to the lattice offsets (per lattice cell). Closed-form from the quintic
+// fade's derivative, using only +, − and ×, so it is as deterministic as Perlin2.
+struct Noise2d {
+  float value, dx, dz;
+};
+Noise2d Perlin2d(std::uint32_t seed, LatticeCoord x, LatticeCoord z);
+
+// The derivative-damped ridged cascade of mountain detail (technique 7 of the Epic Terrain mod,
+// re-implemented): octave i of wavelength / 2^i contributes a_i × ridge_i × damp_i × prev, with
+// ridge_i = 1 − 1.5 |n_i|, damp_i = 1 / (1 + damping × |G|²) where G is the slope (m per m, with
+// the cascade scaled to `height` m) accumulated over the octaves so far, and prev the coarser
+// octaves' result normalised to [0, 1]: detail multiplies with height, and steep ground stops
+// gaining detail, so crests are sharp and slopes smooth. In [0, 1]. `kept` (level of detail, §6.6)
+// evaluates only the first `kept` octaves, normalised by their amplitude; with none kept the result
+// is 0 (the caller substitutes the cascade's mean, as terrain.cpp does for the ridges).
+float DampedRidges2(std::uint32_t seed, std::int64_t x, std::int64_t z, std::int32_t wavelength,
+                    int octaves, float height, float damping, int kept = -1);
+
 // Octaves of a fractal sum whose lattice spacing (wavelength / 2^octave) is at least `cell` m:
 // the ones a level-of-detail cell of that size can resolve (§6.6).
 constexpr int OctavesResolved(std::int32_t wavelength, int octaves, std::int64_t cell) {

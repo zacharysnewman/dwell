@@ -330,3 +330,71 @@ describe('ChunkStreamer', () => {
     expect(streamer.readyAround(at)).toBe(true);
   });
 });
+
+describe('ChunkStreamer: biome tint (§3.7)', () => {
+  /** A source with a tint job the test completes by hand. */
+  class TintSource extends ManualSource {
+    tints: { cx: number; cz: number; resolve: (b: Uint8Array<ArrayBuffer> | null) => void }[] = [];
+    tint(cx: number, cz: number): Promise<Uint8Array<ArrayBuffer> | null> {
+      return new Promise((resolve) => this.tints.push({ cx, cz, resolve }));
+    }
+  }
+  class SpyMesher extends InlineMesher {
+    received: (Uint8Array | null | undefined)[] = [];
+    override mesh(
+      voxels: Uint16Array<ArrayBuffer>,
+      tint?: Uint8Array | null,
+    ): Promise<ChunkMeshes> {
+      this.received.push(tint);
+      return super.mesh(voxels, tint);
+    }
+  }
+  const explicit = (coord: ChunkCoord): Parameters<ChunkStreamer['onChunkData']>[0] => ({
+    form: ChunkForm.Explicit,
+    coord,
+    revision: 1,
+    voxels: new Uint16Array(CHUNK_VOLUME).fill(2),
+  });
+
+  it('asks once for a column and meshes its chunks when the grid arrives, with it', async () => {
+    const source = new TintSource();
+    const mesher = new SpyMesher();
+    const view = new FakeView();
+    const streamer = new ChunkStreamer(new FakeStore(), source, mesher, view);
+    streamer.onChunkData(explicit([3, 0, 4]));
+    streamer.onChunkData(explicit([3, 1, 4]));
+    streamer.onChunkData(explicit([3, 2, 4]));
+    // Not meshed while the column's tint is out; the column is asked for once.
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(0);
+    expect(source.tints.map((t) => [t.cx, t.cz])).toEqual([[3, 4]]);
+    const grid = new Uint8Array([1, 2, 3]);
+    source.tints[0]?.resolve(grid);
+    await flush();
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(3);
+    await flush();
+    expect(mesher.received).toEqual([grid, grid, grid]);
+    expect(source.tints).toHaveLength(1);
+    // An edit meshes again at once, from the cached grid.
+    streamer.onChunkData(explicit([3, 0, 4]));
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBeGreaterThan(0); // it and the neighbours it touches
+    expect(source.tints).toHaveLength(1);
+  });
+
+  it('meshes untinted where the generator has no tint, or when it fails', async () => {
+    const plain = new SpyMesher();
+    const a = new ChunkStreamer(new FakeStore(), new ManualSource(), plain, new FakeView());
+    a.onChunkData(explicit([0, 0, 0]));
+    expect(a.meshDirty([0, 0, 0], 100)).toBe(1);
+    expect(plain.received).toEqual([null]);
+
+    const source = new TintSource();
+    source.tint = () => Promise.reject(new Error('no wasm'));
+    const failing = new SpyMesher();
+    const b = new ChunkStreamer(new FakeStore(), source, failing, new FakeView());
+    b.onChunkData(explicit([0, 0, 0]));
+    expect(b.meshDirty([0, 0, 0], 100)).toBe(0);
+    await flush();
+    expect(b.meshDirty([0, 0, 0], 100)).toBe(1);
+    expect(failing.received).toEqual([null]);
+  });
+});

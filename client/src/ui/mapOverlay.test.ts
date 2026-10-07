@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BIOME_COLORS,
+  BIOME_NAMES,
   DISC_ZOOM,
   MAP_SIZE,
   MAP_ZOOMS,
@@ -10,6 +11,9 @@ import {
   mapPixels,
   mapView,
 } from './mapOverlay';
+
+/** worldgen::Biome::kMeadow (biomes.h): the first land climate biome. */
+const MEADOW = 7;
 
 function map(columns: [number, number, number][]): Uint8Array {
   const out = new Uint8Array(columns.length * 4);
@@ -23,6 +27,15 @@ function map(columns: [number, number, number][]): Uint8Array {
 }
 
 describe('terrain map overlay', () => {
+  it('has a colour and a name for each of the 19 biomes (biomes.h, in its order)', () => {
+    expect(BIOME_COLORS).toHaveLength(19);
+    expect(BIOME_NAMES).toHaveLength(19);
+    expect(BIOME_NAMES[0]).toBe('ocean');
+    expect(BIOME_NAMES[MEADOW]).toBe('meadow');
+    expect(BIOME_NAMES[18]).toBe('snowfield');
+    expect(new Set(BIOME_NAMES).size).toBe(19);
+  });
+
   it('decodes columns: signed height, biome, beyond the rim', () => {
     const bytes = map([
       [-540, 0, 0],
@@ -43,15 +56,15 @@ describe('terrain map overlay', () => {
   it('colours by biome, shades slopes, darkens deep oceans, and leaves the void black', () => {
     const px = mapPixels(
       map([
-        [10, 2, 0],
-        [10, 2, 0],
+        [10, MEADOW, 0],
+        [10, MEADOW, 0],
         [-300, 0, 0],
-        [0, 2, 1],
+        [0, MEADOW, 1],
       ]),
       2,
       8,
     );
-    const plains = BIOME_COLORS[2] ?? 0;
+    const plains = BIOME_COLORS[MEADOW] ?? 0;
     expect([px[0], px[1], px[2]]).toEqual([
       (plains >> 16) & 0xff,
       (plains >> 8) & 0xff,
@@ -64,8 +77,8 @@ describe('terrain map overlay', () => {
 
   it('draws river and lake water over the biome (flag 2), the sea by its biome', () => {
     const bytes = map([
-      [120, 2, 2],
-      [120, 2, 0],
+      [120, MEADOW, 2],
+      [120, MEADOW, 0],
     ]);
     expect(mapColumn(bytes, 2, 0, 0).river).toBe(true);
     expect(mapColumn(bytes, 2, 1, 0).river).toBe(false);
@@ -75,7 +88,7 @@ describe('terrain map overlay', () => {
       (WATER_COLOR >> 8) & 0xff,
       WATER_COLOR & 0xff,
     ]);
-    const plains = BIOME_COLORS[2] ?? 0;
+    const plains = BIOME_COLORS[MEADOW] ?? 0;
     expect(px[4]).toBe((plains >> 16) & 0xff);
   });
 

@@ -171,7 +171,7 @@ TEST_SUITE("worldgen: terrain") {
 
   TEST_CASE("point queries agree with the chunk path voxel for voxel") {
     const TerrainGenerator gen(0);
-    const auto mountain = FindBiome(gen, Biome::kMountains);
+    const auto mountain = testing::FindMountain(gen);
     REQUIRE(mountain);
     std::vector<ChunkCoord> coords = {{0, 0, 0}, {0, -1, 0}, {-1, -3, 3}};
     const auto m = *mountain;
@@ -297,7 +297,7 @@ TEST_SUITE("worldgen: terrain") {
   TEST_CASE("water only below its column's surface level; small floating pieces are removed") {
     const TerrainGenerator gen(0);
     const auto ocean = FindBiome(gen, Biome::kOcean);
-    const auto mountain = FindBiome(gen, Biome::kMountains);
+    const auto mountain = testing::FindMountain(gen);
     REQUIRE(ocean);
     REQUIRE(mountain);
     int water = 0;
@@ -361,16 +361,24 @@ TEST_SUITE("worldgen: terrain") {
 
   TEST_CASE("the biomes all occur, with surface materials to match") {
     const TerrainGenerator gen(0);
-    for (const Biome b : {Biome::kOcean, Biome::kBeach, Biome::kPlains, Biome::kForest,
-                          Biome::kDesert, Biome::kSnowy, Biome::kMountains}) {
+    // The sea, the coast and every climate biome of the table (biomes.h). Rivers' and lakes'
+    // banks are found by the water tests (rivers_test.cpp).
+    const std::vector<Biome> biomes = {
+        Biome::kOcean,   Biome::kDeepOcean,    Biome::kBeach,        Biome::kSeaCliff,
+        Biome::kMeadow,  Biome::kBroadleaf,    Biome::kBlossomGrove, Biome::kAutumnWoods,
+        Biome::kConifer, Biome::kWetland,      Biome::kSavanna,      Biome::kDunes,
+        Biome::kTundra,  Biome::kAlpineMeadow, Biome::kBareRock,     Biome::kSnowfield};
+    for (const Biome b : biomes) {
       CAPTURE(worldgen::BiomeName(b));
       CHECK(FindBiome(gen, b).has_value());
     }
-    // The top of level plains ground is grass over dirt; desert ground is sand.
+    // The top of the ground of a biome is the first layer of its row in the table (a slope or
+    // slab of it where the surface is shaped).
     core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, 0));
-    const auto top = [&](Biome b, MaterialId expected) {
+    const auto top = [&](Biome b) {
       const auto p = FindBiome(gen, b);
       REQUIRE(p);
+      const MaterialId expected = worldgen::BiomeOf(b).layers[0].material;
       int found = 0;
       // A 128 × 128 m patch around the site, in rows (a region's border or cliffs may take a few).
       for (int d = 0; d < 128 * 128 && found < 5; ++d) {
@@ -395,16 +403,20 @@ TEST_SUITE("worldgen: terrain") {
           ++found;
         }
       }
+      CAPTURE(worldgen::BiomeName(b));
       CHECK(found > 0);
     };
-    top(Biome::kPlains, M::kGrass);
-    top(Biome::kDesert, M::kSand);
-    top(Biome::kSnowy, M::kSnow);
+    for (const Biome b :
+         {Biome::kMeadow, Biome::kBroadleaf, Biome::kBlossomGrove, Biome::kAutumnWoods,
+          Biome::kConifer, Biome::kWetland, Biome::kSavanna, Biome::kDunes, Biome::kTundra,
+          Biome::kAlpineMeadow, Biome::kSnowfield, Biome::kBeach}) {
+      top(b);
+    }
   }
 
   TEST_CASE("trees stand on the ground, and cross chunk borders intact") {
     const TerrainGenerator gen(0);
-    const auto forest = FindBiome(gen, Biome::kForest);
+    const auto forest = FindBiome(gen, Biome::kBroadleaf);
     REQUIRE(forest);
     core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, 0));
     const int cx0 = worldgen::FloorDiv(forest->first, TerrainGenerator::kTreeCell);
@@ -541,6 +553,15 @@ TEST_SUITE("worldgen: golden") {
       for (const testing::Point& p : {wl.lake, wl.stream, wl.river, wl.great, wl.waterfall}) {
         cases.push_back(col({p.x, p.z}, kSurface));
       }
+      // Climate and vegetation (Phase 11c): an alpine meadow, bare rock and a snowfield, a wetland
+      // (with its ponds), a blossom grove and autumn woods (the accent trees), a conifer forest.
+      for (const Biome b :
+           {Biome::kAlpineMeadow, Biome::kBareRock, Biome::kSnowfield, Biome::kWetland,
+            Biome::kBlossomGrove, Biome::kAutumnWoods, Biome::kConifer}) {
+        const auto at = FindBiome(TerrainGenerator(seed), b);
+        REQUIRE(at);
+        cases.push_back(col(*at, kSurface));
+      }
     }
     std::vector<std::string> actual;
     for (auto& k : cases) {
@@ -557,7 +578,7 @@ TEST_SUITE("worldgen: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 7\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 9\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);

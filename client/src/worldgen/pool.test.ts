@@ -104,4 +104,25 @@ describe('worker count', () => {
       expect(defaultWorkerCount(true)).toBe(phone);
     }
   });
+
+  it("asks a worker for a chunk column's tint grid and resolves with its bytes", async () => {
+    const w = new FakeWorker();
+    const pool = new WorldgenPool([w], 3, 0n);
+    w.reply({ t: 'ready' });
+    const got = pool.tint(7, -2);
+    const sent = w.received.find((m) => m.t === 'tint') as unknown as {
+      id: number;
+      cx: number;
+      cz: number;
+    };
+    expect([sent.cx, sent.cz]).toEqual([7, -2]);
+    const bytes = new Uint8Array([9, 8, 7]);
+    w.reply({ t: 'tint', id: sent.id, bytes });
+    await expect(got).resolves.toBe(bytes);
+    // A generator without biomes answers null.
+    const none = pool.tint(0, 0);
+    const second = w.received.filter((m) => m.t === 'tint')[1] as unknown as { id: number };
+    w.reply({ t: 'tint', id: second.id, bytes: null });
+    await expect(none).resolves.toBeNull();
+  });
 });

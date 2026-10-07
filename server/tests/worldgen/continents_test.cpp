@@ -434,7 +434,7 @@ TEST_SUITE("worldgen: continents") {
           CHECK(col.height < -1190.0f);  // the abyss: −1,500 ± 300 m (± the hills' few metres)
           CHECK(col.height > -1810.0f);
           deepest = std::min(deepest, col.height);
-          CHECK(col.biome == worldgen::Biome::kOcean);
+          CHECK(worldgen::IsSeaBiome(col.biome));
         } else if (s > 500.0f && s < 3'000.0f && col.continent >= 0) {
           ++inland_near;
           near_sum += col.continentalness;

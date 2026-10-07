@@ -21,6 +21,7 @@ export type TileName =
   | 'sandstone'
   | 'gravel'
   | 'snow'
+  | 'ice'
   | 'logSide'
   | 'logTop'
   | 'leaves'
@@ -41,6 +42,7 @@ export const TILE_ORDER: readonly TileName[] = [
   'sandstone',
   'gravel',
   'snow',
+  'ice',
   'logSide',
   'logTop',
   'leaves',
@@ -169,6 +171,7 @@ const SAND = rgb(0xeed9a4);
 const SANDSTONE = rgb(0xe0be86);
 const GRAVEL = rgb(0xa3968e);
 const SNOW = rgb(0xfbf8f2);
+const ICE = rgb(0xb4daf0);
 const BARK = rgb(0x7a5236);
 const WOOD = rgb(0xc09a62);
 const LEAVES = rgb(0x6fa83a);
@@ -194,6 +197,15 @@ function gravel(x: number, y: number): Rgb {
   const pebble = tiledNoise(x, y, 8, 1, 71);
   const n = tiledFbm(x, y, 72);
   return scale(GRAVEL, (pebble > 0.55 ? 1.12 : pebble < 0.4 ? 0.78 : 0.95) * (0.85 + 0.25 * n));
+}
+
+/** Ice: pale blue with fine white cracks and a soft sheen. */
+function ice(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 181);
+  const crack = tiledNoise(x, y, 8, 4, 182);
+  let c = scale(ICE, 0.9 + 0.14 * n);
+  if (Math.abs(crack - 0.5) < 0.035) c = mix(c, [240, 248, 255], 0.7); // a white crack
+  return c;
 }
 
 function snow(x: number, y: number): Rgb {
@@ -293,6 +305,7 @@ const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   sandstone,
   gravel,
   snow,
+  ice,
   logSide,
   logTop,
   leaves,
@@ -303,6 +316,19 @@ const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   water,
   ladder,
   launchPad,
+};
+
+/**
+ * How much of a texel the biome tint colours (0..1; WORLD_GENERATION.md §3.7): the grass top and the
+ * leaves entirely, the grass side's fringe but not its dirt. Stored in the atlas as 255 − 255 × mask
+ * in the alpha channel — opaque (255) is untinted, the opaque passes ignore alpha — and read by the
+ * chunk shader (three/ThreeRenderer.ts).
+ */
+export const TINT_MASKS: Partial<Record<TileName, (x: number, y: number) => number>> = {
+  grass: () => 1,
+  leaves: () => 1,
+  // The fringe is the top `depth` texels (see grassSide).
+  grassSide: (x, y) => (TILE - 1 - y < 4 + 5 * tiledNoise(x, 0, 8, 5, 31) ? 1 : 0),
 };
 
 export interface Atlas {
@@ -337,7 +363,7 @@ export function buildAtlas(): Atlas {
         data[o] = Math.round(Math.min(255, Math.max(0, r)));
         data[o + 1] = Math.round(Math.min(255, Math.max(0, g)));
         data[o + 2] = Math.round(Math.min(255, Math.max(0, b)));
-        data[o + 3] = 255;
+        data[o + 3] = 255 - Math.round(255 * (TINT_MASKS[name]?.(tx, ty) ?? 0));
       }
     }
   });

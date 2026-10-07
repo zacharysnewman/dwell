@@ -47,6 +47,8 @@ struct LakeLevelEntry {
   bool valid = false;
 };
 constexpr std::size_t kLakeCacheSize = 64;  // power of two
+// Ponds' surfaces likewise (a pond's cell holds a handful of corners of every chunk near it).
+constexpr std::size_t kPondCacheSize = 256;  // power of two
 
 float CachedLakeLevel(const Seeds& s, std::int32_t i, std::int32_t j, std::int64_t sx,
                       std::int64_t sz, const LevelOracle& oracle) {
@@ -54,6 +56,16 @@ float CachedLakeLevel(const Seeds& s, std::int32_t i, std::int32_t j, std::int64
   LakeLevelEntry& e = cache[CellHash(s.lake, i, j) & (kLakeCacheSize - 1)];
   if (!e.valid || e.seed != s.lake || e.i != i || e.j != j) {
     e = {s.lake, i, j, oracle.LakeLevel(sx, sz), true};
+  }
+  return e.level;
+}
+
+float CachedPondLevel(const Seeds& s, std::int32_t i, std::int32_t j, std::int64_t sx,
+                      std::int64_t sz, const LevelOracle& oracle) {
+  thread_local LakeLevelEntry cache[kPondCacheSize];
+  LakeLevelEntry& e = cache[CellHash(s.pond, i, j) & (kPondCacheSize - 1)];
+  if (!e.valid || e.seed != s.pond || e.i != i || e.j != j) {
+    e = {s.pond, i, j, oracle.PondLevel(sx, sz), true};
   }
   return e.level;
 }
@@ -129,6 +141,8 @@ Seeds MakeSeeds(std::uint64_t world_seed) {
   s.lake = SeedWord(world_seed, 207);
   s.shore = SeedWord(world_seed, 208);
   s.spring = SeedWord(world_seed, 209);
+  s.pond = SeedWord(world_seed, 222);
+  s.pond_shore = SeedWord(world_seed, 223);
   s.great_meander_x = SeedWord(world_seed, 220);
   s.great_meander_z = SeedWord(world_seed, 221);
   const std::int32_t wavelengths[3] = {kGreat.wavelength, kRiver.wavelength, kStream.wavelength};
@@ -225,6 +239,36 @@ Corner Sample(const Seeds& s, std::int64_t x, std::int64_t z, std::int64_t cell,
           c.lake_q = q;
           c.lake_level = level;
           c.lake_depth = kLakeMinDepth + Unit(Mix32(h3 ^ 0x68E31DA4u)) * kLakeDepthRange;
+        }
+      }
+    }
+  }
+
+  // The pond of the point's own cell, if any, and no lake is here. Sites lie kPondMargin m inside
+  // the cell and a pond's reach is below it, so a pond never reaches a neighbouring cell.
+  if (cell < kPondSkipCell && c.lake_q >= kBermTo) {
+    const auto i = static_cast<std::int32_t>(FloorDiv64(x, kPondCell));
+    const auto j = static_cast<std::int32_t>(FloorDiv64(z, kPondCell));
+    const std::uint32_t h = CellHash(s.pond, i, j);
+    if (Unit(h) < kPondChance) {
+      const std::uint32_t h1 = Mix32(h ^ 0x9E3779B9u), h2 = Mix32(h1 + 0x85EBCA6Bu),
+                          h3 = Mix32(h2 + 0xC2B2AE35u);
+      const std::int64_t sx = std::int64_t{i} * kPondCell + kPondMargin +
+                              static_cast<std::int64_t>(h1 % (kPondCell - 2 * kPondMargin)),
+                         sz = std::int64_t{j} * kPondCell + kPondMargin +
+                              static_cast<std::int64_t>(h2 % (kPondCell - 2 * kPondMargin));
+      const float radius = kPondMinRadius + Unit(h3) * kPondRadiusRange;
+      const auto dx = static_cast<float>(x - sx), dz = static_cast<float>(z - sz);
+      const float q_geo = (dx * dx + dz * dz) / (radius * radius);
+      if (q_geo <= kBermTo + 0.5f) {
+        float q = q_geo + kPondShoreNoise * Perlin2(s.pond_shore, Lattice(x, kPondShoreWavelength),
+                                                    Lattice(z, kPondShoreWavelength));
+        if (q < 0.0f) q = 0.0f;
+        const float level = CachedPondLevel(s, i, j, sx, sz, oracle);
+        if (level > kNoLevel * 0.5f) {
+          c.pond_q = q;
+          c.pond_level = level;
+          c.pond_depth = kPondMinDepth + Unit(Mix32(h3 ^ 0x68E31DA4u)) * kPondDepthRange;
         }
       }
     }

@@ -3,7 +3,7 @@ import { LOD_PAD, LOD_VOLUME, lodCell } from '../lod/grid';
 import { faceTint } from '../render/look';
 import { averageTileColor } from '../render/textures';
 import { stateId } from '../world/blocks';
-import { lodColor, meshSection, SURFACE_STRIDE } from './lodMesher';
+import { lodColor, LodTint, meshSection, SURFACE_STRIDE } from './lodMesher';
 
 const WATER = stateId('dwell:water');
 const quads = (m: { indices: Uint32Array }): number => m.indices.length / 6;
@@ -449,6 +449,74 @@ describe('LOD section mesher (§6.6)', () => {
         const line = 2 + (x + 0.5 - 8.5) / 12; // the surface at the column's middle
         expect(Math.abs(h - line)).toBeLessThanOrEqual(0.5);
       }
+    });
+  });
+
+  describe('biome tint', () => {
+    const GRASS = stateId('dwell:grass');
+    const pack = (r: number, g: number, b: number): number => (r << 16) | (g << 8) | b;
+    /** A surface array whose every column carries the tints (and no surface of its own). */
+    function tinted(grass: number, foliage: number): Float32Array {
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let c = 0; c < LOD_PAD * LOD_PAD; c++) {
+        surface[c * SURFACE_STRIDE + 4] = grass;
+        surface[c * SURFACE_STRIDE + 5] = foliage;
+      }
+      return surface;
+    }
+    const floor = (m: number): Uint16Array => {
+      const cells = new Uint16Array(LOD_VOLUME);
+      for (let z = 0; z < 32; z++) for (let x = 0; x < 32; x++) cells[lodCell(x, 0, z)] = m;
+      return cells;
+    };
+
+    it('multiplies a grass top by the column tints and leaves other materials alone', () => {
+      const surface = tinted(pack(128, 64, 32), pack(64, 64, 64));
+      const grass = meshSection(floor(GRASS), { surface });
+      const plain = meshSection(floor(GRASS));
+      const stone = meshSection(floor(2), { surface });
+      const stoneNone = meshSection(floor(2));
+      // The top's colour is the untinted one times (2, 1, 0.5); stone is as without tints.
+      expect(grass.opaque.colors.length).toBe(plain.opaque.colors.length);
+      for (let i = 0; i < grass.opaque.normals.length; i += 3) {
+        if (grass.opaque.normals[i + 1] !== 1) continue; // the top face
+        expect(grass.opaque.colors[i] ?? 0).toBeCloseTo((plain.opaque.colors[i] ?? 0) * 2, 5);
+        expect(grass.opaque.colors[i + 1] ?? 0).toBeCloseTo(plain.opaque.colors[i + 1] ?? 0, 5);
+        expect(grass.opaque.colors[i + 2] ?? 0).toBeCloseTo(
+          (plain.opaque.colors[i + 2] ?? 0) / 2,
+          5,
+        );
+      }
+      expect([...stone.opaque.colors]).toEqual([...stoneNone.opaque.colors]);
+    });
+
+    it('does nothing without surface data, or for columns with no tint', () => {
+      const cells = floor(GRASS);
+      expect([...meshSection(cells, { surface: null }).opaque.colors]).toEqual([
+        ...meshSection(cells).opaque.colors,
+      ]);
+      const none = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      expect([...meshSection(cells, { surface: none }).opaque.colors]).toEqual([
+        ...meshSection(cells).opaque.colors,
+      ]);
+    });
+
+    it('blends between columns: a vertex between two biomes takes the mean', () => {
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          const c = x + 1 + LOD_PAD * (z + 1);
+          surface[c * SURFACE_STRIDE + 4] = x < 16 ? pack(64, 64, 64) : pack(128, 128, 128);
+        }
+      const t = new LodTint(surface);
+      const at = (x: number): number => {
+        const rgb = [1, 1, 1];
+        t.apply('grass', x, 10, rgb);
+        return rgb[0] ?? 0;
+      };
+      expect(at(8)).toBeCloseTo(1, 5);
+      expect(at(24)).toBeCloseTo(2, 5);
+      expect(at(16)).toBeCloseTo(1.5, 5); // the border between columns 15 and 16
     });
   });
 });

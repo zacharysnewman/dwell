@@ -8,8 +8,11 @@ import type { FromMesher } from './messages';
 
 /** Anything that meshes chunks asynchronously: the worker pool, or a test double. */
 export interface Mesher {
-  /** Meshes padded voxels (transferred to the worker: the caller gives up `voxels`). */
-  mesh(voxels: Uint16Array<ArrayBuffer>): Promise<ChunkMeshes>;
+  /**
+   * Meshes padded voxels (transferred to the worker: the caller gives up `voxels`), tinted by the
+   * chunk column's biome tint grid if there is one (mesher.ts `TintField`; copied).
+   */
+  mesh(voxels: Uint16Array<ArrayBuffer>, tint?: Uint8Array | null): Promise<ChunkMeshes>;
   /** Jobs queued or running. */
   readonly pending: number;
 }
@@ -29,6 +32,7 @@ export interface SectionMesher {
 interface Job {
   id: number;
   lod: boolean;
+  tint?: Uint8Array | null;
   options?: MeshSectionOptions & { surface?: Float32Array<ArrayBuffer> | null };
   voxels: Uint16Array<ArrayBuffer>;
   resolve: (m: unknown) => void;
@@ -69,11 +73,12 @@ export class MeshPool implements Mesher, SectionMesher {
     return this.queue.length + this.runningCount;
   }
 
-  mesh(voxels: Uint16Array<ArrayBuffer>): Promise<ChunkMeshes> {
+  mesh(voxels: Uint16Array<ArrayBuffer>, tint: Uint8Array | null = null): Promise<ChunkMeshes> {
     return new Promise((resolve) => {
       this.queue.push({
         id: this.nextId++,
         lod: false,
+        tint,
         voxels,
         resolve: (m) => {
           resolve(m as ChunkMeshes);
@@ -132,7 +137,7 @@ export class MeshPool implements Mesher, SectionMesher {
       best.postMessage(
         job.lod
           ? { t: 'lod', id: job.id, cells: job.voxels, options: job.options ?? {} }
-          : { t: 'mesh', id: job.id, voxels: job.voxels },
+          : { t: 'mesh', id: job.id, voxels: job.voxels, tint: job.tint ?? null },
         surface ? [job.voxels.buffer, surface.buffer] : [job.voxels.buffer],
       );
     }
@@ -142,8 +147,8 @@ export class MeshPool implements Mesher, SectionMesher {
 /** Meshes on the calling thread (tests; a fallback when workers are unavailable). */
 export class InlineMesher implements Mesher, SectionMesher {
   pending = 0;
-  mesh(voxels: Uint16Array<ArrayBuffer>): Promise<ChunkMeshes> {
-    return Promise.resolve(meshChunk(voxels));
+  mesh(voxels: Uint16Array<ArrayBuffer>, tint: Uint8Array | null = null): Promise<ChunkMeshes> {
+    return Promise.resolve(meshChunk(voxels, tint));
   }
   meshSection(
     cells: Uint16Array<ArrayBuffer>,

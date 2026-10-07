@@ -18,6 +18,7 @@ dwell::core::ChunkGenerator g_generator;
 std::unique_ptr<dwell::core::Chunk> g_chunk;
 std::unique_ptr<dwell::worldgen::TerrainGenerator> g_terrain;  // the terrain generator only
 std::vector<std::uint8_t> g_map;
+dwell::worldgen::TerrainGenerator::TintGridData g_tint;
 dwell::core::LodGenerator g_lod;
 dwell::core::LodBoundsFn g_lod_bounds;
 dwell::core::LodCells g_lod_cells;
@@ -68,6 +69,15 @@ EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int 
   return g_map.data();
 }
 
+// The tint of the grass and the leaves around the columns of chunk (cx, cz) (TerrainGenerator::
+// TintGrid): 3 × 3 points at x, z = 0, 16, 32 m, each 6 bytes (grass r, g, b, foliage r, g, b in
+// 1/64), valid until the next call; null for generators without terrain.
+EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_tint(int cx, int cz) {
+  if (!g_terrain) return nullptr;
+  g_tint = g_terrain->TintGrid(cx, cz);
+  return g_tint.data();
+}
+
 // Generates a chunk; returns its kChunkVolume u16 materials (chunk index order), valid until the
 // next call.
 EMSCRIPTEN_KEEPALIVE const std::uint16_t* dwell_worldgen_generate(int cx, int cy, int cz) {
@@ -93,12 +103,13 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_lod(int level, int i, int j, int k) {
   }
   return static_cast<int>(g_lod({level, i, j, k}, g_lod_cells));
 }
-// The last section's column surfaces (core::LodSurface), 34² × 4 floats: height (m), material,
-// flags (1 valid, 2 wet), and where wet the water's level (m). Null when the generator has none
-// (flat worlds: their cells are exact). client/src/lod/grid.ts SURFACE_STRIDE.
+// The last section's column surfaces (core::LodSurface), 34² × 6 floats: height (m), material,
+// flags (1 valid, 2 wet), where wet the water's level (m), and the grass and foliage tints
+// (0xRRGGBB in 1/64 units; exact in a float). Null when the generator has none (flat worlds: their
+// cells are exact). client/src/lod/grid.ts SURFACE_STRIDE.
 EMSCRIPTEN_KEEPALIVE const float* dwell_worldgen_lod_surface() {
   if (g_lod_surface.empty()) return nullptr;
-  constexpr std::size_t kStride = 4;
+  constexpr std::size_t kStride = 6;
   g_lod_surface_out.resize(g_lod_surface.size() * kStride);
   for (std::size_t n = 0; n < g_lod_surface.size(); ++n) {
     const auto& s = g_lod_surface[n];
@@ -106,6 +117,8 @@ EMSCRIPTEN_KEEPALIVE const float* dwell_worldgen_lod_surface() {
     g_lod_surface_out[n * kStride + 1] = static_cast<float>(s.material);
     g_lod_surface_out[n * kStride + 2] = static_cast<float>((s.valid ? 1 : 0) | (s.wet ? 2 : 0));
     g_lod_surface_out[n * kStride + 3] = s.water;
+    g_lod_surface_out[n * kStride + 4] = static_cast<float>(s.tint_grass);
+    g_lod_surface_out[n * kStride + 5] = static_cast<float>(s.tint_foliage);
   }
   return g_lod_surface_out.data();
 }

@@ -28,7 +28,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
 | 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review |
 | 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
-| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`), tested natively; outstanding for 11a: the WASM suites and client-module goldens (CI), the manual river walk, the owner's review of the map images, `package.json` raised to 0.5.0, the new compatibility line (generator v7), then to 0.6.0 for the climate (generator v8); follow-up: LOD rivers, water levels and coarse plate edges match full detail (ADR 0020), a browser look at distant rivers outstanding; 11b–11d not started |
+| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020); 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
 | 13 — Bifacial world: a second face below, gravity toward the midplane | ⏳ Not started |
 | 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
@@ -1261,7 +1261,7 @@ fantasy: warm light and cool shadows, saturated greens, turquoise water, warm ro
 with distance fading into a pale horizon haze. **Rendering and palette only — no terrain
 generation change:** no new materials, no generator version bump, the same landforms and
 vegetation. Design, measured target palette and a full description of the reference image:
-[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1. (Colourful accent vegetation is in Phase 11c;
+[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1. (Biome-tinted vegetation is in Phase 11c;
 clouds are in Phase 12.)
 
 **Status:** ✅ Complete. The owner approved the before/after screenshots and the
@@ -1491,7 +1491,7 @@ Exit criteria
 three tiers as noise contours that always run along valley floors and reach the sea; mountains
 that rise away from rivers within plate-driven uplift belts, with derivative-damped ridged detail;
 lakes, terraced river water above sea level with waterfall steps; climate from altitude, coast
-distance and rain shadows; biomes from a data table driven by the terrain, with colourful accent
+distance and rain shadows; biomes from a data table driven by the terrain, with biome-tinted
 vegetation. Design: §3.
 
 **Status:** In progress. Planned sub-phases (each a generator version bump): **11a — height model,
@@ -1500,10 +1500,10 @@ version 8 after a playtest found snow scattered everywhere — ADR 0019, the fir
 temperature; a playtest follow-up then made the level of detail's rivers, water and coarse
 columns match full detail — ADR 0020; outstanding: the
 WASM suites and client goldens in CI, a look at distant rivers in the browser, the manual river walk, the owner's review of the map images and
-of the new compatibility line); **11b — mountain detail cascade** (not started); **11c — climate, the
-biome table and colourful vegetation** (not started); **11d — fantasy landforms** (karst spires,
+of the new compatibility line); **11b — mountain detail cascade** (built: generator version 9, ADR 0021, tested natively; outstanding: the WASM suites and client goldens in CI, the owner's review and the new compatibility line); **11c — climate, the
+biome table and colourful vegetation** (built: generator version 10, [ADR 0022](./adr/0022-climate-biome-table-vegetation.md), tested natively and in Vitest; outstanding: the same, the cost over the phase, and a look at the foliage in a browser); **11d — fantasy landforms** (karst spires,
 mesas; stretch, after the owner approves 11a–c). What 11a built, and where it differs from the
-design: `WORLD_GENERATION.md` §3.10.
+design: `WORLD_GENERATION.md` §3.10; 11b: §3.11; 11c: §3.12.
 
 Deliverables
 - [x] ADR: drainage-consistent terrain — rivers as noise contours, water above sea level as
@@ -1516,24 +1516,39 @@ Deliverables
   depend on the biome table).*
 - [x] 11a: `IsAirChunk`/`SkyFloor` and `LodBoundsAt` include water above sea level; spawn prefers
   land near water.
-- [ ] 11b: analytic-derivative gradient noise and the derivative-damped ridged cascade (§3.4),
-  amplitude scaled by distance from rivers and uplift; LOD octave dropping.
-- [ ] 11c: temperature with a lapse rate, humidity with coast distance and rain shadow; the biome
-  table (base grid + terrain overrides + dithered borders); surface rules and trees from it;
-  wetland ponds in wet, low, flat ground (moved from 11a).
-- [ ] 11c: colourful vegetation (§3.7): leaf materials (bright, autumn, red, blossom, violet) and
-  grass variants (meadow with flowers, golden), C++ table and TypeScript mirror, with tiles;
-  blossom and autumn tree kinds; accent trees by a grove noise plus a per-tree hash so accents come
-  in clumps, allowed set and share per biome; distant forests keep their colour — `GenerateLod`
-  gives forested columns a canopy (leaf) surface above the tree-cell limit.
+- [x] 11b: analytic-derivative gradient noise and the derivative-damped ridged cascade (§3.4),
+  amplitude scaled by distance from rivers and uplift; LOD octave dropping
+  ([ADR 0021](./adr/0021-mountain-detail-cascade.md), `WORLD_GENERATION.md` §3.11).
+- [x] ADR: climate with continent biases and rain shadows, the biome table, wetland ponds and
+  biome-tinted vegetation ([ADR 0022](./adr/0022-climate-biome-table-vegetation.md)).
+- [x] 11c: temperature with a lapse rate (v8) and the continents' biases, humidity with coast
+  distance and rain shadow; the biome table (zones + altitude bands + terrain overrides + roughened
+  borders); surface rules and trees from it; wetland ponds in wet, low, flat ground (moved from
+  11a). *Deviations:* the borders are roughened by two small noises, not a hash per column; the
+  rain shadow reads a smooth ground height, not `V + U × A` (`WORLD_GENERATION.md` §3.12).
+- [x] 11c: colourful vegetation (§3.7), **as a tint by biome** (the owner's decision, 2026-10-07; the
+  seven variant blocks first built were removed): grass and foliage colours in each biome row;
+  `TerrainGenerator::TintGrid` and the WASM export; the worldgen worker job, the `ChunkStreamer`'s
+  cache and the meshing job's tint; the mesher's `tints` vertex attribute, the atlas alpha masks and
+  the chunk shader; the level of detail's per-column tint in its surface data and its mesher; the
+  blossom tree shape; distant forests keep their colour (`GenerateLod` gives forested columns a
+  `leaves` surface above the tree-cell limit). The in-game F4 map and the inspect tool know the 19
+  biomes. *Not built:* per-tree accent groves (colour is by biome; the owner will design the trees
+  later); tint on sections the player has modified, seen from afar.
+- [x] 11c: an `ice` block (placeable, a cracked pale-blue tile): a frozen ocean's top water voxel is
+  ice (chunks, and level-of-detail cells up to 4 m), over water and a gravel floor
+  (`climate_test.cpp`: every sampled frozen column). *Not built:* freezing lakes and rivers; ice
+  being slippery (no per-material friction in the player controller yet).
 - [ ] 11d (stretch): karst spire and mesa provinces.
 - [x] Inspect tool (11a): rivers and lakes on a local map image with a hillshade mode
   (`dwell_worldgen_inspect <seed> map`, with `biome` and `valley` modes), and on the in-game F4 map.
-  *The biome table's new biomes join the map with 11c.*
+  *The biome table's biomes joined the map with 11c.*
 - [x] 11a: goldens regenerated (generator version 7) with a lake, a stream, a river, a great river and
   a waterfall per seed, chunks and LOD; the LOD agreement test gains a lake, a river and a great
   river site.
-- [ ] Goldens regenerated per later sub-phase, with alpine and coast entries.
+- [x] Goldens regenerated per later sub-phase, with alpine and coast entries (11b: generator
+  version 9; 11c: version 10, with alpine meadow, bare rock, snowfield, wetland, blossom grove,
+  autumn woods and conifer sites, chunks and LOD) — natively; the WASM runs are CI's.
 - [x] 11a: `ARCHITECTURE.md` §6.3 (pipeline stages, water rule) and §6.6 (LOD water) updated.
 - [x] 11a follow-up (playtest: distant terrain changed shape and colour as levels switched, a wide
   river from afar was a dry gully with pools up close, distant water stood over its banks): LOD
@@ -1544,7 +1559,7 @@ Deliverables
   `lod: river valleys and their water`, `lod: column surfaces` at every level again, and the
   mesher's and LOD system's water-level tests. *Deviation:* ADR 0018's widening of channels to a
   cell is dropped (it flooded valleys from afar); streams are not drawn from 32 m cells.
-- [ ] `ARCHITECTURE.md` §6.3 (surface rules, climate, biomes) updated for 11b–11c.
+- [x] `ARCHITECTURE.md` §6.3 (surface rules, climate, biomes) updated for 11b–11c.
 
 Exit criteria
 - [x] Rivers lie in valleys: sampled channel beds are no higher than the terrain 50–500 m to either
@@ -1554,13 +1569,22 @@ Exit criteria
   occur only at terrace steps (143,000 water voxels around a lake, streams, rivers and a waterfall:
   none with air below, 564 contacts all at steps, 0 elsewhere).
 - [x] No cave air within the suppression depth below water.
-- [ ] Snow only above the altitude its temperature implies; lee sides of ranges drier than
-  windward sides.
-- [ ] Vegetation: new materials mirrored and placeable; accent trees clumped (nearest-neighbour
-  accent fraction well above the overall accent fraction); a forested site's level-4 LOD surface
-  is mostly leaf materials.
-- [ ] Biome shares within bands for 8 seeds; chunk and LOD generation ≤ +25 % of today; LOD
-  agreement thresholds still met; determinism goldens pass everywhere.
+- [x] Snow only above the altitude its temperature implies; lee sides of ranges drier than
+  windward sides (`climate_test.cpp`: every snowfield column is cold and every cold column snow;
+  across 1,209 ranges the lee side is 0.41 drier).
+- [x] Vegetation: the biomes' tints agree between neighbouring chunks (shared edges identical), blend
+  smoothly (no step over a third of the biomes' range), reach the table's colours inside a biome
+  and agree with the level of detail's; the client's mesher, LOD mesher, atlas masks, streamer and
+  pool tests cover the tint; a forested site's level-4 LOD surface is leaves
+  (`vegetation_test.cpp`, `mesher.test.ts`, `lodMesher.test.ts`, `textures.test.ts`). *Deviation:*
+  clumped accent trees are not built (colour is by biome).
+- [x] Biome shares within bands for 8 seeds (every climate biome 1–35 %, over 8 seeds: 1.2–21 %).
+- [x] LOD agreement thresholds still met (native).
+- [ ] Chunk and LOD generation ≤ +25 % of today: measured per version (`bench`, near the spawn):
+  11b chunk ±0 %, LOD sections +14–26 % over version 8; 11c chunk +23 %, LOD +11–25 % over 11b —
+  about +30–57 % at LOD levels over version 8. Needs a decision or an optimisation.
+- [ ] Determinism goldens pass everywhere: regenerated and passing natively; the WASM suites and
+  the client module's goldens run in CI.
 - [ ] Manual: a walk along a river from its spring to the sea and a flight over a range, with
   screenshots for the owner.
 

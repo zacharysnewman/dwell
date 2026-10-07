@@ -4,11 +4,40 @@
 // player's surroundings (1 km across) to the whole disc (Phase 10: the plate layout's continents).
 // Biomes and colours are prototype (§6.1).
 
-/** Biome colours, indexed by worldgen::Biome (ocean, beach, plains, forest, desert, snowy, mountains). */
-export const BIOME_COLORS = [0x2f5fa8, 0xd8cc8f, 0x7fb04a, 0x3e7a2e, 0xd9c17a, 0xeef2f5, 0x8a8580];
+/**
+ * Biome colours and names, indexed by worldgen::Biome (server/core/include/dwell/worldgen/biomes.h,
+ * Phase 11c): the sea (ocean, deep, frozen), the coast (beach, sea cliff), banks (riverbank, lake
+ * shore) and the land's climate biomes (meadow, broadleaf forest, blossom grove, autumn woods,
+ * conifer forest, wetland, savanna, dunes, tundra, alpine meadow, bare rock, snowfield).
+ */
+export const BIOME_COLORS = [
+  0x2f5fa8, 0x1e3a78, 0xaac8e1, 0xd8cc8f, 0x969082, 0xaaa096, 0xd7c896, 0x96cd55, 0x3a823e,
+  0xeb82aa, 0xd78c32, 0x235f4b, 0x5a966e, 0xc8be5a, 0xebcd78, 0xa0a578, 0x78be8c, 0xa0948c,
+  0xf0f4f8,
+];
 /** River and lake water (Phase 11a), drawn over the biome where the ground lies below it. */
 export const WATER_COLOR = 0x3fa8d8;
-export const BIOME_NAMES = ['ocean', 'beach', 'plains', 'forest', 'desert', 'snowy', 'mountains'];
+export const BIOME_NAMES = [
+  'ocean',
+  'deep ocean',
+  'frozen ocean',
+  'beach',
+  'sea cliff',
+  'riverbank',
+  'lake shore',
+  'meadow',
+  'broadleaf forest',
+  'blossom grove',
+  'autumn woods',
+  'conifer forest',
+  'wetland',
+  'savanna',
+  'dunes',
+  'tundra',
+  'alpine meadow',
+  'bare rock',
+  'snowfield',
+];
 
 /** Columns per map edge. */
 export const MAP_SIZE = 128;

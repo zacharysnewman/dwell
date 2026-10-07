@@ -39,6 +39,7 @@
 // distance from the coast, and draws internal plate edges; `height` is a hill-shaded height map
 // from the full terrain pipeline (slower: use 16 km per pixel or more).
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -57,6 +58,30 @@
 using namespace dwell;
 
 namespace {
+
+// Map colours and letters of the biomes, in worldgen::Biome order (biomes.h).
+constexpr float kBiomeColour[worldgen::kBiomeCount][3] = {
+    {70, 90, 150},    // ocean
+    {45, 60, 120},    // deep ocean
+    {170, 200, 225},  // frozen ocean
+    {232, 214, 150},  // beach
+    {150, 135, 130},  // sea cliff
+    {170, 160, 150},  // riverbank
+    {215, 200, 150},  // lake shore
+    {150, 205, 85},   // meadow
+    {58, 130, 62},    // broadleaf forest
+    {235, 130, 170},  // blossom grove
+    {215, 140, 50},   // autumn woods
+    {35, 95, 75},     // conifer forest
+    {90, 150, 110},   // wetland
+    {200, 190, 90},   // savanna
+    {235, 205, 120},  // dunes
+    {160, 165, 120},  // tundra
+    {120, 190, 140},  // alpine meadow
+    {160, 148, 140},  // bare rock
+    {240, 244, 248},  // snowfield
+};
+constexpr char kBiomeLetter[worldgen::kBiomeCount + 1] = "~=*bcrlmfpaWsdtAXS^";
 
 // Whole-disc image: one pixel per `km` kilometres, north (−z) up.
 int WriteDisc(const worldgen::TerrainGenerator& gen, const std::string& path, int km,
@@ -230,6 +255,67 @@ int Bench(std::uint64_t seed) {
   return 0;
 }
 
+// Shares of the land by biome over a grid of `km`-spaced columns across the disc, per seed and the
+// range over the seeds (WORLD_GENERATION.md §3.9).
+int BiomeShares(std::uint64_t first, int seeds, int km) {
+  std::vector<std::array<double, worldgen::kBiomeCount>> shares;
+  for (int k = 0; k < seeds; ++k) {
+    const worldgen::TerrainGenerator gen(first + static_cast<std::uint64_t>(k));
+    std::array<long, worldgen::kBiomeCount> n{};
+    long land = 0;
+    std::vector<float> temperature, humidity;
+    for (int z = -core::kWorldRadius + km * 500; z < core::kWorldRadius; z += km * 1000)
+      for (int x = -core::kWorldRadius + km * 500; x < core::kWorldRadius; x += km * 1000) {
+        const worldgen::Column c = gen.ColumnAt(x, z);
+        if (c.outside || c.coast <= 0.0f) continue;
+        ++n[static_cast<std::size_t>(c.biome)];
+        ++land;
+        temperature.push_back(c.temperature);
+        humidity.push_back(c.humidity);
+      }
+    std::array<double, worldgen::kBiomeCount> share{};
+    for (int b = 0; b < worldgen::kBiomeCount; ++b) {
+      share[static_cast<std::size_t>(b)] =
+          land ? 100.0 * static_cast<double>(n[static_cast<std::size_t>(b)]) /
+                     static_cast<double>(land)
+               : 0.0;
+    }
+    shares.push_back(share);
+    if (seeds <= 2) {
+      std::sort(temperature.begin(), temperature.end());
+      std::sort(humidity.begin(), humidity.end());
+      const auto pct = [](const std::vector<float>& v, int p) {
+        return v[v.size() * static_cast<std::size_t>(p) / 100];
+      };
+      std::printf("temperature percentiles 5/25/50/75/95: %.2f %.2f %.2f %.2f %.2f\n",
+                  pct(temperature, 5), pct(temperature, 25), pct(temperature, 50),
+                  pct(temperature, 75), pct(temperature, 95));
+      std::printf("humidity    percentiles 5/25/50/75/95: %.2f %.2f %.2f %.2f %.2f\n",
+                  pct(humidity, 5), pct(humidity, 25), pct(humidity, 50), pct(humidity, 75),
+                  pct(humidity, 95));
+    }
+    const auto spawn = gen.SpawnPoint();
+    std::printf("seed %3llu: %ld land samples; spawn biome %s\n",
+                static_cast<unsigned long long>(first) + static_cast<unsigned long long>(k), land,
+                worldgen::BiomeName(gen.ColumnAt(static_cast<std::int32_t>(spawn[0]),
+                                                 static_cast<std::int32_t>(spawn[2]))
+                                        .biome));
+  }
+  std::printf("%-18s %7s %7s %7s   (share of land, %% over %d seeds)\n", "biome", "min", "mean",
+              "max", seeds);
+  for (int b = 0; b < worldgen::kBiomeCount; ++b) {
+    double lo = 1e9, hi = 0, sum = 0;
+    for (const auto& sh : shares) {
+      lo = std::min(lo, sh[static_cast<std::size_t>(b)]);
+      hi = std::max(hi, sh[static_cast<std::size_t>(b)]);
+      sum += sh[static_cast<std::size_t>(b)];
+    }
+    std::printf("%-18s %7.2f %7.2f %7.2f\n", worldgen::BiomeName(static_cast<worldgen::Biome>(b)),
+                lo, sum / static_cast<double>(shares.size()), hi);
+  }
+  return 0;
+}
+
 int Stats(std::uint64_t first, int seeds, int km) {
   for (int k = 0; k < seeds; ++k) {
     const worldgen::TerrainGenerator gen(first + static_cast<std::uint64_t>(k));
@@ -286,19 +372,8 @@ int WriteMap(const worldgen::TerrainGenerator& gen, const std::string& path, int
             std::clamp((static_cast<float>(c.water) - c.height) / 20.0f, 0.0f, 1.0f);
         r = 80 - 50 * depth, g = 190 - 90 * depth, b = 220 - 60 * depth;
       } else if (mode == "biome") {
-        static const float kBiome[7][3] = {{70, 90, 150},  {230, 215, 150}, {140, 190, 80},
-                                           {40, 120, 50},  {220, 190, 110}, {235, 240, 245},
-                                           {150, 140, 135}};
-        const auto& k = kBiome[static_cast<int>(c.biome)];
+        const auto& k = kBiomeColour[static_cast<int>(c.biome)];
         r = k[0] * shade, g = k[1] * shade, b = k[2] * shade;
-        if (c.biome == worldgen::Biome::kMountains) {  // grass, bare rock above the tree line, snow
-          const float snow = c.temperature < -0.35f ? 1.0f : 0.0f;
-          const float bare = c.temperature < -0.2f ? 1.0f : 0.0f;
-          const float rock[3] = {160, 148, 140}, grass[3] = {138, 190, 78},
-                      white[3] = {240, 244, 248};
-          const float* t = snow > 0 ? white : bare > 0 ? rock : grass;
-          r = t[0] * shade, g = t[1] * shade, b = t[2] * shade;
-        }
       } else {
         const float t = std::clamp(h / 2500.0f, 0.0f, 1.0f);  // lowland green → rock → snow
         r = (95 + 150 * t) * shade, g = (150 + 70 * t - 40 * t * t) * shade,
@@ -456,19 +531,11 @@ int WriteView(const worldgen::TerrainGenerator& gen, const std::string& path, do
             base[0] = 90 - 55 * depth, base[1] = 195 - 100 * depth, base[2] = 225 - 60 * depth;
             lit = 0.85f + 0.15f * ny;  // water: nearly flat
           } else {
-            static const float kBiome[7][3] = {{70, 90, 150},  {232, 214, 150}, {138, 190, 78},
-                                               {58, 130, 62},  {222, 190, 112}, {240, 244, 248},
-                                               {160, 148, 140}};
-            const auto& k = kBiome[static_cast<int>(s.biome)];
+            const auto& k = kBiomeColour[static_cast<int>(s.biome)];
             const float rock = std::clamp((gx * gx + gz * gz - 0.5f) * 1.2f, 0.0f, 1.0f);  // steep
-            // Snow and bare rock by the ground's temperature (the terrain's own rule).
-            const float snow = std::clamp((-0.35f - s.temperature) / 0.08f + 0.5f, 0.0f, 1.0f);
-            const float bare = std::clamp((-0.2f - s.temperature) / 0.08f, 0.0f, 1.0f);
             for (int c = 0; c < 3; ++c) {
               const float stone = c == 0 ? 168.0f : c == 1 ? 150.0f : 142.0f;
-              const float snowy = 246.0f;
-              const float ground = k[c] * (1 - rock) + stone * rock;
-              base[c] = (ground * (1 - bare) + stone * bare) * (1 - snow) + snowy * snow;
+              base[c] = k[c] * (1 - rock) + stone * rock;
             }
           }
           // Warm light, cool shadow.
@@ -506,6 +573,10 @@ int WriteView(const worldgen::TerrainGenerator& gen, const std::string& path, do
 int main(int argc, char** argv) {
   const std::uint64_t seed = argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 0;
   if (argc > 2 && std::string_view(argv[2]) == "bench") return Bench(seed);
+  if (argc > 2 && std::string_view(argv[2]) == "biomes") {
+    return BiomeShares(seed, argc > 3 ? std::max(1, std::atoi(argv[3])) : 8,
+                       argc > 4 ? std::max(1, std::atoi(argv[4])) : 64);
+  }
   if (argc > 2 && std::string_view(argv[2]) == "stats") {
     return Stats(seed, argc > 3 ? std::atoi(argv[3]) : 16,
                  argc > 4 ? std::max(1, std::atoi(argv[4])) : 32);
@@ -606,15 +677,17 @@ int main(int argc, char** argv) {
       ++counts[c.biome];
       lo = std::min(lo, c.height);
       hi = std::max(hi, c.height);
-      char ch = "~bpfdsm"[static_cast<int>(c.biome)];
-      if (c.height > 500.0f) ch = 'M';
+      char ch = kBiomeLetter[static_cast<int>(c.biome)];
+      if (c.height > 1500.0f) ch = 'M';
       std::putchar(ch);
     }
     std::putchar('\n');
   }
   std::printf(
-      "~ ocean  b beach  p plains  f forest  d desert  s snowy  m mountains  M > 500 m  (blank: "
-      "beyond the rim)\n");
+      "~ ocean  = deep ocean  * frozen ocean  b beach  c sea cliff  r riverbank  l lake shore\n"
+      "m meadow  f broadleaf  p blossom grove  a autumn woods  W conifer  s wetland  d savanna\n"
+      "t dunes  A tundra  X alpine meadow  S bare rock  ^ snowfield;\n"
+      "M > 1500 m  (blank: beyond the rim)\n");
   std::printf("height %.1f .. %.1f\n", lo, hi);
   for (const auto& [b, n] : counts)
     std::printf("%-10s %5.1f%%\n", worldgen::BiomeName(b), 100.0 * n / (48 * 96));

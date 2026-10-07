@@ -26,6 +26,11 @@ export interface MeshArrays {
   colors: Float32Array<ArrayBuffer>;
   /** Texture coordinates in blocks: the shader repeats the tile once per unit. */
   uvs: Float32Array<ArrayBuffer>;
+  /**
+   * Biome tint per vertex (r, g, b multipliers, 1 for untinted materials): the chunk shader applies
+   * it where the texture's alpha says so (render/textures.ts TINT_MASKS).
+   */
+  tints: Float32Array<ArrayBuffer>;
   /** Atlas rectangle per vertex: u0, v0, width, height (render/textures.ts). */
   tiles: Float32Array<ArrayBuffer>;
   indices: Uint32Array<ArrayBuffer>;
@@ -130,7 +135,20 @@ class Builder {
   private readonly colors: number[] = [];
   private readonly uvs: number[] = [];
   private readonly tiles: number[] = [];
+  private readonly tints: number[] = [];
   private readonly indices: number[] = [];
+  private readonly scratch = [1, 1, 1];
+
+  constructor(private readonly field: TintField = new TintField(null)) {}
+
+  private pushTint(kind: 'grass' | 'foliage' | undefined, x: number, z: number): void {
+    if (kind) {
+      this.field.at(kind, x, z, this.scratch);
+      this.tints.push(this.scratch[0] ?? 1, this.scratch[1] ?? 1, this.scratch[2] ?? 1);
+    } else {
+      this.tints.push(1, 1, 1);
+    }
+  }
 
   /** Quad on `axis = plane`, spanning [u0,u1] × [v0,v1] (u = axis+1, v = axis+2), facing `sign`. */
   quad(
@@ -143,6 +161,7 @@ class Builder {
     v1: number,
     color: number,
     tile: TileRect,
+    tintKind?: 'grass' | 'foliage',
   ): void {
     const u = (axis + 1) % 3;
     const v = (axis + 2) % 3;
@@ -165,6 +184,7 @@ class Builder {
       this.positions.push(px, py, pz);
       this.normals.push(axis === 0 ? sign : 0, axis === 1 ? sign : 0, axis === 2 ? sign : 0);
       this.colors.push(r, g, b);
+      this.pushTint(tintKind, px, pz);
       // In blocks: s across, t up the face (world y on sides), tops and bottoms in x/z.
       if (axis === 1) this.uvs.push(px, pz);
       else if (axis === 0) this.uvs.push(pz, py);
@@ -193,6 +213,7 @@ class Builder {
     color: number,
     tile: TileRect,
     sideTop?: (pt: readonly [number, number, number]) => number,
+    tintKind?: 'grass' | 'foliage',
   ): void {
     const base = this.positions.length / 3;
     const r = (((color >> 16) & 0xff) / 255) * tint[0];
@@ -209,6 +230,7 @@ class Builder {
       this.positions.push(px, py, pz);
       this.normals.push(nx, ny, nz);
       this.colors.push(r, g, b);
+      this.pushTint(tintKind, px, pz);
       // The dominant axis of the normal: tops and bottoms (and slopes) in x/z, sides by height.
       if (Math.abs(ny) >= Math.abs(nx) && Math.abs(ny) >= Math.abs(nz)) this.uvs.push(px, pz);
       else if (Math.abs(nx) >= Math.abs(nz)) this.uvs.push(pz, tv);
@@ -224,6 +246,7 @@ class Builder {
       normals: Float32Array.from(this.normals),
       colors: Float32Array.from(this.colors),
       uvs: Float32Array.from(this.uvs),
+      tints: Float32Array.from(this.tints),
       tiles: Float32Array.from(this.tiles),
       indices: Uint32Array.from(this.indices),
     };
@@ -231,6 +254,46 @@ class Builder {
 }
 
 const PLAIN = tileRect('plain');
+
+/** Points per axis of a chunk's tint grid (x, z = 0, 16, 32 m) and values per point (§3.7). */
+export const TINT_POINTS = 3;
+export const TINT_STRIDE = 6;
+export const TINT_GRID_BYTES = TINT_POINTS * TINT_POINTS * TINT_STRIDE;
+/** The unit of the generator's tint bytes (biomes.h kTintUnit): 64 is a multiplier of 1. */
+const TINT_UNIT = 64;
+
+/**
+ * The biome tint of a chunk's columns (worldgen TerrainGenerator::TintGrid): grass and foliage
+ * multipliers on a 3 × 3 grid 16 m apart, bilinear in between — the same function for every vertex
+ * of the chunk, so quads agree along their shared edges. Without a grid (generators without
+ * biomes, tests) nothing is tinted.
+ */
+export class TintField {
+  constructor(private readonly grid: Uint8Array | null) {}
+
+  /** The multiplier of `kind` at chunk-local (x, z), written to `out`. */
+  at(kind: 'grass' | 'foliage', x: number, z: number, out: number[]): void {
+    const g = this.grid;
+    if (!g || g.length < TINT_GRID_BYTES) {
+      out[0] = out[1] = out[2] = 1;
+      return;
+    }
+    const fx = Math.min(Math.max(x, 0), CHUNK_SIZE) / 16;
+    const fz = Math.min(Math.max(z, 0), CHUNK_SIZE) / 16;
+    const i = Math.min(Math.floor(fx), TINT_POINTS - 2);
+    const j = Math.min(Math.floor(fz), TINT_POINTS - 2);
+    const tx = fx - i;
+    const tz = fz - j;
+    const base = kind === 'grass' ? 0 : 3;
+    for (let c = 0; c < 3; c++) {
+      const v = (di: number, dj: number): number =>
+        g[((j + dj) * TINT_POINTS + i + di) * TINT_STRIDE + base + c] ?? TINT_UNIT;
+      const a = v(0, 0) + (v(1, 0) - v(0, 0)) * tx;
+      const b = v(0, 1) + (v(1, 1) - v(0, 1)) * tx;
+      out[c] = (a + (b - a) * tz) / TINT_UNIT;
+    }
+  }
+}
 
 /** Vertex colour and texture tile of a face: textured faces take their colour from the texture. */
 function surface(style: MaterialStyle, axis: number, sign: number): [number, TileRect] {
@@ -293,7 +356,7 @@ function shapedVoxel(
     const axis = f.tag < 6 ? Math.floor(f.tag / 2) : 1;
     const sign = f.tag < 6 ? (f.tag % 2 === 0 ? 1 : -1) : normal[1] >= 0 ? 1 : -1;
     const [color, tile] = surface(k.style, axis, sign);
-    b.polygon(f.pts, x, y, z, normal, tint, color, tile, sideTopOf(def, f.tag));
+    b.polygon(f.pts, x, y, z, normal, tint, color, tile, sideTopOf(def, f.tag), k.style.tint);
   }
 }
 
@@ -349,13 +412,15 @@ function floodedWater(b: Builder, padded: Uint16Array, x: number, y: number, z: 
 }
 
 /**
- * Meshes a chunk from its padded voxels (PADDED_VOLUME materials, `paddedIndex` order). Positions
- * are chunk-local.
+ * Meshes a chunk from its padded voxels (PADDED_VOLUME materials, `paddedIndex` order) and, if it
+ * has one, the biome tint grid of its columns (TINT_GRID_BYTES, `TintField`). Positions are
+ * chunk-local.
  */
-export function meshChunk(padded: Uint16Array): ChunkMeshes {
+export function meshChunk(padded: Uint16Array, tint: Uint8Array | null = null): ChunkMeshes {
   if (padded.length !== PADDED_VOLUME) throw new RangeError('padded voxels must be PADDED_VOLUME');
-  const opaque = new Builder();
-  const transparent = new Builder();
+  const field = new TintField(tint);
+  const opaque = new Builder(field);
+  const transparent = new Builder(field);
   const N = CHUNK_SIZE;
   // Merge mask for one slice: material + 1 of a visible mergeable face, 0 for none.
   const mask = new Int32Array(N * N);
@@ -416,7 +481,7 @@ export function meshChunk(padded: Uint16Array): ChunkMeshes {
           if (style.look === 'water' && face === 2) plane = d + WATER_SURFACE;
           const [color, tile] = surface(style, axis, sign);
           const target = style.opacity < 1 ? transparent : opaque;
-          target.quad(axis, sign, plane, i, i + w, j, j + h, color, tile);
+          target.quad(axis, sign, plane, i, i + w, j, j + h, color, tile, style.tint);
           i += w;
         }
       }
@@ -445,6 +510,7 @@ export function meshBuffers(m: ChunkMeshes): ArrayBuffer[] {
     a.normals.buffer,
     a.colors.buffer,
     a.uvs.buffer,
+    a.tints.buffer,
     a.tiles.buffer,
     a.indices.buffer,
   ]);

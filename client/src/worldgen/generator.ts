@@ -12,6 +12,9 @@ import {
 } from '../lod/grid';
 import { wasmUrl } from '../sim/wasmUrl';
 
+/** Bytes of a chunk column's tint grid (mesh/mesher.ts TINT_GRID_BYTES). */
+const TINT_GRID_BYTES = 3 * 3 * 6;
+
 /** Module surface of dwell_worldgen.js (-sMODULARIZE -sEXPORT_ES6). */
 export interface DwellWorldgenModule {
   HEAPU8: Uint8Array;
@@ -25,6 +28,7 @@ export interface DwellWorldgenModule {
   _dwell_worldgen_generate(cx: number, cy: number, cz: number): number;
   _dwell_worldgen_hash(outPtr: number): void;
   _dwell_worldgen_map(x0: number, z0: number, step: number, n: number): number;
+  _dwell_worldgen_tint(cx: number, cz: number): number;
   _dwell_worldgen_lod(level: number, i: number, j: number, k: number): number;
   _dwell_worldgen_lod_cells(): number;
   _dwell_worldgen_lod_surface(): number;
@@ -87,6 +91,15 @@ export class ChunkGenerator {
   map(x0: number, z0: number, step: number, n: number): Uint8Array<ArrayBuffer> | null {
     const ptr = this.m._dwell_worldgen_map(x0, z0, step, n);
     return ptr ? this.m.HEAPU8.slice(ptr, ptr + n * n * 4) : null;
+  }
+
+  /**
+   * The biome tint of chunk column (cx, cz): TINT_GRID_BYTES (3 × 3 points 16 m apart, each the
+   * grass then the foliage colour as r, g, b in 1/64), or null for generators without biomes.
+   */
+  tint(cx: number, cz: number): Uint8Array<ArrayBuffer> | null {
+    const ptr = this.m._dwell_worldgen_tint(cx, cz);
+    return ptr ? this.m.HEAPU8.slice(ptr, ptr + TINT_GRID_BYTES) : null;
   }
 
   /** GenerateLod (§6.6): the section as the generator leaves it, at its level's resolution. */

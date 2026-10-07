@@ -106,6 +106,27 @@ inline constexpr float kLakeRiverZero = 0.7f, kLakeRiverFull = 1.1f;
 inline constexpr float kNoLake = 4.0f;    // squared radius with no lake near
 inline constexpr float kNoLevel = -1e9f;  // lake level of a corner with no lake
 
+// Wetland ponds (Phase 11c): a jittered grid of cells with at most one pond each, in wet, low, flat
+// ground (the oracle decides from the climate at the pond's centre). A pond is a small lake: a
+// bowl below its surface — the integer height of the valley floor at its centre, so the ground
+// around it (never below the valley floor) is never lower — and a low berm around the shore. Sites
+// lie kPondMargin m inside the cell, and a pond's reach (berm and shore wobble) is under that, so a
+// pond never reaches a neighbouring cell.
+inline constexpr std::int32_t kPondCell = 128;  // m
+inline constexpr std::int32_t kPondMargin = 24;
+inline constexpr float kPondChance = 0.5f;
+inline constexpr float kPondMinRadius = 5.0f, kPondRadiusRange = 11.0f;  // m (≤ 16)
+inline constexpr float kPondMinDepth = 1.2f, kPondDepthRange = 1.4f;     // m
+inline constexpr float kPondShoreNoise = 0.35f;
+inline constexpr std::int32_t kPondShoreWavelength = 24;
+// A pond stands only where the centre's humidity is at least this (the wetland biome's), on ground
+// at most kPondRelief m above the valley floor and kPondInland m from the coast.
+inline constexpr float kPondHumidity = 0.55f;
+inline constexpr float kPondRelief = 8.0f;
+inline constexpr float kPondInland = 8'000.0f;
+// Level of detail: cells this wide (m) or wider show no ponds.
+inline constexpr std::int64_t kPondSkipCell = 8;
+
 // Caves stay this far (m) below a river, lake or shallow sea floor (added to the 3 m the cave fade
 // starts below the surface).
 inline constexpr float kCaveClearance = 12.0f;
@@ -129,12 +150,16 @@ struct Corner {
   float lake_q = kNoLake;       // squared radius of the nearest lake (≥ kNoLake: none)
   float lake_level = kNoLevel;  // m: the surface of that lake
   float lake_depth = 0.0f;      // m: its deepest point below the surface
+  // The pond of the point's own cell, if any (same meanings; kNoLake / kNoLevel without one).
+  float pond_q = kNoLake;
+  float pond_level = kNoLevel;
+  float pond_depth = 0.0f;
 };
 
 // The seeds of the river noises.
 struct Seeds {
   std::uint32_t great, river, stream, meander_x, meander_z, terrace, lake, shore, spring,
-      great_meander_x, great_meander_z;
+      great_meander_x, great_meander_z, pond, pond_shore;
   // Each tier's lattice is shifted by a hashed offset (m, within a wavelength): Perlin noise is
   // exactly zero at its lattice points, so unshifted tiers would all cross at the origin — the
   // spawn — in every world.
@@ -148,6 +173,8 @@ Seeds MakeSeeds(std::uint64_t world_seed);
 class LevelOracle {
  public:
   virtual float LakeLevel(std::int64_t x, std::int64_t z) const = 0;
+  // A wetland pond's surface from its centre, or kNoLevel if the ground there is not wetland.
+  virtual float PondLevel(std::int64_t x, std::int64_t z) const = 0;
 
  protected:
   ~LevelOracle() = default;

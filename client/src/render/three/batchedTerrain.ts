@@ -16,6 +16,7 @@ function chunkGeometry(arrays: MeshArrays): BufferGeometry | null {
   g.setAttribute('normal', new BufferAttribute(arrays.normals, 3));
   g.setAttribute('color', new BufferAttribute(arrays.colors, 3));
   g.setAttribute('uv', new BufferAttribute(arrays.uvs, 2));
+  g.setAttribute('tint', new BufferAttribute(arrays.tints, 3));
   g.setAttribute('tile', new BufferAttribute(arrays.tiles, 4));
   g.setIndex(new BufferAttribute(arrays.indices, 1));
   return g;

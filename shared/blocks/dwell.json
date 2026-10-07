@@ -18,7 +18,8 @@
     },
     {
       "name": "grass", "density": 1400, "shape": "full", "placeable": true,
-      "color": "#8dbf3f", "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
+      "color": "#8dbf3f", "tint": "grass",
+      "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
     { "name": "stone_slab", "family": "slab", "of": "stone" },
     {
@@ -58,12 +59,16 @@
       "color": "#fbf8f2", "textures": "snow"
     },
     {
+      "name": "ice", "density": 920, "shape": "full", "placeable": true,
+      "color": "#b4daf0", "textures": "ice"
+    },
+    {
       "name": "log", "density": 700, "shape": "full", "placeable": true,
       "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
     },
     {
       "name": "leaves", "density": 200, "shape": "full", "placeable": true,
-      "color": "#6fa83a", "textures": "leaves"
+      "color": "#6fa83a", "tint": "foliage", "textures": "leaves"
     },
     {
       "name": "coal_ore", "density": 2400, "shape": "full", "placeable": true,

@@ -4,6 +4,7 @@
 - Date: 2026-10-06
 - Resolves: a Phase 11a playtest finding (snow scattered everywhere); the first part of Phase 11c's
   climate
+- Amended by: [0022](0022-climate-biome-table-vegetation.md) (decision 3: the mountains biome is replaced by altitude bands; the snow line's numbers)
 - Builds on: [0018](0018-drainage-consistent-terrain.md), [0017](0017-continents-from-voronoi-plates.md)
 
 ## Context

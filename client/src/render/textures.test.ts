@@ -6,6 +6,7 @@ import {
   CELL,
   GUTTER,
   TILE,
+  TINT_MASKS,
   tileRect,
   tiledFbm,
   tiledNoise,
@@ -100,5 +101,47 @@ describe('texture atlas', () => {
     expect(topG).toBeGreaterThan(bottomG);
     expect(bottomR).toBeGreaterThan(bottomG); // dirt below the fringe
     expect(mean('plain')).toEqual([255, 255, 255]);
+  });
+});
+
+describe('biome tint masks (WORLD_GENERATION.md §3.7)', () => {
+  const atlas = buildAtlas();
+  const alphaOf = (name: TileName, x: number, y: number): number => {
+    const r = tileRect(name);
+    const px = Math.round(r.u0 * ATLAS_SIZE) + x;
+    const py = Math.round(r.v0 * ATLAS_SIZE) + y;
+    return atlas.data[(py * ATLAS_SIZE + px) * 4 + 3] ?? -1;
+  };
+
+  it('marks the grass top and the leaves as tinted (alpha 0) and other tiles as opaque', () => {
+    for (let i = 0; i < TILE; i += 7) {
+      expect(alphaOf('grass', i, 5)).toBe(0);
+      expect(alphaOf('leaves', 3, i)).toBe(0);
+      for (const name of ['stone', 'dirt', 'water', 'sand', 'snow', 'logSide'] as const) {
+        expect(alphaOf(name, i, 9)).toBe(255);
+      }
+    }
+  });
+
+  it('tints only the grass fringe of the grass side, not its dirt', () => {
+    // Row y = TILE − 1 is the top of the tile: the fringe is at least 4 texels deep, at most 9.
+    for (let x = 0; x < TILE; x++) {
+      expect(alphaOf('grassSide', x, TILE - 1)).toBe(0);
+      expect(alphaOf('grassSide', x, TILE - 4)).toBe(0);
+      expect(alphaOf('grassSide', x, TILE - 10)).toBe(255);
+      expect(alphaOf('grassSide', x, 0)).toBe(255);
+    }
+  });
+
+  it('every mask is a share between 0 and 1', () => {
+    for (const [name, mask] of Object.entries(TINT_MASKS)) {
+      for (let y = 0; y < TILE; y += 5) {
+        for (let x = 0; x < TILE; x += 5) {
+          const v = mask(x, y);
+          expect(v, name).toBeGreaterThanOrEqual(0);
+          expect(v, name).toBeLessThanOrEqual(1);
+        }
+      }
+    }
   });
 });
