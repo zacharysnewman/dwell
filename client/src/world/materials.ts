@@ -12,6 +12,8 @@ export interface MaterialStyle {
   color: number;
   opacity: number;
   textures?: MaterialTextures;
+  /** Multiplied by the biome's grass or foliage colour (render/textures.ts TINT_MASKS). */
+  tint?: 'grass' | 'foliage';
   /** Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z). */
   ladderFace?: number;
   /** Index into SHAPES: the solid's geometry in its cell (0 = none). */
@@ -33,6 +35,7 @@ export const MATERIALS: readonly MaterialStyle[] = STATE_DEFS.map((s) => ({
   shape: s.shape,
   flooded: s.flooded,
   ...(s.textures ? { textures: s.textures } : {}),
+  ...(s.tint ? { tint: s.tint } : {}),
   ...(s.ladderFace !== undefined ? { ladderFace: s.ladderFace } : {}),
   ...(s.placeable ? { placeable: true } : {}),
 }));

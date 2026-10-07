@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { tileRect } from '../render/textures';
 import { faceTint, normalTint } from '../render/look';
 import { STATE_DEFS, stateId } from '../world/blocks';
-import { meshChunk, PADDED_VOLUME, paddedIndex, type MeshArrays } from './mesher';
+import {
+  meshChunk,
+  PADDED_VOLUME,
+  paddedIndex,
+  TINT_GRID_BYTES,
+  TINT_POINTS,
+  TINT_STRIDE,
+  type MeshArrays,
+} from './mesher';
 
 const WATER = stateId('dwell:water');
 const GRASS = stateId('dwell:grass');
@@ -344,6 +352,87 @@ describe('greedy chunk mesher', () => {
       expect(pool.transparent.indices.length).toBeLessThan(
         lone.transparent.indices.length + wet.transparent.indices.length,
       );
+    });
+  });
+
+  describe('biome tint (WORLD_GENERATION.md §3.7)', () => {
+    const LEAVES = stateId('dwell:leaves');
+    /** A tint grid: grass (r, g, b) and foliage (r, g, b) at every point, or per point by `at`. */
+    function grid(at: (i: number, j: number) => number[]): Uint8Array {
+      const g = new Uint8Array(TINT_GRID_BYTES);
+      for (let j = 0; j < TINT_POINTS; j++)
+        for (let i = 0; i < TINT_POINTS; i++) g.set(at(i, j), (j * TINT_POINTS + i) * TINT_STRIDE);
+      return g;
+    }
+    const vertices = (a: MeshArrays): number => a.positions.length / 3;
+
+    it('gives every vertex of a tinted block its biome multiplier and leaves other blocks at 1', () => {
+      const cells = voxels([
+        [0, 0, 0, GRASS],
+        [4, 0, 0, LEAVES],
+        [8, 0, 0, 2],
+      ]);
+      const { opaque } = meshChunk(
+        cells,
+        grid(() => [128, 64, 32, 32, 96, 64]),
+      );
+      expect(opaque.tints.length).toBe(opaque.positions.length);
+      expect(vertices(opaque)).toBe(72); // three cubes: 6 quads × 4 vertices each
+      let grass = 0;
+      let leaves = 0;
+      let stone = 0;
+      for (let v = 0; v < vertices(opaque); v++) {
+        const x = opaque.positions[v * 3] ?? 0;
+        const t = [0, 1, 2].map((c) => opaque.tints[v * 3 + c] ?? 0);
+        if (x <= 1) {
+          expect(t).toEqual([2, 1, 0.5]); // grass: 128, 64, 32 in 1/64
+          grass++;
+        } else if (x >= 4 && x <= 5) {
+          expect(t).toEqual([0.5, 1.5, 1]); // foliage
+          leaves++;
+        } else {
+          expect(t).toEqual([1, 1, 1]); // stone
+          stone++;
+        }
+      }
+      expect([grass, leaves, stone]).toEqual([24, 24, 24]);
+    });
+
+    it('interpolates the 16 m grid across the chunk, the same at both ends of a shared edge', () => {
+      // Grass multiplier rising along x: 1 at x = 0, 2 at x = 16, 3 at x = 32 (r only).
+      const g = grid((i) => [64 * (i + 1), 64, 64, 64, 64, 64]);
+      const { opaque } = meshChunk(
+        voxels([
+          [0, 0, 0, GRASS],
+          [8, 0, 0, GRASS],
+          [31, 0, 0, GRASS],
+        ]),
+        g,
+      );
+      for (let v = 0; v < vertices(opaque); v++) {
+        const x = opaque.positions[v * 3] ?? 0;
+        expect(opaque.tints[v * 3] ?? 0).toBeCloseTo(1 + x / 16, 5);
+      }
+    });
+
+    it('draws untinted without a grid, and transparent blocks never tinted', () => {
+      const { opaque } = meshChunk(voxels([[0, 0, 0, GRASS]]));
+      expect([...opaque.tints].every((t) => t === 1)).toBe(true);
+      const wet = meshChunk(
+        voxels([[0, 0, 0, WATER]]),
+        grid(() => [128, 128, 128, 128, 128, 128]),
+      );
+      expect([...wet.transparent.tints].every((t) => t === 1)).toBe(true);
+    });
+
+    it('tints a grass slope like the cube', () => {
+      const slope = stateId('dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=wedge]');
+      const { opaque } = meshChunk(
+        voxels([[2, 0, 0, slope]]),
+        grid(() => [128, 64, 64, 64, 64, 64]),
+      );
+      expect(vertices(opaque)).toBeGreaterThan(0);
+      expect([...opaque.tints].filter((_, i) => i % 3 === 0).every((t) => t === 2)).toBe(true);
     });
   });
 });

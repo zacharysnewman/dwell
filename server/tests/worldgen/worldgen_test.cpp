@@ -34,7 +34,6 @@ namespace {
 constexpr int S = core::kChunkSize;
 
 bool IsSolid(MaterialId m) { return m != M::kAir && m != M::kWater; }
-bool IsLeafState(MaterialId m) { return m >= M::kLeaves && m <= M::kLeavesViolet; }
 
 Chunk Generated(const TerrainGenerator& gen, ChunkCoord c,
                 std::uint8_t stages = TerrainGenerator::kAllStages) {
@@ -397,7 +396,7 @@ TEST_SUITE("worldgen: terrain") {
               break;
             }
           }
-          if (m == M::kLog || IsLeafState(m) || SurfaceMaterialOf(m) == M::kStone)
+          if (m == M::kLog || m == M::kLeaves || SurfaceMaterialOf(m) == M::kStone)
             continue;  // trees, boulders, cliffs (stone slopes too)
           // The ground's top cell is the material or a slope or slab of it.
           CHECK(SurfaceMaterialOf(m) == expected);
@@ -449,7 +448,7 @@ TEST_SUITE("worldgen: terrain") {
         for (int y = top - 2; y <= top; ++y)
           for (int dz = -1; dz <= 1; ++dz)
             for (int dx = -1; dx <= 1; ++dx)
-              leaves += world.GetVoxel(t->x + dx, y, t->z + dz) == t->leaves;
+              leaves += world.GetVoxel(t->x + dx, y, t->z + dz) == M::kLeaves;
         CHECK(leaves >= 8);
         const int lx = worldgen::FloorMod(t->x, S);
         if (lx == 0 || lx == S - 1) ++crossing;
@@ -556,9 +555,9 @@ TEST_SUITE("worldgen: golden") {
       }
       // Climate and vegetation (Phase 11c): an alpine meadow, bare rock and a snowfield, a wetland
       // (with its ponds), a blossom grove and autumn woods (the accent trees), a conifer forest.
-      for (const Biome b : {Biome::kAlpineMeadow, Biome::kBareRock, Biome::kSnowfield,
-                            Biome::kWetland, Biome::kBlossomGrove, Biome::kAutumnWoods,
-                            Biome::kConifer}) {
+      for (const Biome b :
+           {Biome::kAlpineMeadow, Biome::kBareRock, Biome::kSnowfield, Biome::kWetland,
+            Biome::kBlossomGrove, Biome::kAutumnWoods, Biome::kConifer}) {
         const auto at = FindBiome(TerrainGenerator(seed), b);
         REQUIRE(at);
         cases.push_back(col(*at, kSurface));

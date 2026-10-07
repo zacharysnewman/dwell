@@ -367,7 +367,7 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
 | `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB` (the pixel error coarsens while the view's own sections exceed it); `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4 (at most 2 on phones), two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
-| `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material; a section's surface and skirts are one geometry and one draw call, `lodSection.ts`, its index rewritten when the sides whose skirts show change; chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Terrain is static: world matrices are computed when an object is placed rather than for the whole scene in each pass, and the CPU copies of chunk and LOD vertex data are dropped once uploaded to the GPU. `?batch=1` instead draws the chunks and LOD sections in three batches, a draw call each per pass (§6.6, experimental); `?scale=` scales the resolution; `stats()` reports the frame's draw calls and triangles (F3). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves (and their yellow-green, autumn, rust, blossom and violet variants, and meadow and golden grass with flower flecks), and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry the face tint (and the flat colour of untextured materials). **[built, Phase 7]** The look (`look.ts`, plain data shared by both meshers, the lights and the fog; WORLD_GENERATION.md §1): one per-face RGB tint table — warm on top, cooler on the sides, blue underneath — replaces the scalar face shade in the chunk and LOD meshers alike; a warm sun and a green-bounce hemisphere light; ACES filmic tone mapping with an exposure, done in each material's shader (no extra pass); and a sky gradient, a full-screen triangle drawn first in the far pass (`sky.ts`), whose function `skyColor` (and its GLSL twin) the height fog also fades to. Block colours and tiles are tuned to the measured palette; water is turquoise. |
+| `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material; a section's surface and skirts are one geometry and one draw call, `lodSection.ts`, its index rewritten when the sides whose skirts show change; chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Terrain is static: world matrices are computed when an object is placed rather than for the whole scene in each pass, and the CPU copies of chunk and LOD vertex data are dropped once uploaded to the GPU. `?batch=1` instead draws the chunks and LOD sections in three batches, a draw call each per pass (§6.6, experimental); `?scale=` scales the resolution; `stats()` reports the frame's draw calls and triangles (F3). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry the face tint (and the flat colour of untextured materials). **[built, Phase 11c]** *Biome tint*: grass and leaves are multiplied by their biome's colour (§6.3): a per-vertex `tint` attribute from the mesher (`tints`), applied by the chunk shader where the atlas alpha (1 − the tinted share of a texel, `TINT_MASKS`) says so. **[built, Phase 7]** The look (`look.ts`, plain data shared by both meshers, the lights and the fog; WORLD_GENERATION.md §1): one per-face RGB tint table — warm on top, cooler on the sides, blue underneath — replaces the scalar face shade in the chunk and LOD meshers alike; a warm sun and a green-bounce hemisphere light; ACES filmic tone mapping with an exposure, done in each material's shader (no extra pass); and a sky gradient, a full-screen triangle drawn first in the far pass (`sky.ts`), whose function `skyColor` (and its GLSL twin) the height fog also fades to. Block colours and tiles are tuned to the measured palette; water is turquoise. |
 | `physics/` | Debris world (Phase 15) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
 | `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 14; player interpolation is in `game/remotes.ts`. |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
@@ -410,8 +410,7 @@ lower on mobile.
 
 Built (Phases 1–3a; registry Phase 8): the prototype blocks — air, bedrock, stone, dirt, grass,
 stone slab, ladders, water, a debug launch pad, and the terrain generator's sand, sandstone, gravel,
-snow, log, leaves (and four accent colours of them, Phase 11c: bright, autumn, red, blossom, violet),
-meadow and golden grass, and coal/iron/gold ores, plus a slab and nine slope shapes of the shapeable
+snow, log, leaves, and coal/iron/gold ores, plus a slab and nine slope shapes of the shapeable
 materials (below) — where each state has a collision **shape** (`Empty`, `Full`, `Shaped`: a slab or a
 slope, geometry below), `climbable` + facing, `liquid`, `flooded` and `launch_speed`
 (PLAYER_CONTROLLER.md §6);
@@ -454,7 +453,7 @@ by four corner heights in halves of a cell (NW, NE, SE, SW), split into two plan
 one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube is (2, 2, 2, 2),
 a slab (1, 1, 1, 1). The nine slope shapes — wedge, outer (hip) and inner (valley) corner, each at 1:1
 (45°) and the gentle 1:2 (26.57°) pitch in a low and a high piece — in four facings and two halves
-are generated per shapeable material (`shapeFamilies` in the block data: stone, dirt, grass, meadow and golden grass, sand,
+are generated per shapeable material (`shapeFamilies` in the block data: stone, dirt, grass, sand,
 sandstone, gravel, snow, log) as the blocks `dwell:<m>_slope[facing,flooded,half,shape]` (144
 states) and `dwell:<m>_slab[flooded,half]`; `flooded` means water fills the shape's open part. The
 geometry is baked once by `shared/blocks/shapes.mjs` (`gen.mjs`) into both languages: each shape's
@@ -527,7 +526,7 @@ ocean between them (Phase 10, built: *Continents from Voronoi plates* below); dr
 terrain — rivers as noise contours in valley floors, lakes and water above sea level (Phase 11a,
 built: *Rivers, lakes and water above sea level* below), the mountain detail cascade (Phase 11b,
 built: step 2 of *Generator pipeline* below), and the climate, a
-biome table and colourful accent vegetation (Phase 11c, built: *Climate, biomes and vegetation* below); and a full hemispherical dome over the disc
+biome table and biome-tinted vegetation (Phase 11c, built: *Climate, biomes and vegetation* below); and a full hemispherical dome over the disc
 (radius 8,192 km) sparsely filled with sky islands, which raises the world's ceiling from 6,144 m
 to the dome, makes the LOD octree 3D above level 8 and changes `LodIndex` (Phase 12, planned).
 **[planned, Phase 13]** The world becomes **bifacial**: a
@@ -544,7 +543,7 @@ fixes in place, below; Phase 11a adds rivers, lakes and water above sea level as
 continental scale ([ADR 0019](./adr/0019-continental-scale-climate.md), below); version 9 (Phase 11b) takes the
 mountains' detail from the derivative-damped ridged cascade ([ADR 0021](./adr/0021-mountain-detail-cascade.md));
 version 10 (Phase 11c) adds the climate's continent biases and rain shadows, the biome table, wetland
-ponds and colourful vegetation ([ADR 0022](./adr/0022-climate-biome-table-vegetation.md));
+ponds and biome-tinted vegetation ([ADR 0022](./adr/0022-climate-biome-table-vegetation.md));
 versions 2–9 are retired — a world
 saved with one loads as the flat world; the version launcher opens the build that saved it, §2.1) and
 the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
@@ -707,29 +706,41 @@ come from a layout, a pure function of (seed, world coordinates) like every stag
   on ground over 250 m, alpine meadow below the tree line (−0.28), then bare rock (−0.36); else
   the first matching rectangle; then the terrain's overrides (beach, sea cliff, banks). A small
   noise roughens the borders. Each row holds the **surface layers** (top material and depth, filler,
-  steep-ground rule: `SurfaceMaterial` reads them), the **trees** (chance per 7 m cell and kinds),
-  the **accent foliage**, the boulder chance and whether a distant forest shows a canopy. The
+  steep-ground rule: `SurfaceMaterial` reads them), the **trees** (chance per 7 m cell and shapes),
+  the **grass and foliage tints**, the boulder chance and whether a distant forest shows a canopy. The
   generator's content is prototype (§6.1); the rows are what the real world style replaces.
   Over 8 seeds the land is 14–19 % meadow, 11–21 % snowfield, 8–13 % savanna, 4–14 % dunes and
   each other climate biome 1.2–11 %.
 - **Wetland ponds**: small lakes (5–16 m across, 1–3 m deep; one in two 128 m cells) at the surface
   of the valley floor's integer height, in cells whose centre is wetland-humid, inland and at most
   8 m above the valley floor, with a low berm; nothing in the level of detail's cells over 4 m.
-- **Colourful vegetation.** Blocks `leaves_bright`, `leaves_autumn`, `leaves_red`,
-  `leaves_blossom`, `leaves_violet` (leaves; not shaped) and `grass_meadow` (flower flecks),
-  `grass_golden` (both with slope and slab families like grass), each with a procedural tile. Tree
-  kinds: oak, spruce, **blossom** (a short trunk, a wide round crown) and **autumn** (the oak's
-  shape, autumn leaves). A *grove* noise (~320 m) sets the share of trees that are accents (up to
-  0.5–0.6 in a grove's core, so 5–12 % overall), a slower one (~640 m) the colour of a patch, and
-  each tree's hash the outcome: accents come in clumps of one colour. Distant forests keep their
-  colour: in `GenerateLod`, in cells over 4 m, a forested column's top is its canopy leaf (the grove's
-  accent dithered by a hash per cell).
+- **Vegetation is tinted by biome, not made of variant blocks** (ADR 0022). `grass` and `leaves`
+  carry a `tint` mark in the block data (client side); each biome row holds a grass and a foliage
+  colour (multipliers in 1/64: meadow yellow-green, autumn woods orange leaves and golden grass,
+  blossom grove pink, conifer teal, savanna olive, …). Nothing is stored in voxels or sent over the
+  network: `TerrainGenerator::TintGrid(cx, cz)` (WASM `dwell_worldgen_tint`, a worldgen-worker job)
+  gives a chunk column's tint as 3 × 3 points 16 m apart — the biomes' colours blurred 3 × 3, so
+  neighbouring chunks agree on their edge and borders blend over ~30 m. The client's `ChunkStreamer`
+  fetches a column's grid once (cached), holds a chunk's meshing until it has it, and gives it to the
+  mesher (`TintField`: a `tints` vertex attribute, the grid's bilinear value at the vertex, 1 for
+  untinted blocks, so merged quads blend between their corners); the chunk shader multiplies the
+  texture by it where the atlas alpha says so (alpha = 1 − the tinted share of the texel: grass top
+  and leaves wholly, the grass side's fringe but not its dirt; the opaque passes ignore alpha). The
+  level of detail's surface data carries each column's tint (`LodSurface::tint_grass/foliage`, 6
+  floats per column), which the LOD mesher multiplies into the flat colours of tinted materials at
+  each vertex; sections the player has modified have no surface data and draw untinted from afar.
+  Tree *shapes* — oak, spruce and the blossom tree (a short trunk, a wide round crown) — come from
+  the biome row; per-tree colours do not exist (the owner will design the trees later). A distant
+  forest keeps its colour: in `GenerateLod`, in cells over 4 m, a forested column's top is `leaves`
+  (tinted).
 - **Checks** (`climate_test.cpp`, `vegetation_test.cpp`, `cascade_test.cpp`): snow only where the
   ground's temperature is low and every cold column snow; the alpine bands; lee sides drier
   (0.41 against 0.00); continents differ in climate; shares for 8 seeds; the table is well formed
   and covers every temperature and humidity; ponds hold still water (no water voxel floats or
-  spills beside air); accent trees' nearest neighbours are accents 4 times as often as chance
-  (42 % against 10 %); a forested site's level-4 surface is all leaves; the new blocks are placeable.
+  spills beside air); a chunk's tint grid agrees with its neighbours' on shared edges, blends
+  smoothly (no step over a third of the biomes' range), reaches the table's colours inside a
+  biome and agrees with the level of detail's; a forested site's level-4 surface is leaves; and in
+  the client the mesher, LOD mesher, atlas masks, streamer and pool tests cover the tint.
 
 #### Generator pipeline **[built]**
 Executed per chunk. Every stage reads only noise and hashes of world coordinates, never another
@@ -818,8 +829,8 @@ arithmetic, so features placed by point queries agree with the chunks.
    integrity rules once edited.
 7. **Ores.** Seeded blobs per 16³ cell replace stone: coal (y ≤ 136), iron (y ≤ 8), gold
    (y ≤ −48).
-8. **Features.** Boulders (24 m cells) and trees (7 m cells; the biome's kinds — oak, spruce,
-   blossom and autumn trees — with the grove's leaf colour, version 10) at hashed positions per cell, on the ground found by `GroundY`; each writes
+8. **Features.** Boulders (24 m cells) and trees (7 m cells; the biome's shapes — oak, spruce
+   and blossom trees, version 10) at hashed positions per cell, on the ground found by `GroundY`; each writes
    only voxels inside the chunk being generated. Boulders and leaves fill only air, logs air and
    leaves, and features apply in a fixed order (boulders, then trees, each by cell), so
    overlapping features resolve the same way in every chunk. A trunk starts one voxel below the

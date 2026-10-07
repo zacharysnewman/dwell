@@ -12,16 +12,12 @@
 
 namespace dwell::testing {
 
-// A dry column satisfying `pred`: on a coarse grid around the origin, then rings out to the rim
-// (climate regions are hundreds of kilometres across), then — for what only occurs at a coast, if
-// `coastal` — around the coast met walking out from the origin in each of eight directions.
-template <class Pred>
-std::optional<std::pair<std::int32_t, std::int32_t>> FindColumn(
-    const worldgen::TerrainGenerator& gen, Pred&& pred, bool coastal = false) {
-  const auto is = [&](std::int32_t x, std::int32_t z) {
-    const worldgen::Column c = gen.ColumnAt(x, z);
-    return !c.outside && c.wet == 0.0f && pred(c);
-  };
+// A point (x, z) where `is(x, z)` holds: on a coarse grid around the origin, then rings out to the
+// rim (climate regions are hundreds of kilometres across), or — if `coastal`, for what only occurs
+// at a coast — around the coast met walking out from the origin in each of eight directions.
+template <class Is>
+std::optional<std::pair<std::int32_t, std::int32_t>> FindPoint(
+    const worldgen::TerrainGenerator& gen, Is&& is, bool coastal = false) {
   if (!coastal) {
     for (int r = 0; r < 4000; r += 48)
       for (int x = -r; x <= r; x += 48)
@@ -54,6 +50,33 @@ std::optional<std::pair<std::int32_t, std::int32_t>> FindColumn(
         }
   }
   return std::nullopt;
+}
+
+// A dry column satisfying `pred` (FindPoint's search).
+template <class Pred>
+std::optional<std::pair<std::int32_t, std::int32_t>> FindColumn(
+    const worldgen::TerrainGenerator& gen, Pred&& pred, bool coastal = false) {
+  return FindPoint(
+      gen,
+      [&](std::int32_t x, std::int32_t z) {
+        const worldgen::Column c = gen.ColumnAt(x, z);
+        return !c.outside && c.wet == 0.0f && pred(c);
+      },
+      coastal);
+}
+
+// A point well inside a region of the biome: the 5 × 5 columns 400 m apart around it (1.6 km
+// across) are all the biome's and dry.
+inline std::optional<std::pair<std::int32_t, std::int32_t>> FindBiomeInterior(
+    const worldgen::TerrainGenerator& gen, worldgen::Biome biome) {
+  return FindPoint(gen, [&](std::int32_t x, std::int32_t z) {
+    for (int dz = -2; dz <= 2; ++dz)
+      for (int dx = -2; dx <= 2; ++dx) {
+        const worldgen::Column c = gen.ColumnAt(x + dx * 400, z + dz * 400);
+        if (c.outside || c.wet != 0.0f || c.biome != biome) return false;
+      }
+    return true;
+  });
 }
 
 // A dry column of the biome. The sea's biomes and the land's climate biomes are found on the grid

@@ -1,4 +1,4 @@
-# 0022. Climate with continent biases and rain shadows, the biome table, wetland ponds and colourful vegetation
+# 0022. Climate with continent biases and rain shadows, the biome table, wetland ponds and biome-tinted vegetation
 
 - Status: Accepted
 - Date: 2026-10-07
@@ -12,8 +12,7 @@
 Phase 11c of `WORLD_GENERATION.md` (§3.5–3.7): the climate was one noise pair with a lapse rate and
 a snow line; biomes were seven fixed classes chosen in code. The continents already carry a record
 (`ContinentRecord`: a temperature bias, a humidity bias, a prevailing wind) that nothing read, and the
-reference image's character comes from vegetation colour — accent trees in clumps — which needs new
-blocks.
+reference image's character comes from vegetation colour that varies by region.
 
 ## Decision
 
@@ -34,7 +33,7 @@ blocks.
    meadow). The terrain then overrides: beach at the shore, sea cliff within 400 m of the coast and
    above 12 m, and riverbank or lake shore on the dry ground within 3 m of a channel's or lake's
    water. In the sea: ocean, deep ocean (< −300 m), frozen ocean (colder than −0.45). 19 biomes. Each
-   row names its surface layers, steep-ground rule, tree chance and kinds, accent foliage, boulder
+   row names its surface layers, steep-ground rule, tree chance and shapes, grass and foliage tints, boulder
    chance and whether a distant forest draws a canopy; the real world style replaces rows, not code.
 3. **The mountains biome (ADR 0019 decision 3) is gone.** Relief is not a biome: a mountainside passes
    through the zones by its temperature — forest to the tree line, then the alpine bands. The
@@ -44,38 +43,35 @@ blocks.
    a bowl, and a 0.6 m berm. The surface is the integer height of the valley floor at the centre,
    and the ground is never below the valley floor, so a pond cannot spill; it is wholly inside its
    cell (the site lies 24 m in), so only the point's own cell is read.
-5. **Colourful vegetation.** Seven blocks: `leaves_bright`, `leaves_autumn`, `leaves_red`,
-   `leaves_blossom`, `leaves_violet`, and the grass variants `grass_meadow` (flecks of flowers) and
-   `grass_golden`, the grasses with slope families like `grass`. Two tree kinds: the blossom tree
-   (a short trunk, a wide round crown) and the autumn tree (a broadleaf with autumn leaves). A
-   **grove** noise (~320 m) is the share of a biome's trees that are accents, a second slow noise
-   (~640 m) picks the colour of the patch, and each tree's hash decides: accents come in clumps of
-   one colour, 5–12 % of the trees overall. **A distant forest keeps its colour**: above the 4 m
-   cells real trees are drawn in, a forested column's surface is the canopy leaf its grove gives
-   there, dithered by a hash per cell.
-6. **Generator version 10.** Goldens, the storage golden world files and the block vectors regenerate
-   (block ids moved: the new blocks sit among the explicit ones).
+5. **Colourful vegetation is a tint, not blocks** (the owner's decision, 2026-10-07; first built as
+   seven variant blocks, which are gone). `grass` and `leaves` are plain blocks, marked `tint`
+   in the block data; their colour is the texture multiplied by the grass or foliage colour of the
+   **biome** (`BiomeDef::grass` / `foliage`, in 1/64: meadow yellow-green, autumn woods orange
+   foliage and golden grass, blossom grove pink, conifer teal, savanna olive and gold, …). Nothing is
+   stored in the voxel and nothing is sent: the client asks the generator, a pure function of the
+   seed, for the tint of the columns it draws. `TintGrid(cx, cz)` returns the biomes' colours on a
+   16 m lattice blurred 3 × 3 — 3 × 3 points per chunk column, sharing their edges with the
+   neighbours' — so colours change smoothly over borders; the level of detail's surface data carries
+   each column's tint. The mesher gives each vertex of a tinted block the bilinear tint of the grid
+   (merged quads blend between their corners); the texture's alpha is 1 − the share of a texel the
+   tint colours (the grass top and the leaves wholly, the grass side's fringe but not its dirt),
+   which the chunk shader reads (the opaque passes ignore alpha). Sections the player has modified
+   have no surface data and draw untinted from afar. **Trees are not customised yet** (the owner will
+   design them): every tree is as green or as tinted as its biome; the blossom tree is a shape the
+   blossom grove uses. Per-tree accents and groves are not built, and a tree's colour cannot differ
+   from its neighbours' — a limit of tinting by biome. A distant forest keeps its colour: above the
+   4 m cells real trees are drawn in, a forested column's surface is `leaves`, tinted.
+6. **Generator version 10.** Goldens regenerate; the block registry is unchanged from version 9 (the
+   `tint` mark is client-side data).
 
 ## Consequences
 
-- **A breaking change to the terrain a seed generates and to block ids**, so a new compatibility
-  line; the owner raises `package.json` (`CLAUDE.md`).
+- **A breaking change to the terrain a seed generates**, so a new compatibility line; the owner
+  raises `package.json` (`CLAUDE.md`). Block ids are unchanged.
 - Over 8 seeds, the shares of the land: meadow 14–19 %, savanna 8–13 %, snowfield 11–21 %, dunes
   4–14 %, wetland 6–11 %, tundra 6–11 %, broadleaf 5–10 %, blossom grove 6–8 %, autumn woods 5–8 %,
   conifer 4–8 %, riverbank 1.5–2 %, alpine meadow and bare rock about 1.5 % each.
+- Tinting costs a tint grid per chunk column (25 biome lookups, cached by the client) and one more
+  vertex attribute; the level of detail gains two floats per column.
 - Chunk generation costs ~23 % more than 11b's, LOD sections 11–25 % (`bench`, near the spawn).
 - Reversal: replace the zone table and the rows; the climate fields stay.
-
-## Open question (owner, 2026-10-07): blocks, properties or tint?
-
-The variants are built as separate blocks because that needed no change to the registry, the
-meshers, the protocol or the level of detail. Alternatives, undecided:
-- **A property** (`leaves[colour=autumn]`, `grass[variant=meadow]`): the same number of states (each
-  shaped grass family triples either way), one palette slot per block, the family kept together; needs
-  per-state textures in `gen.mjs` and the slope families to carry the property.
-- **No block: a tint from the biome** (grass by the column's climate; leaves by the grove): fewest
-  blocks and no placeable clutter, and a replaced block takes the local colour — but the voxel no
-  longer says what colour it is, so the client needs per-column (and, for per-tree accents, per-tree)
-  tint data for generated, edited and distant terrain, and builders lose the coloured leaves.
-A split is likely best: grass tinted by climate, leaves kept as blocks or a property.
-

@@ -1,20 +1,16 @@
 // Wetland ponds and colourful vegetation (WORLD_GENERATION.md §3.5, §3.7, Phase 11c): ponds hold
-// still water that never floats or spills; accent trees come in clumps; a distant forest keeps its
-// canopy colour; the new leaf and grass blocks are placeable. Runs natively (dwell_tests) and under
-// Node (dwell_worldgen_tests.js, CI).
+// still water that never floats or spills; the biomes' grass and foliage tints blend across borders
+// and agree between neighbouring chunks and the level of detail; a distant forest keeps its canopy.
+// Runs natively (dwell_tests) and under Node (dwell_worldgen_tests.js, CI).
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <set>
-#include <string>
-#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "dwell/core/block_edit.h"
-#include "dwell/core/block_registry.h"
 #include "dwell/core/lod.h"
 #include "dwell/core/voxel.h"
 #include "dwell/worldgen/biomes.h"
@@ -33,7 +29,7 @@ using core::MaterialId;
 
 namespace {
 
-bool IsLeaf(MaterialId m) { return m >= M::kLeaves && m <= M::kLeavesViolet; }
+bool IsLeaf(MaterialId m) { return m == M::kLeaves; }
 bool Open(MaterialId m) { return m == M::kAir; }
 
 }  // namespace
@@ -103,95 +99,114 @@ TEST_SUITE("worldgen: vegetation") {
     CHECK(steep == 0);
   }
 
-  TEST_CASE("accent trees come in clumps: an accent's nearest tree is far more often an accent") {
-    long trees = 0, accents = 0, accents_next_to_accents = 0;
-    for (const std::uint64_t seed : {0ull, 1ull, 2ull}) {
-      const TerrainGenerator gen(seed);
-      const auto site = testing::FindBiome(gen, Biome::kBroadleaf);
-      REQUIRE(site);
-      constexpr int kHalf = 70;  // cells of 7 m: ±490 m around the site
-      const int c0x = worldgen::FloorDiv(site->first, TerrainGenerator::kTreeCell),
-                c0z = worldgen::FloorDiv(site->second, TerrainGenerator::kTreeCell);
-      std::vector<Feature> found;
-      for (int cz = c0z - kHalf; cz <= c0z + kHalf; ++cz)
-        for (int cx = c0x - kHalf; cx <= c0x + kHalf; ++cx) {
-          const auto t = gen.TreeInCell(cx, cz);
-          // Broadleaf forest trees: oaks with a green or an accent crown.
-          if (t && t->kind == Feature::Kind::kOak) found.push_back(*t);
-        }
-      // Nearest neighbour by a grid of 16 m cells.
-      std::unordered_map<std::int64_t, std::vector<std::size_t>> grid;
-      const auto key = [](std::int32_t x, std::int32_t z) {
-        return (static_cast<std::int64_t>(worldgen::FloorDiv(x, 16)) << 32) ^
-               static_cast<std::uint32_t>(worldgen::FloorDiv(z, 16));
-      };
-      for (std::size_t i = 0; i < found.size(); ++i) grid[key(found[i].x, found[i].z)].push_back(i);
-      for (std::size_t i = 0; i < found.size(); ++i) {
-        ++trees;
-        const bool accent = found[i].leaves != M::kLeaves;
-        accents += accent;
-        if (!accent) continue;
-        // The nearest other tree within 3 grid rings (48 m).
-        double best = 1e18;
-        std::size_t nearest = i;
-        for (int dz = -3; dz <= 3; ++dz)
-          for (int dx = -3; dx <= 3; ++dx) {
-            const auto it = grid.find(key(found[i].x + dx * 16, found[i].z + dz * 16));
-            if (it == grid.end()) continue;
-            for (const std::size_t j : it->second) {
-              if (j == i) continue;
-              const double ex = found[j].x - found[i].x, ez = found[j].z - found[i].z;
-              if (ex * ex + ez * ez < best) {
-                best = ex * ex + ez * ez;
-                nearest = j;
-              }
-            }
+  TEST_CASE("biome tints: a chunk's grid agrees with its neighbours' on the shared edge") {
+    const TerrainGenerator gen(1);
+    int checked = 0;
+    for (std::int32_t cz = -6; cz <= 6; cz += 3)
+      for (std::int32_t cx = -200; cx <= 200; cx += 41) {
+        const auto a = gen.TintGrid(cx, cz), east = gen.TintGrid(cx + 1, cz),
+                   south = gen.TintGrid(cx, cz + 1);
+        constexpr int N = TerrainGenerator::kTintOutPoints, S = TerrainGenerator::kTintStride;
+        for (int j = 0; j < N; ++j)
+          for (int c = 0; c < S; ++c) {
+            // The chunk's x = 32 column of points is the east neighbour's x = 0.
+            CHECK(a[static_cast<std::size_t>((j * N + (N - 1)) * S + c)] ==
+                  east[static_cast<std::size_t>((j * N) * S + c)]);
+            // And its z = 32 row the south neighbour's z = 0.
+            CHECK(a[static_cast<std::size_t>(((N - 1) * N + j) * S + c)] ==
+                  south[static_cast<std::size_t>(j * S + c)]);
+            ++checked;
           }
-        accents_next_to_accents += nearest != i && found[nearest].leaves != M::kLeaves;
       }
-    }
-    REQUIRE(trees > 3000);
-    REQUIRE(accents > 100);
-    const double overall = static_cast<double>(accents) / trees;
-    const double clumped = static_cast<double>(accents_next_to_accents) / accents;
-    MESSAGE(trees << " trees, " << accents << " accent (" << overall * 100
-                  << " %); an accent's nearest tree is an accent " << clumped * 100
-                  << " % of the time");
-    CHECK(overall > 0.03);  // sparingly: a few percent of the trees
-    CHECK(overall < 0.2);
-    CHECK(clumped > 3.0 * overall);
+    CHECK(checked > 100);
   }
 
-  TEST_CASE("every accent colour appears, in the biomes that allow it, and only there") {
+  TEST_CASE(
+      "biome tints blend: neighbouring points differ by a third of the biomes' range at most") {
+    long steps = 0, big = 0;
+    int worst = 0;
+    for (const std::uint64_t seed : {0ull, 1ull, 2ull}) {
+      const TerrainGenerator gen(seed);
+      for (std::int32_t cz = -400; cz <= 400; cz += 37)
+        for (std::int32_t cx = -9000; cx <= 9000; cx += 997) {
+          const auto g = gen.TintGrid(cx, cz);
+          constexpr int N = TerrainGenerator::kTintOutPoints, S = TerrainGenerator::kTintStride;
+          for (int j = 0; j < N; ++j)
+            for (int i = 0; i + 1 < N; ++i)
+              for (int c = 0; c < S; ++c) {
+                const int d = std::abs(int{g[static_cast<std::size_t>((j * N + i) * S + c)]} -
+                                       int{g[static_cast<std::size_t>((j * N + i + 1) * S + c)]});
+                worst = std::max(worst, d);
+                ++steps;
+                big += d > 50;  // a third of the widest range, 154 − 35
+              }
+        }
+    }
+    MESSAGE(steps << " steps, widest " << worst << " (1/64 units); " << big << " over 50");
+    CHECK(steps > 1000);
+    CHECK(big == 0);
+  }
+
+  TEST_CASE("inside a biome the tint is the biome's: the table's colours reach the grid") {
     const TerrainGenerator gen(0);
-    std::set<MaterialId> seen;
-    for (const Biome b : {Biome::kBroadleaf, Biome::kBlossomGrove, Biome::kAutumnWoods}) {
-      const auto site = testing::FindBiome(gen, b);
+    for (const Biome b : {Biome::kMeadow, Biome::kAutumnWoods, Biome::kBlossomGrove,
+                          Biome::kConifer, Biome::kSavanna}) {
+      const auto site = testing::FindBiomeInterior(gen, b);
       REQUIRE(site);
       const auto& def = worldgen::BiomeOf(b);
-      const int c0x = worldgen::FloorDiv(site->first, TerrainGenerator::kTreeCell),
-                c0z = worldgen::FloorDiv(site->second, TerrainGenerator::kTreeCell);
-      for (int cz = c0z - 60; cz <= c0z + 60; ++cz)
-        for (int cx = c0x - 60; cx <= c0x + 60; ++cx) {
-          const auto t = gen.TreeInCell(cx, cz);
-          if (!t || !IsLeaf(t->leaves)) continue;
-          seen.insert(t->leaves);
-          // The tree's own biome's rule: its default or one of the biome's accents.
-          const Column col = gen.ColumnAt(t->x, t->z);
-          const auto& tree_def = worldgen::BiomeOf(col.biome);
-          bool allowed = t->leaves == M::kLeaves || t->leaves == M::kLeavesBlossom ||
-                         t->leaves == M::kLeavesAutumn;
-          for (int i = 0; i < tree_def.accent_count; ++i)
-            allowed |= tree_def.accents[i] == t->leaves;
-          CHECK(allowed);
+      // A chunk well inside the region: the grid is all within a few units of the biome's tint.
+      int near = 0, total = 0;
+      for (int dz = -4; dz <= 4; ++dz)
+        for (int dx = -4; dx <= 4; ++dx) {
+          const auto g = gen.TintGrid(worldgen::FloorDiv(site->first, 32) + dx * 8,
+                                      worldgen::FloorDiv(site->second, 32) + dz * 8);
+          ++total;
+          near +=
+              std::abs(int{g[0]} - def.grass.r) <= 3 && std::abs(int{g[3]} - def.foliage.r) <= 3;
         }
-      (void)def;
+      CAPTURE(worldgen::BiomeName(b));
+      CHECK(near * 10 > total * 8);  // inside a region (its borders and neighbours are further out)
     }
-    for (const MaterialId m : {M::kLeaves, M::kLeavesBlossom, M::kLeavesAutumn}) {
-      CAPTURE(m);
-      CHECK(seen.count(m) == 1);
-    }
-    CHECK(seen.size() >= 4);
+    // The colours say what they should: autumn leaves orange, blossom pink, conifers dark, grass in
+    // dry biomes golden — against the plain green tile (64 = unchanged).
+    const auto& autumn = worldgen::BiomeOf(Biome::kAutumnWoods);
+    CHECK(autumn.foliage.r > autumn.foliage.g * 2);
+    const auto& blossom = worldgen::BiomeOf(Biome::kBlossomGrove);
+    CHECK(blossom.foliage.r > 100);
+    CHECK(blossom.foliage.b > blossom.foliage.g * 3);
+    const auto& conifer = worldgen::BiomeOf(Biome::kConifer);
+    CHECK(conifer.foliage.r < worldgen::kTintUnit);
+    const auto& savanna = worldgen::BiomeOf(Biome::kSavanna);
+    CHECK(savanna.grass.r > worldgen::kTintUnit);
+    CHECK(savanna.grass.g < savanna.grass.r);
+  }
+
+  TEST_CASE("the level of detail carries the tint of its columns, agreeing with the chunks'") {
+    const TerrainGenerator gen(0);
+    const auto site = testing::FindBiomeInterior(gen, Biome::kAutumnWoods);
+    REQUIRE(site);
+    const core::LodCoord c{
+        3, static_cast<std::int32_t>((site->first - core::kLodOriginX) / core::LodSectionSize(3)),
+        static_cast<std::int32_t>(
+            (std::max<std::int64_t>(
+                 static_cast<std::int64_t>(gen.ColumnAt(site->first, site->second).height), 0) -
+             core::kLodOriginY) /
+            core::LodSectionSize(3)),
+        static_cast<std::int32_t>((site->second - core::kLodOriginZ) / core::LodSectionSize(3))};
+    core::LodCells cells;
+    core::LodSurfaces surface;
+    REQUIRE(gen.GenerateLod(c, cells, &surface) == core::LodKind::kContent);
+    // The column at the site: its tint is near the chunk grid's there (both blur the biomes').
+    const core::LodOrigin o = core::LodSectionOrigin(c);
+    const int x = static_cast<int>((site->first - o.x) / 8),
+              z = static_cast<int>((site->second - o.z) / 8);
+    const auto& s = surface[static_cast<std::size_t>((z + 1) * core::kLodPad + x + 1)];
+    const auto g =
+        gen.TintGrid(worldgen::FloorDiv(site->first, 32), worldgen::FloorDiv(site->second, 32));
+    const int lod_r = static_cast<int>(s.tint_foliage >> 16), chunk_r = g[3];
+    MESSAGE("foliage red: level of detail " << lod_r << ", chunk grid " << chunk_r);
+    CHECK(s.tint_grass != 0);
+    CHECK(std::abs(lod_r - chunk_r) <= 6);
   }
 
   TEST_CASE("a distant forest keeps its colour: a forested site's level-4 surface is leaves") {
@@ -229,21 +244,5 @@ TEST_SUITE("worldgen: vegetation") {
       REQUIRE(forest > 50);
       CHECK(leaf * 10 > forest * 6);  // mostly (steep ground stays rock)
     }
-  }
-
-  TEST_CASE("the leaf and grass blocks are in the registry, placeable and shaped like their kin") {
-    for (const char* id :
-         {"dwell:leaves_bright", "dwell:leaves_autumn", "dwell:leaves_red", "dwell:leaves_blossom",
-          "dwell:leaves_violet", "dwell:grass_meadow", "dwell:grass_golden"}) {
-      CAPTURE(id);
-      const auto m = core::ParseState(id);
-      REQUIRE(m);
-      CHECK(core::BlockOf(*m).id == std::string_view(id));
-      CHECK(core::GetMaterial(*m).solid);
-      CHECK(core::Placeable(*m));
-    }
-    CHECK(core::FindBlock("dwell:grass_meadow_slope"));
-    CHECK(core::FindBlock("dwell:grass_golden_slab"));
-    CHECK_FALSE(core::FindBlock("dwell:leaves_red_slope"));  // leaves are not shaped
   }
 }

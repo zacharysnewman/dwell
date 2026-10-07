@@ -362,9 +362,8 @@ TEST_SUITE("lod: surface") {
             if (m == M::kAir || m == M::kWater) continue;
             ++tops;
             bedrock += m == M::kBedrock;
-            grassy += m == M::kGrass || m == M::kGrassMeadow || m == M::kGrassGolden ||
-                      m == M::kSand || m == M::kSnow || m == M::kGravel ||
-                      (m >= M::kLeaves && m <= M::kLeavesViolet);
+            grassy += m == M::kGrass || m == M::kSand || m == M::kSnow || m == M::kGravel ||
+                      m == M::kLeaves;
             break;
           }
         }
@@ -473,9 +472,9 @@ TEST_SUITE("lod: golden") {
       cases.push_back({seed, 1, wl.waterfall.x, surface(wl.waterfall), wl.waterfall.z});
       // Climate and vegetation (Phase 11c): alpine ground and snow, and forests, whose canopy
       // above the 4 m cells is leaves.
-      for (const worldgen::Biome b : {worldgen::Biome::kAlpineMeadow, worldgen::Biome::kBareRock,
-                                      worldgen::Biome::kBroadleaf, worldgen::Biome::kBlossomGrove,
-                                      worldgen::Biome::kAutumnWoods}) {
+      for (const worldgen::Biome b :
+           {worldgen::Biome::kAlpineMeadow, worldgen::Biome::kBareRock, worldgen::Biome::kBroadleaf,
+            worldgen::Biome::kBlossomGrove, worldgen::Biome::kAutumnWoods}) {
         const auto site = FindBiome(gen, b);
         REQUIRE(site);
         const auto col = gen.ColumnAt(site->first, site->second);

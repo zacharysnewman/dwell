@@ -113,7 +113,7 @@ namespaced blocks with typed properties, canonical state strings such as
 the `u16` voxel, and world files that store palettes as strings. (An earlier draft of this section
 proposed a hand-made id formula; the registry replaces it.)
 
-- **Families per shapeable material** (stone, dirt, grass, meadow and golden grass, sand, sandstone, gravel, snow, log,
+- **Families per shapeable material** (stone, dirt, grass, sand, sandstone, gravel, snow, log,
   planks later, …), generated from the block data files: `dwell:<m>_slope[facing, flooded, half,
   shape]` — `shape` = the 9 pieces of §1.2 (`wedge`, `outer`, `inner`, `gentle_low`,
   `gentle_high`, `gentle_outer_low`, `gentle_outer_high`, `gentle_inner_low`,

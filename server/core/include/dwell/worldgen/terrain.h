@@ -43,8 +43,8 @@
 // prototype (ARCHITECTURE.md §6.1).
 // Version 10 (ADR 0022, WORLD_GENERATION.md §3.5–3.7, Phase 11c): the climate with the continents'
 // biases and rain shadows, the biome table (biomes.h) in place of seven fixed biomes, wetland
-// ponds, and colourful vegetation: accent leaves in groves, blossom and autumn trees, meadow and
-// golden grass, and a canopy for distant forests. Version 9 (WORLD_GENERATION.md §3.4, Phase 11b):
+// ponds, the biomes' grass and foliage tints (TintGrid), blossom trees, and a canopy for distant
+// forests. Version 9 (WORLD_GENERATION.md §3.4, Phase 11b):
 // mountain detail from the derivative-damped ridged cascade (noise.h) — sharp crests, smooth
 // valleys and slopes — scaled by the distance from rivers and the uplift, in place of the ridged
 // field's contribution to the uplift belts and mountains. Version 8 (ADR 0019): climate at
@@ -86,13 +86,11 @@ struct Column {
 
 // A tree or boulder; positions are world voxel coordinates.
 struct Feature {
-  // kOak and kAutumn are the broadleaf shape (they differ in their default leaves), kBlossom a
-  // short tree with a wide round crown, kSpruce a cone.
-  enum class Kind : std::uint8_t { kOak, kSpruce, kBoulder, kBlossom, kAutumn } kind = Kind::kOak;
+  // kOak is the broadleaf shape, kBlossom a short tree with a wide round crown, kSpruce a cone.
+  enum class Kind : std::uint8_t { kOak, kSpruce, kBoulder, kBlossom } kind = Kind::kOak;
   std::int32_t x = 0, y = 0, z = 0;  // trunk base / boulder centre (first voxel above the ground)
   int size = 0;                      // trunk height, or boulder radius
   std::uint32_t hash = 0;            // per-feature randomness (leaf trimming)
-  core::MaterialId leaves = core::Materials::kLeaves;  // the crown's leaf material (§3.7)
 };
 
 class TerrainGenerator {
@@ -161,6 +159,19 @@ class TerrainGenerator {
   std::optional<Feature> TreeInCell(std::int32_t cx, std::int32_t cz) const;
   std::optional<Feature> BoulderInCell(std::int32_t cx, std::int32_t cz) const;
 
+  // The tint (biomes.h) of the grass and the leaves around a chunk's columns, for the client's
+  // meshers: the biomes' colours on a lattice of kTintStep m, blurred 3 × 3 so that colours change
+  // smoothly across biome borders. `out` holds kTintOutPoints² points at the chunk's x = 0, 16 and
+  // 32 (and z), row-major along x then z, each {grass r, g, b, foliage r, g, b} in 1/64. A pure
+  // function of (seed, cx, cz); neighbouring chunks agree on their shared edge.
+  static constexpr int kTintStep = 16;
+  static constexpr int kTintOutPoints = 3;
+  static constexpr int kTintStride = 6;
+  using TintGridData = std::array<std::uint8_t, kTintOutPoints * kTintOutPoints * kTintStride>;
+  TintGridData TintGrid(std::int32_t cx, std::int32_t cz) const;
+  // The tint of the column at (x, z) from its own biome (unblurred): for the level of detail.
+  std::array<std::uint8_t, kTintStride> TintAt(std::int32_t x, std::int32_t z) const;
+
   // Feet position for players: near the origin, on land, on level ground with no tree nearby.
   std::array<double, 3> SpawnPoint() const;
 
@@ -183,10 +194,8 @@ class TerrainGenerator {
  private:
   struct Seeds {
     std::uint32_t continent, erosion, temperature, humidity, hills, ridges, overhang, spaghetti_a,
-        spaghetti_b, cheese, trees, boulders, ores, macro, relief, cascade, border_t, border_h,
-        grove, patch;
+        spaghetti_b, cheese, trees, boulders, ores, macro, relief, cascade, border_t, border_h;
   } seeds_;
-  GroveSeeds grove_seeds_{};
   ContinentLayout continents_;
   rivers::Seeds river_seeds_;
   // The cascade's lattice is shifted by a hashed offset (m): Perlin noise is zero at its lattice

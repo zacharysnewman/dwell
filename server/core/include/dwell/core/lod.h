@@ -83,6 +83,9 @@ struct LodSurface {
   // Where wet: the water's surface (metres; open voxels below it are water) — the sea's, or a
   // river's or lake's above sea level, which is not on the cells' grid.
   float water = 0;
+  // The tint (worldgen/biomes.h) of the column's grass and foliage, as 0xRRGGBB in 1/64 units (0:
+  // none), smoothed over neighbouring columns: the client multiplies tinted blocks' colours by it.
+  std::uint32_t tint_grass = 0, tint_foliage = 0;
 };
 using LodSurfaces = std::vector<LodSurface>;  // kLodPad²
 

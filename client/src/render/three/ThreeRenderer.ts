@@ -90,6 +90,7 @@ function geometryOf(arrays: MeshArrays): BufferGeometry | null {
   g.setAttribute('normal', new BufferAttribute(arrays.normals, 3));
   g.setAttribute('color', new BufferAttribute(arrays.colors, 3));
   g.setAttribute('uv', new BufferAttribute(arrays.uvs, 2));
+  g.setAttribute('tint', new BufferAttribute(arrays.tints, 3));
   g.setAttribute('tile', new BufferAttribute(arrays.tiles, 4));
   g.setIndex(new BufferAttribute(arrays.indices, 1));
   g.computeBoundingSphere();
@@ -109,16 +110,23 @@ function chunkMaterial(params: MeshLambertMaterialParameters): MeshLambertMateri
   const material = new MeshLambertMaterial(params);
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 tile;\nvarying vec4 vTile;')
-      .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvTile = tile;');
+      .replace(
+        '#include <common>',
+        '#include <common>\nattribute vec4 tile;\nattribute vec3 tint;\nvarying vec4 vTile;\nvarying vec3 vTint;',
+      )
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvTile = tile;\n\tvTint = tint;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec4 vTile;')
+      .replace('#include <common>', '#include <common>\nvarying vec4 vTile;\nvarying vec3 vTint;')
       .replace(
         '#include <map_fragment>',
         [
           '#ifdef USE_MAP',
           '\tvec2 atlasUv = vTile.xy + fract(vMapUv) * vTile.zw;',
-          '\tdiffuseColor *= textureGrad(map, atlasUv, dFdx(vMapUv) * vTile.zw, dFdy(vMapUv) * vTile.zw);',
+          '\tvec4 texel = textureGrad(map, atlasUv, dFdx(vMapUv) * vTile.zw, dFdy(vMapUv) * vTile.zw);',
+          '\tdiffuseColor *= texel;',
+          // The atlas alpha is 1 − the share of a texel the biome tint colours (TINT_MASKS); the
+          // opaque passes ignore alpha, water has none.
+          '\tdiffuseColor.rgb *= mix(vTint, vec3(1.0), texel.a);',
           '#endif',
         ].join('\n'),
       );

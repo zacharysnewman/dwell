@@ -1,8 +1,8 @@
 // Climate and biomes (ADR 0019, Phase 11c, WORLD_GENERATION.md §3.5–3.7): biomes come in regions of
 // tens to hundreds of kilometres, not patches a few hundred metres across; snow lies where it is
 // cold, by region and by height; the lee sides of ranges are drier; every biome has a share of the
-// land; the biome table is well formed; wetland ponds hold still water; accent trees come in
-// clumps; a distant forest keeps its canopy. Runs natively (dwell_tests) and under Node
+// land; the biome table is well formed; wetland ponds hold still water; the biomes' tints blend
+// across borders; a distant forest keeps its canopy. Runs natively (dwell_tests) and under Node
 // (dwell_worldgen_tests.js, CI).
 #include <doctest/doctest.h>
 
@@ -246,13 +246,11 @@ TEST_SUITE("worldgen: climate") {
       if (def.tree_chance > 0.0f) CHECK(def.trees[0].weight + def.trees[1].weight == 100);
       CHECK(def.tree_chance >= 0.0f);
       CHECK(def.tree_chance <= 1.0f);
-      // Accents are leaf materials, up to five.
-      CHECK(def.accent_count <= 5);
-      for (int i = 0; i < def.accent_count; ++i) {
-        CHECK(def.accents[i] > M::kLeaves);
-        CHECK(def.accents[i] <= M::kLeavesViolet);
+      // Tints are within what a multiplier of the tiles can be (up to x3.98) and not black.
+      for (const auto& t : {def.grass, def.foliage}) {
+        CHECK(std::min({t.r, t.g, t.b}) >= 16);
+        CHECK(t.r > 0);
       }
-      if (def.accent_count == 0) CHECK(def.accent_share == 0.0f);
     }
     // Every point of the temperature × humidity diagram has a climate biome, whatever the height.
     for (int ti = -100; ti <= 100; ++ti)

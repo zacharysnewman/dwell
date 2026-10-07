@@ -6,6 +6,7 @@ import {
   CELL,
   GUTTER,
   TILE,
+  TINT_MASKS,
   tileRect,
   tiledFbm,
   tiledNoise,
@@ -103,64 +104,44 @@ describe('texture atlas', () => {
   });
 });
 
-describe('colourful vegetation tiles (WORLD_GENERATION.md §3.7)', () => {
+describe('biome tint masks (WORLD_GENERATION.md §3.7)', () => {
   const atlas = buildAtlas();
-  const mean = (name: TileName): number[] => {
+  const alphaOf = (name: TileName, x: number, y: number): number => {
     const r = tileRect(name);
-    const x0 = Math.round(r.u0 * ATLAS_SIZE);
-    const y0 = Math.round(r.v0 * ATLAS_SIZE);
-    const sum = [0, 0, 0];
-    for (let y = 0; y < TILE; y++) {
-      for (let x = 0; x < TILE; x++) {
-        texel(atlas, x0 + x, y0 + y).forEach((c, i) => (sum[i] = (sum[i] ?? 0) + c));
-      }
-    }
-    return sum.map((c) => c / (TILE * TILE));
+    const px = Math.round(r.u0 * ATLAS_SIZE) + x;
+    const py = Math.round(r.v0 * ATLAS_SIZE) + y;
+    return atlas.data[(py * ATLAS_SIZE + px) * 4 + 3] ?? -1;
   };
 
-  it('paints each accent leaf in its colour: orange, rust, pink, violet and yellow-green', () => {
-    const [ar = 0, ag = 0, ab = 0] = mean('leavesAutumn');
-    expect(ar).toBeGreaterThan(ag); // orange: red over green over blue
-    expect(ag).toBeGreaterThan(ab);
-    const [rr = 0, rg = 0] = mean('leavesRed');
-    expect(rr).toBeGreaterThan(rg * 1.6); // rust: red well over green
-    expect(rr).toBeLessThan(ar); // darker than the autumn orange
-    const [br = 0, bg = 0, bb = 0] = mean('leavesBlossom');
-    expect(br).toBeGreaterThan(bg * 1.4); // pink
-    expect(bb).toBeGreaterThan(bg);
-    const [vr = 0, vg = 0, vb = 0] = mean('leavesViolet');
-    expect(vg).toBeLessThan(vr); // violet: green lowest
-    expect(vg).toBeLessThan(vb);
-    const [yr = 0, yg = 0, yb = 0] = mean('leavesBright');
-    const [gr = 0, gg = 0] = mean('leaves');
-    expect(yg).toBeGreaterThan(yb * 1.8); // yellow-green
-    expect(yr / yg).toBeGreaterThan(gr / gg); // yellower (more red per green) than the green
-  });
-
-  it('paints meadow grass with flower flecks and golden grass yellow', () => {
-    // The meadow's flecks are brighter and not green: some texels have blue or red over green.
-    const r = tileRect('grassMeadow');
-    const x0 = Math.round(r.u0 * ATLAS_SIZE);
-    const y0 = Math.round(r.v0 * ATLAS_SIZE);
-    let flowers = 0;
-    for (let y = 0; y < TILE; y++) {
-      for (let x = 0; x < TILE; x++) {
-        const [pr = 0, pg = 0, pb = 0] = texel(atlas, x0 + x, y0 + y);
-        if (pr > pg || pb > pg) flowers++;
+  it('marks the grass top and the leaves as tinted (alpha 0) and other tiles as opaque', () => {
+    for (let i = 0; i < TILE; i += 7) {
+      expect(alphaOf('grass', i, 5)).toBe(0);
+      expect(alphaOf('leaves', 3, i)).toBe(0);
+      for (const name of ['stone', 'dirt', 'water', 'sand', 'snow', 'logSide'] as const) {
+        expect(alphaOf(name, i, 9)).toBe(255);
       }
     }
-    expect(flowers).toBeGreaterThan(3);
-    expect(flowers).toBeLessThan(TILE * TILE * 0.1); // sparse
-    const [fr = 0, fg = 0] = mean('grassGolden');
-    const [er = 0, eg = 0] = mean('grass');
-    expect(fr / fg).toBeGreaterThan(er / eg + 0.2); // warmer than the green
-    // The side tiles carry the fringe over dirt, like the grass side.
-    for (const side of ['grassMeadowSide', 'grassGoldenSide'] as const) {
-      const sr = tileRect(side);
-      const sx = Math.round(sr.u0 * ATLAS_SIZE);
-      const sy = Math.round(sr.v0 * ATLAS_SIZE);
-      const bottom = texel(atlas, sx + 5, sy + 1);
-      expect(bottom[0] ?? 0).toBeGreaterThan(bottom[1] ?? 0); // dirt below the fringe
+  });
+
+  it('tints only the grass fringe of the grass side, not its dirt', () => {
+    // Row y = TILE − 1 is the top of the tile: the fringe is at least 4 texels deep, at most 9.
+    for (let x = 0; x < TILE; x++) {
+      expect(alphaOf('grassSide', x, TILE - 1)).toBe(0);
+      expect(alphaOf('grassSide', x, TILE - 4)).toBe(0);
+      expect(alphaOf('grassSide', x, TILE - 10)).toBe(255);
+      expect(alphaOf('grassSide', x, 0)).toBe(255);
+    }
+  });
+
+  it('every mask is a share between 0 and 1', () => {
+    for (const [name, mask] of Object.entries(TINT_MASKS)) {
+      for (let y = 0; y < TILE; y += 5) {
+        for (let x = 0; x < TILE; x += 5) {
+          const v = mask(x, y);
+          expect(v, name).toBeGreaterThanOrEqual(0);
+          expect(v, name).toBeLessThanOrEqual(1);
+        }
+      }
     }
   });
 });

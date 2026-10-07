@@ -57,7 +57,9 @@ inline constexpr float kFrozenOceanTemperature = -0.45f;
 // then bare rock above the tree line on high ground; otherwise the zone table.
 Biome ClimateBiome(float temperature, float humidity, float height);
 
-enum class TreeKind : std::uint8_t { kOak, kSpruce, kBlossom, kAutumn };
+// Tree shapes (§3.7): the oak (round crown), the spruce (a cone) and the blossom tree (a short
+// trunk and a wide round crown). Their colour is not carried: it is the biome's foliage tint.
+enum class TreeKind : std::uint8_t { kOak, kSpruce, kBlossom };
 
 // A surface layer: the voxels with depth run < `until` below the surface (run 0 = the top voxel).
 struct SurfaceLayer {
@@ -69,6 +71,14 @@ struct TreeChoice {
   std::uint8_t weight;  // of 100 among the biome's choices
 };
 
+// A colour multiplier per channel in 1/64 (64 = ×1, up to ×3.98): what the tinted blocks' textures
+// (grass, leaves) are multiplied by in a biome. Nothing is stored in the voxels: the client asks
+// the generator for the tint of the columns it draws (TerrainGenerator::TintGrid).
+struct TintColor {
+  std::uint8_t r, g, b;
+};
+inline constexpr std::uint8_t kTintUnit = 64;
+
 struct BiomeDef {
   Biome id;
   const char* name;
@@ -78,31 +88,14 @@ struct BiomeDef {
   SurfaceLayer layers[3];
   core::MaterialId steep;
   std::int8_t steep_until;
-  // Vegetation (§3.7): the chance a 7 m cell holds a tree and which kinds; groves of accent trees
-  // (the share of a grove's core that is accent-coloured, and the leaf materials they may be).
+  // Vegetation (§3.7): the chance a 7 m cell holds a tree and which shapes.
   float tree_chance;
   TreeChoice trees[2];
-  float accent_share;
-  std::uint8_t accent_count;
-  core::MaterialId accents[5];
+  // The colours of the grass and of the foliage (leaves) here.
+  TintColor grass, foliage;
   float boulder_chance;  // per 24 m cell
   bool canopy;           // a distant forest: LOD columns above the tree cells show leaves
 };
 const BiomeDef& BiomeOf(Biome b);
-
-// The default leaf material of a tree kind.
-core::MaterialId DefaultLeaves(TreeKind kind);
-
-// Grove noise (§3.7): groves of accent trees come in clumps a few hundred metres across. The
-// share of trees that are accents at (x, z) and the accent leaf material of the patch there.
-struct GroveSeeds {
-  std::uint32_t grove, patch;
-};
-// 0 outside groves, up to 1 in a grove's core.
-float GroveCore(const GroveSeeds& seeds, std::int64_t x, std::int64_t z);
-// The leaf material of a tree of `kind` in `biome` at (x, z) whose own hash is `hash`: the kind's
-// default, or the grove's accent colour with the chance GroveCore × the biome's accent share.
-core::MaterialId LeafMaterialAt(const GroveSeeds& seeds, const BiomeDef& biome, TreeKind kind,
-                                std::int64_t x, std::int64_t z, std::uint32_t hash);
 
 }  // namespace dwell::worldgen

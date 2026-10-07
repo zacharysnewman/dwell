@@ -24,15 +24,6 @@ export type TileName =
   | 'logSide'
   | 'logTop'
   | 'leaves'
-  | 'leavesBright'
-  | 'leavesAutumn'
-  | 'leavesRed'
-  | 'leavesBlossom'
-  | 'leavesViolet'
-  | 'grassMeadow'
-  | 'grassMeadowSide'
-  | 'grassGolden'
-  | 'grassGoldenSide'
   | 'coalOre'
   | 'ironOre'
   | 'goldOre'
@@ -53,15 +44,6 @@ export const TILE_ORDER: readonly TileName[] = [
   'logSide',
   'logTop',
   'leaves',
-  'leavesBright',
-  'leavesAutumn',
-  'leavesRed',
-  'leavesBlossom',
-  'leavesViolet',
-  'grassMeadow',
-  'grassMeadowSide',
-  'grassGolden',
-  'grassGoldenSide',
   'coalOre',
   'ironOre',
   'goldOre',
@@ -144,39 +126,17 @@ const STONE = rgb(0xbbafa6);
 const STONE_COOL = rgb(0x9c95a8);
 const STONE_FLECK = rgb(0xd6c6b4);
 
-/** Grass tiles: the same tiled noise over a low, base and high colour; `seed` varies the variants. */
-function grassPainter(low: Rgb, base: Rgb, high: Rgb, seed = 0): (x: number, y: number) => Rgb {
-  return (x, y) => {
-    const n = tiledFbm(x, y, 11 + seed);
-    const patches = tiledNoise(x, y, 4, 7, 12 + seed);
-    const blade = hash(x, y, 9, 13 + seed); // per-texel speckle: darker and lighter blades
-    // Gentle: large features repeat once per block, so bright patches only tint; noise runs from
-    // the deeper green in the hollows to the yellow-green highlights.
-    const lit = mix(base, high, 0.55 * patches);
-    let c = mix(low, lit, Math.min(1, 0.35 + 0.9 * n));
-    if (blade > 0.9) c = scale(c, 0.82);
-    else if (blade < 0.06) c = scale(c, 1.1);
-    return c;
-  };
-}
-
-const grass = grassPainter(GRASS_LOW, GRASS, GRASS_HIGH);
-
-const GOLDEN = rgb(0xc4b14a);
-const GOLDEN_HIGH = rgb(0xdcc766);
-const GOLDEN_LOW = rgb(0xa08e3a);
-const grassGolden = grassPainter(GOLDEN_LOW, GOLDEN, GOLDEN_HIGH, 200);
-
-/** Meadow grass: grass with sparse pink, white and yellow flower flecks. */
-const FLOWERS: readonly Rgb[] = [rgb(0xf08fb0), rgb(0xfaf4e8), rgb(0xf5d94a), rgb(0xe85f8b)];
-const meadowBase = grassPainter(GRASS_LOW, GRASS, GRASS_HIGH, 100);
-function grassMeadow(x: number, y: number): Rgb {
-  const fleck = hash(x, y, 14, 113);
-  if (fleck > 0.972) {
-    const pick = Math.floor(hash(x, y, 15, 114) * FLOWERS.length) % FLOWERS.length;
-    return FLOWERS[pick] ?? GRASS;
-  }
-  return meadowBase(x, y);
+function grass(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 11);
+  const patches = tiledNoise(x, y, 4, 7, 12);
+  const blade = hash(x, y, 9, 13); // per-texel speckle: darker and lighter blades
+  // Gentle: large features repeat once per block, so bright patches only tint; noise runs from
+  // the deeper green in the hollows to the yellow-green highlights.
+  const lit = mix(GRASS, GRASS_HIGH, 0.55 * patches);
+  let c = mix(GRASS_LOW, lit, Math.min(1, 0.35 + 0.9 * n));
+  if (blade > 0.9) c = scale(c, 0.82);
+  else if (blade < 0.06) c = scale(c, 1.1);
+  return c;
 }
 
 function dirt(x: number, y: number): Rgb {
@@ -192,14 +152,6 @@ function grassSide(x: number, y: number): Rgb {
   // Fringe depth varies along x with 1D tiled noise (sampled on a fixed row).
   const depth = 4 + 5 * tiledNoise(x, 0, 8, 5, 31);
   return TILE - 1 - y < depth ? grass(x, y) : dirt(x, y);
-}
-
-/** Dirt with a ragged fringe of `top` along the top edge, as grassSide. */
-function fringed(top: (x: number, y: number) => Rgb): (x: number, y: number) => Rgb {
-  return (x, y) => {
-    const depth = 4 + 5 * tiledNoise(x, 0, 8, 5, 31);
-    return TILE - 1 - y < depth ? top(x, y) : dirt(x, y);
-  };
 }
 
 function stone(x: number, y: number): Rgb {
@@ -266,25 +218,13 @@ function logTop(x: number, y: number): Rgb {
   return scale(WOOD, 0.8 + 0.15 * ring + 0.1 * tiledFbm(x, y, 93));
 }
 
-/** Leaf tiles: noise between a base and a highlight colour, with darker gaps between leaves. */
-function leafPainter(base: Rgb, high: Rgb, seed = 0): (x: number, y: number) => Rgb {
-  return (x, y) => {
-    const n = tiledFbm(x, y, 101 + seed);
-    const gap = hash(x, y, 2, 102 + seed);
-    let c = mix(scale(base, 0.95), high, Math.max(0, n - 0.3) * 1.5);
-    if (gap > 0.88) c = scale(c, 0.7); // darker gaps between leaves
-    return c;
-  };
+function leaves(x: number, y: number): Rgb {
+  const n = tiledFbm(x, y, 101);
+  const gap = hash(x, y, 2, 102);
+  let c = mix(scale(LEAVES, 0.95), LEAVES_HIGH, Math.max(0, n - 0.3) * 1.5);
+  if (gap > 0.88) c = scale(c, 0.7); // darker gaps between leaves
+  return c;
 }
-
-const leaves = leafPainter(LEAVES, LEAVES_HIGH);
-// Accent foliage (WORLD_GENERATION.md §1.3, §3.7): yellow-green, autumn orange, rust red, blossom
-// pink and violet, each with its own noise seed so the tiles do not repeat one another.
-const leavesBright = leafPainter(rgb(0xbfb949), rgb(0xe1df6a), 300);
-const leavesAutumn = leafPainter(rgb(0xd27a2c), rgb(0xea9d48), 310);
-const leavesRed = leafPainter(rgb(0x9c3f22), rgb(0xc4583a), 320);
-const leavesBlossom = leafPainter(rgb(0xe0698b), rgb(0xf3a0b6), 330);
-const leavesViolet = leafPainter(rgb(0x8a3d93), rgb(0xb064b6), 340);
 
 /** Stone with clusters of a mineral colour. */
 function ore(color: number, seed: number): (x: number, y: number) => Rgb {
@@ -356,15 +296,6 @@ const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   logSide,
   logTop,
   leaves,
-  leavesBright,
-  leavesAutumn,
-  leavesRed,
-  leavesBlossom,
-  leavesViolet,
-  grassMeadow,
-  grassMeadowSide: fringed(grassMeadow),
-  grassGolden,
-  grassGoldenSide: fringed(grassGolden),
   coalOre: ore(0x26262a, 111),
   ironOre: ore(0xc8926a, 121),
   goldOre: ore(0xf2c230, 131),
@@ -372,6 +303,19 @@ const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   water,
   ladder,
   launchPad,
+};
+
+/**
+ * How much of a texel the biome tint colours (0..1; WORLD_GENERATION.md §3.7): the grass top and the
+ * leaves entirely, the grass side's fringe but not its dirt. Stored in the atlas as 255 − 255 × mask
+ * in the alpha channel — opaque (255) is untinted, the opaque passes ignore alpha — and read by the
+ * chunk shader (three/ThreeRenderer.ts).
+ */
+export const TINT_MASKS: Partial<Record<TileName, (x: number, y: number) => number>> = {
+  grass: () => 1,
+  leaves: () => 1,
+  // The fringe is the top `depth` texels (see grassSide).
+  grassSide: (x, y) => (TILE - 1 - y < 4 + 5 * tiledNoise(x, 0, 8, 5, 31) ? 1 : 0),
 };
 
 export interface Atlas {
@@ -406,7 +350,7 @@ export function buildAtlas(): Atlas {
         data[o] = Math.round(Math.min(255, Math.max(0, r)));
         data[o + 1] = Math.round(Math.min(255, Math.max(0, g)));
         data[o + 2] = Math.round(Math.min(255, Math.max(0, b)));
-        data[o + 3] = 255;
+        data[o + 3] = 255 - Math.round(255 * (TINT_MASKS[name]?.(tx, ty) ?? 0));
       }
     }
   });

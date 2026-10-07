@@ -41,6 +41,7 @@ const familyBlock = (base, kind, extra = {}) => {
     density: base.density,
     color: base.color,
     textures: base.textures,
+    tint: base.tint,
     look: 'shaped',
     shape: 'shaped',
     slopeFamily: kind,
@@ -101,6 +102,7 @@ for (const ns of namespaces) {
         return { name, values };
       });
     if (!(def.shape in SHAPES)) fail(`${id}: shape ${def.shape}`);
+    if (def.tint !== undefined && !['grass', 'foliage'].includes(def.tint)) fail(`${id}: tint ${def.tint}`);
     const look = def.look ?? 'cube';
     if (!LOOKS.includes(look)) fail(`${id}: look ${look}`);
     if (def.facingProperty) {
@@ -377,6 +379,8 @@ ts.push('  look: MaterialLook;');
 ts.push('  color: number;');
 ts.push('  opacity: number;');
 ts.push('  textures?: MaterialTextures;');
+ts.push('  /** Biome tint (docs/WORLD_GENERATION.md §3.7): the texture is multiplied by the biome\'s grass or foliage colour where the tile\'s alpha says so. */');
+ts.push('  tint?: \'grass\' | \'foliage\';');
 ts.push('  /** Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z). */');
 ts.push('  ladderFace?: number;');
 ts.push('  /** Index into SHAPES: the solid\'s geometry in its cell (0 = none). */');
@@ -457,6 +461,7 @@ for (let first = 0; first < states.length; first += CHUNK) {
     `opacity: ${d.opacity ?? 1}`,
   ];
   if (d.textures) parts.push(`textures: ${tex(d.textures)}`);
+  if (d.tint) parts.push(`tint: '${d.tint}'`);
   if (d.look === 'ladder' && d.facingProperty) {
     parts.push(`ladderFace: ${LADDER_FACE[s.values[d.facingProperty]]}`);
   }

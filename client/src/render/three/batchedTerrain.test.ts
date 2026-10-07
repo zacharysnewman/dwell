@@ -5,7 +5,7 @@ import type { ChunkMeshes, MeshArrays } from '../../mesh/mesher';
 import type { ChunkCoord } from '../../protocol/messages';
 import { BatchedTerrain } from './batchedTerrain';
 
-function quad(): Omit<MeshArrays, 'uvs' | 'tiles'> {
+function quad(): Omit<MeshArrays, 'uvs' | 'tiles' | 'tints'> {
   return {
     positions: new Float32Array(12),
     normals: new Float32Array(12),
@@ -18,12 +18,14 @@ const none = (): MeshArrays => ({
   normals: new Float32Array(0),
   colors: new Float32Array(0),
   uvs: new Float32Array(0),
+  tints: new Float32Array(0),
   tiles: new Float32Array(0),
   indices: new Uint32Array(0),
 });
 const textured = (): MeshArrays => ({
   ...quad(),
   uvs: new Float32Array(8),
+  tints: new Float32Array(12),
   tiles: new Float32Array(16),
 });
 const chunk = (water: boolean): ChunkMeshes => ({

@@ -135,10 +135,6 @@ float Clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v;
 // Amplitude (m) of the 3D overhang noise: a metre or two on most land, more on mountain faces.
 float OverhangAmplitude(float land, float mountain) { return 1.0f + 1.5f * land + 9.0f * mountain; }
 
-// The leaf materials are consecutive in the registry (shared/blocks/dwell.json).
-static_assert(M::kLeavesViolet == M::kLeaves + 5, "the leaf materials are consecutive");
-constexpr bool IsLeaves(MaterialId m) { return m >= M::kLeaves && m <= M::kLeavesViolet; }
-
 // Classification of one voxel before materials are assigned.
 enum Cell : std::uint8_t { kOpenAir, kWater, kCaveAir, kSolid };
 
@@ -224,14 +220,12 @@ TerrainGenerator::TerrainGenerator(std::uint64_t world_seed)
     : continents_(world_seed), river_seeds_(rivers::MakeSeeds(world_seed)) {
   std::uint32_t stream = 0;
   for (std::uint32_t* s :
-       {&seeds_.continent,   &seeds_.erosion,  &seeds_.temperature, &seeds_.humidity,
-        &seeds_.hills,       &seeds_.ridges,   &seeds_.overhang,    &seeds_.spaghetti_a,
-        &seeds_.spaghetti_b, &seeds_.cheese,   &seeds_.trees,       &seeds_.boulders,
-        &seeds_.ores,        &seeds_.macro,    &seeds_.relief,      &seeds_.cascade,
-        &seeds_.border_t,    &seeds_.border_h, &seeds_.grove,       &seeds_.patch}) {
+       {&seeds_.continent, &seeds_.erosion, &seeds_.temperature, &seeds_.humidity, &seeds_.hills,
+        &seeds_.ridges, &seeds_.overhang, &seeds_.spaghetti_a, &seeds_.spaghetti_b, &seeds_.cheese,
+        &seeds_.trees, &seeds_.boulders, &seeds_.ores, &seeds_.macro, &seeds_.relief,
+        &seeds_.cascade, &seeds_.border_t, &seeds_.border_h}) {
     *s = SeedWord(world_seed, ++stream);
   }
-  grove_seeds_ = {seeds_.grove, seeds_.patch};
   // 1..4,095 m, never a multiple of 16 (the cascade's finest lattice).
   cascade_offset_x_ = 17 + static_cast<std::int64_t>(Mix32(seeds_.cascade ^ 0x51ed270bu) % 4000u);
   cascade_offset_z_ = 17 + static_cast<std::int64_t>(Mix32(seeds_.cascade ^ 0x2545f491u) % 4000u);
@@ -1023,7 +1017,7 @@ std::optional<Feature> TerrainGenerator::TreeInCell(std::int32_t cx, std::int32_
   const auto ground = GroundY(x, z);
   if (!ground || *ground < col.water) return std::nullopt;
   const std::uint32_t r = Mix32(h + 1u);
-  // The kind: the biome's first choice with its weight (of 100), else its second.
+  // The shape: the biome's first choice with its weight (of 100), else its second.
   const TreeKind tree = static_cast<int>(Mix32(h + 3u) % 100u) < biome.trees[0].weight
                             ? biome.trees[0].kind
                             : biome.trees[1].kind;
@@ -1031,9 +1025,6 @@ std::optional<Feature> TerrainGenerator::TreeInCell(std::int32_t cx, std::int32_
   int size = 4 + static_cast<int>(r % 3u);
   switch (tree) {
     case TreeKind::kOak:
-      break;
-    case TreeKind::kAutumn:
-      kind = Feature::Kind::kAutumn;
       break;
     case TreeKind::kBlossom:
       kind = Feature::Kind::kBlossom;
@@ -1044,8 +1035,7 @@ std::optional<Feature> TerrainGenerator::TreeInCell(std::int32_t cx, std::int32_
       size = 6 + static_cast<int>(r % 4u);
       break;
   }
-  return Feature{
-      kind, x, *ground + 1, z, size, r, LeafMaterialAt(grove_seeds_, biome, tree, x, z, r)};
+  return Feature{kind, x, *ground + 1, z, size, r};
 }
 
 std::optional<Feature> TerrainGenerator::BoulderInCell(std::int32_t cx, std::int32_t cz) const {
@@ -1087,17 +1077,17 @@ void TerrainGenerator::PlaceFeature(const Feature& f, Write&& write) const {
         for (int dx = -r; dx <= r; ++dx) {
           const bool corner = (dx == r || dx == -r) && (dz == r || dz == -r);
           if (corner && (r == 3 || (Hash3(f.hash, dx, y - top, dz) & 1u))) continue;
-          write(f.x + dx, y, f.z + dz, f.leaves);
+          write(f.x + dx, y, f.z + dz, M::kLeaves);
         }
     }
-  } else if (f.kind != Feature::Kind::kSpruce) {  // broadleaf: oak and autumn trees
+  } else if (f.kind != Feature::Kind::kSpruce) {  // broadleaf
     for (std::int32_t y = top - 2; y <= top + 1; ++y) {
       const int r = y <= top - 1 ? 2 : 1;
       for (int dz = -r; dz <= r; ++dz)
         for (int dx = -r; dx <= r; ++dx) {
           const bool corner = (dx == r || dx == -r) && (dz == r || dz == -r);
           if (corner && (y == top + 1 || (Hash3(f.hash, dx, y - top, dz) & 1u))) continue;
-          write(f.x + dx, y, f.z + dz, f.leaves);
+          write(f.x + dx, y, f.z + dz, M::kLeaves);
         }
     }
   } else {
@@ -1109,7 +1099,7 @@ void TerrainGenerator::PlaceFeature(const Feature& f, Write&& write) const {
       for (int dz = -r; dz <= r; ++dz)
         for (int dx = -r; dx <= r; ++dx) {
           if (r > 1 && (dx == r || dx == -r) && (dz == r || dz == -r)) continue;
-          write(f.x + dx, y, f.z + dz, f.leaves);
+          write(f.x + dx, y, f.z + dz, M::kLeaves);
         }
     }
   }
@@ -1378,7 +1368,7 @@ void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint
     if (column(x, z).outside) return;  // features stop at the rim
     MaterialId& cur = voxels[core::LocalIndex(x, y, z)];
     const bool shaped = core::GetMaterial(cur).shape == core::VoxelShape::kShaped;
-    if (cur == M::kAir || (m == M::kLog && (IsLeaves(cur) || shaped))) cur = m;
+    if (cur == M::kAir || (m == M::kLog && (cur == M::kLeaves || shaped))) cur = m;
   };
   const auto in_range = [&](const Feature& f, int reach_down, int reach_up) {
     return f.y + reach_up >= y0 && f.y - reach_down < y0 + S;
@@ -1620,6 +1610,32 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
     }
   const auto column = [&](int x, int z) -> const Column& { return cols[LodCol(x, z)]; };
   const core::LodKind kind = core::LodKindFromBounds(c, LodBoundsOf(column, cell));
+  // The columns' grass and foliage tints, each the mean of its 3 × 3 neighbours' biomes' (the
+  // client multiplies tinted blocks' colours by it, §3.7).
+  if (surface && kind != core::LodKind::kEmpty) {
+    const auto pack = [](int r, int g, int b) {
+      return static_cast<std::uint32_t>(r << 16 | g << 8 | b);
+    };
+    for (int z = -1; z <= kLodSectionCells; ++z)
+      for (int x = -1; x <= kLodSectionCells; ++x) {
+        int sum[6] = {};
+        int n = 0;
+        for (int dz = -1; dz <= 1; ++dz)
+          for (int dx = -1; dx <= 1; ++dx) {
+            const Column& nb = column(x + dx, z + dz);
+            if (nb.outside) continue;
+            const BiomeDef& b = BiomeOf(nb.biome);
+            const int t[6] = {b.grass.r,   b.grass.g,   b.grass.b,
+                              b.foliage.r, b.foliage.g, b.foliage.b};
+            for (int k = 0; k < 6; ++k) sum[k] += t[k];
+            ++n;
+          }
+        if (n == 0) continue;
+        core::LodSurface& s = (*surface)[static_cast<std::size_t>((z + 1) * core::kLodPad + x + 1)];
+        s.tint_grass = pack((sum[0] + n / 2) / n, (sum[1] + n / 2) / n, (sum[2] + n / 2) / n);
+        s.tint_foliage = pack((sum[3] + n / 2) / n, (sum[4] + n / 2) / n, (sum[5] + n / 2) / n);
+      }
+  }
   if (kind == core::LodKind::kEmpty) return kind;
   if (kind == core::LodKind::kBuried) {
     for (int y = -1; y <= kLodSectionCells; ++y) {
@@ -1653,11 +1669,7 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
       const BiomeDef& biome = BiomeOf(col.biome);
       const bool canopy = cell > 4 && biome.canopy && slope < 1.0f && col.wet == 0.0f &&
                           col.height >= static_cast<float>(col.water);
-      const MaterialId canopy_leaves =
-          canopy ? LeafMaterialAt(grove_seeds_, biome, biome.trees[0].kind, wx, wz,
-                                  Hash2(seeds_.trees, static_cast<std::int32_t>(o.x / cell) + x,
-                                        static_cast<std::int32_t>(o.z / cell) + z))
-                 : M::kAir;
+      const MaterialId canopy_leaves = M::kLeaves;
       const float deep =
           col.height - col.overhang * 1.1f - static_cast<float>(kLodCaveCells * cell);
       int run = 1000;  // solid above the padded top: treat as deep
@@ -1735,7 +1747,6 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
   const std::int64_t volume = cell * cell * cell;
   std::vector<std::uint16_t> stone(core::kLodVolume), wood(core::kLodVolume),
       leaves(core::kLodVolume);
-  std::vector<MaterialId> leaf_material(core::kLodVolume, M::kLeaves);  // the last leaf written
   const std::int64_t span = (kLodSectionCells + 1) * cell;
   const auto write = [&](std::int32_t vx, std::int32_t vy, std::int32_t vz, MaterialId m) {
     const auto local = [&](std::int64_t v, std::int64_t origin) {
@@ -1747,8 +1758,7 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
     if (!core::InsideWorldDisc(vx, vz)) return;
     const auto idx = static_cast<std::size_t>(
         LodCell(static_cast<int>(cx), static_cast<int>(cy), static_cast<int>(cz)));
-    auto& counts = m == M::kLog ? wood : IsLeaves(m) ? leaves : stone;
-    if (IsLeaves(m)) leaf_material[idx] = m;
+    auto& counts = m == M::kLog ? wood : m == M::kLeaves ? leaves : stone;
     ++counts[idx];
   };
   const std::int64_t x_lo = o.x - cell, x_hi = o.x + span, z_lo = o.z - cell, z_hi = o.z + span;
@@ -1782,10 +1792,44 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
     if (2 * std::int64_t{stone[i]} >= volume) {
       cells[i] = M::kStone;
     } else if (2 * (std::int64_t{wood[i]} + leaves[i]) >= volume) {
-      cells[i] = wood[i] >= leaves[i] ? M::kLog : leaf_material[i];
+      cells[i] = wood[i] >= leaves[i] ? M::kLog : M::kLeaves;
     }
   }
   return kind;
+}
+
+// --- biome tints ------------------------------------------------------------------------------
+
+std::array<std::uint8_t, TerrainGenerator::kTintStride> TerrainGenerator::TintAt(
+    std::int32_t x, std::int32_t z) const {
+  const BiomeDef& b = BiomeOf(ColumnAt(x, z).biome);
+  return {b.grass.r, b.grass.g, b.grass.b, b.foliage.r, b.foliage.g, b.foliage.b};
+}
+
+TerrainGenerator::TintGridData TerrainGenerator::TintGrid(std::int32_t cx, std::int32_t cz) const {
+  // The biomes' tints one lattice step outside the chunk's corners too (5 × 5 points), so that each
+  // of the 3 × 3 outputs is the mean of its own 3 × 3 neighbourhood: a smooth blend across borders.
+  constexpr int P = kTintOutPoints + 2;
+  std::array<std::array<std::uint8_t, kTintStride>, P * P> raw;
+  for (int j = 0; j < P; ++j)
+    for (int i = 0; i < P; ++i) {
+      raw[static_cast<std::size_t>(j * P + i)] =
+          TintAt(cx * kChunkSize + (i - 1) * kTintStep, cz * kChunkSize + (j - 1) * kTintStep);
+    }
+  TintGridData out{};
+  for (int j = 0; j < kTintOutPoints; ++j)
+    for (int i = 0; i < kTintOutPoints; ++i)
+      for (int c = 0; c < kTintStride; ++c) {
+        int sum = 0;
+        for (int dj = 0; dj < 3; ++dj)
+          for (int di = 0; di < 3; ++di) {
+            sum +=
+                raw[static_cast<std::size_t>((j + dj) * P + i + di)][static_cast<std::size_t>(c)];
+          }
+        out[static_cast<std::size_t>((j * kTintOutPoints + i) * kTintStride + c)] =
+            static_cast<std::uint8_t>((sum + 4) / 9);
+      }
+  return out;
 }
 
 // --- spawn ----------------------------------------------------------------------------------

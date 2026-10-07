@@ -13,9 +13,10 @@ export const LOD_PAD = SECTION_CELLS + 2;
 export const LOD_VOLUME = LOD_PAD * LOD_PAD * LOD_PAD;
 /**
  * Floats per column of a generated section's surface (C++ core::LodSurface, worldgen_api.cpp):
- * height, material, flags (1 valid, 2 wet), and where wet the water's level.
+ * height, material, flags (1 valid, 2 wet), where wet the water's level, and the column's grass and
+ * foliage tints (0xRRGGBB in 1/64 of a multiplier of 1; 0: none).
  */
-export const SURFACE_STRIDE = 4;
+export const SURFACE_STRIDE = 6;
 export const ORIGIN: Vec3 = [-(2 ** 23), World.worldMinY, -(2 ** 23)];
 
 /** [level, i, j, k]. */

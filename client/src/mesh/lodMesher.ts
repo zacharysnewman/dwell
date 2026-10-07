@@ -66,11 +66,87 @@ export function lodColor(m: number, group: number): number {
   return c;
 }
 
+/** The generator's tint unit (biomes.h kTintUnit): 64 is a multiplier of 1. */
+const TINT_UNIT = 64;
+
+/**
+ * The biome tint of a section's columns (the surface data's last two values, 0xRRGGBB in 1/64: the
+ * grass and the foliage colour, smoothed by the generator), looked up bilinearly between column
+ * centres at a vertex. Nothing is tinted without surface data (modified sections, flat worlds).
+ */
+export class LodTint {
+  private readonly grass: Float32Array | null;
+  private readonly foliage: Float32Array | null;
+
+  constructor(surface: Float32Array | null) {
+    const n = LOD_PAD * LOD_PAD;
+    if (!surface || surface.length < n * SURFACE_STRIDE) {
+      this.grass = this.foliage = null;
+      return;
+    }
+    const unpack = (offset: number): Float32Array => {
+      const out = new Float32Array(n * 3);
+      for (let c = 0; c < n; c++) {
+        const packed = surface[c * SURFACE_STRIDE + offset] ?? 0;
+        if (packed === 0) {
+          out.fill(1, c * 3, c * 3 + 3);
+        } else {
+          out[c * 3] = ((packed >> 16) & 0xff) / TINT_UNIT;
+          out[c * 3 + 1] = ((packed >> 8) & 0xff) / TINT_UNIT;
+          out[c * 3 + 2] = (packed & 0xff) / TINT_UNIT;
+        }
+      }
+      return out;
+    };
+    this.grass = unpack(4);
+    this.foliage = unpack(5);
+  }
+
+  /** Multiplies `rgb` (linear) by the tint of `kind` at section position (x, z) in cells. */
+  apply(kind: 'grass' | 'foliage', x: number, z: number, rgb: number[]): void {
+    const t = kind === 'grass' ? this.grass : this.foliage;
+    if (!t) return;
+    const lo = -1;
+    const hi = SECTION_CELLS;
+    const u = Math.min(Math.max(x - 0.5, lo), hi - 1e-6);
+    const v = Math.min(Math.max(z - 0.5, lo), hi - 1e-6);
+    const i = Math.floor(u);
+    const j = Math.floor(v);
+    const fx = u - i;
+    const fz = v - j;
+    for (let c = 0; c < 3; c++) {
+      const at = (di: number, dj: number): number => t[col(i + di, j + dj) * 3 + c] ?? 1;
+      const a = at(0, 0) + (at(1, 0) - at(0, 0)) * fx;
+      const b = at(0, 1) + (at(1, 1) - at(0, 1)) * fx;
+      rgb[c] = (rgb[c] ?? 1) * (a + (b - a) * fz);
+    }
+  }
+}
+
+const NO_TINT = new LodTint(null);
+
 class Builder {
   private readonly positions: number[] = [];
   private readonly normals: number[] = [];
   private readonly colors: number[] = [];
   private readonly indices: number[] = [];
+  private readonly rgb: [number, number, number] = [1, 1, 1];
+
+  constructor(private readonly tint: LodTint = NO_TINT) {}
+
+  /** Pushes a vertex colour: the base (linear) × the biome tint of the material at (x, z). */
+  private pushColor(r: number, g: number, b: number, m: number | undefined, x: number, z: number) {
+    const kind = m === undefined ? undefined : materialStyle(m).tint;
+    if (!kind) {
+      this.colors.push(r, g, b);
+      return;
+    }
+    this.rgb[0] = r;
+    this.rgb[1] = g;
+    this.rgb[2] = b;
+    this.tint.apply(kind, x, z, this.rgb);
+    this.colors.push(...this.rgb);
+  }
 
   quad(
     axis: number,
@@ -81,6 +157,7 @@ class Builder {
     v0: number,
     v1: number,
     color: number,
+    m?: number,
   ): void {
     const u = (axis + 1) % 3;
     const v = (axis + 2) % 3;
@@ -102,7 +179,7 @@ class Builder {
       p[v] = cv;
       this.positions.push(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0);
       this.normals.push(axis === 0 ? sign : 0, axis === 1 ? sign : 0, axis === 2 ? sign : 0);
-      this.colors.push(r, g, b);
+      this.pushColor(r, g, b, m, p[0] ?? 0, p[2] ?? 0);
     }
     if (sign > 0) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     else this.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
@@ -121,6 +198,7 @@ class Builder {
     lo: readonly [number, number],
     hi: readonly [number, number],
     color: number,
+    m?: number,
   ): void {
     const tint = faceTint(axis, sign);
     const r = srgbToLinear((color >> 16) & 0xff) * tint[0];
@@ -145,14 +223,14 @@ class Builder {
     for (const [x, y, z] of corners) {
       this.positions.push(x, y, z);
       this.normals.push(axis === 0 ? sign : 0, 0, axis === 2 ? sign : 0);
-      this.colors.push(r, g, b);
+      this.pushColor(r, g, b, m, x, z);
     }
     if (sign > 0) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     else this.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
   }
 
   /** A convex polygon (counter-clockwise seen from outside) lit by its own normal. */
-  polygon(pts: readonly (readonly number[])[], color: number): void {
+  polygon(pts: readonly (readonly number[])[], color: number, m?: number): void {
     const [a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0]] = pts;
     const e1 = [(b[0] ?? 0) - (a[0] ?? 0), (b[1] ?? 0) - (a[1] ?? 0), (b[2] ?? 0) - (a[2] ?? 0)];
     const e2 = [(c[0] ?? 0) - (a[0] ?? 0), (c[1] ?? 0) - (a[1] ?? 0), (c[2] ?? 0) - (a[2] ?? 0)];
@@ -168,7 +246,7 @@ class Builder {
     for (const p of pts) {
       this.positions.push(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0);
       this.normals.push(nx / len, ny / len, nz / len);
-      this.colors.push(r, g, bl);
+      this.pushColor(r, g, bl, m, p[0] ?? 0, p[2] ?? 0);
     }
     for (let i = 1; i + 1 < pts.length; i++) this.indices.push(base, base + i, base + i + 1);
   }
@@ -222,9 +300,10 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
   const waterDrop = options.waterDrop ?? 0;
   if (cells.length !== LOD_VOLUME) throw new RangeError('section cells must be LOD_VOLUME');
   const N = SECTION_CELLS;
-  const opaque = new Builder();
+  const tint = new LodTint(surface);
+  const opaque = new Builder(tint);
   const waterMesh = new Builder();
-  const skirts = FACES.map(() => new Builder());
+  const skirts = FACES.map(() => new Builder(tint));
   const special = findSurfaces(cells, surface, options.slopes ?? false);
   // Merge key per slice cell: 0 none, else (material + 1) · 2 + (1 for a skirt face).
   const mask = new Int32Array(N * N);
@@ -306,6 +385,7 @@ export function meshSection(cells: Uint16Array, options: MeshSectionOptions = {}
             j,
             j + h,
             lodColor(m, group),
+            m,
           );
           i += w;
         }
@@ -557,6 +637,7 @@ function emitSurfaces(
           opaque.polygon(
             face.pts.map((p) => [x + p[0], y + p[1], z + p[2]]),
             color,
+            s.m[c] ?? 0,
           );
         }
         continue;
@@ -582,7 +663,7 @@ function emitSurfaces(
       for (let dx = 0; dx < d; dx++) topKey.fill(0, z + N * (x + dx), z + w + N * (x + dx));
       const h = (Math.floor(key / 0x10000) - 1) / SURFACE_STEPS;
       // The top: axis y, u = z, v = x.
-      opaque.quad(1, 1, h, z, z + w, x, x + d, lodColor(key % 0x10000, 0));
+      opaque.quad(1, 1, h, z, z + w, x, x + d, lodColor(key % 0x10000, 0), key % 0x10000);
       z += w;
     }
   }
@@ -657,6 +738,7 @@ function emitSurfaces(
             run.lo,
             run.hi,
             lodColor(run.material, 1),
+            run.material,
           );
         };
         for (let b = 0; b <= N; b++) {

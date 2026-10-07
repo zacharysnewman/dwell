@@ -629,12 +629,6 @@ int main(int argc, char** argv) {
           case core::Materials::kGrass:
             ch = '"';
             break;
-          case core::Materials::kGrassMeadow:
-            ch = '\'';
-            break;
-          case core::Materials::kGrassGolden:
-            ch = '`';
-            break;
           case core::Materials::kWater:
             ch = '~';
             break;
@@ -655,13 +649,6 @@ int main(int argc, char** argv) {
             break;
           case core::Materials::kLeaves:
             ch = '%';
-            break;
-          case core::Materials::kLeavesBright:
-          case core::Materials::kLeavesAutumn:
-          case core::Materials::kLeavesRed:
-          case core::Materials::kLeavesBlossom:
-          case core::Materials::kLeavesViolet:
-            ch = '&';  // accent foliage
             break;
           case core::Materials::kBedrock:
             ch = 'B';
