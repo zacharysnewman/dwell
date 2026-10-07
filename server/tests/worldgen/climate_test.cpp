@@ -273,6 +273,24 @@ TEST_SUITE("worldgen: climate") {
         found = true;
         const Column c = gen.ColumnAt(at->first, at->second);
         CHECK(c.temperature < worldgen::kFrozenOceanTemperature);
+        // Its surface is a metre of ice over water: the top water voxel is ice, the ones below are
+        // water, the sea floor gravel.
+        core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, seed));
+        int ice = 0, columns = 0;
+        for (int dz = 0; dz < 16; dz += 3)
+          for (int dx = 0; dx < 16; dx += 3) {
+            const auto col = gen.ColumnAt(at->first + dx, at->second + dz);
+            if (col.biome != Biome::kFrozenOcean || col.height > static_cast<float>(col.water) - 4)
+              continue;
+            ++columns;
+            const int x = at->first + dx, z = at->second + dz;
+            ice += world.GetVoxel(x, col.water - 1, z) == M::kIce &&
+                   world.GetVoxel(x, col.water - 2, z) == M::kWater &&
+                   world.GetVoxel(x, col.water, z) == M::kAir;
+          }
+        MESSAGE(ice << " of " << columns << " frozen columns have a sheet of ice");
+        CHECK(columns > 5);
+        CHECK(ice == columns);
         break;
       }
     }

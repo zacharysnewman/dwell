@@ -58,7 +58,7 @@ TEST_CASE("block edit: the palette (the registry's placeable states)") {
             "dwell:stone", "dwell:dirt", "dwell:grass", "dwell:ladder[facing=north,flooded=false]",
             "dwell:ladder[facing=east,flooded=false]", "dwell:ladder[facing=south,flooded=false]",
             "dwell:ladder[facing=west,flooded=false]", "dwell:sand", "dwell:sandstone",
-            "dwell:gravel", "dwell:snow", "dwell:log", "dwell:leaves", "dwell:coal_ore",
+            "dwell:gravel", "dwell:snow", "dwell:ice", "dwell:log", "dwell:leaves", "dwell:coal_ore",
             "dwell:iron_ore", "dwell:gold_ore"});
   CHECK_FALSE(Placeable(Materials::kCount));
   CHECK_FALSE(Targetable(Materials::kAir));

@@ -1535,6 +1535,10 @@ Deliverables
   `leaves` surface above the tree-cell limit). The in-game F4 map and the inspect tool know the 19
   biomes. *Not built:* per-tree accent groves (colour is by biome; the owner will design the trees
   later); tint on sections the player has modified, seen from afar.
+- [x] 11c: an `ice` block (placeable, a cracked pale-blue tile): a frozen ocean's top water voxel is
+  ice (chunks, and level-of-detail cells up to 4 m), over water and a gravel floor
+  (`climate_test.cpp`: every sampled frozen column). *Not built:* freezing lakes and rivers; ice
+  being slippery (no per-material friction in the player controller yet).
 - [ ] 11d (stretch): karst spire and mesa provinces.
 - [x] Inspect tool (11a): rivers and lakes on a local map image with a hillshade mode
   (`dwell_worldgen_inspect <seed> map`, with `biome` and `valley` modes), and on the in-game F4 map.

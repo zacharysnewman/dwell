@@ -19,6 +19,7 @@ describe('block palette', () => {
       'sandstone',
       'gravel',
       'snow',
+      'ice',
       'log',
       'leaves',
       'coal_ore',

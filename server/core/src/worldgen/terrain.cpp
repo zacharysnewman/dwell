@@ -104,6 +104,8 @@ constexpr float kSeaCliffHeight = 12.0f;
 // exceeds kBankWet is riverbank or lake shore.
 constexpr float kBankWet = 0.5f;
 constexpr float kBankHeight = 3.0f;
+// A frozen sea's ice is drawn in level-of-detail cells up to this wide (m).
+constexpr std::int64_t kLodIceCell = 4;
 // A pond's berm (m above its surface): the ring of ground around a wetland pond.
 constexpr float kPondBerm = 0.6f;
 // Trees reach at most this far above their ground, and leaves this far sideways from the trunk.
@@ -1242,7 +1244,10 @@ void TerrainGenerator::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint
           run = c == kCaveAir ? 1000 : 0;
           under_water = c == kWater;
           if (y < S) {
-            voxels[core::LocalIndex(x, y, z)] = c == kWater ? M::kWater : M::kAir;
+            // A frozen sea's surface is a metre of ice (the top water voxel).
+            const bool ice =
+                c == kWater && col.biome == Biome::kFrozenOcean && y0 + y == col.water - 1;
+            voxels[core::LocalIndex(x, y, z)] = ice ? M::kIce : c == kWater ? M::kWater : M::kAir;
           }
           continue;
         }
@@ -1697,6 +1702,8 @@ core::LodKind TerrainGenerator::GenerateLod(const core::LodCoord& c, core::LodCe
           if (idx < core::kLodVolume) cells[idx] = k == kWater ? M::kWater : M::kAir;
           if (k == kWater && !surfaced && idx < core::kLodVolume) {
             surfaced = true;  // the sea's cells top the column; its floor lies below them
+            // A frozen sea's top cell is ice, where cells are small enough for a thin sheet.
+            if (col.biome == Biome::kFrozenOcean && cell <= kLodIceCell) cells[idx] = M::kIce;
           }
           continue;
         }

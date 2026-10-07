@@ -59,6 +59,10 @@
       "color": "#fbf8f2", "textures": "snow"
     },
     {
+      "name": "ice", "density": 920, "shape": "full", "placeable": true,
+      "color": "#b4daf0", "textures": "ice"
+    },
+    {
       "name": "log", "density": 700, "shape": "full", "placeable": true,
       "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
     },

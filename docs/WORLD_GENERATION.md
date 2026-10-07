@@ -668,8 +668,11 @@ the ponds in `rivers.cpp`, and the blocks in `shared/blocks/dwell.json`. Differe
   grass side's fringe but not its dirt); the level of detail carries each column's tint in its
   surface data. Sections the player has modified draw untinted from afar. Per-tree accents are
   dropped; the trees are the owner's to design later.
-- **Not built:** `frozen_ocean` is a label that changes the sea floor to gravel (there is no ice
-  block); the cliff biome by slope (steep ground is stone in every biome's row instead); per-
+- **Ice:** a frozen ocean (sea colder than −0.45) has a metre of the new `ice` block (placeable, a
+  pale-blue cracked tile, density 920) as its top water voxel, over water, and a gravel floor; the
+  level of detail draws it in cells up to 4 m. Lakes and rivers do not freeze, and ice is not slippery
+  yet (the player controller has no per-material friction).
+- **Not built:** the cliff biome by slope (steep ground is stone in every biome's row instead); per-
   continent mountainousness (the record's `mountainousness` is still unused — 11d's karst
   provinces would read it).
 - **Checks:** see `ARCHITECTURE.md` §6.3 *Climate, biomes and vegetation*. Cost against 11b (Release,

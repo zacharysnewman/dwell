@@ -32,7 +32,7 @@ reference image's character comes from vegetation colour that varies by region.
    (autumn woods, wetland, tundra, conifer forest, dunes, savanna, blossom grove, broadleaf forest,
    meadow). The terrain then overrides: beach at the shore, sea cliff within 400 m of the coast and
    above 12 m, and riverbank or lake shore on the dry ground within 3 m of a channel's or lake's
-   water. In the sea: ocean, deep ocean (< −300 m), frozen ocean (colder than −0.45). 19 biomes. Each
+   water. In the sea: ocean, deep ocean (< −300 m), frozen ocean (colder than −0.45: a metre of the `ice` block on its surface, gravel on its floor). 19 biomes. Each
    row names its surface layers, steep-ground rule, tree chance and shapes, grass and foliage tints, boulder
    chance and whether a distant forest draws a canopy; the real world style replaces rows, not code.
 3. **The mountains biome (ADR 0019 decision 3) is gone.** Relief is not a biome: a mountainside passes
