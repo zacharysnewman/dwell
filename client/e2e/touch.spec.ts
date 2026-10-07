@@ -64,9 +64,10 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   const ground = (await read(page))?.feet[1] ?? 0;
   await touch(cdp, 'touchStart', [{ x: box.x + box.width / 2, y: box.y + box.height / 2, id: 3 }]);
   let peak = ground;
-  // Software rendering is slow and the sim keeps up with real time only roughly: sample for ~1 s,
-  // well past the jump's apex, rather than a fixed few frames.
-  for (let i = 0; i < 25; i++) {
+  // Software rendering is slow and the sim keeps up with real time only roughly: watch until the
+  // jump has clearly left the ground (or a deadline), not for a fixed number of frames.
+  const deadline = Date.now() + 10_000;
+  while (peak - ground <= 0.5 && Date.now() < deadline) {
     await page.waitForTimeout(40);
     peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
   }
