@@ -419,6 +419,8 @@ interface Surfaces {
   wy: Int16Array;
   /** Its water level in cells from the section's bottom (within that cell). */
   w: Float32Array;
+  /** 1 where the column or a neighbour is wet: its ground is drawn at its exact height. */
+  shore: Uint8Array;
 }
 const NO_SURFACE = -1000;
 const FLAT = -1;
@@ -433,6 +435,7 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
     q: new Int8Array(n * 4).fill(FLAT),
     wy: new Int16Array(n).fill(NO_SURFACE),
     w: new Float32Array(n),
+    shore: new Uint8Array(n),
   };
   const data = surface && surface.length >= n * SURFACE_STRIDE ? surface : null;
   const top: number = SECTION_CELLS;
@@ -451,6 +454,35 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
         if (level <= y + 1e-6 || level > y + 1 + 1e-4) continue; // not this cell's: its top
         out.wy[c] = y;
         out.w[c] = Math.min(level, y + 1);
+      }
+    }
+    // Shores: dry columns beside wet ones. Half-cell steps would put a bank a metre above the water
+    // under it, or up to its cell's top (a cell is metres to kilometres tall), so their ground is
+    // drawn at its exact height. A column is wet with the wet flag, or when its topmost filled
+    // cell is liquid — as the sea in the apron row below a section whose bottom is sea level (its
+    // floor is the section below's, so this section's surface data has no wet column there).
+    const wet = new Uint8Array(n);
+    for (let z = -1; z <= top; z++) {
+      for (let x = -1; x <= top; x++) {
+        const c = col(x, z);
+        let y: number = top;
+        while (y >= -1 && (cells[cellIndex(x, y, z)] ?? 0) === 0) y--;
+        if (((data[c * SURFACE_STRIDE + 2] ?? 0) & SURFACE_WET) !== 0) wet[c] = 1;
+        else if (y >= -1 && isLiquid(cells[cellIndex(x, y, z)] ?? 0)) wet[c] = 1;
+      }
+    }
+    for (let z = -1; z <= top; z++) {
+      for (let x = -1; x <= top; x++) {
+        const c = col(x, z);
+        if (wet[c]) continue;
+        let beside = false;
+        for (let dz = -1; dz <= 1 && !beside; dz++)
+          for (let dx = -1; dx <= 1 && !beside; dx++) {
+            const nx = x + dx;
+            const nz = z + dz;
+            beside = nx >= -1 && nx <= top && nz >= -1 && nz <= top && wet[col(nx, nz)] === 1;
+          }
+        if (beside) out.shore[c] = 1;
       }
     }
     for (let z = -1; z <= top; z++) {
@@ -473,6 +505,14 @@ function findSurfaces(cells: Uint16Array, surface: Float32Array | null, slopes: 
         // In 1/SURFACE_STEPS of a cell (at most 1/4 cell off: a pixel or two, as cells are a few
         // pixels on screen; finer steps cost far more triangles). At the cell's top the cell is
         // drawn as usual (and merges).
+        if (out.shore[c] && !isLiquid(m)) {
+          // A bank beside water: at its height (a full cell is drawn as usual, and merges).
+          if (h >= y + 1 - 1e-3) continue;
+          out.y[c] = y;
+          out.h[c] = Math.max(h, y);
+          out.m[c] = m;
+          continue;
+        }
         let steps = Math.round(Math.min(Math.max(h - y, 0), 1) * SURFACE_STEPS);
         if (steps === SURFACE_STEPS && !isLiquid(m)) continue;
         // A sea floor is never drawn at or over its water's surface (only waterDrop, a sliver of a
@@ -530,6 +570,7 @@ function applySlopes(cells: Uint16Array, data: Float32Array | null, out: Surface
       const c = col(x, z);
       const y = cellY[c] ?? NO_SURFACE;
       if (y === NO_SURFACE) continue;
+      if (out.shore[c]) continue; // beside water: flat at its exact height (findSurfaces)
       // The corner at (x + a, z + b): the mean of columns (x + a − 1 … x + a) × (z + b − 1 … z + b).
       let missing = 0; // columns around the cell with no surface
       const corner = (a: number, b: number): number => {
@@ -618,6 +659,7 @@ function emitSurfaces(
 
   // Tops: greedy rectangles over (z, x) of equal height and material.
   const topKey = new Float64Array(N * N);
+  const topH = new Float32Array(N * N);
   for (let z = 0; z < N; z++) {
     for (let x = 0; x < N; x++) {
       const c = col(x, z);
@@ -642,28 +684,31 @@ function emitSurfaces(
         }
         continue;
       }
-      // Height in 1/SURFACE_STEPS cells (integral) and material: exact in a double.
-      topKey[z + N * x] = (Math.round((s.h[c] ?? y) * SURFACE_STEPS) + 1) * 0x10000 + (s.m[c] ?? 0);
+      // Material and height (half-cell steps, or exact beside water): merged where both match.
+      topKey[z + N * x] = (s.m[c] ?? 0) + 1;
+      topH[z + N * x] = s.h[c] ?? y;
     }
   }
+  const sameTop = (a: number, b: number): boolean => topKey[a] === topKey[b] && topH[a] === topH[b];
   for (let x = 0; x < N; x++) {
     for (let z = 0; z < N;) {
-      const key = topKey[z + N * x] ?? 0;
+      const at = z + N * x;
+      const key = topKey[at] ?? 0;
       if (key === 0) {
         z++;
         continue;
       }
       let w = 1;
-      while (z + w < N && topKey[z + w + N * x] === key) w++;
+      while (z + w < N && sameTop(z + w + N * x, at)) w++;
       let d = 1;
       grow: while (x + d < N) {
-        for (let k = 0; k < w; k++) if (topKey[z + k + N * (x + d)] !== key) break grow;
+        for (let k = 0; k < w; k++) if (!sameTop(z + k + N * (x + d), at)) break grow;
         d++;
       }
+      const h = topH[at] ?? 0;
       for (let dx = 0; dx < d; dx++) topKey.fill(0, z + N * (x + dx), z + w + N * (x + dx));
-      const h = (Math.floor(key / 0x10000) - 1) / SURFACE_STEPS;
       // The top: axis y, u = z, v = x.
-      opaque.quad(1, 1, h, z, z + w, x, x + d, lodColor(key % 0x10000, 0), key % 0x10000);
+      opaque.quad(1, 1, h, z, z + w, x, x + d, lodColor(key - 1, 0), key - 1);
       z += w;
     }
   }
