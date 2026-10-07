@@ -48,8 +48,26 @@ jobs:
         env:
           WRANGLER_SEND_METRICS: 'false'
 
+  client-lint:
+    name: Client (format, lint, typecheck)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+
   client:
-    name: Client (lint, typecheck, test, build)
+    name: Client (WASM suites, test, build)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -86,23 +104,21 @@ jobs:
         run: node ../server/build/wasm/tools/dwell_worldgen_tests.js
       - name: Storage suite under WASM (Node) — the browser's VFS; opens the natively written world file (§6.4)
         run: node ../server/build/wasm/tools/dwell_storage_tests.js
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm run typecheck
       - run: npm test
         env:
           DWELL_REQUIRE_WASM: '1'
+      # `npm run build` type-checks too; format and lint run in the client-lint job.
       - run: npm run build
       - name: Build the launcher (RELEASES.md §5)
         run: npm run build:launcher
 
-  server:
-    name: Server (C++ + Rust)
+  server-lint:
+    name: Server (formats, clippy, Rust tests, generated header)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: Rust toolchain (keep in sync with rust-toolchain.toml)
         run: rustup toolchain install 1.94.1 --profile minimal --component clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
@@ -123,6 +139,19 @@ jobs:
           cargo install cbindgen --version 0.29.4 --locked
           server/net/wt/gen-header.sh
           git diff --exit-code -- server/net/wt/include
+
+  server:
+    name: Server (C++ build and tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
+        run: rustup toolchain install 1.94.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server/net/wt
       - name: Configure
         working-directory: server
         run: cmake --preset dev
@@ -139,6 +168,19 @@ jobs:
         # The server runs until signalled: start it, then after 10 s ask it to stop (SIGINT) and
         # require a clean shutdown (--preserve-status: its own exit code, not timeout's 124).
         run: timeout --preserve-status --signal=INT 10s server/build/dev/app/dwell_server --world '' --visibility none
+
+  server-perf:
+    name: Server (player controller performance gate, Release)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
+        run: rustup toolchain install 1.94.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server/net/wt
       - name: Player controller performance gate and golden trace (Release)
         working-directory: server
         run: |
@@ -148,8 +190,14 @@ jobs:
           build/release/tests/dwell_tests --dwell-origin-x=far -ts="player: performance,player: scenario"
 
   e2e:
-    name: End-to-end (native server + Chromium + Electron)
+    # The browser suite is serial (one worker, fixed ports), so it is split across runners; each
+    # builds what it needs. Shard 1 also runs the checks that are not sharded.
+    name: End-to-end ${{ matrix.shard }}/4
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -189,6 +237,7 @@ jobs:
           npm run build:wasm
           npm run build
       - name: Native↔WASM controller divergence (PLAYER_CONTROLLER.md §8.3)
+        if: matrix.shard == 1
         run: |
           cmake --build server/build/dev --target dwell_scenario_trace
           node server/tools/divergence.mjs server/build/dev/tools/dwell_scenario_trace server/build/wasm/tools/dwell_scenario_trace.js
@@ -198,13 +247,15 @@ jobs:
       - name: Install the master server (a local `wrangler dev` for friend-world tests)
         working-directory: services/master
         run: npm ci
-      - name: Browser end-to-end tests
+      - name: Browser end-to-end tests (shard ${{ matrix.shard }}/4)
         working-directory: client
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/4
       - name: Launcher end-to-end tests (a locally assembled site with three versions)
+        if: matrix.shard == 1
         working-directory: client
         run: npm run e2e:site
       - name: Electron smoke test (WebTransport and local mode)
+        if: matrix.shard == 1
         working-directory: platforms/electron
         run: |
           npm ci
@@ -213,3 +264,18 @@ jobs:
           QUERY="?$(grep -o 'invite link: .*' server.log | cut -d'?' -f2)"
           xvfb-run -a npx electron . --smoke --no-sandbox "--join=$QUERY"
           xvfb-run -a npx electron . --smoke --no-sandbox "--join=?local=1"
+
+  # The one check to require in branch protection: the jobs above come and go (and the e2e matrix
+  # has one name per shard) but this stays, and a skipped or failed job fails it.
+  ci:
+    name: CI
+    if: always()
+    needs: [protocol, master, client-lint, client, server-lint, server, server-perf, e2e]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every job passed
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | jq -e 'all(. == "success")' >/dev/null
