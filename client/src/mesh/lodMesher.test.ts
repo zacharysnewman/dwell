@@ -227,6 +227,53 @@ describe('LOD section mesher (§6.6)', () => {
     });
   });
 
+  describe('step sides on slopes (SIDE_SHARE)', () => {
+    // Regression (playtest on 0.6.1-dev.18: everything turned green grass farther away): full
+    // detail shows the dirt sides of one-block steps on hillsides — measured, about a third of the
+    // gradient as a share of the surface (5 % at 0.2, 15 % at 0.5, 40 % on the steepest cells) —
+    // while distant cells drew their slopes in the top colour alone. Tops are tinted toward the
+    // material's side colour by the column's gradient.
+    const GRASS = 4;
+    const topColours = (gradient: number): Set<string> => {
+      // A ramp along x rising `gradient` cells per cell, grass on stone, surfaces given.
+      const cells = new Uint16Array(LOD_VOLUME);
+      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+      for (let z = -1; z <= 32; z++)
+        for (let x = -1; x <= 32; x++) {
+          const h = 4 + gradient * (x + 1);
+          const top = Math.floor(h);
+          for (let y = -1; y < top; y++) cells[lodCell(x, y, z)] = 2;
+          cells[lodCell(x, top, z)] = GRASS;
+          surface.set(
+            [Math.min(h, top + 1), GRASS, 1, 0],
+            (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE,
+          );
+        }
+      const m = meshSection(cells, { surface, slopes: true });
+      const out = new Set<string>();
+      const { normals: n, colors: c } = m.opaque;
+      for (let v = 0; v < n.length / 3; v++)
+        if ((n[v * 3 + 1] ?? 0) > 0.5)
+          out.add([0, 1, 2].map((k) => (c[v * 3 + k] ?? 0).toFixed(4)).join(','));
+      return out;
+    };
+    it('draws flat ground in the top colour alone', () => {
+      expect(topColours(0).size).toBe(1);
+    });
+
+    it('tints sloped ground toward the side colour, more where steeper', () => {
+      const flat = [...topColours(0)][0] ?? '';
+      const gentle = [...topColours(0.25)];
+      const steep = [...topColours(1)];
+      // No top of a sloped ramp is drawn in the flat top colour.
+      expect(gentle.includes(flat)).toBe(false);
+      expect(steep.includes(flat)).toBe(false);
+      // Grass's side (dirt) is redder and less green than its top: steeper, less green.
+      const green = (k: string) => Number(k.split(',')[1]);
+      expect(Math.max(...steep.map(green))).toBeLessThan(Math.min(...gentle.map(green)));
+    });
+  });
+
   describe('shores (the ground beside water at its true height)', () => {
     // Regression (playtest on 0.6.1-dev.18: river and lake shores were swallowed by the water
     // beyond full detail, and sand stuck up out of it where there is none): surface heights are

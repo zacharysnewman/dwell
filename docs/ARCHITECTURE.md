@@ -1255,7 +1255,13 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - Meshes are greedy-merged with one flat colour per material (the average of its texture tile in
   linear light, per face group, as a mipmapped sRGB texture averages from afar) and face shading,
   written as linear vertex colours like the chunks' decoded texels (sRGB values used directly drew
-  distant land paler than the chunks — playtest), in cell units (a group scaled by the cell size). Border faces
+  distant land paler than the chunks — playtest), in cell units (a group scaled by the cell size).
+  A column's top is tinted toward its material's **side colour** by its gradient (its height
+  against its four neighbours'), a third of it up to one half, in eighths: full detail shows the
+  sides of one-block steps on a hillside — measured over generated terrain, 5 % of the surface at
+  a gradient of 0.2, 15 % at 0.5, ~40 % on the steepest cells, alike at 16–64 m cells — which a
+  distant cell's smooth top lacks, so hillsides read as pure grass from afar (playtest; ~7 % more
+  triangles, as tops of different tints do not merge). Border faces
   the apron hides go to a per-side **skirt**, shown when the neighbour on that side is not
   drawn at the same level (and not buried), closing cracks between levels. The surface and the
   six skirts are one geometry (`render/three/lodSection.ts`) whose index lists the surface's
