@@ -3,6 +3,7 @@ import type { MeshSectionOptions, SectionMeshes } from '../mesh/lodMesher';
 import type { SectionMesher } from '../mesh/pool';
 import { LodForm, MessageType, World } from '../protocol/constants.gen';
 import type { ChunkCoord, LodSectionRequest, Vec3 } from '../protocol/messages';
+import { stateId } from '../world/blocks';
 import type { GeneratedSection } from '../worldgen/generator';
 import type { SectionSource } from '../worldgen/pool';
 import type { LodCamera } from './frustum';
@@ -13,6 +14,10 @@ import {
   LOD_VOLUME,
   lodAncestor,
   lodCell,
+  isFaceBSection,
+  lodRowFace,
+  MAX_ALIGNED_LEVEL,
+  mirrorRowBottom,
   lodInWorld,
   lodId,
   LodKind,
@@ -25,6 +30,7 @@ import {
 } from './grid';
 import {
   CHUNK_REQUEST_RADIUS,
+  OTHER_FACE_NEAR_M,
   lookahead,
   LodSystem,
   MAX_LOOKAHEAD_M,
@@ -63,6 +69,44 @@ const flatBounds = (): LodBounds => ({
   bifacial: false,
 });
 
+/** Both faces, each flat: stone where a face-local cell's bottom is below 0. */
+const bifacialBounds = (): LodBounds => ({
+  lo: -Infinity,
+  hi: 0,
+  loB: -Infinity,
+  hiB: 0,
+  anyInside: true,
+  bifacial: true,
+});
+
+/** Face A's ground in the bifacial test world is this material, face B's is stone. */
+const FACE_A_MATERIAL = 3;
+const STONE = stateId('dwell:stone');
+
+/** The column surfaces the bifacial test world hands out (identified by reference in tests). */
+const surfaceA = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+const surfaceB = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
+
+/** The bifacial test world at LOD: both faces flat, as `bifacialBounds` says. */
+function bifacialSection(c: LodCoord): GeneratedSection {
+  const cells = new Uint16Array(LOD_VOLUME);
+  const kind = kindFromBounds(c, bifacialBounds());
+  const [, y0] = sectionOrigin(c);
+  const size = cellSize(c[0]);
+  if (kind !== LodKind.Empty) {
+    for (let y = -1; y <= 32; y++) {
+      const bottom = y0 + y * size;
+      const solid = lodRowFace(c, y) === 0 ? bottom < 0 : mirrorRowBottom(bottom, size) < 0;
+      if (!solid) continue;
+      const material = lodRowFace(c, y) === 0 ? FACE_A_MATERIAL : STONE;
+      for (let z = -1; z <= 32; z++) {
+        for (let x = -1; x <= 32; x++) cells[lodCell(x, y, z)] = material;
+      }
+    }
+  }
+  return { kind, cells, surface: surfaceA, surfaceB };
+}
+
 /** The flat world at LOD: stone where a cell's bottom is below 0. */
 function flatSection(c: LodCoord): GeneratedSection {
   const cells = new Uint16Array(LOD_VOLUME);
@@ -83,11 +127,16 @@ class Jobs implements SectionSource, SectionMesher {
   pending: (() => void)[] = [];
   /** Generation (and bounds) below this level never finishes: a stalled or very slow device. */
   stuckBelow = 0;
+  /** Serve the bifacial test world instead of the flat one. */
+  bifacial = false;
+  /** Every section asked of the generator. */
+  generated: LodCoord[] = [];
   lod(c: LodCoord): Promise<GeneratedSection> {
+    this.generated.push(c);
     return new Promise((resolve) => {
       if (c[0] < this.stuckBelow) return;
       this.pending.push(() => {
-        resolve(flatSection(c));
+        resolve(this.bifacial ? bifacialSection(c) : flatSection(c));
       });
     });
   }
@@ -95,17 +144,20 @@ class Jobs implements SectionSource, SectionMesher {
     return new Promise((resolve) => {
       if (level < this.stuckBelow) return;
       this.pending.push(() => {
-        resolve(flatBounds());
+        resolve(this.bifacial ? bifacialBounds() : flatBounds());
       });
     });
   }
   /** Each meshing job's options. */
   options: MeshSectionOptions[] = [];
+  /** The cells each meshing job was given (parallel to `options`). */
+  meshCells: Uint16Array[] = [];
   /** Bytes of each mesh (for the cache budget); 0: empty meshes. */
   meshBytes = 0;
-  meshSection(_cells: Uint16Array, options: MeshSectionOptions = {}): Promise<SectionMeshes> {
+  meshSection(cells: Uint16Array, options: MeshSectionOptions = {}): Promise<SectionMeshes> {
     // Selection only needs to know a mesh exists (lodMesher.test.ts tests meshing itself).
     this.options.push(options);
+    this.meshCells.push(cells);
     const meshes =
       this.meshBytes === 0
         ? EMPTY_MESHES
@@ -567,6 +619,84 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     const high = await finest(camera([0, 1e6, 0], 0, -90));
     expect(low).toBe(1);
     expect(high).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('LOD of the other face (§6.6)', { timeout: 120_000 }, () => {
+  const box = (c: LodCoord): { lo: Vec3; hi: Vec3 } => {
+    const lo = sectionOrigin(c);
+    const size = sectionSize(c[0]);
+    return { lo, hi: [lo[0] + size, lo[1] + size, lo[2] + size] };
+  };
+  const distanceTo = (p: Vec3, c: LodCoord): number => {
+    const { lo, hi } = box(c);
+    let d = 0;
+    for (let a = 0; a < 3; a++) {
+      const v = p[a] ?? 0;
+      const e = v < (lo[a] ?? 0) ? (lo[a] ?? 0) - v : v > (hi[a] ?? 0) ? v - (hi[a] ?? 0) : 0;
+      d += e * e;
+    }
+    return Math.sqrt(d);
+  };
+  async function settle(position: Vec3, jobs: Jobs): Promise<{ lod: LodSystem; view: View }> {
+    jobs.bifacial = true;
+    const view = new View();
+    const lod = new LodSystem(jobs, jobs, view, { drawable: () => false }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 256 * 1048576,
+      maxGenerationJobs: 16,
+      maxMeshJobs: 8,
+    });
+    const cam = camera(position, 0, -10);
+    for (let frame = 1; frame <= 1500; frame++) {
+      lod.update(cam, frame * 50);
+      await jobs.finish(() => 0, 1);
+    }
+    return { lod, view };
+  }
+  const otherFace = (c: LodCoord, viewerOnA: boolean): boolean =>
+    c[0] <= MAX_ALIGNED_LEVEL && isFaceBSection(c) === viewerOnA;
+
+  for (const viewerOnA of [true, false]) {
+    it(`does not generate or draw the far face's sections (camera on face ${viewerOnA ? 'A' : 'B'})`, async () => {
+      // Regression (phone playtest, 2026-10-07): the traversal ignored which face the camera was on,
+      // so the other face's sections (kilometres away through the core) were generated and drawn.
+      const jobs = new Jobs();
+      const at: Vec3 = [0.5, viewerOnA ? 100 : 2 * World.midplaneY - 100, 0.5];
+      const { lod } = await settle(at, jobs);
+      const far = (c: LodCoord): boolean =>
+        otherFace(c, viewerOnA) && distanceTo(at, c) > OTHER_FACE_NEAR_M;
+      expect(jobs.generated.length).toBeGreaterThan(0);
+      expect(jobs.generated.filter(far).length).toBe(0);
+      expect(lod.lastSelection().drawn.filter(far).length).toBe(0);
+    });
+  }
+
+  it('culls nothing near the rim, where the other face shows past the edge', async () => {
+    const jobs = new Jobs();
+    const at: Vec3 = [World.worldRadius - 1000, 100, 0.5];
+    await settle(at, jobs);
+    expect(
+      jobs.generated.some((c) => otherFace(c, true) && distanceTo(at, c) > OTHER_FACE_NEAR_M),
+    ).toBe(true);
+  });
+
+  it("meshes level ≥ 7 sections for the viewer's face: the other face's rows are stone", async () => {
+    // Regression: such sections hold rows of both faces and were meshed with face A's surfaces and
+    // tints only, printing face A's biome map onto face B.
+    const jobs = new Jobs();
+    const at: Vec3 = [0.5, 2 * World.midplaneY - 100, 0.5];
+    await settle(at, jobs);
+    const both = jobs.options.map((o, i) => ({ o, cells: jobs.meshCells[i] as Uint16Array }));
+    const tinted = both.filter((m) => m.o.tint !== undefined);
+    expect(tinted.length).toBeGreaterThan(0);
+    for (const { o, cells } of tinted) {
+      expect(o.surface).toBeNull();
+      expect(o.tint).toBe(surfaceB);
+      // Face A's ground (material 3) is gone, face B's stone is still there.
+      expect(cells.includes(FACE_A_MATERIAL)).toBe(false);
+      expect(cells.includes(STONE)).toBe(true);
+    }
   });
 });
 

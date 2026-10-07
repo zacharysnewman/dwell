@@ -175,5 +175,8 @@ character of its own.
   by its side of the midplane (`three/heightFog.ts`); the sky and haze are evaluated in the viewer's
   face-local frame with a night gradient and the moon's glow. Straddling LOD sections (levels ≥ 7) mesh
   both faces from one grid: face B's part is at cell resolution, shaded as undersides.
+  The LOD does not load or draw the other face (beyond 512 m, except near the rim), and a straddling
+  section is meshed for the viewer's face alone (the other face's rows become stone, the tints are the
+  viewer's face's).
 - **Not done here:** Tier 1 bodies' Jolt factors are built and tested, but clusters arrive in Phase 14;
   the F4 terrain map and the debug overlays show face A.

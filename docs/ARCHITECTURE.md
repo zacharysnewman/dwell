@@ -1256,6 +1256,14 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   `?batch=1` path, and without water, so a lake may be missing for the moment its section takes
   to load; a buried region gets none), never drawing a coarse section over the chunks. A device that keeps up never takes this path;
   one whose LOD generation is slow or stalled still shows the world around the player.
+- **The other face is not loaded or drawn:** the traversal culls sections of level ≤ 6 that lie
+  wholly on the face the camera is not on and are farther than `OTHER_FACE_NEAR_M` (512 m, so a
+  shaft through the core still shows), except within `RIM_VIEW_M` (16 km) of the rim, where the
+  other face can be seen past the edge. A culled section is never scheduled, never makes its parent
+  wait and is evicted like any unused one. Sections of level ≥ 7 hold rows of both faces, so they
+  are meshed for the viewer's face: the other face's rows are filled with stone (nothing is drawn
+  against stone) and the biome tints are the viewer's face's (`MeshSectionOptions.tint`); they are
+  meshed again when the camera's face changes.
 - A parent stays drawn until **all its children** are ready (meshed, or known empty or buried),
   then they swap in; unused children are evicted only as whole sibling sets, least recently used
   first, while the cache is over `LOD_CACHE_MB` — the view never has holes. **The view itself
@@ -1580,6 +1588,7 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | Full-detail distance (client, `lod/detail.ts`) | 256 m desktop / 128 m mobile (96–352 m) | Chunks are drawn out to it (a setting; §6.6) |
 | LOD lookahead (client, `lodSystem.ts`) | 1.5 s, at most 1 km | Distances are the nearer of the camera's and of its position this far ahead along its velocity (§6.6) |
 | `LOD_NEAR_SPLIT_M` | 1 024 m | Distance splitting the near and far depth passes |
+| `OTHER_FACE_NEAR_M` / `RIM_VIEW_M` (client, `lodSystem.ts`) | 512 m / 16 384 m | Other-face LOD sections nearer than the first, or anywhere within the second of the rim, are kept (§6.6) |
 | `LOD_CACHE_MB` | 256 (desktop) / 96 (mobile); a setting (32–1,024) | Client cache of LOD section content and meshes; the view is held within it (error scale) |
 | `LOD_BYTES_PER_SECOND` | 256 KiB/s | LOD bandwidth budget per client (`lod` stream) |
 | `LOD_REQUESTS_PER_SECOND` | 64 | Per-client `LodRequest` rate limit |

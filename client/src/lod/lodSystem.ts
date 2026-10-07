@@ -15,6 +15,8 @@ import type { LodMessage } from '../net/session';
 import { CHUNK_SIZE, Limits, Lod, LodForm, MessageType, World } from '../protocol/constants.gen';
 import type { ChunkCoord, LodIndexEntry, LodSectionRequest, Vec3 } from '../protocol/messages';
 import type { SectionSource } from '../worldgen/pool';
+import { FACE_A, FACE_B, type FaceSign } from '../world/face';
+import { stateId } from '../world/blocks';
 import { Frustum, type LodCamera } from './frustum';
 import {
   cellSize,
@@ -25,6 +27,8 @@ import {
   lodChild,
   lodId,
   isFaceBSection,
+  lodRowFace,
+  MAX_ALIGNED_LEVEL,
   lodInWorld,
   mirrorSectionOrigin,
   LodKind,
@@ -134,6 +138,8 @@ interface Node {
   cells: Uint16Array<ArrayBuffer> | null;
   /** Generated sections: each column's exact surface (worldgen GeneratedSection.surface). */
   surface: Float32Array<ArrayBuffer> | null;
+  /** Level ≥ 7 only: face B's column surfaces (tints), which the section's rows may hold too. */
+  surfaceB: Float32Array<ArrayBuffer> | null;
   meshed: boolean;
   /** Needs a (new) mesh: its content or a neighbour's border changed. */
   remesh: boolean;
@@ -149,6 +155,10 @@ const ROOT: LodCoord = [MAX_LEVEL, 0, 0, 0];
 const OFF_VIEW_PRIORITY = 1 / 8;
 /** Drawable chunks wait at most this long (ms) for the LOD levels above them (see findCovered). */
 export const FORCE_CHUNKS_AFTER_MS = 1000;
+/** Other-face sections closer than this to the camera are kept (a shaft through the core). */
+export const OTHER_FACE_NEAR_M = 512;
+/** Within this of the rim the other face can be seen past the edge: nothing is culled. */
+export const RIM_VIEW_M = 16_384;
 /** Distances look this far ahead along the camera's velocity (s), and at most this far (m). */
 export const LOOKAHEAD_S = 1.5;
 export const MAX_LOOKAHEAD_M = 1024;
@@ -217,6 +227,10 @@ export class LodSystem {
   private detailM: number | null = null;
   /** Where the camera will be (LOOKAHEAD_S along its velocity), if it moves. */
   private ahead: Vec3 | null = null;
+  /** The face the camera is on, and whether it is near the rim (other-face culling, see culled). */
+  private viewFace: FaceSign = 1;
+  private nearRim = false;
+  private position: Vec3 = [0, 0, 0];
   private cameraChunk: ChunkCoord = [0, 0, 0];
   /** Chunks asked of the server (by key: the chunk and when), and the pacing of those requests. */
   private readonly chunkAsked = new Map<string, { coord: ChunkCoord; at: number }>();
@@ -329,6 +343,12 @@ export class LodSystem {
    */
   update(camera: LodCamera, nowMs: number): void {
     this.frame++;
+    const p = camera.position;
+    const viewFace: FaceSign = p[1] >= World.midplaneY ? 1 : -1;
+    if (viewFace !== this.viewFace) this.faceChanged();
+    this.viewFace = viewFace;
+    this.nearRim = Math.hypot(p[0], p[2]) > World.worldRadius - RIM_VIEW_M;
+    this.position = p;
     const frustum = new Frustum(camera);
     this.ahead = lookahead(camera);
     this.cameraChunk = camera.position.map((v) => Math.floor(v / CHUNK_SIZE)) as ChunkCoord;
@@ -390,6 +410,21 @@ export class LodSystem {
 
   // --- selection -------------------------------------------------------------------------------
 
+  /** A section wholly on the face the camera is not on, far from it: not loaded or drawn. */
+  private culled(n: Node): boolean {
+    if (this.nearRim || n.coord[0] > MAX_ALIGNED_LEVEL) return false;
+    const onB = isFaceBSection(n.coord);
+    if (onB === (this.viewFace === -1)) return false;
+    return boxDistance(this.position, n.lo, n.hi) > OTHER_FACE_NEAR_M;
+  }
+
+  /** Level ≥ 7 sections are meshed for the viewer's face only: mesh them again on a change. */
+  private faceChanged(): void {
+    for (const n of this.nodes.values()) {
+      if (n.coord[0] > MAX_ALIGNED_LEVEL && n.meshed) n.remesh = true;
+    }
+  }
+
   private touch(n: Node): void {
     if (n.lastUsed !== this.frame) this.inUse += n.bytes + (n.cells?.byteLength ?? 0);
     n.lastUsed = this.frame;
@@ -398,6 +433,10 @@ export class LodSystem {
   }
 
   private visit(node: Node, frustum: Frustum, selection: Selection, fallback: Node | null): void {
+    if (this.culled(node)) {
+      selection.empty.push(node.coord);
+      return;
+    }
     // A node that is not ready is only reached on the way down to the covered chunks.
     const ready = this.ready(node);
     // Where this branch leaves a hole, the nearest ready mesh above it is drawn clipped to it.
@@ -444,6 +483,7 @@ export class LodSystem {
     }
     let allReady = true;
     for (const kid of node.kids) {
+      if (this.culled(kid)) continue;
       this.touch(kid);
       if (!this.ready(kid)) {
         allReady = false;
@@ -476,6 +516,10 @@ export class LodSystem {
    * asking for all the rock within the full-detail distance loaded hundreds of chunks for nothing.
    */
   private visitBuried(node: Node, frustum: Frustum, selection: Selection): void {
+    if (this.culled(node)) {
+      selection.empty.push(node.coord);
+      return;
+    }
     if (node.coord[0] === 1) {
       const refine = this.refineToChunks(node, frustum);
       if (refine && (this.covered.has(node.id) || this.allDrawable(node))) {
@@ -499,6 +543,7 @@ export class LodSystem {
     }
     let allReady = true;
     for (const kid of node.kids) {
+      if (this.culled(kid)) continue;
       this.touch(kid);
       if (!this.ready(kid)) {
         allReady = false;
@@ -527,6 +572,7 @@ export class LodSystem {
       }
     }
     for (const kid of node.kids) {
+      if (this.culled(kid)) continue;
       this.touch(kid);
       if (!this.ready(kid)) this.wanted.push(kid);
       this.visit(kid, frustum, selection, fallback);
@@ -702,6 +748,7 @@ export class LodSystem {
         meshing: false,
         cells: null,
         surface: null,
+        surfaceB: null,
         meshed: false,
         remesh: false,
         bytes: 0,
@@ -873,7 +920,13 @@ export class LodSystem {
         if (n.token !== token || n.modified || this.nodes.get(n.id) !== n) return;
         this.setCells(n, s.cells);
         // A face-B section's surfaces are face-local, those of its mirror image.
-        n.surface = (isFaceBSection(n.coord) ? s.surfaceB : s.surface) ?? null;
+        if (n.coord[0] > MAX_ALIGNED_LEVEL) {
+          // May hold rows of both faces: meshed for the viewer's face (see mesh).
+          n.surface = s.surface ?? null;
+          n.surfaceB = s.surfaceB ?? null;
+        } else {
+          n.surface = (isFaceBSection(n.coord) ? s.surfaceB : s.surface) ?? null;
+        }
         n.remesh = true;
       },
       () => {
@@ -892,8 +945,14 @@ export class LodSystem {
     this.meshing++;
     const token = ++this.token;
     n.token = token;
+    // Level ≥ 7 sections may hold rows of both faces: the other face's rows become stone (nothing
+    // is drawn against stone), and the tints are the viewer's face's.
+    const both = n.coord[0] > MAX_ALIGNED_LEVEL && !this.nearRim;
+    if (both) this.blankOtherFace(n, cells);
+    const viewerB = both && this.viewFace === -1;
     const options = {
-      surface: this.surfaceInCells(n),
+      surface: viewerB ? null : this.surfaceInCells(n),
+      ...(both ? { tint: viewerB ? n.surfaceB : n.surface } : {}),
       waterDrop: CHUNK_WATER_DROP_M / cellSize(n.coord[0]),
       // Distant terrain as facets, not terraces (SLOPE_BLOCKS.md §3.2), at every level.
       slopes: true,
@@ -913,10 +972,24 @@ export class LodSystem {
     });
   }
 
+  private blankOtherFace(n: Node, cells: Uint16Array): void {
+    const stone = stateId('dwell:stone');
+    const viewer = this.viewFace === 1 ? FACE_A : FACE_B;
+    for (let r = -1; r <= SECTION_CELLS; r++) {
+      if (lodRowFace(n.coord, r) === viewer) continue;
+      for (let z = -1; z <= SECTION_CELLS; z++) {
+        for (let x = -1; x <= SECTION_CELLS; x++) cells[lodCell(x, r, z)] = stone;
+      }
+    }
+  }
+
   private setCells(n: Node, cells: Uint16Array<ArrayBuffer> | null): void {
     this.cacheBytes += (cells?.byteLength ?? 0) - (n.cells?.byteLength ?? 0);
     n.cells = cells;
-    if (!cells) n.surface = null;
+    if (!cells) {
+      n.surface = null;
+      n.surfaceB = null;
+    }
   }
 
   /** The section's column surfaces with heights in cells from its bottom (the mesher's units). */
