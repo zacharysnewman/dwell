@@ -1,6 +1,6 @@
 # Dwell — Baseline Evaluation: What to Keep, Add and Cut
 
-> **Status: evaluation, 2026-10-12; planned in [`REWORK_PLAN.md`](./REWORK_PLAN.md).** Nothing here
+> **Status: evaluation, 2026-10-12; planned as Phases 14–19 of [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).** Nothing here
 > is built yet. It compares the owner's
 > new baseline with the code and docs on `main` (app 0.8.1, generator version 11, protocol v12) and
 > proposes the work to get there. Once the owner settles the open decisions (§7), the agreed parts
@@ -388,32 +388,18 @@ Already systems, untouched by the baseline:
 | D9 | Midplane at y = 0 | Yes: the origin of generation is the centre of the disc, the midplane and the build sphere |
 | D10 | How far "data" goes for terrain | A fixed vocabulary of node kinds in code, parameters and composition in data (§3.5) — not a general scripting language |
 
-## 8. Proposed order of work
+## 8. Order of work
 
-A re-plan for `IMPLEMENTATION_PLAN.md`, replacing the outstanding parts of Phases 9–13 (to agree
-before editing the plan):
-
-1. **Cut** (§4) and shrink the block set (§3.9). Mostly deletion; goldens regenerated.
-2. **Terrain definitions and the build volume** (§3.3–3.6): the definition format, its generator
-   and hash, the evaluator in `server/core`, `dwell:baseline` (one island, 10-layer core, sea level,
-   50 km disc), the sphere predicate everywhere, constants changed in `constants.json`; inspect tool
-   reads definitions. Checks: disc radius; land never within `rimClearance` of the rim; every column
-   has its core layers on both faces; no edit accepted outside the sphere; a test that a definition
-   change changes the hash; generation time against version 11.
-3. **Adaptive natural blocks** (9e, with the table as data, §3.7); check the thin-crust LOD (§3.1)
-   at the same time.
-4. **WebGPU, looks and textures** (§3.8, §3.9): prove WebGPU in headless CI first; then TSL looks,
-   the look registry and texture data behind the render interface; frame time on a desktop and a
-   phone against the WebGL build.
-
-Each step updates `ARCHITECTURE.md` (§6, §5, §7.4) and its sub-specs in the same change, and ADRs
-record the baseline (superseding ADR 0011's scale and 0017–0022), the terrain definitions, the
-adaptive table as data, and WebGPU.
+Planned as **Phases 14–19** of [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md), which holds
+their deliverables and exit criteria: **14** decisions and ADRs, **15** the cut (§4, §3.9), **16** world
+shape and build volume (§3.2–3.4), **17** terrain definitions (§3.3, §3.5, §3.6), **18** adaptive
+natural blocks (§3.7), **19** WebGPU, looks and textures (§3.8, §3.9). The physics phases follow as
+20–22.
 
 ## 9. Compatibility and releases
 
-Steps 1–3 change the terrain every seed generates, the block registry (and so saved palettes) and
+Phases 15–18 change the terrain every seed generates, the block registry (and so saved palettes) and
 protocol constants: a **new compatibility line** (`CLAUDE.md`, ADR 0014). Before 1.0.0 that is the
-next minor, **0.9.0**, raised in `client/package.json` by the owner, not by an agent. Steps 1–3 can
-share one line if they land together; step 4 changes no public API. Worlds of the 0.1–0.8 lines keep
+next minor, **0.9.0**, raised in `client/package.json` by the owner, not by an agent. They can
+share one line if they land together; Phase 19 changes no public API. Worlds of the 0.1–0.8 lines keep
 opening in their own versions through the launcher.

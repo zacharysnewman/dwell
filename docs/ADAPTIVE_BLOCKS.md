@@ -153,11 +153,11 @@ world treat missing neighbours as the same height.
 
 ### 4.6 Later phases
 
-- **Phase 14 (voxel awakening):** a detached cluster's adaptive blocks keep the shapes they had at
+- **Phase 20 (voxel awakening):** a detached cluster's adaptive blocks keep the shapes they had at
   the moment of detachment (frozen into its body), or re-derive within the cluster — to decide
   there. Convex decomposition: the ridge corner, T and cross are not convex (two or three convex
   parts); the others are.
-- **Phases 15–16:** re-baking a settled body writes cube states; shapes re-derive from occupancy.
+- **Phases 21–22:** re-baking a settled body writes cube states; shapes re-derive from occupancy.
 
 ## 5. Sub-phase plan (9e)
 
@@ -214,4 +214,4 @@ rules made them unnecessary, and the 1 m grid stays.
   lower column (ground ramps up to it); confirm in the lab.
 - Slabs as neighbours: a slab counts as lower than a block beside it (§3); confirm.
 - Flooded shaped blocks (§3) and how shores look.
-- Phase 14's choice for detached clusters (§4.6).
+- Phase 20's choice for detached clusters (§4.6).
