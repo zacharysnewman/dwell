@@ -1,6 +1,6 @@
 # 0011. Planet-scale world: an 8,192 km disc, 8,192 m tall, with double-precision physics
 
-- Status: Accepted
+- Status: Accepted; decision 1 (the 8,192 km disc) superseded by [0025](0025-baseline-world.md) (a 50 km disc); the precision decisions 2–6 stand
 - Date: 2026-09-29
 - Resolves: ARCHITECTURE.md Open Decisions #7
 

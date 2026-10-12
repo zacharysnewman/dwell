@@ -1,6 +1,6 @@
 # 0022. Climate with continent biases and rain shadows, the biome table, wetland ponds and biome-tinted vegetation
 
-- Status: Accepted
+- Status: Superseded by [0025](0025-baseline-world.md) (no climate, biomes or vegetation)
 - Date: 2026-10-07
 - Amends: [0019](0019-continental-scale-climate.md) decisions 2–3 (the snow line's numbers; the mountains
   biome from relief is replaced by altitude bands)

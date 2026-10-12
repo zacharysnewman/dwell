@@ -1,7 +1,11 @@
 # 0024. Adaptive natural blocks: shapes derived from neighbours by five rules
 
-- Status: Proposed
+- Status: Accepted (2026-10-12, amended: the table as data with overrides)
 - Date: 2026-10-08
+- Amended: 2026-10-12, by the baseline rework ([0025](0025-baseline-world.md),
+  [`BASELINE_EVALUATION.md`](../BASELINE_EVALUATION.md) §3.7): the rule table is data, with
+  per-neighbourhood overrides the Shape Playground exports; every solid block in the baseline is
+  natural, so the placed families are removed outright. Built as Phase 18.
 - Partly supersedes: [0016](0016-slope-blocks.md) for natural materials (placed slope families
   and the generator's slope stage); 0016 stands for crafted materials and the shape table.
 
@@ -43,8 +47,19 @@ column is shaped, only its upper surface; a block with another on top is a full 
 
 The rules are baked into one table (6,561 neighbourhoods → shape and facing) in `shared/blocks/`,
 read by the C++ server and the TypeScript client, so collision, prediction and rendering agree.
+
+**Amended (2026-10-12): the table is data.** Its source of truth is a data file
+(`shared/blocks/adaptive.json`): the entries the five rules generate, plus **overrides** per
+neighbourhood. The blocks' generator checks that every entry names a known shape and facing and runs
+the exhaustive no-holes adjacency test over the result, and emits the C++ and TypeScript tables from
+it; CI fails on stale output. The **Shape Playground exports overrides** in that format, so the
+tool that designed the rules keeps editing the result. Changing how one neighbourhood is shaped is
+then an override, not a change to a rule.
 The shape set gains 12 corner shapes and 6 ridge shapes. Adaptive materials lose their placed
-slope and slab families; crafted materials keep theirs. The generator's slope stage is removed.
+slope and slab families; crafted materials keep theirs. **Amended (2026-10-12):** the baseline has
+no crafted materials — grass, dirt, stone and sand are all `"adaptive": true`, by data — so every
+placed slope and slab family is removed ([0025](0025-baseline-world.md)); the `shapeFamilies`
+mechanism stays in the generator, unused, for a future crafted block. The generator's slope stage is removed.
 The 1 m grid stays.
 
 ## Consequences
@@ -56,7 +71,9 @@ The 1 m grid stays.
 - Generation gets simpler (no slope stage) but its terrain changes: a generator version bump and,
   with the registry hash, a **new compatibility line** (the owner raises `client/package.json`).
 - The LOD applies the same table to its cells, so near and far terrain follow one rule.
-- Phase 14 must decide whether a detached cluster keeps its blocks' shapes or re-derives them;
-  three ridge shapes are not convex.
+- Phase 20 (voxel awakening; Phase 14 when this was written) must decide whether a detached
+  cluster keeps its blocks' shapes or re-derives them; three ridge shapes are not convex.
+- With overrides, the table can drift from the rules; the generator reports how many entries are
+  overridden, and the exhaustive adjacency test guards the result whatever its source.
 - Reversal: shapes are derived, so turning adaptivity off for a material (a data change) returns
   its blocks to cubes without touching saved worlds.

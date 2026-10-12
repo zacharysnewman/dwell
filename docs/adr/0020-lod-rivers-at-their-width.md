@@ -1,6 +1,6 @@
 # 0020. Level-of-detail rivers at their own width; water drawn at its level
 
-- Status: Accepted
+- Status: Superseded by [0025](0025-baseline-world.md) (no rivers)
 - Date: 2026-10-06
 - Amends: [0018](0018-drainage-consistent-terrain.md) decision 7 (rivers at the level of detail)
 - Builds on: [0012](0012-lod-octree.md) (the level of detail), [0017](0017-continents-from-voronoi-plates.md)

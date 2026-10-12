@@ -1,6 +1,6 @@
 # 0017. Continents from Voronoi plates: a plate layout, a separation clamp, a macro lattice, and `sqrt`
 
-- Status: Accepted
+- Status: Superseded by [0025](0025-baseline-world.md) (one island) and [0026](0026-terrain-definitions.md) (its coast distance kept as a layout kind; the `sqrt` amendment to 0010 stands)
 - Date: 2026-10-06
 - Resolves: Phase 10 of the implementation plan (continents from Voronoi plates)
 - Amends: [0010](0010-worldgen-noise-numerics.md) (strict IEEE numerics: a correctly rounded `sqrt` is

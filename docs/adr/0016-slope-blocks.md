@@ -1,6 +1,6 @@
 # 0016. Slope blocks: shaped block families, one baked shape table, shaped terrain
 
-- Status: Accepted
+- Status: Accepted; amended by [0024](0024-adaptive-natural-blocks.md) and [0025](0025-baseline-world.md) (placed slope and slab families and the slope stage removed; the shape table stays)
 - Date: 2026-10-06
 - Resolves: Phase 9 of the implementation plan (slope shapes, collision, building, terrain, LOD)
 - Builds on: [0015](0015-block-registry.md) (the block registry), [0010](0010-worldgen-noise-numerics.md)

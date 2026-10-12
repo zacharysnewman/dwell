@@ -31,7 +31,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage; **re-scoped by the baseline rework**: rivers, climate, biomes, tints and features are to be cut (Phase 15), which drops these outstanding items |
 | 12 — Sky islands in a dome | ✖ Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features); never started |
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
-| 14 — Baseline decisions & ADRs | ⏳ Not started — the baseline rework's first phase ([`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md)); the owner confirms decisions D1–D10 |
+| 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | ⏳ Not started |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started |
@@ -1854,16 +1854,16 @@ Phases 20–23 (which wait for this rework, as they waited for Phases 6–13).
 
 **Goal:** Settle the open decisions and record the baseline's architecture before code changes.
 
-**Status:** Not started.
+**Status:** Complete (2026-10-12). The owner answered D1–D10; ADRs 0024–0027 are Accepted.
 
-Defaults (`BASELINE_EVALUATION.md` §7), used by this plan unless the owner changes them:
+The owner's answers (2026-10-12; `BASELINE_EVALUATION.md` §7 records them too):
 
-| # | Decision | Default |
+| # | Decision | Answer |
 |---|---|---|
 | D1 | "10 layers of stone" | A fixed core of 10 stone layers per face from the midplane; higher ground is stone under a soil skin |
 | D2 | Build sphere radius | 50 km (= the world radius) |
-| D3 | Flight at the sphere | Held at the boundary; falling unaffected |
-| D4 | WebGL fallback | WebGPU first; Three's WebGL2 backend only as an automatic fallback, all shaders in TSL |
+| D3 | Flight at the sphere | **No movement limit** (changed from the proposal, held at the boundary): the sphere bounds building and storage only; players may fly anywhere |
+| D4 | WebGL fallback | WebGPU first; Three's WebGL2 backend only as an automatic fallback, all shaders in TSL; **the settings menu shows which backend the device is using** (added by the owner) |
 | D5 | Face B's terrain | Same definition as face A, own seed (own island); selectable per face |
 | D6 | Launch pads | Remove the block, `launch_speed` and its tests |
 | D7 | Movement playground world | Becomes a structure file the controller tests load |
@@ -1872,21 +1872,21 @@ Defaults (`BASELINE_EVALUATION.md` §7), used by this plan unless the owner chan
 | D10 | Terrain data scope | Fixed node kinds in code; parameters and composition in data; no scripting |
 
 Deliverables
-- [ ] The owner confirms or changes D1–D10; this table and `BASELINE_EVALUATION.md` §7 record it.
-- [ ] **ADR 0025 — the baseline world**: 50 km bifacial disc, midplane at 0, 10-layer core, spherical
+- [x] The owner confirms or changes D1–D10; this table and `BASELINE_EVALUATION.md` §7 record it.
+- [x] **ADR 0025 — the baseline world**: 50 km bifacial disc, midplane at 0, 10-layer core, spherical
   build volume, six blocks, no biomes or features. Supersedes ADR 0011's scale (keeps its precision
   decisions) and ADRs 0017–0022; amends ADR 0023 (thickness, midplane) and ADR 0016 (placed slope
   families removed).
-- [ ] **ADR 0026 — terrain definitions**: terrain as data (layout, height nodes, layers, spawn rule),
+- [x] **ADR 0026 — terrain definitions**: terrain as data (layout, height nodes, layers, spawn rule),
   generated into C++/TS, its hash identifying the generator.
-- [ ] **ADR 0024** amended (rule table as data, with overrides) and accepted.
-- [ ] **ADR 0027 — WebGPU renderer**: supersedes ADR 0002's backend (Three.js and the render
+- [x] **ADR 0024** amended (rule table as data, with overrides) and accepted.
+- [x] **ADR 0027 — WebGPU renderer**: supersedes ADR 0002's backend (Three.js and the render
   interface stay); the look registry.
-- [ ] `adr/README.md` index; `ARCHITECTURE.md` §12 (Open Decisions) and the plan updated: Phase 12
+- [x] `adr/README.md` index; `ARCHITECTURE.md` §12 (Open Decisions) and the plan updated: Phase 12
   cancelled, Phases 9e/10/11's outstanding items replaced by this rework.
 
 Exit criteria
-- [ ] ADRs 0024–0027 are Accepted and indexed; the decisions table has the owner's answers.
+- [x] ADRs 0024–0027 are Accepted and indexed; the decisions table has the owner's answers.
 
 ---
 
@@ -1946,11 +1946,12 @@ Deliverables
   `seaLevel` and the core's thickness move to the terrain definition in Phase 17 (interim values here:
   sea level `h` = 32, core 10); `worldBottomY`/`worldMaxY` replaced by `bounds`
   `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }`; `lod.maxLevel` 12;
-  `flightCeiling` replaced by the bounds; fewer fly-speed levels. Protocol version bumped.
+  `flightCeiling` removed (D3: no movement limit); fly-speed levels re-checked for a 50 km world.
+  Protocol version bumped.
 - [ ] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
   (sphere; slab kept for tests), parameters from data. Used by: edits (server rejection, client
   pre-check), generation and storage (chunks wholly outside are air, never stored; `IsAirChunk`,
-  `LodBoundsAt`), streaming and LOD requests, flight (held at the boundary, D3).
+  `LodBoundsAt`), streaming and LOD requests. Not movement: players may fly outside it (D3).
 - [ ] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
   flip band and `CORE_ANCHOR_LAYERS` (8) checked against the 10-layer core.
 - [ ] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
@@ -1962,7 +1963,8 @@ Exit criteria
 - [ ] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
   one e2e edit at the boundary).
 - [ ] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
-- [ ] Flight stops at the boundary (controller scenario, native and WASM).
+- [ ] Flight is not bounded by the sphere (D3): a controller scenario flies out through it, native
+  and WASM, and the client requests no chunk or LOD section outside it while there (test).
 - [ ] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
   (mesher tests over a 20-layer crust).
 - [ ] Walking over the rim still carries a player across the midplane to face B (controller
@@ -2068,7 +2070,7 @@ Deliverables
 - [ ] **CI first**: Playwright's Chromium runs WebGPU headless (flags and a software adapter) for
   e2e and `client/scripts/shots.ts`; a smoke test proves a WebGPU frame renders in CI.
 - [ ] **`WebGPURenderer`** behind `client/render` (async init); the WebGL2 backend as automatic
-  fallback (D4), reported in F3.
+  fallback (D4); the active backend shown in the settings menu (owner, D4) and in F3.
 - [ ] **TSL ports**: height fog and per-face light (`heightFog.ts`), the sky (`sky.ts`), chunk and
   LOD materials, tone mapping and exposure; no GLSL left.
 - [ ] **Look registry**: each look (`cube`, `shaped`, `water`, `ladder`, …) is a module registering a
@@ -2081,7 +2083,8 @@ Deliverables
 - [ ] Docs: `ARCHITECTURE.md` §2.1, §5; `render` interface notes; ADR 0027 as built.
 
 Exit criteria
-- [ ] e2e suites pass on WebGPU in CI, and on the WebGL2 fallback.
+- [ ] e2e suites pass on WebGPU in CI, and on the WebGL2 fallback; the settings menu names the
+  backend in use on each (e2e).
 - [ ] A new texture or look is added by data plus (for a look) one module — a test adds a fixture
   look and texture without touching the mesher.
 - [ ] Screenshots match the WebGL build's look (owner review of before/after).

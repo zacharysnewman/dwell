@@ -1,6 +1,6 @@
 # 0019. Climate at continental scale: biomes in regions, snow by temperature and height
 
-- Status: Accepted
+- Status: Superseded by [0025](0025-baseline-world.md) (no climate or biomes)
 - Date: 2026-10-06
 - Resolves: a Phase 11a playtest finding (snow scattered everywhere); the first part of Phase 11c's
   climate
