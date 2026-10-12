@@ -21,6 +21,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   shaping and LOD (becomes an architecture sub-spec as the phase lands).
 - `docs/ADAPTIVE_BLOCKS.md` — design for Phase 9e: natural blocks shaped from their neighbours by
   five rules (replaces placed slopes and terrain slope shaping for natural materials).
+- `docs/BASELINE_EVALUATION.md` — the owner's simplified baseline (2026-10-12) compared with what
+  is built: what to keep, add and cut, and the open decisions (evaluation; not yet planned).
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,
