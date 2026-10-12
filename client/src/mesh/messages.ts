@@ -8,8 +8,6 @@ export type ToMesher =
       id: number;
       /** Padded voxels (mesher.ts), transferred. */
       voxels: Uint16Array<ArrayBuffer>;
-      /** The chunk column's biome tint grid (mesher.ts TintField), copied; null: untinted. */
-      tint: Uint8Array | null;
       /** A chunk of face B: meshed as its mirror image (mesher.ts `meshChunk`). */
       mirror: boolean;
     }

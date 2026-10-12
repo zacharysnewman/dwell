@@ -53,6 +53,13 @@ TEST_CASE(
   CHECK(ComputeRegistryHash() == kRegistryHash);
 }
 
+TEST_CASE("block registry: the baseline block set, exactly (Phase 15, ADR 0025)") {
+  std::vector<std::string> ids;
+  for (const BlockDef& b : kBlocks) ids.emplace_back(b.id);
+  CHECK(ids == std::vector<std::string>{"dwell:air", "dwell:stone", "dwell:dirt", "dwell:grass",
+                                        "dwell:ladder", "dwell:water", "dwell:sand"});
+}
+
 TEST_CASE("block registry: every state's canonical string round-trips") {
   for (MaterialId id = 0; id < Materials::kCount; ++id) {
     CAPTURE(id);
@@ -97,10 +104,8 @@ TEST_CASE("block registry: properties are read and set by name") {
 TEST_CASE("block registry: behaviour comes from the data files") {
   CHECK(GetMaterial(Materials::kLadderFacingEast).climbable);
   CHECK(GetMaterial(Materials::kLadderFacingEast).facing == Facing::kEast);
-  CHECK(GetMaterial(Materials::kStoneSlab).shape == VoxelShape::kShaped);
+  CHECK(GetMaterial(Materials::kStone).shape == VoxelShape::kFull);
   CHECK(GetMaterial(Materials::kWater).liquid);
-  CHECK(GetMaterial(Materials::kBedrock).indestructible);
-  CHECK(GetMaterial(Materials::kLaunchPad).launch_speed == 14.0f);
   CHECK_FALSE(GetMaterial(Materials::kLadder).solid);
   CHECK(GetMaterial(Materials::kStone).solid);
 }

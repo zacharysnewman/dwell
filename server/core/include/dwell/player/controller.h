@@ -185,7 +185,7 @@ class Players {
   // Runs the pipeline (PLAYER_CONTROLLER.md §4) for every player. Call before the physics step.
   void Tick();
 
-  // Instant velocity change (knockback, launch pads, explosions): absorbed next tick.
+  // Instant velocity change (knockback, explosions): absorbed next tick.
   void AddVelocity(PlayerHandle handle, Vec3 delta_v);
   // Radial push with linear falloff and upward bias (PPC AddExplosion), for players in range.
   void AddExplosion(RVec3 center, float radius, float speed, float upward_bias);

@@ -107,7 +107,7 @@ TEST_SUITE("player: step smoothness") {
         // Step i is i + 1 half-cells high: full cubes below, a slab on top when odd.
         const int halves = slabs ? i + 1 : 2 * (i + 1);
         for (int h = 0; h < halves / 2; ++h) w.Fill(-3, h, z, 3, h, z, core::Materials::kStone);
-        if (halves % 2) w.Fill(-3, halves / 2, z, 3, halves / 2, z, core::Materials::kStoneSlab);
+        if (halves % 2) w.HalfStep(-3, halves / 2, z, 3, z);
       }
     }
     const float top = rise * static_cast<float>(steps);
@@ -160,15 +160,21 @@ TEST_SUITE("player: step smoothness") {
   }
 
   TEST_CASE("stepping down a stair's corner gains no momentum") {
-    // Diagonally down the playground's slab stairs: the ground snap drives the capsule into the
-    // corner of the step being left, and the contact's sideways push-out is not a kick.
+    // Diagonally down half-block stairs (the movement playground's, before the baseline cut its
+    // slabs: half steps are static boxes now): the ground snap drives the capsule into the corner
+    // of the step being left, and the contact's sideways push-out is not a kick.
     for (float x : {-9.5f, -8.5f, -7.2f}) {
       for (float yaw : {160.0f, 180.0f, 200.0f, 220.0f}) {
         for (bool run : {false, true}) {
           CAPTURE(x);
           CAPTURE(yaw);
           CAPTURE(run);
-          PlayerTestWorld w(player::DefaultConfig(), core::GeneratePlaygroundChunk);
+          PlayerTestWorld w(player::DefaultConfig(), core::GenerateFlatChunk);
+          // Half, block, block and a half, two blocks: 0.5 m per step (x −10..−8, z 6..10).
+          w.HalfStep(-10, 0, 6, -8, 6);
+          w.Fill(-10, 0, 7, -8, 0, 10, core::Materials::kStone);
+          w.HalfStep(-10, 1, 8, -8, 8);
+          w.Fill(-10, 1, 9, -8, 1, 10, core::Materials::kStone);
           const auto e = w.Spawn(Vec3(x, 2.0f, 10.5f), yaw);
           w.input = [&](int, PlayerHandle) { return Move(0, 1, run, false, false, yaw); };
           float external = 0.0f, driven = 0.0f;
@@ -374,17 +380,6 @@ TEST_SUITE("player: collision mesh") {
         for (int z = 0; z <= 2; ++z) world.SetVoxel(x, y, z, core::Materials::kStone);
     mesh = core::BuildChunkMesh(world, {0, 0, 0});
     CHECK(mesh.triangles.size() == 9 * 6 * 2);  // only the outer faces of the 3³ block
-  }
-
-  TEST_CASE("slab faces: half-height sides, hidden between neighbouring slabs") {
-    core::VoxelWorld world(core::GenerateEmptyChunk);
-    world.SetVoxel(1, 1, 1, core::Materials::kStoneSlab);
-    world.SetVoxel(2, 1, 1, core::Materials::kStoneSlab);
-    const auto mesh = core::BuildChunkMesh(world, {0, 0, 0});
-    CHECK(mesh.triangles.size() == 2 * 5 * 2);  // each slab: top, bottom, 3 sides
-    float max_y = 0;
-    for (const auto& v : mesh.vertices) max_y = std::max(max_y, v.y);
-    CHECK(max_y == 1.5f);
   }
 
   TEST_CASE("faces across a chunk border use the neighbour chunk") {

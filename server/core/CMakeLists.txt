@@ -14,6 +14,7 @@ add_library(dwell_core
   src/terrain_collision.cpp
   src/block_registry.cpp
   src/block_shape.cpp
+  src/structure.cpp
   src/voxel.cpp
   src/worldgen_pool.cpp
   src/protocol/bytes.cpp
@@ -23,12 +24,9 @@ add_library(dwell_core
   src/player/predictor.cpp
   src/player/voxel_query.cpp
   src/worldgen/noise.cpp
-  src/worldgen/continents.cpp
-  src/worldgen/rivers.cpp
-  src/worldgen/biomes.cpp
+  src/worldgen/island.cpp
   src/worldgen/terrain.cpp
   src/worldgen/bifacial.cpp
-  src/worldgen/slopes.cpp
   src/storage/world_db.cpp
   src/storage/world_store.cpp)
 if(EMSCRIPTEN)

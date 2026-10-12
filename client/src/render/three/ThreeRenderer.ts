@@ -99,7 +99,6 @@ function geometryOf(arrays: MeshArrays): BufferGeometry | null {
   g.setAttribute('normal', new BufferAttribute(arrays.normals, 3));
   g.setAttribute('color', new BufferAttribute(arrays.colors, 3));
   g.setAttribute('uv', new BufferAttribute(arrays.uvs, 2));
-  g.setAttribute('tint', new BufferAttribute(arrays.tints, 3));
   g.setAttribute('tile', new BufferAttribute(arrays.tiles, 4));
   g.setIndex(new BufferAttribute(arrays.indices, 1));
   g.computeBoundingSphere();
@@ -119,13 +118,10 @@ function chunkMaterial(params: MeshLambertMaterialParameters): MeshLambertMateri
   const material = new MeshLambertMaterial(params);
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        '#include <common>\nattribute vec4 tile;\nattribute vec3 tint;\nvarying vec4 vTile;\nvarying vec3 vTint;',
-      )
-      .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvTile = tile;\n\tvTint = tint;');
+      .replace('#include <common>', '#include <common>\nattribute vec4 tile;\nvarying vec4 vTile;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvTile = tile;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec4 vTile;\nvarying vec3 vTint;')
+      .replace('#include <common>', '#include <common>\nvarying vec4 vTile;')
       .replace(
         '#include <map_fragment>',
         [
@@ -133,9 +129,6 @@ function chunkMaterial(params: MeshLambertMaterialParameters): MeshLambertMateri
           '\tvec2 atlasUv = vTile.xy + fract(vMapUv) * vTile.zw;',
           '\tvec4 texel = textureGrad(map, atlasUv, dFdx(vMapUv) * vTile.zw, dFdy(vMapUv) * vTile.zw);',
           '\tdiffuseColor *= texel;',
-          // The atlas alpha is 1 − the share of a texel the biome tint colours (TINT_MASKS); the
-          // opaque passes ignore alpha, water has none.
-          '\tdiffuseColor.rgb *= mix(vTint, vec3(1.0), texel.a);',
           '#endif',
         ].join('\n'),
       );
@@ -239,12 +232,6 @@ export class ThreeRenderer implements Renderer {
     new LineBasicMaterial({ color: 0x101418, transparent: true, opacity: 0.8 }),
   );
 
-  /** The shape about to be placed (SLOPE_BLOCKS.md §6): its edges, lighter than the block outline. */
-  private readonly preview = new LineSegments(
-    new BufferGeometry(),
-    new LineBasicMaterial({ color: 0xfff6c8, transparent: true, opacity: 0.95 }),
-  );
-
   constructor(canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     if (!canvas.getContext('webgl2')) {
       throw new RendererUnavailableError('WebGL2 is not available on this device.');
@@ -267,9 +254,6 @@ export class ThreeRenderer implements Renderer {
     this.setSkyFrame(SKY_REST);
     this.outline.visible = false;
     this.scene.add(this.outline);
-    this.preview.visible = false;
-    this.preview.frustumCulled = false;
-    this.scene.add(this.preview);
     this.lodWater.mesh.renderOrder = 1;
     this.scene.add(this.lodWater.mesh);
     this.batch = options.batched
@@ -594,14 +578,6 @@ export class ThreeRenderer implements Renderer {
     this.outline.position.set(cell[0] - 0.002, cell[1] - 0.002, cell[2] - 0.002);
     this.outline.scale.set(1, height, 1);
     ThreeRenderer.placed(this.outline);
-  }
-
-  setPlacementPreview(cell: Vec3 | null, edges?: Float32Array): void {
-    this.preview.visible = cell !== null && edges !== undefined;
-    if (!cell || !edges) return;
-    this.preview.geometry.setAttribute('position', new BufferAttribute(edges, 3));
-    this.preview.position.set(cell[0], cell[1], cell[2]);
-    ThreeRenderer.placed(this.preview);
   }
 
   setDebugLines(segments: readonly DebugSegment[] | null): void {

@@ -1,43 +1,20 @@
-// Biome/height map overlay (F4; Phase 3e debug tooling, ARCHITECTURE.md §6.3): the terrain
-// generator's columns around the player, sampled in a worldgen worker (worldgen/generator.ts
-// `map`), coloured by biome and hill-shaded by height. `-` and `=` zoom out and in, from the
-// player's surroundings (1 km across) to the whole disc (Phase 10: the plate layout's continents).
-// Biomes and colours are prototype (§6.1).
+// Height map overlay (F4; Phase 3e debug tooling, ARCHITECTURE.md §6.3): the terrain generator's
+// columns around the player, sampled in a worldgen worker (worldgen/generator.ts `map`), coloured by
+// height and hill-shaded. `-` and `=` zoom out and in, from the player's surroundings (1 km across)
+// to the whole disc. The colours are prototype (§6.1); the baseline has no biomes (ADR 0025).
 
-/**
- * Biome colours and names, indexed by worldgen::Biome (server/core/include/dwell/worldgen/biomes.h,
- * Phase 11c): the sea (ocean, deep, frozen), the coast (beach, sea cliff), banks (riverbank, lake
- * shore) and the land's climate biomes (meadow, broadleaf forest, blossom grove, autumn woods,
- * conifer forest, wetland, savanna, dunes, tundra, alpine meadow, bare rock, snowfield).
- */
-export const BIOME_COLORS = [
-  0x2f5fa8, 0x1e3a78, 0xaac8e1, 0xd8cc8f, 0x969082, 0xaaa096, 0xd7c896, 0x96cd55, 0x3a823e,
-  0xeb82aa, 0xd78c32, 0x235f4b, 0x5a966e, 0xc8be5a, 0xebcd78, 0xa0a578, 0x78be8c, 0xa0948c,
-  0xf0f4f8,
-];
-/** River and lake water (Phase 11a), drawn over the biome where the ground lies below it. */
-export const WATER_COLOR = 0x3fa8d8;
-export const BIOME_NAMES = [
-  'ocean',
-  'deep ocean',
-  'frozen ocean',
-  'beach',
-  'sea cliff',
-  'riverbank',
-  'lake shore',
-  'meadow',
-  'broadleaf forest',
-  'blossom grove',
-  'autumn woods',
-  'conifer forest',
-  'wetland',
-  'savanna',
-  'dunes',
-  'tundra',
-  'alpine meadow',
-  'bare rock',
-  'snowfield',
-];
+import { MAP_COLUMN_BYTES } from '../worldgen/generator';
+
+export { MAP_COLUMN_BYTES };
+
+/** The sea, by depth: shallow and deep (blended to 20 m). */
+export const SEA_SHALLOW = 0x50bedc;
+export const SEA_DEEP = 0x1e5aa0;
+/** The shore (ground less than 2 m above sea level). */
+export const SHORE_COLOR = 0xe8d696;
+/** Land, by height: lowland and upland (blended to 160 m). */
+export const LOWLAND_COLOR = 0x5fa046;
+export const UPLAND_COLOR = 0xa58c64;
 
 /** Columns per map edge. */
 export const MAP_SIZE = 128;
@@ -74,27 +51,36 @@ export function formatMapDistance(m: number): string {
 
 export interface MapColumn {
   height: number;
-  biome: number;
   outside: boolean;
-  /** Under river or lake water (not the sea): the ground is below the column's water level. */
-  river: boolean;
 }
 
 /** Column (i, j) of a map (i along +x, j along +z). */
 export function mapColumn(bytes: Uint8Array, n: number, i: number, j: number): MapColumn {
-  const o = (j * n + i) * 4;
+  const o = (j * n + i) * MAP_COLUMN_BYTES;
   const raw = (bytes[o] ?? 0) | ((bytes[o + 1] ?? 0) << 8);
   return {
     height: raw >= 0x8000 ? raw - 0x10000 : raw,
-    biome: bytes[o + 2] ?? 0,
-    outside: ((bytes[o + 3] ?? 0) & 1) !== 0,
-    river: ((bytes[o + 3] ?? 0) & 2) !== 0,
+    outside: ((bytes[o + 2] ?? 0) & 1) !== 0,
   };
 }
 
+function mix(a: number, b: number, t: number): number {
+  const k = Math.max(0, Math.min(1, t));
+  const ch = (shift: number) =>
+    Math.round(((a >> shift) & 0xff) * (1 - k) + ((b >> shift) & 0xff) * k);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+/** The colour of a column of ground height `h` (m above sea level). */
+export function heightColor(h: number): number {
+  if (h < 0) return mix(SEA_SHALLOW, SEA_DEEP, -h / 20);
+  if (h < 2) return SHORE_COLOR;
+  return mix(LOWLAND_COLOR, UPLAND_COLOR, h / 160);
+}
+
 /**
- * RGBA pixels of a map, north (−z) up: biome colour, hill-shaded by the height difference to the
- * next column in +x; oceans darken with depth; beyond the rim, black.
+ * RGBA pixels of a map, north (−z) up: coloured by height, land hill-shaded by the height
+ * difference to the next column in +x; beyond the rim, black.
  */
 export function mapPixels(
   bytes: Uint8Array,
@@ -110,9 +96,8 @@ export function mapPixels(
       if (c.outside) continue;
       const east = mapColumn(bytes, n, Math.min(i + 1, n - 1), j).height;
       const slope = (east - c.height) / Math.min(step, 256);
-      let shade = 1 - Math.max(-0.35, Math.min(0.35, slope * 0.8));
-      if (c.height < 0) shade *= Math.max(0.45, 1 + c.height / 400);
-      const color = c.river ? WATER_COLOR : (BIOME_COLORS[c.biome] ?? 0xff00ff);
+      const shade = c.height < 0 ? 1 : 1 - Math.max(-0.35, Math.min(0.35, slope * 0.8));
+      const color = heightColor(c.height);
       out[o] = ((color >> 16) & 0xff) * shade;
       out[o + 1] = ((color >> 8) & 0xff) * shade;
       out[o + 2] = (color & 0xff) * shade;
@@ -202,10 +187,7 @@ export class MapOverlay {
     }
     const c = MAP_SIZE / 2;
     const here = mapColumn(bytes, MAP_SIZE, c, c);
-    const place =
-      this.level === DISC_ZOOM
-        ? 'the whole disc'
-        : `${BIOME_NAMES[here.biome] ?? '?'} · ground ${String(here.height)} m`;
+    const place = this.level === DISC_ZOOM ? 'the whole disc' : `ground ${String(here.height)} m`;
     this.caption.textContent = `${place} · ${formatMapDistance(view.step)}/px · ${formatMapDistance(MAP_SIZE * view.step)} across · − = zoom`;
   }
 }

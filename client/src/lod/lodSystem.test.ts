@@ -682,17 +682,15 @@ describe('LOD of the other face (§6.6)', { timeout: 120_000 }, () => {
   });
 
   it("meshes level ≥ 7 sections for the viewer's face: the other face's rows are stone", async () => {
-    // Regression: such sections hold rows of both faces and were meshed with face A's surfaces and
-    // tints only, printing face A's biome map onto face B.
+    // Regression: such sections hold rows of both faces and were meshed with face A's surfaces
+    // only. Seen from face B they are meshed without surfaces (face A's would be wrong there).
     const jobs = new Jobs();
     const at: Vec3 = [0.5, 2 * World.midplaneY - 100, 0.5];
     await settle(at, jobs);
-    const both = jobs.options.map((o, i) => ({ o, cells: jobs.meshCells[i] as Uint16Array }));
-    const tinted = both.filter((m) => m.o.tint !== undefined);
-    expect(tinted.length).toBeGreaterThan(0);
-    for (const { o, cells } of tinted) {
-      expect(o.surface).toBeNull();
-      expect(o.tint).toBe(surfaceB);
+    const all = jobs.options.map((o, i) => ({ o, cells: jobs.meshCells[i] as Uint16Array }));
+    const both = all.filter((m) => m.o.surface === null);
+    expect(both.length).toBeGreaterThan(0);
+    for (const { cells } of both) {
       // Face A's ground (material 3) is gone, face B's stone is still there.
       expect(cells.includes(FACE_A_MATERIAL)).toBe(false);
       expect(cells.includes(STONE)).toBe(true);

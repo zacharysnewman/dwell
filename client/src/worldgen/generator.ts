@@ -12,8 +12,8 @@ import {
 } from '../lod/grid';
 import { wasmUrl } from '../sim/wasmUrl';
 
-/** Bytes of a chunk column's tint grid (mesh/mesher.ts TINT_GRID_BYTES). */
-const TINT_GRID_BYTES = 3 * 3 * 6;
+/** Bytes per column of the terrain map (`map`): i16 height (m, little-endian), u8 flags (1 = beyond the rim). */
+export const MAP_COLUMN_BYTES = 3;
 
 /** Module surface of dwell_worldgen.js (-sMODULARIZE -sEXPORT_ES6). */
 export interface DwellWorldgenModule {
@@ -28,7 +28,6 @@ export interface DwellWorldgenModule {
   _dwell_worldgen_generate(cx: number, cy: number, cz: number): number;
   _dwell_worldgen_hash(outPtr: number): void;
   _dwell_worldgen_map(x0: number, z0: number, step: number, n: number, face: number): number;
-  _dwell_worldgen_tint(cx: number, cz: number, face: number): number;
   _dwell_worldgen_lod(level: number, i: number, j: number, k: number): number;
   _dwell_worldgen_lod_cells(): number;
   _dwell_worldgen_lod_surface(face: number): number;
@@ -90,23 +89,13 @@ export class ChunkGenerator {
   }
 
   /**
-   * The terrain's biome/height map (n × n columns from (x0, z0) every `step` m, 4 bytes each:
-   * i16 height, u8 biome, u8 flags) of a face (0 = A, 1 = B; heights are face-local), or null for
-   * generators without one.
+   * The terrain's height map (n × n columns from (x0, z0) every `step` m, MAP_COLUMN_BYTES each:
+   * i16 height, u8 flags) of a face (0 = A, 1 = B; heights are face-local), or
+   * null for generators without one.
    */
   map(x0: number, z0: number, step: number, n: number, face = 0): Uint8Array<ArrayBuffer> | null {
     const ptr = this.m._dwell_worldgen_map(x0, z0, step, n, face);
-    return ptr ? this.m.HEAPU8.slice(ptr, ptr + n * n * 4) : null;
-  }
-
-  /**
-   * The biome tint of chunk column (cx, cz) of a face (0 = A, 1 = B): TINT_GRID_BYTES (3 × 3
-   * points 16 m apart, each the grass then the foliage colour as r, g, b in 1/64), or null for
-   * generators without biomes.
-   */
-  tint(cx: number, cz: number, face = 0): Uint8Array<ArrayBuffer> | null {
-    const ptr = this.m._dwell_worldgen_tint(cx, cz, face);
-    return ptr ? this.m.HEAPU8.slice(ptr, ptr + TINT_GRID_BYTES) : null;
+    return ptr ? this.m.HEAPU8.slice(ptr, ptr + n * n * MAP_COLUMN_BYTES) : null;
   }
 
   /** GenerateLod (§6.6): the section as the generator leaves it, at its level's resolution. */

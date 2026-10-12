@@ -610,7 +610,7 @@ void Players::StepCrouch(Player& p) {
 
 void Players::PerformJump(Player& p) {
   PlayerController& c = p.c;
-  // Keep any larger upward velocity already absorbed (e.g. from a launch pad).
+  // Keep any larger upward velocity already absorbed (e.g. from a knockback).
   c.vertical.accumulated_y =
       std::max(c.vertical.accumulated_y, p.cfg->JumpVelocity() + c.vertical.platform_y);
   c.ground.grounded = false;  // off the ground for every pass from this tick

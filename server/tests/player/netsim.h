@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "../test_origin.h"
+#include "playground.h"
 #include "dwell/core/block_edit.h"
 #include "dwell/core/jolt_runtime.h"
 #include "dwell/core/server.h"
@@ -91,7 +92,7 @@ struct SimClient {
   core::SessionId session = 0;
   std::uint16_t player_id = 0;
   std::uint8_t welcome_flags = 0;
-  core::VoxelWorld world{Shifted(core::GeneratorFor(core::kGeneratorPlayground))};
+  core::VoxelWorld world{Shifted(PlaygroundGenerator())};
   std::unique_ptr<player::Predictor> predictor;
   Link up, down;
   Script script;
@@ -120,15 +121,22 @@ struct SimClient {
 
 class NetSim {
  public:
-  // The client side builds the playground (below), so the server defaults to it too; both are
-  // moved to the test origin.
-  explicit NetSim(LinkConditions conditions,
-                  core::ServerConfig config = {.generator_version = core::kGeneratorPlayground})
+  // The client side builds the playground (playground.h: the flat world with the playground
+  // structure), so the server does too unless the config names another generator; both are moved
+  // to the test origin.
+  explicit NetSim(LinkConditions conditions, core::ServerConfig config = PlaygroundConfig())
       : conditions_(conditions), server_(AtTestOrigin(std::move(config)), entropy_, jobs_) {}
+
+  // The flat world's config with the playground stamped over it.
+  static core::ServerConfig PlaygroundConfig() {
+    return {.generator_version = core::kGeneratorFlat, .generator_override = PlaygroundGenerator()};
+  }
 
   static core::ServerConfig AtTestOrigin(core::ServerConfig config) {
     config.generator_override =
-        Shifted(core::GeneratorFor(config.generator_version, config.world_seed));
+        Shifted(config.generator_override
+                    ? config.generator_override
+                    : core::GeneratorFor(config.generator_version, config.world_seed));
     auto spawn =
         config.spawn.value_or(core::SpawnPointFor(config.generator_version, config.world_seed));
     spawn[0] += OriginX();

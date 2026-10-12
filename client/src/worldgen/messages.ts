@@ -6,8 +6,6 @@ export type ToWorldgen =
   | { t: 'init'; generatorVersion: number; worldSeed: bigint }
   | { t: 'generate'; id: number; coord: ChunkCoord }
   | { t: 'map'; id: number; x0: number; z0: number; step: number; n: number; face?: number }
-  /** The biome tint grid of a chunk's columns (mesh/mesher.ts TintField). */
-  | { t: 'tint'; id: number; cx: number; cz: number; face: number }
   /** GenerateLod of a section, and a column of sections' bounds (§6.6). */
   | { t: 'lod'; id: number; coord: LodCoord }
   | { t: 'bounds'; id: number; level: number; i: number; k: number };
@@ -17,8 +15,6 @@ export type FromWorldgen =
   | { t: 'error'; message: string }
   /** `voxels` is transferred; `hash` is its ChunkHash. */
   | { t: 'chunk'; id: number; voxels: Uint16Array<ArrayBuffer>; hash: bigint }
-  /** `bytes` (transferred) is the tint grid (TINT_GRID_BYTES), or null for generators without one. */
-  | { t: 'tint'; id: number; bytes: Uint8Array<ArrayBuffer> | null }
   /** `bytes` (transferred) is the terrain map, or null for generators without one. */
   | { t: 'map'; id: number; bytes: Uint8Array<ArrayBuffer> | null }
   /** `cells` (transferred): the section's 34³ cells. */

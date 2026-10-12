@@ -1,7 +1,7 @@
 #pragma once
 
 // The five-player scenario (PPC Phase8Hardening / GoldenTrace) on voxel geometry: a floor, ramp,
-// slab step, crawlspace, ladder to a ledge, pool, a moving and turning platform, and an explosion.
+// half step, crawlspace, ladder to a ledge, pool, a moving and turning platform, and an explosion.
 // Used by the golden-trace test, the performance gate, and the native↔WASM divergence tool
 // (server/tools/scenario_trace.cpp).
 #include <cstdio>
@@ -15,13 +15,12 @@ namespace dwell::test {
 inline constexpr int kScenarioTicks = 600;
 inline constexpr int kScenarioPlayers = 5;
 
-// Floor, ramp, slab step, crawlspace roof, ladder to a ledge, pool, a moving and turning platform,
-// the playground's slope features (a 45° ramp, a gentle ramp and a hill with hips) and an
-// explosion at tick 300.
+// Floor, ramp, half step (a static box), crawlspace roof, ladder to a ledge, pool, a moving and
+// turning platform and an explosion at tick 300.
 inline void ScenarioWorld(PlayerTestWorld& w) {
   w.Floor(0, 24);
   w.Box(Vec3(-6, 0, 6), Vec3(2, 0.5f, 5), Euler(-20, 0, 0));  // ramp
-  w.Fill(4, 0, 6, 7, 0, 10, core::Materials::kStoneSlab);     // slab step
+  w.HalfStep(4, 0, 6, 7, 10);                                  // half step
   w.Fill(-1, 1, 7, 1, 1, 9, core::Materials::kStone);         // crawlspace roof
   w.Fill(10, 0, 2, 14, 2, 6, core::Materials::kStone);        // ledge
   w.Fill(12, 0, 1, 12, 2, 1, core::Materials::kLadderN);      // ladder
@@ -29,25 +28,12 @@ inline void ScenarioWorld(PlayerTestWorld& w) {
   w.Fill(-16, -3, -12, -10, -2, -6, core::Materials::kStone);
   w.Fill(-15, -2, -11, -11, -1, -7, core::Materials::kWater);
   w.Box(Vec3(-12, 0.25f, 0), Vec3(2, 0.25f, 2), JPH::Quat::sIdentity(), Vec3(0, 0, 1), 30.0f);
-  // The slope playground (x 18..30, z 6..14), stamped from the playground generator.
-  {
-    core::Chunk chunk;
-    core::GeneratePlaygroundChunk({0, 0, 0}, chunk);
-    for (int z = 6; z <= 14; ++z) {
-      for (int y = 0; y <= 5; ++y) {
-        for (int x = 18; x <= 30; ++x) {
-          const core::MaterialId m = chunk.Get(x, y, z);
-          if (m != core::Materials::kAir) w.Set(x, y, z, m);
-        }
-      }
-    }
-  }
   w.Explosion(300, Vec3(0, 1, 6), 8.0f, 10.0f, 0.5f);
   w.Spawn(Vec3(-6, 0, 0));      // ramp
   w.Spawn(Vec3(0.5f, 0, 4));    // crawlspace
   w.Spawn(Vec3(12.5f, 0, -1));  // ladder
   w.Spawn(Vec3(-12, 0.5f, 0));  // platform
-  w.Spawn(Vec3(19.5f, 0, 3));   // slopes
+  w.Spawn(Vec3(5.5f, 0, 3));    // half step
 }
 
 // Different deterministic input scripts per player, exercising every action.

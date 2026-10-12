@@ -211,21 +211,12 @@ LodKind LodKindFromBounds(const LodCoord& c, const LodBounds& b) {
 namespace {
 
 // Surface strata of the flat world by depth below the top (m): grass, three of dirt, stone.
-MaterialId FlatMaterial(std::int64_t y, std::int64_t depth_m) {
-  if (y < kMidplaneY + kBedrockLayers) return M::kBedrock;
+MaterialId FlatMaterial(std::int64_t depth_m) {
   return depth_m == 0 ? M::kGrass : depth_m < 4 ? M::kDirt : M::kStone;
 }
 
-// Fills a buried section: stone, bedrock at the bottom of the world.
-void FillBuried(const LodCoord& c, LodCells& cells) {
-  const LodOrigin o = LodSectionOrigin(c);
-  const std::int64_t cell = LodCellSize(c.level);
-  for (int y = -1; y <= kLodSectionCells; ++y) {
-    const std::int64_t a = o.y + y * cell;
-    const MaterialId m = a < kMidplaneY + kBedrockLayers ? M::kBedrock : M::kStone;
-    std::fill_n(cells.begin() + LodCell(-1, y, -1), kLodPad * kLodPad, m);
-  }
-}
+// Fills a buried section: stone.
+void FillBuried(LodCells& cells) { cells.assign(kLodVolume, M::kStone); }
 
 }  // namespace
 
@@ -252,7 +243,7 @@ LodKind GenerateFlatLod(const LodCoord& c, LodCells& cells) {
   const LodKind kind = LodKindFromBounds(c, FlatLodBounds(c.level, c.i, c.k));
   if (kind == LodKind::kEmpty) return kind;
   if (kind == LodKind::kBuried) {
-    FillBuried(c, cells);
+    FillBuried(cells);
     return kind;
   }
   const LodOrigin o = LodSectionOrigin(c);
@@ -264,10 +255,10 @@ LodKind GenerateFlatLod(const LodCoord& c, LodCells& cells) {
         const std::int64_t a = o.y + y * cell;
         MaterialId m = M::kAir;
         if (a < kMidplaneY) {
-          m = M::kBedrock;  // below the world: the apron reads solid, so the floor is not drawn
+          m = M::kStone;  // below the world: the apron reads solid, so the floor is not drawn
         } else if (a < 0) {
           // The top solid cell starts at or below −1; its depth in metres below the surface.
-          m = FlatMaterial(a, -cell - a);
+          m = FlatMaterial(-cell - a);
         }
         cells[static_cast<std::size_t>(LodCell(x, y, z))] = m;
       }

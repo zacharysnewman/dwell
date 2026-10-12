@@ -7,15 +7,6 @@ import type { BlockTarget } from '../sim/clientCore';
 import { BLOCK_DEFS, STATE_DEFS } from '../world/blocks';
 import { type FaceSign, viewForward } from '../world/face';
 import { MATERIALS, PLACEABLE } from '../world/materials';
-import {
-  PIECES,
-  facingToward,
-  hasShapes,
-  hitFractionY,
-  pieceState,
-  placementHalf,
-  type Piece,
-} from './shapes';
 
 export type EditAction = 'break' | 'place';
 
@@ -37,14 +28,9 @@ export interface PaletteSlot {
   /** Material shown and placed (for ladders: the one facing north). */
   material: number;
   ladder: boolean;
-  /** Comes in slopes and slabs (the shape key picks the piece, SLOPE_BLOCKS.md §6). */
-  shapes: boolean;
 }
 
-/**
- * The palette (§6.5): one slot per placeable block (its first palette state), ladders as one. The
- * shaped families (slopes, slabs) have no slots of their own: they are pieces of their material.
- */
+/** The palette (§6.5): one slot per placeable block (its first palette state), ladders as one. */
 export const PALETTE: readonly PaletteSlot[] = PLACEABLE.flatMap((id, i): PaletteSlot[] => {
   const style = MATERIALS[id];
   const state = STATE_DEFS[id];
@@ -58,7 +44,6 @@ export const PALETTE: readonly PaletteSlot[] = PLACEABLE.flatMap((id, i): Palett
       block,
       material: id,
       ladder: style.look === 'ladder',
-      shapes: hasShapes(block),
     },
   ];
 });
@@ -100,18 +85,12 @@ export interface TargetSource {
 export class BlockInteraction {
   /** Index into PALETTE. */
   selected = 0;
-  /** The shape piece placed from slots that come in shapes (the shape key cycles it). */
-  piece: Piece = 'cube';
   /** Touch: what a tap on the view does. */
   touchAction: EditAction = 'break';
   /** Called when the selection changes (the hotbar redraws). */
   onSelect: ((slot: number) => void) | null = null;
-  /** Called when the piece changes. */
-  onPiece: ((piece: Piece) => void) | null = null;
   private current: BlockTarget | null = null;
   private yaw = 0;
-  private eye: Vec3 = [0, 0, 0];
-  private dir: Vec3 = [0, 0, 1];
   private lastEditMs = -Infinity;
 
   constructor(
@@ -131,30 +110,9 @@ export class BlockInteraction {
     face: FaceSign = 1,
   ): BlockTarget | null {
     this.yaw = yawDeg;
-    this.dir = viewDirection(yawDeg, pitchDeg, face);
-    if (eye) this.eye = eye;
-    this.current = eye ? this.world.target(eye, this.dir, Players.reachDistance) : null;
+    const dir = viewDirection(yawDeg, pitchDeg, face);
+    this.current = eye ? this.world.target(eye, dir, Players.reachDistance) : null;
     return this.current;
-  }
-
-  /** Picks a piece directly (tests and automation). */
-  setPiece(piece: Piece): void {
-    this.piece = piece;
-    this.onPiece?.(piece);
-  }
-
-  /** The piece in effect: the chosen one for materials that come in shapes, else the cube. */
-  get effectivePiece(): Piece {
-    return PALETTE[this.selected]?.shapes ? this.piece : 'cube';
-  }
-
-  /** The shape key: the next (delta > 0) or previous piece. Does nothing on a material without shapes. */
-  cyclePiece(delta: number): void {
-    if (!PALETTE[this.selected]?.shapes || delta === 0) return;
-    const n = PIECES.length;
-    const at = PIECES.indexOf(this.piece);
-    this.piece = PIECES[(((at + Math.sign(delta)) % n) + n) % n] ?? 'cube';
-    this.onPiece?.(this.piece);
   }
 
   /** The state the selected slot places against the current target, and where; null with no target. */
@@ -165,14 +123,7 @@ export class BlockInteraction {
     const dir = FACE_DIRS[t.face] ?? [0, 0, 0];
     const cell: Vec3 = [t.cell[0] + dir[0], t.cell[1] + dir[1], t.cell[2] + dir[2]];
     if (slot.ladder) return { cell, material: ladderFor(t.face, this.yaw) };
-    const piece = this.effectivePiece;
-    const shaped = pieceState(
-      slot.block,
-      piece,
-      facingToward(this.yaw),
-      placementHalf(t.face, hitFractionY(this.eye, this.dir, t.cell, t.face)),
-    );
-    return { cell, material: shaped ?? slot.material };
+    return { cell, material: slot.material };
   }
 
   select(slot: number): void {

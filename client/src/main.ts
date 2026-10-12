@@ -42,7 +42,6 @@ import { ClientCore } from './sim/clientCore';
 import { importDwellCore } from './sim/module';
 import { MessageType } from './protocol/constants.gen';
 import type { ChunkCoord } from './protocol/messages';
-import { PIECES } from './interact/shapes';
 import { Hotbar, slotForKey } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
@@ -70,8 +69,6 @@ interface DwellDebug {
   edit(action: EditAction): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
-  /** Picks the shape piece placed from slots that come in shapes (`wedge`, `slab`, `cube`, …). */
-  piece(name: string): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
   /** Material at a voxel in the client's world. */
@@ -206,10 +203,6 @@ function start(): App {
     view: () => ({ yaw: app.input.yaw, pitch: app.input.pitch }),
     edit: (action) => app.game?.edit(action, performance.now()) ?? false,
     select: (slot) => app.interaction?.select(slot),
-    piece: (name) => {
-      const piece = PIECES.find((p) => p === name);
-      if (piece) app.interaction?.setPiece(piece);
-    },
     placement: () => app.interaction?.placement() ?? null,
     voxel: (x, y, z) => app.core?.voxel(x, y, z) ?? 0,
     fly: (on) => {
@@ -232,7 +225,6 @@ function start(): App {
     if (slot !== null && slot < PALETTE.length) app.interaction?.select(slot);
   };
   app.input.onScroll = (delta) => app.interaction?.scroll(delta);
-  app.input.onShape = (delta) => app.interaction?.cyclePiece(delta);
   // Creative flight (§8.3): double-tap Space or Jump, or the Fly button.
   touch.onDebug = () => {
     app.hud.toggleDebug();
@@ -330,21 +322,11 @@ function play(
     const interaction = new BlockInteraction(core, (m) => {
       session.sendControl(m);
     });
-    const hotbar = new Hotbar(
-      document.body,
-      PALETTE,
-      (slot) => {
-        interaction.select(slot);
-      },
-      (delta) => {
-        interaction.cyclePiece(delta);
-      },
-    );
+    const hotbar = new Hotbar(document.body, PALETTE, (slot) => {
+      interaction.select(slot);
+    });
     interaction.onSelect = (slot) => {
       hotbar.setSelected(slot);
-    };
-    interaction.onPiece = (piece) => {
-      hotbar.setPiece(piece);
     };
     interaction.select(0);
     app.interaction = interaction;

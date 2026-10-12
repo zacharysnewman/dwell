@@ -16,12 +16,6 @@ export interface GeneratedChunk {
 /** Anything that generates chunks asynchronously: the worker pool, or a test double. */
 export interface ChunkSource {
   generate(coord: ChunkCoord): Promise<GeneratedChunk>;
-  /**
-   * The biome tint grid of the columns of chunk (cx, cz) of a face (0 = A, 1 = B) for the mesher
-   * (mesh/mesher.ts TintField), or null for generators without biomes. Optional: sources without
-   * it mesh untinted.
-   */
-  tint?(cx: number, cz: number, face: number): Promise<Uint8Array<ArrayBuffer> | null>;
   /** Drops a queued job; its promise never settles. False if it already started. */
   cancel(coord: ChunkCoord): boolean;
   /** Jobs queued or running. */
@@ -139,16 +133,11 @@ export class WorldgenPool implements ChunkSource, SectionSource {
   }
 
   /**
-   * Samples the terrain's biome/height map (worldgen/generator.ts `map`) in a worker; null for
+   * Samples the terrain's height map (worldgen/generator.ts `map`) in a worker; null for
    * generators without one.
    */
   map(request: MapRequest): Promise<Uint8Array<ArrayBuffer> | null> {
     return this.submit<Uint8Array<ArrayBuffer> | null>(this.queue, { t: 'map', ...request });
-  }
-
-  /** The tint grid of the chunk column (cx, cz): see ChunkSource.tint. */
-  tint(cx: number, cz: number, face: number): Promise<Uint8Array<ArrayBuffer> | null> {
-    return this.submit<Uint8Array<ArrayBuffer> | null>(this.queue, { t: 'tint', cx, cz, face });
   }
 
   /** GenerateLod of a section (§6.6). */
@@ -216,7 +205,7 @@ export class WorldgenPool implements ChunkSource, SectionSource {
       job?.resolve(
         msg.t === 'chunk'
           ? { voxels: msg.voxels, hash: msg.hash }
-          : msg.t === 'map' || msg.t === 'tint'
+          : msg.t === 'map'
             ? msg.bytes
             : msg.t === 'lod'
               ? { kind: msg.kind, cells: msg.cells, surface: msg.surface, surfaceB: msg.surfaceB }

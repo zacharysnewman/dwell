@@ -78,7 +78,7 @@ TEST_CASE("chunk requests: a modified chunk arrives explicitly, and its edits fo
   CHECK(chunks[0].voxels[LocalIndex(0, 0, 2)] == Materials::kStone);
 
   // The next edit there reaches player 1 too.
-  f.Send(2, BlockEditRequest{BlockEditAction::kPlace, {6 * 32 + 1, -1, 2}, 2, Materials::kLog});
+  f.Send(2, BlockEditRequest{BlockEditAction::kPlace, {6 * 32 + 1, -1, 2}, 2, Materials::kSand});
   f.server.Step();
   bool edit_seen = false;
   for (const auto& [m, size] : f.Take(1)) {

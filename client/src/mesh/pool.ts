@@ -9,15 +9,10 @@ import type { FromMesher } from './messages';
 /** Anything that meshes chunks asynchronously: the worker pool, or a test double. */
 export interface Mesher {
   /**
-   * Meshes padded voxels (transferred to the worker: the caller gives up `voxels`), tinted by the
-   * chunk column's biome tint grid if there is one (mesher.ts `TintField`; copied). `mirror`: a
+   * Meshes padded voxels (transferred to the worker: the caller gives up `voxels`). `mirror`: a
    * chunk of face B, meshed as its mirror image (mesher.ts `meshChunk`).
    */
-  mesh(
-    voxels: Uint16Array<ArrayBuffer>,
-    tint?: Uint8Array | null,
-    mirror?: boolean,
-  ): Promise<ChunkMeshes>;
+  mesh(voxels: Uint16Array<ArrayBuffer>, mirror?: boolean): Promise<ChunkMeshes>;
   /** Jobs queued or running. */
   readonly pending: number;
 }
@@ -37,7 +32,6 @@ export interface SectionMesher {
 interface Job {
   id: number;
   lod: boolean;
-  tint?: Uint8Array | null;
   mirror?: boolean;
   options?: MeshSectionOptions & { surface?: Float32Array<ArrayBuffer> | null };
   voxels: Uint16Array<ArrayBuffer>;
@@ -79,16 +73,11 @@ export class MeshPool implements Mesher, SectionMesher {
     return this.queue.length + this.runningCount;
   }
 
-  mesh(
-    voxels: Uint16Array<ArrayBuffer>,
-    tint: Uint8Array | null = null,
-    mirror = false,
-  ): Promise<ChunkMeshes> {
+  mesh(voxels: Uint16Array<ArrayBuffer>, mirror = false): Promise<ChunkMeshes> {
     return new Promise((resolve) => {
       this.queue.push({
         id: this.nextId++,
         lod: false,
-        tint,
         mirror,
         voxels,
         resolve: (m) => {
@@ -152,7 +141,6 @@ export class MeshPool implements Mesher, SectionMesher {
               t: 'mesh',
               id: job.id,
               voxels: job.voxels,
-              tint: job.tint ?? null,
               mirror: job.mirror ?? false,
             },
         surface ? [job.voxels.buffer, surface.buffer] : [job.voxels.buffer],
@@ -164,12 +152,8 @@ export class MeshPool implements Mesher, SectionMesher {
 /** Meshes on the calling thread (tests; a fallback when workers are unavailable). */
 export class InlineMesher implements Mesher, SectionMesher {
   pending = 0;
-  mesh(
-    voxels: Uint16Array<ArrayBuffer>,
-    tint: Uint8Array | null = null,
-    mirror = false,
-  ): Promise<ChunkMeshes> {
-    return Promise.resolve(meshChunk(voxels, tint, mirror));
+  mesh(voxels: Uint16Array<ArrayBuffer>, mirror = false): Promise<ChunkMeshes> {
+    return Promise.resolve(meshChunk(voxels, mirror));
   }
   meshSection(
     cells: Uint16Array<ArrayBuffer>,

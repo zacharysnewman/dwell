@@ -9,12 +9,11 @@ import { World } from '../protocol/constants.gen';
 import { mapColumn } from '../ui/mapOverlay';
 import type { ChunkCoord } from '../protocol/messages';
 import { LOD_VOLUME } from '../lod/grid';
-import { ChunkGenerator, type DwellWorldgenFactory } from './generator';
+import { ChunkGenerator, type DwellWorldgenFactory, MAP_COLUMN_BYTES } from './generator';
 
 const wasmJs = new URL('../../public/wasm/dwell_worldgen.js', import.meta.url);
 const skip = !existsSync(wasmJs) && !process.env.DWELL_REQUIRE_WASM;
 const GENERATOR_TERRAIN = GENERATORS.terrain;
-const SEA_BIOMES = 2; // the last sea biome id: 0 ocean, 1 deep ocean, 2 frozen ocean
 
 async function loadGenerator(version: number, seed: bigint): Promise<ChunkGenerator> {
   const mod = (await import(/* @vite-ignore */ wasmJs.href)) as { default: DwellWorldgenFactory };
@@ -115,21 +114,21 @@ describe.skipIf(skip)('worldgen module (WASM)', () => {
   it('samples the terrain map (debug overlay): land at the spawn, the void beyond the rim', async () => {
     const gen = await loadGenerator(GENERATOR_TERRAIN, 0n);
     const bytes = gen.map(-16, -16, 8, 4);
-    expect(bytes?.length).toBe(64);
-    expect(mapColumn(bytes ?? new Uint8Array(64), 4, 2, 2).biome).toBeGreaterThan(SEA_BIOMES); // not sea
+    expect(bytes?.length).toBe(4 * 4 * MAP_COLUMN_BYTES);
+    expect(mapColumn(bytes ?? new Uint8Array(64), 4, 2, 2).height).toBeGreaterThan(0); // land
     const rim = gen.map(World.worldRadius + 100, 0, 8, 2);
     expect(mapColumn(rim ?? new Uint8Array(16), 2, 0, 0).outside).toBe(true);
-    // Generators without a terrain map (flat, playground) have none.
+    // The flat test world has no terrain map.
     expect((await loadGenerator(GENERATORS.flat, 0n)).map(0, 0, 8, 4)).toBeNull();
   });
 
-  it('samples the whole disc (the map zoomed all the way out): land at the origin, mostly ocean, a void corner', async () => {
+  it('samples the whole disc (the map zoomed all the way out): the island at the origin, ocean, a void corner', async () => {
     const gen = await loadGenerator(GENERATOR_TERRAIN, 0n);
     const n = 32;
     const step = (2 * World.worldRadius) / n;
     const bytes = gen.map(-World.worldRadius, -World.worldRadius, step, n) ?? new Uint8Array(0);
-    expect(bytes.length).toBe(n * n * 4);
-    expect(mapColumn(bytes, n, n / 2, n / 2).biome).toBeGreaterThan(SEA_BIOMES); // the origin is on land
+    expect(bytes.length).toBe(n * n * MAP_COLUMN_BYTES);
+    expect(mapColumn(bytes, n, n / 2, n / 2).height).toBeGreaterThan(0); // the island at the origin
     expect(mapColumn(bytes, n, 0, 0).outside).toBe(true); // the corner is beyond the rim
     let ocean = 0;
     let inside = 0;
@@ -138,8 +137,8 @@ describe.skipIf(skip)('worldgen module (WASM)', () => {
         const c = mapColumn(bytes, n, i, j);
         if (c.outside) continue;
         inside++;
-        if (c.biome <= SEA_BIOMES) ocean++; // ocean, deep ocean, frozen ocean (biomes.h)
+        if (c.height < 0) ocean++;
       }
-    expect(ocean / inside).toBeGreaterThan(0.5); // the continents cover a quarter to a third
+    expect(ocean / inside).toBeGreaterThan(0.99); // one island ~25 km across in a 16,384 km disc
   });
 });

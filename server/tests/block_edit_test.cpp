@@ -47,19 +47,11 @@ TEST_CASE("block edit: the palette (the registry's placeable states)") {
   for (MaterialId m = 0; m < Materials::kCount; ++m) {
     if (Placeable(m)) placeable.push_back(GetMaterial(m).name);
   }
-  // The shaped families (slopes and slabs) are placed through the shape selector, not slots: every
-  // state of them is placeable, and the hotbar draws one slot per material.
-  std::erase_if(placeable, [](std::string_view name) {
-    return name.find("_slope[") != std::string_view::npos ||
-           name.find("_slab[") != std::string_view::npos;
-  });
   CHECK(placeable ==
         std::vector<std::string_view>{
             "dwell:stone", "dwell:dirt", "dwell:grass", "dwell:ladder[facing=north,flooded=false]",
             "dwell:ladder[facing=east,flooded=false]", "dwell:ladder[facing=south,flooded=false]",
-            "dwell:ladder[facing=west,flooded=false]", "dwell:sand", "dwell:sandstone",
-            "dwell:gravel", "dwell:snow", "dwell:ice", "dwell:log", "dwell:leaves",
-            "dwell:coal_ore", "dwell:iron_ore", "dwell:gold_ore"});
+            "dwell:ladder[facing=west,flooded=false]", "dwell:sand"});
   CHECK_FALSE(Placeable(Materials::kCount));
   CHECK_FALSE(Targetable(Materials::kAir));
   CHECK_FALSE(Targetable(Materials::kWater));
@@ -80,11 +72,6 @@ TEST_CASE("block edit: the targeting ray finds the first targetable cell and the
     CHECK(hit->distance == doctest::Approx(4.5f));
     CHECK_FALSE(RaycastBlock(world, eye, {0, 0, 1}, 4.4f));
 
-    // A slab is a half-height box: a ray above it passes, one through its lower half hits.
-    world.SetVoxel(ox, 0, 2, Materials::kStoneSlab);
-    CHECK(RaycastBlock(world, {ox + 0.5, 0.75, 0.5}, {0, 0, 1}, 5.0f)->cell == Cell{ox, 0, 5});
-    CHECK(RaycastBlock(world, {ox + 0.5, 0.25, 0.5}, {0, 0, 1}, 5.0f)->cell == Cell{ox, 0, 2});
-
     // Looking down onto a floor: its top face.
     world.SetVoxel(ox + 2, -1, 0, Materials::kGrass);
     const float s = std::sqrt(0.5f);
@@ -94,7 +81,7 @@ TEST_CASE("block edit: the targeting ray finds the first targetable cell and the
     CHECK(hit->face == 2);
 
     // The cell containing the eye is not a target.
-    world.SetVoxel(ox + 5, 0, 0, Materials::kLeaves);
+    world.SetVoxel(ox + 5, 0, 0, Materials::kDirt);
     CHECK_FALSE(RaycastBlock(world, {ox + 5.5, 0.5, 0.5}, {1, 0, 0}, 3.0f));
   }
 }
@@ -170,30 +157,21 @@ TEST_CASE("block edit: validation of reach, line of sight, materials, occupancy 
         EditCheck::kNoLineOfSight);
   CHECK(CheckBlockEdit(world, Break({0, 0, 1}, 5), eye, nobody).check == EditCheck::kOk);
 
-  // Bedrock is unbreakable.
-  world.SetVoxel(3, 0, 0, Materials::kBedrock);
-  CHECK(CheckBlockEdit(world, Break({3, 0, 0}, 1), eye, nobody).check == EditCheck::kUnbreakable);
   // Only the palette can be placed.
-  for (const MaterialId m : {Materials::kAir, Materials::kWater, Materials::kBedrock,
-                             Materials::kLaunchPad, MaterialId{65000}}) {
+  for (const MaterialId m : {Materials::kAir, Materials::kWater,
+                             Materials::kLadderFacingEastFloodedTrue, MaterialId{65000}}) {
     CAPTURE(m);
     CHECK(CheckBlockEdit(world, Place({-2, -1, 0}, 2, m), eye, nobody).check ==
           EditCheck::kNotPlaceable);
   }
 }
 
-TEST_CASE("block edit: placing into blocks or players is rejected") {
+TEST_CASE("block edit: placing into water is allowed, into players rejected") {
   VoxelWorld world = Empty();
   for (int x = -4; x <= 4; ++x)
     for (int z = -4; z <= 8; ++z) world.SetVoxel(x, -1, z, Materials::kGrass);
   const std::array<double, 3> eye{0.5, 1.62, 0.5};
   const std::vector<EditCapsule> nobody;
-  // Against a block's side whose neighbour is a slab: the face's upper half shows above the slab,
-  // but the cell to place into is taken.
-  world.SetVoxel(0, 0, 3, Materials::kStone);
-  world.SetVoxel(0, 0, 2, Materials::kStoneSlab);
-  CHECK(CheckBlockEdit(world, Place({0, 0, 3}, 5, Materials::kDirt), eye, nobody).check ==
-        EditCheck::kOccupied);
   // Into a cell holding water: allowed (the block replaces it).
   world.SetVoxel(-2, 0, 0, Materials::kWater);
   CHECK(CheckBlockEdit(world, Place({-2, -1, 0}, 2, Materials::kDirt), eye, nobody).check ==
@@ -210,71 +188,36 @@ TEST_CASE("block edit: placing into blocks or players is rejected") {
         EditCheck::kOk);
 }
 
-TEST_CASE("block edit: every slope and slab state of a shapeable material is placeable") {
-  std::size_t shaped = 0;
-  for (MaterialId m = 0; m < Materials::kCount; ++m) {
-    const std::string name(StateString(m));
-    const bool family =
-        name.find("_slope[") != std::string::npos || name.find("_slab[") != std::string::npos;
-    if (family) {
-      CAPTURE(name);
-      CHECK(Placeable(m));
-      ++shaped;
-    }
-  }
-  CHECK(shaped == 8 * (144 + 4));
-  CHECK_FALSE(Placeable(Materials::kWater));
-}
-
 TEST_CASE(
-    "block edit: a shape placed into water is flooded, anywhere else dry; breaking leaves water") {
+    "block edit: a flooded-property block placed into water is flooded, anywhere else dry; "
+    "breaking a flooded one leaves water") {
   VoxelWorld world = Empty();
   for (int x = -4; x <= 4; ++x)
     for (int z = -4; z <= 8; ++z) world.SetVoxel(x, -1, z, Materials::kGrass);
   const std::array<double, 3> eye{0.5, 1.62, 0.5};
-  const auto wedge = [](bool flooded) {
-    return *ParseState(std::string("dwell:stone_slope[facing=east,flooded=") +
-                       (flooded ? "true" : "false") + ",half=bottom,shape=wedge]");
+  const auto ladder = [](bool flooded) {
+    return flooded ? Materials::kLadderFacingSouthFloodedTrue : Materials::kLadderS;
   };
-  // Into air: dry, even when the client asks for a flooded state (no water from nothing).
-  auto dry = CheckBlockEdit(world, Place({0, -1, 2}, 2, wedge(true)), eye, {});
+  // Into air: dry (no water from nothing). The palette holds the dry state only.
+  auto dry = CheckBlockEdit(world, Place({0, -1, 2}, 2, ladder(false)), eye, {});
   REQUIRE(dry.check == EditCheck::kOk);
-  CHECK(dry.material == wedge(false));
-  // Into water: flooded, whichever state the client sent.
+  CHECK(dry.material == ladder(false));
+  CHECK(CheckBlockEdit(world, Place({0, -1, 2}, 2, ladder(true)), eye, {}).check ==
+        EditCheck::kNotPlaceable);
+  // Into water: flooded.
   world.SetVoxel(-2, 0, 0, Materials::kWater);
-  for (const bool asked : {false, true}) {
-    const auto wet = CheckBlockEdit(world, Place({-2, -1, 0}, 2, wedge(asked)), eye, {});
-    REQUIRE(wet.check == EditCheck::kOk);
-    CHECK(wet.material == wedge(true));
-  }
-  // Breaking a flooded shape leaves water; a dry one leaves air.
-  world.SetVoxel(1, 0, 2, wedge(true));
-  world.SetVoxel(-1, 0, 2, wedge(false));
+  const auto wet = CheckBlockEdit(world, Place({-2, -1, 0}, 2, ladder(false)), eye, {});
+  REQUIRE(wet.check == EditCheck::kOk);
+  CHECK(wet.material == ladder(true));
+  // Breaking a flooded block leaves water; a dry one leaves air.
+  world.SetVoxel(1, 0, 2, ladder(true));
+  world.SetVoxel(-1, 0, 2, ladder(false));
   const auto leaves_water = CheckBlockEdit(world, Break({1, 0, 2}, 2), eye, {});
   REQUIRE(leaves_water.check == EditCheck::kOk);
   CHECK(leaves_water.material == Materials::kWater);
   const auto leaves_air = CheckBlockEdit(world, Break({-1, 0, 2}, 2), eye, {});
   REQUIRE(leaves_air.check == EditCheck::kOk);
   CHECK(leaves_air.material == Materials::kAir);
-}
-
-TEST_CASE("block edit: a slope is checked against players by its true volume, not its cell") {
-  VoxelWorld world = Empty();
-  for (int x = -4; x <= 4; ++x)
-    for (int z = -4; z <= 8; ++z) world.SetVoxel(x, -1, z, Materials::kGrass);
-  const std::array<double, 3> eye{0.5, 1.62, 0.5};
-  const auto wedge =
-      *ParseState("dwell:stone_slope[facing=east,flooded=false,half=bottom,shape=wedge]");
-  // A player standing 0.2 m past the low (east) edge of the cell (0, 0, 2): too close for a cube
-  // (its face is within the capsule's 0.3 m), clear of the wedge, whose edge there has no height.
-  const std::vector<EditCapsule> player{{{1.2, 0.9, 2.5}, 0.3f, 0.6f}};
-  CHECK(CheckBlockEdit(world, Place({0, -1, 2}, 2, Materials::kStone), eye, player).check ==
-        EditCheck::kIntoPlayer);
-  CHECK(CheckBlockEdit(world, Place({0, -1, 2}, 2, wedge), eye, player).check == EditCheck::kOk);
-  // On the high (west) side the wedge is as solid as a cube.
-  const std::vector<EditCapsule> high{{{-0.2, 0.9, 2.5}, 0.3f, 0.6f}};
-  CHECK(CheckBlockEdit(world, Place({0, -1, 2}, 2, wedge), eye, high).check ==
-        EditCheck::kIntoPlayer);
 }
 
 TEST_CASE("block edit: probes see a block placed into a chunk they read as open sky") {
@@ -315,10 +258,10 @@ TEST_CASE("edits: a placed block reaches every client streaming its chunk, one r
 
   // Player 1 stands at (−1, 0, −0.25): two blocks on the ground ahead, in one tick.
   f.Send(1, Place({-1, -1, 2}, 2, Materials::kStone));
-  f.Send(1, Place({0, -1, 2}, 2, Materials::kLog));
+  f.Send(1, Place({0, -1, 2}, 2, Materials::kSand));
   f.server.Step();
   CHECK(f.server.world().GetVoxel(-1, 0, 2) == Materials::kStone);
-  CHECK(f.server.world().GetVoxel(0, 0, 2) == Materials::kLog);
+  CHECK(f.server.world().GetVoxel(0, 0, 2) == Materials::kSand);
   CHECK(f.server.world().Find({0, 0, 0})->revision() == 1);
   CHECK(f.server.world().Find({-1, 0, 0})->revision() == 1);
   auto out = f.TakeAll();
@@ -338,7 +281,7 @@ TEST_CASE("edits: a placed block reaches every client streaming its chunk, one r
     CHECK(mods[0].chunks[1].revision == 1);
     CHECK(mods[0].chunks[1].changes ==
           std::vector<VoxelChange>{
-              {static_cast<std::uint16_t>(LocalIndex(0, 0, 2)), Materials::kLog}});
+              {static_cast<std::uint16_t>(LocalIndex(0, 0, 2)), Materials::kSand}});
   }
 
   // Breaking it again: revision 2.
@@ -392,15 +335,6 @@ TEST_CASE("edits: rate limited, and refused by the edit policy") {
     f.server.Step();
     CHECK(f.server.world().GetVoxel(-1, 0, 2) == Materials::kAir);
     CHECK(f.server.world().GetVoxel(0, 0, 2) == Materials::kDirt);
-  }
-  SUBCASE("bedrock stays; the rejection is recorded") {
-    Fixture f(Flat());
-    JoinStreaming(f, 1);
-    f.server.world().SetVoxel(-1, -1, 2, Materials::kBedrock);
-    f.Send(1, Break({-1, -1, 2}, 2));
-    f.server.Step();
-    CHECK(f.server.StatsOf(1)->edits_rejected == 1);
-    CHECK(f.server.StatsOf(1)->last_edit_check == EditCheck::kUnbreakable);
   }
 }
 

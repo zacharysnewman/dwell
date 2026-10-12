@@ -30,9 +30,6 @@ function generate(msg: ToWorldgen, g: ChunkGenerator): void {
   } else if (msg.t === 'map') {
     const bytes = g.map(msg.x0, msg.z0, msg.step, msg.n, msg.face ?? 0);
     scope.postMessage({ t: 'map', id: msg.id, bytes }, bytes ? [bytes.buffer] : []);
-  } else if (msg.t === 'tint') {
-    const bytes = g.tint(msg.cx, msg.cz, msg.face);
-    scope.postMessage({ t: 'tint', id: msg.id, bytes }, bytes ? [bytes.buffer] : []);
   } else if (msg.t === 'lod') {
     const s = g.lod(msg.coord);
     const surface = s.surface ?? null;

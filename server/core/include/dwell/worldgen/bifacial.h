@@ -14,7 +14,7 @@
 namespace dwell::worldgen {
 
 // The seed of a face's generator. Face A keeps the world seed; face B's is derived from it, so its
-// continents, rivers, climate and features differ from face A's.
+// island and hills differ from face A's.
 std::uint64_t FaceSeed(std::uint64_t world_seed, core::Face face);
 
 class BifacialTerrain {
@@ -25,9 +25,8 @@ class BifacialTerrain {
   const TerrainGenerator& Local(core::Face face) const { return face == core::Face::kA ? a_ : b_; }
 
   // Generates a chunk of either face: face A's directly, face B's as the vertical flip of the
-  // face-local chunk (core::FaceLocalChunk) with slabs and slopes turned over (MirrorMaterial).
-  void Generate(const core::ChunkCoord& coord, core::Chunk& chunk,
-                std::uint8_t stages = TerrainGenerator::kAllStages) const;
+  // face-local chunk (core::FaceLocalChunk) with shaped blocks turned over (MirrorMaterial).
+  void Generate(const core::ChunkCoord& coord, core::Chunk& chunk) const;
   // Exactly the generator's own all-air shortcut, per face.
   bool IsAirChunk(const core::ChunkCoord& coord) const;
   // The sky test's height for a chunk column of a face (face-local, TerrainGenerator::SkyFloorAt).

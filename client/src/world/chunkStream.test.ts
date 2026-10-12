@@ -331,27 +331,12 @@ describe('ChunkStreamer', () => {
   });
 });
 
-describe('ChunkStreamer: biome tint (§3.7)', () => {
-  /** A source with a tint job the test completes by hand. */
-  class TintSource extends ManualSource {
-    tints: {
-      cx: number;
-      cz: number;
-      face: number;
-      resolve: (b: Uint8Array<ArrayBuffer> | null) => void;
-    }[] = [];
-    tint(cx: number, cz: number, face: number): Promise<Uint8Array<ArrayBuffer> | null> {
-      return new Promise((resolve) => this.tints.push({ cx, cz, face, resolve }));
-    }
-  }
+describe('ChunkStreamer: faces', () => {
   class SpyMesher extends InlineMesher {
-    received: (Uint8Array | null | undefined)[] = [];
-    override mesh(
-      voxels: Uint16Array<ArrayBuffer>,
-      tint?: Uint8Array | null,
-    ): Promise<ChunkMeshes> {
-      this.received.push(tint);
-      return super.mesh(voxels, tint);
+    received: boolean[] = [];
+    override mesh(voxels: Uint16Array<ArrayBuffer>, mirror = false): Promise<ChunkMeshes> {
+      this.received.push(mirror);
+      return super.mesh(voxels, mirror);
     }
   }
   const explicit = (coord: ChunkCoord): Parameters<ChunkStreamer['onChunkData']>[0] => ({
@@ -361,57 +346,13 @@ describe('ChunkStreamer: biome tint (§3.7)', () => {
     voxels: new Uint16Array(CHUNK_VOLUME).fill(2),
   });
 
-  it("asks for a face B column's grid from face B's own terrain", () => {
-    const source = new TintSource();
-    const streamer = new ChunkStreamer(new FakeStore(), source, new SpyMesher(), new FakeView());
-    streamer.onChunkData(explicit([3, 0, 4]));
-    streamer.onChunkData(explicit([3, -70, 4]));
-    streamer.meshDirty([0, 0, 0], 100);
-    expect(source.tints.map((t) => [t.cx, t.cz, t.face]).sort()).toEqual([
-      [3, 4, 0],
-      [3, 4, 1],
-    ]);
-  });
-
-  it('asks once for a column and meshes its chunks when the grid arrives, with it', async () => {
-    const source = new TintSource();
+  it("meshes face B's chunks as mirror images, face A's as they are", () => {
     const mesher = new SpyMesher();
-    const view = new FakeView();
-    const streamer = new ChunkStreamer(new FakeStore(), source, mesher, view);
+    const streamer = new ChunkStreamer(new FakeStore(), new ManualSource(), mesher, new FakeView());
     streamer.onChunkData(explicit([3, 0, 4]));
-    streamer.onChunkData(explicit([3, 1, 4]));
-    streamer.onChunkData(explicit([3, 2, 4]));
-    // Not meshed while the column's tint is out; the column is asked for once.
-    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(0);
-    expect(source.tints.map((t) => [t.cx, t.cz, t.face])).toEqual([[3, 4, 0]]);
-    const grid = new Uint8Array([1, 2, 3]);
-    source.tints[0]?.resolve(grid);
-    await flush();
-    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(3);
-    await flush();
-    expect(mesher.received).toEqual([grid, grid, grid]);
-    expect(source.tints).toHaveLength(1);
-    // An edit meshes again at once, from the cached grid.
-    streamer.onChunkData(explicit([3, 0, 4]));
-    expect(streamer.meshDirty([0, 0, 0], 100)).toBeGreaterThan(0); // it and the neighbours it touches
-    expect(source.tints).toHaveLength(1);
-  });
-
-  it('meshes untinted where the generator has no tint, or when it fails', async () => {
-    const plain = new SpyMesher();
-    const a = new ChunkStreamer(new FakeStore(), new ManualSource(), plain, new FakeView());
-    a.onChunkData(explicit([0, 0, 0]));
-    expect(a.meshDirty([0, 0, 0], 100)).toBe(1);
-    expect(plain.received).toEqual([null]);
-
-    const source = new TintSource();
-    source.tint = () => Promise.reject(new Error('no wasm'));
-    const failing = new SpyMesher();
-    const b = new ChunkStreamer(new FakeStore(), source, failing, new FakeView());
-    b.onChunkData(explicit([0, 0, 0]));
-    expect(b.meshDirty([0, 0, 0], 100)).toBe(0);
-    await flush();
-    expect(b.meshDirty([0, 0, 0], 100)).toBe(1);
-    expect(failing.received).toEqual([null]);
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(1);
+    streamer.onChunkData(explicit([3, -70, 4]));
+    expect(streamer.meshDirty([0, 0, 0], 100)).toBe(1);
+    expect(mesher.received).toEqual([false, true]);
   });
 });

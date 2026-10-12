@@ -1,95 +1,67 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BIOME_COLORS,
-  BIOME_NAMES,
   DISC_ZOOM,
+  LOWLAND_COLOR,
+  MAP_COLUMN_BYTES,
   MAP_SIZE,
   MAP_ZOOMS,
-  WATER_COLOR,
+  SEA_SHALLOW,
+  SHORE_COLOR,
   formatMapDistance,
+  heightColor,
   mapColumn,
   mapPixels,
   mapView,
 } from './mapOverlay';
 
-/** worldgen::Biome::kMeadow (biomes.h): the first land climate biome. */
-const MEADOW = 7;
-
-function map(columns: [number, number, number][]): Uint8Array {
-  const out = new Uint8Array(columns.length * 4);
-  columns.forEach(([h, biome, flags], i) => {
-    out[i * 4] = h & 0xff;
-    out[i * 4 + 1] = (h >> 8) & 0xff;
-    out[i * 4 + 2] = biome;
-    out[i * 4 + 3] = flags;
+function map(columns: [number, number][]): Uint8Array {
+  const out = new Uint8Array(columns.length * MAP_COLUMN_BYTES);
+  columns.forEach(([h, flags], i) => {
+    out[i * MAP_COLUMN_BYTES] = h & 0xff;
+    out[i * MAP_COLUMN_BYTES + 1] = (h >> 8) & 0xff;
+    out[i * MAP_COLUMN_BYTES + 2] = flags;
   });
   return out;
 }
 
-describe('terrain map overlay', () => {
-  it('has a colour and a name for each of the 19 biomes (biomes.h, in its order)', () => {
-    expect(BIOME_COLORS).toHaveLength(19);
-    expect(BIOME_NAMES).toHaveLength(19);
-    expect(BIOME_NAMES[0]).toBe('ocean');
-    expect(BIOME_NAMES[MEADOW]).toBe('meadow');
-    expect(BIOME_NAMES[18]).toBe('snowfield');
-    expect(new Set(BIOME_NAMES).size).toBe(19);
-  });
+const rgb = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
 
-  it('decodes columns: signed height, biome, beyond the rim', () => {
+describe('terrain map overlay', () => {
+  it('decodes columns: signed height, beyond the rim', () => {
     const bytes = map([
-      [-540, 0, 0],
-      [1950, 6, 0],
-      [0, 2, 1],
-      [12, 3, 0],
+      [-540, 0],
+      [1950, 0],
+      [0, 1],
+      [12, 0],
     ]);
-    expect(mapColumn(bytes, 2, 0, 0)).toEqual({
-      height: -540,
-      biome: 0,
-      outside: false,
-      river: false,
-    });
+    expect(mapColumn(bytes, 2, 0, 0)).toEqual({ height: -540, outside: false });
     expect(mapColumn(bytes, 2, 1, 0).height).toBe(1950);
     expect(mapColumn(bytes, 2, 0, 1).outside).toBe(true);
   });
 
-  it('colours by biome, shades slopes, darkens deep oceans, and leaves the void black', () => {
+  it('colours by height: the sea by depth, the shore, the land from lowland to upland', () => {
+    expect(heightColor(0)).toBe(SHORE_COLOR);
+    expect(heightColor(1)).toBe(SHORE_COLOR);
+    expect(heightColor(-0.01)).toBe(SEA_SHALLOW);
+    expect(heightColor(2)).toBe(LOWLAND_COLOR);
+    expect(heightColor(-40)).not.toBe(heightColor(-1));
+    expect(heightColor(150)).not.toBe(heightColor(10));
+  });
+
+  it('shades slopes on land, not the sea, and leaves the void black', () => {
     const px = mapPixels(
       map([
-        [10, MEADOW, 0],
-        [10, MEADOW, 0],
-        [-300, 0, 0],
-        [0, MEADOW, 1],
+        [10, 0],
+        [10, 0],
+        [-5, 0],
+        [0, 1],
       ]),
       2,
       8,
     );
-    const plains = BIOME_COLORS[MEADOW] ?? 0;
-    expect([px[0], px[1], px[2]]).toEqual([
-      (plains >> 16) & 0xff,
-      (plains >> 8) & 0xff,
-      plains & 0xff,
-    ]);
-    const ocean = BIOME_COLORS[0] ?? 0;
-    expect(px[8] ?? 0).toBeLessThan(((ocean >> 16) & 0xff) * 0.8);
+    expect([px[0], px[1], px[2]]).toEqual(rgb(heightColor(10)));
+    expect([px[8], px[9], px[10]]).toEqual(rgb(heightColor(-5)));
     expect([px[12], px[13], px[14], px[15]]).toEqual([0, 0, 0, 255]);
-  });
-
-  it('draws river and lake water over the biome (flag 2), the sea by its biome', () => {
-    const bytes = map([
-      [120, MEADOW, 2],
-      [120, MEADOW, 0],
-    ]);
-    expect(mapColumn(bytes, 2, 0, 0).river).toBe(true);
-    expect(mapColumn(bytes, 2, 1, 0).river).toBe(false);
-    const px = mapPixels(bytes, 2, 8);
-    expect([px[0], px[1], px[2]]).toEqual([
-      (WATER_COLOR >> 16) & 0xff,
-      (WATER_COLOR >> 8) & 0xff,
-      WATER_COLOR & 0xff,
-    ]);
-    const plains = BIOME_COLORS[MEADOW] ?? 0;
-    expect(px[4]).toBe((plains >> 16) & 0xff);
   });
 
   it('zooms from the surroundings out to the whole disc, centred on the player until then', () => {

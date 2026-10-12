@@ -225,14 +225,15 @@ TEST_SUITE("netcode: prediction") {
     CHECK(c.predictor->Velocity().GetZ() > 0.5f);
   }
 
-  TEST_CASE("the debug launch pad knockback replays smoothly at 150 ms RTT") {
-    core::ServerConfig config{.generator_version = core::kGeneratorPlayground};
-    config.spawn = {2.5f, 0.0f, -4.75f};  // slot 0 spawns 1.5 m to the left of this
-    NetSim sim({150, 20, 0.05}, config);
+  TEST_CASE("a server knockback replays smoothly at 150 ms RTT") {
+    NetSim sim({150, 20, 0.05});
     auto& c = sim.Join([](int tick, const SimClient& self) {
       return tick < Ticks(4.0f) ? SteerTo(self, 0.5f, -5.5f) : player::Input{};
     });
-    sim.Step(Ticks(6.0f));
+    sim.Step(Ticks(2.0f));
+    // A server-originated upward kick (an explosion, a hit) while walking: 14 m/s up.
+    sim.server().Knockback(c.player_id, JPH::Vec3(0, 14.0f, 0));
+    sim.Step(Ticks(4.0f));
     const auto knockbacks = std::count_if(c.events.begin(), c.events.end(), [](auto& e) {
       return e.kind == PlayerEventKind::kKnockback;
     });
@@ -264,7 +265,7 @@ TEST_SUITE("netcode: prediction") {
 TEST_CASE("predictor: remote proxy right after the first snapshot") {
   core::JoltRuntime runtime;
   JPH::JobSystemSingleThreaded jobs(JPH::cMaxPhysicsJobs);
-  core::VoxelWorld world(core::GeneratorFor(1));
+  core::VoxelWorld world(PlaygroundGenerator());
   player::PlayerControllerConfig config;
   player::Predictor p(world, jobs, config);
   protocol::PhysicsSnapshot snap;
@@ -281,7 +282,7 @@ TEST_CASE("predictor: remote proxy right after the first snapshot") {
 
 TEST_SUITE("netcode: block edits") {
   TEST_CASE("a block placed by one player blocks another on the server and in its prediction") {
-    core::ServerConfig config{.generator_version = core::kGeneratorPlayground};
+    core::ServerConfig config = NetSim::PlaygroundConfig();
     config.spawn = {20.5, 0.0, 0.5};  // open ground; slot 0 at x 19, slot 1 at x 20
     NetSim sim({100, 10, 0.0}, config);
     bool walk = false;
@@ -353,7 +354,7 @@ TEST_SUITE("netcode: flight policy") {
   }
 
   TEST_CASE("with flight off the server ignores the fly bit") {
-    core::ServerConfig config{.generator_version = core::kGeneratorPlayground};
+    core::ServerConfig config = NetSim::PlaygroundConfig();
     config.flight = core::EditPolicy::kNobody;
     NetSim sim({}, config);
     auto& c = sim.Join(fly_script);

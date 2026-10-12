@@ -12,26 +12,7 @@ export const ATLAS_CELLS = 8;
 export const ATLAS_SIZE = CELL * ATLAS_CELLS;
 
 export type TileName =
-  | 'plain'
-  | 'grass'
-  | 'grassSide'
-  | 'dirt'
-  | 'stone'
-  | 'sand'
-  | 'sandstone'
-  | 'gravel'
-  | 'snow'
-  | 'ice'
-  | 'logSide'
-  | 'logTop'
-  | 'leaves'
-  | 'coalOre'
-  | 'ironOre'
-  | 'goldOre'
-  | 'bedrock'
-  | 'water'
-  | 'ladder'
-  | 'launchPad';
+  'plain' | 'grass' | 'grassSide' | 'dirt' | 'stone' | 'sand' | 'water' | 'ladder';
 export const TILE_ORDER: readonly TileName[] = [
   'plain',
   'grass',
@@ -39,20 +20,8 @@ export const TILE_ORDER: readonly TileName[] = [
   'dirt',
   'stone',
   'sand',
-  'sandstone',
-  'gravel',
-  'snow',
-  'ice',
-  'logSide',
-  'logTop',
-  'leaves',
-  'coalOre',
-  'ironOre',
-  'goldOre',
-  'bedrock',
   'water',
   'ladder',
-  'launchPad',
 ];
 
 export interface TileRect {
@@ -168,14 +137,6 @@ function stone(x: number, y: number): Rgb {
 }
 
 const SAND = rgb(0xeed9a4);
-const SANDSTONE = rgb(0xe0be86);
-const GRAVEL = rgb(0xa3968e);
-const SNOW = rgb(0xfbf8f2);
-const ICE = rgb(0xb4daf0);
-const BARK = rgb(0x7a5236);
-const WOOD = rgb(0xc09a62);
-const LEAVES = rgb(0x6fa83a);
-const LEAVES_HIGH = rgb(0xa9c94a);
 
 function sand(x: number, y: number): Rgb {
   const n = tiledFbm(x, y, 51);
@@ -185,85 +146,8 @@ function sand(x: number, y: number): Rgb {
   return c;
 }
 
-/** Sandstone: sand with horizontal bands (the tile's rows wrap, so bands tile seamlessly). */
-function sandstone(x: number, y: number): Rgb {
-  const n = tiledFbm(x, y, 61);
-  const band = tiledNoise(0, y, 8, 3, 62);
-  return scale(SANDSTONE, 0.78 + 0.18 * n + 0.12 * band);
-}
-
-function gravel(x: number, y: number): Rgb {
-  // Pebbles: coarse value noise quantised into light and dark stones.
-  const pebble = tiledNoise(x, y, 8, 1, 71);
-  const n = tiledFbm(x, y, 72);
-  return scale(GRAVEL, (pebble > 0.55 ? 1.12 : pebble < 0.4 ? 0.78 : 0.95) * (0.85 + 0.25 * n));
-}
-
-/** Ice: pale blue with fine white cracks and a soft sheen. */
-function ice(x: number, y: number): Rgb {
-  const n = tiledFbm(x, y, 181);
-  const crack = tiledNoise(x, y, 8, 4, 182);
-  let c = scale(ICE, 0.9 + 0.14 * n);
-  if (Math.abs(crack - 0.5) < 0.035) c = mix(c, [240, 248, 255], 0.7); // a white crack
-  return c;
-}
-
-function snow(x: number, y: number): Rgb {
-  const n = tiledFbm(x, y, 81);
-  return scale(SNOW, 0.92 + 0.08 * n);
-}
-
-/** Bark: vertical streaks (noise varying along x only, stretched along y). */
-function logSide(x: number, y: number): Rgb {
-  const streak = tiledNoise(x, y * 0.125, 16, 4, 91);
-  const n = tiledFbm(x, y, 92);
-  return scale(BARK, 0.7 + 0.35 * streak + 0.15 * n);
-}
-
-/** Cut wood with growth rings around the tile centre, and a bark rim. */
-function logTop(x: number, y: number): Rgb {
-  const dx = x - TILE / 2 + 0.5;
-  const dy = y - TILE / 2 + 0.5;
-  const r = Math.max(Math.abs(dx), Math.abs(dy));
-  if (r > TILE / 2 - 3) return logSide(x, y);
-  const ring = 0.5 + 0.5 * Math.cos(Math.hypot(dx, dy) * 1.3);
-  return scale(WOOD, 0.8 + 0.15 * ring + 0.1 * tiledFbm(x, y, 93));
-}
-
-function leaves(x: number, y: number): Rgb {
-  const n = tiledFbm(x, y, 101);
-  const gap = hash(x, y, 2, 102);
-  let c = mix(scale(LEAVES, 0.95), LEAVES_HIGH, Math.max(0, n - 0.3) * 1.5);
-  if (gap > 0.88) c = scale(c, 0.7); // darker gaps between leaves
-  return c;
-}
-
-/** Stone with clusters of a mineral colour. */
-function ore(color: number, seed: number): (x: number, y: number) => Rgb {
-  const mineral = rgb(color);
-  return (x, y) => {
-    const cluster = tiledNoise(x, y, 8, 0, seed);
-    const speck = hash(x, y, 6, seed + 1);
-    if (cluster > 0.62 && speck > 0.25) return scale(mineral, 0.8 + 0.3 * speck);
-    return stone(x, y);
-  };
-}
-
-const BEDROCK = rgb(0x4e4858);
 const WATER = rgb(0x3fb2d6);
 const RAIL = rgb(0xa0703a);
-const LAUNCH = rgb(0xe8792a);
-
-/** Bedrock: dark, high-contrast rock with black cracks and pale flecks. */
-function bedrock(x: number, y: number): Rgb {
-  const n = tiledFbm(x, y, 141);
-  const crack = tiledNoise(x, y, 8, 3, 142);
-  const fleck = hash(x, y, 4, 143);
-  let c = scale(BEDROCK, 0.55 + 0.7 * n);
-  if (Math.abs(crack - 0.5) < 0.04) c = scale(c, 0.35);
-  if (fleck > 0.95) c = scale(c, 1.5);
-  return c;
-}
 
 /** Water: soft ripples (the face's opacity makes it translucent). */
 function water(x: number, y: number): Rgb {
@@ -282,19 +166,6 @@ function ladder(x: number, y: number): Rgb {
   return scale(RAIL, 0.3 + 0.08 * tiledFbm(x, y, 162));
 }
 
-/** Debug launch pad: orange plate with a dark ring and an up arrow. */
-function launchPad(x: number, y: number): Rgb {
-  const dx = x - TILE / 2 + 0.5;
-  const dy = y - TILE / 2 + 0.5;
-  const r = Math.hypot(dx, dy);
-  const base = scale(LAUNCH, 0.85 + 0.2 * tiledFbm(x, y, 171));
-  const arrowHead = y >= 16 && y <= 25 && Math.abs(dx) <= 25 - y;
-  const arrowShaft = y >= 7 && y < 16 && Math.abs(dx) <= 2;
-  if (arrowHead || arrowShaft) return [245, 240, 230];
-  if (r > 12 && r < 14.5) return scale(base, 0.45);
-  return base;
-}
-
 const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   plain: () => [255, 255, 255],
   grass,
@@ -302,33 +173,8 @@ const PAINTERS: Record<TileName, (x: number, y: number) => Rgb> = {
   dirt,
   stone,
   sand,
-  sandstone,
-  gravel,
-  snow,
-  ice,
-  logSide,
-  logTop,
-  leaves,
-  coalOre: ore(0x26262a, 111),
-  ironOre: ore(0xc8926a, 121),
-  goldOre: ore(0xf2c230, 131),
-  bedrock,
   water,
   ladder,
-  launchPad,
-};
-
-/**
- * How much of a texel the biome tint colours (0..1; WORLD_GENERATION.md §3.7): the grass top and the
- * leaves entirely, the grass side's fringe but not its dirt. Stored in the atlas as 255 − 255 × mask
- * in the alpha channel — opaque (255) is untinted, the opaque passes ignore alpha — and read by the
- * chunk shader (three/ThreeRenderer.ts).
- */
-export const TINT_MASKS: Partial<Record<TileName, (x: number, y: number) => number>> = {
-  grass: () => 1,
-  leaves: () => 1,
-  // The fringe is the top `depth` texels (see grassSide).
-  grassSide: (x, y) => (TILE - 1 - y < 4 + 5 * tiledNoise(x, 0, 8, 5, 31) ? 1 : 0),
 };
 
 export interface Atlas {
@@ -363,7 +209,7 @@ export function buildAtlas(): Atlas {
         data[o] = Math.round(Math.min(255, Math.max(0, r)));
         data[o + 1] = Math.round(Math.min(255, Math.max(0, g)));
         data[o + 2] = Math.round(Math.min(255, Math.max(0, b)));
-        data[o + 3] = 255 - Math.round(255 * (TINT_MASKS[name]?.(tx, ty) ?? 0));
+        data[o + 3] = 255;
       }
     }
   });

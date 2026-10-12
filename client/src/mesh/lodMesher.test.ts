@@ -3,9 +3,12 @@ import { LOD_PAD, LOD_VOLUME, lodCell } from '../lod/grid';
 import { faceTint } from '../render/look';
 import { averageTileColor } from '../render/textures';
 import { stateId } from '../world/blocks';
-import { lodColor, LodTint, meshSection, mirrorRows, SURFACE_STRIDE } from './lodMesher';
+import { lodColor, meshSection, mirrorRows, SURFACE_STRIDE } from './lodMesher';
 
 const WATER = stateId('dwell:water');
+const GRASS = stateId('dwell:grass');
+const SAND = stateId('dwell:sand');
+const STONE = stateId('dwell:stone');
 const quads = (m: { indices: Uint32Array }): number => m.indices.length / 6;
 
 describe('LOD section mesher: face B (BIFACIAL_WORLD.md §5)', () => {
@@ -13,7 +16,7 @@ describe('LOD section mesher: face B (BIFACIAL_WORLD.md §5)', () => {
   const slab = (lo: number, hi: number): Uint16Array => {
     const cells = new Uint16Array(LOD_VOLUME);
     for (let y = lo; y <= hi; y++) {
-      for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) cells[lodCell(x, y, z)] = 4;
+      for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) cells[lodCell(x, y, z)] = GRASS;
     }
     return cells;
   };
@@ -87,8 +90,8 @@ describe('LOD section mesher: face B (BIFACIAL_WORLD.md §5)', () => {
     // A floor in rows −1..0 (a skirt on its −Y border row hides against the apron): the skirt a
     // mirrored section shows on its bottom is the original's top.
     const rim = new Uint16Array(LOD_VOLUME);
-    for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) rim[lodCell(x, 31, z)] = 4;
-    rim[lodCell(5, 32, 5)] = 4; // solid above the top row: the −Y border face of row 31 is hidden
+    for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) rim[lodCell(x, 31, z)] = GRASS;
+    rim[lodCell(5, 32, 5)] = GRASS; // solid above the top row: the −Y border face of row 31 is hidden
     const m = meshSection(rim, { mirror: true });
     const plain = meshSection(mirrorRows(rim));
     expect(quads(m.skirts[2] ?? m.opaque)).toBe(quads(plain.skirts[3] ?? m.opaque));
@@ -99,7 +102,7 @@ describe('LOD section mesher: face B (BIFACIAL_WORLD.md §5)', () => {
 describe('LOD section mesher (§6.6)', () => {
   it('draws a lone cell as six faces, in cell units', () => {
     const cells = new Uint16Array(LOD_VOLUME);
-    cells[lodCell(3, 4, 5)] = 2;
+    cells[lodCell(3, 4, 5)] = STONE;
     const m = meshSection(cells);
     expect(quads(m.opaque)).toBe(6);
     expect(Math.max(...m.opaque.positions)).toBe(6);
@@ -109,7 +112,7 @@ describe('LOD section mesher (§6.6)', () => {
   it('merges a floor, and puts border faces the apron hides into per-side skirts', () => {
     // A 32 × 32 floor at y = 0 with its neighbours' floors (the apron) around it.
     const cells = new Uint16Array(LOD_VOLUME);
-    for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) cells[lodCell(x, 0, z)] = 4;
+    for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) cells[lodCell(x, 0, z)] = GRASS;
     const m = meshSection(cells);
     // Top and bottom each one merged quad; the sides are all hidden by the apron.
     expect(quads(m.opaque)).toBe(2);
@@ -117,7 +120,7 @@ describe('LOD section mesher (§6.6)', () => {
     expect(quads(m.skirts[2] ?? m.opaque) + quads(m.skirts[3] ?? m.opaque)).toBe(0);
     // Without the apron the sides are ordinary faces.
     const alone = new Uint16Array(LOD_VOLUME);
-    for (let z = 0; z < 32; z++) for (let x = 0; x < 32; x++) alone[lodCell(x, 0, z)] = 4;
+    for (let z = 0; z < 32; z++) for (let x = 0; x < 32; x++) alone[lodCell(x, 0, z)] = GRASS;
     const a = meshSection(alone);
     expect(quads(a.opaque)).toBe(6);
     expect(a.skirts.every((s) => quads(s) === 0)).toBe(true);
@@ -127,7 +130,7 @@ describe('LOD section mesher (§6.6)', () => {
     const cells = new Uint16Array(LOD_VOLUME);
     for (let z = -1; z <= 32; z++) {
       for (let x = -1; x <= 32; x++) {
-        cells[lodCell(x, 0, z)] = 12; // sand
+        cells[lodCell(x, 0, z)] = SAND; // sand
         cells[lodCell(x, 1, z)] = WATER; // water
       }
     }
@@ -143,7 +146,7 @@ describe('LOD section mesher (§6.6)', () => {
   it('writes linear vertex colours: the textured chunks are sRGB, decoded before lighting', () => {
     // Regression (phone playtest): sRGB bytes used as linear colours drew distant land paler.
     const cells = new Uint16Array(LOD_VOLUME);
-    cells[lodCell(3, 4, 5)] = 4; // grass
+    cells[lodCell(3, 4, 5)] = GRASS; // grass
     const m = meshSection(cells);
     const n = m.opaque.normals;
     let top = -1;
@@ -171,9 +174,9 @@ describe('LOD section mesher (§6.6)', () => {
     const col = (x: number, z: number) => (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
     for (let z = -1; z <= 32; z++) {
       for (let x = -1; x <= 32; x++) {
-        cells[lodCell(x, 0, z)] = 4; // grass, one cell thick
+        cells[lodCell(x, 0, z)] = GRASS; // grass, one cell thick
         surface[col(x, z)] = x < 16 ? 0.5 : 1; // a terrace at half height, then the full cell
-        surface[col(x, z) + 1] = 4;
+        surface[col(x, z) + 1] = GRASS;
         surface[col(x, z) + 2] = 1; // valid
       }
     }
@@ -199,11 +202,11 @@ describe('LOD section mesher (§6.6)', () => {
     const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
     for (let z = -1; z <= 32; z++) {
       for (let x = -1; x <= 32; x++) {
-        cells[lodCell(x, -1, z)] = 12; // sand below
+        cells[lodCell(x, -1, z)] = SAND; // sand below
         cells[lodCell(x, 0, z)] = WATER; // water (the cell holds the whole sea)
         const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
         surface[c] = 0.5;
-        surface[c + 1] = 12; // a sand floor
+        surface[c + 1] = SAND; // a sand floor
         surface[c + 2] = 1 | 2; // valid, wet
       }
     }
@@ -256,7 +259,7 @@ describe('LOD section mesher (§6.6)', () => {
       const cells = new Uint16Array(LOD_VOLUME);
       for (let z = -1; z <= 32; z++)
         for (let x = -1; x <= 32; x++) {
-          cells[lodCell(x, -1, z)] = 12;
+          cells[lodCell(x, -1, z)] = SAND;
           cells[lodCell(x, 0, z)] = WATER;
         }
       const surface = surfaceOf(() => ({ h: 0.375, m: 12, wet: true, water: 0.5625 }));
@@ -270,7 +273,7 @@ describe('LOD section mesher (§6.6)', () => {
       const cells = new Uint16Array(LOD_VOLUME);
       for (let z = -1; z <= 32; z++)
         for (let x = -1; x <= 32; x++) {
-          cells[lodCell(x, 0, z)] = 12;
+          cells[lodCell(x, 0, z)] = SAND;
           cells[lodCell(x, 1, z)] = WATER;
           cells[lodCell(x, 2, z)] = WATER;
         }
@@ -284,7 +287,7 @@ describe('LOD section mesher (§6.6)', () => {
       const cells = new Uint16Array(LOD_VOLUME);
       for (let z = -1; z <= 32; z++)
         for (let x = -1; x <= 32; x++) {
-          cells[lodCell(x, -1, z)] = 12;
+          cells[lodCell(x, -1, z)] = SAND;
           cells[lodCell(x, 0, z)] = WATER;
         }
       const surface = surfaceOf(() => ({ h: 0.28, m: 12, wet: true, water: 0.3 }));
@@ -303,7 +306,7 @@ describe('LOD section mesher (§6.6)', () => {
       const cells = new Uint16Array(LOD_VOLUME);
       for (let z = -1; z <= 32; z++)
         for (let x = -1; x <= 32; x++) {
-          cells[lodCell(x, 0, z)] = 12;
+          cells[lodCell(x, 0, z)] = SAND;
           if (x < 16) cells[lodCell(x, 1, z)] = WATER;
         }
       const surface = surfaceOf((x) =>
@@ -321,7 +324,6 @@ describe('LOD section mesher (§6.6)', () => {
     // gradient as a share of the surface (5 % at 0.2, 15 % at 0.5, 40 % on the steepest cells) —
     // while distant cells drew their slopes in the top colour alone. Tops are tinted toward the
     // material's side colour by the column's gradient.
-    const GRASS = 4;
     const topColours = (gradient: number): Set<string> => {
       // A ramp along x rising `gradient` cells per cell, grass on stone, surfaces given.
       const cells = new Uint16Array(LOD_VOLUME);
@@ -330,14 +332,14 @@ describe('LOD section mesher (§6.6)', () => {
         for (let x = -1; x <= 32; x++) {
           const h = 4 + gradient * (x + 1);
           const top = Math.floor(h);
-          for (let y = -1; y < top; y++) cells[lodCell(x, y, z)] = 2;
+          for (let y = -1; y < top; y++) cells[lodCell(x, y, z)] = STONE;
           cells[lodCell(x, top, z)] = GRASS;
           surface.set(
             [Math.min(h, top + 1), GRASS, 1, 0],
             (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE,
           );
         }
-      const m = meshSection(cells, { surface, slopes: true });
+      const m = meshSection(cells, { surface });
       const out = new Set<string>();
       const { normals: n, colors: c } = m.opaque;
       for (let v = 0; v < n.length / 3; v++)
@@ -376,16 +378,16 @@ describe('LOD section mesher (§6.6)', () => {
       for (let z = -1; z <= 32; z++)
         for (let x = -1; x <= 32; x++) {
           const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
-          cells[lodCell(x, -1, z)] = 12;
+          cells[lodCell(x, -1, z)] = SAND;
           if (x < 16) {
             cells[lodCell(x, 0, z)] = WATER; // the river: floor 118 m, water 121 m
-            surface.set([0.375, 12, 1 | 2, LEVEL], c);
+            surface.set([0.375, SAND, 1 | 2, LEVEL], c);
           } else {
-            cells[lodCell(x, 0, z)] = 12; // the bank: sand at h
-            surface.set([h, 12, 1, 0], c);
+            cells[lodCell(x, 0, z)] = SAND; // the bank: sand at h
+            surface.set([h, SAND, 1, 0], c);
           }
         }
-      const m = meshSection(cells, { surface, waterDrop, slopes: true });
+      const m = meshSection(cells, { surface, waterDrop });
       // The highest upward face over the centre of the column beside the river (16.5, 10.5).
       let top = -Infinity;
       const { positions: p, normals: n, indices } = m.opaque;
@@ -422,12 +424,12 @@ describe('LOD section mesher (§6.6)', () => {
           if (x < 16) {
             cells[lodCell(x, -1, z)] = WATER; // the sea's top cell, below the section
           } else {
-            cells[lodCell(x, -1, z)] = 12;
-            cells[lodCell(x, 0, z)] = 12; // the beach
-            surface.set([0.05, 12, 1, 0], (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE);
+            cells[lodCell(x, -1, z)] = SAND;
+            cells[lodCell(x, 0, z)] = SAND; // the beach
+            surface.set([0.05, SAND, 1, 0], (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE);
           }
         }
-      const m = meshSection(cells, { surface, waterDrop, slopes: true });
+      const m = meshSection(cells, { surface, waterDrop });
       let top = -Infinity;
       const { positions: p, normals: n, indices } = m.opaque;
       for (let t = 0; t < indices.length; t += 3) {
@@ -467,11 +469,11 @@ describe('LOD section mesher (§6.6)', () => {
       const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
       for (let z = -1; z <= 32; z++) {
         for (let x = -1; x <= 32; x++) {
-          cells[lodCell(x, 0, z)] = 12; // sand below
+          cells[lodCell(x, 0, z)] = SAND; // sand below
           cells[lodCell(x, 1, z)] = WATER; // water
           const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
           surface[c] = 1 + floor;
-          surface[c + 1] = 4; // a floor of another material than the cell below
+          surface[c + 1] = GRASS; // a floor of another material than the cell below
           surface[c + 2] = 1 | 2; // valid, wet
         }
       }
@@ -493,10 +495,10 @@ describe('LOD section mesher (§6.6)', () => {
     const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
     const cells = new Uint16Array(LOD_VOLUME);
     const set = (x: number, z: number, top: number, h: number) => {
-      for (let y = -1; y <= top; y++) cells[lodCell(x, y, z)] = 4;
+      for (let y = -1; y <= top; y++) cells[lodCell(x, y, z)] = GRASS;
       const c = (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
       surface[c] = h;
-      surface[c + 1] = 4;
+      surface[c + 1] = GRASS;
       surface[c + 2] = 1;
     };
     for (let z = -1; z <= 32; z++) {
@@ -528,224 +530,5 @@ describe('LOD section mesher (§6.6)', () => {
       for (let x = 0; x <= 32; x++) set(x, z, 0, 0.5);
     }
     expect(covered(meshSection(cells, { surface }), -1)).toEqual([0, 0.5]);
-  });
-
-  describe('slopes (SLOPE_BLOCKS.md §3.2)', () => {
-    /** A section whose column x has `top(x, z)` solid cells (y = 0 … top − 1) of grass. */
-    function terrain(top: (x: number, z: number) => number): Uint16Array {
-      const cells = new Uint16Array(LOD_VOLUME);
-      for (let z = -1; z <= 32; z++)
-        for (let x = -1; x <= 32; x++)
-          for (let y = 0; y < top(x, z); y++) cells[lodCell(x, y, z)] = 4;
-      return cells;
-    }
-
-    /** Triangles of a mesh as (vertices, unit normal). */
-    function triangles(m: { positions: Float32Array; indices: Uint32Array }) {
-      const out: { v: number[][]; n: number[] }[] = [];
-      for (let t = 0; t < m.indices.length / 3; t++) {
-        const v = [0, 1, 2].map((k) => {
-          const i = m.indices[t * 3 + k] ?? 0;
-          return [
-            m.positions[i * 3] ?? 0,
-            m.positions[i * 3 + 1] ?? 0,
-            m.positions[i * 3 + 2] ?? 0,
-          ];
-        });
-        const e1 = v[1]!.map((c, i) => c - (v[0]?.[i] ?? 0)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
-        const e2 = v[2]!.map((c, i) => c - (v[0]?.[i] ?? 0)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
-        const n = [
-          (e1[1] ?? 0) * (e2[2] ?? 0) - (e1[2] ?? 0) * (e2[1] ?? 0),
-          (e1[2] ?? 0) * (e2[0] ?? 0) - (e1[0] ?? 0) * (e2[2] ?? 0),
-          (e1[0] ?? 0) * (e2[1] ?? 0) - (e1[1] ?? 0) * (e2[0] ?? 0),
-        ];
-        const len = Math.hypot(...n);
-        out.push({ v, n: len > 0 ? n.map((c) => c / len) : n });
-      }
-      return out;
-    }
-
-    /** The mesh's top surface height at (x, z): the highest upward triangle over the point. */
-    function heightAt(m: { positions: Float32Array; indices: Uint32Array }, x: number, z: number) {
-      let best = -Infinity;
-      for (const { v, n } of triangles(m)) {
-        if ((n[1] ?? 0) < 0.1) continue;
-        const [a, b, c] = v as [number[], number[], number[]];
-        const d =
-          ((b[2] ?? 0) - (c[2] ?? 0)) * ((a[0] ?? 0) - (c[0] ?? 0)) +
-          ((c[0] ?? 0) - (b[0] ?? 0)) * ((a[2] ?? 0) - (c[2] ?? 0));
-        if (Math.abs(d) < 1e-9) continue;
-        const l1 =
-          (((b[2] ?? 0) - (c[2] ?? 0)) * (x - (c[0] ?? 0)) +
-            ((c[0] ?? 0) - (b[0] ?? 0)) * (z - (c[2] ?? 0))) /
-          d;
-        const l2 =
-          (((c[2] ?? 0) - (a[2] ?? 0)) * (x - (c[0] ?? 0)) +
-            ((a[0] ?? 0) - (c[0] ?? 0)) * (z - (c[2] ?? 0))) /
-          d;
-        const l3 = 1 - l1 - l2;
-        if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
-        best = Math.max(best, l1 * (a[1] ?? 0) + l2 * (b[1] ?? 0) + l3 * (c[1] ?? 0));
-      }
-      return best;
-    }
-
-    it('draws a staircase of cells as sloped facets, within half a cell of the line it climbs', () => {
-      // Column x holds top(x) cells: 5, 6, 7, 8 along +x (x 10 … 13), flat 5 before and 8 after: a
-      // ramp rising one cell per column, drawn without section data (as a modified, downsampled
-      // section is).
-      const top = (x: number) => (x < 10 ? 5 : x > 13 ? 8 : x - 5);
-      const cells = terrain((x) => top(x));
-      const plain = meshSection(cells);
-      const sloped = meshSection(cells, { slopes: true });
-      // Tilted faces rise towards +x (their normals lean to −x), none lean sideways.
-      const tilted = triangles(sloped.opaque).filter(
-        (t) => (t.n[1] ?? 0) > 0.5 && (t.n[1] ?? 0) < 0.99,
-      );
-      expect(tilted.length).toBeGreaterThan(0);
-      for (const t of tilted) {
-        expect(t.n[0]).toBeLessThan(-0.2);
-        expect(t.n[2]).toBeCloseTo(0, 3);
-      }
-      // A column's top is a piece within its own cell, so the surface stays within half a cell of
-      // the line through the column tops, y = x + 0.5 − 5.5.
-      for (let x = 11; x <= 12; x++) {
-        const h = heightAt(sloped.opaque, x + 0.5, 16.5);
-        expect(Math.abs(h - (x + 0.5 - 5.5))).toBeLessThanOrEqual(0.5);
-      }
-      expect(heightAt(sloped.opaque, 5.5, 16.5)).toBeCloseTo(5, 5); // the flat before is flat
-      expect(heightAt(sloped.opaque, 20.5, 16.5)).toBeCloseTo(8, 5);
-      // The terraced version is flat on each column, a half cell off the line in the middle of one.
-      const flat = heightAt(plain.opaque, 11.5, 16.5);
-      const steep = heightAt(plain.opaque, 11.1, 16.5);
-      expect(flat).toBeCloseTo(steep, 5);
-      expect(heightAt(sloped.opaque, 11.1, 16.5)).not.toBeCloseTo(
-        heightAt(sloped.opaque, 11.9, 16.5),
-        2,
-      );
-    });
-
-    it('leaves flat ground exactly as it was', () => {
-      const cells = terrain(() => 3);
-      const plain = meshSection(cells);
-      const sloped = meshSection(cells, { slopes: true });
-      expect(sloped.opaque.indices.length).toBe(plain.opaque.indices.length);
-      expect(Array.from(sloped.opaque.positions)).toEqual(Array.from(plain.opaque.positions));
-    });
-
-    it('keeps cliffs: a three-cell step stays a wall', () => {
-      const cells = terrain((x) => (x < 16 ? 2 : 5));
-      const m = meshSection(cells, { slopes: true });
-      const tilted = triangles(m.opaque).filter((t) => (t.n[1] ?? 0) > 0.1 && (t.n[1] ?? 0) < 0.99);
-      expect(tilted).toHaveLength(0);
-      // The wall faces −x at x = 16 from the low top up to the high one.
-      let wall = 0;
-      for (const t of triangles(m.opaque)) {
-        if ((t.n[0] ?? 0) < -0.99 && t.v.every((p) => p[0] === 16))
-          wall = Math.max(wall, ...t.v.map((p) => p[1] ?? 0));
-      }
-      expect(wall).toBe(5);
-    });
-
-    it("turns generated sections' surfaces into slopes too, with surface heights", () => {
-      // A gentle ground: the surface rises 0.5 cell per column across x 8 … 20, in cell 2.
-      const cells = terrain(() => 3);
-      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
-      const col = (x: number, z: number) => (x + 1 + LOD_PAD * (z + 1)) * SURFACE_STRIDE;
-      for (let z = -1; z <= 32; z++)
-        for (let x = -1; x <= 32; x++) {
-          const h = 2 + Math.min(1, Math.max(0, (x - 8) / 12));
-          surface[col(x, z)] = h;
-          surface[col(x, z) + 1] = 4;
-          surface[col(x, z) + 2] = 1;
-        }
-      const m = meshSection(cells, { surface, slopes: true });
-      for (let x = 9; x <= 19; x++) {
-        const h = heightAt(m.opaque, x + 0.5, 16.5);
-        const line = 2 + (x + 0.5 - 8.5) / 12; // the surface at the column's middle
-        expect(Math.abs(h - line)).toBeLessThanOrEqual(0.5);
-      }
-    });
-  });
-
-  describe('biome tint', () => {
-    const GRASS = stateId('dwell:grass');
-    const pack = (r: number, g: number, b: number): number => (r << 16) | (g << 8) | b;
-    /** A surface array whose every column carries the tints (and no surface of its own). */
-    function tinted(grass: number, foliage: number): Float32Array {
-      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
-      for (let c = 0; c < LOD_PAD * LOD_PAD; c++) {
-        surface[c * SURFACE_STRIDE + 4] = grass;
-        surface[c * SURFACE_STRIDE + 5] = foliage;
-      }
-      return surface;
-    }
-    const floor = (m: number): Uint16Array => {
-      const cells = new Uint16Array(LOD_VOLUME);
-      for (let z = 0; z < 32; z++) for (let x = 0; x < 32; x++) cells[lodCell(x, 0, z)] = m;
-      return cells;
-    };
-
-    it('multiplies a grass top by the column tints and leaves other materials alone', () => {
-      const surface = tinted(pack(128, 64, 32), pack(64, 64, 64));
-      const grass = meshSection(floor(GRASS), { surface });
-      const plain = meshSection(floor(GRASS));
-      const stone = meshSection(floor(2), { surface });
-      const stoneNone = meshSection(floor(2));
-      // The top's colour is the untinted one times (2, 1, 0.5); stone is as without tints.
-      expect(grass.opaque.colors.length).toBe(plain.opaque.colors.length);
-      for (let i = 0; i < grass.opaque.normals.length; i += 3) {
-        if (grass.opaque.normals[i + 1] !== 1) continue; // the top face
-        expect(grass.opaque.colors[i] ?? 0).toBeCloseTo((plain.opaque.colors[i] ?? 0) * 2, 5);
-        expect(grass.opaque.colors[i + 1] ?? 0).toBeCloseTo(plain.opaque.colors[i + 1] ?? 0, 5);
-        expect(grass.opaque.colors[i + 2] ?? 0).toBeCloseTo(
-          (plain.opaque.colors[i + 2] ?? 0) / 2,
-          5,
-        );
-      }
-      expect([...stone.opaque.colors]).toEqual([...stoneNone.opaque.colors]);
-    });
-
-    it('takes the tints from `tint` when given, whatever the surface', () => {
-      const tint = tinted(pack(128, 64, 32), pack(64, 64, 64));
-      const cells = floor(GRASS);
-      const viaTint = meshSection(cells, { surface: null, tint });
-      const viaSurface = meshSection(cells, { surface: tint });
-      expect([...viaTint.opaque.colors]).toEqual([...viaSurface.opaque.colors]);
-      expect([...viaTint.opaque.colors]).not.toEqual([...meshSection(cells).opaque.colors]);
-      // An explicit null tint overrides the surface's.
-      expect([...meshSection(cells, { surface: tint, tint: null }).opaque.colors]).toEqual([
-        ...meshSection(cells).opaque.colors,
-      ]);
-    });
-
-    it('does nothing without surface data, or for columns with no tint', () => {
-      const cells = floor(GRASS);
-      expect([...meshSection(cells, { surface: null }).opaque.colors]).toEqual([
-        ...meshSection(cells).opaque.colors,
-      ]);
-      const none = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
-      expect([...meshSection(cells, { surface: none }).opaque.colors]).toEqual([
-        ...meshSection(cells).opaque.colors,
-      ]);
-    });
-
-    it('blends between columns: a vertex between two biomes takes the mean', () => {
-      const surface = new Float32Array(LOD_PAD * LOD_PAD * SURFACE_STRIDE);
-      for (let z = -1; z <= 32; z++)
-        for (let x = -1; x <= 32; x++) {
-          const c = x + 1 + LOD_PAD * (z + 1);
-          surface[c * SURFACE_STRIDE + 4] = x < 16 ? pack(64, 64, 64) : pack(128, 128, 128);
-        }
-      const t = new LodTint(surface);
-      const at = (x: number): number => {
-        const rgb = [1, 1, 1];
-        t.apply('grass', x, 10, rgb);
-        return rgb[0] ?? 0;
-      };
-      expect(at(8)).toBeCloseTo(1, 5);
-      expect(at(24)).toBeCloseTo(2, 5);
-      expect(at(16)).toBeCloseTo(1.5, 5); // the border between columns 15 and 16
-    });
   });
 });

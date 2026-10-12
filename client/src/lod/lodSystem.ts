@@ -138,8 +138,6 @@ interface Node {
   cells: Uint16Array<ArrayBuffer> | null;
   /** Generated sections: each column's exact surface (worldgen GeneratedSection.surface). */
   surface: Float32Array<ArrayBuffer> | null;
-  /** Level ≥ 7 only: face B's column surfaces (tints), which the section's rows may hold too. */
-  surfaceB: Float32Array<ArrayBuffer> | null;
   meshed: boolean;
   /** Needs a (new) mesh: its content or a neighbour's border changed. */
   remesh: boolean;
@@ -748,7 +746,6 @@ export class LodSystem {
         meshing: false,
         cells: null,
         surface: null,
-        surfaceB: null,
         meshed: false,
         remesh: false,
         bytes: 0,
@@ -919,14 +916,12 @@ export class LodSystem {
         n.generating = false;
         if (n.token !== token || n.modified || this.nodes.get(n.id) !== n) return;
         this.setCells(n, s.cells);
-        // A face-B section's surfaces are face-local, those of its mirror image.
-        if (n.coord[0] > MAX_ALIGNED_LEVEL) {
-          // May hold rows of both faces: meshed for the viewer's face (see mesh).
-          n.surface = s.surface ?? null;
-          n.surfaceB = s.surfaceB ?? null;
-        } else {
-          n.surface = (isFaceBSection(n.coord) ? s.surfaceB : s.surface) ?? null;
-        }
+        // A face-B section's surfaces are face-local, those of its mirror image. A section that
+        // may hold rows of both faces (level ≥ 7) keeps face A's: it is meshed for the viewer's
+        // face, without surfaces on face B (see mesh).
+        n.surface =
+          (n.coord[0] <= MAX_ALIGNED_LEVEL && isFaceBSection(n.coord) ? s.surfaceB : s.surface) ??
+          null;
         n.remesh = true;
       },
       () => {
@@ -946,16 +941,13 @@ export class LodSystem {
     const token = ++this.token;
     n.token = token;
     // Level ≥ 7 sections may hold rows of both faces: the other face's rows become stone (nothing
-    // is drawn against stone), and the tints are the viewer's face's.
+    // is drawn against stone).
     const both = n.coord[0] > MAX_ALIGNED_LEVEL && !this.nearRim;
     if (both) this.blankOtherFace(n, cells);
     const viewerB = both && this.viewFace === -1;
     const options = {
       surface: viewerB ? null : this.surfaceInCells(n),
-      ...(both ? { tint: viewerB ? n.surfaceB : n.surface } : {}),
       waterDrop: CHUNK_WATER_DROP_M / cellSize(n.coord[0]),
-      // Distant terrain as facets, not terraces (SLOPE_BLOCKS.md §3.2), at every level.
-      slopes: true,
       // Face B's terrain faces down: meshed as its mirror image, turned back (lodMesher.ts).
       mirror: isFaceBSection(n.coord),
     };
@@ -986,10 +978,7 @@ export class LodSystem {
   private setCells(n: Node, cells: Uint16Array<ArrayBuffer> | null): void {
     this.cacheBytes += (cells?.byteLength ?? 0) - (n.cells?.byteLength ?? 0);
     n.cells = cells;
-    if (!cells) {
-      n.surface = null;
-      n.surfaceB = null;
-    }
+    if (!cells) n.surface = null;
   }
 
   /** The section's column surfaces with heights in cells from its bottom (the mesher's units). */

@@ -12,8 +12,8 @@
 #include "dwell/core/blocks.gen.h"
 #include "dwell/protocol/constants.gen.h"
 
-// Voxel world storage (ARCHITECTURE.md §6.1): materials, 32³ chunks, the flat test world and the
-// playground; the procedural terrain generator lives in dwell/worldgen (§6.3).
+// Voxel world storage (ARCHITECTURE.md §6.1): materials, 32³ chunks and the flat test world; the
+// procedural terrain generator lives in dwell/worldgen (§6.3).
 namespace dwell::core {
 
 // World bounds and terrain constants (§6.3, §7.4). The world is bifacial (BIFACIAL_WORLD.md): face
@@ -23,9 +23,6 @@ namespace dwell::core {
 inline constexpr int kMidplaneY = protocol::kMidplaneY;  // the halfway plane: face A starts here
 inline constexpr int kWorldBottomY = protocol::kWorldBottomY;  // face B's lowest voxel row
 inline constexpr int kWorldMaxY = protocol::kWorldMaxY;        // generated terrain stays below this
-// Layers of the flat and playground test worlds' floor at the bottom of face A (generated terrain
-// has none: its core is ordinary rock).
-inline constexpr int kBedrockLayers = 4;
 inline constexpr int kSeaLevel = protocol::kSeaLevel;  // terrain: water fills open space below
 inline constexpr int kWorldRadius = protocol::kWorldRadius;  // world disc radius (m); beyond: void
 
@@ -91,26 +88,19 @@ using ChunkGenerator = std::function<void(const ChunkCoord&, Chunk&)>;
 // them as payload-free `Air`, and a generated world reads them as air without storing them.
 using AirChunkTest = std::function<bool(const ChunkCoord&)>;
 
-// Flat test world: bedrock below WORLD_MIN_Y + 4, stone, three layers of dirt, and grass whose top
-// face is at y = 0.
+// Flat test world: stone from the midplane up (face A's core, ordinary rock), three layers of
+// dirt, and grass whose top face is at y = 0.
 void GenerateFlatChunk(const ChunkCoord& coord, Chunk& chunk);
 
 // All air (tests build their geometry voxel by voxel).
 void GenerateEmptyChunk(const ChunkCoord& coord, Chunk& chunk);
 
-// The flat world plus a small movement playground near the spawn (generator version 1, Phase 2):
-// slab and block steps, a 1×2 doorway, a 1-tall crawlspace, a ladder to a ledge, a water pool and
-// a launch pad. See PlaygroundFeatures() for positions.
-void GeneratePlaygroundChunk(const ChunkCoord& coord, Chunk& chunk);
-
-// Generator versions announced in Welcome (§6.3): 0 = flat test world, 1 = playground,
-// 8 = procedural terrain (worldgen::TerrainGenerator, uses the world seed; 2 was the
-// pre-planet-scale terrain, 3 the terrain before super tall massifs and 4 the terrain before
-// slopes, all retired). Unknown
-// versions fall back to the flat world. Bump the terrain version for any change that alters its
+// Generator versions announced in Welcome (§6.3): 0 = flat test world, 8 = procedural terrain
+// (worldgen::TerrainGenerator, uses the world seed; 1 was the movement playground, now a structure
+// file the controller tests load, and 2–4 earlier terrains, all retired). Unknown versions fall
+// back to the flat world. Bump the terrain version for any change that alters its
 // output.
 inline constexpr std::uint32_t kGeneratorFlat = 0;
-inline constexpr std::uint32_t kGeneratorPlayground = 1;
 inline constexpr std::uint32_t kGeneratorTerrain = 8;
 ChunkGenerator GeneratorFor(std::uint32_t generator_version, std::uint64_t world_seed = 0);
 // The generator's all-air test. The terrain's caches per chunk column (not thread-safe: one per

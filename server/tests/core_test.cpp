@@ -27,9 +27,8 @@ TEST_CASE("voxel: flat world layers and revisions") {
   CHECK(world.GetVoxel(5, -1, 5) == Materials::kGrass);
   CHECK(world.GetVoxel(5, -2, 5) == Materials::kDirt);
   CHECK(world.GetVoxel(5, -10, 5) == Materials::kStone);
-  CHECK(world.GetVoxel(5, kMidplaneY, 5) == Materials::kBedrock);
+  CHECK(world.GetVoxel(5, kMidplaneY, 5) == Materials::kStone);  // the core: stone, no bedrock
   CHECK(world.GetVoxel(5, kMidplaneY - 1, 5) == Materials::kAir);  // the void
-  CHECK(GetMaterial(Materials::kBedrock).indestructible);
 
   const auto coord = ChunkOf(5, -1, 5);
   CHECK(world.Find(coord)->revision() == 0);  // generated, unmodified
