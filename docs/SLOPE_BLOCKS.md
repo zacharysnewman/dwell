@@ -1,5 +1,10 @@
 # Dwell — Slope Blocks: Shapes, Collision, Building, Terrain and LOD
 
+> **Next: [planned, Phase 9e]** natural materials will stop using placed slopes and the terrain
+> slope stage: their blocks shape themselves from their neighbours
+> ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md), [ADR 0024](./adr/0024-adaptive-natural-blocks.md)).
+> The shape table and crafted materials' slope families below stay.
+>
 > **Status: [built, Phase 9]** — implemented as designed below, with the decisions recorded in
 > [ADR 0016](./adr/0016-slope-blocks.md); the built mechanisms live in
 > [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxel shapes and the registry, §6.3 generation, §6.5
