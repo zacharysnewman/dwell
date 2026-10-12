@@ -42,6 +42,43 @@ exercising systems, not Dwell's content design (`docs/ARCHITECTURE.md` §6.1). D
 design decisions, don't extend them with content borrowed from other games (e.g. Minecraft's
 block set), and keep new work data-driven so the real block set and world style can replace them.
 
+## Requirement: every new feature is an extendable system
+
+Any new feature must be built as an **extendable system**, not a one-off hardcoded result. The test
+(owner, 2026-10-12): **if you can't reasonably build a tool to add something to it, it's not an
+extendable system.** The baseline rework (Phases 14–19, `docs/BASELINE_EVALUATION.md`) exists
+because earlier features were hardcoded; don't add more work of that kind.
+
+An extendable system has:
+
+- **A data source of truth** for the things it holds (blocks, shapes, terrain layers, looks, …), in
+  a file a tool could edit — not constants and branches in C++ or TypeScript.
+- **One generator or loader** that turns the data into what the server, WASM core and client use, so
+  they agree, with CI failing on stale output (as `shared/blocks/gen.mjs` and
+  `shared/protocol/gen.mjs` do).
+- **References by name, not by code constant** (`"dwell:sand"`, not `Materials::kSand`).
+- **Validation and tests over the data**: a bad entry fails with a message, and a test adds a
+  fixture entry by data alone and sees it work.
+
+The engine behind the data (the node kinds, conditions or shapes it understands) is code, and should
+be a small, fixed vocabulary. Extendable means the *system* can take more; it is not licence to add
+content or features nobody asked for. Build the content that was requested, on a system that can
+grow.
+
+**Ask before designing.** What "extendable" means depends on the feature: what gets added to it
+later, by whom, and with what tool. Before designing a new feature, ask the owner clarifying
+questions (with the question tool when available), for example:
+
+- What will be added to this later: more entries of the same kind, new kinds, or new rules?
+- Who adds them, and with what: a data file, an editor page like `docs/prototypes/`, a CLI, players?
+- What must stay fixed in code, and what must be data?
+- Is it per build, per world, or per player?
+
+Record the answers in the feature's design doc or ADR. If the owner prefers a hardcoded shortcut for
+a prototype, record that as a deviation with the reason. Bug fixes and tuning of an existing system
+don't need this step; a fix in hardcoded code that the baseline rework will replace doesn't need to
+make it extendable first.
+
 ## Requirement: keep ARCHITECTURE.md up to date
 
 Whenever a change adds, removes, or modifies any part of the architecture, update
