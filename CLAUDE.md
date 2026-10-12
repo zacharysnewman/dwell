@@ -14,13 +14,16 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/PLAYER_CONTROLLER.md` — detailed spec of the physics player controller (architecture sub-spec).
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
 - `docs/WORLD_GENERATION.md` — design for Phases 7 and 10–12: art direction and palette, continents,
-  rivers/mountains/biomes, sky islands (becomes an architecture sub-spec as the phases land).
+  rivers/mountains/biomes, sky islands; largely superseded by the baseline rework (Phase 12 cancelled).
 - `docs/BLOCK_REGISTRY.md` — design for Phase 8: namespaced block states, the registry, string
   palettes in world files.
 - `docs/SLOPE_BLOCKS.md` — design for Phase 9: slope block shapes, collision, building, terrain
   shaping and LOD (becomes an architecture sub-spec as the phase lands).
-- `docs/ADAPTIVE_BLOCKS.md` — design for Phase 9e: natural blocks shaped from their neighbours by
+- `docs/ADAPTIVE_BLOCKS.md` — design for Phase 18 (formerly 9e): natural blocks shaped from their neighbours by
   five rules (replaces placed slopes and terrain slope shaping for natural materials).
+- `docs/BASELINE_EVALUATION.md` — the owner's simplified baseline (2026-10-12) compared with what
+  is built: what to keep, add and cut, graded on whether each part is an extendable, data-driven
+  system; built by the baseline rework, Phases 14–19 of the implementation plan.
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,
@@ -28,7 +31,7 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity
   toward the midplane, crossing between the faces.
 - `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
-  spec used by Phase 12).
+  spec used by the cancelled Phase 12; removed in Phase 15).
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 
@@ -38,6 +41,43 @@ All current materials (blocks, ores) and the terrain style are **prototype place
 exercising systems, not Dwell's content design (`docs/ARCHITECTURE.md` §6.1). Don't treat them as
 design decisions, don't extend them with content borrowed from other games (e.g. Minecraft's
 block set), and keep new work data-driven so the real block set and world style can replace them.
+
+## Requirement: every new feature is an extendable system
+
+Any new feature must be built as an **extendable system**, not a one-off hardcoded result. The test
+(owner, 2026-10-12): **if you can't reasonably build a tool to add something to it, it's not an
+extendable system.** The baseline rework (Phases 14–19, `docs/BASELINE_EVALUATION.md`) exists
+because earlier features were hardcoded; don't add more work of that kind.
+
+An extendable system has:
+
+- **A data source of truth** for the things it holds (blocks, shapes, terrain layers, looks, …), in
+  a file a tool could edit — not constants and branches in C++ or TypeScript.
+- **One generator or loader** that turns the data into what the server, WASM core and client use, so
+  they agree, with CI failing on stale output (as `shared/blocks/gen.mjs` and
+  `shared/protocol/gen.mjs` do).
+- **References by name, not by code constant** (`"dwell:sand"`, not `Materials::kSand`).
+- **Validation and tests over the data**: a bad entry fails with a message, and a test adds a
+  fixture entry by data alone and sees it work.
+
+The engine behind the data (the node kinds, conditions or shapes it understands) is code, and should
+be a small, fixed vocabulary. Extendable means the *system* can take more; it is not licence to add
+content or features nobody asked for. Build the content that was requested, on a system that can
+grow.
+
+**Ask before designing.** What "extendable" means depends on the feature: what gets added to it
+later, by whom, and with what tool. Before designing a new feature, ask the owner clarifying
+questions (with the question tool when available), for example:
+
+- What will be added to this later: more entries of the same kind, new kinds, or new rules?
+- Who adds them, and with what: a data file, an editor page like `docs/prototypes/`, a CLI, players?
+- What must stay fixed in code, and what must be data?
+- Is it per build, per world, or per player?
+
+Record the answers in the feature's design doc or ADR. If the owner prefers a hardcoded shortcut for
+a prototype, record that as a deviation with the reason. Bug fixes and tuning of an existing system
+don't need this step; a fix in hardcoded code that the baseline rework will replace doesn't need to
+make it extendable first.
 
 ## Requirement: keep ARCHITECTURE.md up to date
 

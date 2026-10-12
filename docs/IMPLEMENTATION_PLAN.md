@@ -26,15 +26,21 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; follow-up built: one sky sphere that turns as a unit; the owner approved the before/after and the frame time (2026-10-06) |
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; next: **9e — adaptive natural blocks** (natural blocks shape themselves from their neighbours by five rules; design in `ADAPTIVE_BLOCKS.md`, ADR 0024 proposed; not started) |
-| 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
-| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage |
-| 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
-| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
-| 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
-| 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) |
-| 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) |
-| 17 — Dedicated servers & packaging | ⏳ Not started |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; **re-scoped by the baseline rework**: the placed slope and slab families and the slope stage are to be cut (Phase 15), which drops their outstanding checks; 9e (adaptive natural blocks) moves to Phase 18 |
+| 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images; **re-scoped by the baseline rework**: to be cut to one island (Phase 15) and replaced by the terrain definition's layout (Phase 17), which drops these outstanding items |
+| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage; **re-scoped by the baseline rework**: rivers, climate, biomes, tints and features are to be cut (Phase 15), which drops these outstanding items |
+| 12 — Sky islands in a dome | ✖ Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features); never started |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
+| 14 — Baseline decisions & ADRs | ⏳ Not started — the baseline rework's first phase ([`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md)); the owner confirms decisions D1–D10 |
+| 15 — Cut to the baseline | ⏳ Not started |
+| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started |
+| 17 — Terrain definitions (terrain as data) | ⏳ Not started |
+| 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started |
+| 19 — WebGPU, looks & textures | ⏳ Not started — needs Phase 15 only |
+| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
+| 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
+| 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
+| 23 — Dedicated servers & packaging | ⏳ Not started |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -55,6 +61,12 @@ phases, so terrain is tuned with slopes in place; continents before natural terr
 on coast distance and plate edges; sky islands after natural terrain (they use its biomes); the
 bifacial world after both, since face B repeats them, and before physics, so falling bodies handle
 both gravity directions from the start.
+On 2026-10-12 the owner set a simpler baseline ([`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md))
+and inserted the **baseline rework** as **Phases 14–19**, before the physics phases: it cuts back
+Phases 9–11, cancels Phase 12, re-sizes Phase 13's world and takes over 9e (as Phase 18). The former
+Phases 14–17 (voxel awakening, tiered physics, sleep/re-bake, dedicated servers and packaging) are
+now **20–23**; references in this plan, `ARCHITECTURE.md`, the sub-specs and code comments use the
+new numbers, ADRs keep the numbers of their day.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -135,7 +147,7 @@ Deliverables
   - [x] WebRTC fallback endpoint (ADR 0008): ICE-lite `str0m` in the same crate, same channel
     mapping and framing. Spike includes the invite-link path (client synthesizes the remote
     description from address + fingerprint + ICE credentials); if it fails, invite-link
-    fallback joins require the master server (Phase 17).
+    fallback joins require the master server (Phase 23).
 - [x] **Client networking (`client/net`)**
   - [x] `Transport` interface with `WebTransportTransport`, `WebRtcTransport`,
     `LoopbackTransport` (§8.1). Auto-select: WebTransport → WebRTC.
@@ -165,7 +177,7 @@ Exit criteria
 
 **Status:** complete — every deliverable and exit criterion is verified by automated tests (C++
 natively and under WASM, TypeScript unit tests, Playwright e2e). Moved out: the cosmetic death
-ragdoll and animation from `State` (Phase 15, see below). Playtested by a human (Open Decision
+ragdoll and animation from `State` (Phase 21, see below). Playtested by a human (Open Decision
 #9): two findings, fixed: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
@@ -207,9 +219,9 @@ Deviations from the deliverables below:
   gently (PLAYER_CONTROLLER.md §8.1).
 - Dwell uses right-handed axes: the controller's camera-right vector is the mirror of the PPC's
   (Unity, left-handed) so that strafing matches the screen.
-- The snapshot's `groundEntityId` fields are deferred to Phase 14, when Tier 1 bodies can be stood
+- The snapshot's `groundEntityId` fields are deferred to Phase 20, when Tier 1 bodies can be stood
   on (ARCHITECTURE §8.3).
-- Deferred to Phase 15: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
+- Deferred to Phase 21: the cosmetic death ragdoll (Jolt `Ragdoll`) — dead players are drawn lying
   down until the client debris world exists — and animating players from `State` (players are
   capsules; there are no character models yet).
 
@@ -248,9 +260,9 @@ Deliverables
   - [x] Knockback: `PlayerEvent(Knockback, tick)` inserted into prediction history and replayed.
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
-    interpolated kinematic capsules. (Animation from `State` moved to Phase 15.)
+    interpolated kinematic capsules. (Animation from `State` moved to Phase 21.)
   - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
-    to Phase 15; dead players are drawn lying down.)
+    to Phase 21; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
   divergence, checked against `externalAbsorbThreshold`. (Measured: positions bit-identical,
@@ -471,7 +483,7 @@ Deviations and additions (3e):
   can go away at any time. One world file per generator and seed; a second tab on the same world
   runs without persistence (sync access handles are exclusive).
 - Settings and permissions come from launch options saved into the world (`--name`, `--motd`,
-  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 17. Bans and an
+  `--max-players`, `--edits`, `--op`, `--ban`); in-game admin commands stay in Phase 23. Bans and an
   allow-list (`allow_list` setting) are enforced at join. `permissions` records who granted an
   entry (`granted_by`).
 - The wire stays without zstd: Explicit chunks are rare in generated mode, and QUIC/SCTP framing
@@ -872,7 +884,7 @@ multiplayer world without typing certificates or forwarding ports: a main menu w
 management, **one-click Host** from the browser (a join code), **join by code or address**, and
 a **lobby list**. The master server is built as a Cloudflare Worker with Durable Objects, and
 TURN is Cloudflare's managed relay ([ADR 0013](./adr/0013-master-server-on-cloudflare.md),
-§10). This phase takes the web parts of the former hosting phase (now Phase 17) ahead of the
+§10). This phase takes the web parts of the former hosting phase (now Phase 23) ahead of the
 physics phases (6–8); see *Deviations* below.
 
 **Status:** In progress — every sub-phase is built. 5a's exit criteria are covered by
@@ -1076,13 +1088,13 @@ These steps need an account owner's dashboard access and cannot be done from cod
 - **New phase, inserted 2026-09-30.** Multiplayer hosting was the last phase; playtesting multiplayer
   needed an easy way to start, host and join worlds, so the web-first parts moved ahead of the
   physics phases. The former Phases 5–8 are now 6–9. The master server, friend worlds and server
-  browser moved here from Phase 17; the dedicated-server distribution (binaries, Docker, admin
+  browser moved here from Phase 23; the dedicated-server distribution (binaries, Docker, admin
   commands, UPnP, backups, certificate rotation), world export/import, versioned client builds,
-  and the Electron and Capacitor apps stay in Phase 17.
+  and the Electron and Capacitor apps stay in Phase 23.
 - Physics caps in host profiles cover what exists (players, view distance); Tier 1/Tier 2 caps
-  are added with Phases 14–16.
+  are added with Phases 20–22.
 - LAN discovery on the web is "same public IP" through the master (5d); Electron's local-network
-  discovery stays in Phase 17.
+  discovery stays in Phase 23.
 - 5a: the world index is kept in local storage rather than an IndexedDB store — it is a few
   hundred bytes, read synchronously at startup, and cleared together with the worlds' OPFS files.
 - 5a: the menu opens worlds and servers by navigating (`?play=<id>`, or the invite), and Quit
@@ -1090,7 +1102,7 @@ These steps need an account owner's dashboard access and cannot be done from cod
   worker, its OPFS handles and every render resource, a reload continues the same world, and Back
   returns to the menu. Links (`?join=`, `?local=1`, `?world=`, `?seed=`) open directly as before.
 - 5a: the game menu does not pause the world — the simulation is the (local or remote) server's.
-- 5a: Phases 14–16 were put on hold until Phase 5 is complete (2026-09-30).
+- 5a: Phases 20–22 were put on hold until Phase 5 is complete (2026-09-30).
 - 5b: the `Room` class is a stub (501) and the Directory holds only its schema version and the
   rate limits; their real contents are 5c–5e deliverables, added as migrations. `POST /v1/whoami`
   was added to check signing end to end. `dwell_server --master` moved to 5d.
@@ -1144,7 +1156,7 @@ pipeline). Design and setup steps: [`RELEASES.md`](./RELEASES.md).
 **Status:** In progress — 6a complete (release pipeline, launcher, version-locked worlds, license);
 6b (version selector, added 2026-10-06) built and tested (unit, `npm run e2e:site`); outstanding: the
 phone-width check, and a stable release (owner's call) for the menu link to reach stable players.
-Absorbs Phase 17's "versioned client builds"
+Absorbs Phase 23's "versioned client builds"
 for the web.
 
 **Deviations:** the launcher's source is `client/launcher/`, not a top-level `launcher/` (it shares
@@ -1360,9 +1372,9 @@ walked on smoothly by the physics player controller with identical collision on 
 client, and used by the LOD to draw distant terrain as faceted slopes instead of terraces. Design,
 the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 
-**Status:** Built (9a–9d); verification outstanding; **9e (adaptive natural blocks) planned, not started** (below). Sub-phases: **9a — shapes, slope families, meshing, collision
+**Status:** Built (9a–9d); verification outstanding; **9e (adaptive natural blocks) planned, not started** (below). **Re-scoped by the baseline rework**: Phase 15 cuts the placed slope and slab families and the slope stage; 9e is built as Phase 18, with the rule table as data. Sub-phases: **9a — shapes, slope families, meshing, collision
 and the controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
-(generator version 5); **9d — LOD slopes**. Runs after Phase 8 and before Phase 14, whose cluster
+(generator version 5); **9d — LOD slopes**. Runs after Phase 8 and before Phase 20, whose cluster
 shapes and integrity rules must know about slopes. Outstanding: everything that needs CI or a
 person — the WASM suites (controller scenarios, determinism goldens, native↔WASM divergence), the
 browser e2e tests (including the new shape specs), the frame-time and generation/meshing timings on
@@ -1419,6 +1431,9 @@ Exit criteria
 - [ ] Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.
 
 ### 9e — Adaptive natural blocks (slope improvement)
+
+> Moved to the baseline rework as **Phase 18**, which tracks it;
+> the text below is the original plan.
 
 **Goal:** natural blocks (dirt, grass, stone, sand, snow — block data, `"adaptive": true`) take
 their shape from the 3 × 3 columns around them, so touching natural blocks always join into one
@@ -1657,7 +1672,9 @@ only — no dungeons or creatures; the owner's spec of it is kept in
 [`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md)), using existing
 blocks only. Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
 
-**Status:** Not started. Sub-phases: **12a — dome world bounds** (decided; does not depend on the
+**Status:** Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features;
+Phase 15); never started. Kept below for the record until Phase 15 removes the
+sky-island design. Sub-phases were: **12a — dome world bounds** (decided; does not depend on the
 islands, so it may be built earlier than the rest of the phase); **12b — islands** (the
 Aether density field in sparse archipelagos, surface layering, decorations); **12c — clouds**
 (render-only, separable). Open details in `WORLD_GENERATION.md` §4.8.
@@ -1674,7 +1691,7 @@ Deliverables
   at altitude.
 - [ ] 12b: ADR: sky islands — the Aether density field, archipelagos (layout, scale, presence over
   altitude), decoration as deterministic feature functions, island anchors (decided here, before
-  Phase 14's integrity work).
+  Phase 20's integrity work).
 - [ ] 12b: the island field (§4.3): fields A, B and selector S, height gain, vertical ramps, the
   8 × 4 × 8 lattice shared by chunks, `SolidAt` and LOD; field statistics tests against the
   reference's targets.
@@ -1778,7 +1795,302 @@ directory in an earlier run; the same commands pass locally), ceilings' lighting
 turn in a browser, and the owner's review. The F4 map and debug overlays show face A only; straddling LOD
 levels (7+) draw face B at cell resolution, shaded as undersides.
 
-## Phase 14 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
+## The Baseline Rework (Phases 14–19)
+
+On 2026-10-12 the owner set a simpler baseline, evaluated against what is built in
+[`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md). Phases 14–19 build it before the physics
+phases (20–22): they cut back Phases 9–11, cancel Phase 12, re-size Phase 13's world and replace 9e.
+
+### Goal
+
+Replace the over-built, hardcoded world with a small baseline built on **extendable systems**:
+
+- A **bifacial disc of 50 km radius**, a **10-layer stone core per face**, a **spherical build
+  volume** around the origin.
+- **Simple noise terrain** with **one Voronoi island** that keeps clear of the rim — described by a
+  **terrain definition** (data), not by code.
+- **Natural slopes** from the Shape Playground's rules (adaptive blocks), with the rule table as data.
+- **WebGPU** rendering, with block looks and textures as data.
+- **Six blocks**: grass, dirt, stone, sand, water, ladder. **No biomes, no features.**
+
+**The system rule** (owner, 2026-10-12): a part counts as done only when it exists as an extendable
+system — *if you can't reasonably build a tool to add something to it, it's not an extendable
+system.* Every phase below that adds content does it through data with a generator, names
+instead of code constants, and validation (`BASELINE_EVALUATION.md` §1.1). The baseline's content
+is still prototype (`ARCHITECTURE.md` §6.1).
+
+### Rules for every phase of the rework
+
+- **Docs in the same change.** Each phase updates `ARCHITECTURE.md` (and its sub-specs) as it
+  lands, removes descriptions of what it removes, and updates status tags (`CLAUDE.md`).
+- **Determinism stays.** ADR 0010's rules (integer-hashed noise, integer wavelengths, `+ − × /`,
+  strict IEEE) hold for everything the terrain definitions can express; goldens run natively, in
+  WASM and in the client's worldgen module.
+- **Tests with the change**; bug fixes found on the way get a red → green regression test.
+- **One compatibility line.** Phases 15–18 change the terrain a seed generates, the registry and protocol
+  constants: together they are a new compatibility line (`0.9.0` under today's numbering). Pushes to
+  `main` meanwhile are dev builds; **only the owner raises `client/package.json`**, once Phases 15–18 are
+  in (or earlier if they choose to ship a step on its own line). Phase 19 changes no public API.
+- **Licence notices** if a dependency changes (`python3 shared/licenses/gen.py`).
+
+### Order
+
+```
+14 decisions & ADRs ─► 15 cut ─► 16 world shape & build volume ─► 17 terrain definitions ─► 18 adaptive blocks
+                         └─────────────────────────────────────────────────────────────► 19 WebGPU, looks & textures
+```
+
+Phase 19 depends only on Phase 15 (fewer blocks, no tints to port) and may run alongside Phases 16–18.
+
+### What the rework does not change
+
+Server core and threading, the player controller (minus launch pads), networking, persistence,
+streaming, menus, hosting, the master server, identity, versioned releases and the launcher, and
+Phases 20–23 (which wait for this rework, as they waited for Phases 6–13).
+
+---
+
+## Phase 14 — Baseline Decisions and ADRs
+
+**Goal:** Settle the open decisions and record the baseline's architecture before code changes.
+
+**Status:** Not started.
+
+Defaults (`BASELINE_EVALUATION.md` §7), used by this plan unless the owner changes them:
+
+| # | Decision | Default |
+|---|---|---|
+| D1 | "10 layers of stone" | A fixed core of 10 stone layers per face from the midplane; higher ground is stone under a soil skin |
+| D2 | Build sphere radius | 50 km (= the world radius) |
+| D3 | Flight at the sphere | Held at the boundary; falling unaffected |
+| D4 | WebGL fallback | WebGPU first; Three's WebGL2 backend only as an automatic fallback, all shaders in TSL |
+| D5 | Face B's terrain | Same definition as face A, own seed (own island); selectable per face |
+| D6 | Launch pads | Remove the block, `launch_speed` and its tests |
+| D7 | Movement playground world | Becomes a structure file the controller tests load |
+| D8 | Terrain scale | Island 20–30 km radius, ≥ 8 km sea to the rim, sea level `h` = 32, land to `h` ≈ 96–160 |
+| D9 | Midplane | y = 0 |
+| D10 | Terrain data scope | Fixed node kinds in code; parameters and composition in data; no scripting |
+
+Deliverables
+- [ ] The owner confirms or changes D1–D10; this table and `BASELINE_EVALUATION.md` §7 record it.
+- [ ] **ADR 0025 — the baseline world**: 50 km bifacial disc, midplane at 0, 10-layer core, spherical
+  build volume, six blocks, no biomes or features. Supersedes ADR 0011's scale (keeps its precision
+  decisions) and ADRs 0017–0022; amends ADR 0023 (thickness, midplane) and ADR 0016 (placed slope
+  families removed).
+- [ ] **ADR 0026 — terrain definitions**: terrain as data (layout, height nodes, layers, spawn rule),
+  generated into C++/TS, its hash identifying the generator.
+- [ ] **ADR 0024** amended (rule table as data, with overrides) and accepted.
+- [ ] **ADR 0027 — WebGPU renderer**: supersedes ADR 0002's backend (Three.js and the render
+  interface stay); the look registry.
+- [ ] `adr/README.md` index; `ARCHITECTURE.md` §12 (Open Decisions) and the plan updated: Phase 12
+  cancelled, Phases 9e/10/11's outstanding items replaced by this rework.
+
+Exit criteria
+- [ ] ADRs 0024–0027 are Accepted and indexed; the decisions table has the owner's answers.
+
+---
+
+## Phase 15 — Cut to the Baseline
+
+**Goal:** Remove everything outside the baseline, so later steps build on a small codebase. The
+terrain stays the current generator, cut down (an interim, hardcoded step that Phase 17 replaces).
+
+**Status:** Not started.
+
+Deliverables
+- [ ] **Blocks** (`shared/blocks/dwell.json`): keep air, grass, dirt, stone, sand, water, ladder;
+  remove bedrock, launch_pad (and `launch_speed`, its controller code and scenarios, D6),
+  stone_slab, every slope/slab family (and shape picking in the hotbar), sandstone, gravel, snow,
+  ice, log, leaves, coal/iron/gold ore. Regenerate the tables; the registry hash changes. Keep the
+  `shapeFamilies` mechanism in `gen.mjs`, unused.
+- [ ] **Textures**: remove the removed blocks' tiles from `render/textures.ts`.
+- [ ] **Worldgen cuts** (`server/core/worldgen`): rivers, lakes, ponds, waterfalls, `Column::water`,
+  the valley floor `V` and `D` (`rivers.*`); climate, the biome table, rain shadows, snow lines
+  (`biomes.*`, `SampleClimate`); the ridged cascade, belts, ranges, massifs; the 3D density and
+  overhangs; caves; the stability pass; ores; boulders and trees; slope stage 5b (`slopes.*`);
+  multi-continent layout, plates, island plates and the shelf/abyss profile (one island at the
+  origin remains in the interim).
+- [ ] **Tint pipeline**: `TintGrid`, WASM `dwell_worldgen_tint`, the worker's tint job,
+  `TintField`, the `tints` vertex attribute, `TINT_MASKS` and atlas alpha, `LodSurface` tints,
+  `tint` in block data.
+- [ ] **Test worlds**: the flat world gets the stone core instead of bedrock (`BEDROCK_LAYERS`
+  removed); the movement playground becomes a structure file loaded by the controller tests (D7),
+  `kGeneratorPlayground` removed.
+- [ ] **Tools**: `dwell_worldgen_inspect`'s `biomes` and `valley` modes and the biome map in F4 go
+  (height map only).
+- [ ] **Tests**: remove `rivers_test`, `climate_test`, `vegetation_test`, `cascade_test`,
+  `slopes_test`, `slope_terrain_test`, `water_search.h`, `biome_search.h` and the controller's
+  launch-pad scenario; regenerate chunk and LOD goldens; hotbar count in `e2e/edit.spec.ts` = 5.
+- [ ] **Docs**: `ARCHITECTURE.md` §6.1, §6.3, §6.6, §7.4; `WORLD_GENERATION.md` cut to what remains
+  (and its sky-island part removed with `docs/reference/aether-floating-islands.md`);
+  `SLOPE_BLOCKS.md` trimmed to the shape mechanism; `BLOCK_REGISTRY.md` examples;
+  `PLAYER_CONTROLLER.md` launch-pad text; `CLAUDE.md`'s hotbar note.
+
+Exit criteria
+- [ ] The registry holds exactly air, grass, dirt, stone, sand, water and ladder (a test lists them).
+- [ ] No code references a removed block, generator stage or tint (build and grep check).
+- [ ] Native, WASM and Vitest suites pass with regenerated goldens; e2e passes (known failures in
+  `CLAUDE.md` aside).
+- [ ] Chunk and LOD generation time measured against generator version 11 (`… bench`).
+
+---
+
+## Phase 16 — World Shape and Build Volume
+
+**Goal:** The baseline's geometry, with every bound read from one data-driven predicate.
+
+**Status:** Not started.
+
+Deliverables
+- [ ] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
+  `seaLevel` and the core's thickness move to the terrain definition in Phase 17 (interim values here:
+  sea level `h` = 32, core 10); `worldBottomY`/`worldMaxY` replaced by `bounds`
+  `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }`; `lod.maxLevel` 12;
+  `flightCeiling` replaced by the bounds; fewer fly-speed levels. Protocol version bumped.
+- [ ] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
+  (sphere; slab kept for tests), parameters from data. Used by: edits (server rejection, client
+  pre-check), generation and storage (chunks wholly outside are air, never stored; `IsAirChunk`,
+  `LodBoundsAt`), streaming and LOD requests, flight (held at the boundary, D3).
+- [ ] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
+  flip band and `CORE_ANCHOR_LAYERS` (8) checked against the 10-layer core.
+- [ ] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
+  only, without holes or the other face showing through.
+- [ ] Far-origin test runs moved to ~49 km; F4 zoom range narrowed.
+- [ ] Docs: `ARCHITECTURE.md` world bounds, bifacial, §6.6, §7.4; `BIFACIAL_WORLD.md` geometry.
+
+Exit criteria
+- [ ] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
+  one e2e edit at the boundary).
+- [ ] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
+- [ ] Flight stops at the boundary (controller scenario, native and WASM).
+- [ ] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
+  (mesher tests over a 20-layer crust).
+- [ ] Walking over the rim still carries a player across the midplane to face B (controller
+  scenario).
+- [ ] Manual: a look in a browser from the ground, from altitude and from face B.
+
+---
+
+## Phase 17 — Terrain Definitions
+
+**Goal:** Terrain as data. The interim generator from Phase 15 is replaced by an evaluator of terrain
+definitions; the baseline world is `dwell:baseline`.
+
+**Status:** Not started.
+
+Deliverables
+- [ ] **Format** (`shared/worldgen/*.json`, schema documented in `ARCHITECTURE.md` §6.3):
+  - `layout` — `voronoiIsland`: site `cell`, `warp`, `land.radius` and `radiusNoise`,
+    `rimClearance`, `coastDetail`; an extensible `kind`.
+  - `height` — land and sea lists of nodes: `fbm` (wavelength, octaves, gain, amplitude), the coast
+    distance profile, constants; `mask` by name (`inland`, `coast`, …); sum, scale, clamp.
+  - `core`, `surface` (conditioned layer lists: `underwater`, coast distance, height above sea
+    level, slope), `fill`, `seaLevel`, `liquid` — all blocks by name.
+  - `spawn` — a rule (e.g. nearest dry, level land to the origin).
+- [ ] **Generator** `shared/worldgen/gen.mjs`: validates (block names against the registry, node
+  kinds, parameter ranges, integer wavelengths), emits C++ tables and TS for tools; CI fails on
+  stale output. A **definition hash** (FNV-1a 64, like the registry hash) identifies the generator:
+  worlds record it beside the generator version; `Welcome` carries it.
+- [ ] **Evaluator** in `server/core/worldgen`: layout → height field (4-column lattice, bilinear) →
+  fill by layers; `GenerateLod` and point queries (`ColumnAt`, `GroundY`, spawn) from the same
+  fields. Reuses the Voronoi coast distance from `continents.cpp`, parameterised.
+- [ ] **Generators are definitions**: `GeneratorFor`'s switch replaced by a definition lookup; the
+  flat world is a definition with no noise.
+- [ ] **Per-face definitions** (D5): each face names a definition and a seed stream.
+- [ ] **`dwell:baseline`**: one island (D8), the 10-layer core, stone under 3–4 layers of dirt and
+  grass, sand at the coast and under water, sea level `h` = 32. Tuned with the inspect tool.
+- [ ] **Tools**: `dwell_worldgen_inspect` takes a definition file (`--def path`) for height maps,
+  disc images, `view` screenshots and `bench`. Stretch: a definition editor page with a live
+  preview in `docs/prototypes/`.
+- [ ] Goldens for `dwell:baseline` (surface, coast, sea, core rows on both faces, the rim, near the
+  sphere's edge); the old generator code deleted.
+- [ ] Docs: `ARCHITECTURE.md` §6.3 rewritten (pipeline, determinism, the format);
+  `WORLD_GENERATION.md` becomes the definition guide (or is folded into §6.3).
+
+Exit criteria
+- [ ] Adding a noise layer or a surface layer is a data change only: a test loads a modified
+  definition and sees the terrain change, with a different hash.
+- [ ] Invalid definitions (unknown block, unknown node kind, non-integer wavelength) fail the
+  generator with a message (tests).
+- [ ] Land never lies within `rimClearance` of the rim (sampled over seeds); the origin is land.
+- [ ] Every column has its core layers on both faces and no water voxel has air below it.
+- [ ] Goldens agree natively, in WASM and in the client module.
+- [ ] Generation time per chunk and per LOD section reported against Phase 15's.
+- [ ] Manual: the owner reviews whole-disc and first-person images of both faces.
+
+---
+
+## Phase 18 — Adaptive Natural Blocks
+
+**Goal:** The Shape Playground's slopes on all natural terrain — Phase 9e
+([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)), simplified by the baseline (every solid block is
+natural) and with the rule table as data.
+
+**Status:** Not started. Replaces Phase 9e (its original plan stays under Phase 9 for the record).
+
+Deliverables
+- [ ] **Shapes**: the 12 corner and 6 ridge shapes added to `shapes.mjs` as corner-height data;
+  geometry tests (closure, winding, volume, coverage).
+- [ ] **The table as data** (`shared/blocks/adaptive.json`): generated from the five rules, plus
+  per-neighbourhood **overrides**; the generator checks shape names and runs the exhaustive no-holes
+  adjacency test; C++ and TS readers from shared vectors.
+- [ ] **The Shape Playground** exports overrides in that format (republished to the same link,
+  `docs/prototypes/README.md`).
+- [ ] `"adaptive": true` on grass, dirt, stone and sand (block data).
+- [ ] **Meshing, collision, targeting**: derived shapes in the chunk mesher, terrain collision,
+  `RayEnterShape`, `SurfaceHeightAt`; edits re-shape and re-mesh neighbours.
+- [ ] **Terrain and LOD**: point queries, spawn and water read the shaped surface; the rule applied
+  on LOD cells; flooded shaped blocks at shores.
+- [ ] Docs: `ARCHITECTURE.md` §6.1, §6.5, §6.6; `ADAPTIVE_BLOCKS.md` reduced to rationale and tables;
+  ADR 0024 as built.
+
+Exit criteria
+- [ ] The table equals the five rules plus overrides for all 6,561 neighbourhoods, in C++ and TS,
+  and reproduces every block of the owner's playground export.
+- [ ] No holes between any two neighbouring derived shapes at equal height (exhaustive test).
+- [ ] Controller scenarios on every new shape (ridges, saddles, half-and-half corners, 45° ramps; no
+  launches, hops or sliding at rest), native and WASM; the divergence check passes.
+- [ ] e2e: placing and breaking natural blocks re-shapes neighbours identically on two clients.
+- [ ] LOD seams against chunks checked; generation and meshing times against Phase 17's.
+- [ ] Manual: the owner walks the terrain and builds with natural blocks, comparing with the
+  Adaptive Block Lab.
+
+---
+
+## Phase 19 — WebGPU, Looks and Textures
+
+**Goal:** Render with WebGPU, and make how blocks look a system: looks registered by name and
+textures described by data.
+
+**Status:** Not started. Needs Phase 15 only.
+
+Deliverables
+- [ ] **CI first**: Playwright's Chromium runs WebGPU headless (flags and a software adapter) for
+  e2e and `client/scripts/shots.ts`; a smoke test proves a WebGPU frame renders in CI.
+- [ ] **`WebGPURenderer`** behind `client/render` (async init); the WebGL2 backend as automatic
+  fallback (D4), reported in F3.
+- [ ] **TSL ports**: height fog and per-face light (`heightFog.ts`), the sky (`sky.ts`), chunk and
+  LOD materials, tone mapping and exposure; no GLSL left.
+- [ ] **Look registry**: each look (`cube`, `shaped`, `water`, `ladder`, …) is a module registering a
+  TSL material and a meshing style by name; `mesher.ts`'s branches on look names replaced by the
+  registry; `gen.mjs` validates block looks against it.
+- [ ] **Texture data**: tile recipes (parametric noise: palette, scales, features) or image files in
+  `shared/blocks/` (or a sibling), named by block data; the atlas built from them and sized to fit;
+  `TileName` and the painter functions removed. Stretch: a recipe editor page in `docs/prototypes/`.
+- [ ] Re-verify batched terrain, the near/far depth passes and the LOD's draw path on WebGPU.
+- [ ] Docs: `ARCHITECTURE.md` §2.1, §5; `render` interface notes; ADR 0027 as built.
+
+Exit criteria
+- [ ] e2e suites pass on WebGPU in CI, and on the WebGL2 fallback.
+- [ ] A new texture or look is added by data plus (for a look) one module — a test adds a fixture
+  look and texture without touching the mesher.
+- [ ] Screenshots match the WebGL build's look (owner review of before/after).
+- [ ] Frame time on a desktop and a phone, WebGPU against the WebGL build.
+- [ ] Manual: Safari (macOS, iOS) and an Android device render with WebGPU.
+
+---
+
+## Phase 20 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
 
@@ -1800,7 +2112,7 @@ Deliverables
   (reason `Collapse`).
 - [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
 - [ ] `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
-- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 15); client
+- [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 21); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
 - [ ] **Player ↔ Tier 1 interaction** (§9.2, §9.4):
   - [ ] Players push light clusters (contact mass scaling: `maxPushForce`, `pushableMassLimit`);
@@ -1824,7 +2136,7 @@ Exit criteria
 
 ---
 
-## Phase 15 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
+## Phase 21 — Tiered Physics (Authoritative Tier 1, Cosmetic Tier 2)
 
 **Goal:** Spec Phase 5. Keep CPU and bandwidth bounded during large explosions (§7.2).
 
@@ -1861,7 +2173,7 @@ Exit criteria
 
 ---
 
-## Phase 16 — Sleep / Re-bake Cycle
+## Phase 22 — Sleep / Re-bake Cycle
 
 **Goal:** Spec Phase 6. Long-running servers keep a bounded number of dynamic bodies (§7.3).
 
@@ -1889,7 +2201,7 @@ Exit criteria
 
 ---
 
-## Phase 17 — Dedicated Server Distribution & Platform Packaging
+## Phase 23 — Dedicated Server Distribution & Platform Packaging
 
 **Goal:** Complete player-hosted multiplayer with no official game servers (ADR 0003):
 distributable dedicated servers and packaged desktop/mobile apps (ARCHITECTURE §10), on top of the

@@ -1,5 +1,12 @@
 # Dwell — World Generation Plans: Look, Continents, Terrain, Sky Islands
 
+> **Superseded in large part by the baseline rework** (2026-10-12; `IMPLEMENTATION_PLAN.md` Phases
+> 14–19, [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md)): Phase 15 cuts the continents' layout to
+> one island and removes the rivers, climate, biomes and vegetation of §3; Phase 17 replaces the
+> generator with terrain definitions (data); **Phase 12 (§4, sky islands) is cancelled**. §1 (the
+> art direction and colour) stands. Until those phases land, the sections below describe what is
+> built.
+
 > **Status: [planned]; §1 (Phase 7), §2 (Phase 10) and §3.2–3.3 (Phase 11a) are [built].** This is the design reference for implementation Phases 7 and 10–12
 > ([`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)). It describes what to build and why, in
 > enough detail that no outside material is needed. The reference image and the Epic Terrain mod
@@ -683,6 +690,9 @@ the ponds in `rivers.cpp`, and the blocks in `shared/blocks/dwell.json`. Differe
 
 ## 4. Sky islands in a dome (Phase 12)
 
+> **Cancelled (owner, 2026-10-12)** by the baseline rework (no special terrain features); kept for
+> the record until Phase 15 removes it.
+
 > **Decided, with open details.** The world's shape (§4.1–§4.2) and the island terrain (§4.3–§4.4,
 > after the owner's Aether spec in [`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md))
 > are decided (2026-10-05). What remains open is listed in §4.8.
@@ -868,12 +878,12 @@ Phase 12's ADR and of `ARCHITECTURE.md` §6.3/§6.6/§7.1 when built:
 6. **Stability pass.** The field can leave small fragments; the pass removes those under 48 voxels
    inside a chunk, which is acceptable. Tiny islets (18 cells) are exempt by construction (the pass
    skips voxels a feature function placed).
-7. **Structural integrity (Phase 14).** Islands are not connected to bedrock, so the first edit
+7. **Structural integrity (Phase 20).** Islands are not connected to bedrock, so the first edit
    would detach a whole island. Islands need an **anchor**: e.g. the generated island field's
    voxels count as grounded while unmodified components remain larger than a threshold, or an
    indestructible core per island; finding "per island" is hard with a density field, so a
    grounded flag on generated island material is the likelier answer. Decided in Phase 12's ADR;
-   Phase 14's anchor definition follows it.
+   Phase 20's anchor definition follows it.
 8. **Streaming and memory.** Measure chunk counts and memory in a flight through archipelagos
    against today's budgets.
 

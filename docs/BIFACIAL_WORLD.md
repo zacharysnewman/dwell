@@ -5,6 +5,11 @@
 > [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.3 world bounds and generation, §6.6 LOD, §7 physics,
 > §9 players) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md), with an ADR superseding the
 > vertical bounds of ADR 0011 and Phase 12's dome.
+>
+> **Re-sized by the baseline rework** (`IMPLEMENTATION_PLAN.md` Phase 16, `BASELINE_EVALUATION.md`
+> §3.1): a 50 km disc, the midplane at y = 0, a 10-layer stone core per face and a spherical build
+> volume replace the ~4 km crust and bounds below. Phase 12 (the domes this file mentions) is
+> cancelled. The text below is the Phase 13 design and build until Phase 16 updates it.
 
 ## 1. Intent (owner, 2026-10-05)
 
@@ -27,7 +32,7 @@ Bifacial:
   floor; chunk-aligned: chunk row −64). There is **no bedrock**: the rock at the midplane is
   ordinary and can be dug through (owner, 2026-10-05). Instead, a **core zone** of
   `CORE_ANCHOR_LAYERS` (≈ 8) on each side of the midplane anchors both faces for structural
-  integrity by *position*: any solid voxel still in the zone counts as grounded (§7.1, Phase 14),
+  integrity by *position*: any solid voxel still in the zone counts as grounded (§7.1, Phase 20),
   so a dug shaft leaves the surrounding crust standing. Today's bedrock material and the void
   below the world are no longer generated.
 - **Face A** (the top, today's world) is unchanged: ground band [−2,048, 6,144), sea level 0, dome
@@ -128,7 +133,7 @@ Spawn is always on face A (owner, 2026-10-05).
   night sky with the moon's glow where the sun's is on face A) and haze are evaluated in the
   viewer's face-local frame. Height fog uses the height above the viewer's face's sea level.
 
-## 7. Physics (Phases 14–16)
+## 7. Physics (Phases 20–22)
 
 Falling clusters and debris use per-body gravity by side; structural integrity anchors on the core
 zone (§2) instead of a bedrock layer, so digging through the core is allowed and what remains in
@@ -186,5 +191,5 @@ character of its own.
   The LOD does not load or draw the other face (beyond 512 m, except near the rim), and a straddling
   section is meshed for the viewer's face alone (the other face's rows become stone, the tints are the
   viewer's face's).
-- **Not done here:** Tier 1 bodies' Jolt factors are built and tested, but clusters arrive in Phase 14;
+- **Not done here:** Tier 1 bodies' Jolt factors are built and tested, but clusters arrive in Phase 20;
   the F4 terrain map and the debug overlays show face A.
