@@ -26,7 +26,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; follow-up built: one sky sphere that turns as a unit; the owner approved the before/after and the frame time (2026-10-06) |
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; next: **9e — adaptive natural blocks** (natural blocks shape themselves from their neighbours by five rules; design in `ADAPTIVE_BLOCKS.md`, ADR 0024 proposed; not started) |
 | 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage |
 | 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
@@ -1360,7 +1360,7 @@ walked on smoothly by the physics player controller with identical collision on 
 client, and used by the LOD to draw distant terrain as faceted slopes instead of terraces. Design,
 the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 
-**Status:** Built (9a–9d); verification outstanding. Sub-phases: **9a — shapes, slope families, meshing, collision
+**Status:** Built (9a–9d); verification outstanding; **9e (adaptive natural blocks) planned, not started** (below). Sub-phases: **9a — shapes, slope families, meshing, collision
 and the controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
 (generator version 5); **9d — LOD slopes**. Runs after Phase 8 and before Phase 14, whose cluster
 shapes and integrity rules must know about slopes. Outstanding: everything that needs CI or a
@@ -1417,6 +1417,53 @@ Exit criteria
 - [ ] e2e: every shape in every orientation placed and broken, seen identically by a second client.
 - [ ] Frame time within budget on desktop and a phone; chunk generation and meshing times reported.
 - [ ] Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.
+
+### 9e — Adaptive natural blocks (slope improvement)
+
+**Goal:** natural blocks (dirt, grass, stone, sand, snow — block data, `"adaptive": true`) take
+their shape from the 3 × 3 columns around them, so touching natural blocks always join into one
+clean surface and nobody places slopes for them: exposed tops rest at half height, edges slope
+gently to the ground, 1-block steps become one even slope across both blocks, one-block-wide
+shapes become half-height ridges, and a lone block against a higher one is a 45° ramp. Crafted
+blocks, slabs and crafted materials' placed slopes keep their shapes. Design, the five rules and
+the shape set: [`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md); decision:
+[ADR 0024](./adr/0024-adaptive-natural-blocks.md) (proposed); prototypes the rules were fitted to:
+[`prototypes/`](./prototypes/README.md).
+
+**Status:** Not started. Designed with the owner in the prototypes (2026-10-07/08); ADR 0024 awaits
+the owner's acceptance; open details in `ADAPTIVE_BLOCKS.md` §8. **Breaking change:** removing the
+generator's slope stage changes the terrain a seed generates (a generator version bump) and
+removing adaptive materials' slope families changes the registry hash, so this is a new
+compatibility line: the owner raises `client/package.json` when it ships.
+
+Deliverables
+- [ ] ADR 0024 accepted by the owner; `ADAPTIVE_BLOCKS.md` §8 decided.
+- [ ] Shapes and table: the 12 corner shapes and 6 ridge shapes in `shared/blocks/shapes.mjs`
+  (3 × 3 surface form for the ridge shapes), the 6,561-entry rule table baked by `gen.mjs` from the
+  five rules, `adaptive` in `dwell.json`, C++ and TS readers and shared test vectors.
+- [ ] Chunk mesher, terrain collision, `RayEnterShape` and `SurfaceHeightAt` use derived shapes for
+  adaptive top blocks (apron with diagonals and the layer above); an edit re-meshes and rebuilds
+  collision for the neighbours it re-shapes.
+- [ ] Registry: adaptive materials keep only their cube state (their slope and slab families
+  removed); the palette's shape key only for crafted materials.
+- [ ] Generator: step 5b removed; point queries, spawn, water, features and `SurfaceAt` use the
+  shaped surface; generator version bump; goldens regenerated.
+- [ ] LOD: the rule table on LOD cells in place of slopes from surface heights.
+- [ ] Controller scenarios on every new shape (ridges, saddles, half-and-half, single-block 45°
+  ramps).
+- [ ] `ARCHITECTURE.md` §6.1, §6.3, §6.5, §6.6 and `PLAYER_CONTROLLER.md` updated;
+  `ADAPTIVE_BLOCKS.md` and `SLOPE_BLOCKS.md` status notes updated.
+
+Exit criteria
+- [ ] The rule table equals the five rules for all 6,561 neighbourhoods in C++ and TS, and
+  reproduces every block of the owner's Shape Playground export.
+- [ ] No holes: derived shapes of same-height neighbours meet without a gap at every shared edge
+  (exhaustive test).
+- [ ] Controller scenarios pass natively and in WASM; the divergence check passes.
+- [ ] e2e: placing and breaking adaptive blocks re-shapes neighbours identically on two clients.
+- [ ] Generation, meshing and frame time on a desktop and a phone within budget, against Phase 9.
+- [ ] Manual: the owner walks generated terrain and builds with natural blocks, compared with the
+  Adaptive Block Lab.
 
 ---
 

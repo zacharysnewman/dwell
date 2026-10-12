@@ -447,6 +447,14 @@ bit-packed chunk-local palette would be 7× smaller but 2.7× slower to scan wit
 pattern, ADR 0015 — deferred); on disk, chunk palettes hold **world state ids** mapped to strings
 (§6.4).
 
+**Adaptive natural blocks [planned, Phase 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
+[ADR 0024](./adr/0024-adaptive-natural-blocks.md), proposed). Natural blocks (block data
+`"adaptive": true`) will be stored as cubes and shaped at use from the 3 × 3 columns around them by
+five rules baked into one table in `shared/blocks/` (6,561 neighbourhoods → shape and facing), read
+by the server and the client alike; the shape set gains 12 corner shapes and 6 half-height ridge
+shapes; adaptive materials lose their placed slope and slab families, and the generator's slope
+stage (step 5b, §6.3) goes. Until then, the shapes below are as built.
+
 **Shapes and slope blocks [built, Phase 9]** ([ADR 0016](./adr/0016-slope-blocks.md),
 [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). Every solid state has a **shape**: its top surface is given
 by four corner heights in halves of a cell (NW, NE, SE, SW), split into two planar triangles along
@@ -838,7 +846,8 @@ arithmetic, so features placed by point queries agree with the chunks.
    (stone; sandstone on dunes) on steep slopes; stone below. Open space below the column's water level
    (`Column::water`: sea level, or a river's or lake's surface) fills with water; the bottom four
    layers are stone (there is no bedrock: face A's rock continues into face B's).
-5b. **Slopes [built, Phase 9c]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §5). Each column has a
+5b. **Slopes [built, Phase 9c; to be removed in Phase 9e, where natural top blocks are shaped by the
+   adaptive-block rules instead, `ADAPTIVE_BLOCKS.md` §4.3]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §5). Each column has a
    *continuous surface*: the highest zero of its density going down from the sky, closed-form per
    lattice layer (density is linear in y between layers), valid only where solid cells lie under it
    and open ones over it. A cell corner's height is the mean of the four columns around it, rounded

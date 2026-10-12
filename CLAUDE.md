@@ -19,6 +19,10 @@ and friend worlds), with a small master server for discovery; there are no offic
   palettes in world files.
 - `docs/SLOPE_BLOCKS.md` — design for Phase 9: slope block shapes, collision, building, terrain
   shaping and LOD (becomes an architecture sub-spec as the phase lands).
+- `docs/ADAPTIVE_BLOCKS.md` — design for Phase 9e: natural blocks shaped from their neighbours by
+  five rules (replaces placed slopes and terrain slope shaping for natural materials).
+- `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
+  published links; republish to the same link after editing.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,
   version-locked worlds, the license, and the release procedure.
 - `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity

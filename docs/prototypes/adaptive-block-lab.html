@@ -1,0 +1,1030 @@
+<title>Adaptive Block Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a full-height workbench — controls in a left rail (a bottom sheet on phones), the 3D stage filling the rest. */
+:root {
+  --bg: #e9edf1;
+  --panel: #f8fafb;
+  --fg: #1b2330;
+  --muted: #5a6677;
+  --line: #d3dae2;
+  --accent: #17809a;
+  --accent-ink: #ffffff;
+  --accent-soft: #d6eef3;
+  --chip: #eef2f5;
+  --sky-top: #a9cfe8;
+  --sky-bottom: #eef1ea;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+    --accent: #4cbfd6; --accent-ink: #08222a; --accent-soft: #173a44; --chip: #1e2630;
+    --sky-top: #1d3247; --sky-bottom: #3a4250; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+  --accent: #4cbfd6; --accent-ink: #08222a; --accent-soft: #173a44; --chip: #1e2630;
+  --sky-top: #1d3247; --sky-bottom: #3a4250; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+#app { height: 100%; display: grid; grid-template-columns: 330px 1fr; }
+#panel { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 20px 18px 24px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+#stage { position: relative; min-width: 0; min-height: 0; background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 4px 0 8px; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); }
+h2 { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+section { display: flex; flex-direction: column; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); font-weight: 600; }
+.palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.group-label { grid-column: 1 / -1; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.swatch { display: flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: left; font-size: 13px; }
+.swatch[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.swatch i { width: 18px; height: 18px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.18); }
+.swatch kbd { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.toggle { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.switch { flex: none; width: 32px; height: 18px; border-radius: 999px; background: var(--line); position: relative; margin-top: 1px; transition: background 0.15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); transition: transform 0.15s; box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
+.toggle input:checked + .switch { background: var(--accent); }
+.toggle input:checked + .switch::after { transform: translateX(14px); }
+.toggle small { display: block; color: var(--muted); font-size: 12px; }
+.hint-text { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+#share-json { margin-top: 8px; width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 11px; line-height: 1.35; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
+#share-status.ok { color: var(--fg); }
+.controls { display: flex; flex-direction: column; gap: 10px; }
+.rule { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.rule code { font-family: var(--font-mono); font-size: 12px; background: var(--chip); padding: 1px 4px; border-radius: 4px; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.stat b { display: block; font-family: var(--font-display); font-size: 22px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--muted); }
+.keys { font-size: 12px; color: var(--muted); margin: 0; }
+.keys kbd { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.badge { position: absolute; top: 12px; left: 12px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; display: flex; gap: 10px; align-items: center; pointer-events: none; }
+.badge b { font-weight: 600; }
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; vertical-align: -1px; margin-right: 4px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2); }
+.error { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--fg); }
+@media (max-width: 760px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: 58% 42%; }
+  #stage { grid-row: 1; }
+  #panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); padding: 14px 16px 20px; }
+  h1 { font-size: 22px; }
+}
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+</style>
+
+<div id="app">
+  <aside id="panel">
+    <header>
+      <div class="eyebrow">Dwell · shape prototype</div>
+      <h1>Adaptive Block Lab</h1>
+      <p class="lede">Natural blocks take their shape from the columns around them, using the rules worked out in the Shape Playground. Crafted blocks, slabs included, keep their own shapes.</p>
+    </header>
+
+    <section>
+      <h2>Scene</h2>
+      <div class="chips" id="scenes"></div>
+    </section>
+
+    <section>
+      <h2>Block</h2>
+      <div class="palette" id="palette"></div>
+    </section>
+
+    <section>
+      <h2>Tool</h2>
+      <div class="seg" id="tool">
+        <button type="button" id="tool-place" data-v="place">Place</button>
+        <button type="button" id="tool-remove" data-v="remove">Remove</button>
+        <button type="button" id="tool-copy" data-v="copy">Copy 5³</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Shapes</h2>
+      <div class="controls">
+        <div>
+          <div class="seg" id="res">
+            <button type="button" id="res-m1" data-v="m1">1 m cubes</button>
+            <button type="button" id="res-half" data-v="half">1 × ½ × 1 m</button>
+            <button type="button" id="res-cube" data-v="cube">½ m cubes</button>
+          </div>
+          <p class="hint-text">The voxel grid. The playground rules work the same on all three: half height means half a cell.</p>
+        </div>
+        <div id="brush-wrap" hidden>
+          <div class="seg" id="brush">
+            <button type="button" id="brush-voxel" data-v="voxel">One voxel</button>
+            <button type="button" id="brush-block" data-v="block">1 m block</button>
+          </div>
+          <p class="hint-text">What a click places or removes. Picking a natural block switches to one voxel, a crafted block to a 1 m block.</p>
+        </div>
+        <div class="seg" id="mode">
+          <button type="button" id="mode-adaptive" data-v="adaptive">Adaptive</button>
+          <button type="button" id="mode-cubes" data-v="cubes">Cubes (today)</button>
+        </div>
+        <div>
+          <div class="seg" id="ruleset">
+            <button type="button" id="ruleset-playground" data-v="playground">Playground rules</button>
+            <button type="button" id="ruleset-previous" data-v="previous">Previous rules</button>
+          </div>
+          <p class="hint-text">Playground rules are the five rules worked out in the Shape Playground, shaping each top block from the block shapes. Previous rules are the lab's earlier height field (1 m grid) or autotile (finer grids).</p>
+        </div>
+        <div class="controls" id="m1-controls">
+        <div class="seg" id="quant">
+          <button type="button" id="quant-half" data-v="0.5">Heights in ½ m</button>
+          <button type="button" id="quant-quarter" data-v="0">Exact</button>
+        </div>
+        <div>
+          <div class="seg" id="slope">
+            <button type="button" id="slope-gentle" data-v="0.5">27°</button>
+            <button type="button" id="slope-45" data-v="1">45°</button>
+            <button type="button" id="slope-steep" data-v="2">63°</button>
+          </div>
+          <p class="hint-text">The steepest a natural surface may get. At 27° a lone block stands ¼ m tall; at 45° and steeper, ½ m.</p>
+        </div>
+        <div>
+          <div class="seg" id="depth">
+            <button type="button" id="depth-1" data-v="1">Shape top block</button>
+            <button type="button" id="depth-2" data-v="2">Top 2 blocks</button>
+          </div>
+          <p class="hint-text">How deep the surface may cut. With one block, a 2-block drop leaves a small wall; with two, it becomes a slope.</p>
+        </div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="opt-grid"><span class="switch"></span>
+          <span>Show voxel cells<small>Outlines each column's top cell, to compare the surface with the blocks it comes from.</small></span></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>The rule</h2>
+      <ol class="rule" id="rule-playground">
+        <li><b>Rest.</b> Each corner of a top block looks at the 3 columns around it. If none is higher or lower, it sits at half height.</li>
+        <li><b>Drop.</b> If any of them is lower, the corner drops to the block's floor.</li>
+        <li><b>Rise.</b> If one is higher and none is lower, the corner rises to the block's top.</li>
+        <li><b>One block wide.</b> When every corner drops, a half-height ridge runs toward each same-height neighbour: half pyramid, ridge end, ridge, ridge corner, T or cross.</li>
+        <li><b>Ramp up.</b> When every corner drops and exactly one neighbour across an edge is higher (none the same height), the block is a wedge rising to it.</li>
+      </ol>
+      <ol class="rule" id="rule-voxel" hidden>
+        <li>Every voxel is a cell of the grid. A natural voxel with another on top is a full cell.</li>
+        <li>A natural top voxel's surface is 9 points: corners, edge midpoints, centre. A corner drops to the voxel's floor when at least 2 of the 3 voxels around it are lower; an edge midpoint drops when the voxel across is lower and a corner of that edge drops. Otherwise points stay at the top.</li>
+        <li>A point touching both a higher and a lower neighbour stays at the top, so a voxel at a step becomes a ramp up to the higher one.</li>
+        <li>So a lone voxel is a pyramid, a row is a ridge, a 1-voxel step is a wedge, and nothing leaves its own cell. Bigger drops are plain walls.</li>
+      </ol>
+      <ol class="rule" id="rule-m1">
+        <li>Every column has a top. A natural top block with nothing on it rests at half height (<code>top − ½</code>); a block with another on it is a full cube.</li>
+        <li>Each top is a 3 × 3 grid of points: corners, edge midpoints and centre. A point shared by columns takes a height all of them can reach: where a half-height top meets a step up, that is the top of the lower block, so terraces join without a wall. Beside open ground it is the ground.</li>
+        <li>Within a block, heights change no faster than the slope: first nothing rises above <code>a lower point + slope × distance</code>, then nothing falls below <code>a higher point − slope × distance</code>. A block between open ground and a higher block becomes a ramp up to it.</li>
+        <li>The surface stays inside the column's top block, or its top two with Shape depth set to 2. Where neighbours share no height (a pillar's side), a vertical wall carries the difference.</li>
+      </ol>
+    </section>
+
+    <section id="share">
+      <h2>Share with Claude</h2>
+      <p class="hint-text" id="share-status">Choose <b>Copy 5³</b> (key <kbd>V</kbd>) and click a block. The block and everything up to 2 blocks away, a 5 × 5 × 5 set, is copied as JSON for you to paste into the chat.</p>
+      <textarea id="share-json" readonly rows="6" spellcheck="false" aria-label="Copied JSON" hidden></textarea>
+    </section>
+
+    <div class="stats">
+      <div class="stat"><b id="stat-blocks">0</b><span id="stat-blocks-label">blocks</span></div>
+      <div class="stat"><b id="stat-shaped">0</b><span>shaped columns</span></div>
+    </div>
+    <p class="keys">Click to place, right-click to remove, drag to orbit, scroll to zoom. <kbd>1</kbd>–<kbd>8</kbd> block, <kbd>X</kbd> place/remove, <kbd>V</kbd> copy, <kbd>C</kbd> cubes.</p>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view" aria-label="3D view of the blocks. Click to place a block, right-click to remove one."></canvas>
+    <div class="badge" id="badge"></div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- Blocks (Dwell's prototype palette; crafted ones are stand-ins for blocks that do not exist yet).
+const MATS = [
+  { id: 'grass', name: 'Grass', top: 0x8dbf3f, side: 0x7a8f45, natural: true },
+  { id: 'dirt', name: 'Dirt', top: 0x8a5a3a, side: 0x7d5236, natural: true },
+  { id: 'stone', name: 'Stone', top: 0xbbafa6, side: 0xa79c94, natural: true },
+  { id: 'sand', name: 'Sand', top: 0xeed9a4, side: 0xdcc58f, natural: true },
+  { id: 'snow', name: 'Snow', top: 0xfbf8f2, side: 0xe4e2e0, natural: true },
+  { id: 'planks', name: 'Planks', top: 0xc09a62, side: 0xa98552, natural: false },
+  { id: 'cut', name: 'Cut stone', top: 0x9c95a8, side: 0x8a8396, natural: false },
+  { id: 'slab', name: 'Stone slab', top: 0xbbafa6, side: 0xa79c94, natural: false, half: true },
+];
+const MAT = Object.fromEntries(MATS.map((m) => [m.id, m]));
+const BASE_TOP = [0x6f6a78, 0x77727f];
+const BASE_SIDE = 0x4e4858;
+
+// ---- World: columns of blocks, bottom to top (the prototype is 2.5D: no caves or overhangs).
+// The lab is always 24 × 24 m and 16 m tall; the grid sets how many cells that is.
+const GRIDS = { m1: { sx: 1, sy: 1, name: '1 m cubes' }, half: { sx: 1, sy: 0.5, name: '1 × ½ × 1 m voxels' }, cube: { sx: 0.5, sy: 0.5, name: '½ m cubes' } };
+let SX = 1, SY = 1, W = 24, D = 24, MAXH = 16;
+let cols = Array.from({ length: W * D }, () => []);
+const idx = (x, z) => z * W + x;
+const clampi = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const heightOf = (s) => s.length - (SY === 1 && s.length && MAT[s[s.length - 1]].half ? 0.5 : 0); // in cells
+const topOf = (x, z) => heightOf(cols[idx(clampi(x, 0, W - 1), clampi(z, 0, D - 1))]);
+
+const state = { ruleset: 'playground', res: 'm1', brush: 'voxel', mode: 'adaptive', quant: 0.5, slope: 1, depth: 1, grid: false, tool: 'place', mat: 'grass', scene: 'basics' };
+
+// ---- The rule.
+// Points on a half-metre lattice: (i, j) with i = 0..2W, j = 0..2D; even i/j fall on cell edges.
+// Each column's top has 9 of them. Columns that can reach a common height at a point share one
+// node there; where they cannot (a pillar's side), each keeps its own and a wall joins them.
+let FW = 2 * W + 1, FD = 2 * D + 1;
+let COLNODES = new Int32Array(W * D * 9), NODEVAL = new Float32Array(0);
+// What a column allows at its top: the range its surface may take (lo..hi) and where it rests (p).
+// An exposed natural top block rests at half height; anything else is fixed at its height.
+function rangeOf(col) {
+  const s = cols[col];
+  if (adaptive(col)) return { lo: s.length - state.depth, hi: s.length, p: s.length - 0.5 };
+  const e = heightOf(s);
+  return { lo: e, hi: e, p: e };
+}
+const PAIRS = []; // point pairs within one column's 3 × 3, with their distance in lattice steps
+for (let a = 0; a < 9; a++) for (let b = a + 1; b < 9; b++)
+  PAIRS.push([a, b, Math.hypot((a % 3) - (b % 3), Math.floor(a / 3) - Math.floor(b / 3))]);
+const edgeKey = (a, b) => (a < b ? a * W * D + b : b * W * D + a);
+function computeField() { solveField(new Set()); }
+// One solve of the field with the given cliff edges; returns the point values (COLNODES is set).
+function solveField(cliffs) {
+  const R = cols.map((_, c) => rangeOf(c));
+  const lo = [], hi = [], val = [];
+  for (let j = 0; j < FD; j++) for (let i = 0; i < FW; i++) {
+    const xs = (i % 2 ? [(i - 1) / 2] : [i / 2 - 1, i / 2]).filter((x) => x >= 0 && x < W);
+    const zs = (j % 2 ? [(j - 1) / 2] : [j / 2 - 1, j / 2]).filter((z) => z >= 0 && z < D);
+    const touching = [];
+    for (const z of zs) for (const x of xs) touching.push(idx(x, z));
+    // Columns at this point that share an edge through it, and are not split by a cliff, stay together.
+    const parent = new Map(touching.map((c) => [c, c]));
+    const find = (c) => (parent.get(c) === c ? c : find(parent.get(c)));
+    for (const a of touching) for (const b of touching) {
+      if (a >= b) continue;
+      const ax = a % W, az = Math.floor(a / W), bx = b % W, bz = Math.floor(b / W);
+      if (Math.abs(ax - bx) + Math.abs(az - bz) !== 1 || cliffs.has(edgeKey(a, b))) continue;
+      parent.set(find(a), find(b));
+    }
+    const parts = new Map();
+    for (const c of touching) { const r = find(c); if (!parts.has(r)) parts.set(r, []); parts.get(r).push(c); }
+    for (const part of parts.values()) {
+    part.sort((a, b) => R[b].hi - R[a].hi);
+    const touchingPart = part;
+    // Group the columns whose ranges overlap, highest first: a block between open ground and a
+    // higher neighbour joins the higher one, so it ramps up to it rather than staying flush.
+    const groups = [];
+    for (const c of touchingPart) {
+      const g = groups[groups.length - 1], r = R[c];
+      if (g && Math.max(g.lo, r.lo) <= Math.min(g.hi, r.hi)) {
+        g.lo = Math.max(g.lo, r.lo); g.hi = Math.min(g.hi, r.hi); g.p = Math.min(g.p, r.p); g.cols.push(c);
+      } else groups.push({ lo: r.lo, hi: r.hi, p: r.p, cols: [c] });
+    }
+    groups.forEach((g, n) => {
+      // One group: rest where its lowest column rests. Several: the lowest rises to its top and
+      // the others sink to their floor, so the wall between them is as short as it can be.
+      const start = groups.length === 1 ? clampi(g.p, g.lo, g.hi) : n === groups.length - 1 ? g.hi : g.lo;
+      // Natural columns in the group share one point; fixed ones (open ground, crafted blocks) keep
+      // their own, so a natural point can later rise off the ground (a ramp's side) with a wall below.
+      const natural = g.cols.filter((c) => R[c].lo < R[c].hi);
+      const at = (c, node) => { COLNODES[c * 9 + (j - 2 * Math.floor(c / W)) * 3 + (i - 2 * (c % W))] = node; };
+      if (natural.length) {
+        const nlo = Math.max(...natural.map((c) => R[c].lo)), nhi = Math.min(...natural.map((c) => R[c].hi));
+        const node = val.length;
+        lo.push(nlo); hi.push(nhi); val.push(clampi(start, nlo, nhi));
+        for (const c of natural) at(c, node);
+      }
+      for (const c of g.cols) {
+        if (R[c].lo < R[c].hi) continue;
+        const node = val.length;
+        lo.push(R[c].lo); hi.push(R[c].hi); val.push(R[c].lo);
+        at(c, node);
+      }
+    });
+    }
+  }
+  // Slope limit within each column, both ways: first a point is at most a neighbour + slope × distance
+  // (never below its floor), then at least a neighbour − slope × distance (never above its top), so
+  // a block that meets a higher one becomes a ramp up to it.
+  const k = state.slope * 0.5;
+  const relax = (down) => {
+    for (let pass = 0; pass < 400; pass++) {
+      let changed = false;
+      for (let c = 0; c < W * D; c++) {
+        const o = c * 9;
+        for (const [a, b, d] of PAIRS) {
+          const w = k * d;
+          for (const [n, m] of [[COLNODES[o + a], COLNODES[o + b]], [COLNODES[o + b], COLNODES[o + a]]]) {
+            const v = down ? Math.max(lo[n], Math.min(val[n], val[m] + w)) : Math.min(hi[n], Math.max(val[n], val[m] - w));
+            if (Math.abs(v - val[n]) > 1e-9) { val[n] = v; changed = true; }
+          }
+        }
+      }
+      if (!changed) break;
+    }
+  };
+  relax(true);
+  relax(false);
+  NODEVAL = new Float32Array(val.map((v, n) => clampi(state.quant === 0.5 ? Math.round(v * 2) / 2 : v, lo[n], hi[n])));
+  return NODEVAL;
+}
+function adaptive(col) {
+  const s = cols[col];
+  return state.mode === 'adaptive' && s.length > 0 && MAT[s[s.length - 1]].natural;
+}
+// ---- The Shape Playground's rules. Corner heights in halves of a cell (0 floor, 1 half, 2 top),
+// listed NW NE SE SW; canonical shapes descend east. Same tables as the playground.
+const PG_GAME = {
+  full: [2, 2, 2, 2], slab: [1, 1, 1, 1], wedge: [2, 0, 0, 2], outer: [2, 0, 0, 0], inner: [2, 2, 0, 2],
+  gentle_low: [1, 0, 0, 1], gentle_high: [2, 1, 1, 2], gentle_outer_low: [1, 0, 0, 0], gentle_outer_high: [2, 1, 1, 1],
+  gentle_inner_low: [1, 1, 0, 1], gentle_inner_high: [2, 2, 1, 2],
+};
+const PG_NEW = {
+  half_and_half_left: [2, 0, 0, 1], half_and_half_right: [1, 0, 0, 2],
+  tall_half_and_half_left: [2, 2, 1, 0], tall_half_and_half_right: [2, 2, 0, 1],
+  tilt_left: [2, 1, 1, 0], tilt_right: [1, 2, 0, 1], diagonal_slope: [1, 2, 1, 0], dimple: [2, 1, 2, 0],
+  saddle: [2, 0, 2, 0], uneven_saddle: [2, 0, 1, 0], half_saddle: [1, 0, 1, 0], high_half_saddle: [2, 1, 2, 1],
+};
+const PG_CORNERED = { ...PG_GAME, ...PG_NEW };
+const PG_EXTRA = {
+  half_pyramid: [[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+  half_ridge: [[0, 0, 0], [1, 1, 1], [0, 0, 0]],
+  half_ridge_end: [[0, 0, 0], [0, 1, 1], [0, 0, 0]],
+  half_ridge_corner: [[0, 0, 0], [0, 1, 1], [0, 1, 0]],
+  half_ridge_tee: [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
+  half_ridge_cross: [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+};
+const pgRotC = (h, t) => { let o = h.slice(); for (let i = 0; i < ((t % 4) + 4) % 4; i++) o = [o[3], o[0], o[1], o[2]]; return o; };
+const pgRotG = (g, t) => { let o = g.map((r) => r.slice()); for (let i = 0; i < ((t % 4) + 4) % 4; i++) o = o.map((_, r) => o.map((row) => row[r]).reverse()); return o; };
+function pgPoints(shape, turns) {
+  if (PG_EXTRA[shape]) return pgRotG(PG_EXTRA[shape], turns);
+  const [nw, ne, se, sw] = pgRotC(PG_CORNERED[shape], turns);
+  const split = PG_NEW[shape] ? (ne + sw > nw + se ? 1 : 0) : turns % 2;
+  const centre = split === 0 ? (nw + se) / 2 : (ne + sw) / 2;
+  return [[nw, (nw + ne) / 2, ne], [(nw + sw) / 2, centre, (ne + se) / 2], [sw, (sw + se) / 2, se]];
+}
+// The shape the rules give the top block of column (x, z): { shape, turns }.
+function pgShape(x, z) {
+  const t = cols[idx(x, z)].length;
+  const at = (xx, zz) => (xx < 0 || xx >= W || zz < 0 || zz >= D ? t : heightOf(cols[idx(xx, zz)]));
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([dx, dz]) => {
+    const n = [at(x + dx, z), at(x, z + dz), at(x + dx, z + dz)];
+    const higher = n.some((v) => v > t), lower = n.some((v) => v < t);
+    return higher && !lower ? 2 : lower ? 0 : 1; // rise, drop, rest
+  });
+  if (corners.every((v) => v === 0)) {
+    const card = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([dx, dz]) => {
+      const xx = x + dx, zz = z + dz;
+      return xx >= 0 && xx < W && zz >= 0 && zz < D ? heightOf(cols[idx(xx, zz)]) : null;
+    }); // east, south, west, north
+    const higher = card.map((v) => v !== null && v > t), same = card.map((v) => v === t);
+    const nh = higher.filter(Boolean).length, ns = same.filter(Boolean).length;
+    if (nh === 1 && ns === 0) return { shape: 'wedge', turns: (higher.indexOf(true) + 2) % 4 }; // rule 5
+    if (ns === 0) return { shape: 'half_pyramid', turns: 0 };                                     // rule 4
+    if (ns === 1) return { shape: 'half_ridge_end', turns: same.indexOf(true) };
+    if (ns === 2 && same[0] === same[2]) return { shape: 'half_ridge', turns: same[0] ? 0 : 1 };
+    if (ns === 2) return { shape: 'half_ridge_corner', turns: [0, 1, 2, 3].find((i) => same[i] && same[(i + 1) % 4]) };
+    if (ns === 3) return { shape: 'half_ridge_tee', turns: (same.indexOf(false) + 3) % 4 };
+    return { shape: 'half_ridge_cross', turns: 0 };
+  }
+  for (const shape of Object.keys(PG_CORNERED)) for (let turns = 0; turns < 4; turns++)
+    if (pgRotC(PG_CORNERED[shape], turns).join() === corners.join()) return { shape, turns };
+  return { shape: 'slab', turns: 0 }; // not reached: every corner pattern has a shape
+}
+// e.g. "wedge facing west", "half_ridge east-west", "slab".
+function pgName({ shape, turns }) {
+  if (['full', 'slab', 'half_pyramid', 'half_ridge_cross'].includes(shape)) return shape;
+  if (shape === 'half_ridge') return shape + (turns % 2 ? ' north-south' : ' east-west');
+  return `${shape} facing ${['east', 'south', 'west', 'north'][turns]}`;
+}
+function pgSurface(x, z) {
+  const s = cols[idx(x, z)];
+  if (!adaptive(idx(x, z))) { const e = heightOf(s) * SY; return [[e, e, e], [e, e, e], [e, e, e]]; }
+  const { shape, turns } = pgShape(x, z), t = s.length;
+  return pgPoints(shape, turns).map((row) => row.map((v) => (t - 1 + v / 2) * SY));
+}
+
+// A column's top surface: 3 × 3 heights in metres, rows north to south (z), entries west to east (x).
+function surface(x, z) {
+  if (state.ruleset === 'playground') return pgSurface(x, z);
+  if (state.res !== 'm1') return autotile(x, z);
+  const o = idx(x, z) * 9, h = [];
+  for (let r = 0; r < 3; r++) h.push([0, 1, 2].map((c) => NODEVAL[COLNODES[o + r * 3 + c]]));
+  return h;
+}
+
+// The finer grids: a per-voxel autotile. A point of a natural top voxel sits at the voxel's top
+// unless it touches lower neighbours (then at its floor); touching a higher one keeps it up.
+function autotile(x, z) {
+  const s = cols[idx(x, z)], t = s.length;
+  if (!adaptive(idx(x, z))) { const e = heightOf(s) * SY; return [[e, e, e], [e, e, e], [e, e, e]]; }
+  // What the voxels around point (r, c) of this top are, relative to it.
+  const around = (r, c) => {
+    const i = 2 * x + c, j = 2 * z + r;
+    const xs = (i % 2 ? [x] : [i / 2 - 1, i / 2]).filter((v) => v >= 0 && v < W);
+    const zs = (j % 2 ? [z] : [j / 2 - 1, j / 2]).filter((v) => v >= 0 && v < D);
+    let higher = false, lower = 0;
+    for (const zz of zs) for (const xx of xs) {
+      if (xx === x && zz === z) continue;
+      const n = cols[idx(xx, zz)].length;
+      if (n > t) higher = true; else if (n < t) lower++;
+    }
+    return { higher, lower };
+  };
+  // A corner drops to the floor when at least 2 of its 3 neighbours are lower and none is higher.
+  const drop = [[false, false, false], [false, false, false], [false, false, false]];
+  for (const [r, c] of [[0, 0], [0, 2], [2, 0], [2, 2]]) { const a = around(r, c); drop[r][c] = !a.higher && a.lower >= 2; }
+  // An edge midpoint drops when the neighbour across is lower and a corner of that edge drops, so
+  // a single low neighbour leaves a clean square step rather than a notch.
+  for (const [r, c, e1, e2] of [[0, 1, [0, 0], [0, 2]], [2, 1, [2, 0], [2, 2]], [1, 0, [0, 0], [2, 0]], [1, 2, [0, 2], [2, 2]]]) {
+    const a = around(r, c);
+    drop[r][c] = !a.higher && a.lower >= 1 && (drop[e1[0]][e1[1]] || drop[e2[0]][e2[1]]);
+  }
+  return drop.map((row) => row.map((d) => (d ? t - 1 : t) * SY));
+}
+
+// ---- Mesh building.
+function linear(hex, k = 1) {
+  const c = new THREE.Color(hex);
+  return [c.r * k, c.g * k, c.b * k];
+}
+function jitter(col) { // ±3 % per column, so cells read without textures
+  let h = (col * 2654435761) >>> 0; h ^= h >>> 15;
+  return 0.97 + (h % 61) / 1000;
+}
+function sideColor(owner, k) {
+  if (owner < 0 || k < 0) return linear(BASE_SIDE);
+  const s = cols[owner];
+  if (s.length === 0) return linear(BASE_SIDE);
+  const m = s[Math.min(k, s.length - 1)];
+  return linear(MAT[m].side, jitter(owner * 31 + k));
+}
+function clipY(poly, y, keepAbove) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const ina = keepAbove ? a[1] >= y : a[1] <= y;
+    const inb = keepAbove ? b[1] >= y : b[1] <= y;
+    if (ina) out.push(a);
+    if (ina !== inb) {
+      const t = (y - a[1]) / (b[1] - a[1]);
+      out.push([a[0] + (b[0] - a[0]) * t, y]);
+    }
+  }
+  return out;
+}
+
+function build() {
+  const pos = [], colr = [], info = [];
+  // Every triangle is wound to face `out` (up for tops, toward the lower column for walls).
+  const tri = (p0, p1, p2, c, inf, out = [0, 1, 0]) => {
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nx * out[0] + ny * out[1] + nz * out[2] < 0) [p1, p2] = [p2, p1];
+    for (const p of [p0, p1, p2]) pos.push(p[0] * SX, p[1], p[2] * SX); // cells → metres across
+    colr.push(...c, ...c, ...c); info.push(inf);
+  };
+  if (state.res === 'm1' && state.ruleset !== 'playground') computeField();
+  const surf = new Array(W * D);
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) surf[idx(x, z)] = surface(x, z);
+
+  // Top surfaces: per quarter of the cell, two triangles meeting at the centre-to-corner diagonal.
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const col = idx(x, z), s = cols[col], h = surf[col];
+    const color = s.length ? linear(MAT[s[s.length - 1]].top, jitter(col)) : linear(BASE_TOP[(x + z) & 1]);
+    const V = (r, c) => [x + c / 2, h[r][c], z + r / 2];
+    const C = V(1, 1);
+    for (const [kr, kc] of [[0, 0], [0, 2], [2, 2], [2, 0]]) {
+      const K = V(kr, kc), M1 = V(kr, 1), M2 = V(1, kc);
+      tri(C, M1, K, color, { kind: 'top', col });
+      tri(C, K, M2, color, { kind: 'top', col });
+    }
+  }
+
+  // Walls between two edge profiles along a shared line; P(s, y) maps to world space.
+  function wall(P, a0, a1, b0, b1, A, B) {
+    const d0 = a0 - b0, d1 = a1 - b1;
+    const spans = d0 * d1 < 0 ? [[0, d0 / (d0 - d1)], [d0 / (d0 - d1), 1]] : [[0, 1]];
+    for (const [s0, s1] of spans) {
+      const sm = (s0 + s1) / 2;
+      const am = a0 + (a1 - a0) * sm, bm = b0 + (b1 - b0) * sm;
+      if (Math.abs(am - bm) < 1e-6) continue;
+      const aHigh = am > bm;
+      const hiF = (s) => (aHigh ? a0 + (a1 - a0) * s : b0 + (b1 - b0) * s);
+      const loF = (s) => (aHigh ? b0 + (b1 - b0) * s : a0 + (a1 - a0) * s);
+      const owner = aHigh ? A : B, facing = aHigh ? B : A;
+      const poly = [[s0, loF(s0)], [s1, loF(s1)], [s1, hiF(s1)], [s0, hiF(s0)]];
+      const ymin = Math.floor(Math.min(loF(s0), loF(s1)) / SY + 1e-6), ymax = Math.ceil(Math.max(hiF(s0), hiF(s1)) / SY - 1e-6);
+      for (let k = ymin; k < ymax; k++) {
+        const band = clipY(clipY(poly, k * SY, true), (k + 1) * SY, false);
+        if (band.length < 3) continue;
+        const color = sideColor(owner, k);
+        const pts = band.map(([s, y]) => P(s, y));
+        const ox = (owner % W) + 0.5, oz = Math.floor(owner / W) + 0.5;
+        const out = [pts[0][0] - ox, 0, pts[0][2] - oz]; // from the owner's centre to its wall
+        for (let i = 1; i + 1 < pts.length; i++) tri(pts[0], pts[i], pts[i + 1], color, { kind: 'wall', owner, facing }, out);
+      }
+    }
+  }
+  const BASE = -1, FLAT = [BASE, BASE, BASE];
+  // Each shared edge in two halves: profiles of three heights (start, middle, end).
+  function edge(P, a, b, A, B) {
+    wall((s, y) => P(s / 2, y), a[0], a[1], b[0], b[1], A, B);
+    wall((s, y) => P(0.5 + s / 2, y), a[1], a[2], b[1], b[2], A, B);
+  }
+  const colOf = (h, c) => [h[0][c], h[1][c], h[2][c]];
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const A = idx(x, z), a = surf[A];
+    if (x + 1 < W) { const B = idx(x + 1, z); edge((s, y) => [x + 1, y, z + s], colOf(a, 2), colOf(surf[B], 0), A, B); }
+    else edge((s, y) => [W, y, z + s], colOf(a, 2), FLAT, A, -1);
+    if (z + 1 < D) { const B = idx(x, z + 1); edge((s, y) => [x + s, y, z + 1], a[2], surf[B][0], A, B); }
+    else edge((s, y) => [x + s, y, D], a[2], FLAT, A, -1);
+    if (x === 0) edge((s, y) => [0, y, z + s], colOf(a, 0), FLAT, A, -1);
+    if (z === 0) edge((s, y) => [x + s, y, 0], a[0], FLAT, A, -1);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+  g.computeVertexNormals();
+  return { g, info };
+}
+
+// ---- Scene setup.
+const canvas = document.getElementById('view');
+const stage = document.getElementById('stage');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+} catch (e) {
+  stage.insertAdjacentHTML('beforeend', '<div class="error">This prototype needs WebGL, which this browser has turned off.</div>');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+camera.position.set(W / 2 + 22, 24, D / 2 + 26);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(W / 2, 2, D / 2);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.47;
+controls.minDistance = 6;
+controls.maxDistance = 90;
+
+scene.add(new THREE.HemisphereLight(0xe2ecf6, 0x6b5a45, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
+sun.position.set(W / 2 + 16, 30, D / 2 + 9);
+sun.target.position.set(W / 2, 0, D / 2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 90 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target);
+
+const material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92, metalness: 0, side: THREE.FrontSide });
+const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+mesh.castShadow = mesh.receiveShadow = true;
+scene.add(mesh);
+let triInfo = [];
+
+const gridLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x12202c, transparent: true, opacity: 0.45 }));
+scene.add(gridLines);
+
+const ghostGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02));
+const ghost = new THREE.LineSegments(ghostGeo, new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.95 }));
+ghost.renderOrder = 10;
+ghost.visible = false;
+scene.add(ghost);
+
+function rebuild() {
+  const { g, info } = build();
+  mesh.geometry.dispose();
+  mesh.geometry = g;
+  triInfo = info;
+  const lp = [];
+  if (state.grid) {
+    for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+      const t = heightOf(cols[idx(x, z)]);
+      if (!t) continue;
+      const y = t * SY + 0.01, x0 = x * SX, x1 = (x + 1) * SX, z0 = z * SX, z1 = (z + 1) * SX;
+      lp.push(x0, y, z0, x1, y, z0, x1, y, z0, x1, y, z1, x1, y, z1, x0, y, z1, x0, y, z1, x0, y, z0);
+    }
+  }
+  gridLines.geometry.dispose();
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  gridLines.geometry = lg;
+  let blocks = 0, shaped = 0;
+  for (let i = 0; i < cols.length; i++) { blocks += cols[i].length; if (adaptive(i)) shaped++; }
+  document.getElementById('stat-blocks').textContent = blocks.toLocaleString();
+  document.getElementById('stat-blocks-label').textContent = state.res === 'm1' ? 'blocks' : 'voxels';
+  document.getElementById('stat-shaped').textContent = shaped.toLocaleString();
+  updateHover();
+}
+
+// ---- Scenes.
+function stackFor(h, top) {
+  const s = [];
+  for (let y = 0; y < h; y++) {
+    const d = h - 1 - y;
+    let m;
+    if (!MAT[top].natural) m = top;
+    else if (d === 0) m = top;
+    else if (top === 'sand') m = d < 3 ? 'sand' : 'stone';
+    else if (top === 'stone') m = 'stone';
+    else m = d < 3 ? 'dirt' : 'stone';
+    s.push(m);
+  }
+  return s;
+}
+// Scenes are drawn on a 24 × 24 design grid of 1 m blocks, then realised in the current grid.
+const DW = 24;
+let design = [];
+const didx = (x, z) => z * DW + x;
+function clear() { design = Array.from({ length: DW * DW }, () => []); }
+function put(x, z, h, top) { if (x >= 0 && x < DW && z >= 0 && z < DW) design[didx(x, z)] = stackFor(h, top); }
+// metric: each 1 m block fills its full volume; 'voxel': each design block becomes one voxel in
+// one column (centred in the lab), so Basics shows how single voxels behave.
+function realise(unit) {
+  cols = Array.from({ length: W * D }, () => []);
+  const f = Math.round(1 / SX), v = Math.round(1 / SY);
+  for (let z = 0; z < DW; z++) for (let x = 0; x < DW; x++) {
+    const S = design[didx(x, z)];
+    if (!S.length) continue;
+    if (unit === 'voxel') { const o = (W - DW) / 2; cols[idx(x + o, z + o)] = [...S]; continue; }
+    const cells = [];
+    for (const m of S) for (let k = 0; k < v; k++) cells.push(m);
+    for (let k = 0; k < cells.length - 1; k++) if (cells[k] === 'grass') cells[k] = 'dirt';
+    for (let dz = 0; dz < f; dz++) for (let dx = 0; dx < f; dx++) cols[idx(x * f + dx, z * f + dz)] = [...cells];
+  }
+}
+function hash2(x, z, seed) { let h = (x * 374761393 + z * 668265263 + seed * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295; }
+function valueNoise(x, z, seed) {
+  const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi;
+  const sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
+  const a = hash2(xi, zi, seed), b = hash2(xi + 1, zi, seed), c = hash2(xi, zi + 1, seed), d = hash2(xi + 1, zi + 1, seed);
+  return a + (b - a) * sx + (c - a) * sz + (a - b - c + d) * sx * sz;
+}
+const SCENES = {
+  basics: { name: 'Basics', unit: 'voxel', make() {
+    clear();
+    put(3, 3, 1, 'dirt');
+    put(7, 3, 1, 'dirt'); put(8, 3, 1, 'dirt');
+    put(12, 3, 1, 'grass'); put(13, 3, 1, 'grass'); put(12, 4, 1, 'grass');
+    for (let x = 16; x < 20; x++) put(x, 3, 1, 'grass');
+    for (let z = 8; z < 10; z++) for (let x = 3; x < 5; x++) put(x, z, 1, 'grass');
+    for (let z = 8; z < 11; z++) for (let x = 8; x < 11; x++) put(x, z, 1, 'grass');
+    put(15, 9, 2, 'dirt');
+    put(18, 9, 3, 'stone');
+    put(3, 14, 1, 'sand'); put(4, 15, 1, 'sand');
+    put(10, 14, 1, 'grass'); put(9, 15, 1, 'grass'); put(10, 15, 2, 'grass'); put(11, 15, 1, 'grass'); put(10, 16, 1, 'grass');
+    put(15, 15, 1, 'stone'); put(16, 15, 1, 'grass'); put(17, 15, 1, 'sand');
+    put(20, 15, 1, 'planks');
+    put(20, 9, 1, 'slab'); put(21, 9, 1, 'grass'); put(21, 10, 1, 'grass');
+    for (let x = 3; x < 9; x++) put(x, 20, x - 2, 'grass');
+    for (let x = 12; x < 20; x++) put(x, 20, 1, x < 16 ? 'grass' : 'cut');
+    for (let x = 12; x < 20; x++) put(x, 21, 1, x < 16 ? 'grass' : 'cut');
+  } },
+  // Field scenes are sampled at every cell of the current grid. `cells(xm, zm)` gives a column's
+  // height in cells (`metres(...)` in metres, rounded to cells); `top` picks its surface material
+  // from its height (m) and steepness (m of rise per m).
+  terraces: { name: 'Terraces', field: true, cells(xm, zm) {
+    const r = Math.floor(Math.min(xm, zm, 23 - xm, 23 - zm));
+    return 1 + Math.floor(r / 3) + (r >= 9 ? 1 : 0);
+  }, top: (h, steep, n) => (n >= 5 ? 'snow' : 'grass') },
+  hill: { name: 'Hill', field: true, metres(xm, zm) {
+    const r1 = Math.hypot(xm - 9.5, zm - 10.5), r2 = Math.hypot(xm - 17, zm - 16);
+    return 1 + 9 * Math.exp(-(r1 * r1) / 30) + 4 * Math.exp(-(r2 * r2) / 12);
+  }, top: (h) => (h >= 9 ? 'snow' : h <= 1 ? 'sand' : 'grass') },
+  terrain: { name: 'Terrain', field: true, metres(xm, zm) {
+    const n = valueNoise(xm / 9, zm / 9, 7) * 0.65 + valueNoise(xm / 4, zm / 4, 11) * 0.25 + valueNoise(xm / 2, zm / 2, 13) * 0.1;
+    return 1 + (n - 0.25) * 12;
+  }, top: (h, steep) => (h <= 2 ? 'sand' : h >= 10 ? 'snow' : steep >= 3 ? 'stone' : 'grass') },
+  wall: { name: 'Wall & pile', make() {
+    clear();
+    for (let z = 0; z < DW; z++) for (let x = 0; x < DW; x++) put(x, z, 2, 'grass');
+    for (let x = 6; x < 18; x++) design[didx(x, 10)] = [...stackFor(2, 'dirt'), 'planks', 'planks', 'planks', 'planks'];
+    for (let x = 8; x < 14; x++) {
+      const extra = x < 10 || x > 11 ? 1 : 2;
+      put(x, 11, 2 + extra + 1, 'sand'); put(x, 12, 2 + extra, 'sand'); if (extra > 1) put(x, 13, 3, 'sand');
+    }
+    for (let z = 3; z < 7; z++) for (let x = 3; x < 7; x++) design[didx(x, z)] = [...stackFor(2, 'dirt'), 'cut', 'cut'];
+    put(7, 4, 3, 'grass'); put(7, 5, 3, 'grass'); put(8, 5, 3, 'dirt');
+    for (let x = 3; x < 7; x++) design[didx(x, 7)] = [...stackFor(2, 'dirt'), 'slab'];
+    put(16, 16, 4, 'grass'); put(17, 16, 3, 'grass'); put(16, 17, 3, 'grass'); put(15, 16, 3, 'grass');
+  } },
+  meadow: { name: 'Flat meadow', make() {
+    clear();
+    for (let z = 0; z < DW; z++) for (let x = 0; x < DW; x++) put(x, z, 1, 'grass');
+  } },
+};
+
+// ---- UI.
+const $ = (id) => document.getElementById(id);
+function pressGroup(container, value) {
+  for (const b of container.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === String(value)));
+}
+const scenesEl = $('scenes');
+for (const [key, s] of Object.entries(SCENES)) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip'; b.dataset.v = key; b.id = 'scene-' + key; b.textContent = s.name;
+  b.addEventListener('click', () => loadScene(key));
+  scenesEl.append(b);
+}
+function realiseField(sc) {
+  cols = Array.from({ length: W * D }, () => []);
+  const H = new Array(W * D);
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    // Cell centres in metres, offset so the 1 m grid samples whole-metre points as it always has.
+    const xm = (x + 0.5) * SX - 0.5, zm = (z + 0.5) * SX - 0.5;
+    H[idx(x, z)] = Math.max(1, sc.cells ? sc.cells(xm, zm) : Math.round(sc.metres(xm, zm) / SY));
+  }
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const n = H[idx(x, z)];
+    let steep = 0;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const m = H[idx(clampi(x + dx, 0, W - 1), clampi(z + dz, 0, D - 1))];
+      steep = Math.max(steep, (Math.abs(m - n) * SY) / SX);
+    }
+    const top = sc.top(n * SY, steep, n), stack = [];
+    for (let y = 0; y < n; y++) {
+      const d = (n - 1 - y) * SY; // depth below the top (m)
+      stack.push(y === n - 1 ? top : top === 'sand' ? (d < 3 ? 'sand' : 'stone') : top === 'stone' ? 'stone' : d < 3 ? 'dirt' : 'stone');
+    }
+    cols[idx(x, z)] = stack;
+  }
+}
+function loadScene(key) {
+  if (typeof selBox !== 'undefined') selBox.visible = false;
+  state.scene = key;
+  const sc = SCENES[key];
+  if (sc.field) realiseField(sc); else { sc.make(); realise(sc.unit); }
+  pressGroup(scenesEl, key);
+  rebuild();
+}
+function showRuleset() {
+  const pg = state.ruleset === 'playground', v = state.res;
+  pressGroup($('ruleset'), state.ruleset);
+  $('m1-controls').hidden = pg || v !== 'm1';
+  $('rule-playground').hidden = !pg;
+  $('rule-m1').hidden = pg || v !== 'm1';
+  $('rule-voxel').hidden = pg || v === 'm1';
+}
+function setRes(v) {
+  state.res = v;
+  ({ sx: SX, sy: SY } = GRIDS[v]);
+  W = D = Math.round(24 / SX); MAXH = Math.round(16 / SY);
+  FW = 2 * W + 1; FD = 2 * D + 1; COLNODES = new Int32Array(W * D * 9);
+  pressGroup($('res'), v);
+  $('brush-wrap').hidden = v === 'm1';
+  showRuleset();
+  $('mat-slab').hidden = v !== 'm1';
+  if (v !== 'm1' && state.mat === 'slab') setMat('cut');
+  setMat(state.mat);
+  loadScene(state.scene);
+}
+
+const paletteEl = $('palette');
+const groups = [['Adapts (natural)', true], ['Always cubes (crafted)', false]];
+for (const [label, natural] of groups) {
+  const l = document.createElement('div'); l.className = 'group-label'; l.textContent = label; paletteEl.append(l);
+  MATS.forEach((m, i) => {
+    if (m.natural !== natural) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'swatch'; b.dataset.v = m.id; b.id = 'mat-' + m.id;
+    b.innerHTML = `<i style="background:#${m.top.toString(16).padStart(6, '0')}"></i>${m.name}<kbd>${i + 1}</kbd>`;
+    b.addEventListener('click', () => setMat(m.id));
+    paletteEl.append(b);
+  });
+}
+function setMat(id) { state.mat = id; pressGroup(paletteEl, id); setBrush(MAT[id].natural ? 'voxel' : 'block'); }
+function setBrush(v) { state.brush = v; pressGroup($('brush'), v); updateBadge(); }
+function setTool(v) { state.tool = v; pressGroup($('tool'), v); updateBadge(); updateHover(); }
+function setMode(v) { state.mode = v; pressGroup($('mode'), v); rebuild(); updateBadge(); }
+$('ruleset').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) { state.ruleset = v; showRuleset(); rebuild(); } });
+$('res').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) setRes(v); });
+$('brush').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) setBrush(v); });
+$('tool').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) setTool(v); });
+$('mode').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) setMode(v); });
+$('quant').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) { state.quant = Number(v); pressGroup($('quant'), v); rebuild(); } });
+$('depth').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) { state.depth = Number(v); pressGroup($('depth'), v); rebuild(); } });
+$('slope').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) { state.slope = Number(v); pressGroup($('slope'), v); rebuild(); } });
+$('opt-grid').addEventListener('change', (e) => { state.grid = e.target.checked; rebuild(); });
+function updateBadge() {
+  const m = MAT[state.mat];
+  $('badge').innerHTML = `<span><b>${{ place: 'Placing', remove: 'Removing', copy: 'Copying 5 × 5 × 5' }[state.tool]}</b></span>` +
+    (state.tool === 'place' ? `<span><i class="dot" style="background:#${m.top.toString(16).padStart(6, '0')}"></i>${m.name}</span>` : '') +
+    (state.tool === 'place' && state.res !== 'm1' ? `<span>${state.brush === 'block' ? '1 m block' : 'one voxel'}</span>` : '') +
+    `<span>${GRIDS[state.res].name}</span><span>${state.mode === 'adaptive' ? 'Adaptive shapes' : 'Cubes'}</span>`;
+}
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea')) return;
+  const n = Number(e.key);
+  if (n >= 1 && n <= MATS.length) setMat(MATS[n - 1].id);
+  else if (e.key === 'x' || e.key === 'X') setTool(state.tool === 'place' ? 'remove' : 'place');
+  else if (e.key === 'v' || e.key === 'V') setTool('copy');
+  else if (e.key === 'c' || e.key === 'C') setMode(state.mode === 'adaptive' ? 'cubes' : 'adaptive');
+});
+
+// ---- Picking and editing.
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let pointer = null;
+function target(kind) {
+  if (kind === true) kind = 'remove';
+  if (kind === false) kind = 'place';
+  if (!pointer) return null;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((pointer.x - r.left) / r.width) * 2 - 1, -((pointer.y - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObject(mesh, false)[0];
+  if (!hit) return null;
+  const inf = triInfo[hit.faceIndex];
+  if (!inf) return null;
+  if (kind === 'copy') {
+    const col = inf.kind === 'top' ? inf.col : inf.owner;
+    if (col < 0 || cols[col].length === 0) return null;
+    const n = cols[col].length;
+    const y = inf.kind === 'top' ? n - 1 : clampi(Math.floor(hit.point.y / SY - 1e-4), 0, n - 1);
+    return { col, y, copy: true };
+  }
+  const big = state.res !== 'm1' && state.brush === 'block';
+  const f = big ? Math.round(1 / SX) : 1, v = big ? Math.round(1 / SY) : 1;
+  const footOf = (col) => {
+    const x0 = Math.floor((col % W) / f) * f, z0 = Math.floor(Math.floor(col / W) / f) * f, foot = [];
+    for (let dz = 0; dz < f; dz++) for (let dx = 0; dx < f; dx++) foot.push(idx(x0 + dx, z0 + dz));
+    return { x0, z0, foot };
+  };
+  if (kind === 'remove') {
+    const col = inf.kind === 'top' ? inf.col : inf.owner;
+    if (col < 0 || cols[col].length === 0) return null;
+    const { x0, z0, foot } = footOf(col);
+    const yb = Math.floor((cols[col].length - 1) / v) * v;
+    const yt = Math.max(...foot.map((c) => cols[c].length));
+    return { remove: true, x0, z0, f, foot, yb, yt };
+  }
+  const col = inf.kind === 'top' ? inf.col : inf.facing;
+  if (col < 0) return null;
+  const { x0, z0, foot } = footOf(col);
+  const yb = Math.max(...foot.map((c) => cols[c].length));
+  if (yb + v > MAXH) return null;
+  return { remove: false, x0, z0, f, foot, yb, yt: yb + v };
+}
+function updateHover(removeOverride) {
+  const t = target(removeOverride ? 'remove' : state.tool);
+  ghost.visible = !!t;
+  if (t && t.copy) {
+    ghost.scale.set(SX, SY, SX);
+    ghost.position.set(((t.col % W) + 0.5) * SX, (t.y + 0.5) * SY, (Math.floor(t.col / W) + 0.5) * SX);
+  } else if (t) {
+    ghost.scale.set(t.f * SX, (t.yt - t.yb) * SY, t.f * SX);
+    ghost.position.set((t.x0 + t.f / 2) * SX, ((t.yb + t.yt) / 2) * SY, (t.z0 + t.f / 2) * SX);
+  }
+  if (t) {
+    ghost.material.color.set(t.copy ? 0x4cd3ee : t.remove ? 0xff6b5a : 0xffffff);
+  }
+}
+
+// ---- Copy a 5 × 5 × 5 set as JSON.
+const CODES = { grass: 'g', dirt: 'd', stone: 's', sand: 'a', snow: 'w', planks: 'p', cut: 'c', slab: 'h' };
+const selBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(5.04, 5.04, 5.04)),
+  new THREE.LineBasicMaterial({ color: 0x4cd3ee, depthTest: false, transparent: true, opacity: 0.9 }));
+selBox.renderOrder = 11;
+selBox.visible = false;
+scene.add(selBox);
+const round = (v) => Math.round(v * 1000) / 1000;
+function selectionJson(cx, cy, cz) {
+  const layers = [];
+  for (let y = cy + 2; y >= cy - 2; y--) {
+    const rows = [];
+    for (let z = cz - 2; z <= cz + 2; z++) {
+      let row = '';
+      for (let x = cx - 2; x <= cx + 2; x++) {
+        if (x < 0 || x >= W || z < 0 || z >= D || y < 0) { row += '-'; continue; }
+        const s = cols[idx(x, z)];
+        row += y < s.length ? CODES[s[y]] : '.';
+      }
+      rows.push(row);
+    }
+    layers.push({ y, rows });
+  }
+  const tops = [], surfaces = [], shapes = [];
+  for (let z = cz - 2; z <= cz + 2; z++) {
+    const t = [], su = [], names = [];
+    for (let x = cx - 2; x <= cx + 2; x++) {
+      if (x < 0 || x >= W || z < 0 || z >= D) { t.push(null); su.push(null); continue; }
+      t.push(topOf(x, z));
+      if (state.ruleset === 'playground') {
+        const c = idx(x, z);
+        if (adaptive(c)) names.push(pgName(pgShape(x, z)));
+        else names.push(cols[c].length ? 'crafted (flat)' : 'ground');
+      }
+      const sf = surface(x, z);
+      su.push(sf.map((row) => row.map(round)));
+    }
+    tops.push(t); surfaces.push(su); if (names.length) shapes.push(names);
+  }
+  const center = cols[idx(cx, cz)][cy];
+  return JSON.stringify({
+    lab: 'Adaptive Block Lab',
+    center: { x: cx, y: cy, z: cz, block: MAT[center].name.toLowerCase() },
+    settings: { rules: state.ruleset === 'playground' ? 'playground rules 1-5' : 'previous rules', grid: GRIDS[state.res].name, cell: { width_m: SX, height_m: SY }, shapes: state.mode, heights: state.quant === 0.5 ? 'half-metre' : 'exact', slope: { 0.5: '27°', 1: '45°', 2: '63°' }[state.slope], depth: state.depth, scene: state.scene },
+    axes: 'layers run top to bottom (y); each row is one z, west to east (x increasing); rows run north to south (z increasing)',
+    legend: { '.': 'air', '-': 'outside the lab', ...Object.fromEntries(Object.entries(CODES).map(([k, v]) => [v, MAT[k].name.toLowerCase()])) },
+    layers,
+    columns: {
+      note: '5 × 5 columns around the centre, rows by z, entries by x; top = column height in cells (on the 1 m grid a slab on top counts ½); each surface is its 3 × 3 point heights in metres: rows north to south, entries west to east (corners, edge midpoints, centre)',
+      tops,
+      ...(shapes.length ? { shapes } : {}),
+      surfaces,
+    },
+  }, null, 1).replace(/\[\s*((?:-?[\d.]+|null)(?:,\s*(?:-?[\d.]+|null))*)\s*\]/g, (m, inner) => '[' + inner.split(/,\s*/).join(', ') + ']')
+    .replace(/\[\s*(\[[^\[\]]*\]),\s*(\[[^\[\]]*\]),\s*(\[[^\[\]]*\])\s*\]/g, '[$1, $2, $3]');
+}
+function copySelection(t) {
+  const cx = t.col % W, cz = Math.floor(t.col / W), cy = t.y;
+  const json = selectionJson(cx, cy, cz);
+  selBox.scale.set(SX, SY, SX);
+  selBox.position.set((cx + 0.5) * SX, (cy + 0.5) * SY, (cz + 0.5) * SX);
+  selBox.visible = true;
+  const area = $('share-json'), status = $('share-status');
+  area.value = json;
+  area.hidden = false;
+  const label = `${MAT[cols[t.col][cy]].name.toLowerCase()} at (${cx}, ${cy}, ${cz})`;
+  const fallback = () => { area.focus(); area.select(); status.className = 'hint-text'; status.textContent = `Your browser blocked the clipboard. The 5 × 5 × 5 set around ${label} is selected below: copy it and paste it into the chat.`; };
+  try {
+    navigator.clipboard.writeText(json).then(() => { status.className = 'hint-text ok'; status.textContent = `Copied the 5 × 5 × 5 set around ${label}. Paste it into the chat.`; }, fallback);
+  } catch { fallback(); }
+}
+function apply(remove) {
+  if (!remove && state.tool === 'copy') { const t = target('copy'); if (t) copySelection(t); return; }
+  const t = target(remove);
+  if (!t) return;
+  for (const c of t.foot) {
+    if (t.remove) cols[c].length = Math.min(cols[c].length, t.yb);
+    else while (cols[c].length < t.yt) cols[c].push(state.mat);
+  }
+  rebuild();
+}
+let down = null;
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button }; });
+canvas.addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY }; if (e.pointerType === 'mouse' && !e.buttons) updateHover(); else ghost.visible = false; });
+canvas.addEventListener('pointerleave', () => { pointer = null; ghost.visible = false; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  const quick = performance.now() - down.t < 500;
+  pointer = { x: e.clientX, y: e.clientY };
+  if (moved < 6 && quick) apply(down.button === 2 || e.shiftKey || state.tool === 'remove');
+  down = null;
+  if (e.pointerType === 'mouse') updateHover(); else ghost.visible = false;
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ---- Loop.
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+pressGroup($('tool'), state.tool);
+pressGroup($('mode'), state.mode);
+pressGroup($('quant'), String(state.quant));
+pressGroup($('slope'), String(state.slope));
+pressGroup($('depth'), String(state.depth));
+showRuleset();
+setRes('m1');
+</script>

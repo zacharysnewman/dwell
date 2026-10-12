@@ -1,0 +1,904 @@
+<title>Shape Playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the same workbench as the Adaptive Block Lab — controls in a left rail (a bottom sheet on phones), the 3D stage filling the rest. */
+:root {
+  --bg: #e9edf1;
+  --panel: #f8fafb;
+  --fg: #1b2330;
+  --muted: #5a6677;
+  --line: #d3dae2;
+  --accent: #17809a;
+  --accent-ink: #ffffff;
+  --accent-soft: #d6eef3;
+  --chip: #eef2f5;
+  --sky-top: #a9cfe8;
+  --sky-bottom: #eef1ea;
+  --good: #1f8a4c;
+  --bad: #c8362f;
+  --warn: #b5650d;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+    --accent: #4cbfd6; --accent-ink: #08222a; --accent-soft: #173a44; --chip: #1e2630;
+    --sky-top: #1d3247; --sky-bottom: #3a4250; --good: #5fd08a; --bad: #ff7a70; --warn: #f0a050; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+  --accent: #4cbfd6; --accent-ink: #08222a; --accent-soft: #173a44; --chip: #1e2630;
+  --sky-top: #1d3247; --sky-bottom: #3a4250; --good: #5fd08a; --bad: #ff7a70; --warn: #f0a050; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+#app { height: 100%; display: grid; grid-template-columns: 340px 1fr; }
+#panel { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 20px 18px 24px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+#stage { position: relative; min-width: 0; min-height: 0; background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 4px 0 8px; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); }
+h2 { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+section { display: flex; flex-direction: column; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); font-weight: 600; }
+.hint-text { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.hint-text.ok { color: var(--fg); }
+.shapes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.shape { display: flex; flex-direction: column; align-items: center; gap: 4px; background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; font-size: 12px; text-align: center; }
+.shape[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.shape canvas { width: 54px; height: 40px; }
+.shape:disabled { opacity: 0.45; cursor: default; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font-size: 13px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.selected { font-family: var(--font-mono); font-size: 12px; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.rule { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.rules { display: flex; flex-direction: column; gap: 6px; }
+.rulecard { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.rulecard[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.rulecard b { font-size: 13px; }
+.rulecard .txt { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.rulecard .counts { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+.rulecard.off { opacity: 0.55; }
+.good { color: var(--good); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+.proposed { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); margin-left: 6px; }
+.conflicts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.conflicts h3 { font-size: 12px; font-weight: 600; margin: 8px 0 2px; }
+.conflict { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; display: grid; gap: 4px; }
+.conflict.sel { border-color: var(--accent); }
+.conflict button.go { all: unset; cursor: pointer; display: grid; gap: 2px; }
+.conflict button.go:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.conflict .who { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.conflict .take { justify-self: start; font-size: 12px; padding: 4px 8px; }
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
+.legend b { display: inline-block; width: 20px; font-family: var(--font-mono); color: var(--accent); }
+textarea { margin-top: 8px; width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 11px; line-height: 1.35; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
+.keys { font-size: 12px; color: var(--muted); margin: 0; }
+.keys kbd { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.badge { position: absolute; top: 12px; left: 12px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; pointer-events: none; }
+.error { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--fg); }
+@media (max-width: 760px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: 55% 45%; }
+  #stage { grid-row: 1; }
+  #panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); padding: 14px 16px 20px; }
+  h1 { font-size: 22px; }
+}
+</style>
+
+<div id="app">
+  <aside id="panel">
+    <header>
+      <div class="eyebrow">Dwell · shape prototype</div>
+      <h1>Shape Playground</h1>
+      <p class="lede">Every block keeps the shape you give it. Shape the labelled situations the way they should look, then export them so the rules can be worked out from your choices.</p>
+    </header>
+
+    <section>
+      <h2>Tap does</h2>
+      <div class="seg" id="tool">
+        <button type="button" id="tool-shape" data-v="shape">Next shape</button>
+        <button type="button" id="tool-rotate" data-v="rotate">Rotate</button>
+        <button type="button" id="tool-place" data-v="place">Add</button>
+        <button type="button" id="tool-remove" data-v="remove">Remove</button>
+      </div>
+      <p class="hint-text">Every tap also selects the block, so you can then pick its shape below.</p>
+    </section>
+
+    <section>
+      <h2>Selected block</h2>
+      <div class="selected" id="selected">Tap a block.</div>
+      <p class="hint-text" id="selected-rule"></p>
+      <div class="row" style="margin-top:8px">
+        <button type="button" class="btn" id="rot-left">⟲ Rotate left</button>
+        <button type="button" class="btn" id="rot-right">Rotate right ⟳</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Rules &amp; conflicts</h2>
+      <p class="hint-text" style="margin:0 0 8px">Tap a rule to outline the blocks it decides: <span class="good">green</span> where your shape follows it, <span class="bad">red</span> where it doesn't. <span class="warn">Amber</span> marks blocks where the rules want a shape the game doesn't have.</p>
+      <div class="rules" id="rules"></div>
+      <div class="seg" id="hl" style="margin-top:8px">
+        <button type="button" id="hl-all" data-v="all">All conflicts</button>
+        <button type="button" id="hl-none" data-v="none">No outlines</button>
+      </div>
+      <h2 style="margin-top:14px">Conflicts <span id="conflict-count"></span></h2>
+      <ul class="conflicts" id="conflicts"></ul>
+      <div class="row" style="margin-top:10px">
+        <button type="button" class="btn" id="apply-rules">Apply rules to all</button>
+        <button type="button" class="btn" id="reset-yours">Your last export</button>
+        <button type="button" class="btn" id="reset-guess">Rough guess</button>
+        <button type="button" class="btn" id="reset-cubes">All cubes</button>
+      </div>
+      <p class="hint-text" id="rules-status">Your edits are saved in this browser as you go. Apply rules to all replaces every block's shape; Your last export brings back the shapes you sent on 8 October; the new situations get the rules' shapes.</p>
+    </section>
+
+    <section>
+      <h2>Shapes</h2>
+      <div class="shapes" id="shapes"></div>
+      <p class="hint-text">The game's shapes (shared/blocks/shapes.mjs) plus the shapes the rules call for that the game doesn't have yet: 12 corner shapes (half-and-half, tilts, saddles and others) and the half pyramid and half ridge pieces. Slopes face the way they descend; a ridge end faces the way its ridge runs, and a ridge corner turns from that way clockwise.</p>
+    </section>
+
+    <section>
+      <h2>Situations</h2>
+      <ul class="legend" id="legend"></ul>
+    </section>
+
+    <section>
+      <h2>Share with Claude</h2>
+      <button type="button" class="btn primary" id="export">Copy all shapes as JSON</button>
+      <p class="hint-text" id="export-status">Copies every block's shape and the heights around it, grouped by situation, for you to paste into the chat.</p>
+      <textarea id="export-json" readonly rows="6" spellcheck="false" aria-label="Exported JSON" hidden></textarea>
+      <details style="margin-top:10px">
+        <summary class="hint-text" style="cursor:pointer">Load shapes from an export</summary>
+        <textarea id="import-json" rows="4" spellcheck="false" aria-label="Paste an export here" placeholder="Paste an export here"></textarea>
+        <button type="button" class="btn" id="import" style="margin-top:6px">Load these shapes</button>
+        <p class="hint-text" id="import-status"></p>
+      </details>
+    </section>
+
+    <p class="keys">Drag to orbit, scroll to zoom. <kbd>R</kbd> rotate, <kbd>N</kbd>/<kbd>P</kbd> next/previous shape for the selected block.</p>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view" aria-label="3D view of the blocks. Tap a block to change its shape."></canvas>
+    <div class="badge" id="badge"></div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- Shapes. Corner heights in halves of a block (0, 1, 2), listed NW, NE, SE, SW, with north = −z;
+// canonical orientation descends toward +x (east), as in shared/blocks/shapes.mjs. The surface is two
+// triangles split NW–SE, or NE–SW once rotated an odd number of quarter turns.
+const GAME = {
+  full: [2, 2, 2, 2], slab: [1, 1, 1, 1],
+  wedge: [2, 0, 0, 2], outer: [2, 0, 0, 0], inner: [2, 2, 0, 2],
+  gentle_low: [1, 0, 0, 1], gentle_high: [2, 1, 1, 2],
+  gentle_outer_low: [1, 0, 0, 0], gentle_outer_high: [2, 1, 1, 1],
+  gentle_inner_low: [1, 1, 0, 1], gentle_inner_high: [2, 2, 1, 2],
+};
+// Lab extras, as 3 × 3 point heights in halves (rows north to south): no game equivalent yet.
+// Corner shapes the game doesn't have yet (same corner notation, canonical facing east = descends east).
+// Half-and-half: the uphill edge is full height at one end and half height at the other, so one
+// side is a tall ramp and the other a half ramp. Left/right = which side is tall, looking downhill.
+const NEWC = {
+  half_and_half_left: [2, 0, 0, 1],
+  half_and_half_right: [1, 0, 0, 2],
+  tall_half_and_half_left: [2, 2, 1, 0],
+  tall_half_and_half_right: [2, 2, 0, 1],
+  tilt_left: [2, 1, 1, 0],
+  tilt_right: [1, 2, 0, 1],
+  diagonal_slope: [1, 2, 1, 0],
+  dimple: [2, 1, 2, 0],
+  saddle: [2, 0, 2, 0],
+  uneven_saddle: [2, 0, 1, 0],
+  half_saddle: [1, 0, 1, 0],
+  high_half_saddle: [2, 1, 2, 1],
+};
+const CORNERED = { ...GAME, ...NEWC };
+const EXTRA = {
+  half_pyramid: [[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+  half_ridge: [[0, 0, 0], [1, 1, 1], [0, 0, 0]], // runs east–west; rotated, north–south
+  half_ridge_end: [[0, 0, 0], [0, 1, 1], [0, 0, 0]], // a tent's end: the ridge runs from the centre to the east edge
+  half_ridge_corner: [[0, 0, 0], [0, 1, 1], [0, 1, 0]], // the ridge turns: it runs to the east and south edges
+  half_ridge_tee: [[0, 1, 0], [1, 1, 1], [0, 0, 0]], // ridges to the east, west and north edges: faces east = the open side is south
+  half_ridge_cross: [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+};
+const NAMES = {
+  half_and_half_left: 'Half-and-half, left tall', half_and_half_right: 'Half-and-half, right tall',
+  tall_half_and_half_left: 'Tall half-and-half, left', tall_half_and_half_right: 'Tall half-and-half, right',
+  tilt_left: 'Tilt, left', tilt_right: 'Tilt, right', diagonal_slope: 'Diagonal slope', dimple: 'Dimple',
+  saddle: 'Saddle', uneven_saddle: 'Uneven saddle', half_saddle: 'Half saddle', high_half_saddle: 'High half saddle',
+  half_ridge_tee: 'Half ridge T', half_ridge_cross: 'Half ridge cross',
+  full: 'Full', slab: 'Slab', wedge: 'Wedge', outer: 'Outer corner', inner: 'Inner corner',
+  gentle_low: 'Gentle low', gentle_high: 'Gentle high', gentle_outer_low: 'Gentle outer low',
+  gentle_outer_high: 'Gentle outer high', gentle_inner_low: 'Gentle inner low', gentle_inner_high: 'Gentle inner high',
+  half_pyramid: 'Half pyramid', half_ridge: 'Half ridge', half_ridge_end: 'Half ridge end', half_ridge_corner: 'Half ridge corner',
+};
+const ORDER = [...Object.keys(GAME), ...Object.keys(NEWC), ...Object.keys(EXTRA)];
+const SYMMETRIC = new Set(['full', 'slab', 'half_pyramid', 'half_ridge_cross']);
+const FACINGS = ['east', 'south', 'west', 'north']; // quarter turns clockwise from east
+const rotateCorners = (h, turns) => { let o = h.slice(); for (let t = 0; t < ((turns % 4) + 4) % 4; t++) o = [o[3], o[0], o[1], o[2]]; return o; };
+const rotateGrid = (g, turns) => { let o = g.map((r) => r.slice()); for (let t = 0; t < ((turns % 4) + 4) % 4; t++) o = o.map((_, r) => o.map((row) => row[r]).reverse()); return o; };
+// 3 × 3 point heights (halves) of a shape at a facing.
+function pointsOf(shape, turns) {
+  if (EXTRA[shape]) return rotateGrid(EXTRA[shape], turns);
+  const [nw, ne, se, sw] = rotateCorners(CORNERED[shape], turns);
+  // Game shapes split NW–SE, or NE–SW once rotated an odd number of turns; the new shapes split
+  // along their higher diagonal.
+  const split = NEWC[shape] ? (ne + sw > nw + se ? 1 : 0) : turns % 2; // new shapes: the higher diagonal (a ridge, not a valley)
+  const centre = split === 0 ? (nw + se) / 2 : (ne + sw) / 2; // on the split diagonal
+  return [[nw, (nw + ne) / 2, ne], [(nw + sw) / 2, centre, (ne + se) / 2], [sw, (sw + se) / 2, se]];
+}
+
+// ---- World: 24 × 24 columns of 1 m blocks; the top block of each has a shape and facing.
+const W = 32, D = 32, MAXH = 10;
+const idx = (x, z) => z * W + x;
+let cols = [];   // heights in blocks
+let tops = [];   // { shape, turns } of each column's top block
+const GRASS = { top: 0x8dbf3f, side: 0x7a8f45 }, DIRT = { side: 0x7d5236 };
+const BASE_TOP = [0x6f6a78, 0x77727f], BASE_SIDE = 0x4e4858;
+
+// ---- Situations: what each labelled group tests.
+const SITUATIONS = [];
+function sit(letter, name, cells) { SITUATIONS.push({ letter, name, cells }); }
+function rect(x0, z0, x1, z1) { const c = []; for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) c.push([x, z]); return c; }
+function buildArrangement() {
+  SITUATIONS.length = 0;
+  cols = new Array(W * D).fill(0);
+  const set = (cells, h) => { for (const [x, z] of cells) cols[idx(x, z)] = h; };
+  const add = (letter, name, cells, h) => { set(cells, h); sit(letter, name, cells); };
+  add('A', 'Lone block', [[2, 2]], 1);
+  add('B', 'Pair', [[5, 2], [6, 2]], 1);
+  add('C', 'Row of four', rect(9, 2, 12, 2), 1);
+  add('D', 'L of three', [[15, 2], [16, 2], [15, 3]], 1);
+  add('E', '2 × 2', rect(19, 2, 20, 3), 1);
+  add('F', 'Plateau with an inside corner', rect(2, 6, 6, 10).filter(([x, z]) => !(x >= 5 && z <= 7)), 1);
+  add('G', 'One-block pit in a plateau', rect(8, 6, 12, 10).filter(([x, z]) => !(x === 10 && z === 8)), 1);
+  add('H', 'Diagonal pair (corners touch)', [[15, 6], [16, 7]], 1);
+  add('I', 'Pillar, 2 high', [[19, 6]], 2);
+  add('J', 'Terrace: 1-block step with outside and inside corners', rect(2, 13, 8, 18), 1);
+  set(rect(2, 13, 5, 16).filter(([x, z]) => !(x === 5 && z === 13)), 2);
+  add('K', 'Cliff: 2-block step', rect(10, 13, 13, 14), 1);
+  set(rect(10, 15, 13, 16), 3);
+  SITUATIONS.find((s) => s.letter === 'K').cells.push(...rect(10, 15, 13, 16));
+  const L = [[3, 2, 1], [2, 1, 1], [1, 1, 1]];
+  const lCells = rect(16, 13, 18, 15);
+  for (const [x, z] of lCells) cols[idx(x, z)] = L[z - 13][x - 16];
+  sit('L', 'Diagonal 2-block drop', lCells);
+  add('M', 'Ramps up to a 2-high block', [[20, 16], [19, 17], [21, 17], [20, 18]], 1);
+  set([[20, 17]], 2);
+  SITUATIONS.find((s) => s.letter === 'M').cells.push([20, 17]);
+  add('N', 'Single-width wall, 1 high', rect(2, 21, 7, 21), 1);
+  add('O', 'Single-width wall, 2 high', rect(9, 21, 14, 21), 2);
+  const stairs = rect(16, 21, 20, 21);
+  stairs.forEach(([x, z], n) => (cols[idx(x, z)] = n + 1));
+  sit('P', 'Single-width stairs', stairs);
+  // Every other corner shape the rules can ask for, each from the simplest neighbourhood that
+  // produces it, and the T and cross of one-block-wide blocks: [letter, name, [[x, z, height], ...]].
+  for (const [letter, name, cells] of MORE) {
+    for (const [x, z, h] of cells) cols[idx(x, z)] = h;
+    sit(letter, name, cells.map(([x, z]) => [x, z]));
+  }
+}
+const MORE = [["Q", "2-high block, lower: NE SW (centre: half saddle)", [[25, 2, 2], [24, 1, 2], [25, 1, 2], [26, 1, 1], [26, 2, 2], [26, 3, 2], [25, 3, 2], [24, 3, 1], [24, 2, 2]]], ["R", "2-high block, lower: NE SW; higher: NW (centre: uneven saddle)", [[29, 2, 2], [28, 1, 3], [29, 1, 2], [30, 1, 1], [30, 2, 2], [30, 3, 2], [29, 3, 2], [28, 3, 1], [28, 2, 2]]], ["S", "2-high block, lower: SW; higher: NW (centre: tilt)", [[25, 6, 2], [24, 5, 3], [25, 5, 2], [26, 5, 2], [26, 6, 2], [26, 7, 2], [25, 7, 2], [24, 7, 1], [24, 6, 2]]], ["T", "2-high block, lower: SW; higher: N (centre: tall half-and-half)", [[29, 6, 2], [28, 5, 2], [29, 5, 3], [30, 5, 2], [30, 6, 2], [30, 7, 2], [29, 7, 2], [28, 7, 1], [28, 6, 2]]], ["U", "2-high block, lower: SW; higher: NE (centre: diagonal slope)", [[25, 10, 2], [24, 9, 2], [25, 9, 2], [26, 9, 3], [26, 10, 2], [26, 11, 2], [25, 11, 2], [24, 11, 1], [24, 10, 2]]], ["V", "2-high block, lower: NE SW; higher: NW E (centre: saddle)", [[29, 10, 2], [28, 9, 3], [29, 9, 2], [30, 9, 1], [30, 10, 3], [30, 11, 2], [29, 11, 2], [28, 11, 1], [28, 10, 2]]], ["W", "2-high block, lower: SW; higher: E (centre: tall half-and-half (mirrored))", [[25, 14, 2], [24, 13, 2], [25, 13, 2], [26, 13, 2], [26, 14, 3], [26, 15, 2], [25, 15, 2], [24, 15, 1], [24, 14, 2]]], ["X", "2-high block, lower: SW; higher: SE (centre: tilt (mirrored))", [[29, 14, 2], [28, 13, 2], [29, 13, 2], [30, 13, 2], [30, 14, 2], [30, 15, 3], [29, 15, 2], [28, 15, 1], [28, 14, 2]]], ["Y", "2-high block, lower: SW; higher: NW SE (centre: dimple)", [[25, 18, 2], [24, 17, 3], [25, 17, 2], [26, 17, 2], [26, 18, 2], [26, 19, 3], [25, 19, 2], [24, 19, 1], [24, 18, 2]]], ["Z", "2-high block, higher: NW SE (centre: high half saddle)", [[29, 18, 2], [28, 17, 3], [29, 17, 2], [30, 17, 2], [30, 18, 2], [30, 19, 3], [29, 19, 2], [28, 19, 2], [28, 18, 2]]], ["AA", "T of one-block-wide blocks", [[25, 22, 1], [24, 22, 1], [26, 22, 1], [25, 21, 1]]], ["AB", "Cross of one-block-wide blocks", [[29, 22, 1], [28, 22, 1], [30, 22, 1], [29, 21, 1], [29, 23, 1]]]];
+
+// ---- Rough guess: a simple autotile, snapped to the nearest shape. A corner drops when at least 2
+// of the 3 columns around it are lower and none is higher.
+function guessShape(x, z) {
+  const t = cols[idx(x, z)];
+  const at = (xx, zz) => (xx < 0 || xx >= W || zz < 0 || zz >= D ? t : cols[idx(xx, zz)]);
+  const corner = (dx, dz) => {
+    const n = [at(x + dx, z), at(x, z + dz), at(x + dx, z + dz)];
+    if (n.some((v) => v > t)) return 2;
+    return n.filter((v) => v < t).length >= 2 ? 0 : 2;
+  };
+  const want = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+  if (want.every((v) => v === 0)) return { shape: t === 1 ? 'half_pyramid' : 'slab', turns: 0 };
+  let best = { shape: 'full', turns: 0 }, bestD = Infinity;
+  for (const shape of Object.keys(CORNERED)) for (let turns = 0; turns < 4; turns++) {
+    const c = rotateCorners(CORNERED[shape], turns);
+    const d = c.reduce((s, v, i) => s + Math.abs(v - want[i]), 0);
+    if (d < bestD) { bestD = d; best = { shape, turns }; }
+  }
+  return best;
+}
+// ---- The rules worked out from F and J. Corner heights in halves: 0 floor, 1 rest, 2 top.
+function ruleCorners(x, z) {
+  const t = cols[idx(x, z)];
+  const at = (xx, zz) => (xx < 0 || xx >= W || zz < 0 || zz >= D ? t : cols[idx(xx, zz)]);
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([dx, dz]) => {
+    const n = [at(x + dx, z), at(x, z + dz), at(x + dx, z + dz)];
+    const higher = n.some((v) => v > t), lower = n.some((v) => v < t);
+    if (higher && !lower) return 2; // rise
+    if (lower) return 0;            // drop
+    return 1;                       // rest
+  });
+}
+function exactShape(c) {
+  for (const shape of Object.keys(CORNERED)) for (let turns = 0; turns < 4; turns++)
+    if (rotateCorners(CORNERED[shape], turns).join() === c.join()) return { shape, turns: SYMMETRIC.has(shape) ? 0 : turns };
+  return null;
+}
+function nearestShape(c) {
+  let best = { shape: 'slab', turns: 0 }, bestD = Infinity;
+  for (const shape of Object.keys(CORNERED)) for (let turns = 0; turns < 4; turns++) {
+    const d = rotateCorners(CORNERED[shape], turns).reduce((s, v, i) => s + Math.abs(v - c[i]), 0);
+    if (d < bestD) { bestD = d; best = { shape, turns: SYMMETRIC.has(shape) ? 0 : turns }; }
+  }
+  return best;
+}
+// One block wide (every corner drops): a half-height ridge runs toward each neighbour of the same
+// height across an edge. None: a half pyramid; one: an end cap; two in line: a ridge; two at a
+// right angle: a corner. Three or four (a T or a cross) have no piece yet.
+function ridgePiece(c) {
+  const x = c % W, z = Math.floor(c / W), t = cols[c];
+  const same = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([dx, dz]) => { // east, south, west, north
+    const xx = x + dx, zz = z + dz;
+    return xx >= 0 && xx < W && zz >= 0 && zz < D && cols[idx(xx, zz)] === t;
+  });
+  const n = same.filter(Boolean).length;
+  if (n === 0) return { shape: 'half_pyramid', turns: 0 };
+  if (n === 1) return { shape: 'half_ridge_end', turns: same.indexOf(true) };
+  if (n === 2 && same[0] === same[2]) return { shape: 'half_ridge', turns: same[0] ? 0 : 1 };
+  if (n === 2) { const k = [0, 1, 2, 3].find((i) => same[i] && same[(i + 1) % 4]); return { shape: 'half_ridge_corner', turns: k }; }
+  if (n === 3) return { shape: 'half_ridge_tee', turns: (same.indexOf(false) + 3) % 4 };
+  return { shape: 'half_ridge_cross', turns: 0 };
+}
+let unresolved = new Map(); // kept for older saves; outlines now come from the rule check below
+const RULES = [
+  { id: 'R1', name: 'Rest', text: 'A corner sits at half height when none of the 3 columns around it is higher or lower.' },
+  { id: 'R2', name: 'Drop', text: 'A corner drops to the block\'s floor when any of them is lower.' },
+  { id: 'R3', name: 'Rise', text: 'A corner rises to the block\'s top when one is higher and none is lower.' },
+  { id: 'R4', name: 'One block wide', text: 'When every corner drops, a half-height ridge runs toward each same-height neighbour: half pyramid, ridge end, ridge, ridge corner, T or cross.' },
+  { id: 'R5', name: 'Ramp up', text: 'A block whose corners all drop, with exactly one higher neighbour across an edge and none of the same height, is a wedge rising to it.' },
+];
+const CORNER_NAMES = ['NW', 'NE', 'SE', 'SW'];
+// What the rules make of column c: the shape (or missing: the game has none), its corners in halves,
+// which rule set each corner, and which rule chose the whole shape (R4, R5) if one did.
+function rulesFor(c) {
+  const x = c % W, z = Math.floor(c / W), t = cols[c];
+  const at = (xx, zz) => (xx < 0 || xx >= W || zz < 0 || zz >= D ? t : cols[idx(xx, zz)]);
+  const corners = [], cornerRule = [];
+  for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const n = [at(x + dx, z), at(x, z + dz), at(x + dx, z + dz)];
+    const higher = n.some((v) => v > t), lower = n.some((v) => v < t);
+    if (higher && !lower) { corners.push(2); cornerRule.push('R3'); }
+    else if (lower) { corners.push(0); cornerRule.push('R2'); }
+    else { corners.push(1); cornerRule.push('R1'); }
+  }
+  const base = { corners, cornerRule };
+  if (corners.every((v) => v === 0)) {
+    const card = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([dx, dz]) => { const xx = x + dx, zz = z + dz; return xx >= 0 && xx < W && zz >= 0 && zz < D ? cols[idx(xx, zz)] : null; });
+    const higher = card.map((v) => v !== null && v > t), same = card.map((v) => v === t);
+    if (state.rule5 && higher.filter(Boolean).length === 1 && !same.some(Boolean)) {
+      const turns = (higher.indexOf(true) + 2) % 4;
+      return { ...base, shape: 'wedge', turns, whole: 'R5', corners: rotateCorners(GAME.wedge, turns), cornerRule: ['R5', 'R5', 'R5', 'R5'] };
+    }
+    const r = ridgePiece(c);
+    return r ? { ...base, ...r, whole: 'R4' } : { ...base, missing: 'a T or cross of one-block-wide blocks' };
+  }
+  const ex = exactShape(corners);
+  return ex ? { ...base, ...ex } : { ...base, missing: `a twisted shape (corners ${corners.join(' ')})` };
+}
+const gridEq = (a, b) => a.every((row, r) => row.every((v, k) => v === b[r][k]));
+// Compares every block with the rules: per-rule follow/break sets, the conflicts, and blocks the game lacks a shape for.
+let check = { follow: {}, broken: {}, missing: new Set(), conflicts: [], byCol: new Map() };
+function runCheck() {
+  check = { follow: {}, broken: {}, missing: new Set(), conflicts: [], byCol: new Map() };
+  for (const r of RULES) { check.follow[r.id] = new Set(); check.broken[r.id] = new Set(); }
+  for (let c = 0; c < W * D; c++) {
+    if (!cols[c]) continue;
+    const rule = rulesFor(c), user = tops[c];
+    const ug = pointsOf(user.shape, user.turns), uc = [ug[0][0], ug[0][2], ug[2][2], ug[2][0]];
+    const match = !rule.missing && gridEq(ug, pointsOf(rule.shape, rule.turns));
+    if (rule.whole === 'R5') (match ? check.follow : check.broken).R5.add(c);
+    else {
+      for (const id of ['R1', 'R2', 'R3']) {
+        const at = rule.cornerRule.map((r, i) => (r === id ? i : -1)).filter((i) => i >= 0);
+        if (at.length) (at.every((i) => uc[i] === rule.corners[i]) ? check.follow : check.broken)[id].add(c);
+      }
+      if (rule.whole === 'R4') (match ? check.follow : check.broken).R4.add(c);
+    }
+    if (rule.missing) check.missing.add(c);
+    const diff = [0, 1, 2, 3].filter((i) => uc[i] !== rule.corners[i]).map((i) => `${CORNER_NAMES[i]} (${RULES.find((r) => r.id === rule.cornerRule[i]).name})`);
+    const entry = { c, rule, match, diff };
+    check.byCol.set(c, entry);
+    if (!match) check.conflicts.push(entry);
+  }
+}
+// Your shapes from your last export (2026-10-08): [x, z, height, shape, way].
+const YOURS = [[2, 2, 1, "half_pyramid", ""], [5, 2, 1, "half_ridge_end", "east"], [6, 2, 1, "half_ridge_end", "west"], [9, 2, 1, "half_ridge_end", "east"], [10, 2, 1, "half_ridge", "east-west"], [11, 2, 1, "half_ridge", "east-west"], [12, 2, 1, "half_ridge_end", "west"], [15, 2, 1, "half_ridge_corner", "east"], [16, 2, 1, "half_ridge_end", "west"], [15, 3, 1, "half_ridge_end", "north"], [19, 2, 1, "gentle_outer_low", "west"], [20, 2, 1, "gentle_outer_low", "north"], [19, 3, 1, "gentle_outer_low", "south"], [20, 3, 1, "gentle_outer_low", "east"], [2, 6, 1, "gentle_outer_low", "west"], [3, 6, 1, "gentle_low", "north"], [4, 6, 1, "gentle_outer_low", "north"], [2, 7, 1, "gentle_low", "west"], [3, 7, 1, "slab", ""], [4, 7, 1, "gentle_low", "east"], [2, 8, 1, "gentle_low", "west"], [3, 8, 1, "slab", ""], [4, 8, 1, "gentle_inner_low", "north"], [5, 8, 1, "gentle_low", "north"], [6, 8, 1, "gentle_outer_low", "north"], [2, 9, 1, "gentle_low", "west"], [3, 9, 1, "slab", ""], [4, 9, 1, "slab", ""], [5, 9, 1, "slab", ""], [6, 9, 1, "gentle_low", "east"], [2, 10, 1, "gentle_outer_low", "south"], [3, 10, 1, "gentle_low", "south"], [4, 10, 1, "gentle_low", "south"], [5, 10, 1, "gentle_low", "south"], [6, 10, 1, "gentle_outer_low", "east"], [8, 6, 1, "gentle_outer_low", "west"], [9, 6, 1, "gentle_low", "north"], [10, 6, 1, "gentle_low", "north"], [11, 6, 1, "gentle_low", "north"], [12, 6, 1, "gentle_outer_low", "north"], [8, 7, 1, "gentle_low", "west"], [9, 7, 1, "gentle_inner_low", "east"], [10, 7, 1, "gentle_low", "south"], [11, 7, 1, "gentle_inner_low", "south"], [12, 7, 1, "gentle_low", "east"], [8, 8, 1, "gentle_low", "west"], [9, 8, 1, "gentle_low", "east"], [11, 8, 1, "gentle_low", "west"], [12, 8, 1, "gentle_low", "east"], [8, 9, 1, "gentle_low", "west"], [9, 9, 1, "gentle_inner_low", "north"], [10, 9, 1, "gentle_low", "north"], [11, 9, 1, "gentle_inner_low", "west"], [12, 9, 1, "gentle_low", "east"], [8, 10, 1, "gentle_outer_low", "south"], [9, 10, 1, "gentle_low", "south"], [10, 10, 1, "gentle_low", "south"], [11, 10, 1, "gentle_low", "south"], [12, 10, 1, "gentle_outer_low", "east"], [15, 6, 1, "half_pyramid", ""], [16, 7, 1, "half_pyramid", ""], [19, 6, 2, "half_pyramid", ""], [2, 13, 2, "gentle_outer_low", "west"], [3, 13, 2, "gentle_low", "north"], [4, 13, 2, "gentle_outer_low", "north"], [5, 13, 1, "wedge", "north"], [6, 13, 1, "half_and_half_left", "north"], [7, 13, 1, "gentle_low", "north"], [8, 13, 1, "gentle_outer_low", "north"], [2, 14, 2, "gentle_low", "west"], [3, 14, 2, "slab", ""], [4, 14, 2, "gentle_inner_low", "north"], [5, 14, 2, "gentle_outer_low", "north"], [6, 14, 1, "gentle_high", "east"], [7, 14, 1, "slab", ""], [8, 14, 1, "gentle_low", "east"], [2, 15, 2, "gentle_low", "west"], [3, 15, 2, "slab", ""], [4, 15, 2, "slab", ""], [5, 15, 2, "gentle_low", "east"], [6, 15, 1, "gentle_high", "east"], [7, 15, 1, "slab", ""], [8, 15, 1, "gentle_low", "east"], [2, 16, 2, "gentle_outer_low", "south"], [3, 16, 2, "gentle_low", "south"], [4, 16, 2, "gentle_low", "south"], [5, 16, 2, "gentle_outer_low", "east"], [6, 16, 1, "gentle_high", "east"], [7, 16, 1, "slab", ""], [8, 16, 1, "gentle_low", "east"], [2, 17, 1, "half_and_half_right", "west"], [3, 17, 1, "gentle_high", "south"], [4, 17, 1, "gentle_high", "south"], [5, 17, 1, "gentle_high", "south"], [6, 17, 1, "gentle_outer_high", "east"], [7, 17, 1, "slab", ""], [8, 17, 1, "gentle_low", "east"], [2, 18, 1, "gentle_outer_low", "south"], [3, 18, 1, "gentle_low", "south"], [4, 18, 1, "gentle_low", "south"], [5, 18, 1, "gentle_low", "south"], [6, 18, 1, "gentle_low", "south"], [7, 18, 1, "gentle_low", "south"], [8, 18, 1, "gentle_outer_low", "east"], [10, 13, 1, "gentle_outer_low", "west"], [11, 13, 1, "gentle_low", "north"], [12, 13, 1, "gentle_low", "north"], [13, 13, 1, "gentle_outer_low", "north"], [10, 14, 1, "half_and_half_left", "west"], [11, 14, 1, "gentle_high", "north"], [12, 14, 1, "gentle_high", "north"], [13, 14, 1, "half_and_half_right", "east"], [10, 15, 3, "gentle_outer_low", "west"], [11, 15, 3, "gentle_low", "north"], [12, 15, 3, "gentle_low", "north"], [13, 15, 3, "gentle_outer_low", "north"], [10, 16, 3, "gentle_outer_low", "south"], [11, 16, 3, "gentle_low", "south"], [12, 16, 3, "gentle_low", "south"], [13, 16, 3, "gentle_outer_low", "east"], [16, 13, 3, "half_pyramid", ""], [17, 13, 2, "wedge", "east"], [18, 13, 1, "outer", "north"], [16, 14, 2, "wedge", "south"], [17, 14, 1, "gentle_inner_high", "east"], [18, 14, 1, "half_and_half_left", "east"], [16, 15, 1, "outer", "south"], [17, 15, 1, "half_and_half_right", "south"], [18, 15, 1, "gentle_outer_low", "east"], [20, 16, 1, "wedge", "north"], [19, 17, 1, "wedge", "west"], [21, 17, 1, "wedge", "east"], [20, 18, 1, "wedge", "south"], [20, 17, 2, "half_pyramid", ""], [2, 21, 1, "half_ridge_end", "east"], [3, 21, 1, "half_ridge", "east-west"], [4, 21, 1, "half_ridge", "east-west"], [5, 21, 1, "half_ridge", "east-west"], [6, 21, 1, "half_ridge", "east-west"], [7, 21, 1, "half_ridge_end", "west"], [9, 21, 2, "half_ridge_end", "east"], [10, 21, 2, "half_ridge", "east-west"], [11, 21, 2, "half_ridge", "east-west"], [12, 21, 2, "half_ridge", "east-west"], [13, 21, 2, "half_ridge", "east-west"], [14, 21, 2, "half_ridge_end", "west"], [16, 21, 1, "wedge", "west"], [17, 21, 2, "wedge", "west"], [18, 21, 3, "wedge", "west"], [19, 21, 4, "wedge", "west"], [20, 21, 5, "half_pyramid", ""]];
+const WAYS = { east: 0, south: 1, west: 2, north: 3, 'east-west': 0, 'north-south': 1 };
+// Puts shapes onto the arrangement wherever the column heights still match; returns how many were set.
+function loadShapes(list) {
+  let n = 0;
+  for (const [x, z, h, shape, way] of list) {
+    const c = idx(x, z);
+    if (x < 0 || x >= W || z < 0 || z >= D || cols[c] !== h || !(shape in NAMES)) continue;
+    tops[c] = { shape, turns: SYMMETRIC.has(shape) ? 0 : WAYS[way] ?? 0 };
+    n++;
+  }
+  return n;
+}
+// Parses an export (pasted JSON or plain lines) into [x, z, height, shape, way] entries.
+function parseExport(text) {
+  const out = [];
+  for (const m of text.matchAll(/\((\d+),(\d+)\) h(\d+) around \S+ -> (\w+)(?: facing (\w+)| ([\w-]+))?/g))
+    out.push([+m[1], +m[2], +m[3], m[4], m[5] || m[6] || '']);
+  return out;
+}
+const SAVE_KEY = 'dwell-shape-playground';
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ cols, tops })); } catch {} }
+function restore() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (d && Array.isArray(d.cols) && d.cols.length === W * D && Array.isArray(d.tops)) { cols = d.cols; tops = d.tops; return true; }
+  } catch {}
+  return false;
+}
+function applyRules() {
+  unresolved = new Map();
+  tops = cols.map((h, c) => {
+    if (!h) return null;
+    const r = rulesFor(c);
+    if (!r.missing) return { shape: r.shape, turns: r.turns };
+    return r.corners.every((v) => v === 0) ? { shape: 'half_pyramid', turns: 0 } : nearestShape(r.corners);
+  });
+}
+function resetShapes(mode) {
+  unresolved = new Map();
+  tops = cols.map((h, c) => (h ? (mode === 'guess' ? guessShape(c % W, Math.floor(c / W)) : { shape: 'full', turns: 0 }) : null));
+}
+
+// ---- Mesh building.
+function linear(hex, k = 1) { const c = new THREE.Color(hex); return [c.r * k, c.g * k, c.b * k]; }
+function jitter(n) { let h = (n * 2654435761) >>> 0; h ^= h >>> 15; return 0.97 + (h % 61) / 1000; }
+function clipY(poly, y, keepAbove) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const ina = keepAbove ? a[1] >= y : a[1] <= y, inb = keepAbove ? b[1] >= y : b[1] <= y;
+    if (ina) out.push(a);
+    if (ina !== inb) { const t = (y - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, y]); }
+  }
+  return out;
+}
+// A column's top surface as 3 × 3 heights in metres.
+function surface(c) {
+  const h = cols[c];
+  if (!h) return [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const p = pointsOf(tops[c].shape, tops[c].turns);
+  return p.map((row) => row.map((v) => h - 1 + v / 2));
+}
+function sideColor(owner, k) {
+  if (owner < 0 || k < 0 || !cols[owner]) return linear(BASE_SIDE);
+  return linear(k >= cols[owner] - 1 ? GRASS.side : DIRT.side, jitter(owner * 31 + k));
+}
+function build() {
+  const pos = [], colr = [], info = [];
+  const tri = (p0, p1, p2, c, inf, out = [0, 1, 0]) => {
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nx * out[0] + ny * out[1] + nz * out[2] < 0) [p1, p2] = [p2, p1];
+    pos.push(...p0, ...p1, ...p2); colr.push(...c, ...c, ...c); info.push(inf);
+  };
+  const surf = cols.map((_, c) => surface(c));
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const col = idx(x, z), h = surf[col];
+    const color = cols[col] ? linear(GRASS.top, jitter(col)) : linear(BASE_TOP[(x + z) & 1]);
+    const V = (r, c) => [x + c / 2, h[r][c], z + r / 2];
+    const C = V(1, 1);
+    for (const [kr, kc] of [[0, 0], [0, 2], [2, 2], [2, 0]]) {
+      const K = V(kr, kc), M1 = V(kr, 1), M2 = V(1, kc);
+      tri(C, M1, K, color, { kind: 'top', col });
+      tri(C, K, M2, color, { kind: 'top', col });
+    }
+  }
+  function wall(P, a0, a1, b0, b1, A, B) {
+    const d0 = a0 - b0, d1 = a1 - b1;
+    const spans = d0 * d1 < 0 ? [[0, d0 / (d0 - d1)], [d0 / (d0 - d1), 1]] : [[0, 1]];
+    for (const [s0, s1] of spans) {
+      const sm = (s0 + s1) / 2, am = a0 + (a1 - a0) * sm, bm = b0 + (b1 - b0) * sm;
+      if (Math.abs(am - bm) < 1e-6) continue;
+      const aHigh = am > bm;
+      const hiF = (s) => (aHigh ? a0 + (a1 - a0) * s : b0 + (b1 - b0) * s);
+      const loF = (s) => (aHigh ? b0 + (b1 - b0) * s : a0 + (a1 - a0) * s);
+      const owner = aHigh ? A : B, facing = aHigh ? B : A;
+      const poly = [[s0, loF(s0)], [s1, loF(s1)], [s1, hiF(s1)], [s0, hiF(s0)]];
+      const ymin = Math.floor(Math.min(loF(s0), loF(s1)) + 1e-6), ymax = Math.ceil(Math.max(hiF(s0), hiF(s1)) - 1e-6);
+      for (let k = ymin; k < ymax; k++) {
+        const band = clipY(clipY(poly, k, true), k + 1, false);
+        if (band.length < 3) continue;
+        const pts = band.map(([s, y]) => P(s, y));
+        const ox = (owner % W) + 0.5, oz = Math.floor(owner / W) + 0.5;
+        const out = [pts[0][0] - ox, 0, pts[0][2] - oz];
+        for (let i = 1; i + 1 < pts.length; i++) tri(pts[0], pts[i], pts[i + 1], sideColor(owner, k), { kind: 'wall', owner, facing }, out);
+      }
+    }
+  }
+  const FLAT = [-1, -1, -1];
+  const edge = (P, a, b, A, B) => { wall((s, y) => P(s / 2, y), a[0], a[1], b[0], b[1], A, B); wall((s, y) => P(0.5 + s / 2, y), a[1], a[2], b[1], b[2], A, B); };
+  const colOf = (h, c) => [h[0][c], h[1][c], h[2][c]];
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const A = idx(x, z), a = surf[A];
+    if (x + 1 < W) edge((s, y) => [x + 1, y, z + s], colOf(a, 2), colOf(surf[idx(x + 1, z)], 0), A, idx(x + 1, z));
+    else edge((s, y) => [W, y, z + s], colOf(a, 2), FLAT, A, -1);
+    if (z + 1 < D) edge((s, y) => [x + s, y, z + 1], a[2], surf[idx(x, z + 1)][0], A, idx(x, z + 1));
+    else edge((s, y) => [x + s, y, D], a[2], FLAT, A, -1);
+    if (x === 0) edge((s, y) => [0, y, z + s], colOf(a, 0), FLAT, A, -1);
+    if (z === 0) edge((s, y) => [x + s, y, 0], a[0], FLAT, A, -1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+  g.computeVertexNormals();
+  return { g, info };
+}
+
+// ---- Scene.
+const canvas = document.getElementById('view');
+const stage = document.getElementById('stage');
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); } catch (e) {
+  stage.insertAdjacentHTML('beforeend', '<div class="error">This playground needs WebGL, which this browser has turned off.</div>');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+camera.position.set(W / 2 + 22, 32, D / 2 + 30);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(W / 2, 0.5, D / 2);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.47;
+controls.minDistance = 4;
+controls.maxDistance = 100;
+scene.add(new THREE.HemisphereLight(0xe2ecf6, 0x6b5a45, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
+sun.position.set(W / 2 + 16, 30, D / 2 + 9);
+sun.target.position.set(W / 2, 0, D / 2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 90 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target);
+const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92, metalness: 0 }));
+mesh.castShadow = mesh.receiveShadow = true;
+scene.add(mesh);
+let triInfo = [];
+const boxEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02));
+const ghost = new THREE.LineSegments(boxEdges, new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 }));
+ghost.renderOrder = 10; ghost.visible = false; scene.add(ghost);
+const sel = new THREE.LineSegments(boxEdges, new THREE.LineBasicMaterial({ color: 0x4cd3ee, depthTest: false, transparent: true, opacity: 1 }));
+sel.renderOrder = 11; sel.visible = false; scene.add(sel);
+
+// Situation labels: a letter floating above each group.
+const labels = new THREE.Group();
+scene.add(labels);
+function makeLabel(letter) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(23,128,154,0.92)'; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff'; g.font = `600 ${letter.length > 1 ? 26 : 34}px "IBM Plex Sans", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(letter, 32, 34);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+  s.scale.set(1.1, 1.1, 1); s.renderOrder = 12;
+  return s;
+}
+function placeLabels() {
+  labels.clear();
+  for (const s of SITUATIONS) {
+    const cx = s.cells.reduce((a, [x]) => a + x, 0) / s.cells.length + 0.5;
+    const cz = s.cells.reduce((a, [, z]) => a + z, 0) / s.cells.length + 0.5;
+    const top = Math.max(...s.cells.map(([x, z]) => cols[idx(x, z)]));
+    const l = makeLabel(s.letter);
+    l.position.set(cx, top + 0.9, cz);
+    labels.add(l);
+  }
+}
+
+const marks = new THREE.Group();
+scene.add(marks);
+const MARK = {
+  good: new THREE.LineBasicMaterial({ color: 0x45d16b, depthTest: false, transparent: true, opacity: 0.95 }),
+  bad: new THREE.LineBasicMaterial({ color: 0xff4d4d, depthTest: false, transparent: true, opacity: 0.95 }),
+  warn: new THREE.LineBasicMaterial({ color: 0xffa63c, depthTest: false, transparent: true, opacity: 0.95 }),
+};
+function markBox(c, mat) {
+  const m = new THREE.LineSegments(boxEdges, mat);
+  m.renderOrder = 9; m.scale.set(0.92, 0.92, 0.92);
+  m.position.set((c % W) + 0.5, cols[c] - 0.5, Math.floor(c / W) + 0.5);
+  marks.add(m);
+}
+function showMarks() {
+  marks.clear();
+  const hl = state.hl;
+  if (hl === 'all') {
+    for (const e of check.conflicts) markBox(e.c, e.rule.missing ? MARK.warn : MARK.bad);
+  } else if (check.follow[hl]) {
+    for (const c of check.follow[hl]) markBox(c, MARK.good);
+    for (const c of check.broken[hl]) markBox(c, check.missing.has(c) ? MARK.warn : MARK.bad);
+  }
+}
+let selected = -1;
+function rebuild() {
+  const { g, info } = build();
+  mesh.geometry.dispose(); mesh.geometry = g; triInfo = info;
+  runCheck();
+  showSelected();
+  showMarks();
+  renderRules();
+  renderConflicts();
+  save();
+}
+
+// ---- UI.
+const $ = (id) => document.getElementById(id);
+const state = { tool: 'shape', hl: 'all', rule5: true };
+function pressGroup(container, value) { for (const b of container.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === String(value))); }
+function situationOf(c) { const x = c % W, z = Math.floor(c / W); return SITUATIONS.find((s) => s.cells.some(([a, b]) => a === x && b === z)); }
+function shapeLabel(t) { return NAMES[t.shape] + (SYMMETRIC.has(t.shape) ? '' : ` · ${t.shape === 'half_ridge' ? (t.turns % 2 ? 'north–south' : 'east–west') : 'faces ' + FACINGS[t.turns]}`); }
+function showSelected() {
+  sel.visible = selected >= 0 && cols[selected] > 0;
+  if (!sel.visible) { $('selected').textContent = 'Tap a block.'; $('selected-rule').textContent = ''; pressGroup($('shapes'), ''); return; }
+  const x = selected % W, z = Math.floor(selected / W), h = cols[selected], s = situationOf(selected);
+  sel.position.set(x + 0.5, h - 0.5, z + 0.5);
+  $('selected').textContent = `(${x}, ${z}) · ${h} high · ${shapeLabel(tops[selected])}${s ? ` · ${s.letter}: ${s.name}` : ''}`;
+  pressGroup($('shapes'), tops[selected].shape);
+  const e = check.byCol.get(selected);
+  $('selected-rule').innerHTML = !e ? '' : e.match ? '<span class="good">Matches the rules.</span>'
+    : e.rule.missing ? `<span class="warn">The rules want ${e.rule.missing}, which the game doesn't have.</span>`
+    : `<span class="bad">Rules: ${shapeLabel(e.rule)}.</span>${e.diff.length ? ` Corners that differ: ${e.diff.join(', ')}.` : ' Same corners, different ridge.'}`;
+}
+function setShape(shape) { if (selected < 0 || !cols[selected]) return; unresolved.delete(selected); tops[selected] = { shape, turns: SYMMETRIC.has(shape) ? 0 : tops[selected].turns }; rebuild(); }
+function rotate(dir) { if (selected < 0 || !cols[selected] || SYMMETRIC.has(tops[selected].shape)) return; unresolved.delete(selected); tops[selected].turns = (tops[selected].turns + dir + 4) % 4; rebuild(); }
+function cycle(dir) { if (selected < 0 || !cols[selected]) return; const i = ORDER.indexOf(tops[selected].shape); setShape(ORDER[(i + dir + ORDER.length) % ORDER.length]); }
+
+// Rule cards: counts of blocks that follow and break each rule; tap to outline them.
+function renderRules() {
+  const el = $('rules');
+  el.innerHTML = '';
+  for (const r of RULES) {
+    const off = r.id === 'R5' && !state.rule5;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'rulecard' + (off ? ' off' : ''); b.id = 'rule-' + r.id;
+    b.setAttribute('aria-pressed', String(state.hl === r.id));
+    const f = check.follow[r.id].size, k = check.broken[r.id].size;
+    b.innerHTML = `<b>${r.id.slice(1)}. ${r.name}${r.proposed ? '<span class="proposed">proposed</span>' : ''}</b>` +
+      `<span class="counts">${off ? 'off' : `<span class="good">${f} follow</span> · <span class="bad">${k} break</span>`}</span><span class="txt">${r.text}</span>`;
+    b.addEventListener('click', () => { state.hl = state.hl === r.id ? 'all' : r.id; pressGroup($('hl'), state.hl); renderRules(); showMarks(); });
+    el.append(b);
+  }
+}
+function focusOn(c) {
+  selected = c;
+  const target = new THREE.Vector3((c % W) + 0.5, cols[c] - 0.5, Math.floor(c / W) + 0.5);
+  const d = target.clone().sub(controls.target);
+  controls.target.add(d); camera.position.add(d);
+  showSelected();
+  renderConflicts();
+}
+function renderConflicts() {
+  const el = $('conflicts');
+  el.innerHTML = '';
+  $('conflict-count').textContent = `(${check.conflicts.length})`;
+  if (!check.conflicts.length) { el.innerHTML = '<li class="hint-text">None: every block matches the rules.</li>'; return; }
+  const groups = new Map();
+  for (const e of check.conflicts) { const s = situationOf(e.c); const k = s ? `${s.letter}: ${s.name}` : 'Blocks you added'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
+  for (const [name, list] of groups) {
+    const h = document.createElement('h3'); h.textContent = `${name} (${list.length})`; el.append(h);
+    for (const e of list) {
+      const li = document.createElement('li');
+      li.className = 'conflict' + (e.c === selected ? ' sel' : '');
+      const x = e.c % W, z = Math.floor(e.c / W);
+      const why = e.rule.missing ? `<span class="warn">Rules want ${e.rule.missing}; the game has no such shape.</span>`
+        : `<span class="bad">Rules: ${shapeLabel(e.rule)}</span>${e.diff.length ? ` · corners ${e.diff.join(', ')}` : ' · same corners, different ridge'}`;
+      li.innerHTML = `<button type="button" class="go"><span class="who">(${x}, ${z}) · ${cols[e.c]} high</span><span>You: ${shapeLabel(tops[e.c])}</span><span>${why}</span></button>`;
+      li.querySelector('.go').addEventListener('click', () => focusOn(e.c));
+      if (!e.rule.missing) {
+        const take = document.createElement('button');
+        take.type = 'button'; take.className = 'btn take'; take.textContent = "Use the rules' shape";
+        take.addEventListener('click', () => { tops[e.c] = { shape: e.rule.shape, turns: e.rule.turns }; selected = e.c; rebuild(); });
+        li.append(take);
+      }
+      el.append(li);
+    }
+  }
+}
+$('hl').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) { state.hl = v; pressGroup($('hl'), v); renderRules(); showMarks(); } });
+
+// Shape buttons with a small drawing of each shape.
+const shapesEl = $('shapes');
+function drawShape(cv, shape) {
+  const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+  g.clearRect(0, 0, w, h);
+  const p = pointsOf(shape, 0);
+  const proj = (x, y, z) => [w / 2 + (x - z) * w * 0.34, h * 0.78 - (x + z) * h * 0.2 - y * h * 0.42];
+  const fill = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#17809a';
+  g.strokeStyle = fill; g.lineWidth = 1.5; g.fillStyle = fill + '33';
+  const V = (r, c) => proj(c / 2, p[r][c] / 2, r / 2);
+  const tris = [];
+  for (const [kr, kc] of [[0, 0], [0, 2], [2, 2], [2, 0]]) tris.push([V(1, 1), V(kr, 1), V(kr, kc)], [V(1, 1), V(kr, kc), V(1, kc)]);
+  for (const t of tris) { g.beginPath(); g.moveTo(...t[0]); g.lineTo(...t[1]); g.lineTo(...t[2]); g.closePath(); g.fill(); }
+  // Outline: top edges and the vertical edges down to the base.
+  g.beginPath();
+  const ring = [[0, 0], [0, 1], [0, 2], [1, 2], [2, 2], [2, 1], [2, 0], [1, 0]];
+  ring.forEach(([r, c], i) => (i ? g.lineTo(...V(r, c)) : g.moveTo(...V(r, c))));
+  g.closePath();
+  for (const [r, c] of [[0, 2], [2, 2], [2, 0]]) { g.moveTo(...V(r, c)); g.lineTo(...proj(c / 2, 0, r / 2)); }
+  g.moveTo(...proj(1, 0, 0)); g.lineTo(...proj(1, 0, 1)); g.lineTo(...proj(0, 0, 1));
+  g.stroke();
+}
+for (const shape of ORDER) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'shape'; b.dataset.v = shape; b.id = 'shape-' + shape;
+  const cv = document.createElement('canvas'); cv.width = 108; cv.height = 80;
+  b.append(cv, document.createTextNode(NAMES[shape]));
+  b.addEventListener('click', () => setShape(shape));
+  shapesEl.append(b);
+  drawShape(cv, shape);
+}
+$('tool').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) { state.tool = v; pressGroup($('tool'), v); updateBadge(); } });
+$('rot-left').addEventListener('click', () => rotate(-1));
+$('rot-right').addEventListener('click', () => rotate(1));
+$('reset-guess').addEventListener('click', () => { resetShapes('guess'); rebuild(); });
+$('reset-yours').addEventListener('click', () => { buildArrangement(); applyRules(); unresolved = new Map(); loadShapes(YOURS); rebuild(); $('rules-status').textContent = 'Back to the shapes from your last export.'; });
+$('import').addEventListener('click', () => {
+  const list = parseExport($('import-json').value);
+  const n = loadShapes(list);
+  unresolved = new Map();
+  rebuild();
+  $('import-status').textContent = list.length ? `Loaded ${n} of ${list.length} blocks${n < list.length ? ' (the rest no longer match the column heights here)' : ''}.` : 'No blocks found in that text. Paste the whole export.';
+});
+$('apply-rules').addEventListener('click', () => {
+  applyRules(); rebuild();
+  $('rules-status').textContent = check.missing.size
+    ? `Applied. ${check.missing.size} blocks want a shape the game doesn't have (amber); they got the nearest one.`
+    : 'Applied. Every block has its rules shape.';
+});
+$('reset-cubes').addEventListener('click', () => { resetShapes('cubes'); rebuild(); });
+function updateBadge() { $('badge').textContent = { shape: 'Tap: next shape', rotate: 'Tap: rotate', place: 'Tap: add a block', remove: 'Tap: remove a block' }[state.tool]; }
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest('textarea, input')) return;
+  if (e.key === 'r' || e.key === 'R') rotate(1);
+  else if (e.key === 'n' || e.key === 'N') cycle(1);
+  else if (e.key === 'p' || e.key === 'P') cycle(-1);
+});
+const legendEl = $('legend');
+function fillLegend() {
+  legendEl.innerHTML = '';
+  for (const s of SITUATIONS) { const li = document.createElement('li'); li.innerHTML = `<b>${s.letter}</b>${s.name}`; legendEl.append(li); }
+}
+
+// ---- Picking.
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let pointer = null;
+function pick() {
+  if (!pointer) return null;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((pointer.x - r.left) / r.width) * 2 - 1, -((pointer.y - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObject(mesh, false)[0];
+  return hit ? triInfo[hit.faceIndex] : null;
+}
+function targetOf(inf, tool) {
+  if (!inf) return null;
+  if (tool === 'place') { const c = inf.kind === 'top' ? inf.col : inf.facing; return c >= 0 && cols[c] < MAXH ? { col: c, y: cols[c] } : null; }
+  const c = inf.kind === 'top' ? inf.col : inf.owner;
+  return c >= 0 && cols[c] > 0 ? { col: c, y: cols[c] - 1 } : null;
+}
+function hover() {
+  const t = targetOf(pick(), state.tool);
+  ghost.visible = !!t;
+  if (t) { ghost.position.set((t.col % W) + 0.5, t.y + 0.5, Math.floor(t.col / W) + 0.5); ghost.material.color.set(state.tool === 'remove' ? 0xff6b5a : 0xffffff); }
+}
+function tap(removeOverride) {
+  const tool = removeOverride ? 'remove' : state.tool;
+  const t = targetOf(pick(), tool);
+  if (!t) return;
+  const c = t.col;
+  if (tool === 'place') { cols[c]++; tops[c] = { shape: 'full', turns: 0 }; selected = c; }
+  else if (tool === 'remove') { cols[c]--; tops[c] = cols[c] ? { shape: 'full', turns: 0 } : null; selected = cols[c] ? c : -1; }
+  else if (tool === 'rotate') { selected = c; rotate(1); return; }
+  else { if (selected === c) cycle(1); else { selected = c; showSelected(); } return; }
+  rebuild();
+}
+let down = null;
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button }; });
+canvas.addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY }; if (e.pointerType === 'mouse' && !e.buttons) hover(); else ghost.visible = false; });
+canvas.addEventListener('pointerleave', () => { pointer = null; ghost.visible = false; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!down) return;
+  pointer = { x: e.clientX, y: e.clientY };
+  if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6 && performance.now() - down.t < 500) tap(down.button === 2);
+  down = null;
+  if (e.pointerType === 'mouse') hover(); else ghost.visible = false;
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ---- Export: every block's shape with the column heights around it, grouped by situation.
+function exportJson() {
+  const groups = [];
+  const seen = new Set();
+  const describe = (c) => {
+    const x = c % W, z = Math.floor(c / W), t = tops[c];
+    const around = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      let row = '';
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, zz = z + dz;
+        row += xx < 0 || xx >= W || zz < 0 || zz >= D ? '-' : String(cols[idx(xx, zz)]);
+      }
+      around.push(row);
+    }
+    seen.add(c);
+    const facing = SYMMETRIC.has(t.shape) ? '' : t.shape === 'half_ridge' ? (t.turns % 2 ? ' north-south' : ' east-west') : ' facing ' + FACINGS[t.turns];
+    return `(${x},${z}) h${cols[c]} around ${around.join('/')} -> ${t.shape}${facing}`;
+  };
+  for (const s of SITUATIONS) {
+    const blocks = s.cells.filter(([x, z]) => cols[idx(x, z)] > 0).map(([x, z]) => describe(idx(x, z)));
+    groups.push({ situation: `${s.letter}: ${s.name}`, blocks });
+  }
+  const other = [];
+  for (let c = 0; c < W * D; c++) if (cols[c] && !seen.has(c)) other.push(describe(c));
+  if (other.length) groups.push({ situation: 'Other blocks you added', blocks: other });
+  const text = JSON.stringify({
+    playground: 'Shape Playground',
+    note: 'One line per block: (x,z) column, h = height in blocks, around = the 3 × 3 column heights centred on it (rows north to south separated by /, each row west to east, "-" outside), then the shape you chose for its top block and the way it faces (slopes face the way they descend). North is -z.',
+    shapes: { ...Object.fromEntries(Object.entries(GAME).map(([k, v]) => [k, `corners NW NE SE SW ${v.join(' ')} (facing east)`])), ...Object.fromEntries(Object.entries(NEWC).map(([k, v]) => [k, `corners NW NE SE SW ${v.join(' ')} (facing east; not in the game yet)`])), half_ridge_tee: 'ridges to three edges; facing east, the open side is south', half_ridge_cross: 'ridges to all four edges', half_pyramid: 'centre 1, edges 0', half_ridge: 'centre line 1, sides 0', half_ridge_end: 'ridge from the centre to the edge it faces, 1; the rest 0', half_and_half_left: 'corners NW NE SE SW 2 0 0 1 (facing east; not in the game yet)', half_and_half_right: 'corners NW NE SE SW 1 0 0 2 (facing east; not in the game yet)', half_ridge_corner: 'ridge from the centre to the edge it faces and the next edge clockwise, 1; the rest 0' },
+    situations: groups,
+  }, null, 1)
+    .replace(/\[\s*((?:-?[\d.]+)(?:,\s*-?[\d.]+)*)\s*\]/g, (m, inner) => '[' + inner.split(/,\s*/).join(', ') + ']')
+    .replace(/\[\s*(\[[^\[\]]*\]),\s*(\[[^\[\]]*\]),\s*(\[[^\[\]]*\])\s*\]/g, '[$1, $2, $3]');
+  const area = $('export-json'), status = $('export-status');
+  area.value = text; area.hidden = false;
+  const fallback = () => { area.focus(); area.select(); status.className = 'hint-text'; status.textContent = 'Your browser blocked the clipboard. The JSON is selected below: copy it and paste it into the chat.'; };
+  try { navigator.clipboard.writeText(text).then(() => { status.className = 'hint-text ok'; status.textContent = `Copied ${groups.reduce((n, g) => n + g.blocks.length, 0)} blocks. Paste them into the chat.`; }, fallback); } catch { fallback(); }
+}
+$('export').addEventListener('click', exportJson);
+
+// ---- Loop.
+function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(stage);
+resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+buildArrangement();
+fillLegend();
+pressGroup($('tool'), state.tool);
+pressGroup($('hl'), state.hl);
+updateBadge();
+// Boot: the shapes saved in this browser, else your last export.
+function start(data) {
+  if (data && Array.isArray(data.cols) && data.cols.length === W * D && Array.isArray(data.tops)) {
+    cols = data.cols; tops = data.tops; unresolved = new Map(data.unresolved || []);
+  } else if (!restore()) { applyRules(); unresolved = new Map(); loadShapes(YOURS); }
+  placeLabels();
+  rebuild();
+}
+start({});
+</script>
