@@ -1,6 +1,6 @@
 # 0021. Mountain detail from a derivative-damped ridged cascade
 
-- Status: Accepted
+- Status: Superseded by [0025](0025-baseline-world.md) (simple noise terrain)
 - Date: 2026-10-07
 - Builds on: [0018](0018-drainage-consistent-terrain.md) (the height model `V + D × relief`),
   [0010](0010-worldgen-noise-numerics.md) (strict-float determinism)

@@ -1,6 +1,8 @@
 # Dwell — Baseline Evaluation: What to Keep, Add and Cut
 
-> **Status: evaluation, 2026-10-12; planned as Phases 14–19 of [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).** Nothing here
+> **Status: evaluation, 2026-10-12; planned as Phases 14–19 of [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
+> The owner answered the open decisions on 2026-10-12 (§7), recorded in ADRs
+> [0024](./adr/0024-adaptive-natural-blocks.md)–[0027](./adr/0027-webgpu-renderer.md).** Nothing else here
 > is built yet. It compares the owner's
 > new baseline with the code and docs on `main` (app 0.8.1, generator version 11, protocol v12) and
 > proposes the work to get there. Once the owner settles the open decisions (§7), the agreed parts
@@ -114,7 +116,7 @@ around 8,192 km:
 | Continent cells of 2,560 km, plates of 256 km, 512 km ocean ring, 300 km gaps (ADR 0017) | Larger than the world | Replace (§3.6) |
 | Climate fields of 600–1,200 km, 262 km fBm, ranges, massifs (ADRs 0019, 0021) | Meaningless | Cut (§4) |
 | `lod.maxLevel` = 19 (16,777 km root) | Level 12 (131 km) covers the disc | Change the data |
-| `flightCeiling` 24,000 km, fly-speed levels to 2^19.5 | Beyond the build sphere | Bound by the sphere (§3.4); fewer levels |
+| `flightCeiling` 24,000 km, fly-speed levels to 2^19.5 | Beyond the build sphere | `flightCeiling` removed, movement not bounded (D3); fly-speed levels re-checked |
 | Double-precision Jolt, 1/256 m fixed-point positions, region-anchored collision, the integer/remainder noise lattice (ADR 0011) | No longer needed (float32 is ~4 mm at 50 km) | **Keep**: built, tested, generic (they work at any radius), and cheap. Revisit only for a measured cost |
 | F4 map zoom to 128 km/column; far-origin tests at ~8,000 km | Outside the world | Narrow the zoom; far origin ~49 km |
 
@@ -166,7 +168,8 @@ with the shape a small closed set in code (sphere today; a slab or cylinder woul
 which keeps tests and old worlds' bounds expressible). Everything that bounds the world reads the
 predicate: **edits** (server check, client pre-check), **generation and storage** (chunks wholly
 outside are air, never stored; `IsAirChunk`, `LodBoundsAt`), **streaming and LOD** (chunk rows and
-sections bounded by it), **flight** (held at the boundary, D3; falling unaffected).
+sections bounded by it). **Not movement** (D3, owner: players may fly outside the sphere;
+`flightCeiling` goes).
 
 **Radius (D2).** Proposed 50 km, equal to the world radius: the rim lies on the sphere's equator,
 50 km of build height over the centre, tapering to ~10 km at 49 km out and ~3 km at 49.9 km. The
@@ -373,20 +376,25 @@ Already systems, untouched by the baseline:
 - Versioned releases and the launcher; the Phase 7 palette, tone mapping and sky (ported with B8;
   the sky colours could join the look data later).
 
-## 7. Open decisions for the owner
+## 7. Decisions (answered by the owner, 2026-10-12)
 
-| # | Decision | Proposal |
-|---|---|---|
-| D1 | What "10 layers of stone" measures | A fixed core of 10 stone layers per face from the midplane; higher ground is stone under a soil skin (§3.3) |
-| D2 | Build sphere radius | 50 km, equal to the world radius (§3.4) |
-| D3 | At the sphere's surface in flight | Held at the boundary; falling unaffected |
-| D4 | WebGL fallback | WebGPU first, Three's WebGL2 backend only as an automatic fallback, all shaders in TSL (§3.8) |
-| D5 | Face B's terrain | The same definition as face A with its own seed (its own island), selectable per face (§3.1) |
-| D6 | Launch pads | Remove the block, the `launch_speed` property and its tests |
-| D7 | The movement playground world | Replace with a structure/saved-world file the controller tests load, or cut |
-| D8 | Terrain scale | Island ~20–30 km radius, ≥ 8 km of sea to the rim, sea level `h` = 32, land to ~`h` = 96–160 — tuned with the inspect tool |
-| D9 | Midplane at y = 0 | Yes: the origin of generation is the centre of the disc, the midplane and the build sphere |
-| D10 | How far "data" goes for terrain | A fixed vocabulary of node kinds in code, parameters and composition in data (§3.5) — not a general scripting language |
+The owner accepted every proposal except D3 (no movement limit instead) and added to D4 (the
+settings menu shows the backend in use). Recorded in ADRs [0025](./adr/0025-baseline-world.md)
+(D1–D3, D5–D9), [0026](./adr/0026-terrain-definitions.md) (D10) and
+[0027](./adr/0027-webgpu-renderer.md) (D4).
+
+| # | Decision | Proposal | Answer |
+|---|---|---|---|
+| D1 | What "10 layers of stone" measures | A fixed core of 10 stone layers per face from the midplane; higher ground is stone under a soil skin (§3.3) | As proposed |
+| D2 | Build sphere radius | 50 km, equal to the world radius (§3.4) | As proposed |
+| D3 | At the sphere's surface in flight | Held at the boundary; falling unaffected | **Changed:** no movement limit — the sphere bounds building and storage only; players may fly anywhere |
+| D4 | WebGL fallback | WebGPU first, Three's WebGL2 backend only as an automatic fallback, all shaders in TSL (§3.8) | As proposed, **plus** the settings menu shows which backend the device is using |
+| D5 | Face B's terrain | The same definition as face A with its own seed (its own island), selectable per face (§3.1) | As proposed |
+| D6 | Launch pads | Remove the block, the `launch_speed` property and its tests | As proposed |
+| D7 | The movement playground world | Replace with a structure/saved-world file the controller tests load, or cut | A structure file the controller tests load |
+| D8 | Terrain scale | Island ~20–30 km radius, ≥ 8 km of sea to the rim, sea level `h` = 32, land to ~`h` = 96–160 — tuned with the inspect tool | As proposed |
+| D9 | Midplane at y = 0 | Yes: the origin of generation is the centre of the disc, the midplane and the build sphere | As proposed |
+| D10 | How far "data" goes for terrain | A fixed vocabulary of node kinds in code, parameters and composition in data (§3.5) — not a general scripting language | As proposed |
 
 ## 8. Order of work
 

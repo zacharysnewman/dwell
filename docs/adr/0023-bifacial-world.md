@@ -1,6 +1,6 @@
 # 0023. The bifacial world: two faces, gravity toward the midplane
 
-- Status: Accepted
+- Status: Accepted; decisions 1–3 and 8 amended by [0025](0025-baseline-world.md) (midplane at 0, a 10-layer core, face B by terrain definition, the LOD over a thin crust)
 - Date: 2026-10-07
 - Supersedes: [0011](0011-planet-scale-world.md) decision on the vertical bounds (the world floor, the
   bedrock layer and the void below it); Phase 12's single dome (the dome of each face is now its own)

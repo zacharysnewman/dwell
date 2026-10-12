@@ -1,6 +1,6 @@
 # 0002. Client renderer: Three.js on WebGL2, behind a thin render interface
 
-- Status: Accepted
+- Status: Accepted; backend superseded by [0027](0027-webgpu-renderer.md) (WebGPU; Three.js and the render interface stay)
 - Date: 2026-09-25
 - Resolves: ARCHITECTURE.md Open Decisions #2
 

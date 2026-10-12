@@ -1,6 +1,6 @@
 # 0018. Drainage-consistent terrain: rivers as noise contours, terraced static water above sea level
 
-- Status: Accepted
+- Status: Superseded by [0025](0025-baseline-world.md) (no rivers or lakes)
 - Date: 2026-10-06
 - Resolves: Open Decision 17 (water above sea level); Phase 11a of the implementation plan (height
   model, rivers, lakes, water above sea level)
