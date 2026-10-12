@@ -23,7 +23,9 @@ and friend worlds), with a small master server for discovery; there are no offic
   five rules (replaces placed slopes and terrain slope shaping for natural materials).
 - `docs/BASELINE_EVALUATION.md` — the owner's simplified baseline (2026-10-12) compared with what
   is built: what to keep, add and cut, graded on whether each part is an extendable, data-driven
-  system (evaluation; not yet planned).
+  system (evaluation).
+- `docs/REWORK_PLAN.md` — the baseline rework (R0–R5) that builds it, before Phases 14–16: its
+  deliverables and exit criteria are tracked there like the implementation plan's.
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,

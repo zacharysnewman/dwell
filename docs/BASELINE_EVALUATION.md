@@ -1,6 +1,7 @@
 # Dwell — Baseline Evaluation: What to Keep, Add and Cut
 
-> **Status: evaluation, 2026-10-12.** Nothing here is built or decided yet. It compares the owner's
+> **Status: evaluation, 2026-10-12; planned in [`REWORK_PLAN.md`](./REWORK_PLAN.md).** Nothing here
+> is built yet. It compares the owner's
 > new baseline with the code and docs on `main` (app 0.8.1, generator version 11, protocol v12) and
 > proposes the work to get there. Once the owner settles the open decisions (§7), the agreed parts
 > become ADRs, a re-plan of `IMPLEMENTATION_PLAN.md`, and changes to `ARCHITECTURE.md` in the

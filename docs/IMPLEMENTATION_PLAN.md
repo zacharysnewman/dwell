@@ -26,14 +26,15 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; follow-up built: one sky sphere that turns as a unit; the owner approved the before/after and the frame time (2026-10-06) |
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
-| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; next: **9e — adaptive natural blocks** (natural blocks shape themselves from their neighbours by five rules; design in `ADAPTIVE_BLOCKS.md`, ADR 0024 proposed; not started) |
-| 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images |
-| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage |
-| 12 — Sky islands in a dome | ⏳ Not started — design from the Aether spec; open details in `WORLD_GENERATION.md` §4.8 |
-| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
-| 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) |
-| 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) |
-| 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) |
+| 9 — Slope blocks (shapes, collision, building, terrain, LOD) | 🚧 In progress — 9a–9d built and tested natively and in Vitest; `package.json` raised to 0.3.0, the new compatibility line (generator v5, registry hash); playtest follow-up built: generated slopes left gaps under stacked pieces and steep ground unsloped, fixed in place on the 0.3 and 0.4 lines (patches 0.3.1 and 0.4.1, same generator versions, the owner's decision); ladders targetable again; a slab's and a slope's side faces show the grass fringe along their top edge (playtest); outstanding: WASM suites, e2e (incl. new shape specs), frame time, owner review; **re-scoped by the baseline rework** ([`REWORK_PLAN.md`](./REWORK_PLAN.md)): the placed slope and slab families and the slope stage are to be cut (R1), which drops their outstanding checks; 9e (adaptive natural blocks) moves to rework R4 |
+| 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images; **re-scoped by the baseline rework**: to be cut to one island (R1) and replaced by the terrain definition's layout (R3), which drops these outstanding items |
+| 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage; **re-scoped by the baseline rework**: rivers, climate, biomes, tints and features are to be cut (R1), which drops these outstanding items |
+| 12 — Sky islands in a dome | ✖ Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features); never started |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (R2), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
+| R — Baseline rework (R0 decisions & ADRs, R1 cut, R2 world shape & build volume, R3 terrain definitions, R4 adaptive blocks, R5 WebGPU, looks & textures) | ⏳ Not started — planned in [`REWORK_PLAN.md`](./REWORK_PLAN.md), which holds its deliverables and exit criteria; from [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md) |
+| 14 — Voxel awakening | ⏸ Waits for Phases 6–13 (2026-10-05) and the baseline rework (2026-10-12) |
+| 15 — Tiered physics | ⏸ Waits for Phases 6–13 (2026-10-05) and the baseline rework (2026-10-12) |
+| 16 — Sleep / re-bake | ⏸ Waits for Phases 6–13 (2026-10-05) and the baseline rework (2026-10-12) |
 | 17 — Dedicated servers & packaging | ⏳ Not started |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -55,6 +56,10 @@ phases, so terrain is tuned with slopes in place; continents before natural terr
 on coast distance and plate edges; sky islands after natural terrain (they use its biomes); the
 bifacial world after both, since face B repeats them, and before physics, so falling bodies handle
 both gravity directions from the start.
+On 2026-10-12 the owner set a simpler baseline ([`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md)):
+the **baseline rework** ([`REWORK_PLAN.md`](./REWORK_PLAN.md), sub-phases R0–R5) cuts back Phases 9–11,
+cancels Phase 12, re-sizes Phase 13's world and replaces 9e, and runs before Phases 14–16. Its
+deliverables are tracked in `REWORK_PLAN.md`; this table carries its status.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -1360,7 +1365,7 @@ walked on smoothly by the physics player controller with identical collision on 
 client, and used by the LOD to draw distant terrain as faceted slopes instead of terraces. Design,
 the shape table and the angle check: [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md).
 
-**Status:** Built (9a–9d); verification outstanding; **9e (adaptive natural blocks) planned, not started** (below). Sub-phases: **9a — shapes, slope families, meshing, collision
+**Status:** Built (9a–9d); verification outstanding; **9e (adaptive natural blocks) planned, not started** (below). **Re-scoped by the baseline rework** ([`REWORK_PLAN.md`](./REWORK_PLAN.md)): R1 cuts the placed slope and slab families and the slope stage; 9e is built as R4, with the rule table as data. Sub-phases: **9a — shapes, slope families, meshing, collision
 and the controller**; **9b — building** (palette, orientation, validation); **9c — terrain shaping**
 (generator version 5); **9d — LOD slopes**. Runs after Phase 8 and before Phase 14, whose cluster
 shapes and integrity rules must know about slopes. Outstanding: everything that needs CI or a
@@ -1419,6 +1424,9 @@ Exit criteria
 - [ ] Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.
 
 ### 9e — Adaptive natural blocks (slope improvement)
+
+> Moved to the baseline rework as **R4** ([`REWORK_PLAN.md`](./REWORK_PLAN.md)), which tracks it;
+> the text below is the original plan.
 
 **Goal:** natural blocks (dirt, grass, stone, sand, snow — block data, `"adaptive": true`) take
 their shape from the 3 × 3 columns around them, so touching natural blocks always join into one
@@ -1657,7 +1665,9 @@ only — no dungeons or creatures; the owner's spec of it is kept in
 [`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md)), using existing
 blocks only. Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
 
-**Status:** Not started. Sub-phases: **12a — dome world bounds** (decided; does not depend on the
+**Status:** Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features;
+[`REWORK_PLAN.md`](./REWORK_PLAN.md)); never started. Kept below for the record until R1 removes the
+sky-island design. Sub-phases were: **12a — dome world bounds** (decided; does not depend on the
 islands, so it may be built earlier than the rest of the phase); **12b — islands** (the
 Aether density field in sparse archipelagos, surface layering, decorations); **12c — clouds**
 (render-only, separable). Open details in `WORLD_GENERATION.md` §4.8.
