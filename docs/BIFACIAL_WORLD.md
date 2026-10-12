@@ -5,6 +5,11 @@
 > [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.3 world bounds and generation, §6.6 LOD, §7 physics,
 > §9 players) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md), with an ADR superseding the
 > vertical bounds of ADR 0011 and Phase 12's dome.
+>
+> **Re-sized by the baseline rework** (`IMPLEMENTATION_PLAN.md` Phase 16, `BASELINE_EVALUATION.md`
+> §3.1): a 50 km disc, the midplane at y = 0, a 10-layer stone core per face and a spherical build
+> volume replace the ~4 km crust and bounds below. Phase 12 (the domes this file mentions) is
+> cancelled. The text below is the Phase 13 design and build until Phase 16 updates it.
 
 ## 1. Intent (owner, 2026-10-05)
 

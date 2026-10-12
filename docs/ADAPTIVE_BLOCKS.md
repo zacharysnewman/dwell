@@ -1,6 +1,8 @@
 # Dwell — Adaptive Natural Blocks: Shapes From Neighbours
 
-> **Status: [planned, Phase 9e]** — design agreed with the owner in prototypes on 2026-10-07/08
+> **Status: [planned, Phase 18]** (formerly 9e; moved into the baseline rework, whose Phase 18
+> also makes the rule table data with overrides and marks every remaining solid block adaptive —
+> `IMPLEMENTATION_PLAN.md`, `BASELINE_EVALUATION.md` §3.7) — design agreed with the owner in prototypes on 2026-10-07/08
 > ([`prototypes/`](./prototypes/README.md)); decision proposed in
 > [ADR 0024](./adr/0024-adaptive-natural-blocks.md). Nothing here is built yet. When it lands, the
 > built mechanisms move into [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1, §6.3, §6.5, §6.6) and
@@ -159,7 +161,9 @@ world treat missing neighbours as the same height.
   parts); the others are.
 - **Phases 21–22:** re-baking a settled body writes cube states; shapes re-derive from occupancy.
 
-## 5. Sub-phase plan (9e)
+## 5. Sub-phase plan (9e, now Phase 18)
+
+> Phase 18 in `IMPLEMENTATION_PLAN.md` is the plan of record; this was the original breakdown.
 
 1. **Shapes and the table.** The 18 new shapes in `shapes.mjs` (corner shapes and the 3 × 3
    surface form), the rule table and its generator, `adaptive` in `dwell.json`, test vectors;

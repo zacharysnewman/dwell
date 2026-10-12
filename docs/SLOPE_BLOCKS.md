@@ -1,9 +1,10 @@
 # Dwell — Slope Blocks: Shapes, Collision, Building, Terrain and LOD
 
-> **Next: [planned, Phase 9e]** natural materials will stop using placed slopes and the terrain
-> slope stage: their blocks shape themselves from their neighbours
+> **Next: the baseline rework** (`IMPLEMENTATION_PLAN.md` Phases 15 and 18): Phase 15 removes the
+> placed slope and slab families (no crafted material is left) and the terrain slope stage; Phase 18
+> makes natural blocks shape themselves from their neighbours
 > ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md), [ADR 0024](./adr/0024-adaptive-natural-blocks.md)).
-> The shape table and crafted materials' slope families below stay.
+> The shape mechanism and table below stay; this file is trimmed to them in Phase 15.
 >
 > **Status: [built, Phase 9]** — implemented as designed below, with the decisions recorded in
 > [ADR 0016](./adr/0016-slope-blocks.md); the built mechanisms live in
@@ -218,7 +219,7 @@ Gentle pieces appear on gentle ground and standard pieces on slopes near 45°; a
 stays a cliff of cubes with a shaped lip (built in 0.3.1 / 0.4.1: every column's top cell is shaped,
 clamped to one cell, on solid cells). Slopes are a generator stage like the others, so this is
 a **generator version bump** with regenerated goldens; the point queries (`SolidAt`, `GroundY`)
-and `GenerateLod`'s surfaces follow the same rule. Islands (Phase 12) and cave floors keep cubes
+and `GenerateLod`'s surfaces follow the same rule. Islands (Phase 12, cancelled) and cave floors keep cubes
 at first; extending the rule to them is a later tuning step.
 
 ## 6. Building

@@ -14,12 +14,12 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/PLAYER_CONTROLLER.md` — detailed spec of the physics player controller (architecture sub-spec).
 - `docs/IMPLEMENTATION_PLAN.md` — the phased build plan and each phase's exit criteria.
 - `docs/WORLD_GENERATION.md` — design for Phases 7 and 10–12: art direction and palette, continents,
-  rivers/mountains/biomes, sky islands (becomes an architecture sub-spec as the phases land).
+  rivers/mountains/biomes, sky islands; largely superseded by the baseline rework (Phase 12 cancelled).
 - `docs/BLOCK_REGISTRY.md` — design for Phase 8: namespaced block states, the registry, string
   palettes in world files.
 - `docs/SLOPE_BLOCKS.md` — design for Phase 9: slope block shapes, collision, building, terrain
   shaping and LOD (becomes an architecture sub-spec as the phase lands).
-- `docs/ADAPTIVE_BLOCKS.md` — design for Phase 9e: natural blocks shaped from their neighbours by
+- `docs/ADAPTIVE_BLOCKS.md` — design for Phase 18 (formerly 9e): natural blocks shaped from their neighbours by
   five rules (replaces placed slopes and terrain slope shaping for natural materials).
 - `docs/BASELINE_EVALUATION.md` — the owner's simplified baseline (2026-10-12) compared with what
   is built: what to keep, add and cut, graded on whether each part is an extendable, data-driven
@@ -31,7 +31,7 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity
   toward the midplane, crossing between the faces.
 - `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
-  spec used by Phase 12).
+  spec used by the cancelled Phase 12; removed in Phase 15).
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 
