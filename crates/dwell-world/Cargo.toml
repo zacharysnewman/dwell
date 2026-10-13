@@ -1,0 +1,15 @@
+[package]
+name = "dwell-world"
+description = "Dwell's voxel world: chunks, bounds and faces, LOD sections, structures, block edits (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-protocol = { path = "../dwell-protocol" }
+
+[lints]
+workspace = true

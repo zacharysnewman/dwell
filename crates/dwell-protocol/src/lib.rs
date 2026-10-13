@@ -1,5 +1,10 @@
-//! Dwell's wire protocol. The constants are generated from `shared/protocol/constants.json` by
-//! `shared/protocol/gen.mjs`; the codec is ported in Phase 24d.
+//! Dwell's wire protocol (ARCHITECTURE.md §8). The constants are generated from
+//! `shared/protocol/constants.json` by `shared/protocol/gen.mjs`; the codec is pinned by the golden
+//! vectors in `shared/protocol/vectors.txt`.
+
+pub mod auth;
+pub mod bytes;
+mod messages;
 
 #[rustfmt::skip]
 mod constants {
@@ -7,6 +12,7 @@ mod constants {
 }
 
 pub use constants::*;
+pub use messages::*;
 
 #[cfg(test)]
 mod tests {

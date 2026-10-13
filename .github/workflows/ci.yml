@@ -289,7 +289,7 @@ jobs:
       - name: Rust toolchain (keep in sync with rust-toolchain.toml)
         run: |
           rustup toolchain install 1.94.1 --profile minimal --component clippy,rustfmt
-          rustup target add wasm32-unknown-unknown --toolchain 1.94.1
+          rustup target add wasm32-unknown-unknown wasm32-wasip1 --toolchain 1.94.1
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
@@ -302,6 +302,8 @@ jobs:
           cargo clippy -p dwell-client --target wasm32-unknown-unknown -- -D warnings
       - name: Tests
         run: cargo nextest run --workspace
+      - name: Deterministic suites under WASM (worldgen goldens, ADR 0010; Node's WASI, tools/wasi-run.mjs)
+        run: cargo test -p dwell-blocks -p dwell-protocol -p dwell-world -p dwell-worldgen --target wasm32-wasip1
       - name: WebGPU probe in headless Chromium
         working-directory: client
         run: |

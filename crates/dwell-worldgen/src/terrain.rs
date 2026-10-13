@@ -1,0 +1,525 @@
+//! Procedural terrain, generator version 12 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! 15 — one island at the origin, a 2D height field, and the ground filled by depth. A chunk is a
+//! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
+//! natively or in WASM, bit-identically (noise.rs, ADR 0010).
+//!
+//! Per chunk: (1) layout: the signed distance to the coast; (2) height: the sea floor falling from
+//! the coast, or the land rising inland, plus hills; (3) fill: stone up to the surface under grass
+//! over dirt on land, sand at the shore and under water, water in open space below sea level. 2D
+//! fields are sampled every 4 columns and interpolated. Parameters are code constants: Phase 17
+//! replaces this with an evaluator of terrain definitions (data, ADR 0026).
+
+use dwell_blocks::StateId;
+use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface, LodSurfaces};
+use dwell_world::{
+    CHUNK_SIZE, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y, SEA_LEVEL, WORLD_MAX_Y,
+    chunk_disc_overlap, inside_world_disc, local_index,
+};
+
+use crate::island::{self, IslandLayout};
+use crate::noise::{
+    clamp01, fbm2, floor_div, floor_mod, floor_to_int, lerp, noise_offset, octaves_resolved,
+    seed_word, smooth_step,
+};
+
+/// A generator works face-locally: its ground band is [FACE_MIN_Y, WORLD_MAX_Y), sea level 0.
+const FACE_MIN_Y: i32 = MIDPLANE_Y;
+/// Lattice spacing of the interpolated 2D fields (voxels).
+const LATTICE: i32 = 4;
+const LATTICE_STEP: f32 = 0.25;
+/// The land's rise inland (m, approached far inland) and the distance (m) at which it is half done.
+const INLAND_RISE: f32 = 90.0;
+const RISE_HALF: f32 = 6_000.0;
+/// The sea floor's depth offshore (m below sea level), reached linearly over this distance (m).
+const SEA_FLOOR: f32 = -20.0;
+const SHELF: f32 = 2_500.0;
+/// Hills on land, faded in from HILL_FADE_FROM to HILL_FADE_TO m inland.
+const HILL_HEIGHT: f32 = 30.0;
+const HILL_WAVELENGTH: i32 = 2_048;
+const HILL_OCTAVES: u32 = 4;
+const HILL_FADE_FROM: f32 = 500.0;
+const HILL_FADE_TO: f32 = 4_000.0;
+/// Small bumps everywhere.
+const BUMP_HEIGHT: f32 = 2.5;
+const BUMP_WAVELENGTH: i32 = 128;
+const BUMP_OCTAVES: u32 = 3;
+/// Fill by depth (m): sand at the shore (top voxel below SHORE_HEIGHT above sea) to SAND_DEPTH,
+/// else grass over dirt to DIRT_DEPTH; stone below.
+const SHORE_HEIGHT: i32 = 2;
+const SAND_DEPTH: i64 = 3;
+const DIRT_DEPTH: i64 = 3;
+
+/// The spawn point's level patch reaches this many columns either side.
+pub const SPAWN_CLEAR: i32 = 4;
+
+/// 2D fields of one column.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Column {
+    /// Signed distance to the coast (m): > 0 land, < 0 sea.
+    pub coast: f32,
+    /// Ground height (m, face-local, sea level 0): the top voxel is ceil(height) − 1.
+    pub height: f32,
+    /// Beyond the world's disc: nothing is generated.
+    pub outside: bool,
+}
+
+/// The top voxel of a column of height h: ceil(h) − 1.
+fn top_voxel(h: f32) -> i32 {
+    let f = floor_to_int(h);
+    if f as f32 == h { f - 1 } else { f }
+}
+
+/// The material `depth` m below the surface of a column whose top voxel is `top`.
+fn fill(top: i32, depth: i64) -> StateId {
+    if top < SEA_LEVEL + SHORE_HEIGHT {
+        return if depth < SAND_DEPTH { M.sand } else { M.stone };
+    }
+    if depth == 0 {
+        M.grass
+    } else if depth <= DIRT_DEPTH {
+        M.dirt
+    } else {
+        M.stone
+    }
+}
+
+/// The noise fields of a point, before the height is derived from them.
+#[derive(Clone, Copy, Debug, Default)]
+struct Corner {
+    coast: f32,
+    hills: f32,
+    bumps: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct TerrainGenerator {
+    hills_seed: u32,
+    bumps_seed: u32,
+    offset_x: i64,
+    offset_z: i64,
+    island: IslandLayout,
+}
+
+impl TerrainGenerator {
+    pub fn new(world_seed: u64) -> Self {
+        Self {
+            hills_seed: seed_word(world_seed, 1),
+            bumps_seed: seed_word(world_seed, 2),
+            offset_x: noise_offset(seed_word(world_seed, 3)),
+            offset_z: noise_offset(seed_word(world_seed, 4)),
+            island: IslandLayout::new(world_seed),
+        }
+    }
+
+    fn sample_corner(&self, lx: i32, lz: i32) -> Corner {
+        let x = i64::from(lx) * i64::from(LATTICE);
+        let z = i64::from(lz) * i64::from(LATTICE);
+        let (nx, nz) = (x + self.offset_x, z + self.offset_z);
+        Corner {
+            coast: self.island.coast_at(x, z, None),
+            hills: fbm2(self.hills_seed, nx, nz, HILL_WAVELENGTH, HILL_OCTAVES, None),
+            bumps: fbm2(self.bumps_seed, nx, nz, BUMP_WAVELENGTH, BUMP_OCTAVES, None),
+        }
+    }
+
+    fn sample_lod(&self, x: i64, z: i64, cell: i64) -> Corner {
+        let (nx, nz) = (x + self.offset_x, z + self.offset_z);
+        Corner {
+            coast: self.island.coast_at(
+                x,
+                z,
+                Some(octaves_resolved(
+                    island::COAST_WAVELENGTH,
+                    island::COAST_OCTAVES,
+                    cell,
+                )),
+            ),
+            hills: fbm2(
+                self.hills_seed,
+                nx,
+                nz,
+                HILL_WAVELENGTH,
+                HILL_OCTAVES,
+                Some(octaves_resolved(HILL_WAVELENGTH, HILL_OCTAVES, cell)),
+            ),
+            bumps: fbm2(
+                self.bumps_seed,
+                nx,
+                nz,
+                BUMP_WAVELENGTH,
+                BUMP_OCTAVES,
+                Some(octaves_resolved(BUMP_WAVELENGTH, BUMP_OCTAVES, cell)),
+            ),
+        }
+    }
+
+    fn finish(c: Corner) -> Column {
+        // Fractal sums rarely leave ±0.5: × 2 brings the amplitudes to about their nominal values.
+        let base = if c.coast > 0.0 {
+            INLAND_RISE * (c.coast / (c.coast + RISE_HALF))
+        } else {
+            SEA_FLOOR * clamp01(-c.coast * (1.0 / SHELF))
+        };
+        let land = smooth_step(HILL_FADE_FROM, HILL_FADE_TO, c.coast);
+        Column {
+            coast: c.coast,
+            height: base + land * HILL_HEIGHT * 2.0 * c.hills + BUMP_HEIGHT * 2.0 * c.bumps,
+            outside: false,
+        }
+    }
+
+    fn interp(c: &[Corner; 4], fx: i32, fz: i32) -> Column {
+        let tx = fx as f32 * LATTICE_STEP;
+        let tz = fz as f32 * LATTICE_STEP;
+        let bi = |f: fn(&Corner) -> f32| {
+            lerp(
+                lerp(f(&c[0]), f(&c[1]), tx),
+                lerp(f(&c[2]), f(&c[3]), tx),
+                tz,
+            )
+        };
+        Self::finish(Corner {
+            coast: bi(|c| c.coast),
+            hills: bi(|c| c.hills),
+            bumps: bi(|c| c.bumps),
+        })
+    }
+
+    /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
+    pub fn column_at(&self, x: i32, z: i32) -> Column {
+        let lx = floor_div(x, LATTICE);
+        let lz = floor_div(z, LATTICE);
+        let c = [
+            self.sample_corner(lx, lz),
+            self.sample_corner(lx + 1, lz),
+            self.sample_corner(lx, lz + 1),
+            self.sample_corner(lx + 1, lz + 1),
+        ];
+        let mut col = Self::interp(&c, floor_mod(x, LATTICE), floor_mod(z, LATTICE));
+        col.outside = !inside_world_disc(i64::from(x), i64::from(z));
+        col
+    }
+
+    pub fn solid_at(&self, x: i32, y: i32, z: i32) -> bool {
+        if !(FACE_MIN_Y..WORLD_MAX_Y).contains(&y) {
+            return false;
+        }
+        let col = self.column_at(x, z);
+        !col.outside && y <= top_voxel(col.height)
+    }
+
+    /// The top solid voxel of a column inside the disc.
+    pub fn ground_y(&self, x: i32, z: i32) -> Option<i32> {
+        let col = self.column_at(x, z);
+        (!col.outside).then(|| top_voxel(col.height).clamp(FACE_MIN_Y, WORLD_MAX_Y - 1))
+    }
+
+    /// The island's coast distance at the point itself (no lattice).
+    pub fn coast_at(&self, x: i32, z: i32) -> f32 {
+        self.island.coast_at(i64::from(x), i64::from(z), None)
+    }
+
+    /// Columns of a chunk (S × S, row-major from (x0, z0)).
+    fn chunk_columns(&self, x0: i32, z0: i32) -> Vec<Column> {
+        const S: i32 = CHUNK_SIZE;
+        const NL: i32 = S / LATTICE + 1;
+        let lx0 = floor_div(x0, LATTICE);
+        let lz0 = floor_div(z0, LATTICE);
+        let mut corners = Vec::with_capacity((NL * NL) as usize);
+        for j in 0..NL {
+            for i in 0..NL {
+                corners.push(self.sample_corner(lx0 + i, lz0 + j));
+            }
+        }
+        let at = |i: i32, j: i32| corners[(j * NL + i) as usize];
+        let mut cols = Vec::with_capacity((S * S) as usize);
+        for z in 0..S {
+            for x in 0..S {
+                let (i, j) = (x / LATTICE, z / LATTICE);
+                let c = [at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)];
+                let mut col = Self::interp(&c, x % LATTICE, z % LATTICE);
+                col.outside = !inside_world_disc(i64::from(x0 + x), i64::from(z0 + z));
+                cols.push(col);
+            }
+        }
+        cols
+    }
+
+    /// The highest ground of the columns inside the disc.
+    fn sky_floor(cols: &[Column]) -> f32 {
+        cols.iter()
+            .filter(|c| !c.outside)
+            .fold(-1e9f32, |top, c| top.max(c.height))
+    }
+
+    /// The sky test's height for a chunk column: chunks with y0 above it (and at or above sea
+    /// level) are air. Depends only on (cx, cz), so callers cache it per column.
+    pub fn sky_floor_at(&self, cx: i32, cz: i32) -> f32 {
+        Self::sky_floor(&self.chunk_columns(cx * CHUNK_SIZE, cz * CHUNK_SIZE))
+    }
+
+    /// `is_air_chunk` given `sky_floor_at(coord.x, coord.z)`.
+    pub fn is_air_chunk_with(coord: ChunkCoord, sky_floor: f32) -> bool {
+        let y0 = coord.y * CHUNK_SIZE;
+        if y0 + CHUNK_SIZE <= FACE_MIN_Y || y0 >= WORLD_MAX_Y {
+            return true;
+        }
+        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside {
+            return true;
+        }
+        y0 >= SEA_LEVEL && y0 as f32 > sky_floor
+    }
+
+    /// True when `generate` would leave the chunk all air: exactly the generator's own shortcut.
+    pub fn is_air_chunk(&self, coord: ChunkCoord) -> bool {
+        let y0 = coord.y * CHUNK_SIZE;
+        if !(SEA_LEVEL..WORLD_MAX_Y).contains(&y0)
+            || chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+        {
+            return Self::is_air_chunk_with(coord, 0.0);
+        }
+        Self::is_air_chunk_with(coord, self.sky_floor_at(coord.x, coord.z))
+    }
+
+    pub fn generate(&self, coord: ChunkCoord, chunk: &mut Chunk) {
+        const S: i32 = CHUNK_SIZE;
+        let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
+        if y0 + S <= FACE_MIN_Y || y0 >= WORLD_MAX_Y {
+            return;
+        }
+        // Beyond the rim of the world's disc: nothing.
+        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside {
+            return;
+        }
+        let cols = self.chunk_columns(x0, z0);
+        // Sky above all ground and sea: all air (`is_air_chunk` is this same test).
+        if y0 as f32 > Self::sky_floor(&cols) && y0 >= SEA_LEVEL {
+            return;
+        }
+        let voxels = chunk.voxels_mut();
+        for z in 0..S {
+            for x in 0..S {
+                let col = cols[(z * S + x) as usize];
+                if col.outside {
+                    continue;
+                }
+                let top = top_voxel(col.height);
+                for ly in 0..S {
+                    let y = y0 + ly;
+                    if !(FACE_MIN_Y..WORLD_MAX_Y).contains(&y) {
+                        continue;
+                    }
+                    let v = &mut voxels[local_index(x, ly, z)];
+                    if y <= top {
+                        *v = fill(top, i64::from(top - y));
+                    } else if y < SEA_LEVEL {
+                        *v = M.water;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- level of detail (§6.6) -------------------------------------------------------------------
+
+    fn column_lod(&self, x: i64, z: i64, cell: i64) -> Column {
+        let mut col = Self::finish(self.sample_lod(x, z, cell));
+        col.outside = !inside_world_disc(x, z);
+        col
+    }
+
+    fn lod_columns(&self, o: lod::LodOrigin, level: i32) -> Vec<Column> {
+        let cell = lod::cell_size(level);
+        let half = cell / 2;
+        let mut cols = vec![Column::default(); (lod::PAD * lod::PAD) as usize];
+        for z in -1..=lod::SECTION_CELLS {
+            for x in -1..=lod::SECTION_CELLS {
+                cols[lod::column_index(x, z)] = self.column_lod(
+                    o.x + i64::from(x) * cell + half,
+                    o.z + i64::from(z) * cell + half,
+                    cell,
+                );
+            }
+        }
+        cols
+    }
+
+    fn lod_bounds_of(cols: &[Column]) -> LodBounds {
+        let mut b = LodBounds {
+            lo: f64::INFINITY,
+            hi: f64::NEG_INFINITY,
+            any_inside: false,
+            ..LodBounds::default()
+        };
+        let mut all_inside = true;
+        for col in cols {
+            if col.outside {
+                all_inside = false;
+                continue;
+            }
+            b.any_inside = true;
+            // A cell is solid when its bottom voxel lies below the column's height: samples below
+            // `lo` are solid, at or above `hi` open.
+            b.hi = b.hi.max(f64::from(col.height) + 1.0);
+            b.lo = b.lo.min(f64::from(col.height) - 1.0);
+        }
+        if !b.any_inside {
+            return b;
+        }
+        b.hi = b.hi.max(f64::from(SEA_LEVEL - 1));
+        if !all_inside {
+            b.lo = f64::NEG_INFINITY;
+        }
+        b
+    }
+
+    /// The column bounds sections are classified by (`lod::kind_from_bounds`).
+    pub fn lod_bounds_at(&self, level: i32, i: i32, k: i32) -> LodBounds {
+        let o = lod::section_origin(LodCoord::new(level, i, 0, k));
+        Self::lod_bounds_of(&self.lod_columns(o, level))
+    }
+
+    /// A section evaluated at its cells' resolution: each cell samples the height field at its
+    /// column's centre with octaves finer than a cell dropped, solid when its bottom voxel is. The
+    /// apron below the face reads as stone.
+    pub fn generate_lod(
+        &self,
+        c: LodCoord,
+        cells: &mut LodCells,
+        surface: Option<&mut LodSurfaces>,
+    ) -> LodKind {
+        if !lod::in_world(c) {
+            cells.clear();
+            cells.resize(lod::VOLUME, M.air);
+            if let Some(s) = surface {
+                s.clear();
+                s.resize((lod::PAD * lod::PAD) as usize, LodSurface::default());
+            }
+            return LodKind::Empty;
+        }
+        self.generate_lod_at(c, lod::section_origin(c).y, cells, surface)
+            .0
+    }
+
+    /// The same for the face-local section whose rows start at height `origin_y` (x, z, level from
+    /// `c`). Returns the kind (this face's) and the section's column bounds.
+    pub fn generate_lod_at(
+        &self,
+        c: LodCoord,
+        origin_y: i64,
+        cells: &mut LodCells,
+        mut surface: Option<&mut LodSurfaces>,
+    ) -> (LodKind, LodBounds) {
+        cells.clear();
+        cells.resize(lod::VOLUME, M.air);
+        if let Some(s) = surface.as_deref_mut() {
+            s.clear();
+            s.resize((lod::PAD * lod::PAD) as usize, LodSurface::default());
+        }
+        let mut o = lod::section_origin(c);
+        o.y = origin_y;
+        let cell = lod::cell_size(c.level);
+        let cols = self.lod_columns(o, c.level);
+        let bounds = Self::lod_bounds_of(&cols);
+        let kind = if bounds.any_inside {
+            lod::kind_of_face(c.level, origin_y, bounds.lo, bounds.hi)
+        } else {
+            LodKind::Empty
+        };
+        match kind {
+            LodKind::Empty => return (kind, bounds),
+            LodKind::Buried => {
+                cells.fill(M.stone);
+                return (kind, bounds);
+            }
+            LodKind::Content => {}
+        }
+        let face_min = i64::from(FACE_MIN_Y);
+        let sea = i64::from(SEA_LEVEL);
+        for z in -1..=lod::SECTION_CELLS {
+            for x in -1..=lod::SECTION_CELLS {
+                let col = cols[lod::column_index(x, z)];
+                if col.outside {
+                    continue; // beyond the rim: the void
+                }
+                let top = i64::from(top_voxel(col.height));
+                let is_sea = col.height < SEA_LEVEL as f32;
+                for y in -1..=lod::SECTION_CELLS {
+                    let a = o.y + i64::from(y) * cell;
+                    let m = &mut cells[lod::cell_index(x, y, z)];
+                    if a + cell <= face_min {
+                        *m = M.stone; // the apron under the face
+                        continue;
+                    }
+                    // A cell reaching below the face samples at the face's lowest voxel.
+                    let at = a.max(face_min);
+                    if at > top {
+                        if at < sea {
+                            *m = M.water;
+                        }
+                        continue;
+                    }
+                    let depth = (top - (a + cell - 1)).max(0);
+                    if depth > 0 {
+                        *m = fill(top as i32, depth.min(1000));
+                        continue;
+                    }
+                    // The column's top: its surface seen from above. A sea whose water no cell
+                    // sampled shows its water.
+                    let water_above = a + cell < sea;
+                    *m = if is_sea && !water_above {
+                        M.water
+                    } else {
+                        fill(top as i32, 0)
+                    };
+                    if let Some(s) = surface.as_deref_mut() {
+                        s[lod::column_index(x, z)] = LodSurface {
+                            valid: true,
+                            wet: is_sea,
+                            height: col.height.min((a + cell) as f32),
+                            material: fill(top as i32, 0),
+                            water: if is_sea { SEA_LEVEL as f32 } else { 0.0 },
+                        };
+                    }
+                }
+            }
+        }
+        (kind, bounds)
+    }
+
+    /// Feet position for players: the level dry ground nearest the origin (a square spiral in 8 m
+    /// steps for a patch SPAWN_CLEAR columns either side at one height above the shore).
+    pub fn spawn_point(&self) -> [f64; 3] {
+        let mut fallback = None;
+        let (mut x, mut z, mut dx, mut dz) = (0i32, 0i32, 1i32, 0i32);
+        let (mut leg, mut walked, mut turns) = (1, 0, 0);
+        for _ in 0..40_000 {
+            if let Some(g) = self.ground_y(x, z)
+                && g >= SEA_LEVEL + SHORE_HEIGHT
+            {
+                let point = [f64::from(x) + 0.5, f64::from(g) + 1.0, f64::from(z) + 0.5];
+                fallback.get_or_insert(point);
+                let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
+                    (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| self.ground_y(x + px, z + pz) == Some(g))
+                });
+                if level {
+                    return point;
+                }
+            }
+            x += dx * 8;
+            z += dz * 8;
+            walked += 1;
+            if walked == leg {
+                walked = 0;
+                let t = dx;
+                dx = -dz;
+                dz = t;
+                turns += 1;
+                if turns % 2 == 0 {
+                    leg += 1;
+                }
+            }
+        }
+        fallback.unwrap_or([0.5, f64::from(SEA_LEVEL) + 1.0, 0.5])
+    }
+}

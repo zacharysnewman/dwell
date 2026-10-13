@@ -1,0 +1,21 @@
+[package]
+name = "dwell-storage"
+description = "Dwell's world files: redb tables, LZ4 chunk blobs, the save thread (ADR 0028 §8)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-protocol = { path = "../dwell-protocol" }
+dwell-world = { path = "../dwell-world" }
+lz4_flex = "0.14"
+redb = "4.3"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+redb = "4.3"

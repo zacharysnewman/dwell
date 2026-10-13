@@ -15,7 +15,10 @@
 > TypeScript. **Built (24a):** the workspace (`Cargo.toml`, `crates/`) with `dwell-protocol` and
 > `dwell-blocks` (tables generated from `shared/`, by name) and `dwell-client`'s WebGPU probe (wgpu
 > drawing offscreen and to a canvas, checked in headless Chromium on SwiftShader's Vulkan); the
-> `rust` CI job. Until the cutover, this document otherwise describes the C++/TS build; it is
+> `rust` CI job. **Built (24b):** `dwell-world` (chunks, the voxel grid, bounds and faces, LOD
+> sections, structures, block edits), `dwell-worldgen` (the Phase 15 generator, reproducing the C++
+> golden hashes natively and in WASM), `dwell-storage` (redb tables, LZ4 blobs, world state ids by
+> string, the save thread) and the protocol codec with Ed25519 verification in `dwell-protocol`. Until the cutover, this document otherwise describes the C++/TS build; it is
 > rewritten at the cutover.
 
 ---
@@ -212,9 +215,17 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 ```
 /Cargo.toml          Rust workspace (ADR 0028, Phase 24) [in progress]; `server/net/wt` stays outside it
                      until 24d. The dev profile builds at opt-level 1, dependencies at 3.
+/tools               wasi-run.mjs: the cargo runner for `--target wasm32-wasip1` (.cargo/config.toml), so
+                     test binaries run as WASM under Node's WASI.
 /crates              The Rust port's crates, added as their sub-phase starts:
-  /dwell-protocol    Protocol constants (`constants.gen.rs` from shared/protocol); the codec in 24d.
-  /dwell-blocks      Block registry tables (`blocks.gen.rs` from shared/blocks), looked up by name.
+  /dwell-protocol    Protocol constants (`constants.gen.rs` from shared/protocol), the message codec
+                     (pinned by shared/protocol/vectors.txt) and Ed25519 verification.
+  /dwell-blocks      Block registry tables (`blocks.gen.rs` from shared/blocks), looked up by name;
+                     state strings and properties; shape geometry.
+  /dwell-world       Chunks and the voxel grid, world bounds and faces, LOD sections, structure
+                     files, block edits.
+  /dwell-worldgen    Noise, the island, the terrain and the bifacial world; generator lookup.
+  /dwell-storage     World files on redb (LZ4 blobs), the save thread.
   /dwell-client      Browser client (wasm32, wasm-bindgen, wgpu): so far the WebGPU probe, with its page
                      in www/ (`npm run build:probe`, `npm run e2e:webgpu` in client/).
 /client              TypeScript client (Vite). Renderer, prediction, interpolation, debris.
@@ -279,7 +290,7 @@ yet.
 | Desktop | Electron 44.4.5 (`platforms/electron`) |
 | Releases | `release.yml` and `pages.yml` (§2.1): Node 22 type stripping runs `client/scripts/*.ts`; `gh` publishes releases; the site is deployed with `actions/deploy-pages` |
 | Master server | TypeScript 6.0 on Cloudflare Workers (`services/master`, compatibility date 2026-08-15), Wrangler 4.124.0, `@cloudflare/workers-types`, Vitest 4.1 with `@cloudflare/vitest-pool-workers` 0.22.0 (tests run in workerd), ESLint/Prettier as the client; `legacy-peer-deps` in its `.npmrc` |
-| CI (`ci.yml`) | Protocol: regenerated constants and vectors (including `shared/master/vectors.json`) must match. Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client-lint (its own fast job): format, lint, typecheck. Client: WASM build, the player/netcode suite under WASM (Node) at the origin and ~8,000 km from it, the worldgen and storage suites under WASM (the storage suite through the browser's VFS, reading the natively written golden world file), unit tests (WASM tests required), build, launcher build. Server-lint: the third-party notices are current (`shared/licenses/gen.py --check`), clang-format, `cargo fmt`/`clippy -D warnings`/`test`, stale-header check. Server: CMake configure/build, ctest (including `dwell_version_lock`: the real server on world files saved by other versions), the player and netcode suites ~8,000 km from the origin, smoke-run. Server-perf (in parallel): a Release build running the player performance gate and golden trace at both origins. E2E (the browser suite is serial, so it runs as four `--shard`s on separate runners, each building what it needs; shard 1 also runs the divergence, launcher and Electron steps): native↔WASM controller divergence check (`server/tools/divergence.mjs`), native server + built client in Playwright Chromium (WebTransport, WebRTC, local mode, session replacement, local-mode movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view — LOD around the player, then the whole disc after flying up to the flight ceiling), the launcher's own e2e (`npm run e2e:site`: three versions assembled locally — which build each address opens, worlds in their own line, version badges, errors), Electron smoke under Xvfb. Rust (the port's workspace, ADR 0028): `cargo fmt --check`, clippy `-D warnings` natively and for `dwell-client` on wasm32, `cargo nextest`, then the WebGPU probe built with `wasm-bindgen` and run in headless Chromium (`--use-webgpu-adapter=swiftshader`). The `CI` job needs all of the above and fails if any did not succeed: it is the one check to require in branch protection |
+| CI (`ci.yml`) | Protocol: regenerated constants and vectors (including `shared/master/vectors.json`) must match. Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client-lint (its own fast job): format, lint, typecheck. Client: WASM build, the player/netcode suite under WASM (Node) at the origin and ~8,000 km from it, the worldgen and storage suites under WASM (the storage suite through the browser's VFS, reading the natively written golden world file), unit tests (WASM tests required), build, launcher build. Server-lint: the third-party notices are current (`shared/licenses/gen.py --check`), clang-format, `cargo fmt`/`clippy -D warnings`/`test`, stale-header check. Server: CMake configure/build, ctest (including `dwell_version_lock`: the real server on world files saved by other versions), the player and netcode suites ~8,000 km from the origin, smoke-run. Server-perf (in parallel): a Release build running the player performance gate and golden trace at both origins. E2E (the browser suite is serial, so it runs as four `--shard`s on separate runners, each building what it needs; shard 1 also runs the divergence, launcher and Electron steps): native↔WASM controller divergence check (`server/tools/divergence.mjs`), native server + built client in Playwright Chromium (WebTransport, WebRTC, local mode, session replacement, local-mode movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view — LOD around the player, then the whole disc after flying up to the flight ceiling), the launcher's own e2e (`npm run e2e:site`: three versions assembled locally — which build each address opens, worlds in their own line, version badges, errors), Electron smoke under Xvfb. Rust (the port's workspace, ADR 0028): `cargo fmt --check`, clippy `-D warnings` natively and for `dwell-client` on wasm32, `cargo nextest`, the deterministic suites (blocks, protocol, world, worldgen goldens) again under WASM (wasm32-wasip1 on Node's WASI, `tools/wasi-run.mjs`), then the WebGPU probe built with `wasm-bindgen` and run in headless Chromium (`--use-webgpu-adapter=swiftshader`). The `CI` job needs all of the above and fails if any did not succeed: it is the one check to require in branch protection |
 | Enforced boundaries | ESLint forbids importing `three` outside `client/src/render/three` (ADR 0002) and `node:` built-ins outside tests |
 
 ---

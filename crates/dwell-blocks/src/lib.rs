@@ -2,6 +2,8 @@
 //! `shared/blocks/*.json` by `shared/blocks/gen.mjs`; code refers to blocks by name
 //! (`"dwell:sand"`), never by a numeric constant, and resolves names once at startup.
 
+mod registry;
+pub mod shape;
 mod types;
 
 #[rustfmt::skip]
@@ -10,6 +12,7 @@ mod tables {
     include!("blocks.gen.rs");
 }
 
+pub use registry::*;
 pub use tables::{BLOCKS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SHAPE_FACES, SHAPES, STATES};
 pub use types::*;
 
@@ -19,16 +22,14 @@ pub type StateId = u16;
 /// Air is always state 0 (the generator checks it).
 pub const AIR: StateId = 0;
 
-/// The state with this canonical string (`dwell:ladder[facing=east,flooded=false]`), or a block's
-/// default state when given its id alone (`dwell:ladder`).
+/// The state named by `name`: a canonical string (`dwell:ladder[facing=east,flooded=false]`), or
+/// any form [`parse_state`] takes (properties in any order, missing ones at their defaults; a block
+/// id alone is its default state).
 pub fn state(name: &str) -> Option<StateId> {
     if let Some(i) = STATES.iter().position(|s| s.name == name) {
         return StateId::try_from(i).ok();
     }
-    BLOCKS
-        .iter()
-        .find(|b| b.name == name)
-        .map(|b| b.first_state)
+    parse_state(name).ok()
 }
 
 /// Like [`state`], for names that must exist (built-in content); panics with the name otherwise.

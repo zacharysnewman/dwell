@@ -1,0 +1,4 @@
+# `cargo test --target wasm32-wasip1` runs the test binaries under Node's WASI (Phase 24b), so the
+# deterministic suites (worldgen goldens) are checked in WASM as well as natively.
+[target.wasm32-wasip1]
+runner = "tools/wasi-run.mjs"
