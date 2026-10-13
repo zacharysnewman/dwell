@@ -70,6 +70,11 @@ jobs:
   client:
     name: Client (WASM suites, test, build)
     runs-on: ubuntu-24.04
+    env:
+      # Compiler cache (ccache) for the C++ and Emscripten builds, restored by ccache-action.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
     defaults:
       run:
         working-directory: client
@@ -94,6 +99,10 @@ jobs:
           echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: wasm
+          max-size: 1G
       - run: npm ci
       - name: Build local-mode WASM core
         run: npm run build:wasm
@@ -144,12 +153,27 @@ jobs:
           git diff --exit-code -- server/net/wt/include
 
   server:
-    name: Server (C++ build and tests)
+    # The suite runs are independent, so they run on separate runners; the shared compiler cache
+    # keeps each one's build short.
+    name: Server (C++ build and tests, ${{ matrix.suite }})
     runs-on: ubuntu-24.04
+    env:
+      # Compiler cache (ccache) for the C++ and Emscripten builds, restored by ccache-action.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ctest, far-origin, face-b]
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: server-dev
+          max-size: 1G
       - name: Rust toolchain (keep in sync with rust-toolchain.toml)
         run: rustup toolchain install 1.94.1 --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -162,17 +186,21 @@ jobs:
         working-directory: server
         run: cmake --build --preset dev
       - name: Test
+        if: matrix.suite == 'ctest'
         working-directory: server
         run: ctest --preset dev
       - name: Player and netcode suites ~8,000 km from the origin (ADR 0011)
+        if: matrix.suite == 'far-origin'
         working-directory: server
         run: build/dev/tests/dwell_tests --dwell-origin-x=far -ts="player*,netcode*"
       - name: Player suites on face B, the mirror image of face A (ADR 0023)
+        if: matrix.suite == 'face-b'
         working-directory: server
         run: |
           build/dev/tests/dwell_tests --dwell-face=b -ts="player*"
           build/dev/tests/dwell_tests --dwell-face=b --dwell-origin-x=far -ts="player*"
       - name: Smoke-run server
+        if: matrix.suite == 'ctest'
         # The server runs until signalled: start it, then after 10 s ask it to stop (SIGINT) and
         # require a clean shutdown (--preserve-status: its own exit code, not timeout's 124).
         run: timeout --preserve-status --signal=INT 10s server/build/dev/app/dwell_server --world '' --visibility none
@@ -180,10 +208,19 @@ jobs:
   server-perf:
     name: Server (player controller performance gate, Release)
     runs-on: ubuntu-24.04
+    env:
+      # Compiler cache (ccache) for the C++ and Emscripten builds, restored by ccache-action.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: server-release
+          max-size: 1G
       - name: Rust toolchain (keep in sync with rust-toolchain.toml)
         run: rustup toolchain install 1.94.1 --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -197,27 +234,29 @@ jobs:
           build/release/tests/dwell_tests -ts="player: performance,player: scenario"
           build/release/tests/dwell_tests --dwell-origin-x=far -ts="player: performance,player: scenario"
 
-  e2e:
-    # The browser suite is serial (one worker, fixed ports), so it is split across runners; each
-    # builds what it needs. Shard 1 also runs the checks that are not sharded.
-    name: End-to-end ${{ matrix.shard }}/4
+  build:
+    # Builds what the e2e shards run (the native server and the client with its WASM core) once,
+    # for every shard to download; also runs the native↔WASM divergence check, which needs both.
+    name: Build (native server, client with WASM)
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
+    env:
+      # Compiler cache (ccache) for the C++ and Emscripten builds, restored by ccache-action.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            client/package-lock.json
-            platforms/electron/package-lock.json
-            services/master/package-lock.json
+          cache-dependency-path: client/package-lock.json
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: e2e-build
+          max-size: 1G
       - name: Rust toolchain (keep in sync with rust-toolchain.toml)
         run: rustup toolchain install 1.94.1 --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -237,7 +276,7 @@ jobs:
           echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
       - name: Build native server
         working-directory: server
-        run: cmake --preset dev -DDWELL_BUILD_TESTS=OFF && cmake --build --preset dev --target dwell_server
+        run: cmake --preset dev -DDWELL_BUILD_TESTS=OFF && cmake --build --preset dev --target dwell_server dwell_scenario_trace
       - name: Build client (with local-mode WASM)
         working-directory: client
         run: |
@@ -245,19 +284,54 @@ jobs:
           npm run build:wasm
           npm run build
       - name: Native↔WASM controller divergence (PLAYER_CONTROLLER.md §8.3)
-        if: matrix.shard == 1
-        run: |
-          cmake --build server/build/dev --target dwell_scenario_trace
-          node server/tools/divergence.mjs server/build/dev/tools/dwell_scenario_trace server/build/wasm/tools/dwell_scenario_trace.js
+        run: node server/tools/divergence.mjs server/build/dev/tools/dwell_scenario_trace server/build/wasm/tools/dwell_scenario_trace.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-build
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            server/build/dev/app/dwell_server
+            client/public/wasm
+            client/dist
+
+  e2e:
+    # The browser suite is serial (one worker, fixed ports), so it is split across runners, each
+    # running the build job's output. Shard 1 also runs the checks that are not sharded.
+    name: End-to-end ${{ matrix.shard }}/6
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            platforms/electron/package-lock.json
+            services/master/package-lock.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-build
+      - name: Restore the server's executable bit (artifacts drop it)
+        run: chmod +x server/build/dev/app/dwell_server
+      - name: Install the client
+        working-directory: client
+        run: npm ci
       - name: Install Playwright Chromium
         working-directory: client
         run: npx playwright install --with-deps chromium
       - name: Install the master server (a local `wrangler dev` for friend-world tests)
         working-directory: services/master
         run: npm ci
-      - name: Browser end-to-end tests (shard ${{ matrix.shard }}/4)
+      - name: Browser end-to-end tests (shard ${{ matrix.shard }}/6)
         working-directory: client
-        run: npx playwright test --shard=${{ matrix.shard }}/4
+        run: npx playwright test --shard=${{ matrix.shard }}/6
       - name: Launcher end-to-end tests (a locally assembled site with three versions)
         if: matrix.shard == 1
         working-directory: client
@@ -266,6 +340,7 @@ jobs:
         if: matrix.shard == 1
         working-directory: platforms/electron
         run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
           npm ci
           ../../server/build/dev/app/dwell_server --port 4433 --visibility none > server.log &
           sleep 2
@@ -278,7 +353,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [protocol, master, client-lint, client, server-lint, server, server-perf, e2e]
+    needs: [protocol, master, client-lint, client, server-lint, server, server-perf, build, e2e]
     runs-on: ubuntu-24.04
     steps:
       - name: Every job passed
