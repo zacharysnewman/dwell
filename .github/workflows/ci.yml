@@ -302,8 +302,14 @@ jobs:
           cargo clippy -p dwell-client --target wasm32-unknown-unknown -- -D warnings
       - name: Tests
         run: cargo nextest run --workspace
-      - name: Deterministic suites under WASM (worldgen goldens, ADR 0010; Node's WASI, tools/wasi-run.mjs)
-        run: cargo test -p dwell-blocks -p dwell-protocol -p dwell-world -p dwell-worldgen --target wasm32-wasip1
+      - name: Player controller ~8,000 km from the origin and on face B (ADR 0011, ADR 0023)
+        run: |
+          DWELL_ORIGIN_X=far cargo nextest run -p dwell-physics
+          DWELL_FACE=b cargo nextest run -p dwell-physics
+      - name: Deterministic suites under WASM (worldgen goldens, the controller's golden trace as the native↔WASM divergence check, ADR 0010; Node's WASI, tools/wasi-run.mjs)
+        run: cargo test -p dwell-blocks -p dwell-protocol -p dwell-world -p dwell-worldgen -p dwell-physics --target wasm32-wasip1
+      - name: 64 players' controller passes under 1 ms per tick (Release, enhanced-determinism on)
+        run: cargo test --release -p dwell-physics --test scenario sixty_four -- --nocapture
       - name: WebGPU probe in headless Chromium
         working-directory: client
         run: |

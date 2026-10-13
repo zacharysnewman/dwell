@@ -28,10 +28,18 @@ impl Frame {
         if self.b() { Self::MIRROR - y } else { y }
     }
     pub fn p(self, p: DVec3) -> DVec3 {
-        if self.b() { DVec3::new(p.x, Self::MIRROR - p.y, p.z) } else { p }
+        if self.b() {
+            DVec3::new(p.x, Self::MIRROR - p.y, p.z)
+        } else {
+            p
+        }
     }
     pub fn v(self, v: Vec3) -> Vec3 {
-        if self.b() { Vec3::new(v.x, -v.y, v.z) } else { v }
+        if self.b() {
+            Vec3::new(v.x, -v.y, v.z)
+        } else {
+            v
+        }
     }
     pub fn row(self, y: i32) -> i32 {
         if self.b() { mirror_y(y) } else { y }
@@ -53,7 +61,14 @@ pub struct FaceQuery<'q, 'a> {
 }
 
 impl FaceQuery<'_, '_> {
-    pub fn cast_ray(&self, origin: DVec3, dir: Vec3, max: f32, me: Option<BodyHandle>, bodies: bool) -> Option<ProbeHit> {
+    pub fn cast_ray(
+        &self,
+        origin: DVec3,
+        dir: Vec3,
+        max: f32,
+        me: Option<BodyHandle>,
+        bodies: bool,
+    ) -> Option<ProbeHit> {
         let f = self.f;
         let mut hit = self.q.cast_ray(f.p(origin), f.v(dir), max, me, bodies)?;
         hit.point = f.p(hit.point);
@@ -65,15 +80,23 @@ impl FaceQuery<'_, '_> {
         self.q.bodies_near(a.min(c), a.max(c), me)
     }
     fn world(&self, c: &Capsule) -> Capsule {
-        Capsule { center: self.f.p(c.center), ..*c }
+        Capsule {
+            center: self.f.p(c.center),
+            ..*c
+        }
     }
     pub fn overlaps_solid(&self, c: &Capsule, me: Option<BodyHandle>) -> bool {
         self.q.overlaps_solid(&self.world(c), me)
     }
     /// `f(x, y, z, state)` with the cell's row and state in the local frame.
-    pub fn for_each_overlapping_cell(&self, c: &Capsule, mut f: impl FnMut(i32, i32, i32, StateId)) {
+    pub fn for_each_overlapping_cell(
+        &self,
+        c: &Capsule,
+        mut f: impl FnMut(i32, i32, i32, StateId),
+    ) {
         let fr = self.f;
-        self.q.for_each_overlapping_cell(&self.world(c), |x, y, z, m| f(x, fr.row(y), z, fr.m(m)));
+        self.q
+            .for_each_overlapping_cell(&self.world(c), |x, y, z, m| f(x, fr.row(y), z, fr.m(m)));
     }
     pub fn submerged_fraction(&self, center: DVec3, half_height: f32) -> f32 {
         self.q.submerged_fraction(self.f.p(center), half_height)

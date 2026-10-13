@@ -11,7 +11,9 @@
 use std::collections::HashMap;
 
 use dwell_blocks::info;
-use dwell_world::{CHUNK_SIZE, CHUNK_VOLUME, ChunkCoord, MAX_CHUNK_Y, MIN_CHUNK_Y, VoxelWorld, chunk_of};
+use dwell_world::{
+    CHUNK_SIZE, CHUNK_VOLUME, ChunkCoord, MAX_CHUNK_Y, MIN_CHUNK_Y, VoxelWorld, chunk_of,
+};
 use rapier3d_f64::math::IVector;
 use rapier3d_f64::parry::shape::Voxels;
 use rapier3d_f64::prelude::*;
@@ -22,20 +24,25 @@ use crate::physics::{DVec3, Layer, Physics, groups};
 struct Loaded {
     stamp: u64,
     revision: u32,
-    solid: Box<[u64; CHUNK_VOLUME / 64]>,
+    /// The solid cells; `None` when there are none (most chunks above the ground), so passing
+    /// through the sky costs no memory per chunk.
+    solid: Option<Mask>,
 }
+
+type Mask = Box<[u64; CHUNK_VOLUME / 64]>;
 
 pub struct TerrainCollision {
     collider: ColliderHandle,
     chunks: HashMap<ChunkCoord, Loaded>,
 }
 
-fn solid_mask(world: &mut VoxelWorld, c: ChunkCoord) -> (u64, u32, Box<[u64; CHUNK_VOLUME / 64]>) {
+fn solid_mask(world: &mut VoxelWorld, c: ChunkCoord) -> (u64, u32, Option<Mask>) {
     let chunk = world.read(c);
-    let mut mask = Box::new([0u64; CHUNK_VOLUME / 64]);
+    let mut mask: Option<Mask> = None;
     for (i, &m) in chunk.voxels().iter().enumerate() {
         if info(m).solid {
-            mask[i / 64] |= 1 << (i % 64);
+            mask.get_or_insert_with(|| Box::new([0u64; CHUNK_VOLUME / 64]))[i / 64] |=
+                1 << (i % 64);
         }
     }
     (chunk.stamp(), chunk.revision(), mask)
@@ -54,9 +61,19 @@ impl TerrainCollision {
     pub fn new(physics: &mut Physics) -> Self {
         let body = physics.w.bodies.insert(RigidBodyBuilder::fixed().build());
         let shape = SharedShape::new(Voxels::new(DVec3::ONE, &[]));
-        let collider = ColliderBuilder::new(shape).collision_groups(groups(Layer::Terrain)).friction(0.0).build();
-        let collider = physics.w.colliders.insert_with_parent(collider, body, &mut physics.w.bodies);
-        Self { collider, chunks: HashMap::new() }
+        let collider = ColliderBuilder::new(shape)
+            .collision_groups(groups(Layer::Terrain))
+            .friction(0.0)
+            .build();
+        let collider =
+            physics
+                .w
+                .colliders
+                .insert_with_parent(collider, body, &mut physics.w.bodies);
+        Self {
+            collider,
+            chunks: HashMap::new(),
+        }
     }
 
     fn voxels<'a>(&self, physics: &'a mut Physics) -> &'a mut Voxels {
@@ -71,9 +88,13 @@ impl TerrainCollision {
     }
 
     /// Sets the cells whose bit differs between `old` and `new`.
-    fn apply(&self, physics: &mut Physics, c: ChunkCoord, old: Option<&[u64; CHUNK_VOLUME / 64]>, new: &[u64; CHUNK_VOLUME / 64]) {
+    fn apply(&self, physics: &mut Physics, c: ChunkCoord, old: Option<&Mask>, new: Option<&Mask>) {
+        if old.is_none() && new.is_none() {
+            return;
+        }
         let voxels = self.voxels(physics);
-        for (w, &bits) in new.iter().enumerate() {
+        for w in 0..CHUNK_VOLUME / 64 {
+            let bits = new.map_or(0, |n| n[w]);
             let mut changed = bits ^ old.map_or(0, |o| o[w]);
             while changed != 0 {
                 let b = changed.trailing_zeros() as usize;
@@ -85,9 +106,23 @@ impl TerrainCollision {
     }
 
     /// Makes sure the chunks overlapping the box (world metres) are in the collider.
-    pub fn ensure_box(&mut self, physics: &mut Physics, world: &mut VoxelWorld, lo: DVec3, hi: DVec3) {
-        let a = chunk_of(lo.x.floor() as i32, lo.y.floor() as i32, lo.z.floor() as i32);
-        let b = chunk_of(hi.x.floor() as i32, hi.y.floor() as i32, hi.z.floor() as i32);
+    pub fn ensure_box(
+        &mut self,
+        physics: &mut Physics,
+        world: &mut VoxelWorld,
+        lo: DVec3,
+        hi: DVec3,
+    ) {
+        let a = chunk_of(
+            lo.x.floor() as i32,
+            lo.y.floor() as i32,
+            lo.z.floor() as i32,
+        );
+        let b = chunk_of(
+            hi.x.floor() as i32,
+            hi.y.floor() as i32,
+            hi.z.floor() as i32,
+        );
         for cy in a.y.max(MIN_CHUNK_Y)..=b.y.min(MAX_CHUNK_Y) {
             for cz in a.z..=b.z {
                 for cx in a.x..=b.x {
@@ -96,8 +131,15 @@ impl TerrainCollision {
                         continue;
                     }
                     let (stamp, revision, solid) = solid_mask(world, c);
-                    self.apply(physics, c, None, &solid);
-                    self.chunks.insert(c, Loaded { stamp, revision, solid });
+                    self.apply(physics, c, None, solid.as_ref());
+                    self.chunks.insert(
+                        c,
+                        Loaded {
+                            stamp,
+                            revision,
+                            solid,
+                        },
+                    );
                 }
             }
         }
@@ -107,7 +149,9 @@ impl TerrainCollision {
     pub fn sync(&mut self, physics: &mut Physics, world: &mut VoxelWorld) {
         let coords: Vec<ChunkCoord> = self.chunks.keys().copied().collect();
         for c in coords {
-            let (stamp, revision) = world.find(c).map_or((0, 0), |ch| (ch.stamp(), ch.revision()));
+            let (stamp, revision) = world
+                .find(c)
+                .map_or((0, 0), |ch| (ch.stamp(), ch.revision()));
             let loaded = &self.chunks[&c];
             if loaded.stamp == stamp && loaded.revision == revision {
                 continue;
@@ -116,18 +160,24 @@ impl TerrainCollision {
             // anyway is the simple, safe path.
             let (stamp, revision, solid) = solid_mask(world, c);
             let old = self.chunks.remove(&c).expect("loaded");
-            self.apply(physics, c, Some(&old.solid), &solid);
-            self.chunks.insert(c, Loaded { stamp, revision, solid });
+            self.apply(physics, c, old.solid.as_ref(), solid.as_ref());
+            self.chunks.insert(
+                c,
+                Loaded {
+                    stamp,
+                    revision,
+                    solid,
+                },
+            );
         }
     }
 
     /// Drops the chunks `keep` rejects.
     pub fn retain(&mut self, physics: &mut Physics, keep: impl Fn(ChunkCoord) -> bool) {
         let drop: Vec<ChunkCoord> = self.chunks.keys().copied().filter(|&c| !keep(c)).collect();
-        let empty = Box::new([0u64; CHUNK_VOLUME / 64]);
         for c in drop {
             let old = self.chunks.remove(&c).expect("loaded");
-            self.apply(physics, c, Some(&old.solid), &empty);
+            self.apply(physics, c, old.solid.as_ref(), None);
         }
     }
 

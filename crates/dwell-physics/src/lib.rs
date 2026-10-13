@@ -7,6 +7,7 @@ pub mod controller;
 pub mod frame;
 pub mod net;
 mod physics;
+pub mod predictor;
 pub mod query;
 pub mod terrain;
 

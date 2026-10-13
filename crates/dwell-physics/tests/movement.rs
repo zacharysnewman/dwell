@@ -18,7 +18,7 @@ fn spawn_configures_a_locked_gravity_free_frictionless_dynamic_capsule() {
     let e = w.spawn(Vec3::ZERO);
     w.step(1);
     let r = w.physics.rapier();
-    let body = &r.bodies[w.players.body(e)];
+    let body = &r.bodies[w.players.body(e).rapier()];
     assert!(body.is_dynamic());
     assert_eq!(body.gravity_scale(), 0.0);
     assert!(body.activation().time_until_sleep == f64::MAX || !body.is_sleeping());
@@ -51,7 +51,11 @@ fn input_reaches_the_controller_and_move_is_clamped() {
     let i = w.c(e).input;
     assert!(i.run);
     assert_eq!((i.look_yaw, i.look_pitch), (90.0, -10.0));
-    assert!(approx((i.move_x * i.move_x + i.move_y * i.move_y).sqrt(), 1.0, 1e-5));
+    assert!(approx(
+        (i.move_x * i.move_x + i.move_y * i.move_y).sqrt(),
+        1.0,
+        1e-5
+    ));
 }
 
 #[test]
@@ -59,7 +63,13 @@ fn a_heavy_cluster_hitting_the_player_pushes_it() {
     let mut w = PlayerTestWorld::new();
     w.floor();
     let e = w.spawn(v(0.5, 0.0, 0.5));
-    w.dynamic_box(v(-2.5, 0.9, 0.5), Vec3::splat(0.5), 2000.0, v(10.0, 0.0, 0.0), true);
+    w.dynamic_box(
+        v(-2.5, 0.9, 0.5),
+        Vec3::splat(0.5),
+        2000.0,
+        v(10.0, 0.0, 0.0),
+        true,
+    );
     w.step(30);
     assert!(w.pos(e).x > 1.0, "{:?}", w.pos(e));
 }
@@ -89,7 +99,13 @@ fn floating_high_is_not_grounded() {
 #[test]
 fn too_steep_ground_is_not_walkable() {
     let mut w = PlayerTestWorld::new();
-    w.boxed(v(0.0, -1.0, 0.0), v(5.0, 0.5, 5.0), euler(0.0, 0.0, 60.0), Vec3::ZERO, 0.0);
+    w.boxed(
+        v(0.0, -1.0, 0.0),
+        v(5.0, 0.5, 5.0),
+        euler(0.0, 0.0, 60.0),
+        Vec3::ZERO,
+        0.0,
+    );
     let e = w.spawn(v(0.0, 0.5, 0.0));
     w.step(2);
     let g = w.c(e).ground;
@@ -127,9 +143,17 @@ fn walk_accelerates_to_walk_speed() {
     let e = w.spawn(v(0.5, 0.0, -8.0));
     w.set_input(|_, _| mv(0.0, 1.0));
     w.step(3);
-    assert!(approx(w.horizontal_speed(e), 2.5, 0.05), "{}", w.horizontal_speed(e));
+    assert!(
+        approx(w.horizontal_speed(e), 2.5, 0.05),
+        "{}",
+        w.horizontal_speed(e)
+    );
     w.step(ticks(1.0));
-    assert!(approx(w.horizontal_speed(e), 5.0, 0.01), "{}", w.horizontal_speed(e));
+    assert!(
+        approx(w.horizontal_speed(e), 5.0, 0.01),
+        "{}",
+        w.horizontal_speed(e)
+    );
     assert!(w.pos(e).z > -3.5);
     assert_eq!(w.c(e).state, State::Walking);
 }
@@ -147,7 +171,16 @@ fn run_reaches_run_speed() {
 
 #[test]
 fn every_direction_moves_at_the_same_speed() {
-    let dirs = [mv(0.0, 1.0), mv(0.0, -1.0), mv(1.0, 0.0), mv(-1.0, 0.0), mv(0.7071, 0.7071)];
+    let dirs = [
+        mv(0.0, 1.0),
+        mv(0.0, -1.0),
+        mv(1.0, 0.0),
+        mv(-1.0, 0.0),
+        mv(
+            std::f32::consts::FRAC_1_SQRT_2,
+            std::f32::consts::FRAC_1_SQRT_2,
+        ),
+    ];
     let m = PlayerControllerConfig::default().movement;
     for run in [false, true] {
         for yaw in [0.0f32, 37.0, 90.0] {
@@ -155,7 +188,11 @@ fn every_direction_moves_at_the_same_speed() {
                 let mut w = PlayerTestWorld::new();
                 w.floor_at(0, 40);
                 let e = w.spawn(v(0.5, 0.0, 0.5));
-                let i = dwell_physics::controller::Input { run, look_yaw: yaw, ..*dir };
+                let i = dwell_physics::controller::Input {
+                    run,
+                    look_yaw: yaw,
+                    ..*dir
+                };
                 w.set_input(move |_, _| i);
                 w.step(ticks(0.5));
                 let start = w.pos(e);
@@ -163,7 +200,10 @@ fn every_direction_moves_at_the_same_speed() {
                 let moved = w.pos(e) - start;
                 let distance = (moved.x * moved.x + moved.z * moved.z).sqrt();
                 let expected = 2.0 * if run { m.run_speed } else { m.walk_speed };
-                assert!(approx(distance, expected, 0.01), "run {run} yaw {yaw} dir {d}: {distance}");
+                assert!(
+                    approx(distance, expected, 0.01),
+                    "run {run} yaw {yaw} dir {d}: {distance}"
+                );
             }
         }
     }
@@ -185,7 +225,13 @@ fn releasing_input_decelerates_to_a_stop() {
     let mut w = PlayerTestWorld::new();
     w.floor();
     let e = w.spawn(v(0.5, 0.0, -12.0));
-    w.set_input(|t, _| if t < ticks(1.0) { mv(0.0, 1.0) } else { mv(0.0, 0.0) });
+    w.set_input(|t, _| {
+        if t < ticks(1.0) {
+            mv(0.0, 1.0)
+        } else {
+            mv(0.0, 0.0)
+        }
+    });
     w.step(ticks(1.0) + ticks(0.5));
     assert!(w.horizontal_speed(e) < 0.05);
     assert_eq!(w.c(e).state, State::Idle);
@@ -270,7 +316,17 @@ fn stepping_up_never_moves_the_player_faster_than_its_speed() {
             w.floor_at(0, 40);
             w.fill(-3, 0, 3, 3, 0, 20, stone());
             let e = w.spawn(v(0.5, 0.0, 0.0));
-            w.set_input(move |t, _| input(0.0, 1.0, run, t >= jump_tick && t < jump_tick + 3, false, 0.0, 0.0));
+            w.set_input(move |t, _| {
+                input(
+                    0.0,
+                    1.0,
+                    run,
+                    t >= jump_tick && t < jump_tick + 3,
+                    false,
+                    0.0,
+                    0.0,
+                )
+            });
             let mut prev = w.pos(e);
             for _ in 0..jump_tick + ticks(1.5) {
                 w.step(1);
@@ -285,7 +341,11 @@ fn stepping_up_never_moves_the_player_faster_than_its_speed() {
             onto += i32::from(w.feet(e) > 0.95);
         }
         assert!(onto > 10, "run {run}: onto {onto}");
-        assert!(worst <= limit, "run {run}: {} m/s jumping at {worst_jump}", worst * 60.0);
+        assert!(
+            worst <= limit,
+            "run {run}: {} m/s jumping at {worst_jump}",
+            worst * 60.0
+        );
     }
     let mut w = PlayerTestWorld::new();
     w.floor_at(0, 40);
@@ -313,14 +373,27 @@ fn clearing_a_blocks_top_edge_does_not_launch() {
             w.floor_at(0, 40);
             w.fill(0, 0, 3, 0, 0, 3, stone());
             let e = w.spawn(v(0.5, 0.0, 0.0));
-            w.set_input(move |t, _| input(0.0, 1.0, run, t >= jump_tick && t < jump_tick + 3, false, 0.0, 0.0));
+            w.set_input(move |t, _| {
+                input(
+                    0.0,
+                    1.0,
+                    run,
+                    t >= jump_tick && t < jump_tick + 3,
+                    false,
+                    0.0,
+                    0.0,
+                )
+            });
             let apex = w.max_feet(e, jump_tick + ticks(1.5));
             if apex > highest {
                 highest = apex;
                 at = jump_tick;
             }
         }
-        assert!(highest <= cfg.jump.height + 0.05, "run {run}: apex {highest} jumping at {at}");
+        assert!(
+            highest <= cfg.jump.height + 0.05,
+            "run {run}: apex {highest} jumping at {at}"
+        );
     }
 }
 
@@ -340,7 +413,10 @@ fn one_jump_climbs_one_step_of_a_diagonal_staircase() {
     w.set_input(|t, _| input(0.0, 1.0, true, (20..23).contains(&t), false, 45.0, 0.0));
     let apex = w.max_feet(e, ticks(3.0));
     assert_eq!(w.count(e, events::JUMPED), 1);
-    assert!(apex <= PlayerControllerConfig::default().jump.height + 0.05, "{apex}");
+    assert!(
+        apex <= PlayerControllerConfig::default().jump.height + 0.05,
+        "{apex}"
+    );
     assert!(approx(w.feet(e), 1.0, 0.02), "{}", w.feet(e));
 }
 
@@ -350,7 +426,11 @@ fn air_control_scales_airborne_acceleration() {
     let e = w.spawn(v(0.0, 20.0, 0.0));
     w.set_input(|_, _| mv(0.0, 1.0));
     w.step(ticks(0.25));
-    assert!(approx(w.horizontal_speed(e), 2.5, 0.05), "{}", w.horizontal_speed(e));
+    assert!(
+        approx(w.horizontal_speed(e), 2.5, 0.05),
+        "{}",
+        w.horizontal_speed(e)
+    );
 }
 
 #[test]
@@ -382,6 +462,10 @@ fn air_drag_decays_an_air_kick_unity_parity() {
     let e = w.spawn(v(0.0, 30.0, 0.0));
     w.kick(5, e, v(6.0, 0.0, 0.0));
     w.step(8 + 60);
-    assert!(approx(w.vel(e).x, 6.0 * (-0.5f32).exp(), 0.08), "{}", w.vel(e).x);
+    assert!(
+        approx(w.vel(e).x, 6.0 * (-0.5f32).exp(), 0.08),
+        "{}",
+        w.vel(e).x
+    );
     let _ = DQuat::IDENTITY;
 }

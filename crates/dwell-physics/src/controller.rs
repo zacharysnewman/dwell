@@ -4,7 +4,9 @@
 //! and WASM builds agree bit for bit.
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::surface_height_at};
-use dwell_world::{MIDPLANE_Y, SEA_LEVEL, VoxelWorld, WORLD_MAX_Y, chunk_distance, chunk_of, mirror_y};
+use dwell_world::{
+    MIDPLANE_Y, SEA_LEVEL, VoxelWorld, WORLD_MAX_Y, chunk_distance, chunk_of, mirror_y,
+};
 use rapier3d_f64::prelude::*;
 
 use crate::config::PlayerControllerConfig;
@@ -338,13 +340,23 @@ struct LadderFrame {
 
 fn frame_of(cell: Cell, material: dwell_blocks::StateId) -> LadderFrame {
     let facing = facing_vector(info(material).facing);
-    let center = DVec3::new(f64::from(cell.x) + 0.5, f64::from(cell.y) + 0.5, f64::from(cell.z) + 0.5);
-    LadderFrame { facing, plate: center - (facing * (0.5 - LADDER_PLATE_HALF_DEPTH)).as_dvec3() }
+    let center = DVec3::new(
+        f64::from(cell.x) + 0.5,
+        f64::from(cell.y) + 0.5,
+        f64::from(cell.z) + 0.5,
+    );
+    LadderFrame {
+        facing,
+        plate: center - (facing * (0.5 - LADDER_PLATE_HALF_DEPTH)).as_dvec3(),
+    }
 }
 
 fn capsule_shape(cfg: &PlayerControllerConfig, crouching: bool) -> SharedShape {
     let r = cfg.body.radius;
-    SharedShape::capsule_y(f64::from((cfg.half_height(crouching) - r).max(0.0)), f64::from(r))
+    SharedShape::capsule_y(
+        f64::from((cfg.half_height(crouching) - r).max(0.0)),
+        f64::from(r),
+    )
 }
 
 /// Runs the controller for a set of players in one physics world.
@@ -358,7 +370,12 @@ pub struct Players {
 impl Players {
     /// `terrain`: build voxel collision around players (off for worlds of bodies only).
     pub fn new(physics: &mut Physics, terrain: bool) -> Self {
-        Self { players: Vec::new(), terrain: terrain.then(|| TerrainCollision::new(physics)), ticks: 0, ring: ring() }
+        Self {
+            players: Vec::new(),
+            terrain: terrain.then(|| TerrainCollision::new(physics)),
+            ticks: 0,
+            ring: ring(),
+        }
     }
 
     pub fn terrain(&self) -> Option<&TerrainCollision> {
@@ -366,12 +383,38 @@ impl Players {
     }
 
     /// Spawns a player standing with its feet at `feet`, on the face that position lies on.
-    pub fn spawn(&mut self, physics: &mut Physics, cfg: PlayerControllerConfig, feet: DVec3, yaw: f32) -> PlayerHandle {
-        let handle = self.players.iter().position(Option::is_none).unwrap_or(self.players.len()) as PlayerHandle;
+    pub fn spawn(
+        &mut self,
+        physics: &mut Physics,
+        cfg: PlayerControllerConfig,
+        feet: DVec3,
+        yaw: f32,
+    ) -> PlayerHandle {
+        let handle = self
+            .players
+            .iter()
+            .position(Option::is_none)
+            .unwrap_or(self.players.len()) as PlayerHandle;
         let mut c = PlayerController::default();
         c.input.look_yaw = yaw;
-        c.face = if feet.y >= f64::from(MIDPLANE_Y) { 1 } else { -1 };
-        let center = feet + DVec3::new(0.0, f64::from(c.face) * f64::from(cfg.half_height(false)), 0.0);
+        c.face = if feet.y >= f64::from(MIDPLANE_Y) {
+            1
+        } else {
+            -1
+        };
+        let center = feet
+            + DVec3::new(
+                0.0,
+                f64::from(c.face) * f64::from(cfg.half_height(false)),
+                0.0,
+            );
+        // Creative flight near the ceiling is far faster than the engine's default limit.
+        physics.raise_max_linear_velocity(f64::from(
+            cfg.fly.speed
+                * cfg.fly.run_factor
+                * (1.0 + cfg.fly.ceiling / cfg.fly.boost_height)
+                * 1.1,
+        ));
         // Rotation locked, no physics gravity, frictionless, never sleeps; continuous collision so
         // fast flight cannot tunnel (§2, §6.7).
         let body = RigidBodyBuilder::dynamic()
@@ -393,8 +436,23 @@ impl Players {
             .restitution_combine_rule(CoefficientCombineRule::Min)
             .collision_groups(groups(Layer::Character))
             .build();
-        let collider = physics.w.colliders.insert_with_parent(collider, body, &mut physics.w.bodies);
-        let p = Player { c, pending: Input { look_yaw: yaw, ..Input::default() }, cfg, body, collider, contacts: Vec::new(), drive_lift: 0.0 };
+        let collider =
+            physics
+                .w
+                .colliders
+                .insert_with_parent(collider, body, &mut physics.w.bodies);
+        let p = Player {
+            c,
+            pending: Input {
+                look_yaw: yaw,
+                ..Input::default()
+            },
+            cfg,
+            body: BodyHandle(body),
+            collider,
+            contacts: Vec::new(),
+            drive_lift: 0.0,
+        };
         if handle as usize == self.players.len() {
             self.players.push(Some(p));
         } else {
@@ -437,10 +495,15 @@ impl Players {
     }
     /// The player whose body this is.
     pub fn player_of_body(&self, body: BodyHandle) -> Option<PlayerHandle> {
-        self.players.iter().position(|p| p.as_ref().is_some_and(|p| p.body == body)).map(|i| i as PlayerHandle)
+        self.players
+            .iter()
+            .position(|p| p.as_ref().is_some_and(|p| p.body == body))
+            .map(|i| i as PlayerHandle)
     }
     pub fn handles(&self) -> Vec<PlayerHandle> {
-        (0..self.players.len() as PlayerHandle).filter(|&h| self.exists(h)).collect()
+        (0..self.players.len() as PlayerHandle)
+            .filter(|&h| self.exists(h))
+            .collect()
     }
 
     /// Capsule centre (world).
@@ -463,7 +526,14 @@ impl Players {
     }
 
     /// Restores a player's full state (controller + body), e.g. from a snapshot before replaying.
-    pub fn restore(&mut self, physics: &mut Physics, h: PlayerHandle, state: &PlayerController, position: DVec3, velocity: Vec3) {
+    pub fn restore(
+        &mut self,
+        physics: &mut Physics,
+        h: PlayerHandle,
+        state: &PlayerController,
+        position: DVec3,
+        velocity: Vec3,
+    ) {
         let p = self.get_mut(h);
         p.c = *state;
         let crouching = state.crouching;
@@ -472,7 +542,13 @@ impl Players {
     }
 
     /// Moves the body.
-    pub fn teleport(&mut self, physics: &mut Physics, h: PlayerHandle, position: DVec3, velocity: Vec3) {
+    pub fn teleport(
+        &mut self,
+        physics: &mut Physics,
+        h: PlayerHandle,
+        position: DVec3,
+        velocity: Vec3,
+    ) {
         let body = self.get(h).body;
         physics.set_position(body, position);
         physics.set_velocity(body, velocity.as_dvec3());
@@ -486,17 +562,35 @@ impl Players {
     }
 
     /// Radial push with linear falloff and upward bias (PPC AddExplosion), for players in range.
-    pub fn add_explosion(&mut self, physics: &mut Physics, center: DVec3, radius: f32, speed: f32, upward_bias: f32) {
+    pub fn add_explosion(
+        &mut self,
+        physics: &mut Physics,
+        center: DVec3,
+        radius: f32,
+        speed: f32,
+        upward_bias: f32,
+    ) {
         for h in self.handles() {
             let offset = (self.position(physics, h) - center).as_vec3();
             let distance = offset.length();
             if distance > radius {
                 continue;
             }
-            let up = Frame { face: self.get(h).c.face }.world_up();
-            let direction = if distance > 1e-3 { offset / distance } else { up };
+            let up = Frame {
+                face: self.get(h).c.face,
+            }
+            .world_up();
+            let direction = if distance > 1e-3 {
+                offset / distance
+            } else {
+                up
+            };
             let falloff = 1.0 - distance / radius;
-            self.add_velocity(physics, h, (direction + up * upward_bias) * (speed * falloff));
+            self.add_velocity(
+                physics,
+                h,
+                (direction + up * upward_bias) * (speed * falloff),
+            );
         }
     }
 
@@ -564,10 +658,15 @@ impl Players {
                 // Capped: fast flight must not ask for kilometres of collision.
                 let speed = physics.velocity(p.body).length() as f32;
                 let reach = f64::from(3.0 + (speed * DT * 2.0).min(64.0));
-                terrain.ensure_box(physics, world, pos - DVec3::splat(reach), pos + DVec3::splat(reach));
+                terrain.ensure_box(
+                    physics,
+                    world,
+                    pos - DVec3::splat(reach),
+                    pos + DVec3::splat(reach),
+                );
             }
             self.ticks += 1;
-            if self.ticks % RETAIN_EVERY_TICKS == 0 {
+            if self.ticks.is_multiple_of(RETAIN_EVERY_TICKS) {
                 let centers: Vec<_> = self
                     .players
                     .iter()
@@ -577,7 +676,11 @@ impl Players {
                         chunk_of(q.x.floor() as i32, q.y.floor() as i32, q.z.floor() as i32)
                     })
                     .collect();
-                terrain.retain(physics, |c| centers.iter().any(|&k| chunk_distance(c, k) <= RETAIN_CHUNKS));
+                terrain.retain(physics, |c| {
+                    centers
+                        .iter()
+                        .any(|&k| chunk_distance(c, k) <= RETAIN_CHUNKS)
+                });
             }
             terrain.sync(physics, world);
         }
@@ -652,8 +755,14 @@ impl Players {
         let bodies = q.bodies_near(center.min(end) - pad, center.max(end) + pad, Some(me));
         let mut best: Option<ProbeHit> = None;
         for k in 0..=RING_RAYS {
-            let origin = if k == 0 { center } else { center + (ring[k - 1] * radius).as_dvec3() };
-            let Some(hit) = q.cast_ray(origin, dir, distance, Some(me), bodies) else { continue };
+            let origin = if k == 0 {
+                center
+            } else {
+                center + (ring[k - 1] * radius).as_dvec3()
+            };
+            let Some(hit) = q.cast_ray(origin, dir, distance, Some(me), bodies) else {
+                continue;
+            };
             if !closest {
                 return Some(hit);
             }
@@ -673,24 +782,42 @@ impl Players {
         let half_height = cfg.half_height(p.c.crouching);
         let ring_radius = cfg.body.radius * cfg.advanced.probe_ring_radius;
         let vq = VoxelQuery::new(world, physics);
-        let q = FaceQuery { q: &vq, f: Self::frame(p) };
+        let q = FaceQuery {
+            q: &vq,
+            f: Self::frame(p),
+        };
         let c = &mut p.c;
         let g = &mut c.ground;
         g.was_grounded = g.grounded;
         // While grounded, reach down a whole step so walking down stairs keeps the ground.
         let reach = if g.grounded {
-            cfg.probes.ground_probe_margin.max(cfg.movement.max_step_height)
+            cfg.probes
+                .ground_probe_margin
+                .max(cfg.movement.max_step_height)
         } else {
             cfg.probes.ground_probe_margin
         };
-        if let Some(hit) = Self::ring_cast(&ring, &q, p.body, center, -Vec3::Y, half_height + reach, ring_radius, true) {
+        if let Some(hit) = Self::ring_cast(
+            &ring,
+            &q,
+            p.body,
+            center,
+            -Vec3::Y,
+            half_height + reach,
+            ring_radius,
+            true,
+        ) {
             g.normal = hit.normal;
             g.gap = hit.distance - half_height;
             g.slope_angle = slope_angle(hit.normal);
             g.ground = hit.ground;
             let walkable = g.slope_angle <= cfg.probes.max_slope_angle;
             // Rising faster than the ground below keeps the previous answer until the rise ends.
-            let ground_vy = if c.platform.ground == hit.ground { c.platform.ground_velocity.y } else { 0.0 };
+            let ground_vy = if c.platform.ground == hit.ground {
+                c.platform.ground_velocity.y
+            } else {
+                0.0
+            };
             let rising = c.vertical.accumulated_y > ground_vy + RISING_MARGIN;
             g.grounded = walkable && (!rising || g.was_grounded);
         } else {
@@ -714,8 +841,13 @@ impl Players {
         g.touching_wall = false;
         g.wall_normal = Vec3::ZERO;
         for dir in [Vec3::Z, -Vec3::Z, -Vec3::X, Vec3::X] {
-            if let Some(wall) = q.cast_ray(center + (dir * ring_radius).as_dvec3(), dir, cfg.advanced.wall_check_distance, Some(p.body), true)
-                && slope_angle(wall.normal) > WALL_MIN_ANGLE
+            if let Some(wall) = q.cast_ray(
+                center + (dir * ring_radius).as_dvec3(),
+                dir,
+                cfg.advanced.wall_check_distance,
+                Some(p.body),
+                true,
+            ) && slope_angle(wall.normal) > WALL_MIN_ANGLE
             {
                 g.touching_wall = true;
                 g.wall_normal = wall.normal;
@@ -748,7 +880,11 @@ impl Players {
         let platform = &mut p.c.platform;
         platform.ground_velocity = velocity;
         platform.base_velocity = if grounded { velocity } else { Vec3::ZERO };
-        platform.yaw_delta = if grounded { yaw_delta.clamp(-max_yaw, max_yaw) } else { 0.0 };
+        platform.yaw_delta = if grounded {
+            yaw_delta.clamp(-max_yaw, max_yaw)
+        } else {
+            0.0
+        };
     }
 
     fn fits_standing(q: &FaceQuery, p: &Player, center: DVec3) -> bool {
@@ -771,7 +907,10 @@ impl Players {
         // Grounded: grow upwards from the feet. Airborne: grow down to the feet first, else up.
         let stand_at = |world: &mut VoxelWorld, physics: &Physics, p: &Player| {
             let vq = VoxelQuery::new(world, physics);
-            let q = FaceQuery { q: &vq, f: Self::frame(p) };
+            let q = FaceQuery {
+                q: &vq,
+                f: Self::frame(p),
+            };
             let up = position + DVec3::new(0.0, delta, 0.0);
             let down = position - DVec3::new(0.0, delta, 0.0);
             if p.c.ground.grounded {
@@ -798,7 +937,11 @@ impl Players {
         if p.c.crouch_pressed() && !p.c.crouching {
             // Grounded: keep the feet where they are. Airborne: keep the head, pull the feet up.
             let grounded = p.c.ground.grounded;
-            Self::set_pos(physics, p, position + DVec3::new(0.0, if grounded { -delta } else { delta }, 0.0));
+            Self::set_pos(
+                physics,
+                p,
+                position + DVec3::new(0.0, if grounded { -delta } else { delta }, 0.0),
+            );
             Self::set_crouch_shape(physics, p, true);
             if !grounded && cfg.crouch.mid_air_boost > 0.0 {
                 p.c.vertical.accumulated_y += cfg.crouch.mid_air_boost;
@@ -812,7 +955,10 @@ impl Players {
     fn perform_jump(p: &mut Player) {
         let c = &mut p.c;
         // Keep any larger upward velocity already absorbed (e.g. from a knockback).
-        c.vertical.accumulated_y = c.vertical.accumulated_y.max(p.cfg.jump_velocity() + c.vertical.platform_y);
+        c.vertical.accumulated_y = c
+            .vertical
+            .accumulated_y
+            .max(p.cfg.jump_velocity() + c.vertical.platform_y);
         c.ground.grounded = false;
         c.jump.buffer_ticks = 0;
         c.jump.coyote_ticks = 0;
@@ -834,7 +980,11 @@ impl Players {
         let (x, z) = (probe.x.floor() as i32, probe.z.floor() as i32);
         let y = (feet + cfg.movement.max_step_height + 0.05).floor() as i32;
         let top = y as f32
-            + surface_height_at(q.material(x, y, z), (probe.x - f64::from(x)) as f32, (probe.z - f64::from(z)) as f32);
+            + surface_height_at(
+                q.material(x, y, z),
+                (probe.x - f64::from(x)) as f32,
+                (probe.z - f64::from(z)) as f32,
+            );
         if top <= feet + cfg.movement.max_step_height || top > feet + 1.05 {
             return false;
         }
@@ -867,7 +1017,10 @@ impl Players {
         } else if p.cfg.movement.auto_jump && grounded && !p.c.crouching {
             let center = Self::pos(physics, p);
             let vq = VoxelQuery::new(world, physics);
-            let q = FaceQuery { q: &vq, f: Self::frame(p) };
+            let q = FaceQuery {
+                q: &vq,
+                f: Self::frame(p),
+            };
             if Self::auto_jump_obstacle(&q, p, center) {
                 Self::perform_jump(p);
             }
@@ -878,7 +1031,11 @@ impl Players {
     fn find_ladder(q: &FaceQuery, p: &Player, center: DVec3) -> (Option<Cell>, bool) {
         let c = &p.c;
         let r = p.cfg.body.radius;
-        let capsule = Capsule { center, radius: r, half_cylinder: (p.cfg.half_height(c.crouching) - r).max(0.0) };
+        let capsule = Capsule {
+            center,
+            radius: r,
+            half_cylinder: (p.cfg.half_height(c.crouching) - r).max(0.0),
+        };
         let mut found = None;
         let mut in_released = false;
         q.for_each_overlapping_cell(&capsule, |x, y, z, m| {
@@ -901,8 +1058,11 @@ impl Players {
         // their feet onto the ledge. It only keeps a climb going.
         let feet = center.y as f32 - p.cfg.half_height(c.crouching);
         let y = (feet - LADDER_TOP_REACH).floor() as i32;
-        for z in (center.z - f64::from(r)).floor() as i32..=(center.z + f64::from(r)).floor() as i32 {
-            for x in (center.x - f64::from(r)).floor() as i32..=(center.x + f64::from(r)).floor() as i32 {
+        for z in (center.z - f64::from(r)).floor() as i32..=(center.z + f64::from(r)).floor() as i32
+        {
+            for x in
+                (center.x - f64::from(r)).floor() as i32..=(center.x + f64::from(r)).floor() as i32
+            {
                 if !info(q.material(x, y, z)).climbable || info(q.material(x, y + 1, z)).climbable {
                     continue;
                 }
@@ -927,7 +1087,10 @@ impl Players {
         let cfg = p.cfg;
         let position = Self::pos(physics, p);
         let vq = VoxelQuery::new(world, physics);
-        let q = FaceQuery { q: &vq, f: Self::frame(p) };
+        let q = FaceQuery {
+            q: &vq,
+            f: Self::frame(p),
+        };
         let (found, in_released) = Self::find_ladder(&q, p, position);
         let c = &mut p.c;
         if c.climb.has_released && !in_released {
@@ -958,7 +1121,11 @@ impl Players {
                 let l = c.climb.ladder;
                 let frame = frame_of(l, q.material(l.x, l.y, l.z));
                 let depth = (position - frame.plate).as_vec3().dot(frame.facing);
-                let away = if depth >= 0.0 { frame.facing } else { -frame.facing };
+                let away = if depth >= 0.0 {
+                    frame.facing
+                } else {
+                    -frame.facing
+                };
                 c.horizontal.current = away * cfg.climb.jump_off_away;
                 c.vertical.accumulated_y = cfg.climb.jump_off_up;
                 c.ground.grounded = false;
@@ -970,7 +1137,7 @@ impl Players {
             release(c, true);
             return;
         }
-        let Some(ladder) = found.filter(|_| !(c.ground.grounded && !c.ground.was_grounded)) else {
+        let Some(ladder) = found.filter(|_| !c.ground.grounded || c.ground.was_grounded) else {
             release(c, false);
             return;
         };
@@ -981,7 +1148,8 @@ impl Players {
         if c.input.look_pitch < -cfg.climb.look_down_threshold {
             vertical = -vertical;
         }
-        let mut velocity = Vec3::Y * (vertical * speed) + camera_right(c.input.look_yaw) * (c.input.move_x * speed);
+        let mut velocity = Vec3::Y * (vertical * speed)
+            + camera_right(c.input.look_yaw) * (c.input.move_x * speed);
         // Over the top (Dwell): near the column's top, climbing up also moves onto the ledge.
         let mut top = ladder.y;
         for _ in 0..256 {
@@ -1020,7 +1188,10 @@ impl Players {
         let body_velocity = Self::vel(physics, p);
         {
             let vq = VoxelQuery::new(world, physics);
-            let q = FaceQuery { q: &vq, f: Self::frame(p) };
+            let q = FaceQuery {
+                q: &vq,
+                f: Self::frame(p),
+            };
             p.c.swim.submerged = q.submerged_fraction(position, cfg.half_height(p.c.crouching));
         }
         let c = &mut p.c;
@@ -1065,7 +1236,8 @@ impl Players {
             libm::sinf(pitch),
             libm::cosf(yaw) * libm::cosf(pitch),
         );
-        let mut wish = (forward * c.input.move_y + camera_right(c.input.look_yaw) * c.input.move_x) * cfg.swim.speed;
+        let mut wish = (forward * c.input.move_y + camera_right(c.input.look_yaw) * c.input.move_x)
+            * cfg.swim.speed;
         if c.input.jump {
             wish.y = cfg.swim.speed;
         }
@@ -1078,12 +1250,18 @@ impl Players {
         if band && dry && !steer {
             wish.y = body_velocity.y;
         }
-        let mut velocity = body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.swim.drag * DT));
+        let mut velocity =
+            body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.swim.drag * DT));
         if !dry || !band {
-            velocity += Vec3::Y * (cfg.swim.buoyancy * (c.swim.submerged - cfg.swim.float_fraction) * DT);
+            velocity +=
+                Vec3::Y * (cfg.swim.buoyancy * (c.swim.submerged - cfg.swim.float_fraction) * DT);
         }
         if band {
-            let pull = if body_velocity.y < 0.0 { cfg.band.boost_gravities } else { height / band_height };
+            let pull = if body_velocity.y < 0.0 {
+                cfg.band.boost_gravities
+            } else {
+                height / band_height
+            };
             velocity -= Vec3::Y * (cfg.body.gravity * pull * DT);
         }
         c.swim.velocity = velocity;
@@ -1134,14 +1312,19 @@ impl Players {
         speed = speed.max(base * fly_speed_factor(c.input.fly_speed));
         let mut wish = move_direction(&c.input) * speed;
         wish.y = (f32::from(u8::from(c.input.jump)) - f32::from(u8::from(c.input.crouch))) * speed;
-        let mut velocity = body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.fly.drag * DT));
+        let mut velocity =
+            body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.fly.drag * DT));
         // Sideways, stop just past the rim; up top, arrive at the ceiling instead of passing it.
         let limit = f64::from(cfg.fly.horizontal_limit);
         let dt = f64::from(DT);
-        let hold = |at: f64, v: f32| f64::from(v).clamp(((-limit - at) / dt).min(0.0), ((limit - at) / dt).max(0.0)) as f32;
+        let hold = |at: f64, v: f32| {
+            f64::from(v).clamp(((-limit - at) / dt).min(0.0), ((limit - at) / dt).max(0.0)) as f32
+        };
         velocity.x = hold(position.x, velocity.x);
         velocity.z = hold(position.z, velocity.z);
-        velocity.y = velocity.y.min(((f64::from(cfg.fly.ceiling) - feet).max(0.0) / dt) as f32);
+        velocity.y = velocity
+            .y
+            .min(((f64::from(cfg.fly.ceiling) - feet).max(0.0) / dt) as f32);
         c.fly.velocity = velocity;
         c.horizontal.current = Vec3::ZERO;
         c.horizontal.external = Vec3::ZERO;
@@ -1151,7 +1334,12 @@ impl Players {
     }
 
     /// Lifts the player onto a step just ahead (PPC TryStep); returns the forward nudge.
-    fn try_step(world: &mut VoxelWorld, physics: &mut Physics, p: &mut Player, move_dir: Vec3) -> Vec3 {
+    fn try_step(
+        world: &mut VoxelWorld,
+        physics: &mut Physics,
+        p: &mut Player,
+        move_dir: Vec3,
+    ) -> Vec3 {
         let cfg = p.cfg;
         let f = flat(move_dir);
         if f.length() < MIN_DIRECTION {
@@ -1161,21 +1349,38 @@ impl Players {
         let center = Self::pos(physics, p);
         let half_height = cfg.half_height(p.c.crouching);
         let feet = center.y as f32 - half_height;
-        let mut origin = center + (dir * (cfg.body.radius + cfg.advanced.step_probe_distance)).as_dvec3();
+        let mut origin =
+            center + (dir * (cfg.body.radius + cfg.advanced.step_probe_distance)).as_dvec3();
         // Start at centre height, or just above step height when crouched.
         origin.y = f64::from((center.y as f32).max(feet + cfg.movement.max_step_height + 0.05));
         let hit = {
             let vq = VoxelQuery::new(world, physics);
-            let q = FaceQuery { q: &vq, f: Self::frame(p) };
-            q.cast_ray(origin, -Vec3::Y, origin.y as f32 - feet + half_height, Some(p.body), true)
+            let q = FaceQuery {
+                q: &vq,
+                f: Self::frame(p),
+            };
+            q.cast_ray(
+                origin,
+                -Vec3::Y,
+                origin.y as f32 - feet + half_height,
+                Some(p.body),
+                true,
+            )
         };
         let Some(hit) = hit else { return Vec3::ZERO };
         let step_height = hit.point.y as f32 - feet;
-        if step_height > MIN_STEP && step_height <= cfg.movement.max_step_height && slope_angle(hit.normal) <= cfg.probes.max_slope_angle {
+        if step_height > MIN_STEP
+            && step_height <= cfg.movement.max_step_height
+            && slope_angle(hit.normal) <= cfg.probes.max_slope_angle
+        {
             // Dwell: also nudge forward so the probe ring is over the step.
             let ring = cfg.body.radius * cfg.advanced.probe_ring_radius;
             let nudge = cfg.body.radius + cfg.advanced.step_probe_distance - ring + 0.01;
-            Self::set_pos(physics, p, center + DVec3::new(0.0, f64::from(step_height), 0.0) + (dir * nudge).as_dvec3());
+            Self::set_pos(
+                physics,
+                p,
+                center + DVec3::new(0.0, f64::from(step_height), 0.0) + (dir * nudge).as_dvec3(),
+            );
             p.c.vertical.step_grace = STEP_GRACE_TICKS;
             return dir * nudge;
         }
@@ -1184,14 +1389,22 @@ impl Players {
 
     /// Edge guard (Dwell): crouched on the ground, don't move (per axis) where the ground ring
     /// would lose ground within a step.
-    fn apply_edge_guard(ring: &[Vec3; RING_RAYS], world: &mut VoxelWorld, physics: &Physics, p: &mut Player) {
+    fn apply_edge_guard(
+        ring: &[Vec3; RING_RAYS],
+        world: &mut VoxelWorld,
+        physics: &Physics,
+        p: &mut Player,
+    ) {
         let cfg = p.cfg;
         let center = Self::pos(physics, p);
         let half_height = cfg.half_height(true);
         let ring_radius = cfg.body.radius * cfg.advanced.probe_ring_radius;
         let reach = half_height + cfg.movement.max_step_height;
         let vq = VoxelQuery::new(world, physics);
-        let q = FaceQuery { q: &vq, f: Self::frame(p) };
+        let q = FaceQuery {
+            q: &vq,
+            f: Self::frame(p),
+        };
         for axis in [0usize, 2] {
             let v = p.c.horizontal.contribution[axis];
             if v == 0.0 {
@@ -1199,7 +1412,18 @@ impl Players {
             }
             let mut offset = DVec3::ZERO;
             offset[axis] = f64::from(v * DT);
-            if Self::ring_cast(ring, &q, p.body, center + offset, -Vec3::Y, reach, ring_radius, false).is_some() {
+            if Self::ring_cast(
+                ring,
+                &q,
+                p.body,
+                center + offset,
+                -Vec3::Y,
+                reach,
+                ring_radius,
+                false,
+            )
+            .is_some()
+            {
                 continue;
             }
             p.c.horizontal.current[axis] = 0.0;
@@ -1249,7 +1473,11 @@ impl Players {
             c.horizontal.external += external_delta;
         }
         c.horizontal.external = if grounded {
-            move_towards(c.horizontal.external, Vec3::ZERO, m.ground_external_friction * DT)
+            move_towards(
+                c.horizontal.external,
+                Vec3::ZERO,
+                m.ground_external_friction * DT,
+            )
         } else {
             c.horizontal.external * libm::expf(-m.air_external_drag * DT)
         };
@@ -1280,7 +1508,11 @@ impl Players {
         };
         let move_length = (input.move_x * input.move_x + input.move_y * input.move_y).sqrt();
         let mut rate = if move_length > INPUT_DEADZONE {
-            if dot < REVERSE_DOT { m.reverse_deceleration } else { m.acceleration }
+            if dot < REVERSE_DOT {
+                m.reverse_deceleration
+            } else {
+                m.acceleration
+            }
         } else {
             m.deceleration
         };
@@ -1294,7 +1526,11 @@ impl Players {
         let nudge_length = nudge.length();
         if nudge_length > 0.0 {
             let along = nudge / nudge_length;
-            let pay = c.horizontal.contribution.dot(along).clamp(0.0, nudge_length / DT);
+            let pay = c
+                .horizontal
+                .contribution
+                .dot(along)
+                .clamp(0.0, nudge_length / DT);
             c.horizontal.contribution -= along * pay;
         }
         if m.edge_guard && grounded && c.crouching {
@@ -1325,17 +1561,27 @@ impl Players {
             v.accumulated_y = 0.0;
         }
         if c.ground.grounded {
-            // A significant upward deviation while grounded is a launch, unless the ground explains it.
+            // A significant upward deviation while grounded is a launch, unless the ground explains
+            // it, or driving into a block's top edge does (Rapier: the solver rolls the capsule
+            // over the edge of a step just climbed with an upward velocity, which Jolt didn't).
             let explained = v.target_y.max(c.platform.ground_velocity.y);
-            let threshold = if v.step_grace > 0 { STEP_LAUNCH_THRESHOLD } else { LAUNCH_THRESHOLD };
-            if body_y - explained > threshold {
+            let threshold = if v.step_grace > 0 {
+                STEP_LAUNCH_THRESHOLD
+            } else {
+                LAUNCH_THRESHOLD
+            };
+            if body_y - drive_lift - explained > threshold {
                 v.accumulated_y = body_y + gravity * DT;
                 c.ground.grounded = false;
             } else {
                 // Follow the ground along slopes, then close any gap within one tick.
                 let n = c.ground.normal;
                 let horizontal = c.horizontal.contribution - flat(c.platform.base_velocity);
-                let along_slope = if n.y > 0.1 { -(n.x * horizontal.x + n.z * horizontal.z) / n.y } else { 0.0 };
+                let along_slope = if n.y > 0.1 {
+                    -(n.x * horizontal.x + n.z * horizontal.z) / n.y
+                } else {
+                    0.0
+                };
                 v.accumulated_y = v.platform_y + along_slope - c.ground.gap.max(0.0) / DT;
             }
         } else {
@@ -1387,9 +1633,17 @@ impl Players {
         } else if c.crouching {
             State::Crouching
         } else if !c.ground.grounded {
-            if v.y > 0.0 || c.jump.jumping { State::Jumping } else { State::Falling }
+            if v.y > 0.0 || c.jump.jumping {
+                State::Jumping
+            } else {
+                State::Falling
+            }
         } else if flat(v).length() > MOVING_SPEED {
-            if c.input.run { State::Running } else { State::Walking }
+            if c.input.run {
+                State::Running
+            } else {
+                State::Walking
+            }
         } else {
             State::Idle
         };

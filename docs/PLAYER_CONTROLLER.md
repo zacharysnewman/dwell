@@ -9,6 +9,26 @@
 > character models), and the Tier 1 interactions of §6.6 (push cap, crush, riding clusters —
 > Phase 20).
 
+> **[in progress] Rust port (ADR 0028, Phase 24c built).** The controller is ported to Rust on
+> Rapier in `crates/dwell-physics` (`controller.rs`, `query.rs`, `terrain.rs`, `net.rs`,
+> `predictor.rs`; suites in `crates/dwell-physics/tests`), with the same layers, passes and tuning.
+> Until the cutover this spec describes the C++ build; the Rust one differs in:
+> - **Terrain collision** is one Rapier voxel collider for the whole world, kept in step with the
+>   chunks around each player by chunk stamp and revision; there are no regions, anchors or
+>   seams. Chunks with no solid cells cost no memory in it, so fast flight through the sky stays
+>   cheap.
+> - **Speed limit:** Rapier caps body speed at 400 m/s by default; spawning a player raises the
+>   world's limit to cover creative flight at the ceiling (as the C++ raised Jolt's per body).
+> - **Launch check (§4):** while grounded, an upward deviation explained by driving into a block's
+>   top edge (`drive_lift`) is not a launch. Rapier's solver rolls the capsule over the edge of a step
+>   just climbed with up to ~2.6 m/s of upward velocity, where Jolt stayed under the step launch
+>   threshold.
+> - **Golden trace:** re-recorded on Rapier with exact (round-trip) floats and held bit-exactly in
+>   the origin frame, natively and under `wasm32-wasip1`: that run is the native↔WASM divergence
+>   check. Far from the origin and on face B every state must match and positions stay within 1 mm.
+> - Not ported, because what they test no longer exists: the terrain-region crossing case and the
+>   Jolt collision-mesh cases of the scenario suite.
+
 This spec ports the **Physics Player Controller (PPC)** —
 [`zacharysnewman/physics-player-controller`](https://github.com/zacharysnewman/physics-player-controller),
 specifically its deterministic Photon Quantum 3 port in `Quantum~/` — into Dwell's architecture:

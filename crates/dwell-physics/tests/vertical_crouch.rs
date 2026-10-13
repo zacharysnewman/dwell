@@ -76,7 +76,17 @@ fn ledge(jump_tick: i32) -> (PlayerTestWorld, u32) {
     w.fill(-4, -1, -12, 3, -1, 1, stone());
     w.floor_at(-20, 16);
     let e = w.spawn(v(0.5, 0.0, -2.0));
-    w.set_input(move |t, _| input(0.0, 1.0, false, jump_tick >= 0 && t >= jump_tick && t < jump_tick + 2, false, 0.0, 0.0));
+    w.set_input(move |t, _| {
+        input(
+            0.0,
+            1.0,
+            false,
+            jump_tick >= 0 && t >= jump_tick && t < jump_tick + 2,
+            false,
+            0.0,
+            0.0,
+        )
+    });
     (w, e)
 }
 
@@ -124,7 +134,17 @@ fn a_second_press_right_after_a_jump_is_not_a_double_jump() {
     let mut w = PlayerTestWorld::new();
     w.floor();
     let e = w.spawn(v(0.5, 0.0, 0.5));
-    w.set_input(|t, _| input(0.0, 0.0, false, (5..7).contains(&t) || (12..14).contains(&t), false, 0.0, 0.0));
+    w.set_input(|t, _| {
+        input(
+            0.0,
+            0.0,
+            false,
+            (5..7).contains(&t) || (12..14).contains(&t),
+            false,
+            0.0,
+            0.0,
+        )
+    });
     let apex = w.max_feet(e, ticks(1.5));
     assert_eq!(w.count(e, ev::JUMPED), 1);
     assert!(approx(apex, 1.25, 0.05), "{apex}");
@@ -167,7 +187,13 @@ fn a_jump_during_a_launch_keeps_the_larger_velocity() {
 fn walks_up_and_down_a_20_degree_ramp_staying_grounded() {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.boxed(v(0.5, 0.0, 6.0), v(2.0, 0.5, 5.0), euler(-20.0, 0.0, 0.0), Vec3::ZERO, 0.0);
+    w.boxed(
+        v(0.5, 0.0, 6.0),
+        v(2.0, 0.5, 5.0),
+        euler(-20.0, 0.0, 0.0),
+        Vec3::ZERO,
+        0.0,
+    );
     let e = w.spawn(v(0.5, 0.0, -1.0));
     let turn = ticks(1.4);
     w.set_input(move |t, _| mv(0.0, if t < turn { 1.0 } else { -1.0 }));
@@ -185,7 +211,10 @@ fn walks_up_and_down_a_20_degree_ramp_staying_grounded() {
     }
     let climbed = (at_end - at_start) / 0.15;
     assert!(approx(climbed.z, 5.0, 0.03), "{climbed:?}");
-    assert!(approx(climbed.y, 5.0 * 20f32.to_radians().tan(), 0.15), "{climbed:?}");
+    assert!(
+        approx(climbed.y, 5.0 * 20f32.to_radians().tan(), 0.15),
+        "{climbed:?}"
+    );
     assert_eq!(ungrounded, 0);
     assert!(approx(w.feet(e), 0.0, 0.03), "{}", w.feet(e));
 }
@@ -223,7 +252,11 @@ fn crouch_walking_is_slower() {
     let e = w.spawn(v(0.5, 0.0, -8.0));
     w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
     w.step(ticks(1.0));
-    assert!(approx(w.horizontal_speed(e), 1.6, 0.02), "{}", w.horizontal_speed(e));
+    assert!(
+        approx(w.horizontal_speed(e), 1.6, 0.02),
+        "{}",
+        w.horizontal_speed(e)
+    );
 }
 
 /// A 1-tall crawlspace: roof blocks at y = 1 over z = 2..4.
@@ -283,7 +316,17 @@ fn a_crouch_jump_lifts_the_feet_higher() {
         let mut w = PlayerTestWorld::new();
         w.floor();
         let e = w.spawn(v(0.5, 0.0, 0.5));
-        w.set_input(move |t, _| input(0.0, 0.0, false, (2..4).contains(&t), crouch && t >= 10, 0.0, 0.0));
+        w.set_input(move |t, _| {
+            input(
+                0.0,
+                0.0,
+                false,
+                (2..4).contains(&t),
+                crouch && t >= 10,
+                0.0,
+                0.0,
+            )
+        });
         w.max_feet(e, ticks(1.0))
     };
     assert!(max_feet(true) > max_feet(false) + 0.8);
@@ -309,7 +352,17 @@ fn landing_crouched_keeps_a_centred_capsule_then_stands_from_the_feet() {
     w.floor();
     let e = w.spawn(v(0.5, 0.0, 0.5));
     let release = ticks(2.0);
-    w.set_input(move |t, _| input(0.0, 0.0, false, (2..4).contains(&t), t >= 10 && t < release, 0.0, 0.0));
+    w.set_input(move |t, _| {
+        input(
+            0.0,
+            0.0,
+            false,
+            (2..4).contains(&t),
+            t >= 10 && t < release,
+            0.0,
+            0.0,
+        )
+    });
     w.step(release - 5);
     assert!(w.c(e).crouching);
     assert!(approx(w.feet(e), 0.0, 0.02), "{}", w.feet(e));

@@ -2,7 +2,10 @@
 //! the server and the client's prediction dequantize the same integers here, so both simulate
 //! bit-identical inputs.
 
-use dwell_protocol::{ControllerState, GroundKind, InputFrame, controller_flags as cf, input_buttons as ib, player_flags as pf, players};
+use dwell_protocol::{
+    ControllerState, GroundKind, InputFrame, controller_flags as cf, input_buttons as ib,
+    player_flags as pf, players,
+};
 
 use crate::controller::{Cell, Input, PlayerController};
 use crate::physics::Vec3;
@@ -108,7 +111,11 @@ pub fn to_net(c: &PlayerController, ground_id: impl Fn(GroundRef) -> u16) -> Con
 }
 
 /// Overwrites the resumable parts of `c` (everything but input, outputs and per-tick scratch).
-pub fn from_net(s: &ControllerState, ground: impl Fn(GroundKind, u16) -> GroundRef, c: &mut PlayerController) {
+pub fn from_net(
+    s: &ControllerState,
+    ground: impl Fn(GroundKind, u16) -> GroundRef,
+    c: &mut PlayerController,
+) {
     c.ground.grounded = s.flags & cf::GROUNDED != 0;
     c.jump.jumping = s.flags & cf::JUMPING != 0;
     c.crouching = s.flags & cf::CROUCHING != 0;
@@ -128,8 +135,16 @@ pub fn from_net(s: &ControllerState, ground: impl Fn(GroundKind, u16) -> GroundR
     c.platform.ground_velocity = Vec3::new(0.0, s.ground_velocity_y, 0.0);
     c.jump.buffer_ticks = u16::from(s.buffer_ticks);
     c.jump.coyote_ticks = u16::from(s.coyote_ticks);
-    c.climb.ladder = Cell { x: s.ladder[0], y: s.ladder[1], z: s.ladder[2] };
-    c.climb.released = Cell { x: s.released[0], y: 0, z: s.released[1] };
+    c.climb.ladder = Cell {
+        x: s.ladder[0],
+        y: s.ladder[1],
+        z: s.ladder[2],
+    };
+    c.climb.released = Cell {
+        x: s.released[0],
+        y: 0,
+        z: s.released[1],
+    };
 }
 
 pub fn player_flags_of(c: &PlayerController, dead: bool) -> u8 {
@@ -149,17 +164,37 @@ mod tests {
 
     #[test]
     fn input_round_trips_through_the_wire() {
-        let i = Input { move_x: 0.6, move_y: -0.8, look_yaw: 90.0, look_pitch: -30.0, run: true, fly: true, fly_speed: 17, ..Input::default() };
+        let i = Input {
+            move_x: 0.6,
+            move_y: -0.8,
+            look_yaw: 90.0,
+            look_pitch: -30.0,
+            run: true,
+            fly: true,
+            fly_speed: 17,
+            ..Input::default()
+        };
         let back = dequantize_input(&quantize_input(&i, 7));
         assert!((back.move_x - 0.6).abs() < 0.01 && (back.move_y + 0.8).abs() < 0.01);
         assert!((back.look_yaw - 90.0).abs() < 0.01 && (back.look_pitch + 30.0).abs() < 0.01);
         assert!(back.run && back.fly && !back.jump);
         assert_eq!(back.fly_speed, 17);
         // Longer move vectors are clamped; levels above the maximum count as it.
-        let f = quantize_input(&Input { move_x: 3.0, move_y: 4.0, fly_speed: 200, ..Input::default() }, 1);
+        let f = quantize_input(
+            &Input {
+                move_x: 3.0,
+                move_y: 4.0,
+                fly_speed: 200,
+                ..Input::default()
+            },
+            1,
+        );
         assert_eq!((f.move_x, f.move_y), (76, 102));
         assert_eq!(dequantize_input(&f).fly_speed, MAX_LEVEL as u8);
-        let wire = InputFrame { buttons: ib::FLY_SPEED, ..InputFrame::default() };
+        let wire = InputFrame {
+            buttons: ib::FLY_SPEED,
+            ..InputFrame::default()
+        };
         assert_eq!(dequantize_input(&wire).fly_speed, MAX_LEVEL as u8);
         assert_eq!(quantize_yaw(-90.0), quantize_yaw(270.0));
     }
@@ -178,7 +213,17 @@ mod tests {
         c.platform.ground = GroundRef::Terrain;
         let s = to_net(&c, |_| 0);
         let mut back = PlayerController::default();
-        from_net(&s, |k, _| if k == GroundKind::Terrain { GroundRef::Terrain } else { GroundRef::None }, &mut back);
+        from_net(
+            &s,
+            |k, _| {
+                if k == GroundKind::Terrain {
+                    GroundRef::Terrain
+                } else {
+                    GroundRef::None
+                }
+            },
+            &mut back,
+        );
         assert!(back.ground.grounded && back.crouching && back.climb.has_released);
         assert_eq!(back.face, -1);
         assert_eq!(back.horizontal.external, c.horizontal.external);

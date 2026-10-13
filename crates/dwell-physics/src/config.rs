@@ -177,9 +177,21 @@ impl Default for PlayerControllerConfig {
                 max_push_force: 800.0,
                 pushable_mass_limit: 400.0,
             },
-            probes: Probes { ground_probe_margin: 0.15, ceiling_probe_margin: 0.10, max_slope_angle: 50.0 },
-            jump: Jump { height: 1.25, buffer_ticks: 12, coyote_ticks: 12 },
-            crouch: Crouch { height: 0.9, speed: 1.6, mid_air_boost: 0.0 },
+            probes: Probes {
+                ground_probe_margin: 0.15,
+                ceiling_probe_margin: 0.10,
+                max_slope_angle: 50.0,
+            },
+            jump: Jump {
+                height: 1.25,
+                buffer_ticks: 12,
+                coyote_ticks: 12,
+            },
+            crouch: Crouch {
+                height: 0.9,
+                speed: 1.6,
+                mid_air_boost: 0.0,
+            },
             climb: Climb {
                 speed: 3.0,
                 look_down_threshold: 30.0,
@@ -195,7 +207,9 @@ impl Default for PlayerControllerConfig {
                 buoyancy: 12.0,
                 drag: 2.0,
             },
-            band: Band { boost_gravities: 2.0 },
+            band: Band {
+                boost_gravities: 2.0,
+            },
             fly: Fly {
                 speed: 11.0,
                 run_factor: 2.5,
@@ -205,7 +219,12 @@ impl Default for PlayerControllerConfig {
                 ceiling: dwell_protocol::players::FLIGHT_CEILING as f32,
                 horizontal_limit: 8_400_000.0,
             },
-            damage: Damage { fall_damage_min_speed: 12.0, fall_damage_per_speed: 8.0, crush_speed: 4.0, crush_ticks: 6 },
+            damage: Damage {
+                fall_damage_min_speed: 12.0,
+                fall_damage_per_speed: 8.0,
+                crush_speed: 4.0,
+                crush_ticks: 6,
+            },
             advanced: Advanced {
                 step_probe_distance: 0.01,
                 probe_ring_radius: 0.9,
@@ -245,7 +264,11 @@ impl PlayerControllerConfig {
     }
 
     pub fn half_height(&self, crouching: bool) -> f32 {
-        (if crouching { self.crouch.height } else { self.body.standing_height }) * 0.5
+        (if crouching {
+            self.crouch.height
+        } else {
+            self.body.standing_height
+        }) * 0.5
     }
     /// How far the capsule centre moves when crouching or standing up.
     pub fn crouch_height_delta(&self) -> f32 {

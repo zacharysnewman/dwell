@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24a built (workspace, generated protocol/blocks crates, `rust` CI job, WebGPU probe passing locally in headless Chromium); 24b built (world, worldgen reproducing the C++ goldens natively and in WASM, redb storage, protocol codec, Ed25519); outstanding: the `rust` job's first CI run, the OPFS backend (with 24e); C++/TS feature work stops after Phase 15 |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24a built (workspace, generated protocol/blocks crates, `rust` CI job, WebGPU probe passing locally in headless Chromium); 24b built (world, worldgen reproducing the C++ goldens natively and in WASM, redb storage, protocol codec, Ed25519); 24c built (Rapier physics, the player controller and predictor; every controller suite in the three frames, golden trace bit-exact natively and in WASM, 64 players ~0.5 ms/tick); next: 24d (server, netcode); outstanding: the `rust` job's first CI run, the OPFS backend (with 24e); C++/TS feature work stops after Phase 15 |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -1981,7 +1981,10 @@ test pipeline ([ADR 0028](./adr/0028-rust-port.md)). Runs after Phase 15 and bef
 generators, the `rust` CI job and the WebGPU probe (passing locally in headless Chromium on
 SwiftShader); outstanding for 24a: the job's first CI run. 24b built: blocks, the world, the
 generator (reproducing the C++ goldens natively and in WASM), redb storage, the protocol codec and
-Ed25519; outstanding: the OPFS backend (with 24e). ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
+Ed25519; outstanding: the OPFS backend (with 24e). 24c built: `dwell-physics` on Rapier, the
+controller, voxel queries, wire conversions and predictor, every controller suite passing in the
+three frames, the golden trace bit-exact natively and in WASM, 64 players at ~0.5 ms/tick;
+outstanding for 24c: the new CI steps' first run. ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
 the C++/TS tree and replaces it at the cutover (24f); the old tree takes only fixes until then.
 Storage, compression and crypto decided by Claude at the owner's request (2026-10-13, ADR 0028
 §8): `redb` (files natively, OPFS in the browser), LZ4 (`lz4_flex`), `ed25519-dalek`.
@@ -2026,12 +2029,27 @@ auth transcript) was ported here rather than in 24d, because storage stores chun
 it passes the golden vectors (round-trips byte for byte, rejects every malformed one).
 
 ### 24c — Physics and the player controller on Rapier
-- [ ] `dwell-physics` wraps Rapier (`rapier3d-f64`, `enhanced-determinism`); no Rapier types
-  outside it.
-- [ ] The controller per `PLAYER_CONTROLLER.md`, re-tuned; every scenario suite ported (voxel
+- [x] `dwell-physics` wraps Rapier (`rapier3d-f64`, `enhanced-determinism`); no Rapier types
+  outside it (`BodyHandle` is opaque; `Physics::rapier` and `BodyHandle::rapier` are an escape
+  hatch for tests that inspect the engine's bodies).
+- [x] The controller per `PLAYER_CONTROLLER.md`, re-tuned; every scenario suite ported (voxel
   geometry, crouch, steps and air, step smoothness, knockback), at the origin, ~8,000 km out and on
   face B; golden traces re-recorded.
-- [ ] Native↔WASM divergence check in Rust.
+- [x] Native↔WASM divergence check in Rust.
+
+Deviations (24c):
+- The divergence check is the golden-trace test itself: the trace is stored as exact floats and
+  held bit-exactly in the origin frame, and CI runs the suite under `wasm32-wasip1` as well
+  (`server/tools/divergence.mjs` and `scenario_trace` have no Rust counterpart).
+- The predictor (`predictor.rs`) and wire conversions (`net.rs`) were ported here rather than in
+  24d, with unit tests against an in-process server; the latency, loss and multi-client netcode
+  suites need the server and stay in 24d.
+- Not ported: the scenario suite's terrain-region crossing case and its two Jolt collision-mesh
+  cases; one voxel collider has no regions or meshes (PLAYER_CONTROLLER.md, Rust port note).
+- Re-tuning on Rapier: the world's speed limit is raised for flight; the grounded launch check
+  discounts lift from driving into a step's top edge; the terrain collider keeps no mask for empty
+  chunks and the test worlds read untouched chunks as air (fast flight used ~860 MB natively and
+  crashed Node's WASI).
 
 ### 24d — Server, netcode and networking
 - [ ] Tick loop, snapshots, prediction and reconciliation, input validation, fall damage and
@@ -2063,8 +2081,10 @@ it passes the golden vectors (round-trips byte for byte, rejects every malformed
 Exit criteria
 - [ ] Every native suite, WASM suite and e2e test of the Phase 15 baseline has a Rust counterpart
   that passes in CI (WebGPU covered as 24a decides).
-- [ ] Worldgen goldens agree natively and in WASM; the divergence check passes.
-- [ ] 64 players < 1 ms/tick (native Release, `enhanced-determinism` on).
+- [x] Worldgen goldens agree natively and in WASM; the divergence check passes (the worldgen
+  goldens and the controller's golden trace under `wasm32-wasip1`, 24b and 24c).
+- [x] 64 players < 1 ms/tick (native Release, `enhanced-determinism` on): 0.48 ms locally
+  (`scenario` test `sixty_four_players…`, also a step of the `rust` CI job).
 - [ ] Frame time at least matches the Three.js build on a desktop and a phone (measured).
 - [ ] CI wall time under 6 minutes on a warm cache; a one-line change in the sim rebuilds and
   tests locally in under a minute (measured).

@@ -41,7 +41,12 @@ pub struct ProbeHit {
 
 impl Default for ProbeHit {
     fn default() -> Self {
-        Self { distance: 0.0, point: DVec3::ZERO, normal: Vec3::Y, ground: GroundRef::None }
+        Self {
+            distance: 0.0,
+            point: DVec3::ZERO,
+            normal: Vec3::Y,
+            ground: GroundRef::None,
+        }
     }
 }
 
@@ -59,42 +64,74 @@ pub struct VoxelQuery<'a> {
     physics: &'a Physics,
 }
 
-const STEP: [[i32; 3]; 6] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+const STEP: [[i32; 3]; 6] = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+];
 
 impl<'a> VoxelQuery<'a> {
     pub fn new(world: &'a mut VoxelWorld, physics: &'a Physics) -> Self {
-        Self { world: RefCell::new(world), physics }
+        Self {
+            world: RefCell::new(world),
+            physics,
+        }
     }
 
     /// The state of a voxel (generating its chunk if needed).
     pub fn material(&self, x: i32, y: i32, z: i32) -> StateId {
         let c = chunk_of(x, y, z);
         let mut w = self.world.borrow_mut();
-        w.read(c).get(x - c.x * CHUNK_SIZE, y - c.y * CHUNK_SIZE, z - c.z * CHUNK_SIZE)
+        w.read(c).get(
+            x - c.x * CHUNK_SIZE,
+            y - c.y * CHUNK_SIZE,
+            z - c.z * CHUNK_SIZE,
+        )
     }
 
     fn pipeline<'q>(&'q self, filter: QueryFilter<'q>) -> QueryPipeline<'q> {
         let w = &self.physics.w;
-        w.broad_phase.as_query_pipeline(w.narrow_phase.query_dispatcher(), &w.bodies, &w.colliders, filter)
+        w.broad_phase.as_query_pipeline(
+            w.narrow_phase.query_dispatcher(),
+            &w.bodies,
+            &w.colliders,
+            filter,
+        )
     }
 
     fn moving_filter(&self, me: Option<BodyHandle>) -> QueryFilter<'static> {
         let mut f = QueryFilter::default().groups(moving_groups());
-        f.exclude_rigid_body = me;
+        f.exclude_rigid_body = me.map(|h| h.0);
         f
     }
 
     /// Is any moving body other than `me` within the box? (Lets a batch of probes skip Rapier.)
     pub fn bodies_near(&self, lo: DVec3, hi: DVec3, me: Option<BodyHandle>) -> bool {
         let q = self.pipeline(self.moving_filter(me));
-        q.intersect_aabb_conservative(Aabb::new(lo, hi)).next().is_some()
+        q.intersect_aabb_conservative(Aabb::new(lo, hi))
+            .next()
+            .is_some()
     }
 
     /// Nearest solid along the ray (unit `dir`), ignoring `me`. A ray starting inside solid
     /// terrain only hits once it has left it. `bodies` false skips moving bodies.
-    pub fn cast_ray(&self, origin: DVec3, dir: Vec3, max: f32, me: Option<BodyHandle>, bodies: bool) -> Option<ProbeHit> {
+    pub fn cast_ray(
+        &self,
+        origin: DVec3,
+        dir: Vec3,
+        max: f32,
+        me: Option<BodyHandle>,
+        bodies: bool,
+    ) -> Option<ProbeHit> {
         let a = self.cast_voxels(origin, dir, max);
-        let b = if bodies { self.cast_bodies(origin, dir, a.map_or(max, |h| h.distance), me) } else { None };
+        let b = if bodies {
+            self.cast_bodies(origin, dir, a.map_or(max, |h| h.distance), me)
+        } else {
+            None
+        };
         match (a, b) {
             (_, Some(b)) if a.is_none_or(|a| b.distance < a.distance) => Some(b),
             _ => a,
@@ -104,7 +141,11 @@ impl<'a> VoxelQuery<'a> {
     /// Amanatides–Woo walk over cells, entering each cell's shape; in f32 relative to the
     /// origin's cell, so equally precise anywhere in the world (ADR 0011).
     pub fn cast_voxels(&self, origin: DVec3, dir: Vec3, max: f32) -> Option<ProbeHit> {
-        let base = [origin.x.floor() as i32, origin.y.floor() as i32, origin.z.floor() as i32];
+        let base = [
+            origin.x.floor() as i32,
+            origin.y.floor() as i32,
+            origin.z.floor() as i32,
+        ];
         let o = [
             (origin.x - f64::from(base[0])) as f32,
             (origin.y - f64::from(base[1])) as f32,
@@ -135,10 +176,19 @@ impl<'a> VoxelQuery<'a> {
             let shape = shape_of(self.material(cx, cy, cz));
             if shape.face_count > 0 {
                 // Faces against a solid neighbour are internal: a ray crossing them is inside.
-                let nb: [&ShapeInfo; 6] =
-                    std::array::from_fn(|f| shape_of(self.material(cx + STEP[f][0], cy + STEP[f][1], cz + STEP[f][2])));
+                let nb: [&ShapeInfo; 6] = std::array::from_fn(|f| {
+                    shape_of(self.material(cx + STEP[f][0], cy + STEP[f][1], cz + STEP[f][2]))
+                });
                 let corner = cell.map(|c| c as f32);
-                if let Some(e) = ray_enter_shape(shape, corner, o, d, t_next, Some(&nb), if first { 1e-6 } else { 0.0 }) {
+                if let Some(e) = ray_enter_shape(
+                    shape,
+                    corner,
+                    o,
+                    d,
+                    t_next,
+                    Some(&nb),
+                    if first { 1e-6 } else { 0.0 },
+                ) {
                     if e.t > max {
                         return None;
                     }
@@ -168,15 +218,21 @@ impl<'a> VoxelQuery<'a> {
         None
     }
 
-    pub fn cast_bodies(&self, origin: DVec3, dir: Vec3, max: f32, me: Option<BodyHandle>) -> Option<ProbeHit> {
+    pub fn cast_bodies(
+        &self,
+        origin: DVec3,
+        dir: Vec3,
+        max: f32,
+        me: Option<BodyHandle>,
+    ) -> Option<ProbeHit> {
         let q = self.pipeline(self.moving_filter(me));
         let ray = Ray::new(origin, dir.as_dvec3());
         let (h, hit) = q.cast_ray_and_get_normal(&ray, f64::from(max), true)?;
         let collider = self.physics.w.colliders.get(h)?;
         let body = collider.parent()?;
         let ground = match layer_of(collider) {
-            Layer::Character => GroundRef::Player(body),
-            _ => GroundRef::Tier1Body(body),
+            Layer::Character => GroundRef::Player(BodyHandle(body)),
+            _ => GroundRef::Tier1Body(BodyHandle(body)),
         };
         Some(ProbeHit {
             distance: hit.time_of_impact as f32,
@@ -192,17 +248,32 @@ impl<'a> VoxelQuery<'a> {
         let hi = (hi - c.center).as_vec3();
         let dx = lo.x.max(0.0).max(-hi.x);
         let dz = lo.z.max(0.0).max(-hi.z);
-        let dy = (lo.y - c.half_cylinder).max(0.0).max(-c.half_cylinder - hi.y);
+        let dy = (lo.y - c.half_cylinder)
+            .max(0.0)
+            .max(-c.half_cylinder - hi.y);
         (dx * dx + dy * dy + dz * dz).sqrt()
     }
 
     /// Calls `f(x, y, z, state)` for every non-air cell the capsule overlaps (cell as a box).
-    pub fn for_each_overlapping_cell(&self, c: &Capsule, mut f: impl FnMut(i32, i32, i32, StateId)) {
+    pub fn for_each_overlapping_cell(
+        &self,
+        c: &Capsule,
+        mut f: impl FnMut(i32, i32, i32, StateId),
+    ) {
         let r = f64::from(c.radius);
         let hh = f64::from(c.half_cylinder + c.radius);
-        let (x0, x1) = ((c.center.x - r).floor() as i32, (c.center.x + r).floor() as i32);
-        let (y0, y1) = ((c.center.y - hh).floor() as i32, (c.center.y + hh).floor() as i32);
-        let (z0, z1) = ((c.center.z - r).floor() as i32, (c.center.z + r).floor() as i32);
+        let (x0, x1) = (
+            (c.center.x - r).floor() as i32,
+            (c.center.x + r).floor() as i32,
+        );
+        let (y0, y1) = (
+            (c.center.y - hh).floor() as i32,
+            (c.center.y + hh).floor() as i32,
+        );
+        let (z0, z1) = (
+            (c.center.z - r).floor() as i32,
+            (c.center.z + r).floor() as i32,
+        );
         for z in z0..=z1 {
             for y in y0..=y1 {
                 for x in x0..=x1 {
@@ -227,8 +298,13 @@ impl<'a> VoxelQuery<'a> {
                 return;
             }
             let rel = (c.center - DVec3::new(f64::from(x), f64::from(y), f64::from(z))).as_vec3();
-            if vertical_segment_distance_sq(shape, rel.x, rel.z, rel.y - c.half_cylinder, rel.y + c.half_cylinder)
-                < c.radius * c.radius
+            if vertical_segment_distance_sq(
+                shape,
+                rel.x,
+                rel.z,
+                rel.y - c.half_cylinder,
+                rel.y + c.half_cylinder,
+            ) < c.radius * c.radius
             {
                 overlaps = true;
             }

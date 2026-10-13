@@ -6,9 +6,20 @@ use rapier3d_f64::prelude::*;
 
 pub use rapier3d_f64::glamx::Vec3;
 pub use rapier3d_f64::math::Vector as DVec3;
-pub use rapier3d_f64::prelude::RigidBodyHandle as BodyHandle;
 
 use dwell_world::MIDPLANE_Y;
+
+/// A body in the physics world (opaque: game code never sees Rapier's types).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BodyHandle(pub(crate) RigidBodyHandle);
+
+impl BodyHandle {
+    /// Rapier's handle, with `Physics::rapier`: for tests and tools that inspect the engine's
+    /// bodies, never for game code.
+    pub fn rapier(self) -> RigidBodyHandle {
+        self.0
+    }
+}
 
 /// What a body is, for collision filtering and probes (the former Jolt object layers).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,7 +74,11 @@ pub struct PhysicsConfig {
 
 impl Default for PhysicsConfig {
     fn default() -> Self {
-        Self { gravity_y: -9.81, flip_band: 4.0, band_boost_gravities: 2.0 }
+        Self {
+            gravity_y: -9.81,
+            flip_band: 4.0,
+            band_boost_gravities: 2.0,
+        }
     }
 }
 
@@ -126,7 +141,7 @@ impl Physics {
     /// Steps the world. First sets each dynamic Tier 1 body's gravity by its side of the midplane
     /// (a body on face B falls toward the midplane), faded across the flip band.
     pub fn step(&mut self, dt: f64) {
-        let tier1: Vec<(BodyHandle, f64, f64)> = self
+        let tier1: Vec<(RigidBodyHandle, f64, f64)> = self
             .w
             .bodies
             .iter()
@@ -139,7 +154,11 @@ impl Physics {
             let depth = over.abs();
             let toward = side * vy < 0.0;
             let fade = if depth < self.config.flip_band {
-                if toward { self.config.band_boost_gravities } else { depth / self.config.flip_band }
+                if toward {
+                    self.config.band_boost_gravities
+                } else {
+                    depth / self.config.flip_band
+                }
             } else {
                 1.0
             };
@@ -171,13 +190,16 @@ impl Physics {
             builder = builder.lock_rotations();
         }
         let h = self.w.bodies.insert(builder.build());
-        let mut collider = ColliderBuilder::cuboid(b.half.x, b.half.y, b.half.z).collision_groups(groups(Layer::Tier1));
+        let mut collider = ColliderBuilder::cuboid(b.half.x, b.half.y, b.half.z)
+            .collision_groups(groups(Layer::Tier1));
         collider = match b.mass {
             Some(m) => collider.mass(m),
             None => collider.density(1000.0),
         };
-        self.w.colliders.insert_with_parent(collider.build(), h, &mut self.w.bodies);
-        h
+        self.w
+            .colliders
+            .insert_with_parent(collider.build(), h, &mut self.w.bodies);
+        BodyHandle(h)
     }
 
     /// The Rapier world, read-only (tests and tools inspect bodies and colliders).
@@ -186,34 +208,45 @@ impl Physics {
     }
 
     pub fn remove_body(&mut self, h: BodyHandle) {
-        self.w.remove_body_with_colliders(h, true);
+        self.w.remove_body_with_colliders(h.0, true);
     }
 
     pub fn position(&self, h: BodyHandle) -> DVec3 {
-        self.w.bodies.get(h).map_or(DVec3::ZERO, |b| b.translation())
+        self.w
+            .bodies
+            .get(h.0)
+            .map_or(DVec3::ZERO, |b| b.translation())
     }
     pub fn velocity(&self, h: BodyHandle) -> DVec3 {
-        self.w.bodies.get(h).map_or(DVec3::ZERO, |b| b.linvel())
+        self.w.bodies.get(h.0).map_or(DVec3::ZERO, |b| b.linvel())
     }
     pub fn angular_velocity(&self, h: BodyHandle) -> DVec3 {
-        self.w.bodies.get(h).map_or(DVec3::ZERO, |b| b.angvel())
+        self.w.bodies.get(h.0).map_or(DVec3::ZERO, |b| b.angvel())
     }
     /// The velocity of the body's material at a world point (v + ω × r).
     pub fn point_velocity(&self, h: BodyHandle, point: DVec3) -> DVec3 {
-        self.w.bodies.get(h).map_or(DVec3::ZERO, |b| b.velocity_at_point(point))
+        self.w
+            .bodies
+            .get(h.0)
+            .map_or(DVec3::ZERO, |b| b.velocity_at_point(point))
     }
     pub fn set_position(&mut self, h: BodyHandle, p: DVec3) {
-        if let Some(b) = self.w.bodies.get_mut(h) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
             b.set_translation(p, true);
         }
     }
+    /// Raises the engine's speed limit (Rapier's default is 400 m/s) to at least `v` m/s.
+    pub fn raise_max_linear_velocity(&mut self, v: f64) {
+        let p = &mut self.w.integration_parameters;
+        p.normalized_max_linear_velocity = p.normalized_max_linear_velocity.max(v / p.length_unit);
+    }
     pub fn set_velocity(&mut self, h: BodyHandle, v: DVec3) {
-        if let Some(b) = self.w.bodies.get_mut(h) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
             b.set_linvel(v, true);
         }
     }
     pub fn set_angular_velocity(&mut self, h: BodyHandle, w: DVec3) {
-        if let Some(b) = self.w.bodies.get_mut(h) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
             b.set_angvel(w, true);
         }
     }
@@ -226,7 +259,9 @@ impl Physics {
     /// Push-out normals (toward `body`) of its contacts in the last step, at most `max`.
     pub fn contact_normals(&self, body: BodyHandle, max: usize, out: &mut Vec<DVec3>) {
         out.clear();
-        let Some(b) = self.w.bodies.get(body) else { return };
+        let Some(b) = self.w.bodies.get(body.0) else {
+            return;
+        };
         for &collider in b.colliders() {
             for pair in self.w.narrow_phase.contact_pairs_with(collider) {
                 for m in pair.manifolds() {
@@ -234,7 +269,11 @@ impl Physics {
                         continue;
                     }
                     // The normal points from collider 1 out toward collider 2.
-                    out.push(if pair.collider2 == collider { m.data.normal } else { -m.data.normal });
+                    out.push(if pair.collider2 == collider {
+                        m.data.normal
+                    } else {
+                        -m.data.normal
+                    });
                 }
             }
         }
@@ -249,4 +288,3 @@ impl Default for Physics {
 
 /// `user_data` of Tier 1 bodies; a player body's is its handle + 1 (below this).
 pub(crate) const TIER1_BODY: u128 = u128::MAX;
-

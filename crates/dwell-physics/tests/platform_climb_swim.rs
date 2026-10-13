@@ -18,7 +18,13 @@ fn look(x: f32, y: f32, yaw: f32, pitch: f32) -> dwell_physics::controller::Inpu
 #[test]
 fn rides_a_moving_kinematic_platform() {
     let mut w = PlayerTestWorld::new();
-    let platform = w.boxed(v(0.0, -0.5, 0.0), PLATFORM_HALF, DQuat::IDENTITY, v(3.0, 0.0, 0.0), 0.0);
+    let platform = w.boxed(
+        v(0.0, -0.5, 0.0),
+        PLATFORM_HALF,
+        DQuat::IDENTITY,
+        v(3.0, 0.0, 0.0),
+        0.0,
+    );
     let e = w.spawn(Vec3::ZERO);
     w.step(ticks(0.5));
     let settled = w.pos(e) - w.body_position(platform);
@@ -32,20 +38,40 @@ fn rides_a_moving_kinematic_platform() {
 #[test]
 fn rides_a_dynamic_platform_using_its_body_velocity() {
     let mut w = PlayerTestWorld::new();
-    let platform = w.dynamic_box(v(0.0, -0.5, 0.0), PLATFORM_HALF, 1000.0, v(2.0, 0.0, 0.0), true);
+    let platform = w.dynamic_box(
+        v(0.0, -0.5, 0.0),
+        PLATFORM_HALF,
+        1000.0,
+        v(2.0, 0.0, 0.0),
+        true,
+    );
     let e = w.spawn(Vec3::ZERO);
     w.step(ticks(0.5));
     let settled = w.pos(e) - w.body_position(platform);
     w.step(ticks(2.0));
-    assert!(w.body_position(platform).x > 4.0, "{:?}", w.body_position(platform));
+    assert!(
+        w.body_position(platform).x > 4.0,
+        "{:?}",
+        w.body_position(platform)
+    );
     assert!(((w.pos(e) - w.body_position(platform)) - settled).length() < 0.05);
-    assert!(approx(w.c(e).platform.base_velocity.x, 2.0, 0.05), "{:?}", w.c(e).platform.base_velocity);
+    assert!(
+        approx(w.c(e).platform.base_velocity.x, 2.0, 0.05),
+        "{:?}",
+        w.c(e).platform.base_velocity
+    );
 }
 
 #[test]
 fn walking_on_a_moving_platform_is_relative_to_it() {
     let mut w = PlayerTestWorld::new();
-    w.boxed(v(0.0, -0.5, 0.0), v(10.0, 0.5, 10.0), DQuat::IDENTITY, v(0.0, 0.0, 3.0), 0.0);
+    w.boxed(
+        v(0.0, -0.5, 0.0),
+        v(10.0, 0.5, 10.0),
+        DQuat::IDENTITY,
+        v(0.0, 0.0, 3.0),
+        0.0,
+    );
     let e = w.spawn(Vec3::ZERO);
     w.set_input(|_, _| mv(-1.0, 0.0)); // strafe left: +X at yaw 0
     w.step(ticks(0.8));
@@ -56,7 +82,13 @@ fn walking_on_a_moving_platform_is_relative_to_it() {
 #[test]
 fn carried_around_a_rotating_platform() {
     let mut w = PlayerTestWorld::new();
-    w.boxed(v(0.0, -0.5, 0.0), v(5.0, 0.5, 5.0), DQuat::IDENTITY, Vec3::ZERO, 90.0);
+    w.boxed(
+        v(0.0, -0.5, 0.0),
+        v(5.0, 0.5, 5.0),
+        DQuat::IDENTITY,
+        Vec3::ZERO,
+        90.0,
+    );
     let e = w.spawn(v(0.0, 0.0, 2.0));
     w.step(3);
     let yaw_delta = w.c(e).platform.yaw_delta;
@@ -72,7 +104,13 @@ fn rides_an_elevator_up_and_down_staying_grounded() {
     for speed in [2.0f32, -2.0] {
         let mut w = PlayerTestWorld::new();
         w.floor_at(-30, 16);
-        let lift = w.boxed(v(0.0, -0.5, 0.0), PLATFORM_HALF, DQuat::IDENTITY, v(0.0, speed, 0.0), 0.0);
+        let lift = w.boxed(
+            v(0.0, -0.5, 0.0),
+            PLATFORM_HALF,
+            DQuat::IDENTITY,
+            v(0.0, speed, 0.0),
+            0.0,
+        );
         let e = w.spawn(Vec3::ZERO);
         let mut ungrounded = 0;
         for _ in 0..ticks(2.0) {
@@ -80,7 +118,11 @@ fn rides_an_elevator_up_and_down_staying_grounded() {
             ungrounded += i32::from(!w.c(e).ground.grounded);
         }
         let top = w.body_position(lift).y + 0.5;
-        assert!(approx(w.feet(e) - top, 0.0, 0.04), "speed {speed}: {}", w.feet(e) - top);
+        assert!(
+            approx(w.feet(e) - top, 0.0, 0.04),
+            "speed {speed}: {}",
+            w.feet(e) - top
+        );
         assert!(ungrounded <= 2, "speed {speed}: {ungrounded}");
     }
 }
@@ -88,7 +130,13 @@ fn rides_an_elevator_up_and_down_staying_grounded() {
 #[test]
 fn jumping_off_a_moving_platform_keeps_its_momentum() {
     let mut w = PlayerTestWorld::new();
-    w.boxed(v(0.0, -0.5, 0.0), PLATFORM_HALF, DQuat::IDENTITY, v(4.0, 0.0, 0.0), 0.0);
+    w.boxed(
+        v(0.0, -0.5, 0.0),
+        PLATFORM_HALF,
+        DQuat::IDENTITY,
+        v(4.0, 0.0, 0.0),
+        0.0,
+    );
     let e = w.spawn(Vec3::ZERO);
     w.set_input(|t, _| input(0.0, 0.0, false, (40..42).contains(&t), false, 0.0, 0.0));
     w.step(44);
@@ -162,7 +210,13 @@ fn forward_climbs_up_and_snaps_to_the_ladder_face() {
 fn looking_down_climbs_down() {
     let mut w = ladder_world();
     let e = w.spawn(v(0.5, 0.0, -0.5));
-    w.set_input(|t, _| if t < 40 { mv(0.0, 1.0) } else { look(0.0, 1.0, 0.0, -45.0) });
+    w.set_input(|t, _| {
+        if t < 40 {
+            mv(0.0, 1.0)
+        } else {
+            look(0.0, 1.0, 0.0, -45.0)
+        }
+    });
     w.step(48);
     assert!(w.c(e).climb.climbing);
     assert!(approx(w.vel(e).y, -3.0, 0.03), "{:?}", w.vel(e));
@@ -191,7 +245,17 @@ fn strafing_moves_along_the_ladder() {
 fn jumping_off_launches_away_and_does_not_re_grab() {
     let mut w = ladder_world();
     let e = w.spawn(v(0.5, 0.0, -0.5));
-    w.set_input(|t, _| input(0.0, if t < 40 { 1.0 } else { 0.0 }, false, (40..42).contains(&t), false, 0.0, 0.0));
+    w.set_input(|t, _| {
+        input(
+            0.0,
+            if t < 40 { 1.0 } else { 0.0 },
+            false,
+            (40..42).contains(&t),
+            false,
+            0.0,
+            0.0,
+        )
+    });
     w.step(41);
     assert!(!w.c(e).climb.climbing);
     assert_eq!(w.count(e, ev::CLIMB_ENDED), 1);
@@ -265,7 +329,11 @@ fn deep_water_starts_swimming_and_buoyancy_floats() {
     assert!(w.c(e).swim.swimming);
     assert_eq!(w.c(e).state, State::Swimming);
     assert_eq!(w.count(e, ev::SWIM_STARTED), 1);
-    assert!(approx(w.c(e).swim.submerged, 0.7, 0.08), "{}", w.c(e).swim.submerged);
+    assert!(
+        approx(w.c(e).swim.submerged, 0.7, 0.08),
+        "{}",
+        w.c(e).swim.submerged
+    );
 }
 
 #[test]
@@ -273,7 +341,13 @@ fn crouch_dives_and_look_direction_swimming_moves() {
     let mut w = PlayerTestWorld::new();
     pool(&mut w);
     let e = w.spawn(v(0.5, -2.0, 4.0));
-    w.set_input(|t, _| if t < 60 { input(0.0, 0.0, false, false, true, 0.0, 0.0) } else { mv(0.0, 1.0) });
+    w.set_input(|t, _| {
+        if t < 60 {
+            input(0.0, 0.0, false, false, true, 0.0, 0.0)
+        } else {
+            mv(0.0, 1.0)
+        }
+    });
     w.step(60);
     assert!(w.c(e).swim.swimming);
     assert!(w.feet(e) < -1.9, "{}", w.feet(e));
@@ -287,7 +361,13 @@ fn jumping_at_the_edge_climbs_out_of_the_pool() {
     let mut w = PlayerTestWorld::new();
     pool(&mut w);
     let e = w.spawn(v(0.5, -1.2, 7.0));
-    w.set_input(|t, _| if t < 60 { input(0.0, 1.0, false, true, false, 0.0, 0.0) } else { mv(0.0, 0.0) });
+    w.set_input(|t, _| {
+        if t < 60 {
+            input(0.0, 1.0, false, true, false, 0.0, 0.0)
+        } else {
+            mv(0.0, 0.0)
+        }
+    });
     w.step(ticks(3.0));
     assert!(!w.c(e).swim.swimming);
     assert!(w.count(e, ev::SWIM_ENDED) >= 1);
@@ -304,5 +384,9 @@ fn shallow_water_is_walked_through() {
     w.set_input(|_, _| mv(0.0, 1.0));
     w.step(ticks(1.0));
     assert!(!w.c(e).swim.swimming);
-    assert!(approx(w.horizontal_speed(e), 5.0, 0.02), "{}", w.horizontal_speed(e));
+    assert!(
+        approx(w.horizontal_speed(e), 5.0, 0.02),
+        "{}",
+        w.horizontal_speed(e)
+    );
 }
