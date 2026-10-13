@@ -222,6 +222,8 @@ export interface MeshSectionOptions {
    * the top shading, as the chunks' do.
    */
   mirror?: boolean;
+  /** Debug (?skirts=1): skirts in flat red, to tell them apart from the surface. */
+  highlightSkirts?: boolean;
 }
 
 /** The rows of a section's cells reversed: row r ↔ row 31 − r, apron rows −1 and 32 included. */
@@ -364,7 +366,13 @@ function meshSectionAbove(cells: Uint16Array, options: MeshSectionOptions): Sect
   return {
     opaque: opaque.finish(),
     water: waterMesh.finish(),
-    skirts: skirts.map((s) => s.finish()),
+    skirts: skirts.map((s) => {
+      const m = s.finish();
+      if (options.highlightSkirts) {
+        for (let i = 0; i < m.colors.length; i += 3) m.colors.set([1, 0, 0], i);
+      }
+      return m;
+    }),
   };
 }
 

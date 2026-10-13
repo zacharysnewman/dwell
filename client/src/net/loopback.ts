@@ -80,6 +80,11 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /** Debug tooling: moves a player of this local world (feet at x, y, z), at rest. */
+  teleport(playerId: number, x: number, y: number, z: number): void {
+    if (!this.closed) this.post({ t: 'teleport', playerId, x, y, z });
+  }
+
   close(): void {
     if (this.closed) return;
     this.post({ t: 'disconnect', session: SESSION });

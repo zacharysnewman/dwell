@@ -570,6 +570,23 @@ registry (`CaptureRegistry`): a system adds its own by registering a function un
 name (a malformed or repeated name is an error; a section that throws is recorded as its error),
 and the capture never changes for it. Decided with the owner (2026-10-13): JSON with a PNG data URL,
 from the debug overlay's button (so phones have it), sections as a registry.
+**Testing in a browser** (debug tooling, 2026-10-13): `scripts/setup.sh` makes a checkout runnable
+(client deps; the Emscripten version CI pins, in `~/emsdk`; the WASM build, with the SQLite
+amalgamation from npm where sqlite.org is blocked; a client build; `--server` the native server),
+skipping steps already done (~2 min fresh, nearly all of it the WASM build). `npm run shot` in
+`client/` (`scripts/shot.ts`, options in `shotArgs.ts`) serves the build, opens a local world in
+headless Chromium, puts the player at `--at x,y,z` looking `--look yaw,pitch`, waits until the view
+has finished loading and writes the PNG with a JSON summary beside it (position, LOD and terrain
+stats, render stats, and the LOD's leaves within 2 km: drawn sections with the sides whose skirts
+show, chunks and stand-ins); `--views file.json` takes several views in one run. It rests on page
+debug parameters and hooks: `?at=x,y,z` (local worlds only: the local server moves the player,
+`dwell_local_teleport`, worker message `teleport`), `?look=yaw,pitch`, `?fly=1`
+(`debug/start.ts`); `__dwell.teleport()`, `__dwell.settled()` (no terrain or LOD work in flight,
+`debug/settled.ts`) and `__dwell.lodSelection()` (`LodSystem.debugSelection`); and debug views that
+tell what draws each pixel: `?lodcolors=1` (sections tinted by level), `?standins=1` (stand-ins in
+magenta) and `?skirts=1` (skirts in red, `MeshSectionOptions.highlightSkirts`). Decided by default
+in the owner's absence (recorded here): teleport in local worlds only, debug views as URL
+parameters, golden screenshots in CI later.
 **Built (Phase 3b):** streaming, the verification chunk, and the generation pools (below).
 
 #### World bounds **[built, Phase 3c]**

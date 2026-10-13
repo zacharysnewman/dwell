@@ -191,6 +191,22 @@ Check these before chasing an e2e failure; they are red on `main` too:
 - The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (5); update it when the palette
   changes.
 
+## Testing in the browser
+
+To see a change in the game rather than only in tests (`docs/ARCHITECTURE.md`, debug tooling):
+
+```sh
+scripts/setup.sh                      # deps, Emscripten, WASM, client build (~2 min fresh; skips what is done)
+cd client && npm run shot -- --at 15557,30,-12546 --look 135,-12 --out coast.png
+```
+
+`npm run shot` writes the PNG and a JSON summary beside it (what the LOD draws near the camera,
+stats, whether the view finished loading). Debug views tell what draws each pixel: `--lodcolors`,
+`--standins` (magenta), `--skirts` (red). `--views views.json` shoots several views in one run.
+By hand, the page takes `?local=1&seed=N&at=x,y,z&look=yaw,pitch&fly=1` (teleport needs a local
+world) and the same `standins`/`skirts`/`lodcolors` parameters. Headless Chromium renders in
+software: a view takes ~45–60 s to finish loading at the default `--scale 0.5`.
+
 ## Building without sqlite.org
 
 The server and WASM builds fetch the SQLite amalgamation from `www.sqlite.org`

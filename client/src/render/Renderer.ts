@@ -74,6 +74,8 @@ export interface Renderer {
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void;
   /** Debug: tint LOD sections by level. */
   setLodLevelColors(on: boolean): void;
+  /** Debug (?standins=1): LOD stand-ins (ancestors clipped to a hole) drawn in flat magenta. */
+  setStandInHighlight(on: boolean): void;
   /** Height fog (§6.6): the haze's distance, density and scale height (render/fog.ts). */
   /**
    * Turns the sky (render/skyFrame.ts): the day sky's zenith, the sun and the moon, and the lights

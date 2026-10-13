@@ -108,6 +108,11 @@ export class LocalCore {
     this.m._dwell_local_close_guests();
   }
 
+  /** Debug: moves a player's feet to (x, y, z) at rest; false if it is not playing. */
+  teleport(playerId: number, x: number, feetY: number, z: number): boolean {
+    return this.m._dwell_local_teleport(playerId, x, feetY, z) === 1;
+  }
+
   /** Runs the simulation steps due for `elapsedSeconds` of real time; returns the tick. */
   advance(elapsedSeconds: number): number {
     return this.m._dwell_local_advance(elapsedSeconds);

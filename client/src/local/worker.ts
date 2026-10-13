@@ -61,6 +61,9 @@ function handle(msg: ToWorker): void {
     case 'closeGuests':
       core.closeGuests();
       break;
+    case 'teleport':
+      core.teleport(msg.playerId, msg.x, msg.y, msg.z);
+      break;
     case 'reliable':
       core.reliable(msg.session, msg.channel, msg.bytes);
       break;

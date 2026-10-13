@@ -1,6 +1,8 @@
 import { buildInfo, formatBuildInfo, recordedVersion } from './buildInfo';
 import { blockDump, formatBlockDump, type BlockDump } from './debug/blockDump';
 import { CaptureRegistry, formatCapture } from './debug/capture';
+import { hasDebugStart, parseDebugStart } from './debug/start';
+import { isSettled } from './debug/settled';
 import { Game, type GameDebugState } from './game/game';
 import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInteraction';
 import { MeshPool } from './mesh/pool';
@@ -56,7 +58,7 @@ import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
 import { ChunkStreamer } from './world/chunkStream';
 import { defaultWorkerCount, WorldgenPool } from './worldgen/pool';
-import { LodSystem } from './lod/lodSystem';
+import { LodSystem, type DebugSelectionEntry } from './lod/lodSystem';
 import { defaultDetail } from './lod/detail';
 import { lodViewport } from './lod/frustum';
 
@@ -84,6 +86,12 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /** Moves the player's feet to (x, y, z), at rest (local worlds only); false elsewhere. */
+  teleport(x: number, y: number, z: number): boolean;
+  /** The view has finished loading: no terrain or LOD work in flight (debug/settled.ts). */
+  settled(): boolean;
+  /** The LOD's last selection within `radius` m of the player (LodSystem.debugSelection). */
+  lodSelection(radius?: number): DebugSelectionEntry[] | null;
 }
 
 declare global {
@@ -121,6 +129,8 @@ interface App {
   memory: (() => MemoryReport) | null;
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
+  /** Debug tooling: moves the player's feet (local worlds only), or null. */
+  teleport: ((x: number, y: number, z: number) => boolean) | null;
 }
 
 function start(): App {
@@ -164,6 +174,7 @@ function start(): App {
     fps: new FpsMeter(),
     memory: null,
     world: null,
+    teleport: null,
   };
   touch.visible = prefersTouch();
   app.input.touch = touch.state;
@@ -215,6 +226,15 @@ function start(): App {
     renderStats: () => renderer.stats(),
     memory: () => app.memory?.() ?? null,
     blockDump: () => blockDumpOf(app),
+    teleport: (x, y, z) => app.teleport?.(x, y, z) ?? false,
+    lodSelection: (radius = 2000) => {
+      const g = app.game;
+      return g?.lod ? g.lod.debugSelection(g.debugState().feet, radius) : null;
+    },
+    settled: () => {
+      const s = app.game?.debugState();
+      return !!s?.active && isSettled(s.terrain, s.lod);
+    },
   };
   app.hud.onCopyBlocks = () => {
     copyBlockDump(app);
@@ -368,6 +388,13 @@ function play(
       game.onGameMessage(m, bytes, performance.now());
     });
     app.game = game;
+    if (loopback) {
+      app.teleport = (x, y, z) => {
+        loopback.teleport(game.debugState().playerId, x, y, z);
+        return true;
+      };
+    }
+    applyDebugStart(app, game);
 
     // Verification (§6.3): the server streams Generated chunks only if our generator reproduces
     // its verification chunk bit for bit; a hash of 0 (or a failed worker) selects full-chunk mode.
@@ -405,9 +432,11 @@ function play(
         },
       );
       lod.setFullMode(hash === 0n);
+      lod.setSkirtHighlight(params.get('skirts') === '1');
       lod.setDetailDistance(detail.distanceM);
       app.renderer.setChunkVisibility((c) => lod.chunkVisible(c));
       app.renderer.setLodLevelColors(params.get('lodcolors') === '1');
+      app.renderer.setStandInHighlight(params.get('standins') === '1');
       game.viewport = () => lodViewport(app.canvas.clientWidth, app.canvas.clientHeight);
       game.lod = lod;
     }
@@ -494,6 +523,42 @@ function copyBlockDump(app: App): void {
     return;
   }
   copyText(app, formatBlockDump(dump), 'Block info copied');
+}
+
+/**
+ * The debug start (?at, ?look, ?fly; debug/start.ts), applied once the player is in the world: the
+ * view turns and flight starts on any world, the move needs a local one.
+ */
+function applyDebugStart(app: App, game: Game): void {
+  const start = parseDebugStart(location.search);
+  if (!hasDebugStart(start)) return;
+  let began: number | null = null;
+  const timer = setInterval(() => {
+    const s = game.debugState();
+    if (!s.active) return;
+    if (began === null) {
+      began = performance.now();
+      if (start.fly) app.input.flight.set(true);
+      if (start.look) {
+        app.input.yaw = start.look.yaw;
+        app.input.pitch = start.look.pitch;
+      }
+      if (start.at && !app.teleport) {
+        console.warn('?at= needs a local world');
+        clearInterval(timer);
+        return;
+      }
+    }
+    // The move is asked again until the player is there: the first request can reach the local
+    // server before it has placed the player (it then does nothing).
+    const at = start.at;
+    const there = !at || Math.hypot(...s.feet.map((v, i) => v - (at[i] ?? 0))) < 1;
+    if (there || performance.now() - began > 15_000) {
+      clearInterval(timer);
+      return;
+    }
+    app.teleport?.(...at);
+  }, 500);
 }
 
 /** Copies text to the clipboard, or shows it to copy by hand where that is refused. */

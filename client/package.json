@@ -20,7 +20,8 @@
     "e2e": "playwright test",
     "build:launcher": "vite build -c vite.launcher.config.ts",
     "site:fixture": "node --experimental-strip-types scripts/localSite.ts",
-    "e2e:site": "npm run site:fixture && playwright test -c playwright.site.config.ts"
+    "e2e:site": "npm run site:fixture && playwright test -c playwright.site.config.ts",
+    "shot": "node --experimental-strip-types scripts/shot.ts"
   },
   "dependencies": {
     "qrcode-generator": "2.0.4",

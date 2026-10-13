@@ -21,7 +21,9 @@ export type ToWorker =
   /** The host's page was hidden or shown: pause or resume the world and tell the guests. */
   | { t: 'hostStatus'; state: HostState }
   /** Stop hosting: end the guests' sessions (Reject(ServerClosing)). */
-  | { t: 'closeGuests' };
+  | { t: 'closeGuests' }
+  /** Debug tooling: move a player's feet to (x, y, z), at rest. */
+  | { t: 'teleport'; playerId: number; x: number; y: number; z: number };
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */

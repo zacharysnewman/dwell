@@ -169,6 +169,20 @@ EMSCRIPTEN_KEEPALIVE void dwell_local_close_guests() {
   g_server->server.CloseSessions("The host stopped hosting.", /*keep_loopback=*/true);
 }
 
+// Debug tooling (local worlds only): moves player `player_id` to feet (x, feet_y, z) on face A, at
+// rest. The server streams the new surroundings and the client's prediction snaps to it, as after
+// any large correction. Returns 1 if the player was moved, 0 if it is not playing.
+EMSCRIPTEN_KEEPALIVE int dwell_local_teleport(std::uint32_t player_id, double x, double feet_y,
+                                              double z) {
+  if (!g_server) return 0;
+  const auto handle = g_server->server.PlayerHandleOf(static_cast<std::uint16_t>(player_id));
+  if (!handle) return 0;
+  auto& players = g_server->server.players();
+  players.Teleport(*handle, JPH::RVec3(x, feet_y + players.HalfHeight(*handle), z),
+                   JPH::Vec3::sZero());
+  return 1;
+}
+
 // Adds real elapsed time and runs the due simulation steps; returns the current tick.
 EMSCRIPTEN_KEEPALIVE std::uint32_t dwell_local_advance(double elapsed_seconds) {
   const int steps = g_server->fixed.Advance(elapsed_seconds);

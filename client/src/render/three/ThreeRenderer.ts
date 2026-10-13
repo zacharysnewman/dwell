@@ -192,6 +192,8 @@ export class ThreeRenderer implements Renderer {
   private lodShown: ReadonlyMap<number, number> = new Map();
   private lodStandIns: readonly { id: number; lo: Vec3; hi: Vec3 }[] = [];
   private readonly standInSlots: Mesh[] = [];
+  /** Debug: stand-ins in flat magenta (setStandInHighlight). */
+  private standInHighlight = false;
   private warnedStandIns = false;
   private readonly lodMaterial = withHeightFog(new MeshLambertMaterial({ vertexColors: true }));
   /** Like the chunks' water (see-through from both sides, at their opacity), untextured. */
@@ -410,8 +412,9 @@ export class ThreeRenderer implements Renderer {
       if (!slot) {
         slot = new Mesh(
           new BufferGeometry(),
-          withHeightFog(new MeshLambertMaterial({ vertexColors: true })),
+          withHeightFog(new MeshLambertMaterial({ vertexColors: !this.standInHighlight })),
         );
+        if (this.standInHighlight) (slot.material as MeshLambertMaterial).color.setHex(0xff00ff);
         this.scene.add(slot);
         this.standInSlots.push(slot);
       }
@@ -442,6 +445,16 @@ export class ThreeRenderer implements Renderer {
 
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void {
     this.chunkVisible = visible;
+  }
+
+  setStandInHighlight(on: boolean): void {
+    this.standInHighlight = on;
+    for (const slot of this.standInSlots) {
+      const m = slot.material as MeshLambertMaterial;
+      m.vertexColors = !on;
+      m.color.setHex(on ? 0xff00ff : 0xffffff);
+      m.needsUpdate = true;
+    }
   }
 
   setLodLevelColors(on: boolean): void {

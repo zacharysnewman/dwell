@@ -20,6 +20,7 @@ export interface DwellCoreModule {
   _dwell_local_host(maxPlayers: number, edits: number, flight: number, hostKeyPtr: number): void;
   _dwell_local_host_status(state: number): void;
   _dwell_local_close_guests(): void;
+  _dwell_local_teleport(playerId: number, x: number, feetY: number, z: number): number;
   _dwell_local_connected(session: number, kind: number, bindingPtr: number): void;
   _dwell_local_disconnected(session: number): void;
   _dwell_local_reliable(session: number, channel: number, ptr: number, len: number): void;

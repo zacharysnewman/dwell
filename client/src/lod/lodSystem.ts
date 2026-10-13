@@ -108,6 +108,19 @@ export interface Selection {
   standIns: StandIn[];
 }
 
+/** One leaf of the selection near a point (LodSystem.debugSelection), for debug tooling. */
+export interface DebugSelectionEntry {
+  kind: 'drawn' | 'chunks' | 'standIn';
+  level: number;
+  /** The leaf's box in world metres. */
+  lo: Vec3;
+  hi: Vec3;
+  /** Drawn sections: the sides whose skirts show. */
+  skirts?: string[];
+  /** Stand-ins: the level of the ancestor drawn in the hole. */
+  from?: number;
+}
+
 export interface StandIn {
   /** The region with nothing ready to draw (its box is what gets drawn). */
   hole: LodCoord;
@@ -205,6 +218,7 @@ export class LodSystem {
   private readonly index = new Map<number, number>();
   private readonly indexed = new Set<number>();
   private fullMode = false;
+  private skirtHighlight = false;
   private frame = 0;
   private token = 0;
   private generating = 0;
@@ -215,6 +229,8 @@ export class LodSystem {
   private lastRequestMs: number | null = null;
   private readonly received: { at: number; bytes: number }[] = [];
   private selection: Selection = { drawn: [], empty: [], chunks: [], standIns: [] };
+  /** The last frame's skirt masks by section id (debugSelection). */
+  private skirts: ReadonlyMap<number, number> = new Map();
   private readonly refined = new Set<number>();
   /**
    * Level-1 sections around the camera whose 8 chunks are drawable, and all their ancestors: the
@@ -286,6 +302,11 @@ export class LodSystem {
     this.lastStepFiner = false;
   }
 
+  /** Debug (?skirts=1): skirts meshed in flat red (sections meshed from now on). */
+  setSkirtHighlight(on: boolean): void {
+    this.skirtHighlight = on;
+  }
+
   /** Full-chunk mode (§6.3): nothing is generated here; every section comes from the server. */
   setFullMode(full: boolean): void {
     this.fullMode = full;
@@ -300,6 +321,34 @@ export class LodSystem {
 
   lastSelection(): Selection {
     return this.selection;
+  }
+
+  /**
+   * Debug tooling (`__dwell.lodSelection()`): the last frame's leaves within `radius` metres of
+   * `near` (horizontally), as world boxes: drawn sections with the sides whose skirts show, the
+   * level-1 sections drawn as chunks, and stand-ins with the level of the ancestor drawn in them.
+   */
+  debugSelection(near: Vec3, radius: number): DebugSelectionEntry[] {
+    const out: DebugSelectionEntry[] = [];
+    const add = (
+      kind: DebugSelectionEntry['kind'],
+      c: LodCoord,
+      extra: Partial<DebugSelectionEntry> = {},
+    ) => {
+      const { lo, hi } = this.box(c);
+      const dx = Math.max(lo[0] - near[0], 0, near[0] - hi[0]);
+      const dz = Math.max(lo[2] - near[2], 0, near[2] - hi[2]);
+      if (Math.hypot(dx, dz) > radius) return;
+      out.push({ kind, level: c[0], lo, hi, ...extra });
+    };
+    for (const c of this.selection.drawn) {
+      const mask = this.skirts.get(lodId(...c)) ?? 0;
+      const sides = ['+X', '-X', '+Y', '-Y', '+Z', '-Z'].filter((_, f) => (mask & (1 << f)) !== 0);
+      add('drawn', c, { skirts: sides });
+    }
+    for (const c of this.selection.chunks) add('chunks', c);
+    for (const s of this.selection.standIns) add('standIn', s.hole, { from: s.from[0] });
+    return out;
   }
 
   onMessage(m: LodMessage, byteLength: number, nowMs: number): void {
@@ -381,6 +430,7 @@ export class LodSystem {
       visible.set(lodId(...c), mask);
     }
     this.view.showLodSections(visible);
+    this.skirts = visible;
     this.view.showLodStandIns(
       selection.standIns.map((s) => ({ id: lodId(...s.from), ...this.box(s.hole) })),
     );
@@ -954,6 +1004,7 @@ export class LodSystem {
       waterDrop: CHUNK_WATER_DROP_M / cellSize(n.coord[0]),
       // Face B's terrain faces down: meshed as its mirror image, turned back (lodMesher.ts).
       mirror: isFaceBSection(n.coord),
+      highlightSkirts: this.skirtHighlight,
     };
     void this.mesher.meshSection(cells, options).then((meshes) => {
       this.meshing--;
