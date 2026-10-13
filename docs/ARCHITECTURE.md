@@ -1100,9 +1100,12 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   sides of one-block steps on a hillside — measured over generated terrain, 5 % of the surface at
   a gradient of 0.2, 15 % at 0.5, ~40 % on the steepest cells, alike at 16–64 m cells — which a
   distant cell's smooth top lacks, so hillsides read as pure grass from afar (playtest; ~7 % more
-  triangles, as tops of different tints do not merge). Border faces
+  triangles, as tops of different tints do not merge). Side border faces
   the apron hides go to a per-side **skirt**, shown when the neighbour on that side is not
-  drawn at the same level (and not buried), closing cracks between levels. The surface and the
+  drawn at the same level (and not buried), closing cracks between levels. The top and bottom
+  borders have none: such a skirt was a sheet across the whole section at its border, laid over
+  the next level's terrain whenever that level differed — 1/8 m above its sea where the two
+  levels disagreed on land and water (grey sheets z-fighting the sea, 0.9.1 playtest). The surface and the
   six skirts are one geometry (`render/three/lodSection.ts`) whose index lists the surface's
   triangles and those of the sides shown, rewritten only when they change: one draw call per
   section. (Six separate skirt meshes were two thirds of the LOD's draw calls.) A generated section

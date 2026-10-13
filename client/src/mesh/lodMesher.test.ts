@@ -62,7 +62,7 @@ describe('LOD section mesher: face B (BIFACIAL_WORLD.md §5)', () => {
     expect(colour(b.opaque, 1)).toEqual(colour(a.opaque, -1));
   });
 
-  it('winds the turned-over faces to face the way their normals point, and swaps the ±Y skirts', () => {
+  it('winds the turned-over faces to face the way their normals point, with no ±Y skirts', () => {
     const b = meshSection(slab(22, 31), { mirror: true });
     const p = b.opaque.positions;
     const idx = b.opaque.indices;
@@ -87,15 +87,19 @@ describe('LOD section mesher: face B (BIFACIAL_WORLD.md §5)', () => {
       const dot = cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2];
       expect(dot).toBeGreaterThan(0); // counter-clockwise seen from the normal's side
     }
-    // A floor in rows −1..0 (a skirt on its −Y border row hides against the apron): the skirt a
-    // mirrored section shows on its bottom is the original's top.
+    // A top row under a solid apron cell: neither the section nor its mirror image has a skirt on
+    // its top or bottom (only the sides get skirts), and the mirror keeps the side skirts.
     const rim = new Uint16Array(LOD_VOLUME);
     for (let z = -1; z <= 32; z++) for (let x = -1; x <= 32; x++) rim[lodCell(x, 31, z)] = GRASS;
-    rim[lodCell(5, 32, 5)] = GRASS; // solid above the top row: the −Y border face of row 31 is hidden
+    rim[lodCell(5, 32, 5)] = GRASS;
     const m = meshSection(rim, { mirror: true });
     const plain = meshSection(mirrorRows(rim));
-    expect(quads(m.skirts[2] ?? m.opaque)).toBe(quads(plain.skirts[3] ?? m.opaque));
-    expect(quads(m.skirts[3] ?? m.opaque)).toBe(quads(plain.skirts[2] ?? m.opaque));
+    for (const mesh of [m, plain]) {
+      expect(quads(mesh.skirts[2] ?? mesh.opaque) + quads(mesh.skirts[3] ?? mesh.opaque)).toBe(0);
+    }
+    for (const face of [0, 1, 4, 5]) {
+      expect(quads(m.skirts[face] ?? m.opaque)).toBe(quads(plain.skirts[face] ?? m.opaque));
+    }
   });
 });
 
@@ -107,6 +111,24 @@ describe('LOD section mesher (§6.6)', () => {
     expect(quads(m.opaque)).toBe(6);
     expect(Math.max(...m.opaque.positions)).toBe(6);
     expect(m.skirts.every((s) => quads(s) === 0)).toBe(true);
+  });
+
+  it('never makes skirts of the top and bottom borders: they lay sheets over the next level', () => {
+    // Regression (0.9.1 playtest: stone and sand sheets over the sea, z-fighting it): a section
+    // whose top row is solid under a solid apron put that row's tops into its +Y skirt, a
+    // section-wide sheet at its top border. Shown whenever the section above is drawn at another
+    // level, it lay over that section's terrain — 1/8 m above the sea where the coarser cells
+    // said land and the finer ones water. Side skirts close the cracks between levels.
+    const cells = new Uint16Array(LOD_VOLUME);
+    for (let z = -1; z <= 32; z++) {
+      for (let x = -1; x <= 32; x++) {
+        for (let y = -1; y <= 32; y++) cells[lodCell(x, y, z)] = STONE; // solid through both borders
+      }
+    }
+    const m = meshSection(cells);
+    expect(quads(m.skirts[2] ?? m.opaque)).toBe(0); // +Y
+    expect(quads(m.skirts[3] ?? m.opaque)).toBe(0); // −Y
+    for (const face of [0, 1, 4, 5]) expect(quads(m.skirts[face] ?? m.opaque)).toBeGreaterThan(0);
   });
 
   it('merges a floor, and puts border faces the apron hides into per-side skirts', () => {

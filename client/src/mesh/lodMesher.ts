@@ -308,6 +308,11 @@ function meshSectionAbove(cells: Uint16Array, options: MeshSectionOptions): Sect
           const nSolid = n !== 0 && !isLiquid(n);
           const hidden = nSolid || (liquid && n !== 0);
           if (hidden && (!border || liquid)) continue;
+          // Skirts only on the sides: a top or bottom border face the apron hides would be a sheet
+          // across the whole section at its border, laid over the next level's terrain (and 1/8 m
+          // above its sea where the two levels disagree on land and water) whenever that level
+          // differs. The side skirts close the cracks between levels.
+          if (hidden && axis === 1) continue;
           if (atLevel && axis !== 1) {
             const y = cell[1] ?? 0;
             const lid = (special.w[wc] ?? y + 1) - waterDrop;
