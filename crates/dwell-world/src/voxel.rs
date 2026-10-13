@@ -86,6 +86,9 @@ pub const fn local_index(lx: i32, ly: i32, lz: i32) -> usize {
 pub struct Chunk {
     voxels: Box<[StateId; CHUNK_VOLUME]>,
     revision: u32,
+    /// Set by the world each time it stores a chunk object (0: never stored, e.g. the shared air
+    /// chunk): with the revision, it tells caches (terrain collision) the content may have changed.
+    stamp: u64,
 }
 
 impl Default for Chunk {
@@ -93,11 +96,16 @@ impl Default for Chunk {
         Self {
             voxels: Box::new([0; CHUNK_VOLUME]),
             revision: 0,
+            stamp: 0,
         }
     }
 }
 
 impl Chunk {
+    /// Which stored chunk object this is: changes whenever the world stores a chunk here.
+    pub fn stamp(&self) -> u64 {
+        self.stamp
+    }
     pub fn get(&self, lx: i32, ly: i32, lz: i32) -> StateId {
         self.voxels[local_index(lx, ly, lz)]
     }
@@ -362,6 +370,7 @@ pub struct VoxelWorld {
     saved: Option<Box<dyn SavedChunks>>,
     chunks: HashMap<ChunkCoord, Box<Chunk>>,
     epoch: u64,
+    next_stamp: u64,
     generated_on_access: u64,
     loaded_saved: u64,
 }
@@ -374,6 +383,7 @@ impl VoxelWorld {
             saved: None,
             chunks: HashMap::new(),
             epoch: 0,
+            next_stamp: 1,
             generated_on_access: 0,
             loaded_saved: 0,
         }
@@ -417,8 +427,7 @@ impl VoxelWorld {
                 c.reset_revision();
                 c
             });
-            self.epoch += 1;
-            self.chunks.insert(coord, Box::new(chunk));
+            self.store(coord, chunk);
         }
         self.chunks.get_mut(&coord).expect("inserted")
     }
@@ -467,6 +476,12 @@ impl VoxelWorld {
 
     /// Inserts or replaces a chunk (streamed chunks; chunks generated off-thread).
     pub fn put(&mut self, coord: ChunkCoord, chunk: Chunk) {
+        self.store(coord, chunk);
+    }
+
+    fn store(&mut self, coord: ChunkCoord, mut chunk: Chunk) {
+        chunk.stamp = self.next_stamp;
+        self.next_stamp += 1;
         self.chunks.insert(coord, Box::new(chunk));
         self.epoch += 1;
     }
