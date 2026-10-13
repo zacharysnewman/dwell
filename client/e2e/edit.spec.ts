@@ -15,6 +15,7 @@ interface DebugState {
   terrainReady: boolean;
   terrain: { loaded: number; generating: number };
   target: Target | null;
+  remotes: { feet: Vec3 }[];
 }
 
 const FACE_DIRS: Vec3[] = [
@@ -76,11 +77,29 @@ async function lookAt(page: Page, cell: Vec3, height = 0.25): Promise<void> {
   await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(cell.join());
 }
 
-/** The cardinal yaw (0, 90, 180, 270) facing most directly away from `other`. */
-async function yawAwayFrom(page: Page, other: Page): Promise<number> {
-  const [a, b] = await Promise.all([feet(page), feet(other)]);
-  const yaw = (Math.atan2(a[0] - b[0], a[2] - b[2]) * 180) / Math.PI;
-  return (((Math.round(yaw / 90) * 90) % 360) + 360) % 360;
+/**
+ * The cardinal yaw (0, 90, 180, 270) whose placement, looking 45° down, lands farthest from every
+ * other player the page sees (the server refuses a block placed into a player, and players from
+ * earlier tests may still stand around the spawn).
+ */
+async function clearYaw(page: Page): Promise<number> {
+  let best = 0;
+  let bestDistance = -1;
+  for (const yaw of [0, 90, 180, 270]) {
+    await call(page, `d.look(${String(yaw)}, -45)`);
+    await expect.poll(async () => (await state(page))?.target ?? null).not.toBeNull();
+    const placement = await call<Placement>(page, 'd.placement()');
+    const remotes = (await state(page))?.remotes ?? [];
+    const [x, , z] = placement.cell;
+    const distance = Math.min(
+      ...remotes.map((r) => Math.hypot(x + 0.5 - r.feet[0], z + 0.5 - r.feet[2])),
+    );
+    if (distance > bestDistance) {
+      best = yaw;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
@@ -127,30 +146,34 @@ test('a placed block shows as the same state to a second client on a native serv
   test.setTimeout(120_000);
   const invite = readFileSync(INVITE_FILE, 'utf8');
   const contexts = [await browser.newContext(), await browser.newContext()];
-  const [a, b] = await Promise.all(contexts.map((c) => c.newPage()));
-  await a.goto(`./${invite}`);
-  await b.goto(`./${invite}`);
-  await ready(a);
-  await ready(b);
-  // Players spawn side by side: build away from the other one (the server refuses a block placed
-  // into a player).
-  const yaw = await yawAwayFrom(a, b);
-  for (const key of ['Digit1', 'Digit5'] as const) {
-    await a.keyboard.press(key); // stone, then sand
-    await call(a, `d.look(${String(yaw)}, -45)`);
-    await expect.poll(async () => (await state(a))?.target ?? null).not.toBeNull();
-    const placement = await call<Placement>(a, 'd.placement()');
-    const expected = placement.material;
-    await a.waitForTimeout(120);
-    expect(await call<boolean>(a, `d.edit('place')`)).toBe(true);
-    await expect.poll(() => voxel(a, placement.cell), { timeout: 5_000 }).toBe(expected);
-    await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(expected);
-    await lookAt(a, placement.cell);
-    await a.waitForTimeout(120);
-    expect(await call<boolean>(a, `d.edit('break')`)).toBe(true);
-    await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(0);
+  try {
+    const [a, b] = await Promise.all(contexts.map((c) => c.newPage()));
+    await a.goto(`./${invite}`);
+    await b.goto(`./${invite}`);
+    await ready(a);
+    await ready(b);
+    await expect.poll(async () => (await state(a))?.remotes.length ?? 0).toBeGreaterThan(0);
+    // Players spawn side by side: build where nobody stands.
+    const yaw = await clearYaw(a);
+    for (const key of ['Digit1', 'Digit5'] as const) {
+      await a.keyboard.press(key); // stone, then sand
+      await call(a, `d.look(${String(yaw)}, -45)`);
+      await expect.poll(async () => (await state(a))?.target ?? null).not.toBeNull();
+      const placement = await call<Placement>(a, 'd.placement()');
+      const expected = placement.material;
+      // edit() refuses (and sends nothing) without a target or within BLOCK_EDIT_INTERVAL_MS.
+      await expect.poll(() => call<boolean>(a, `d.edit('place')`)).toBe(true);
+      await expect.poll(() => voxel(a, placement.cell), { timeout: 5_000 }).toBe(expected);
+      await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(expected);
+      await lookAt(a, placement.cell);
+      await expect.poll(() => call<boolean>(a, `d.edit('break')`)).toBe(true);
+      await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(0);
+      // And on the builder's page, or its next aim still finds the block and places beside it.
+      await expect.poll(() => voxel(a, placement.cell), { timeout: 5_000 }).toBe(0);
+    }
+  } finally {
+    await Promise.all(contexts.map((c) => c.close()));
   }
-  await Promise.all(contexts.map((c) => c.close()));
 });
 
 test('an edit by one client appears for another on a native server', async ({ browser }) => {
