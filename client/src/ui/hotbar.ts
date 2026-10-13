@@ -1,9 +1,7 @@
 // The block hotbar (ARCHITECTURE.md §6.5): the infinite palette with the selected block highlighted.
 // Number keys and the scroll wheel (desktop) or tapping a slot (touch) change the selection.
 import type { PaletteSlot } from '../interact/blockInteraction';
-import { pieceLabel, type Piece } from '../interact/shapes';
 import { sharedAtlas, TILE, tilePixels } from '../render/textures';
-import { SHAPES } from '../world/blocks';
 import { materialStyle } from '../world/materials';
 
 /** Key label of a slot: 1–9, then 0 for the tenth; later slots are reached by scrolling. */
@@ -23,16 +21,12 @@ export class Hotbar {
   private readonly root: HTMLDivElement;
   private readonly slots: HTMLButtonElement[] = [];
   private readonly label: HTMLDivElement;
-  private readonly shapeButton: HTMLButtonElement;
   private selected = 0;
-  private piece: Piece = 'cube';
 
   constructor(
     parent: HTMLElement,
     private readonly palette: readonly PaletteSlot[],
     onPick: (slot: number) => void,
-    /** The shape button (or key) was pressed: the next piece (+1) or the previous (−1). */
-    onShape: (delta: number) => void = () => undefined,
   ) {
     this.root = document.createElement('div');
     this.root.id = 'hotbar';
@@ -62,17 +56,6 @@ export class Hotbar {
       this.slots.push(b);
       row.append(b);
     });
-    // The shape button: the piece placed from slots that come in slopes and slabs (key R).
-    this.shapeButton = document.createElement('button');
-    this.shapeButton.type = 'button';
-    this.shapeButton.id = 'hotbar-shape';
-    this.shapeButton.title = 'Shape (R)';
-    this.shapeButton.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      onShape(1);
-    });
-    row.append(this.shapeButton);
     this.root.append(this.label, row);
     parent.append(this.root);
     this.refresh();
@@ -88,20 +71,9 @@ export class Hotbar {
     this.refresh();
   }
 
-  /** The piece the shape key picked (applies to slots that come in shapes). */
-  setPiece(piece: Piece): void {
-    this.piece = piece;
-    this.refresh();
-  }
-
   private refresh(): void {
     const slot = this.palette[this.selected];
-    const name = (slot?.name ?? '').replace(/_/g, ' ');
-    const shaped = slot?.shapes === true;
-    this.label.textContent =
-      shaped && this.piece !== 'cube' ? `${name} · ${pieceLabel(this.piece)}` : name;
-    this.shapeButton.hidden = !shaped;
-    this.shapeButton.textContent = pieceLabel(this.piece);
+    this.label.textContent = (slot?.name ?? '').replace(/_/g, ' ');
   }
 }
 
@@ -123,7 +95,5 @@ function swatch(material: number): HTMLCanvasElement {
     ctx.fillStyle = `#${style.color.toString(16).padStart(6, '0')}`;
     ctx.fillRect(0, 0, TILE, TILE);
   }
-  const shape = style.look === 'shaped' ? SHAPES[style.shape] : undefined;
-  if (shape && !shape.inverted) ctx.clearRect(0, 0, TILE, TILE * (1 - shape.maxY));
   return canvas;
 }

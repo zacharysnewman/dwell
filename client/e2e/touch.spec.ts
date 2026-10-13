@@ -1,5 +1,6 @@
 // Touch controls on a landscape phone (local mode): the stick walks, dragging looks, Jump jumps.
 import { devices, expect, test, type CDPSession, type Page } from '@playwright/test';
+import { stateId } from '../src/world/blocks';
 
 test.use({ ...devices['iPhone 13 landscape'], browserName: 'chromium' });
 
@@ -122,7 +123,9 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
   await tap(edit.x, edit.y, 5);
   await expect(page.locator('#touch-edit')).toHaveText('Place');
   await tap(600, 150, 6);
-  await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(3);
+  await expect
+    .poll(() => page.evaluate<number>(above), { timeout: 5_000 })
+    .toBe(stateId('dwell:dirt'));
 
   // Back to Break: a tap removes it again, once the new block is the one targeted (on a slow
   // runner the target could still be the ground below, which the tap would break instead).

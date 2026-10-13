@@ -90,12 +90,8 @@ struct LodSurface {
   bool wet = false;    // under water: `height` is the floor, `material` the floor's
   float height = 0;    // metres
   MaterialId material = 0;
-  // Where wet: the water's surface (metres; open voxels below it are water) — the sea's, or a
-  // river's or lake's above sea level, which is not on the cells' grid.
+  // Where wet: the water's surface (metres; open voxels below it are water), the sea's.
   float water = 0;
-  // The tint (worldgen/biomes.h) of the column's grass and foliage, as 0xRRGGBB in 1/64 units (0:
-  // none), smoothed over neighbouring columns: the client multiplies tinted blocks' colours by it.
-  std::uint32_t tint_grass = 0, tint_foliage = 0;
 };
 using LodSurfaces = std::vector<LodSurface>;  // kLodPad²
 
@@ -169,7 +165,7 @@ inline std::int64_t LodMirrorRowBottom(std::int64_t bottom, std::int64_t cell) {
   return kMirrorSum + 1 - bottom - cell;
 }
 
-// The flat test world (generators 0 and 1: the playground's features are far below a cell).
+// The flat test world (generator 0).
 LodKind GenerateFlatLod(const LodCoord& c, LodCells& cells);
 LodBounds FlatLodBounds(int level, std::int32_t i, std::int32_t k);
 

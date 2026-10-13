@@ -1,3 +1,4 @@
+import { stateId } from '../world/blocks';
 import { describe, expect, it } from 'vitest';
 import { LOD_VOLUME, lodCell } from '../lod/grid';
 import { World } from '../protocol/constants.gen';
@@ -26,7 +27,7 @@ import { srgbToLinear } from './textures';
 import { skyFrame } from './skyFrame';
 import { lightWeight, patchFogShader } from './three/heightFog';
 
-const GRASS = 4;
+const GRASS = stateId('dwell:grass');
 /** Axis and sign of the face a vertex normal points along. */
 const faceOf = (n: readonly number[]): [number, number] => {
   const axis = n.findIndex((c) => c !== 0);

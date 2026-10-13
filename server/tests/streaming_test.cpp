@@ -8,6 +8,7 @@
 
 #include "dwell/core/worldgen_pool.h"
 #include "dwell/player/net.h"
+#include "dwell/worldgen/terrain.h"
 #include "server_fixture.h"
 
 using namespace dwell::test;
@@ -256,7 +257,8 @@ TEST_CASE(
 }
 
 TEST_CASE("streaming: after fast flight the chunks around the player all arrive") {
-  // Fast flight (400 m/s, then down): the server still streams everything around the player.
+  // Fast flight (400 m/s, then down to the ground): the server still streams everything around
+  // the player.
   Fixture f(ServerConfig{.world_seed = 5});
   f.Join(1, Client(1));
   f.Send(1, WorldgenCheck{0});
@@ -278,11 +280,16 @@ TEST_CASE("streaming: after fast flight the chunks around the player all arrive"
              static_cast<float>(z + (3500 - z) * d / len));
     pump(1);
   }
-  for (y = 300; y > 40; y -= 6.7) f.MoveTo(1, 4880.0f, static_cast<float>(y), 3500.0f), pump(1);
-  f.MoveTo(1, 4880.0f, 40.0f, 3500.0f);
+  // Down to just above the ground there.
+  const double ground = dwell::worldgen::TerrainGenerator(5).ColumnAt(4880, 3500).height;
+  for (y = 300; y > ground + 2; y -= 6.7) {
+    f.MoveTo(1, 4880.0f, static_cast<float>(y), 3500.0f), pump(1);
+  }
+  f.MoveTo(1, 4880.0f, static_cast<float>(ground + 2), 3500.0f);
   pump(600);
   int missing = 0;
-  for (int cy = 0; cy <= 2; ++cy)
+  const int row = static_cast<int>(std::floor(ground / 32));
+  for (int cy = row - 1; cy <= row + 1; ++cy)
     for (int cz = 108; cz <= 110; ++cz)
       for (int cx = 151; cx <= 153; ++cx) missing += held.count({cx, cy, cz}) == 0;
   CHECK(missing == 0);

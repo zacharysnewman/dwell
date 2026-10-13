@@ -237,10 +237,15 @@ TEST_SUITE("player: walking") {
 }
 
 TEST_SUITE("player: steps and air") {
-  TEST_CASE("walks up a slab step without leaving the ground") {
+  TEST_CASE("the walkable slope limit leaves room for a 45° pitch") {
+    // A 45° face (a box ramp, later Phase 18's adaptive slopes) must not hinge on float rounding.
+    CHECK(player::DefaultConfig().probes.max_slope_angle >= 49.9f);
+  }
+
+  TEST_CASE("walks up a half-block step without leaving the ground") {
     PlayerTestWorld w;
     w.Floor();
-    w.Fill(-3, 0, 2, 3, 0, 12, core::Materials::kStoneSlab);  // 0.5 m step from z = 2
+    w.HalfStep(-3, 0, 2, 3, 12);  // 0.5 m step from z = 2
     const auto e = w.Spawn(Vec3(0.5f, 0, 0));
     w.input = [](int, PlayerHandle) { return Move(0, 1); };
     int airborne = 0;
@@ -300,10 +305,10 @@ TEST_SUITE("player: steps and air") {
       CHECK(onto > 10);
       CHECK(worst <= limit);
     }
-    // Walking up a slab step.
+    // Walking up a half-block step.
     PlayerTestWorld w;
     w.Floor(0, 40);
-    w.Fill(-3, 0, 3, 3, 0, 20, core::Materials::kStoneSlab);
+    w.HalfStep(-3, 0, 3, 3, 20);
     const auto e = w.Spawn(Vec3(0.5f, 0, 0));
     w.input = [](int, PlayerHandle) { return Move(0, 1); };
     Vec3 prev = w.Pos(e);

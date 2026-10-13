@@ -83,6 +83,16 @@ class PlayerTestWorld {
   }
   void Remove(int x, int y, int z) { Set(x, y, z, core::Materials::kAir); }
 
+  // A 0.5 m step over the cells x0..x1, z0..z1 (inclusive) with its floor at y: a static box, as
+  // the slab blocks were before the baseline cut them (Phase 15); the controller steps onto it
+  // the same way.
+  JPH::BodyID HalfStep(int x0, int y, int z0, int x1, int z1) {
+    return Box(Vec3(0.5f * static_cast<float>(x0 + x1 + 1), static_cast<float>(y) + 0.25f,
+                    0.5f * static_cast<float>(z0 + z1 + 1)),
+               Vec3(0.5f * static_cast<float>(x1 - x0 + 1), 0.25f,
+                    0.5f * static_cast<float>(z1 - z0 + 1)));
+  }
+
   // --- bodies (Tier 1 layer) ---
   JPH::BodyID Box(Vec3 center, Vec3 half, JPH::Quat rotation = JPH::Quat::sIdentity(),
                   Vec3 velocity = Vec3::sZero(), float yaw_rate_deg = 0.0f) {

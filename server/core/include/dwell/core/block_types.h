@@ -59,10 +59,9 @@ struct MaterialInfo {
   bool climbable = false;         // ladders, vines (PLAYER_CONTROLLER.md §6.3)
   Facing facing = Facing::kNone;  // climbable: direction the climbing side faces
   float climb_speed_scale = 1.0f;
-  bool liquid = false;        // water: swim layer (PLAYER_CONTROLLER.md §6.4)
-  float launch_speed = 0.0f;  // debug launch pad: upward knockback when stood on (m/s)
-  bool placeable = false;     // in the infinite creative palette (§6.5)
-  std::uint16_t block = 0;    // index into kBlocks
+  bool liquid = false;      // water: swim layer (PLAYER_CONTROLLER.md §6.4)
+  bool placeable = false;   // in the infinite creative palette (§6.5)
+  std::uint16_t block = 0;  // index into kBlocks
 };
 
 // A typed property of a block: an enum of named values (booleans are "false" / "true").

@@ -12,7 +12,7 @@ import {
   WORLD_TYPES,
   type WorldIndex,
   type WorldMeta,
-  type WorldType,
+  type CreatableType,
 } from '../local/worldIndex';
 import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { PROTOCOL_VERSION } from '../protocol/constants.gen';
@@ -252,7 +252,7 @@ export class MainMenu {
       const world = this.deps.index.create(
         {
           name: cleanName(name.value, 'New world'),
-          type: type.value as WorldType,
+          type: type.value as CreatableType,
           seed: parseSeed(seed.value),
         },
         this.deps.now(),
@@ -452,9 +452,12 @@ export class MainMenu {
       return;
     }
     // A new file: this build's world, whichever version the old one was.
+    // The retired playground (Phase 15) starts again as a flat world.
+    const type = world.type === 'playground' ? 'flat' : world.type;
     this.deps.index.put({
       ...world,
-      generatorVersion: GENERATORS[world.type],
+      type,
+      generatorVersion: GENERATORS[type],
       appVersion: recordedVersion(),
     });
     this.deps.go({ play: world.id });

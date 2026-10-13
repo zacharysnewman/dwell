@@ -218,7 +218,6 @@ class Server {
     int health = protocol::kMaxHealth;
     std::uint32_t respawn_tick = 0;  // while dead
     double death_position[3] = {0, 0, 0};
-    std::uint32_t launch_ready_tick = 0;
     std::uint32_t last_knockback_seq = 0;
     std::uint32_t rate_window_tick = 0;
     std::uint32_t rate_window_count = 0;

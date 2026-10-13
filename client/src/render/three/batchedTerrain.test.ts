@@ -18,14 +18,12 @@ const none = (): MeshArrays => ({
   normals: new Float32Array(0),
   colors: new Float32Array(0),
   uvs: new Float32Array(0),
-  tints: new Float32Array(0),
   tiles: new Float32Array(0),
   indices: new Uint32Array(0),
 });
 const textured = (): MeshArrays => ({
   ...quad(),
   uvs: new Float32Array(8),
-  tints: new Float32Array(12),
   tiles: new Float32Array(16),
 });
 const chunk = (water: boolean): ChunkMeshes => ({

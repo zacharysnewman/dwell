@@ -1,43 +1,39 @@
-// Worldgen inspection (Phase 3 debug tooling): an ASCII biome/height map around a point, biome
-// shares, generation timings, and the spawn point.
+// Worldgen inspection (Phase 3 debug tooling): an ASCII height map around a point, generation
+// timings, and the spawn point.
 //   dwell_worldgen_inspect [seed] [centre_x] [centre_z] [metres per character] [slice]
 // With "slice", prints a 1:1 vertical section along x through the centre instead of the map.
-// Coordinates may be anywhere in the 8,192 km world (e.g. 7999488 0 for ~8,000 km east).
+// Coordinates may be anywhere in the world's disc.
 //
-// Timings (Phase 10: chunk and LOD generation budgets, reported in every worldgen change):
+// Timings (chunk and LOD generation budgets, reported in every worldgen change):
 //   dwell_worldgen_inspect <seed> bench
 // Best of five runs of chunk generation around the spawn and of LOD sections at several levels.
 //
-// Layout statistics over many seeds (Phase 10): continents, land share, islands.
-//   dwell_worldgen_inspect <first seed> stats [seeds (16)] [km per sample (32)]
+// Layout statistics over many seeds: the island's extent and land share.
+//   dwell_worldgen_inspect <first seed> stats [seeds (16)] [m per sample (250)]
 //
-// Local map image (Phase 11, WORLD_GENERATION.md §3.8):
+// Local map image (height map only: the baseline has no biomes):
 //   dwell_worldgen_inspect <seed> map <out.png|ppm> <centre_x> <centre_z> [pixels (512)] [m per
 //   pixel (8)]
-//                          [hillshade|biome|valley]
-// Writes an image of the area (north up): `hillshade` is the relief lit from the north-west, tinted
-// by height, with water (sea, rivers, lakes) in blue — turquoise where shallow, deep blue where
-// deep; `biome` colours the biomes (water still blue); `valley` shows the valley floor V without
-// the relief or the channels, with the channels' wetness in blue. Prints the share of water
-// columns.
+// Writes an image of the area (north up): the relief lit from the north-west, tinted by height,
+// with the shore in sand and the sea in blue — turquoise where shallow, deep blue where deep.
+// Prints the share of water columns.
 //
 // First-person view (screenshots without a browser, in seconds):
 //   dwell_worldgen_inspect <seed> view <out.png|ppm> <x> <y> <z> <yaw> <pitch> [width (640)]
 //                          [height (360)] [range m (40000)] [fov degrees (70)]
 // Ray-marches the generator's terrain from the camera at (x, y, z) (feet; the eye is 1.6 m up): yaw
 // 0 looks along +z, 90 along +x, pitch up is positive. The ground is shaded by its slope and
-// coloured by biome and height, water (the sea, rivers, lakes) is blue by depth, and distance fades
-// to the sky's haze. Columns are sampled on grids that coarsen with distance (cached per
-// thread, rows split across threads), so a 640×360 view takes seconds. This is the terrain's shape
-// and colour only — no trees, blocks or lighting model of the game — for reviewing generator
-// changes; the browser script (`client/scripts/shots.ts`) is for the game's own look.
+// coloured by height, the sea is blue by depth, and distance fades to the sky's haze. Columns are
+// sampled on grids that coarsen with distance (cached per thread, rows split across threads), so a
+// 640×360 view takes seconds. This is the terrain's shape and colour only — no blocks or lighting
+// model of the game — for reviewing generator changes; the browser script
+// (`client/scripts/shots.ts`) is for the game's own look.
 //
-// Whole-disc image (Phase 10, WORLD_GENERATION.md §2.4):
-//   dwell_worldgen_inspect [seed] disc <out.ppm> [km per pixel (8)] [continents|height]
-// Writes a PPM of the whole disc (north up) and prints the continent count, land share and each
-// continent's area. `continents` colours land by continent id (islands gold), darkens the sea with
-// distance from the coast, and draws internal plate edges; `height` is a hill-shaded height map
-// from the full terrain pipeline (slower: use 16 km per pixel or more).
+// Island image (whole island and the sea around it):
+//   dwell_worldgen_inspect [seed] disc <out.ppm> [m per pixel (100)] [coast|height]
+// Writes a PPM of the area within 40 km of the origin (north up) and prints the land share and
+// the island's extent. `coast` shows land and sea by the layout's coast distance; `height` is a
+// hill-shaded height map from the full terrain pipeline.
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -59,43 +55,30 @@ using namespace dwell;
 
 namespace {
 
-// Map colours and letters of the biomes, in worldgen::Biome order (biomes.h).
-constexpr float kBiomeColour[worldgen::kBiomeCount][3] = {
-    {70, 90, 150},    // ocean
-    {45, 60, 120},    // deep ocean
-    {170, 200, 225},  // frozen ocean
-    {232, 214, 150},  // beach
-    {150, 135, 130},  // sea cliff
-    {170, 160, 150},  // riverbank
-    {215, 200, 150},  // lake shore
-    {150, 205, 85},   // meadow
-    {58, 130, 62},    // broadleaf forest
-    {235, 130, 170},  // blossom grove
-    {215, 140, 50},   // autumn woods
-    {35, 95, 75},     // conifer forest
-    {90, 150, 110},   // wetland
-    {200, 190, 90},   // savanna
-    {235, 205, 120},  // dunes
-    {160, 165, 120},  // tundra
-    {120, 190, 140},  // alpine meadow
-    {160, 148, 140},  // bare rock
-    {240, 244, 248},  // snowfield
-};
-constexpr char kBiomeLetter[worldgen::kBiomeCount + 1] = "~=*bcrlmfpaWsdtAXS^";
+// Ground colour by height (m above sea level) and the shore's sand.
+void GroundColour(float h, float* rgb) {
+  if (h < 2.0f) {
+    rgb[0] = 232, rgb[1] = 214, rgb[2] = 150;  // sand
+    return;
+  }
+  const float t = std::clamp(h / 160.0f, 0.0f, 1.0f);  // lowland green → upland
+  rgb[0] = 95 + 70 * t, rgb[1] = 160 - 20 * t, rgb[2] = 70 + 30 * t;
+}
 
-// Whole-disc image: one pixel per `km` kilometres, north (−z) up.
-int WriteDisc(const worldgen::TerrainGenerator& gen, const std::string& path, int km,
+// Island image: the area within kDiscReach m of the origin, one pixel per `m_per_px` metres,
+// north (−z) up.
+constexpr int kDiscReach = 40'000;
+int WriteDisc(const worldgen::TerrainGenerator& gen, const std::string& path, int m_per_px,
               const std::string& mode) {
-  const int n = 2 * (core::kWorldRadius / 1000) / km;
+  const int n = 2 * kDiscReach / m_per_px;
   const bool height = mode == "height";
   std::vector<std::uint8_t> rgb(static_cast<std::size_t>(n) * n * 3, 0);
-  std::map<std::int32_t, long> area;  // continent id → pixels
+  std::vector<float> heights(static_cast<std::size_t>(n) * n, 0.0f);
   long land = 0, inside = 0;
-  std::vector<float> heights;
-  if (height) heights.assign(static_cast<std::size_t>(n) * n, 0.0f);
+  int reach = 0, nearest_sea = kDiscReach;
   const auto at = [&](int px, int py, int& x, int& z) {
-    x = (px - n / 2) * km * 1000 + km * 500;
-    z = (py - n / 2) * km * 1000 + km * 500;
+    x = (px - n / 2) * m_per_px + m_per_px / 2;
+    z = (py - n / 2) * m_per_px + m_per_px / 2;
   };
   for (int py = 0; py < n; ++py)
     for (int px = 0; px < n; ++px) {
@@ -103,55 +86,39 @@ int WriteDisc(const worldgen::TerrainGenerator& gen, const std::string& path, in
       at(px, py, x, z);
       if (!core::InsideWorldDisc(x, z)) continue;
       ++inside;
-      std::uint8_t* o = &rgb[(static_cast<std::size_t>(py) * n + px) * 3];
-      if (height) {
-        const auto c = gen.ColumnAt(x, z);
-        heights[static_cast<std::size_t>(py) * n + px] = c.height;
-        land += c.height >= 0.0f;
-        continue;
-      }
-      const auto l = gen.LandAt(x, z);
-      if (l.coast > 0.0f) {
+      const float h = height ? gen.ColumnAt(x, z).height : gen.CoastAt(x, z);
+      heights[static_cast<std::size_t>(py) * n + px] = h;
+      const int r = static_cast<int>(std::sqrt(static_cast<double>(x) * x + static_cast<double>(z) * z));
+      if (h > 0.0f) {
         ++land;
-        ++area[l.continent];
-        const std::uint32_t h =
-            worldgen::Mix32(static_cast<std::uint32_t>(l.continent + 7) * 2654435761u);
-        float r = 90 + (h & 127), g = 90 + ((h >> 8) & 127), b = 60 + ((h >> 16) & 95);
-        if (l.continent == worldgen::continents::kIslandId) r = 230, g = 190, b = 60;
-        if (l.plate_edge < 8000.0f) r *= 0.55f, g *= 0.55f, b *= 0.55f;  // internal plate edges
-        o[0] = static_cast<std::uint8_t>(std::min(255.0f, r));
-        o[1] = static_cast<std::uint8_t>(std::min(255.0f, g));
-        o[2] = static_cast<std::uint8_t>(std::min(255.0f, b));
+        reach = std::max(reach, r);
       } else {
-        const float depth = std::min(1.0f, -l.coast / 250000.0f);
-        o[0] = static_cast<std::uint8_t>(60 - 40 * depth);
-        o[1] = static_cast<std::uint8_t>(130 - 80 * depth);
-        o[2] = static_cast<std::uint8_t>(200 - 90 * depth);
+        nearest_sea = std::min(nearest_sea, r);
       }
     }
-  if (height) {
-    for (int py = 0; py < n; ++py)
-      for (int px = 0; px < n; ++px) {
-        int x, z;
-        at(px, py, x, z);
-        if (!core::InsideWorldDisc(x, z)) continue;
-        const float h = heights[static_cast<std::size_t>(py) * n + px];
+  for (int py = 0; py < n; ++py)
+    for (int px = 0; px < n; ++px) {
+      int x, z;
+      at(px, py, x, z);
+      if (!core::InsideWorldDisc(x, z)) continue;
+      const float h = heights[static_cast<std::size_t>(py) * n + px];
+      std::uint8_t* o = &rgb[(static_cast<std::size_t>(py) * n + px) * 3];
+      float c[3];
+      if (h <= 0.0f) {
+        const float d = height ? std::min(1.0f, -h / 20.0f) : std::min(1.0f, -h / 10000.0f);
+        c[0] = 70 - 50 * d, c[1] = 170 - 100 * d, c[2] = 215 - 90 * d;
+      } else if (height) {
         const float east = heights[static_cast<std::size_t>(py) * n + std::min(px + 1, n - 1)];
-        float shade = 1.0f - std::max(-0.4f, std::min(0.4f, (east - h) / (km * 40.0f)));
-        std::uint8_t* o = &rgb[(static_cast<std::size_t>(py) * n + px) * 3];
-        if (h < 0.0f) {
-          const float d = std::min(1.0f, -h / 1500.0f);
-          o[0] = static_cast<std::uint8_t>(70 - 50 * d);
-          o[1] = static_cast<std::uint8_t>(140 - 90 * d);
-          o[2] = static_cast<std::uint8_t>(210 - 100 * d);
-        } else {
-          const float t = std::min(1.0f, h / 3000.0f);
-          o[0] = static_cast<std::uint8_t>(std::min(255.0f, (110 + 120 * t) * shade));
-          o[1] = static_cast<std::uint8_t>(std::min(255.0f, (160 - 40 * t) * shade));
-          o[2] = static_cast<std::uint8_t>(std::min(255.0f, (70 + 140 * t) * shade));
-        }
+        const float shade =
+            1.0f - std::clamp((east - h) / (static_cast<float>(m_per_px) * 0.5f), -0.4f, 0.4f);
+        GroundColour(h, c);
+        for (float& v : c) v *= shade;
+      } else {
+        const float t = std::min(1.0f, h / 15000.0f);
+        c[0] = 120 + 60 * t, c[1] = 170 - 40 * t, c[2] = 80;
       }
-  }
+      for (int k = 0; k < 3; ++k) o[k] = static_cast<std::uint8_t>(std::clamp(c[k], 0.0f, 255.0f));
+    }
   std::FILE* f = std::fopen(path.c_str(), "wb");
   if (!f) {
     std::fprintf(stderr, "cannot write %s\n", path.c_str());
@@ -160,21 +127,10 @@ int WriteDisc(const worldgen::TerrainGenerator& gen, const std::string& path, in
   std::fprintf(f, "P6\n%d %d\n255\n", n, n);
   std::fwrite(rgb.data(), 1, rgb.size(), f);
   std::fclose(f);
-  std::printf("%s: %d x %d, %d km per pixel (%s)\n", path.c_str(), n, n, km, mode.c_str());
-  std::printf("land share %.1f%%\n", 100.0 * land / std::max(1L, inside));
-  if (!height) {
-    const double px_km2 = static_cast<double>(km) * km;
-    int continents = 0;
-    for (const auto& [id, px] : area) {
-      if (id < 0) {
-        std::printf("islands: %.0f km^2\n", px * px_km2);
-      } else {
-        ++continents;
-        std::printf("continent %3d: %9.0f km^2\n", id, px * px_km2);
-      }
-    }
-    std::printf("%d continents (layout says %d)\n", continents, gen.Continents().ContinentCount());
-  }
+  std::printf("%s: %d x %d, %d m per pixel (%s)\n", path.c_str(), n, n, m_per_px, mode.c_str());
+  std::printf("land share %.1f%% within %d km; land reaches %.1f km, sea from %.1f km\n",
+              100.0 * land / std::max(1L, inside), kDiscReach / 1000, reach / 1000.0,
+              nearest_sea / 1000.0);
   return 0;
 }
 
@@ -202,30 +158,11 @@ int Bench(std::uint64_t seed) {
     best = std::min(best, std::chrono::duration<double, std::milli>(elapsed).count() / chunks);
   }
   std::printf("chunk: %.3f ms\n", best);
-  if (const char* layout_runs = std::getenv("DWELL_BENCH_LAYOUT")) {
-    // The continent layout alone: exact evaluations and lattice samples per microsecond.
-    const auto& layout = gen.Continents();
-    const int n = std::max(1, std::atoi(layout_runs));
-    for (int mode = 0; mode < 2; ++mode) {
-      const auto start = std::chrono::steady_clock::now();
-      double sink = 0;
-      for (int i = 0; i < n; ++i) {
-        // A grid of points, as a LOD section's columns are: neighbours share their plates.
-        const std::int64_t x = (i % 200) * 1024LL - 100000, z = (i / 200 % 200) * 1024LL - 100000;
-        sink += mode == 0 ? layout.At(x, z).coast : layout.Sample(x, z).coast;
-      }
-      const double us =
-          std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start)
-              .count();
-      std::printf("%s: %.3f us each (%g)\n", mode == 0 ? "At" : "Sample", us / n, sink);
-    }
-    if (std::getenv("DWELL_BENCH_ONLY")) return 0;
-  }
   // LOD sections around (DWELL_BENCH_AT=x,z), default the origin: sections at a coast cost more
   // than in an interior. `coast` names the point where the land ends east of the origin.
   std::int64_t at_x = 0, at_z = 0;
   if (std::getenv("DWELL_BENCH_AT") && std::string_view(std::getenv("DWELL_BENCH_AT")) == "coast") {
-    while (gen.LandAt(static_cast<std::int32_t>(at_x), 0).coast > 0.0f) at_x += 1000;
+    while (gen.CoastAt(static_cast<std::int32_t>(at_x), 0) > 0.0f) at_x += 250;
     std::printf("LOD sections at the coast (%ld, 0)\n", static_cast<long>(at_x));
   } else if (const char* at = std::getenv("DWELL_BENCH_AT"))
     std::sscanf(at, "%ld,%ld", &at_x, &at_z);
@@ -255,95 +192,46 @@ int Bench(std::uint64_t seed) {
   return 0;
 }
 
-// Shares of the land by biome over a grid of `km`-spaced columns across the disc, per seed and the
-// range over the seeds (WORLD_GENERATION.md §3.9).
-int BiomeShares(std::uint64_t first, int seeds, int km) {
-  std::vector<std::array<double, worldgen::kBiomeCount>> shares;
+// The island over many seeds: its extent along 64 rays from the origin (the farthest land and the
+// nearest sea) and its land share within 40 km.
+int Stats(std::uint64_t first, int seeds, int step) {
   for (int k = 0; k < seeds; ++k) {
     const worldgen::TerrainGenerator gen(first + static_cast<std::uint64_t>(k));
-    std::array<long, worldgen::kBiomeCount> n{};
-    long land = 0;
-    std::vector<float> temperature, humidity;
-    for (int z = -core::kWorldRadius + km * 500; z < core::kWorldRadius; z += km * 1000)
-      for (int x = -core::kWorldRadius + km * 500; x < core::kWorldRadius; x += km * 1000) {
-        const worldgen::Column c = gen.ColumnAt(x, z);
-        if (c.outside || c.coast <= 0.0f) continue;
-        ++n[static_cast<std::size_t>(c.biome)];
-        ++land;
-        temperature.push_back(c.temperature);
-        humidity.push_back(c.humidity);
+    double near = 1e9, far = 0;
+    for (int a = 0; a < 64; ++a) {
+      const double angle = a * (2.0 * 3.14159265358979323846 / 64);
+      double first_sea = -1, last_land = 0;
+      for (int r = 0; r <= kDiscReach; r += step) {
+        const auto x = static_cast<std::int32_t>(std::lround(r * std::cos(angle)));
+        const auto z = static_cast<std::int32_t>(std::lround(r * std::sin(angle)));
+        if (gen.CoastAt(x, z) > 0.0f) {
+          last_land = r;
+        } else if (first_sea < 0) {
+          first_sea = r;
+        }
       }
-    std::array<double, worldgen::kBiomeCount> share{};
-    for (int b = 0; b < worldgen::kBiomeCount; ++b) {
-      share[static_cast<std::size_t>(b)] =
-          land ? 100.0 * static_cast<double>(n[static_cast<std::size_t>(b)]) /
-                     static_cast<double>(land)
-               : 0.0;
+      near = std::min(near, first_sea < 0 ? kDiscReach : first_sea);
+      far = std::max(far, last_land);
     }
-    shares.push_back(share);
-    if (seeds <= 2) {
-      std::sort(temperature.begin(), temperature.end());
-      std::sort(humidity.begin(), humidity.end());
-      const auto pct = [](const std::vector<float>& v, int p) {
-        return v[v.size() * static_cast<std::size_t>(p) / 100];
-      };
-      std::printf("temperature percentiles 5/25/50/75/95: %.2f %.2f %.2f %.2f %.2f\n",
-                  pct(temperature, 5), pct(temperature, 25), pct(temperature, 50),
-                  pct(temperature, 75), pct(temperature, 95));
-      std::printf("humidity    percentiles 5/25/50/75/95: %.2f %.2f %.2f %.2f %.2f\n",
-                  pct(humidity, 5), pct(humidity, 25), pct(humidity, 50), pct(humidity, 75),
-                  pct(humidity, 95));
-    }
+    long land = 0, total = 0;
+    for (int z = -kDiscReach; z < kDiscReach; z += step * 4)
+      for (int x = -kDiscReach; x < kDiscReach; x += step * 4) {
+        ++total;
+        land += gen.CoastAt(x, z) > 0.0f;
+      }
     const auto spawn = gen.SpawnPoint();
-    std::printf("seed %3llu: %ld land samples; spawn biome %s\n",
-                static_cast<unsigned long long>(first) + static_cast<unsigned long long>(k), land,
-                worldgen::BiomeName(gen.ColumnAt(static_cast<std::int32_t>(spawn[0]),
-                                                 static_cast<std::int32_t>(spawn[2]))
-                                        .biome));
-  }
-  std::printf("%-18s %7s %7s %7s   (share of land, %% over %d seeds)\n", "biome", "min", "mean",
-              "max", seeds);
-  for (int b = 0; b < worldgen::kBiomeCount; ++b) {
-    double lo = 1e9, hi = 0, sum = 0;
-    for (const auto& sh : shares) {
-      lo = std::min(lo, sh[static_cast<std::size_t>(b)]);
-      hi = std::max(hi, sh[static_cast<std::size_t>(b)]);
-      sum += sh[static_cast<std::size_t>(b)];
-    }
-    std::printf("%-18s %7.2f %7.2f %7.2f\n", worldgen::BiomeName(static_cast<worldgen::Biome>(b)),
-                lo, sum / static_cast<double>(shares.size()), hi);
-  }
-  return 0;
-}
-
-int Stats(std::uint64_t first, int seeds, int km) {
-  for (int k = 0; k < seeds; ++k) {
-    const worldgen::TerrainGenerator gen(first + static_cast<std::uint64_t>(k));
-    long land = 0, inside = 0, island = 0;
-    std::map<std::int32_t, long> area;
-    for (int z = -core::kWorldRadius + km * 500; z < core::kWorldRadius; z += km * 1000)
-      for (int x = -core::kWorldRadius + km * 500; x < core::kWorldRadius; x += km * 1000) {
-        if (!core::InsideWorldDisc(x, z)) continue;
-        ++inside;
-        const auto l = gen.LandAt(x, z);
-        if (l.coast <= 0.0f) continue;
-        ++land;
-        if (l.continent == worldgen::continents::kIslandId) ++island;
-        ++area[l.continent];
-      }
-    int continents = 0;
-    for (const auto& [id, n] : area) continents += id >= 0 && n > 0;
-    std::printf("seed %3llu: layout %2d continents, seen %2d, land %.1f%%, islands %.2f%%\n",
-                static_cast<unsigned long long>(first) + static_cast<unsigned long long>(k),
-                gen.Continents().ContinentCount(), continents, 100.0 * land / inside,
-                100.0 * island / inside);
+    std::printf(
+        "seed %3llu: sea from %5.1f km, land to %5.1f km, land %.1f%% within %d km; spawn %.1f %.1f "
+        "%.1f\n",
+        static_cast<unsigned long long>(first) + static_cast<unsigned long long>(k), near / 1000,
+        far / 1000, 100.0 * land / total, kDiscReach / 1000, spawn[0], spawn[1], spawn[2]);
   }
   return 0;
 }
 
 // Local map image: see the header comment.
 int WriteMap(const worldgen::TerrainGenerator& gen, const std::string& path, int cx, int cz, int n,
-             int m_per_px, const std::string& mode) {
+             int m_per_px) {
   std::vector<std::uint8_t> rgb(static_cast<std::size_t>(n) * n * 3, 0);
   std::vector<worldgen::Column> cols(static_cast<std::size_t>(n + 2) * (n + 2));
   const auto col_at = [&](int px, int py) -> worldgen::Column& {
@@ -357,28 +245,23 @@ int WriteMap(const worldgen::TerrainGenerator& gen, const std::string& path, int
   for (int py = 0; py < n; ++py)
     for (int px = 0; px < n; ++px) {
       const worldgen::Column& c = col_at(px, py);
-      const float h = mode == "valley" ? c.valley : c.height;
+      const float h = c.height;
       // Lit from the north-west: the slope towards it, per pixel.
       const float dx = col_at(px + 1, py).height - col_at(px - 1, py).height;
       const float dz = col_at(px, py + 1).height - col_at(px, py - 1).height;
       const float shade = std::clamp(
           0.75f + 0.5f * (-(dx + dz) / (2.0f * static_cast<float>(m_per_px)) * 3.0f), 0.35f, 1.15f);
       float r, g, b;
-      const bool wet = c.height < static_cast<float>(c.water);
+      const bool wet = c.height < static_cast<float>(core::kSeaLevel);
       ++total;
       if (wet) {
         ++water;
-        const float depth =
-            std::clamp((static_cast<float>(c.water) - c.height) / 20.0f, 0.0f, 1.0f);
+        const float depth = std::clamp(-c.height / 20.0f, 0.0f, 1.0f);
         r = 80 - 50 * depth, g = 190 - 90 * depth, b = 220 - 60 * depth;
-      } else if (mode == "biome") {
-        const auto& k = kBiomeColour[static_cast<int>(c.biome)];
-        r = k[0] * shade, g = k[1] * shade, b = k[2] * shade;
       } else {
-        const float t = std::clamp(h / 2500.0f, 0.0f, 1.0f);  // lowland green → rock → snow
-        r = (95 + 150 * t) * shade, g = (150 + 70 * t - 40 * t * t) * shade,
-        b = (70 + 150 * t) * shade;
-        if (mode == "valley" && c.wet > 0.0f) r *= 0.4f, g *= 0.8f, b = 255.0f * c.wet;
+        float k[3];
+        GroundColour(h, k);
+        r = k[0] * shade, g = k[1] * shade, b = k[2] * shade;
       }
       std::uint8_t* o = &rgb[(static_cast<std::size_t>(py) * n + px) * 3];
       o[0] = static_cast<std::uint8_t>(std::clamp(r, 0.0f, 255.0f));
@@ -410,12 +293,9 @@ class ViewSampler {
 
   struct Sample {
     float ground, water;  // metres; water 0 = sea level
-    float temperature;    // at the ground (lapse rate included)
-    worldgen::Biome biome;
-    bool lake;
   };
 
-  // The column grid at spacing 4 << level, bilinear in the ground, nearest for the rest.
+  // The column grid at spacing 4 << level, bilinear in the ground.
   Sample At(int level, float x, float z) {
     const int sp = 4 << level;
     const float fx = x / static_cast<float>(sp), fz = z / static_cast<float>(sp);
@@ -428,8 +308,7 @@ class ViewSampler {
     const worldgen::Column& d = Cell(level, ix + 1, iz + 1);
     const float ground = (a.height * (1 - tx) + b.height * tx) * (1 - tz) +
                          (c.height * (1 - tx) + d.height * tx) * tz;
-    const worldgen::Column& n = tx < 0.5f ? (tz < 0.5f ? a : c) : (tz < 0.5f ? b : d);
-    return {ground, static_cast<float>(n.water), n.temperature, n.biome, n.lake};
+    return {ground, static_cast<float>(core::kSeaLevel)};
   }
 
  private:
@@ -531,7 +410,8 @@ int WriteView(const worldgen::TerrainGenerator& gen, const std::string& path, do
             base[0] = 90 - 55 * depth, base[1] = 195 - 100 * depth, base[2] = 225 - 60 * depth;
             lit = 0.85f + 0.15f * ny;  // water: nearly flat
           } else {
-            const auto& k = kBiomeColour[static_cast<int>(s.biome)];
+            float k[3];
+            GroundColour(s.ground, k);
             const float rock = std::clamp((gx * gx + gz * gz - 0.5f) * 1.2f, 0.0f, 1.0f);  // steep
             for (int c = 0; c < 3; ++c) {
               const float stone = c == 0 ? 168.0f : c == 1 ? 150.0f : 142.0f;
@@ -573,13 +453,9 @@ int WriteView(const worldgen::TerrainGenerator& gen, const std::string& path, do
 int main(int argc, char** argv) {
   const std::uint64_t seed = argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 0;
   if (argc > 2 && std::string_view(argv[2]) == "bench") return Bench(seed);
-  if (argc > 2 && std::string_view(argv[2]) == "biomes") {
-    return BiomeShares(seed, argc > 3 ? std::max(1, std::atoi(argv[3])) : 8,
-                       argc > 4 ? std::max(1, std::atoi(argv[4])) : 64);
-  }
   if (argc > 2 && std::string_view(argv[2]) == "stats") {
     return Stats(seed, argc > 3 ? std::atoi(argv[3]) : 16,
-                 argc > 4 ? std::max(1, std::atoi(argv[4])) : 32);
+                 argc > 4 ? std::max(1, std::atoi(argv[4])) : 250);
   }
   if (argc > 8 && std::string_view(argv[2]) == "view") {
     const worldgen::TerrainGenerator gen(seed);
@@ -593,13 +469,12 @@ int main(int argc, char** argv) {
     const worldgen::TerrainGenerator gen(seed);
     return WriteMap(gen, argv[3], std::atoi(argv[4]), std::atoi(argv[5]),
                     argc > 6 ? std::max(16, std::atoi(argv[6])) : 512,
-                    argc > 7 ? std::max(1, std::atoi(argv[7])) : 8,
-                    argc > 8 ? argv[8] : "hillshade");
+                    argc > 7 ? std::max(1, std::atoi(argv[7])) : 8);
   }
   if (argc > 3 && std::string_view(argv[2]) == "disc") {
     const worldgen::TerrainGenerator gen(seed);
-    return WriteDisc(gen, argv[3], argc > 4 ? std::max(1, std::atoi(argv[4])) : 8,
-                     argc > 5 ? argv[5] : "continents");
+    return WriteDisc(gen, argv[3], argc > 4 ? std::max(1, std::atoi(argv[4])) : 100,
+                     argc > 5 ? argv[5] : "coast");
   }
   const int cx = argc > 2 ? std::atoi(argv[2]) : 0;
   const int cz = argc > 3 ? std::atoi(argv[3]) : 0;
@@ -607,7 +482,7 @@ int main(int argc, char** argv) {
   const worldgen::TerrainGenerator gen(seed);
 
   if (argc > 5 && std::string_view(argv[5]) == "slice") {
-    // Generated chunks, so the section includes surface materials, ores, and features.
+    // Generated chunks, so the section includes the surface materials.
     core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, seed));
     const auto base = gen.ColumnAt(cx, cz).height;
     const int top = static_cast<int>(base) + 40;
@@ -635,27 +510,9 @@ int main(int argc, char** argv) {
           case core::Materials::kSand:
             ch = '.';
             break;
-          case core::Materials::kSandstone:
-            ch = '=';
-            break;
-          case core::Materials::kGravel:
-            ch = ',';
-            break;
-          case core::Materials::kSnow:
-            ch = '*';
-            break;
-          case core::Materials::kLog:
-            ch = '|';
-            break;
-          case core::Materials::kLeaves:
-            ch = '%';
-            break;
-          case core::Materials::kBedrock:
-            ch = 'B';
-            break;
           default:
             ch = 'o';
-            break;  // ores
+            break;
         }
         std::putchar(ch);
       }
@@ -664,8 +521,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  // Map: biome letter, M for the upper slopes of ranges, blank beyond the rim.
-  std::map<worldgen::Biome, int> counts;
+  // Map: height bands (~ sea, . shore, then 0–9 for each 16 m above it), blank beyond the rim.
   float lo = 1e9f, hi = -1e9f;
   for (int row = -24; row < 24; ++row) {
     for (int col = -48; col < 48; ++col) {
@@ -674,23 +530,18 @@ int main(int argc, char** argv) {
         std::putchar(' ');
         continue;
       }
-      ++counts[c.biome];
       lo = std::min(lo, c.height);
       hi = std::max(hi, c.height);
-      char ch = kBiomeLetter[static_cast<int>(c.biome)];
-      if (c.height > 1500.0f) ch = 'M';
+      const char ch = c.height < 0.0f   ? '~'
+                      : c.height < 2.0f ? '.'
+                                        : static_cast<char>('0' + std::min(9, static_cast<int>(
+                                                                                 c.height / 16)));
       std::putchar(ch);
     }
     std::putchar('\n');
   }
-  std::printf(
-      "~ ocean  = deep ocean  * frozen ocean  b beach  c sea cliff  r riverbank  l lake shore\n"
-      "m meadow  f broadleaf  p blossom grove  a autumn woods  W conifer  s wetland  d savanna\n"
-      "t dunes  A tundra  X alpine meadow  S bare rock  ^ snowfield;\n"
-      "M > 1500 m  (blank: beyond the rim)\n");
+  std::printf("~ sea  . shore  0-9 height / 16 m  (blank: beyond the rim)\n");
   std::printf("height %.1f .. %.1f\n", lo, hi);
-  for (const auto& [b, n] : counts)
-    std::printf("%-10s %5.1f%%\n", worldgen::BiomeName(b), 100.0 * n / (48 * 96));
 
   // Timings: a 5×5 column of chunks from 4 below to 6 above the centre's surface.
   core::Chunk chunk;
@@ -713,8 +564,6 @@ int main(int argc, char** argv) {
   for (const auto& [m, n] : materials)
     std::printf("  %-10s %ld\n", core::GetMaterial(m).name.data(), n);
   const auto s = gen.SpawnPoint();
-  std::printf(
-      "spawn %.1f %.1f %.1f (%s)\n", s[0], s[1], s[2],
-      worldgen::BiomeName(gen.ColumnAt(static_cast<int>(s[0]), static_cast<int>(s[2])).biome));
+  std::printf("spawn %.1f %.1f %.1f\n", s[0], s[1], s[2]);
   return 0;
 }

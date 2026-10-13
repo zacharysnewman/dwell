@@ -84,7 +84,7 @@ describe('world index', () => {
     const store = memoryStore();
     const index = new WorldIndex(store);
     const a = index.create({ name: 'A', type: 'terrain', seed: 1 }, 1);
-    const b = index.create({ name: 'B', type: 'playground', seed: 2 }, 2);
+    const b = index.create({ name: 'B', type: 'flat', seed: 2 }, 2);
     index.remove(a.id);
     expect(new WorldIndex(store).list()).toEqual([b]);
   });
@@ -216,7 +216,7 @@ describe('world index', () => {
 
   it('maps generator versions to types', () => {
     expect(typeOfGenerator(GENERATORS.flat)).toBe('flat');
-    expect(typeOfGenerator(GENERATORS.playground)).toBe('playground');
+    expect(typeOfGenerator(1)).toBe('playground'); // retired: old worlds only
     expect(typeOfGenerator(GENERATORS.terrain)).toBe('terrain');
     expect(typeOfGenerator(2)).toBe('terrain');
   });

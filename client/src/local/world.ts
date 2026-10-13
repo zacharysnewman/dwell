@@ -1,7 +1,9 @@
-// Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|playground|flat` picks
+// Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|flat` picks
 // the generator (procedural terrain by default) and `?seed=N` the world seed.
 
-export const GENERATORS = { flat: 0, playground: 1, terrain: 8 } as const;
+export const GENERATORS = { flat: 0, terrain: 8 } as const;
+/** The retired movement playground (now a test structure, Phase 15): old worlds only. */
+export const RETIRED_PLAYGROUND = 1;
 
 export interface LocalWorld {
   worldSeed: number;

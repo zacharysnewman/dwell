@@ -114,10 +114,10 @@ bool ReferenceCast(const VoxelQuery& q, player::RVec3 origin, player::Vec3 dir, 
 }  // namespace
 
 TEST_SUITE("player: voxel query") {
-  TEST_CASE("a flooded shape counts as water for swimming, a dry one does not") {
+  TEST_CASE("a flooded block counts as water for swimming, a dry one does not") {
     PlayerTestWorld w;
-    const auto flooded = *ParseState("dwell:stone_slab[flooded=true,half=bottom]");
-    const auto dry = *ParseState("dwell:stone_slab[flooded=false,half=bottom]");
+    const auto flooded = Materials::kLadderFacingSouthFloodedTrue;
+    const auto dry = Materials::kLadderS;
     w.Set(0, 0, 0, flooded);
     w.Set(4, 0, 0, dry);
     w.Set(8, 0, 0, Materials::kWater);
@@ -131,7 +131,7 @@ TEST_SUITE("player: voxel query") {
   }
 
   TEST_CASE("axis-aligned rays from grid points answer like the box cast") {
-    // The ray caster itself, in world coordinates (and against slabs standing on the floor):
+    // The ray caster itself, in world coordinates:
     // nothing face-specific, so nothing for the mirrored frame to prove (--dwell-face=b).
     if (FaceB()) return;
     PlayerTestWorld w;
@@ -141,7 +141,7 @@ TEST_SUITE("player: voxel query") {
         for (int x = -4; x <= 4; ++x) {
           const unsigned r = rng() % 6;
           if (r == 0) w.Set(x, y, z, Materials::kStone);
-          if (r == 1) w.Set(x, y, z, Materials::kStoneSlab);
+          if (r == 1) w.Set(x, y, z, Materials::kDirt);
         }
       }
     }
@@ -198,7 +198,7 @@ TEST_SUITE("player: voxel query") {
     MESSAGE(compared << " rays");
   }
 
-  TEST_CASE("the exact-shape ray cast answers like the box cast on cubes and slabs") {
+  TEST_CASE("the exact-shape ray cast answers like the box cast on cubes") {
     if (FaceB()) return;  // as above
     PlayerTestWorld w;
     std::mt19937 rng(7);
@@ -207,7 +207,7 @@ TEST_SUITE("player: voxel query") {
         for (int x = -6; x <= 6; ++x) {
           const unsigned r = rng() % 8;
           if (r == 0) w.Set(x, y, z, Materials::kStone);
-          if (r == 1) w.Set(x, y, z, Materials::kStoneSlab);
+          if (r == 1) w.Set(x, y, z, Materials::kDirt);
           if (r == 2) w.Set(x, y, z, Materials::kGrass);
         }
       }

@@ -17,6 +17,6 @@ scope.onmessage = (e) => {
     scope.postMessage({ t: 'lod', id: msg.id, meshes }, sectionBuffers(meshes));
     return;
   }
-  const meshes = meshChunk(msg.voxels, msg.tint, msg.mirror);
+  const meshes = meshChunk(msg.voxels, msg.mirror);
   scope.postMessage({ t: 'mesh', id: msg.id, meshes }, meshBuffers(meshes));
 };

@@ -18,15 +18,10 @@
 #include "dwell/worldgen/noise.h"
 #include "dwell/worldgen/terrain.h"
 
-#include "biome_search.h"
-#include "water_search.h"
-
 using namespace dwell;
 using core::Chunk;
 using core::ChunkCoord;
 using core::MaterialId;
-using testing::FindBiome;
-using worldgen::Biome;
 using worldgen::TerrainGenerator;
 namespace M = core::Materials;
 
@@ -36,19 +31,24 @@ constexpr int S = core::kChunkSize;
 
 bool IsSolid(MaterialId m) { return m != M::kAir && m != M::kWater; }
 
-Chunk Generated(const TerrainGenerator& gen, ChunkCoord c,
-                std::uint8_t stages = TerrainGenerator::kAllStages) {
+Chunk Generated(const TerrainGenerator& gen, ChunkCoord c) {
   Chunk chunk;
-  gen.Generate(c, chunk, stages);
+  gen.Generate(c, chunk);
   return chunk;
 }
 
 // A chunk of the bifacial world (either face).
-Chunk GeneratedWorld(const worldgen::BifacialTerrain& gen, ChunkCoord c,
-                     std::uint8_t stages = TerrainGenerator::kAllStages) {
+Chunk GeneratedWorld(const worldgen::BifacialTerrain& gen, ChunkCoord c) {
   Chunk chunk;
-  gen.Generate(c, chunk, stages);
+  gen.Generate(c, chunk);
   return chunk;
+}
+
+// Where the island's coast crosses the +x axis (the first sea column, 16 m steps from the origin).
+std::pair<std::int32_t, std::int32_t> CoastOnAxis(const TerrainGenerator& gen) {
+  std::int32_t x = 0;
+  while (gen.ColumnAt(x, 0).height >= 0.0f) x += 16;
+  return {x, 0};
 }
 
 }  // namespace
@@ -131,45 +131,33 @@ TEST_SUITE("worldgen: noise") {
 }
 
 TEST_SUITE("worldgen: terrain") {
-  TEST_CASE("the tallest ranges reach super tall peaks, rarely, and stay inside the world") {
-    // Prototype relief (§6.1): massifs in the cores of the largest ranges rise to ~5.5 km.
-    for (const std::uint64_t seed : {0ull, 42ull}) {
-      CAPTURE(seed);
-      const TerrainGenerator gen(seed);
-      float highest = -1e9f;
-      std::int32_t peak_x = 0, peak_z = 0;
-      int land = 0, above_3km = 0;
-      constexpr std::int32_t kStep = 8192, kHalf = 2'000'000;
-      for (std::int32_t z = -kHalf; z <= kHalf; z += kStep)
-        for (std::int32_t x = -kHalf; x <= kHalf; x += kStep) {
-          const float h = gen.ColumnAt(x, z).height;
-          if (h > highest) {
-            highest = h;
-            peak_x = x;
-            peak_z = z;
-          }
-          if (h > 0) ++land;
-          if (h > 3000) ++above_3km;
-        }
-      MESSAGE("highest sampled column " << highest << " m at (" << peak_x << ", " << peak_z << "); "
-                                        << above_3km << " of " << land
-                                        << " land samples above 3 km");
-      CHECK(highest > 4500.0f);
-      CHECK(highest < static_cast<float>(core::kWorldMaxY - 400));
-      CHECK(above_3km < land / 50);  // super tall peaks are rare
-    }
+  TEST_CASE("heights: a low shore, land rising inland, a shallow sea floor") {
+    const TerrainGenerator gen(0);
+    const auto [cx, cz] = CoastOnAxis(gen);
+    float highest = -1e9f, lowest = 1e9f;
+    for (std::int32_t z = -30'000; z <= 30'000; z += 500)
+      for (std::int32_t x = -30'000; x <= 30'000; x += 500) {
+        const float h = gen.ColumnAt(x, z).height;
+        highest = std::max(highest, h);
+        lowest = std::min(lowest, h);
+      }
+    MESSAGE("heights " << lowest << " .. " << highest << " m; coast at x = " << cx);
+    CHECK(highest > 60.0f);
+    CHECK(highest < 200.0f);
+    CHECK(lowest > -30.0f);
+    CHECK(std::abs(gen.ColumnAt(cx, cz).height) < 6.0f);  // the shore is low
   }
 
   TEST_CASE("a chunk is a pure function of seed and coordinate") {
     const TerrainGenerator a(123), b(123), c(124);
-    const ChunkCoord coord{1, 0, -1};  // at the surface (sea level is y = 0)
+    const ChunkCoord coord{1, 2, -1};  // at the surface near the origin (~75 m up)
     CHECK(Generated(a, coord).voxels() == Generated(b, coord).voxels());
     CHECK(Generated(a, coord).voxels() != Generated(c, coord).voxels());
     CHECK(Generated(a, coord).revision() == 0);
     // Order of generation within a world does not matter.
     core::VoxelWorld w1(core::GeneratorFor(core::kGeneratorTerrain, 123));
     core::VoxelWorld w2(core::GeneratorFor(core::kGeneratorTerrain, 123));
-    const ChunkCoord n{2, 0, -1};
+    const ChunkCoord n{2, 2, -1};
     w1.GetOrCreate(coord);
     w1.GetOrCreate(n);
     w2.GetOrCreate(n);
@@ -180,14 +168,14 @@ TEST_SUITE("worldgen: terrain") {
 
   TEST_CASE("point queries agree with the chunk path voxel for voxel") {
     const TerrainGenerator gen(0);
-    const auto mountain = testing::FindMountain(gen);
-    REQUIRE(mountain);
-    std::vector<ChunkCoord> coords = {{0, 0, 0}, {0, -1, 0}, {-1, -3, 3}};
-    const auto m = *mountain;
-    const auto h = static_cast<int>(gen.ColumnAt(m.first, m.second).height);
-    coords.push_back(core::ChunkOf(m.first, h, m.second));
+    const auto [cx, cz] = CoastOnAxis(gen);
+    std::vector<ChunkCoord> coords = {{0, 0, 0}, {0, 2, 0}, {-1, -3, 3}};
+    for (const auto& [x, z] :
+         {std::pair{cx, cz}, std::pair{cx + 600, cz}, std::pair{-9000, 4000}}) {
+      coords.push_back(core::ChunkOf(x, static_cast<int>(gen.ColumnAt(x, z).height), z));
+    }
     for (const ChunkCoord& c : coords) {
-      const Chunk chunk = Generated(gen, c, 0);  // terrain stages only
+      const Chunk chunk = Generated(gen, c);
       int solid = 0, checked = 0;
       for (int z = 0; z < S; z += 3)
         for (int y = 0; y < S; y += 2)
@@ -226,7 +214,7 @@ TEST_SUITE("worldgen: terrain") {
     REQUIRE(core::ChunkDiscOverlap(column.x, column.z) == core::DiscOverlap::kPartial);
     const int bottom = core::kMidplaneY / S;
     int inside = 0, outside = 0;
-    for (const int cy : {bottom, 0}) {
+    for (const int cy : {bottom, -1}) {
       const Chunk chunk = Generated(gen, {column.x, cy, column.z});
       for (int z = 0; z < S; ++z)
         for (int x = 0; x < S; ++x) {
@@ -268,8 +256,9 @@ TEST_SUITE("worldgen: terrain") {
       const auto air = core::AirTestFor(core::kGeneratorTerrain, seed);
       int sky = 0, checked = 0;
       for (const auto& [cx, cz] :
-           {std::pair{0, 0}, {5, -3}, {-14, -36}, {40, -12}, {249990, 10}, {-3, 249000}}) {
-        const int surface = static_cast<int>(gen.ColumnAt(cx * S, cz * S).height) / S;
+           {std::pair{0, 0}, {5, -3}, {-14, -36}, {700, -12}, {249990, 10}, {-3, 249000}}) {
+        const int surface =
+            worldgen::FloorDiv(static_cast<int>(gen.ColumnAt(cx * S, cz * S).height), S);
         for (int cy = surface - 2; cy <= surface + 6; ++cy) {
           const ChunkCoord c{cx, cy, cz};
           CAPTURE(c.x);
@@ -286,206 +275,66 @@ TEST_SUITE("worldgen: terrain") {
       }
       CHECK(sky > checked / 4);
     }
-    // Flat and playground worlds: the same guarantee.
-    for (const std::uint32_t version : {core::kGeneratorFlat, core::kGeneratorPlayground}) {
-      const auto generate = core::GeneratorFor(version);
-      const auto air = core::AirTestFor(version);
-      for (int cy = -3; cy <= 2; ++cy)
-        for (int cx = -2; cx <= 1; ++cx) {
-          const ChunkCoord c{cx, cy, 0};
-          if (!air(c)) continue;
-          Chunk chunk;
-          generate(c, chunk);
-          for (const MaterialId v : chunk.voxels()) REQUIRE(v == M::kAir);
-        }
-      CHECK(air({0, 1, 0}));
-      CHECK_FALSE(air({0, -1, 0}));
-    }
+    // The flat world: the same guarantee.
+    const auto generate = core::GeneratorFor(core::kGeneratorFlat);
+    const auto air = core::AirTestFor(core::kGeneratorFlat);
+    for (int cy = -3; cy <= 2; ++cy)
+      for (int cx = -2; cx <= 1; ++cx) {
+        const ChunkCoord c{cx, cy, 0};
+        if (!air(c)) continue;
+        Chunk chunk;
+        generate(c, chunk);
+        for (const MaterialId v : chunk.voxels()) REQUIRE(v == M::kAir);
+      }
+    CHECK(air({0, 1, 0}));
+    CHECK_FALSE(air({0, -1, 0}));
   }
 
-  TEST_CASE("water only below its column's surface level; small floating pieces are removed") {
+  TEST_CASE(
+      "the fill: grass over dirt inland, sand at the shore and under water, sea to its level") {
     const TerrainGenerator gen(0);
-    const auto ocean = FindBiome(gen, Biome::kOcean);
-    const auto mountain = testing::FindMountain(gen);
-    REQUIRE(ocean);
-    REQUIRE(mountain);
-    int water = 0;
-    for (const auto& [px, pz] : {*ocean, *mountain}) {
-      const int h = static_cast<int>(gen.ColumnAt(px, pz).height);
-      for (int dy = -1; dy <= 1; ++dy) {
-        const ChunkCoord c = core::ChunkOf(px, h + dy * S, pz);
-        const Chunk chunk = Generated(gen, c, TerrainGenerator::kStageStability);
+    const auto [cx, cz] = CoastOnAxis(gen);
+    int water = 0, grass = 0, sand = 0;
+    // Across the coast, from 200 m inland to 200 m out to sea.
+    for (std::int32_t x = cx - 200; x <= cx + 200; x += 40) {
+      const int h = static_cast<int>(gen.ColumnAt(x, cz).height);
+      for (const int cy :
+           {worldgen::FloorDiv(h, S) - 1, worldgen::FloorDiv(h, S), worldgen::FloorDiv(h, S) + 1}) {
+        const ChunkCoord c = core::ChunkOf(x, cy * S, cz);
+        const Chunk chunk = Generated(gen, c);
         for (int z = 0; z < S; ++z)
-          for (int y = 0; y < S; ++y)
-            for (int x = 0; x < S; ++x)
-              if (chunk.Get(x, y, z) == M::kWater) {
-                ++water;
-                // Sea level, or the surface of the river or lake in the column (Phase 11a).
-                CHECK(c.y * S + y < gen.ColumnAt(c.x * S + x, c.z * S + z).water);
-              }
-        // Every solid component touches a chunk face or has at least 48 voxels.
-        std::vector<std::uint8_t> seen(core::kChunkVolume, 0);
-        for (int start = 0; start < core::kChunkVolume; ++start) {
-          if (seen[start] || !IsSolid(chunk.voxels()[start])) continue;
-          std::vector<int> stack{start};
-          seen[start] = 1;
-          int size = 0;
-          bool face = false;
-          while (!stack.empty()) {
-            const int i = stack.back();
-            stack.pop_back();
-            ++size;
-            const int x = i & 31, y = (i >> 5) & 31, z = i >> 10;
-            face |= x == 0 || y == 0 || z == 0 || x == S - 1 || y == S - 1 || z == S - 1;
-            for (const int d : {1, -1, S, -S, S * S, -S * S}) {
-              const int j = i + d;
-              const int jx = j & 31, jy = (j >> 5) & 31, jz = j >> 10;
-              if (j < 0 || j >= core::kChunkVolume ||
-                  std::abs(jx - x) + std::abs(jy - y) + std::abs(jz - z) != 1) {
-                continue;
-              }
-              if (!seen[j] && IsSolid(chunk.voxels()[j])) {
-                seen[j] = 1;
-                stack.push_back(j);
+          for (int lx = 0; lx < S; ++lx) {
+            const auto ground = gen.GroundY(c.x * S + lx, c.z * S + z);
+            REQUIRE(ground);
+            for (int y = 0; y < S; ++y) {
+              const int wy = c.y * S + y;
+              const MaterialId m = chunk.Get(lx, y, z);
+              const int depth = *ground - wy;
+              if (depth < 0) {
+                // Above the ground: water below sea level, air above it.
+                CHECK(m == (wy < core::kSeaLevel ? M::kWater : M::kAir));
+                water += m == M::kWater;
+              } else if (*ground < core::kSeaLevel + 2) {
+                CHECK(m == (depth < 3 ? M::kSand : M::kStone));  // the shore and the sea floor
+                sand += m == M::kSand;
+              } else {
+                CHECK(m == (depth == 0 ? M::kGrass : depth <= 3 ? M::kDirt : M::kStone));
+                grass += m == M::kGrass;
               }
             }
           }
-          CHECK((face || size >= 48));
-        }
       }
     }
-    CHECK(water > 200);  // the ocean chunks hold sea
-  }
-
-  // The material a voxel is made of: a slope or slab state reads as its plain block.
-  MaterialId SurfaceMaterialOf(MaterialId m) {
-    const std::string name(core::StateString(m));
-    for (const char* suffix : {"_slope[", "_slab["}) {
-      if (const auto at = name.find(suffix); at != std::string::npos) {
-        return *core::ParseState(name.substr(0, at));
-      }
-    }
-    return m;
-  }
-
-  TEST_CASE("the biomes all occur, with surface materials to match") {
-    const TerrainGenerator gen(0);
-    // The sea, the coast and every climate biome of the table (biomes.h). Rivers' and lakes'
-    // banks are found by the water tests (rivers_test.cpp).
-    const std::vector<Biome> biomes = {
-        Biome::kOcean,   Biome::kDeepOcean,    Biome::kBeach,        Biome::kSeaCliff,
-        Biome::kMeadow,  Biome::kBroadleaf,    Biome::kBlossomGrove, Biome::kAutumnWoods,
-        Biome::kConifer, Biome::kWetland,      Biome::kSavanna,      Biome::kDunes,
-        Biome::kTundra,  Biome::kAlpineMeadow, Biome::kBareRock,     Biome::kSnowfield};
-    for (const Biome b : biomes) {
-      CAPTURE(worldgen::BiomeName(b));
-      CHECK(FindBiome(gen, b).has_value());
-    }
-    // The top of the ground of a biome is the first layer of its row in the table (a slope or
-    // slab of it where the surface is shaped).
-    core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, 0));
-    const auto top = [&](Biome b) {
-      const auto p = FindBiome(gen, b);
-      REQUIRE(p);
-      const MaterialId expected = worldgen::BiomeOf(b).layers[0].material;
-      int found = 0;
-      // A 128 × 128 m patch around the site, in rows (a region's border or cliffs may take a few).
-      for (int d = 0; d < 128 * 128 && found < 5; ++d) {
-        const int x = p->first + d % 128 - 32, z = p->second + d / 128 - 32;
-        const auto column = gen.ColumnAt(x, z);
-        if (column.biome != b || column.wet > 0.0f) continue;  // rivers and lakes have beds
-        if (const auto g = gen.GroundY(x, z)) {
-          // The topmost solid cell of the column near the ground: the surface, or a slope or slab
-          // of it standing on the ground's top voxel.
-          MaterialId m = M::kAir;
-          for (int y = *g + 2; y >= *g - 2; --y) {  // the slope stage can lower the surface a cell
-            const MaterialId here = world.GetVoxel(x, y, z);
-            if (here != M::kAir && here != M::kWater) {
-              m = here;
-              break;
-            }
-          }
-          if (m == M::kLog || m == M::kLeaves || SurfaceMaterialOf(m) == M::kStone)
-            continue;  // trees, boulders, cliffs (stone slopes too)
-          // The ground's top cell is the material or a slope or slab of it.
-          CHECK(SurfaceMaterialOf(m) == expected);
-          ++found;
-        }
-      }
-      CAPTURE(worldgen::BiomeName(b));
-      CHECK(found > 0);
-    };
-    for (const Biome b :
-         {Biome::kMeadow, Biome::kBroadleaf, Biome::kBlossomGrove, Biome::kAutumnWoods,
-          Biome::kConifer, Biome::kWetland, Biome::kSavanna, Biome::kDunes, Biome::kTundra,
-          Biome::kAlpineMeadow, Biome::kSnowfield, Biome::kBeach}) {
-      top(b);
-    }
-  }
-
-  TEST_CASE("trees stand on the ground, and cross chunk borders intact") {
-    const TerrainGenerator gen(0);
-    const auto forest = FindBiome(gen, Biome::kBroadleaf);
-    REQUIRE(forest);
-    core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, 0));
-    const int cx0 = worldgen::FloorDiv(forest->first, TerrainGenerator::kTreeCell);
-    const int cz0 = worldgen::FloorDiv(forest->second, TerrainGenerator::kTreeCell);
-    int trees = 0, crossing = 0;
-    for (int cz = cz0 - 15; cz <= cz0 + 15; ++cz)
-      for (int cx = cx0 - 15; cx <= cx0 + 15; ++cx) {
-        const auto t = gen.TreeInCell(cx, cz);
-        if (!t) continue;
-        // A boulder on the trunk's spot wins it (boulders are placed first; logs only replace air,
-        // leaves and shaped cells).
-        bool under_boulder = false;
-        for (int bz = worldgen::FloorDiv(t->z - 3, TerrainGenerator::kBoulderCell);
-             bz <= worldgen::FloorDiv(t->z + 3, TerrainGenerator::kBoulderCell); ++bz)
-          for (int bx = worldgen::FloorDiv(t->x - 3, TerrainGenerator::kBoulderCell);
-               bx <= worldgen::FloorDiv(t->x + 3, TerrainGenerator::kBoulderCell); ++bx)
-            if (const auto b = gen.BoulderInCell(bx, bz)) {
-              under_boulder |=
-                  std::abs(b->x - t->x) <= b->size + 1 && std::abs(b->z - t->z) <= b->size + 1;
-            }
-        if (under_boulder) continue;
-        ++trees;
-        CHECK(IsSolid(world.GetVoxel(t->x, t->y - 1, t->z)));
-        for (int y = t->y; y < t->y + t->size; ++y) CHECK(world.GetVoxel(t->x, y, t->z) == M::kLog);
-        // Leaves around the upper trunk (oak crowns, spruce cones), including in the neighbouring
-        // chunk.
-        const int top = t->y + t->size - 1;
-        int leaves = 0;
-        for (int y = top - 2; y <= top; ++y)
-          for (int dz = -1; dz <= 1; ++dz)
-            for (int dx = -1; dx <= 1; ++dx)
-              leaves += world.GetVoxel(t->x + dx, y, t->z + dz) == M::kLeaves;
-        CHECK(leaves >= 8);
-        const int lx = worldgen::FloorMod(t->x, S);
-        if (lx == 0 || lx == S - 1) ++crossing;
-      }
-    CHECK(trees > 20);
-    CHECK(crossing > 0);  // their leaves (checked above) reach into the next chunk
-    MESSAGE(trees << " trees, " << crossing << " on a chunk border");
-  }
-
-  TEST_CASE("ores are embedded in stone within their depth ranges") {
-    const TerrainGenerator gen(0);
-    int ores = 0;
-    for (int cy = -3; cy <= 1; ++cy) {
-      const Chunk chunk = Generated(gen, {3, cy, -2});
-      for (int i = 0; i < core::kChunkVolume; ++i) {
-        const MaterialId m = chunk.voxels()[i];
-        const int y = cy * S + ((i >> 5) & 31);
-        if (m == M::kCoalOre) CHECK(y <= 138);
-        if (m == M::kIronOre) CHECK(y <= 9);
-        if (m == M::kGoldOre) CHECK(y <= -47);
-        ores += m == M::kCoalOre || m == M::kIronOre || m == M::kGoldOre;
-      }
-    }
-    CHECK(ores > 100);
+    CHECK(water > 1000);
+    CHECK(grass > 100);
+    CHECK(sand > 100);
   }
 
   TEST_CASE("players spawn on level open ground near the origin") {
-    for (const std::uint64_t seed : {0ull, 1ull, 42ull}) {
+    // Level for 4 columns around the point: the server spreads up to eight players 1.5 m
+    // either side of it, and each can place a block within reach without meeting a step (a block
+    // placed beside a step can land inside its player, which the server refuses).
+    for (std::uint64_t seed = 0; seed < 16; ++seed) {
       CAPTURE(seed);
       const auto s = core::SpawnPointFor(core::kGeneratorTerrain, seed);
       core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, seed));
@@ -494,20 +343,21 @@ TEST_SUITE("worldgen: terrain") {
       CHECK(std::abs(x) < 512);
       CHECK(std::abs(z) < 512);
       CHECK(y > core::kSeaLevel);
-      for (int dz = -2; dz <= 2; ++dz)
-        for (int dx = -2; dx <= 2; ++dx) {
+      const int r = 4;  // 1.5 m of spread + reach to the block ahead, rounded up
+      for (int dz = -r; dz <= r; ++dz)
+        for (int dx = -r; dx <= r; ++dx) {
           CHECK(IsSolid(world.GetVoxel(x + dx, y - 1, z + dz)));
           CHECK(world.GetVoxel(x + dx, y, z + dz) == M::kAir);
           CHECK(world.GetVoxel(x + dx, y + 1, z + dz) == M::kAir);
         }
     }
-    // Other generators keep the flat spawn.
-    CHECK(core::SpawnPointFor(core::kGeneratorPlayground, 9)[1] == 0.0f);
+    // The flat world keeps the flat spawn.
+    CHECK(core::SpawnPointFor(core::kGeneratorFlat, 9)[1] == 0.0f);
   }
 }
 
 TEST_SUITE("worldgen: golden") {
-  // Chunks across the pipeline: surface, caves, bedrock, sky, ocean, mountain. The same hashes
+  // Chunks across the pipeline: surface, rock, the face's floor, sky, sea, coast. The same hashes
   // must come out natively and under WASM (CI runs this suite in both); any change to the
   // generator's output needs a new generator version (ARCHITECTURE.md §6.3).
   TEST_CASE("generated chunks match the golden hashes") {
@@ -515,78 +365,51 @@ TEST_SUITE("worldgen: golden") {
       std::uint64_t seed;
       ChunkCoord c;
     };
-    // Surface, caves, deep rock, bedrock, sky and the top of the world, ocean, mountains; the
-    // rim of the disc; terrain ~8,000 km out (its surface chunk found from the column); and a
-    // super tall massif.
+    // Surface, deep rock, the face's floor, sky and the top of the world, the coast, the sea; the
+    // rim of the disc; the sea ~8,000 km out (its floor's chunk found from the column).
     constexpr int kSurface = 1 << 20;  // y placeholder: the chunk holding the column's surface
     constexpr int kSurfaceB = kSurface + 1;  // … of face B's terrain (a mirrored chunk row)
     std::vector<Case> cases = {
+        {0, {0, kSurface, 0}},
         {0, {0, 0, 0}},
         {0, {0, -1, 0}},
-        {0, {0, -3, 0}},
         {0, {0, -6, 0}},
-        {0, {0, -40, 0}},
         {0, {0, -64, 0}},
         {0, {0, 6, 0}},
         {0, {0, 191, 0}},
-        {0, {-14, 3, -36}},
-        {0, {-14, 2, -36}},
-        {0, {40, -1, -12}},
-        {0, {-7, -1, 19}},
-        {20260925, {0, 0, 0}},
+        {0, {-14, kSurface, -36}},
+        {0, {40, kSurface, -12}},
+        {20260925, {0, kSurface, 0}},
         {20260925, {5, -1, -3}},
-        {20260925, {-2, -2, 9}},
+        {20260925, {-300, kSurface, 450}},
         {0, {181019, -64, 181019}},
         {0, {249990, kSurface, 10}},
         {20260925, {-3, kSurface, 249000}},
-        {0, {-249990, kSurface, -5}},
-        {0, {3036, kSurface, 36828}},  // a massif's slopes, ~5.4 km up
+        {0, {1500, kSurface, 0}},  // the open sea, ~48 km out
+        {0, {1500, -1, 0}},
         // Face B (BIFACIAL_WORLD.md §5): the chunk rows either side of the midplane (no bedrock),
-        // flipped caves and rock, the mirror image of face A's sea and sky, and surfaces of face
-        // B's own terrain, including shaped (flipped) slabs and slopes.
+        // flipped rock, the mirror image of face A's sky, and surfaces of face B's own island.
         {0, {0, -65, 0}},
         {0, {0, -66, 0}},
-        {0, {0, -100, 0}},
         {0, {0, -129, 0}},
-        {0, {0, -130, 0}},
         {0, {0, -191, 0}},
         {0, {0, -320, 0}},
-        {20260925, {-2, -66, 9}},
         {0, {0, kSurfaceB, 0}},
         {0, {-14, kSurfaceB, -36}},
         {20260925, {5, kSurfaceB, -3}},
         {0, {181019, -65, 181019}},
         {0, {249990, kSurfaceB, 10}},
     };
-    // The plate layout (Phase 10): a coast, the middle of an ocean gap between two continents (its
-    // seabed and the open water over it), an island, another continent's interior and the abyss.
+    // The coast of each face's island where it crosses the +x axis, and just inland and offshore.
     for (const std::uint64_t seed : {std::uint64_t{0}, std::uint64_t{20260925}}) {
-      const auto lm = testing::FindLandmarks(TerrainGenerator(seed));
-      REQUIRE(lm.found);
-      const auto col = [&](std::pair<std::int32_t, std::int32_t> p, int y) {
-        return Case{seed, {worldgen::FloorDiv(p.first, S), y, worldgen::FloorDiv(p.second, S)}};
-      };
-      cases.push_back(col(lm.coast, kSurface));
-      cases.push_back(col(lm.gap, kSurface));
-      cases.push_back(col(lm.gap, -2));
-      cases.push_back(col(lm.island, kSurface));
-      cases.push_back(col(lm.interior, kSurface));
-      cases.push_back(col(lm.abyss, kSurface));
-      // Water above sea level (Phase 11a): a lake, a stream, a river, a great river and a
-      // waterfall.
-      const auto wl = testing::FindWaterLandmarks(TerrainGenerator(seed));
-      REQUIRE(wl.found);
-      for (const testing::Point& p : {wl.lake, wl.stream, wl.river, wl.great, wl.waterfall}) {
-        cases.push_back(col({p.x, p.z}, kSurface));
-      }
-      // Climate and vegetation (Phase 11c): an alpine meadow, bare rock and a snowfield, a wetland
-      // (with its ponds), a blossom grove and autumn woods (the accent trees), a conifer forest.
-      for (const Biome b :
-           {Biome::kAlpineMeadow, Biome::kBareRock, Biome::kSnowfield, Biome::kWetland,
-            Biome::kBlossomGrove, Biome::kAutumnWoods, Biome::kConifer}) {
-        const auto at = FindBiome(TerrainGenerator(seed), b);
-        REQUIRE(at);
-        cases.push_back(col(*at, kSurface));
+      for (const core::Face face : {core::Face::kA, core::Face::kB}) {
+        const auto [x, z] = CoastOnAxis(worldgen::BifacialTerrain(seed).Local(face));
+        for (const std::int32_t dx : {-96, 0, 96}) {
+          cases.push_back(
+              {seed,
+               {worldgen::FloorDiv(x + dx, S), face == core::Face::kA ? kSurface : kSurfaceB,
+                worldgen::FloorDiv(z, S)}});
+        }
       }
     }
     std::vector<std::string> actual;
@@ -608,7 +431,7 @@ TEST_SUITE("worldgen: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 11\n";
+      out << "# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 12\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden hashes written to " << path);

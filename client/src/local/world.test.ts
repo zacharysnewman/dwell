@@ -7,10 +7,12 @@ describe('local world options', () => {
   });
 
   it('reads ?world= and ?seed=', () => {
-    expect(parseLocalWorld('?world=playground&seed=42')).toEqual({
+    expect(parseLocalWorld('?world=flat&seed=42')).toEqual({
       worldSeed: 42,
-      generatorVersion: GENERATORS.playground,
+      generatorVersion: GENERATORS.flat,
     });
+    // The movement playground was retired (Phase 15): terrain instead.
+    expect(parseLocalWorld('?world=playground').generatorVersion).toBe(GENERATORS.terrain);
     expect(parseLocalWorld('?world=flat').generatorVersion).toBe(GENERATORS.flat);
   });
 

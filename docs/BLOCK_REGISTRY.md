@@ -56,7 +56,10 @@ blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generate
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,
 `dwell:stone_slope[facing,flooded,half,shape]` (9 shapes × 4 facings × 2 halves × 2 flooded = 144
 states) — each linked to its base material (textures, density, drops). This avoids meaningless
-property combinations (a full cube has no facing) while keeping one material identity.
+property combinations (a full cube has no facing) while keeping one material identity. **Since
+Phase 15** no material opts in (`shapeFamilies` is empty: the baseline's blocks are air, stone,
+dirt, grass, sand, water and ladders); the mechanism stays for future crafted blocks, and the
+examples here name the families as they were.
 
 ## 3. Runtime ids and the registry
 
@@ -115,11 +118,9 @@ so a failure says which changed.
 ## 5. What uses it
 
 - **Ladders** become `dwell:ladder[facing,flooded]` (one block, 8 states).
-- **Slopes and slabs** (Phase 9): the shaped families above; **flooded** = water in a shaped
-  block's open part (Minecraft's `waterlogged`): the mesher draws water there, the controller's swim
-  layer treats it as water, and the generator may place flooded slopes on lake and sea floors. This
-  resolves the "slopes under water" question.
-- **Vegetation variants** (Phase 11c) are new blocks in the data files.
+- **Slopes and slabs** (Phase 9; removed in Phase 15): the shaped families above; **flooded** =
+  water in a block's open part (Minecraft's `waterlogged`): the mesher draws water there, the
+  controller's swim layer treats it as water. Ladders keep the property.
 - **Placement and editing:** the creative palette lists blocks; placement chooses property values
   (facing from the player, `half` from the hit face); `VoxelModification` carries runtime ids as
   now. Commands and tools can name blocks by string (`/fill … dwell:stone_slab[half=top]`), parsed

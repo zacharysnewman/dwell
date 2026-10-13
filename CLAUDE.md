@@ -17,8 +17,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   rivers/mountains/biomes, sky islands; largely superseded by the baseline rework (Phase 12 cancelled).
 - `docs/BLOCK_REGISTRY.md` — design for Phase 8: namespaced block states, the registry, string
   palettes in world files.
-- `docs/SLOPE_BLOCKS.md` — design for Phase 9: slope block shapes, collision, building, terrain
-  shaping and LOD (becomes an architecture sub-spec as the phase lands).
+- `docs/SLOPE_BLOCKS.md` — Phase 9's shape mechanism (shapes, collision, meshing), trimmed in Phase 15
+  (the placed slope and slab families, terrain slope shaping and LOD slopes were cut).
 - `docs/ADAPTIVE_BLOCKS.md` — design for Phase 18 (formerly 9e): natural blocks shaped from their neighbours by
   five rules (replaces placed slopes and terrain slope shaping for natural materials).
 - `docs/BASELINE_EVALUATION.md` — the owner's simplified baseline (2026-10-12) compared with what
@@ -188,7 +188,7 @@ Check these before chasing an e2e failure; they are red on `main` too:
   prediction snap (`snaps: 1`, `lastCorrection` ~2.1 m) and passed on other runs of the same code and
   4 of 4 locally. Treat as an intermittent timing failure on loaded runners; if it fails twice in a row
   on one commit, it is real.
-- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (14); update it when the palette
+- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (5); update it when the palette
   changes.
 
 ## Building without sqlite.org

@@ -41,7 +41,6 @@ const familyBlock = (base, kind, extra = {}) => {
     density: base.density,
     color: base.color,
     textures: base.textures,
-    tint: base.tint,
     look: 'shaped',
     shape: 'shaped',
     slopeFamily: kind,
@@ -102,7 +101,8 @@ for (const ns of namespaces) {
         return { name, values };
       });
     if (!(def.shape in SHAPES)) fail(`${id}: shape ${def.shape}`);
-    if (def.tint !== undefined && !['grass', 'foliage'].includes(def.tint)) fail(`${id}: tint ${def.tint}`);
+    if (def.tint !== undefined) fail(`${id}: tint is no longer supported (biome tints were removed)`);
+    if (def.launchSpeed !== undefined) fail(`${id}: launchSpeed is no longer supported`);
     const look = def.look ?? 'cube';
     if (!LOOKS.includes(look)) fail(`${id}: look ${look}`);
     if (def.facingProperty) {
@@ -153,35 +153,6 @@ for (const st of states) {
   else st.shapeIndex = shapeIndexOf((d.slopeFamily === 'slope' ? slopeShape : slabShape)(st.values));
 }
 if (shapeTable.length > 0xffff) fail('too many shapes');
-
-// The slope pieces terrain and the LOD pick for four corner heights (halves of a cell, NW NE SE SW):
-// a pattern with a piece of its own keeps it, any other maps to the nearest by total distance, the
-// higher on a tie, then the lower index. Pattern index = nw + 3·ne + 9·se + 27·sw. Both languages
-// read this table (SLOPE_BLOCKS.md §5), so terrain and LOD agree.
-const pieceAllowed = new Set([0, 1 + 3 + 9 + 27, 2 + 6 + 18 + 54]);
-for (const shape of Object.keys(SLOPE_SHAPES)) {
-  for (const facing of SHAPE_FACINGS) {
-    const c = slopeShape({ facing, half: 'bottom', shape }).corners;
-    pieceAllowed.add(c[0] + 3 * c[1] + 9 * c[2] + 27 * c[3]);
-  }
-}
-const patternCorners = (p) => [p % 3, Math.floor(p / 3) % 3, Math.floor(p / 9) % 3, Math.floor(p / 27) % 3];
-const pieceNearest = Array.from({ length: 81 }, (_, p) => {
-  const a = patternCorners(p);
-  let best = -1;
-  let bestKey = null;
-  for (const q of [...pieceAllowed].sort((x, y) => x - y)) {
-    const b = patternCorners(q);
-    const distance = a.reduce((n, v, i) => n + Math.abs(v - b[i]), 0);
-    const height = b.reduce((n, v) => n + v, 0);
-    // Smaller distance first, then taller; ties keep the lower index (iterated ascending).
-    if (best < 0 || distance < bestKey[0] || (distance === bestKey[0] && height > bestKey[1])) {
-      best = q;
-      bestKey = [distance, height];
-    }
-  }
-  return best;
-});
 
 // Palette (creative inventory) membership: a block's `palette` lists partial property assignments;
 // `placeable` alone means the default state.
@@ -309,9 +280,6 @@ cpp.push(`inline constexpr std::array<ShapeInfo, ${shapeRows.length}> kShapes{{`
 cpp.push(...shapeRows);
 cpp.push('}};');
 cpp.push('');
-cpp.push('// Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves): see shared/blocks/gen.mjs.');
-cpp.push(`inline constexpr std::array<std::uint8_t, 81> kPieceNearest{{${pieceNearest.join(', ')}}};`);
-cpp.push('');
 cpp.push('inline constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{');
 states.forEach((s, i) => {
   const d = s.block.def;
@@ -328,7 +296,6 @@ states.forEach((s, i) => {
     `.facing = ${facing}`,
     `.climb_speed_scale = ${num(d.climbSpeedScale ?? 1)}`,
     `.liquid = ${!!d.liquid}`,
-    `.launch_speed = ${num(d.launchSpeed ?? 0)}`,
     `.placeable = ${!!s.placeable}`,
     `.block = ${blocks.indexOf(s.block)}`,
   ];
@@ -379,8 +346,6 @@ ts.push('  look: MaterialLook;');
 ts.push('  color: number;');
 ts.push('  opacity: number;');
 ts.push('  textures?: MaterialTextures;');
-ts.push('  /** Biome tint (docs/WORLD_GENERATION.md §3.7): the texture is multiplied by the biome\'s grass or foliage colour where the tile\'s alpha says so. */');
-ts.push('  tint?: \'grass\' | \'foliage\';');
 ts.push('  /** Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z). */');
 ts.push('  ladderFace?: number;');
 ts.push('  /** Index into SHAPES: the solid\'s geometry in its cell (0 = none). */');
@@ -425,9 +390,6 @@ for (const b of blocks) {
 }
 ts.push('];');
 ts.push('');
-ts.push('/** Slope piece per corner pattern (nw + 3·ne + 9·se + 27·sw, halves of a cell): shared/blocks/gen.mjs. */');
-ts.push(`export const PIECE_NEAREST: readonly number[] = [${pieceNearest.join(', ')}];`);
-ts.push('');
 ts.push('export const SHAPES: readonly ShapeDef[] = [');
 for (const t of shapeTable) {
   const sh = t.shape;
@@ -461,7 +423,6 @@ for (let first = 0; first < states.length; first += CHUNK) {
     `opacity: ${d.opacity ?? 1}`,
   ];
   if (d.textures) parts.push(`textures: ${tex(d.textures)}`);
-  if (d.tint) parts.push(`tint: '${d.tint}'`);
   if (d.look === 'ladder' && d.facingProperty) {
     parts.push(`ladderFace: ${LADDER_FACE[s.values[d.facingProperty]]}`);
   }

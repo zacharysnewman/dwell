@@ -23,16 +23,16 @@ std::uint64_t FaceSeed(std::uint64_t world_seed, Face face) {
 BifacialTerrain::BifacialTerrain(std::uint64_t world_seed)
     : a_(FaceSeed(world_seed, Face::kA)), b_(FaceSeed(world_seed, Face::kB)) {}
 
-void BifacialTerrain::Generate(const ChunkCoord& coord, Chunk& chunk, std::uint8_t stages) const {
+void BifacialTerrain::Generate(const ChunkCoord& coord, Chunk& chunk) const {
   if (core::FaceOfChunkY(coord.y) == Face::kA) {
-    a_.Generate(coord, chunk, stages);
+    a_.Generate(coord, chunk);
     return;
   }
   // Face B: the face-local chunk, flipped. Row ly of the local chunk is row S − 1 − ly of this one
   // (core::MirrorY maps the voxel; the chunk rows pair up exactly).
   const ChunkCoord local = core::FaceLocalChunk(coord);
   auto scratch = std::make_unique<Chunk>();
-  b_.Generate(local, *scratch, stages);
+  b_.Generate(local, *scratch);
   const auto& src = scratch->voxels();
   auto& dst = chunk.generation_voxels();
   constexpr int S = kChunkSize;

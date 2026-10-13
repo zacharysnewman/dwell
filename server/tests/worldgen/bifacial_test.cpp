@@ -63,22 +63,9 @@ TEST_SUITE("bifacial: mirror") {
     CHECK(core::FaceLocalChunk(a) == a);
   }
 
-  TEST_CASE("turning a block upside down swaps the half of slabs and slopes only") {
-    const auto state = [](const char* text) {
-      const auto id = core::ParseState(text);
-      REQUIRE(id.has_value());
-      return *id;
-    };
-    const MaterialId slab_bottom = state("dwell:stone_slab[flooded=false,half=bottom]");
-    const MaterialId slab_top = state("dwell:stone_slab[flooded=false,half=top]");
-    CHECK(core::MirrorMaterial(slab_bottom) == slab_top);
-    CHECK(core::MirrorMaterial(slab_top) == slab_bottom);
-    const MaterialId slope =
-        state("dwell:grass_slope[facing=east,flooded=true,half=bottom,shape=outer]");
-    const MaterialId flipped =
-        state("dwell:grass_slope[facing=east,flooded=true,half=top,shape=outer]");
-    CHECK(core::MirrorMaterial(slope) == flipped);
-    CHECK(core::MirrorMaterial(flipped) == slope);
+  TEST_CASE("turning a block upside down swaps a `half` property only") {
+    // The baseline's blocks have no `half` (the shaped families were cut, Phase 15): every state
+    // is its own mirror image. Shaped blocks with a `half` return in Phase 18.
     for (const MaterialId m :
          {M::kAir, M::kStone, M::kWater, M::kGrass, M::kLadderN, M::kLadderW}) {
       CHECK(core::MirrorMaterial(m) == m);
@@ -94,12 +81,12 @@ TEST_SUITE("bifacial: generation") {
     for (const std::uint64_t seed : {0ull, 20260925ull}) {
       CAPTURE(seed);
       const BifacialTerrain gen(seed);
-      // Rows near the midplane, the rock between, and the sea and shore of face B (face-local rows
-      // −1..1 are −129 − (−1)… i.e. −128..−130).
+      // Rows near the midplane, the rock between, and the ground of face B's island (face-local
+      // rows −1..1 are −129 − (−1)… i.e. −128..−130).
       for (const ChunkCoord c :
            {ChunkCoord{0, -65, 0}, ChunkCoord{4, -66, -7}, ChunkCoord{-3, -100, 5},
             ChunkCoord{0, -128, 0}, ChunkCoord{0, -129, 0}, ChunkCoord{0, -130, 0},
-            ChunkCoord{9, -131, 2}}) {
+            ChunkCoord{9, -129, 2}}) {
         const Chunk flipped = Generate(gen, c);
         Chunk local;
         gen.Local(Face::kB).Generate(core::FaceLocalChunk(c), local);
@@ -138,9 +125,10 @@ TEST_SUITE("bifacial: generation") {
       int differing = 0, columns = 0;
       for (int i = -20; i <= 20; ++i)
         for (int j = -20; j <= 20; ++j) {
-          const std::int32_t x = i * 40000, z = j * 40000;
+          // Over both faces' islands (each ~25 km in radius at the origin).
+          const std::int32_t x = i * 1500, z = j * 1500;
           const auto a = gen.Local(Face::kA).ColumnAt(x, z), b = gen.Local(Face::kB).ColumnAt(x, z);
-          if (a.outside || b.outside) continue;
+          if (a.outside || b.outside || (a.height < 0.0f && b.height < 0.0f)) continue;
           ++columns;
           differing += std::abs(a.height - b.height) > 8.0f;
         }
@@ -159,14 +147,13 @@ TEST_SUITE("bifacial: generation") {
             ChunkCoord{200, -65, -30}, ChunkCoord{-12, -64, 40}, ChunkCoord{-12, -65, 40}}) {
         const Chunk chunk = Generate(gen, c);
         for (const MaterialId m : chunk.voxels()) {
-          CHECK(m != M::kBedrock);
           CHECK_FALSE(core::GetMaterial(m).indestructible);
           ++checked;
           solid += m != M::kAir && m != M::kWater;
         }
       }
       // The core is rock across the midplane: the two layers either side of it are solid
-      // everywhere (caves fade out above the face's floor).
+      // everywhere.
       for (const std::int32_t x : {0, 32 * 200 + 5, -32 * 12 + 9}) {
         const std::int32_t z = x == 0 ? 0 : x > 0 ? -30 * 32 + 3 : 40 * 32 + 1;
         for (const std::int32_t y : {-2049, -2048}) {
@@ -179,11 +166,10 @@ TEST_SUITE("bifacial: generation") {
 
   TEST_CASE("point queries by face agree with the chunk path") {
     const BifacialTerrain gen(11);
-    // Terrain stages only: no slopes, stability or features, so solidity is the point query's.
-    for (const ChunkCoord c :
-         {ChunkCoord{0, -66, 0}, ChunkCoord{5, -129, 5}, ChunkCoord{0, -130, 0}}) {
+    for (const ChunkCoord c : {ChunkCoord{0, -66, 0}, ChunkCoord{5, -129, 5},
+                               ChunkCoord{0, -130, 0}, ChunkCoord{0, -131, 0}}) {
       Chunk chunk;
-      gen.Generate(c, chunk, 0);
+      gen.Generate(c, chunk);
       for (int z = 0; z < S; z += 3)
         for (int y = 0; y < S; ++y)
           for (int x = 0; x < S; x += 3) {

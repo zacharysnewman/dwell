@@ -54,17 +54,6 @@ function isConvex(shape: ShapeDef): boolean {
 
 // The §1.2 table in the canonical orientation (facing east, upright): heights NW NE SE SW in
 // cells, volume and convexity.
-const TABLE: [string, number[], number, boolean][] = [
-  ['wedge', [1, 0, 0, 1], 1 / 2, true],
-  ['outer', [1, 0, 0, 0], 1 / 3, true],
-  ['inner', [1, 1, 0, 1], 2 / 3, false],
-  ['gentle_low', [0.5, 0, 0, 0.5], 1 / 4, true],
-  ['gentle_high', [1, 0.5, 0.5, 1], 3 / 4, true],
-  ['gentle_outer_low', [0.5, 0, 0, 0], 1 / 6, true],
-  ['gentle_outer_high', [1, 0.5, 0.5, 0.5], 2 / 3, true],
-  ['gentle_inner_low', [0.5, 0.5, 0, 0.5], 1 / 3, false],
-  ['gentle_inner_high', [1, 1, 0.5, 1], 5 / 6, false],
-];
 
 function shapeOf(text: string): ShapeDef {
   const parsed = parseState(text);
@@ -76,41 +65,13 @@ function shapeOf(text: string): ShapeDef {
 }
 
 describe('shape table', () => {
-  it('matches the design: corner heights, volumes and convexity of every shape', () => {
-    for (const [name, corners, volume, convex] of TABLE) {
-      const shape = shapeOf(`dwell:stone_slope[facing=east,half=bottom,shape=${name}]`);
-      expect(
-        shape.corners.map((h) => h / 2),
-        name,
-      ).toEqual(corners);
-      expect(volumeOf(shape), name).toBeCloseTo(volume, 9);
-      expect(shape.volume, name).toBeCloseTo(volume, 9);
-      expect(isConvex(shape), name).toBe(convex);
-      expect(shape.convex, name).toBe(convex);
-      expect(isClosed(shape), name).toBe(true);
-    }
-  });
-
-  it('is a closed outward-wound solid for every facing and half', () => {
-    for (const [name, , volume, convex] of TABLE) {
-      for (const facing of ['north', 'east', 'south', 'west']) {
-        for (const half of ['bottom', 'top']) {
-          const shape = shapeOf(`dwell:stone_slope[facing=${facing},half=${half},shape=${name}]`);
-          const label = `${name} ${facing} ${half}`;
-          expect(isClosed(shape), label).toBe(true);
-          expect(volumeOf(shape), label).toBeCloseTo(volume, 9); // positive: wound outward
-          expect(isConvex(shape), label).toBe(convex);
-          expect(shape.inverted, label).toBe(half === 'top');
-        }
-      }
-    }
-  });
-
-  it('describes cubes and slabs too', () => {
+  // The shaped families were cut with the baseline (Phase 15): the table is the empty shape and
+  // the cube. Shaped blocks return as adaptive natural blocks (Phase 18).
+  it('describes the cube and the empty shape', () => {
     expect(volumeOf(shapeOf('dwell:stone'))).toBeCloseTo(1, 9);
-    expect(volumeOf(shapeOf('dwell:stone_slab'))).toBeCloseTo(0.5, 9);
-    expect(shapeOf('dwell:stone_slab[half=top]').inverted).toBe(true);
-    expect(SHAPES[0]?.faces).toEqual([]); // the empty shape
+    expect(isClosed(shapeOf('dwell:stone'))).toBe(true);
+    expect(isConvex(shapeOf('dwell:stone'))).toBe(true);
+    expect(SHAPES[0]?.faces).toEqual([]);
   });
 });
 
@@ -166,7 +127,7 @@ describe('shape adjacency', () => {
       if (st.shape !== 0 && !distinct.has(st.shape))
         distinct.set(st.shape, SHAPES[st.shape] as ShapeDef);
     }
-    expect(distinct.size).toBeGreaterThanOrEqual(70);
+    expect(distinct.size).toBeGreaterThanOrEqual(1);
     const N = 7;
     let checked = 0;
     const failures: string[] = [];
@@ -204,6 +165,6 @@ describe('shape adjacency', () => {
       }
     }
     expect(failures).toEqual([]);
-    expect(checked).toBeGreaterThan(100000);
+    expect(checked).toBeGreaterThan(0);
   }, 120_000);
 });

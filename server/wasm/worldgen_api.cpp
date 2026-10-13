@@ -18,7 +18,6 @@ dwell::core::ChunkGenerator g_generator;
 std::unique_ptr<dwell::core::Chunk> g_chunk;
 std::unique_ptr<dwell::worldgen::BifacialTerrain> g_terrain;  // the terrain generator only
 std::vector<std::uint8_t> g_map;
-dwell::worldgen::TerrainGenerator::TintGridData g_tint;
 dwell::core::LodGenerator g_lod;
 dwell::core::LodBoundsFn g_lod_bounds;
 dwell::core::LodCells g_lod_cells;
@@ -30,7 +29,7 @@ std::vector<float> g_lod_surface_b_out;
 const float* LodSurfaceOut(const dwell::core::LodSurfaces& surfaces,
                                   std::vector<float>& out) {
   if (surfaces.empty()) return nullptr;
-  constexpr std::size_t kStride = 6;
+  constexpr std::size_t kStride = 4;
   out.resize(surfaces.size() * kStride);
   for (std::size_t n = 0; n < surfaces.size(); ++n) {
     const auto& s = surfaces[n];
@@ -38,8 +37,6 @@ const float* LodSurfaceOut(const dwell::core::LodSurfaces& surfaces,
     out[n * kStride + 1] = static_cast<float>(s.material);
     out[n * kStride + 2] = static_cast<float>((s.valid ? 1 : 0) | (s.wet ? 2 : 0));
     out[n * kStride + 3] = s.water;
-    out[n * kStride + 4] = static_cast<float>(s.tint_grass);
-    out[n * kStride + 5] = static_cast<float>(s.tint_foliage);
   }
   return out.data();
 }
@@ -64,41 +61,26 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_create(std::uint32_t generator_version,
   return 1;
 }
 
-// Biome/height map for the in-game overlay (Phase 3e debug tooling): n × n columns from (x0, z0)
-// every `step` metres, row-major along x then z, 4 bytes each — i16 base height (m), u8 biome
-// (worldgen::Biome), u8 flags (1 = beyond the world's disc, 2 = under river or lake water: the
-// ground lies below the column's water level, sea excluded — Phase 11a), of face `face` (0 = A, 1
-// = B; heights are face-local). Null for generators without a terrain map. Valid until the next
-// call.
+// Height map for the in-game overlay (Phase 3e debug tooling): n × n columns from (x0, z0) every
+// `step` metres, row-major along x then z, 3 bytes each — i16 ground height (m), u8 flags (1 =
+// beyond the world's disc) — of face `face` (0 = A, 1 = B; heights are face-local). Null for
+// generators without a terrain map. Valid until the next call.
 EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_map(int x0, int z0, int step, int n,
                                                             int face) {
   if (!g_terrain || n <= 0 || n > 512 || step <= 0) return nullptr;
-  g_map.assign(static_cast<std::size_t>(n) * n * 4, 0);
+  g_map.assign(static_cast<std::size_t>(n) * n * 3, 0);
   const auto& terrain = g_terrain->Local(face == 1 ? dwell::core::Face::kB : dwell::core::Face::kA);
   std::size_t i = 0;
   for (int j = 0; j < n; ++j) {
-    for (int k = 0; k < n; ++k, i += 4) {
+    for (int k = 0; k < n; ++k, i += 3) {
       const auto c = terrain.ColumnAt(x0 + k * step, z0 + j * step);
       const auto h = static_cast<std::int16_t>(std::clamp(c.height, -32768.0f, 32767.0f));
       g_map[i] = static_cast<std::uint8_t>(h);
       g_map[i + 1] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(h) >> 8);
-      g_map[i + 2] = static_cast<std::uint8_t>(c.biome);
-      g_map[i + 3] = static_cast<std::uint8_t>(
-          (c.outside ? 1 : 0) | (c.height < static_cast<float>(c.water) && c.water > 0 ? 2 : 0));
+      g_map[i + 2] = static_cast<std::uint8_t>(c.outside ? 1 : 0);
     }
   }
   return g_map.data();
-}
-
-// The tint of the grass and the leaves around the columns of chunk (cx, cz) (TerrainGenerator::
-// TintGrid) of face `face` (0 = A, 1 = B): 3 × 3 points at x, z = 0, 16, 32 m, each 6 bytes (grass
-// r, g, b, foliage r, g, b in 1/64), valid until the next call; null for generators without
-// terrain.
-EMSCRIPTEN_KEEPALIVE const std::uint8_t* dwell_worldgen_tint(int cx, int cz, int face) {
-  if (!g_terrain) return nullptr;
-  g_tint = g_terrain->Local(face == 1 ? dwell::core::Face::kB : dwell::core::Face::kA)
-               .TintGrid(cx, cz);
-  return g_tint.data();
 }
 
 // Generates a chunk; returns its kChunkVolume u16 materials (chunk index order), valid until the
@@ -128,10 +110,9 @@ EMSCRIPTEN_KEEPALIVE int dwell_worldgen_lod(int level, int i, int j, int k) {
   }
   return static_cast<int>(g_lod({level, i, j, k}, g_lod_cells));
 }
-// The last section's column surfaces (core::LodSurface), 34² × 6 floats: height (m), material,
-// flags (1 valid, 2 wet), where wet the water's level (m), and the grass and foliage tints
-// (0xRRGGBB in 1/64 units; exact in a float). Null when the generator has none (flat worlds: their
-// cells are exact). client/src/lod/grid.ts SURFACE_STRIDE. `face` 0 is face A's, in world terms;
+// The last section's column surfaces (core::LodSurface), 34² × 4 floats: height (m), material,
+// flags (1 valid, 2 wet), and where wet the water's level (m). Null when the generator has none
+// (flat worlds: their cells are exact). client/src/lod/grid.ts SURFACE_STRIDE. `face` 0 is face A's, in world terms;
 // 1 is face B's, in face-local terms (null where the section has no rows of face B).
 EMSCRIPTEN_KEEPALIVE const float* dwell_worldgen_lod_surface(int face) {
   return face == 1 ? LodSurfaceOut(g_lod_surface_b, g_lod_surface_b_out)

@@ -61,7 +61,7 @@ std::vector<std::uint16_t> Noisy(std::uint32_t seed) {
     h ^= h << 13;
     h ^= h >> 17;
     h ^= h << 5;
-    m = static_cast<std::uint16_t>(h % 20);
+    m = static_cast<std::uint16_t>(h % dwell::core::Materials::kCount);
   }
   return v;
 }
@@ -77,8 +77,10 @@ SaveBatch GoldenBatch() {
   SaveBatch b;
   b.meta = WorldMeta{0xDEADBEEFCAFEull, 3, std::array<double, 3>{7999488.5, 12.0, -3.25}, 4321,
                      1700000000,        0};
-  b.chunks.push_back({{0, 0, 0}, 3, Filled(2)});
-  b.chunks.push_back({{-250000, 191, 250000}, 1, Filled(16)});
+  // Stone and dirt; a flooded west ladder and water (the files name them by string).
+  b.chunks.push_back({{0, 0, 0}, 3, Filled(dwell::core::Materials::kStone)});
+  b.chunks.push_back(
+      {{-250000, 191, 250000}, 1, Filled(dwell::core::Materials::kLadderFacingWestFloodedTrue)});
   PlayerRecord p;
   p.key = Key(7);
   p.display_name = "Golden";
@@ -103,7 +105,7 @@ void CheckGolden(WorldDb& db) {
   const auto far = db.LoadChunk({-250000, 191, 250000});
   REQUIRE(far);
   CHECK(far->revision == 1);
-  CHECK(far->voxels == Filled(16));
+  CHECK(far->voxels == Filled(dwell::core::Materials::kLadderFacingWestFloodedTrue));
   const auto player = db.LoadPlayer(Key(7));
   REQUIRE(player);
   CHECK(player->display_name == "Golden");
@@ -332,9 +334,9 @@ TEST_CASE("persistence: an edited world survives a server restart") {
     Fixture f(config);
     f.Join(1, Client(1));
     f.server.Step();
-    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-1, -1, 2}, 2, Materials::kLog});
+    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-1, -1, 2}, 2, Materials::kSand});
     f.server.Step();
-    REQUIRE(f.server.world().GetVoxel(-1, 0, 2) == Materials::kLog);
+    REQUIRE(f.server.world().GetVoxel(-1, 0, 2) == Materials::kSand);
     f.MoveTo(1, 3.5f, 0.0f, 4.5f);
     f.server.Step();
     CHECK(f.server.save_stats().dirty == 1);
@@ -352,7 +354,7 @@ TEST_CASE("persistence: an edited world survives a server restart") {
   again.world_seed = 1;
   again.store = open_store();
   Fixture f(again);
-  CHECK(f.server.world().GetVoxel(-1, 0, 2) == Materials::kLog);
+  CHECK(f.server.world().GetVoxel(-1, 0, 2) == Materials::kSand);
   CHECK(f.server.world().Find({-1, 0, 0})->revision() == 1);
   CHECK(f.server.save_stats().loaded >= 1);
   // The returning player continues where it was.
@@ -424,11 +426,11 @@ TEST_CASE("debug tooling: regenerate and diff lists exactly the voxels changed s
   Chunk current = generated;
   CHECK(DiffChunk(generated, current).empty());
   current.SetAt(LocalIndex(3, 31, 4), Materials::kAir);  // grass broken
-  current.SetAt(LocalIndex(0, 0, 0), Materials::kLog);
+  current.SetAt(LocalIndex(0, 0, 0), Materials::kSand);
   const auto diff = DiffChunk(generated, current);
   REQUIRE(diff.size() == 2);
   CHECK(diff[0].index == LocalIndex(0, 0, 0));
-  CHECK(diff[0].current == Materials::kLog);
+  CHECK(diff[0].current == Materials::kSand);
   CHECK(diff[1].index == LocalIndex(3, 31, 4));
   CHECK(diff[1].generated == Materials::kGrass);
   CHECK(diff[1].current == Materials::kAir);
@@ -506,12 +508,12 @@ TEST_CASE("storage: a chunk's meaning is its strings, whatever the code's runtim
     auto db = OpenOrFail(path);
     SaveBatch b;
     b.meta = WorldMeta{1, 4, std::nullopt, 0, 0, 0};
-    b.chunks.push_back({{0, 0, 0}, 1, Filled(2)});  // stone and dirt
+    b.chunks.push_back({{0, 0, 0}, 1, Filled(dwell::core::Materials::kStone)});  // stone and dirt
     std::string error;
     REQUIRE(db->Save(b, error));
   }
   {
-    // Stored with world ids, not runtime ids: ids 2 and 3 are not the file's ids for them.
+    // Stored with world ids (in order of first use), not runtime ids.
     auto db = OpenOrFail(path);
     const auto states = db->BlockStates();
     REQUIRE(states.size() == 3);  // stone, air, dirt: in order of first use
@@ -546,12 +548,12 @@ TEST_CASE("storage: a second connection's new states are visible to the first") 
   auto writer = OpenOrFail(path);
   SaveBatch b;
   b.meta = WorldMeta{1, 4, std::nullopt, 0, 0, 0};
-  b.chunks.push_back({{0, 0, 0}, 1, Filled(16)});
+  b.chunks.push_back({{0, 0, 0}, 1, Filled(dwell::core::Materials::kLadderFacingWestFloodedTrue)});
   std::string error;
   REQUIRE(writer->Save(b, error));
   const auto chunk = reader->LoadChunk({0, 0, 0});
   REQUIRE(chunk);
-  CHECK(chunk->voxels == Filled(16));
+  CHECK(chunk->voxels == Filled(dwell::core::Materials::kLadderFacingWestFloodedTrue));
 }
 #endif
 
@@ -604,7 +606,7 @@ TEST_CASE("persistence: LOD sections survive a restart, and are rebuilt when sta
     Fixture f(config);
     f.Join(1, Client(1));
     f.server.Step();
-    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-1, -1, 2}, 2, Materials::kLog});
+    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-1, -1, 2}, 2, Materials::kSand});
     f.server.Step();
     f.server.DrainLod();
     REQUIRE(f.server.lod().sections().size() ==

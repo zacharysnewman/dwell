@@ -23,7 +23,6 @@ constexpr std::size_t kInputBuffer = 2;               // jitter buffer depth (ti
 constexpr std::size_t kMaxBufferedInputs = 6;         // beyond this, skip to bound input latency
 constexpr std::uint32_t kMaxSeqAhead = 256;           // inputs further ahead are rejected
 constexpr std::uint32_t kInputDatagramsPerSecond = 2 * kSimHz;  // §11: SIM_HZ + redundancy
-constexpr int kLaunchCooldownTicks = kSimHz / 2;
 constexpr int kPrefetchChunks = 2;  // generated ahead around each player (collision reach + 1)
 constexpr int kKeepChunks = 3;      // unmodified chunks kept around players; farther: evicted
 constexpr std::uint32_t kEvictEveryTicks = 64;
@@ -401,7 +400,7 @@ void Server::Kill(Session& s, DamageCause cause) {
   BroadcastWorld(e);
 }
 
-// Server-side effects of the controller tick: fall damage and debug launch pads.
+// Server-side effects of the controller tick: fall damage.
 void Server::AfterControllerTick(Session& s) {
   if (!s.handle) return;
   const PlayerHandle h = *s.handle;
@@ -413,24 +412,6 @@ void Server::AfterControllerTick(Session& s) {
              static_cast<int>(
                  std::lround((c.landed_speed - d.fall_damage_min_speed) * d.fall_damage_per_speed)),
              DamageCause::kFall);
-      if (!s.handle) return;
-    }
-  }
-  const RVec3 p = players_.Position(h);
-  // There is no void to fall into: a body that leaves the disc falls toward the midplane and
-  // settles in the flip band (BIFACIAL_WORLD.md §3).
-  const float feet = players_.Feet(h);
-  const auto face = static_cast<float>(c.face);
-  // Debug launch pad (Phase 2): a server-originated knockback, predicted by replay on the client.
-  if (c.ground.grounded && c.ground.ground.kind == player::GroundRef::kTerrain &&
-      tick_ >= s.launch_ready_tick) {
-    const auto x = static_cast<std::int32_t>(std::floor(p.GetX()));
-    const auto y = static_cast<std::int32_t>(std::floor(feet - face * 0.05f));
-    const auto z = static_cast<std::int32_t>(std::floor(p.GetZ()));
-    const float launch = GetMaterial(world_.GetVoxel(x, y, z)).launch_speed;
-    if (launch > 0.0f) {
-      Knockback(s.player_id, Vec3(0, face * (launch - face * players_.Velocity(h).GetY()), 0));
-      s.launch_ready_tick = tick_ + kLaunchCooldownTicks;
     }
   }
 }

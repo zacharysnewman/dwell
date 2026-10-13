@@ -20,9 +20,6 @@
 #include "dwell/worldgen/bifacial.h"
 #include "dwell/worldgen/terrain.h"
 
-#include "biome_search.h"
-#include "water_search.h"
-
 using namespace dwell;
 using core::Chunk;
 using core::ChunkCoord;
@@ -31,7 +28,6 @@ using core::LodCells;
 using core::LodCoord;
 using core::LodKind;
 using core::MaterialId;
-using testing::FindBiome;
 using worldgen::TerrainGenerator;
 namespace M = core::Materials;
 
@@ -64,6 +60,27 @@ LodCoord SectionAt(int level, std::int64_t x, std::int64_t y, std::int64_t z) {
     return static_cast<std::int32_t>(d >= 0 ? d / s : -((-d + s - 1) / s));
   };
   return {level, div(x, core::kLodOriginX), div(y, core::kLodOriginY), div(z, core::kLodOriginZ)};
+}
+
+// Where the island's coast crosses the +x axis (the first sea column, 16 m steps from the origin).
+std::pair<std::int32_t, std::int32_t> CoastOnAxis(const TerrainGenerator& gen) {
+  std::int32_t x = 0;
+  while (gen.ColumnAt(x, 0).height >= 0.0f) x += 16;
+  return {x, 0};
+}
+
+// Points of interest on a face's terrain: the spawn's island interior, its coast, a hillside
+// inland, and the open sea beyond the island.
+struct Site {
+  std::string name;
+  std::int32_t x, z;
+};
+std::vector<Site> Sites(const TerrainGenerator& gen) {
+  const auto coast = CoastOnAxis(gen);
+  return {{"spawn", 0, 0},
+          {"coast", coast.first, coast.second},
+          {"inland", -9000, 4000},
+          {"sea", 45'000, -20'000}};
 }
 
 int ClassOf(MaterialId m) { return m == M::kAir ? 0 : core::LodSolid(m) ? 2 : 1; }
@@ -191,7 +208,8 @@ TEST_SUITE("lod: downsample") {
     CHECK(block([](int x, int, int) { return x == 0 ? M::kDirt : M::kAir; }) == M::kDirt);
     CHECK(block([](int x, int, int) { return x == 1 ? M::kDirt : M::kAir; }) == M::kDirt);
     // A 1×1 pillar: 2 of 8.
-    CHECK(block([](int x, int, int z) { return x == 0 && z == 0 ? M::kLog : M::kAir; }) == M::kAir);
+    CHECK(block([](int x, int, int z) { return x == 0 && z == 0 ? M::kDirt : M::kAir; }) ==
+          M::kAir);
     // Three of eight is air too.
     CHECK(block([](int x, int y, int z) {
             return x + y + z <= 1 && !(x == 0 && y == 0 && z == 0) ? M::kStone : M::kAir;
@@ -207,7 +225,7 @@ TEST_SUITE("lod: downsample") {
           }) == M::kStone);
     // A floor whose top half is empty: the lower cells are the columns' tops.
     CHECK(block([](int x, int y, int) {
-            return y == 1 ? M::kAir : x == 0 ? M::kSand : M::kGravel;
+            return y == 1 ? M::kAir : x == 0 ? M::kSand : M::kDirt;
           }) == M::kSand);
   }
 
@@ -230,7 +248,7 @@ TEST_SUITE("lod: downsample") {
     // A 1 m wall at x = 7 and a 1 m pillar at (20, ·, 20), in the chunk that is octant 5 (+x, +z).
     for (int y = 0; y < 32; ++y)
       for (int z = 0; z < 32; ++z) chunk.Set(7, y, z, M::kStone);
-    for (int y = 0; y < 32; ++y) chunk.Set(20, y, 20, M::kLog);
+    for (int y = 0; y < 32; ++y) chunk.Set(20, y, 20, M::kDirt);
     LodCells section(core::kLodVolume, M::kAir);
     core::DownsampleChunkOctant(chunk, {1, 0, 0, 0}, 5, section);
     CHECK(section[LodCell(16 + 3, 0, 16 + 4)] == M::kStone);  // x 7 → cell 3 of the octant
@@ -308,60 +326,18 @@ TEST_SUITE("lod: generation") {
   }
 
   TEST_CASE("a generated section agrees with the downsample of generated chunks") {
-    // Tolerance (§6.6), at the spawn and a site of each biome, levels 1–2 (3 in the mountains):
-    // at least 95% of the cells have the same class (air, liquid, solid) and at least 95% of the
-    // columns' top non-air cell is within one cell; over all sites the mean surface difference
-    // is under half a cell. Differences come from cave
-    // air (LOD caves stop three cells below the surface), noise sampled at cell centres instead
-    // of a 4 m lattice, and features smaller than a cell.
+    // Tolerance (§6.6), at the spawn, the coast, a hillside and the sea, levels 1–3: at least 95%
+    // of the cells have the same class (air, liquid, solid) and at least 95% of the columns' top
+    // non-air cell is within one cell; over all sites the mean surface difference is under half a
+    // cell. Differences come from the height sampled at cell centres instead of a 4 m lattice.
     const TerrainGenerator gen(0);
     const auto chunks = core::GeneratorFor(core::kGeneratorTerrain, 0);
-    struct Site {
-      std::string name;
-      std::int32_t x, z;
-    };
-    std::vector<Site> sites = {{"spawn", 0, 0}};
-    for (const worldgen::Biome biome :
-         {worldgen::Biome::kBroadleaf, worldgen::Biome::kBareRock, worldgen::Biome::kOcean,
-          worldgen::Biome::kBeach, worldgen::Biome::kDunes, worldgen::Biome::kSnowfield}) {
-      if (const auto at = FindBiome(gen, biome)) {
-        // A gentle spot of the biome near it: the first hit of a far region can lie on a cliff,
-        // where a cell-centre sample and a downsample differ by design.
-        std::pair<std::int32_t, std::int32_t> site = *at;
-        for (int d = 0; d < 64 * 64; ++d) {
-          const std::int32_t x = at->first + (d % 64) * 8 - 256,
-                             z = at->second + (d / 64) * 8 - 256;
-          const auto c = gen.ColumnAt(x, z);
-          if (c.biome != biome || c.wet > 0.0f) continue;
-          float steepest = 0.0f;
-          for (const auto& [dx, dz] :
-               {std::pair{8, 0}, std::pair{-8, 0}, std::pair{0, 8}, std::pair{0, -8}}) {
-            steepest = std::max(steepest, std::abs(gen.ColumnAt(x + dx, z + dz).height - c.height));
-          }
-          if (steepest <= 4.0f) {
-            site = {x, z};
-            break;
-          }
-        }
-        sites.push_back({worldgen::BiomeName(biome), site.first, site.second});
-      }
-    }
-    // Water above sea level (Phase 11a): a lake, a river and a great river.
-    {
-      const auto wl = testing::FindWaterLandmarks(gen);
-      REQUIRE(wl.found);
-      sites.push_back({"lake", wl.lake.x, wl.lake.z});
-      sites.push_back({"river", wl.river.x, wl.river.z});
-      sites.push_back({"great river", wl.great.x, wl.great.z});
-    }
-    CHECK(sites.size() == 10);
     double mean_sum = 0;
     int count = 0;
-    for (const Site& site : sites) {
+    for (const Site& site : Sites(gen)) {
       const auto column = gen.ColumnAt(site.x, site.z);
-      const auto h =
-          static_cast<std::int64_t>(std::max(column.height, static_cast<float>(column.water)));
-      for (int level = 1; level <= (site.name == "mountains" ? 3 : 2); ++level) {
+      const auto h = static_cast<std::int64_t>(std::max(column.height, 0.0f));
+      for (int level = 1; level <= 3; ++level) {
         // The section holding the surface there.
         const LodCoord c = SectionAt(level, site.x, std::max<std::int64_t>(h, -1), site.z);
         LodCells generated;
@@ -371,9 +347,7 @@ TEST_SUITE("lod: generation") {
                           << ", surface within 1 cell " << a.surface_within << ", mean "
                           << a.surface_mean);
         CHECK(a.class_match >= 0.95);
-        // Dense spruces (the snowy biome) have crowns narrower than a 2–4 m cell: a cell-centre
-        // sample and a downsample round them differently in ~6–12 % of the columns.
-        CHECK(a.surface_within >= (site.name == "snowy" ? 0.85 : 0.95));
+        CHECK(a.surface_within >= 0.95);
         mean_sum += a.surface_mean;
         ++count;
       }
@@ -389,20 +363,10 @@ TEST_SUITE("lod: face B") {
     const worldgen::BifacialTerrain gen(0);
     const auto chunks = core::GeneratorFor(core::kGeneratorTerrain, 0);
     const TerrainGenerator& b = gen.Local(core::Face::kB);
-    const auto lm = testing::FindLandmarks(b);
-    REQUIRE(lm.found);
-    struct Site {
-      std::string name;
-      std::int32_t x, z;
-    };
-    const std::vector<Site> sites = {{"coast", lm.coast.first, lm.coast.second},
-                                     {"interior", lm.interior.first, lm.interior.second},
-                                     {"abyss", lm.abyss.first, lm.abyss.second},
-                                     {"spawn", 0, 0}};
-    for (const Site& site : sites) {
+    for (const Site& site : Sites(b)) {
       const auto col = b.ColumnAt(site.x, site.z);
       // The face-local surface height h is world y = −4,096 − h; the section holds it.
-      const auto h = static_cast<std::int64_t>(std::max(col.height, static_cast<float>(col.water)));
+      const auto h = static_cast<std::int64_t>(std::max(col.height, 0.0f));
       for (int level = 1; level <= 2; ++level) {
         const LodCoord c = SectionAt(level, site.x, -4096 - std::max<std::int64_t>(h, -1), site.z);
         LodCells generated;
@@ -440,28 +404,27 @@ TEST_SUITE("lod: surface") {
   TEST_CASE(
       "coarse cells taller than the relief show the ground's surface, not the world's floor") {
     // Regression: from level ~12 a cell spans from the world's floor past the terrain, so its
-    // bottom-voxel sample is bedrock; the column's top cell must still look like its surface.
+    // bottom-voxel sample is deep rock; the column's top cell must still look like its surface.
     const TerrainGenerator gen(0);
     for (const int level : {12, 13, 15}) {
       CAPTURE(level);
       const LodCoord c = SectionAt(level, 0, 0, 0);
       LodCells cells;
       REQUIRE(gen.GenerateLod(c, cells) == LodKind::kContent);
-      int tops = 0, bedrock = 0, grassy = 0;
+      int tops = 0, stone = 0, grassy = 0;
       for (int z = 0; z < N; ++z)
         for (int x = 0; x < N; ++x) {
           for (int y = N - 1; y >= 0; --y) {
             const MaterialId m = cells[static_cast<std::size_t>(LodCell(x, y, z))];
             if (m == M::kAir || m == M::kWater) continue;
             ++tops;
-            bedrock += m == M::kBedrock;
-            grassy += m == M::kGrass || m == M::kSand || m == M::kSnow || m == M::kGravel ||
-                      m == M::kLeaves;
+            stone += m == M::kStone;
+            grassy += m == M::kGrass || m == M::kSand;
             break;
           }
         }
       CHECK(tops > 0);
-      CHECK(bedrock == 0);
+      CHECK(stone == 0);
       CHECK(grassy > tops / 2);
     }
   }
@@ -472,11 +435,8 @@ TEST_SUITE("lod: sea") {
     // Regression: at coarse levels a cell spans the sea floor and the sea; with liquids counted
     // apart from solids the floor won and oceans looked like dry land from afar.
     const TerrainGenerator gen(0);
-    // The abyss: open ocean far from every coast, found on the layout.
-    const auto landmarks = testing::FindLandmarks(gen);
-    REQUIRE(landmarks.found);
-    const std::optional<std::pair<std::int32_t, std::int32_t>> ocean = landmarks.abyss;
-    REQUIRE(ocean);
+    // Open sea far from the island.
+    const std::optional<std::pair<std::int32_t, std::int32_t>> ocean = std::pair{120'000, 70'000};
     for (const int level : {6, 8, 10}) {
       CAPTURE(level);
       const LodCoord c = SectionAt(level, ocean->first, -1, ocean->second);
@@ -489,7 +449,7 @@ TEST_SUITE("lod: sea") {
                                                                    x * core::LodCellSize(level)),
                                          static_cast<std::int32_t>(core::LodSectionOrigin(c).z +
                                                                    z * core::LodCellSize(level)))
-                                    .height >= -30.0f) {
+                                    .height >= -10.0f) {
             continue;  // land, shore or shallows (coarse columns are smoothed)
           }
           for (int y = N - 1; y >= 0; --y) {
@@ -507,8 +467,8 @@ TEST_SUITE("lod: sea") {
 }
 
 TEST_SUITE("lod: golden") {
-  // GenerateLod sections across levels: the surface near the spawn, mountains, ocean, the rim,
-  // terrain ~8,000 km out, a level-8 (index level) section and the root. The same hashes must come
+  // GenerateLod sections across levels: the surface near the spawn, the coast, the sea, the rim,
+  // the sea ~8,000 km out, a level-8 (index level) section and the root. The same hashes must come
   // out natively and under WASM; any change needs a new generator version (§6.3).
   TEST_CASE("generated LOD sections match the golden hashes") {
     struct Case {
@@ -517,84 +477,39 @@ TEST_SUITE("lod: golden") {
       std::int64_t x, y, z;  // a world point inside the section
     };
     std::vector<Case> cases = {
-        {0, 1, 0, 0, 0},
+        {0, 1, 0, 64, 0},
         {0, 2, 0, -64, 0},
-        {0, 3, -440, 0, -1150},
-        {0, 4, 1280, -64, -380},
+        {0, 3, -440, 64, -1150},
+        {0, 4, 1280, 64, -380},
         {0, 6, 0, 0, 0},
         {0, 8, 0, 0, 0},
         {0, 10, 8'180'000, 0, 0},
         {0, 12, 0, 0, 0},
-        {20260925, 1, 31, 0, -97},
+        {20260925, 1, 31, 64, -97},
         {20260925, 5, -7'990'000, 0, 5000},
         {0, core::kLodMaxLevel, 0, 0, 0},
-        {0, 6, 97152, 5400, 1178496},  // a massif's peak
-        {0, 9, 97152, 5400, 1178496},
+        {0, 7, 60'000, -10, 0},  // the open sea
     };
-    // The plate layout (Phase 10): a coast, an ocean gap between two continents, an island, another
-    // continent's interior and the abyss, at several levels.
+    // Each face's coast, inland hills and sea, at several levels (face-local height h is world
+    // y = −4,096 − h on face B).
     for (const std::uint64_t seed : {std::uint64_t{0}, std::uint64_t{20260925}}) {
-      const auto lm = testing::FindLandmarks(TerrainGenerator(seed));
-      REQUIRE(lm.found);
-      const auto at = [](std::pair<std::int32_t, std::int32_t> p) { return p; };
-      for (const int level : {1, 4, 8})
-        cases.push_back({seed, level, at(lm.coast).first, 0, at(lm.coast).second});
-      for (const int level : {6, 9})
-        cases.push_back({seed, level, at(lm.gap).first, -400, at(lm.gap).second});
-      for (const int level : {2, 5})
-        cases.push_back({seed, level, at(lm.island).first, 0, at(lm.island).second});
-      cases.push_back({seed, 3, at(lm.interior).first, 0, at(lm.interior).second});
-      cases.push_back({seed, 7, at(lm.abyss).first, -900, at(lm.abyss).second});
-      // Water above sea level (Phase 11a): where each lies, at the levels that still show it.
-      const TerrainGenerator gen(seed);
-      const auto wl = testing::FindWaterLandmarks(gen);
-      REQUIRE(wl.found);
-      const auto surface = [&](const testing::Point& p) {
-        const auto col = gen.ColumnAt(p.x, p.z);
-        return static_cast<std::int64_t>(
-            std::max<float>(col.height, static_cast<float>(col.water)));
-      };
-      for (const int level : {1, 3})
-        cases.push_back({seed, level, wl.lake.x, surface(wl.lake), wl.lake.z});
-      for (const int level : {1, 2})
-        cases.push_back({seed, level, wl.stream.x, surface(wl.stream), wl.stream.z});
-      for (const int level : {1, 3})
-        cases.push_back({seed, level, wl.river.x, surface(wl.river), wl.river.z});
-      for (const int level : {2, 5})
-        cases.push_back({seed, level, wl.great.x, surface(wl.great), wl.great.z});
-      cases.push_back({seed, 1, wl.waterfall.x, surface(wl.waterfall), wl.waterfall.z});
-      // Climate and vegetation (Phase 11c): alpine ground and snow, and forests, whose canopy
-      // above the 4 m cells is leaves.
-      for (const worldgen::Biome b :
-           {worldgen::Biome::kAlpineMeadow, worldgen::Biome::kBareRock, worldgen::Biome::kBroadleaf,
-            worldgen::Biome::kBlossomGrove, worldgen::Biome::kAutumnWoods}) {
-        const auto site = FindBiome(gen, b);
-        REQUIRE(site);
-        const auto col = gen.ColumnAt(site->first, site->second);
-        const auto top = static_cast<std::int64_t>(std::max<float>(col.height, 0.0f));
-        cases.push_back({seed, 1, site->first, top, site->second});
-        cases.push_back({seed, 4, site->first, top, site->second});
+      const worldgen::BifacialTerrain world(seed);
+      for (const core::Face face : {core::Face::kA, core::Face::kB}) {
+        const TerrainGenerator& gen = world.Local(face);
+        for (const Site& site : Sites(gen)) {
+          const auto h = static_cast<std::int64_t>(gen.ColumnAt(site.x, site.z).height);
+          const std::int64_t y = face == core::Face::kA ? h : -4096 - h;
+          for (const int level : {1, 4, 8}) cases.push_back({seed, level, site.x, y, site.z});
+        }
       }
     }
-    // Face B and the midplane (BIFACIAL_WORLD.md §5): sections wholly on face B (the surface near
-    // its sea level at y = −4,096, its own coast, gap and abyss), sections whose rows straddle the
-    // midplane (levels 7 and up: each cell takes the face of its centre), and the root.
+    // The midplane (BIFACIAL_WORLD.md §5): sections whose rows straddle it (levels 7 and up: each
+    // cell takes the face of its centre), and sections wholly on face B near its sea level.
     for (const int level : {1, 3, 6}) cases.push_back({0, level, 0, -4100, 0});
     for (const int level : {7, 8, 10, 12, 14}) cases.push_back({0, level, 0, -2048, 0});
     cases.push_back({0, 2, 0, -2100, 0});
     cases.push_back({0, 5, 1280, -2049, -380});
     cases.push_back({20260925, 9, -7'990'000, -2048, 5000});
-    for (const std::uint64_t seed : {std::uint64_t{0}, std::uint64_t{20260925}}) {
-      const auto lm = testing::FindLandmarks(worldgen::BifacialTerrain(seed).Local(core::Face::kB));
-      REQUIRE(lm.found);
-      // Face-local height h is world y = −4,096 − h.
-      for (const int level : {1, 4, 8})
-        cases.push_back({seed, level, lm.coast.first, -4096, lm.coast.second});
-      for (const int level : {6, 9})
-        cases.push_back({seed, level, lm.gap.first, -4096 + 400, lm.gap.second});
-      cases.push_back({seed, 3, lm.interior.first, -4096, lm.interior.second});
-      cases.push_back({seed, 7, lm.abyss.first, -4096 + 900, lm.abyss.second});
-    }
     std::vector<std::string> actual;
     for (const Case& k : cases) {
       const worldgen::BifacialTerrain gen(k.seed);
@@ -610,7 +525,7 @@ TEST_SUITE("lod: golden") {
     if (const char* update = std::getenv("DWELL_UPDATE_GOLDEN");
         update && std::string(update) == "1") {
       std::ofstream out(path);
-      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 11\n";
+      out << "# seed level i j k kind fnv1a64(kind, cells) - generator version 12\n";
       out << "# registry " << std::hex << core::kRegistryHash << '\n';
       for (const auto& line : actual) out << line << '\n';
       MESSAGE("golden LOD hashes written to " << path);
@@ -671,15 +586,9 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
     double error_cells = 0, error_surface = 0;
     int columns = 0, valid = 0;
     for (int s = 0; s < 6; ++s) {
-      // The section holding the ground there (inland the ground is well above sea level).
-      // On low-relief land (the coarse levels' mean relief of ranges lies ~100 m below a point's:
-      // a known limit of dropping their octaves, not measured here).
-      std::int32_t px = 4000 + s * 37000;
-      const std::int32_t pz = 3000 + s * 23000;
-      for (int k = 0; k < 400; ++k, px += 4000) {
-        const auto probe = gen.ColumnAt(px, pz);
-        if (!probe.outside && probe.coast > 0 && probe.height - probe.valley < 25.0f) break;
-      }
+      // The section holding the ground there: points across the island, and one at sea.
+      const std::int32_t px = -20'000 + s * 8000;
+      const std::int32_t pz = 3000 - s * 4000;
       const LodCoord c = SectionAt(
           level, px,
           std::max<std::int64_t>(static_cast<std::int64_t>(gen.ColumnAt(px, pz).height), 0), pz);
@@ -705,8 +614,8 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
           error_cells += static_cast<double>(o.y + (top + 1) * cell) - std::max(truth, 0.0);
           if (!sf.valid) continue;
           ++valid;
-          // Wet exactly where the floor lies below the water — the sea's, or a river's or a
-          // lake's above sea level, whose level the surface carries for the client to draw it at.
+          // Wet exactly where the floor lies below the sea, whose level the surface carries for the
+          // client to draw it at.
           if (sf.wet) {
             CHECK(sf.height < sf.water);
             CHECK(sf.water >= 0.0f);
@@ -720,107 +629,9 @@ TEST_CASE("lod: column surfaces put distant land and seas at their true height")
     MESSAGE("level " << level << ": cell tops " << error_cells / columns << " m above the surface, "
                      << "column surfaces " << (valid ? error_surface / valid : 0) << " m (" << valid
                      << "/" << columns << " columns)");
-    // Levels 1–3 keep a whole cell where 3D noise raised the ground above the column's height
-    // (overhangs, which grow with the mountains of a continent's interior).
-    CHECK(valid >= columns * (level <= 2 ? 75 : level <= 3 ? 90 : 95) / 100);
+    CHECK(valid >= columns * 95 / 100);
     // Unbiased within a few metres (coarse columns drop octaves finer than the cell), at every
-    // level. (From 256 m cells the coarse columns lost the internal plate edges, and with them the
-    // uplift belts: their mean lay 55–80 m below a point sample's.)
+    // level.
     CHECK(std::abs(error_surface / std::max(valid, 1)) < 8.0 + 0.002 * static_cast<double>(cell));
-  }
-}
-
-TEST_CASE("lod: river valleys and their water look the same from afar as up close") {
-  // Regression (playtest: distant rivers were wide water that turned into a dry gully with pools
-  // up close, and their valleys were hills from afar). A coarse column dropped the stream and river
-  // tiers whole — their valleys with their channels, so the relief they flatten came back — and
-  // widened every channel it kept to a cell, so a 3 m stream was 64 m of water at 64 m cells.
-  // Around the centrelines of each tier, every level must keep the ground where full detail has it
-  // and show water where most of the cell is water in full detail, and only there.
-  using testing::FindCentrelines;
-  using testing::Tier;
-  for (const std::uint64_t seed : {1u, 5u}) {
-    const TerrainGenerator gen(seed);
-    std::vector<testing::Point> sites;
-    for (const auto& [tier, half, step] :
-         {std::tuple{Tier::kStream, 12000, 200}, std::tuple{Tier::kRiver, 12000, 400},
-          std::tuple{Tier::kGreat, 240000, 8000}}) {
-      const auto found = FindCentrelines(gen, tier, 0, 0, half, step, 2);
-      sites.insert(sites.end(), found.begin(), found.end());
-    }
-    REQUIRE(sites.size() >= 4);
-    for (int level = 4; level <= 9; ++level) {
-      CAPTURE(seed);
-      CAPTURE(level);
-      const std::int64_t cell = core::LodCellSize(level);
-      // Full detail's wetness of a cell: the share of a k × k grid of its columns under water.
-      const int k = static_cast<int>(std::min<std::int64_t>(cell, 8));
-      double height_error = 0;
-      int columns = 0, wet_truth = 0, false_wet = 0, missed_wet = 0, level_checked = 0,
-          level_off = 0;
-      for (const testing::Point& p : sites) {
-        const auto ground = gen.ColumnAt(p.x, p.z);
-        const LodCoord mid = SectionAt(level, p.x, static_cast<std::int64_t>(ground.height), p.z);
-        // Each column's surface, from whichever row holds it.
-        core::LodSurfaces surface(static_cast<std::size_t>(core::kLodPad * core::kLodPad));
-        for (int dj = -1; dj <= 1; ++dj) {
-          LodCells cells;
-          core::LodSurfaces s;
-          LodCoord c = mid;
-          c.j += dj;
-          if (gen.GenerateLod(c, cells, &s) != LodKind::kContent) continue;
-          for (std::size_t n = 0; n < s.size(); ++n)
-            if (s[n].valid && !surface[n].valid) surface[n] = s[n];
-        }
-        const auto o = core::LodSectionOrigin(mid);
-        const int sx = static_cast<int>((p.x - o.x) / cell),
-                  sz = static_cast<int>((p.z - o.z) / cell);
-        for (int z = std::max(0, sz - 6); z <= std::min(N - 1, sz + 6); ++z)
-          for (int x = std::max(0, sx - 6); x <= std::min(N - 1, sx + 6); ++x) {
-            const auto& sf = surface[static_cast<std::size_t>((z + 1) * core::kLodPad + x + 1)];
-            const std::int64_t x0 = o.x + x * cell, z0 = o.z + z * cell;
-            const auto centre = gen.ColumnAt(static_cast<std::int32_t>(x0 + cell / 2),
-                                             static_cast<std::int32_t>(z0 + cell / 2));
-            if (!sf.valid || centre.outside || centre.coast <= 0.0f) continue;
-            int wet = 0;
-            for (int b = 0; b < k; ++b)
-              for (int a = 0; a < k; ++a) {
-                const auto col =
-                    gen.ColumnAt(static_cast<std::int32_t>(x0 + (2 * a + 1) * cell / (2 * k)),
-                                 static_cast<std::int32_t>(z0 + (2 * b + 1) * cell / (2 * k)));
-                wet += col.height < static_cast<float>(col.water);
-              }
-            ++columns;
-            height_error += std::abs(sf.height - centre.height);
-            // Clearly wet or clearly dry in full detail (cells about half under water may go
-            // either way).
-            // A wet column carries its water's level (the client draws the water there, not at
-            // its cell's top): full detail's at the cell's centre.
-            if (sf.wet && centre.height < static_cast<float>(centre.water)) {
-              ++level_checked;
-              level_off += sf.water != static_cast<float>(centre.water);
-            }
-            if (4 * wet >= 3 * k * k) {
-              ++wet_truth;
-              missed_wet += !sf.wet;
-            } else if (4 * wet <= k * k) {
-              false_wet += sf.wet;
-            }
-          }
-      }
-      REQUIRE(columns > 0);
-      MESSAGE("seed " << seed << " level " << level << ": |height| " << height_error / columns
-                      << " m over " << columns << " columns; wet " << wet_truth << ", missed "
-                      << missed_wet << ", false " << false_wet);
-      // The ground: within a metre or so up to 128 m cells (the valleys kept, the channels' carve
-      // at most a few metres), a few metres beyond (the octaves finer than a cell dropped).
-      CHECK(height_error / columns < (level <= 7 ? 1.5 : level == 8 ? 5.0 : 8.0));
-      // The water: no more than a sliver of columns wet that full detail shows dry, or dry that it
-      // shows wet.
-      CHECK(false_wet <= columns / 50);
-      CHECK(missed_wet <= std::max(1, wet_truth / 10));
-      MESSAGE("water levels: " << level_off << " of " << level_checked << " differ");
-      CHECK(level_off == 0);
-    }
   }
 }

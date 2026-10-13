@@ -178,7 +178,7 @@ TEST_SUITE("lod: streaming") {
     REQUIRE(Above(site2, dwell::core::kLodIndexLevel) == index_section);
     REQUIRE_FALSE(Above(site2, 7) == Above(site1, 7));
 
-    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-1, -1, 2}, 2, M::kLog});
+    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-1, -1, 2}, 2, M::kSand});
     const std::uint32_t edit_tick = f.server.tick();
     // The server's sections above the edit change within a bounded time, and B hears of it.
     int ticks = 0;
@@ -233,7 +233,7 @@ TEST_SUITE("lod: streaming") {
     const std::size_t updates_before = boxes[2].updates.size();
     f.MoveTo(a.player_id, -4999.5f, 0.0f, 0.5f);
     for (int i = 0; i < 3; ++i) StepInto(f, boxes);
-    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-5001, -1, 2}, 2, M::kLog});
+    f.Send(1, BlockEditRequest{BlockEditAction::kPlace, {-5001, -1, 2}, 2, M::kSand});
     for (int i = 0; i < 120 && boxes[2].updates.size() == updates_before; ++i) StepInto(f, boxes);
     REQUIRE(boxes[2].updates.size() > updates_before);
     const std::uint64_t bytes_before = f.server.LodStatsOf(b.player_id)->bytes;

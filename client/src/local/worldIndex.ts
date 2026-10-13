@@ -4,10 +4,14 @@
 // the index is what the main menu shows.
 import { recordedVersion } from '../buildInfo';
 import { isVersion } from '../version/semver';
-import { GENERATORS } from './world';
+import { GENERATORS, RETIRED_PLAYGROUND } from './world';
 
-export type WorldType = keyof typeof GENERATORS;
-export const WORLD_TYPES: readonly WorldType[] = ['terrain', 'playground', 'flat'];
+/** The types a new world can have. */
+export type CreatableType = keyof typeof GENERATORS;
+/** Types in the index: `playground` only on worlds of versions before 0.9 (append-only store). */
+export type WorldType = CreatableType | 'playground';
+export const WORLD_TYPES: readonly CreatableType[] = ['terrain', 'flat'];
+const STORED_TYPES: readonly WorldType[] = [...WORLD_TYPES, 'playground'];
 
 export interface WorldMeta {
   /** File name in `dwell/worlds/` without `.dwellworld`. */
@@ -44,7 +48,7 @@ const LEGACY_ID = /^local-g(\d+)-s(\d+)$/;
 /** The world type of a generator version (a retired version counts as its type's current one). */
 export function typeOfGenerator(generatorVersion: number): WorldType {
   if (generatorVersion === GENERATORS.flat) return 'flat';
-  if (generatorVersion === GENERATORS.playground) return 'playground';
+  if (generatorVersion === RETIRED_PLAYGROUND) return 'playground';
   return 'terrain';
 }
 
@@ -101,7 +105,7 @@ function isMeta(v: unknown): v is WorldMeta {
     /^[a-z0-9-]{1,64}$/.test(m.id) &&
     typeof m.name === 'string' &&
     typeof m.type === 'string' &&
-    (WORLD_TYPES as readonly string[]).includes(m.type) &&
+    (STORED_TYPES as readonly string[]).includes(m.type) &&
     Number.isSafeInteger(m.seed) &&
     (m.seed as number) >= 0 &&
     Number.isInteger(m.generatorVersion) &&
@@ -168,7 +172,7 @@ export class WorldIndex {
 
   /** Creates a new world's entry (its file is created when it is first played). */
   create(
-    options: { name: string; type: WorldType; seed: number },
+    options: { name: string; type: CreatableType; seed: number },
     now: number,
     random: () => number = Math.random,
   ): WorldMeta {

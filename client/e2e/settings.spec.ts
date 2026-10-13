@@ -26,6 +26,7 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     '4.0 px',
     '256 MB',
     '1.00×',
+    '0°',
   ]);
 
   // Density to zero (no fog), as a drag would.
@@ -51,5 +52,6 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     fog: { distanceM: 4000, density: 0.5, heightM: 1500 },
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
     exposure: 1,
+    skyRotation: 0,
   });
 });
