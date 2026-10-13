@@ -34,6 +34,11 @@ struct Column {
   bool outside = false;  // beyond the world's disc: nothing is generated
 };
 
+// The spawn point's level patch reaches this many columns either side (SpawnPoint): the server
+// spreads players 1.5 m either side of the point, and each can place a block ahead of it without
+// meeting a step (a block placed beside a step can land inside its player, which is refused).
+inline constexpr std::int32_t kSpawnClear = 4;
+
 class TerrainGenerator {
  public:
   explicit TerrainGenerator(std::uint64_t world_seed);
@@ -58,7 +63,8 @@ class TerrainGenerator {
   // The island's coast distance at the point itself (no lattice), for tools and tests.
   float CoastAt(std::int32_t x, std::int32_t z) const { return island_.CoastAt(x, z); }
 
-  // Feet position for players: the level dry ground nearest the origin (a spiral search).
+  // Feet position for players: the level dry ground nearest the origin (a spiral search for a
+  // patch kSpawnClear columns either side).
   std::array<double, 3> SpawnPoint() const;
 
   // Level of detail (ARCHITECTURE.md §6.6): a section evaluated at its cells' resolution. Each

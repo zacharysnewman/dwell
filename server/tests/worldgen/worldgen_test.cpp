@@ -331,7 +331,10 @@ TEST_SUITE("worldgen: terrain") {
   }
 
   TEST_CASE("players spawn on level open ground near the origin") {
-    for (const std::uint64_t seed : {0ull, 1ull, 42ull}) {
+    // Level for 4 columns around the point: the server spreads up to eight players 1.5 m
+    // either side of it, and each can place a block within reach without meeting a step (a block
+    // placed beside a step can land inside its player, which the server refuses).
+    for (std::uint64_t seed = 0; seed < 16; ++seed) {
       CAPTURE(seed);
       const auto s = core::SpawnPointFor(core::kGeneratorTerrain, seed);
       core::VoxelWorld world(core::GeneratorFor(core::kGeneratorTerrain, seed));
@@ -340,8 +343,9 @@ TEST_SUITE("worldgen: terrain") {
       CHECK(std::abs(x) < 512);
       CHECK(std::abs(z) < 512);
       CHECK(y > core::kSeaLevel);
-      for (int dz = -2; dz <= 2; ++dz)
-        for (int dx = -2; dx <= 2; ++dx) {
+      const int r = 4;  // 1.5 m of spread + reach to the block ahead, rounded up
+      for (int dz = -r; dz <= r; ++dz)
+        for (int dx = -r; dx <= r; ++dx) {
           CHECK(IsSolid(world.GetVoxel(x + dx, y - 1, z + dz)));
           CHECK(world.GetVoxel(x + dx, y, z + dz) == M::kAir);
           CHECK(world.GetVoxel(x + dx, y + 1, z + dz) == M::kAir);

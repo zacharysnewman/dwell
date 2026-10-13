@@ -540,8 +540,9 @@ build that saved it, §2.1). It is announced in Welcome as generator **8** (`kGe
 default for dedicated servers and local mode; version **0** (flat) remains for tests. The **movement
 playground** (generator 1 until Phase 15) is now a **structure file**
 (`server/tests/player/playground.structure`, below) that the controller and netcode tests stamp over
-the flat world; no world uses it. Players spawn on the first dry, level 5 × 5 patch (top voxels at
-one height, at least 2 m above sea level) found in an 8 m spiral from the origin. Debug tooling:
+the flat world; no world uses it. Players spawn on the first dry, level 9 × 9 patch (top voxels at
+one height, at least 2 m above sea level; `kSpawnClear`, wide enough for the spread of spawning
+players to build beside themselves) found in an 8 m spiral from the origin. Debug tooling:
 `dwell_worldgen_inspect [seed] [x] [z] [m/char] [slice]` prints an ASCII height map (with timings
 and the spawn; blank beyond the rim) or a 1:1 vertical section, at any coordinates;
 `… [seed] disc out.ppm [m/px] [coast|height]` writes the island and the sea within 40 km of the

@@ -367,16 +367,17 @@ core::LodKind TerrainGenerator::GenerateLodAt(const core::LodCoord& c, std::int6
 
 std::array<double, 3> TerrainGenerator::SpawnPoint() const {
   std::optional<std::array<double, 3>> fallback;
-  // A square spiral outwards from the origin in 8 m steps, for dry level ground: a 5 × 5 patch of
-  // columns whose top voxels are all at one height above the shore.
+  // A square spiral outwards from the origin in 8 m steps, for dry level ground: a patch of columns
+  // kSpawnClear either side whose top voxels are all at one height above the shore.
   std::int32_t x = 0, z = 0, dx = 1, dz = 0, leg = 1, walked = 0, turns = 0;
   for (int n = 0; n < 40000; ++n) {
     const auto g = GroundY(x, z);
     if (g && *g >= kSeaLevel + kShoreHeight) {
       if (!fallback) fallback = std::array<double, 3>{x + 0.5, *g + 1.0, z + 0.5};
       bool level = true;
-      for (int pz = -2; level && pz <= 2; ++pz)
-        for (int px = -2; level && px <= 2; ++px) level = GroundY(x + px, z + pz) == g;
+      for (std::int32_t pz = -kSpawnClear; level && pz <= kSpawnClear; ++pz)
+        for (std::int32_t px = -kSpawnClear; level && px <= kSpawnClear; ++px)
+          level = GroundY(x + px, z + pz) == g;
       if (level) return {x + 0.5, *g + 1.0, z + 0.5};
     }
     x += dx * 8;
