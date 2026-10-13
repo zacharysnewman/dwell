@@ -430,6 +430,16 @@ export class ThreeRenderer implements Renderer {
     }
   }
 
+  captureFrame(): string | null {
+    // The drawing buffer is cleared once composited: read it in the same task that drew it.
+    this.renderFrame();
+    try {
+      return this.renderer.domElement.toDataURL('image/png');
+    } catch {
+      return null; // a context lost, or a canvas the page may not read
+    }
+  }
+
   setChunkVisibility(visible: ((coord: ChunkCoord) => boolean) | null): void {
     this.chunkVisible = visible;
   }

@@ -1,5 +1,6 @@
 import { buildInfo, formatBuildInfo, recordedVersion } from './buildInfo';
 import { blockDump, formatBlockDump, type BlockDump } from './debug/blockDump';
+import { CaptureRegistry, formatCapture } from './debug/capture';
 import { Game, type GameDebugState } from './game/game';
 import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInteraction';
 import { MeshPool } from './mesh/pool';
@@ -217,6 +218,10 @@ function start(): App {
   };
   app.hud.onCopyBlocks = () => {
     copyBlockDump(app);
+  };
+  const captures = captureSections(app);
+  app.hud.onCopyCapture = () => {
+    copyText(app, formatCapture(captures.capture(app.renderer.captureFrame())), 'Capture copied');
   };
   // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
   app.input.onAction = (action) => app.game?.edit(action, performance.now());
@@ -488,17 +493,44 @@ function copyBlockDump(app: App): void {
     app.hud.flash('No world to dump yet');
     return;
   }
-  const text = formatBlockDump(dump);
+  copyText(app, formatBlockDump(dump), 'Block info copied');
+}
+
+/** Copies text to the clipboard, or shows it to copy by hand where that is refused. */
+function copyText(app: App, text: string, done: string): void {
   const shown = () => {
     app.hud.showDump(text);
   };
   try {
     navigator.clipboard.writeText(text).then(() => {
-      app.hud.flash('Block info copied');
+      app.hud.flash(done);
     }, shown);
   } catch {
     shown(); // no clipboard (an insecure context)
   }
+}
+
+/**
+ * The capture's sections (debug/capture.ts): what the game knows about the moment. A system with
+ * more to report registers its own section here.
+ */
+function captureSections(app: App): CaptureRegistry {
+  const captures = new CaptureRegistry();
+  captures.register('build', () => buildInfo);
+  captures.register('world', () => app.world);
+  captures.register('view', () => ({ yaw: app.input.yaw, pitch: app.input.pitch }));
+  captures.register('game', () => app.game?.debugState() ?? null);
+  captures.register('render', () => app.renderer.stats());
+  captures.register('display', () => ({
+    width: app.canvas.clientWidth,
+    height: app.canvas.clientHeight,
+    pixelRatio: window.devicePixelRatio,
+    fps: app.fps.fps,
+    userAgent: navigator.userAgent,
+  }));
+  captures.register('settings', () => app.settings?.current ?? null);
+  captures.register('memory', () => app.memory?.() ?? null);
+  return captures;
 }
 
 /** Local storage, or null where it is blocked. */

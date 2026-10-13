@@ -99,6 +99,8 @@ export interface Renderer {
   setDebugLines(segments: readonly { from: Vec3; to: Vec3; color: number }[] | null): void;
   /** The last frame's draw calls and triangles. */
   stats(): RenderStats;
+  /** Draws a frame and returns it as a PNG data URL (debug capture), or null if unreadable. */
+  captureFrame(): string | null;
   /** Release GPU resources. */
   dispose(): void;
 }

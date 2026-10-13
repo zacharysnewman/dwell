@@ -561,6 +561,15 @@ the targeted block and the 5 × 5 × 5 cells around it as JSON (`debug/blockDump
 strings by palette index, with the world's seed and generator version, the build, and the player's
 position and view) — or shows it to copy by hand where the clipboard is refused — so a spot can be
 regenerated and examined exactly; `dwell_world FILE diff` does the same for a world file (§6.4).
+The overlay's **Copy capture** button copies a **capture** (`debug/capture.ts`): one JSON object
+(`kind: "dwell-capture"`, `format: 1`) holding the frame as a PNG data URL (the renderer draws a
+frame and reads it back, `Renderer.captureFrame`) and named **sections** of what the game knows at
+that moment — the build, the world, the view, the game's debug state (position, flight, LOD and
+terrain stats), the renderer's stats, the display, the settings and memory. The sections are a
+registry (`CaptureRegistry`): a system adds its own by registering a function under a camelCase
+name (a malformed or repeated name is an error; a section that throws is recorded as its error),
+and the capture never changes for it. Decided with the owner (2026-10-13): JSON with a PNG data URL,
+from the debug overlay's button (so phones have it), sections as a registry.
 **Built (Phase 3b):** streaming, the verification chunk, and the generation pools (below).
 
 #### World bounds **[built, Phase 3c]**

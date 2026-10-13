@@ -50,6 +50,8 @@ export class Hud {
   private damageUntil = 0;
   /** The debug overlay's "Copy block info" button (or F6): dump the blocks around the target. */
   onCopyBlocks: (() => void) | null = null;
+  /** The debug overlay's "Copy capture" button: the frame and the game's state (debug/capture.ts). */
+  onCopyCapture: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -74,7 +76,14 @@ export class Hud {
     copy.textContent = 'Copy block info';
     copy.title = 'The targeted block and its neighbours as JSON (F6)';
     copy.addEventListener('click', () => this.onCopyBlocks?.());
-    this.debug.append(copy, this.debugText); // first: a phone's overlay clips its long text
+    const capture = document.createElement('button');
+    capture.id = 'debug-capture';
+    capture.type = 'button';
+    capture.textContent = 'Copy capture';
+    capture.title = 'The frame (PNG) and the position, view, LOD and render state as JSON';
+    capture.addEventListener('click', () => this.onCopyCapture?.());
+    // First: a phone's overlay clips its long text.
+    this.debug.append(copy, capture, this.debugText);
     // Where the clipboard is refused: the dump in a box to select and copy by hand.
     this.dump = document.createElement('div');
     this.dump.id = 'debug-dump';
@@ -130,7 +139,7 @@ export class Hud {
     if (!this.debug.hidden) this.debugText.textContent = text;
   }
 
-  /** Shows text (a block dump the clipboard refused) selected in a box, to copy by hand. */
+  /** Shows text (a dump or capture the clipboard refused) selected in a box, to copy by hand. */
   showDump(text: string): void {
     this.dumpText.value = text;
     this.dump.hidden = false;
