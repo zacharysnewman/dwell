@@ -140,11 +140,13 @@ class Jobs implements SectionSource, SectionMesher {
       });
     });
   }
-  lodBounds(level: number): Promise<LodBounds> {
+  /** Per-column bounds (level, i, k), instead of the flat or bifacial world's everywhere. */
+  boundsOf: ((level: number, i: number, k: number) => LodBounds) | null = null;
+  lodBounds(level: number, i: number, k: number): Promise<LodBounds> {
     return new Promise((resolve) => {
       if (level < this.stuckBelow) return;
       this.pending.push(() => {
-        resolve(this.bifacial ? bifacialBounds() : flatBounds());
+        resolve(this.boundsOf?.(level, i, k) ?? (this.bifacial ? bifacialBounds() : flatBounds()));
       });
     });
   }
@@ -384,6 +386,45 @@ describe('LOD selection (§6.6)', { timeout: 120_000 }, () => {
     }
     expect(view.standIns.length).toBe(s.standIns.length);
   }, 120_000);
+
+  it('classifies each column by its own bounds: a hill is drawn after flat ground', async () => {
+    // Regression (0.9.0, all land; before it, mountains): the bounds cache was keyed by row 0, a
+    // row outside the world at every level up to 17, so every column shared the first one's bounds.
+    // Ground above that column's height was "empty", hiding the streamed chunks there.
+    const jobs = new Jobs();
+    const hill = { x0: 1000, x1: 3000, z0: -1000, z1: 1000, top: 100 };
+    jobs.boundsOf = (level, i, k) => {
+      const [x0, , z0] = sectionOrigin([level, i, 0, k]);
+      const s = sectionSize(level);
+      const onHill = x0 < hill.x1 && x0 + s > hill.x0 && z0 < hill.z1 && z0 + s > hill.z0;
+      return { ...flatBounds(), lo: -Infinity, hi: onHill ? hill.top : -1 };
+    };
+    const view = new View();
+    let body: Vec3 = [-3_000_000, 1.6, 0.5];
+    const near = (c: ChunkCoord): boolean =>
+      c.every((v, a) => Math.abs(v - Math.floor((body[a] ?? 0) / 32)) <= 3);
+    const lod = new LodSystem(jobs, jobs, view, { drawable: near }, () => undefined, {
+      pixelError: 4,
+      cacheBytes: 64 * 1048576,
+      maxGenerationJobs: 16,
+      maxMeshJobs: 8,
+    });
+    const random = rng(11);
+    let now = 0;
+    // Settle over flat ground far from the hill first (its columns' bounds are fetched first).
+    for (let i = 0; i < 300; i++) {
+      lod.update(camera(body, 0, -10), (now += 16));
+      await jobs.finish(random, 1);
+    }
+    // Then stand on the hill: the chunk under the feet (y 64..96) is drawn.
+    body = [2000.5, 80, 0.5];
+    const underFoot: ChunkCoord = [62, 2, 0];
+    for (let i = 0; i < 2000 && !lod.chunkVisible(underFoot); i++) {
+      lod.update(camera(body, 0, -10), (now += 16));
+      await jobs.finish(random, 1);
+    }
+    expect(lod.chunkVisible(underFoot)).toBe(true);
+  });
 
   it('draws the streamed chunks inside buried sections: caves deep underground', async () => {
     // Regression (phone playtest): the LOD treats rock well below the surface as buried (solid,
