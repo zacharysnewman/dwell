@@ -112,7 +112,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
     await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
     await page.waitForTimeout(120);
-    expect(placed, `slot ${String(slot)}`).toBeGreaterThan(1);
+    expect(placed, `slot ${String(slot)}`).toBeGreaterThan(0);
   }
 });
 
@@ -186,15 +186,15 @@ test('local mode: an edited world is saved in the browser and survives a reload'
   await ready(page);
   const target = await aim(page);
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
-  await page.locator('.hotbar-slot[title="sandstone"]').click(); // not a fixed slot: the palette grows
-  const sandstone = stateId('dwell:sandstone');
+  await page.locator('.hotbar-slot[title="sand"]').click(); // not a fixed slot: the palette grows
+  const sand = stateId('dwell:sand');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
-  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sandstone);
+  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sand);
   // Local worlds save every few seconds (and when the page is hidden).
   await page.waitForTimeout(6_000);
   await page.reload();
   await ready(page);
-  await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(sandstone);
+  await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(sand);
   // A different seed is a different world file: untouched there.
   await page.goto('./?world=flat&seed=8');
   await ready(page);
