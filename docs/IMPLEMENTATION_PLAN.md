@@ -32,7 +32,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 12 — Sky islands in a dome | ✖ Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features); never started |
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
-| 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); outstanding: e2e in CI, the owner's look in a browser |
+| 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started |
@@ -1899,7 +1899,7 @@ terrain stays the current generator, cut down (an interim, hardcoded step that P
 locally — native suites (both faces, ~8,000 km out), WASM suites (player, worldgen, storage) and the
 client's Vitest suites pass, with goldens regenerated; `package.json` raised to **0.9.0**, the new
 compatibility line (registry, terrain and the LOD surface layout changed), by the owner's decision.
-Outstanding: the e2e suite in CI (not run locally) and the owner's look at the island in a browser.
+The e2e suite passes in CI. Outstanding: the owner's look at the island in a browser.
 
 Deliverables
 - [x] **Blocks** (`shared/blocks/dwell.json`): keep air, grass, dirt, stone, sand, water, ladder;
@@ -1935,7 +1935,8 @@ Exit criteria
 - [x] No code references a removed block, generator stage or tint (build and grep check).
 - [x] Native, WASM and Vitest suites pass with regenerated goldens.
 - [x] Chunk and LOD generation time measured against generator version 11 (`… bench`).
-- [ ] e2e passes in CI (known failures in `CLAUDE.md` aside) — not runnable here; checked on the PR.
+- [x] e2e passes in CI (known failures in `CLAUDE.md` aside): green once the specs that named block
+  ids by number name them by state (`stateId`), and the settings spec counts the sky rotation slider.
 
 **Measured** (`dwell_worldgen_inspect <seed> bench`, Release, seeds 0 and 20260925): a chunk
 1.03–1.07 ms (version 11) → 0.07 ms (version 12); LOD sections 0.9–2.1 ms → 0.54–0.84 ms per
