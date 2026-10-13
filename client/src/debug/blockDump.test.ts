@@ -3,9 +3,9 @@ import { stateId } from '../world/blocks';
 import { blockDump, formatBlockDump } from './blockDump';
 
 const STONE = stateId('dwell:stone');
-const WEDGE = stateId('dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=wedge]');
+const WEDGE = stateId('dwell:ladder[facing=east,flooded=false]');
 
-// A world of stone below y = 10, with a wedge at (3, 10, -4).
+// A world of stone below y = 10, with a ladder at (3, 10, -4).
 const voxel = (x: number, y: number, z: number) =>
   x === 3 && y === 10 && z === -4 ? WEDGE : y < 10 ? STONE : 0;
 
@@ -26,9 +26,7 @@ describe('block dump', () => {
     expect(d.layers).toHaveLength(5);
     const at = (x: number, y: number, z: number) =>
       d.palette[d.layers[y - 8]?.[z + 6]?.[x - 1] ?? -1];
-    expect(at(3, 10, -4)).toBe(
-      'dwell:grass_slope[facing=east,flooded=false,half=bottom,shape=wedge]',
-    );
+    expect(at(3, 10, -4)).toBe('dwell:ladder[facing=east,flooded=false]');
     expect(at(1, 8, -6)).toBe('dwell:stone');
     expect(at(5, 12, -2)).toBe('dwell:air');
     expect(new Set(d.palette).size).toBe(d.palette.length); // each state named once

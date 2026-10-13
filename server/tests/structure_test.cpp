@@ -30,7 +30,8 @@ TEST_SUITE("structure files") {
 
   TEST_CASE("a bad line fails with its number and reason") {
     std::string error;
-    CHECK_FALSE(ParseStructure("fill 0 0 0 1 1 1 dwell:stone\nfill 0 0 0 1 1 dwell:stone\n", &error));
+    CHECK_FALSE(
+        ParseStructure("fill 0 0 0 1 1 1 dwell:stone\nfill 0 0 0 1 1 dwell:stone\n", &error));
     CHECK(error.find("line 2") != std::string::npos);
     CHECK_FALSE(ParseStructure("fill 0 0 0 1 1 1 dwell:bedrock\n", &error));
     CHECK(error.find("dwell:bedrock") != std::string::npos);
@@ -59,9 +60,9 @@ TEST_SUITE("structure files") {
 
   TEST_CASE("the movement playground file loads") {
     const auto playground = test::PlaygroundStructure();
-    CHECK(playground->At(9, 0, 9) == Materials::kLadderN);   // the ladder
-    CHECK(playground->At(0, 0, 12) == Materials::kAir);      // the doorway
-    CHECK(playground->At(13, -1, 7) == Materials::kWater);   // the pool
+    CHECK(playground->At(9, 0, 9) == Materials::kLadderN);  // the ladder
+    CHECK(playground->At(0, 0, 12) == Materials::kAir);     // the doorway
+    CHECK(playground->At(13, -1, 7) == Materials::kWater);  // the pool
   }
 }
 

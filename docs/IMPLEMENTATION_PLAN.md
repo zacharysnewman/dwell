@@ -32,7 +32,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 12 — Sky islands in a dome | ✖ Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features); never started |
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
-| 15 — Cut to the baseline | ⏳ Not started |
+| 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); outstanding: e2e in CI, the owner's look in a browser |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started |
@@ -1895,43 +1895,73 @@ Exit criteria
 **Goal:** Remove everything outside the baseline, so later steps build on a small codebase. The
 terrain stays the current generator, cut down (an interim, hardcoded step that Phase 17 replaces).
 
-**Status:** Not started.
+**Status:** Built (2026-10-13): every deliverable and exit criterion below is done and verified
+locally — native suites (both faces, ~8,000 km out), WASM suites (player, worldgen, storage) and the
+client's Vitest suites pass, with goldens regenerated; `package.json` raised to **0.9.0**, the new
+compatibility line (registry, terrain and the LOD surface layout changed), by the owner's decision.
+Outstanding: the e2e suite in CI (not run locally) and the owner's look at the island in a browser.
 
 Deliverables
-- [ ] **Blocks** (`shared/blocks/dwell.json`): keep air, grass, dirt, stone, sand, water, ladder;
+- [x] **Blocks** (`shared/blocks/dwell.json`): keep air, grass, dirt, stone, sand, water, ladder;
   remove bedrock, launch_pad (and `launch_speed`, its controller code and scenarios, D6),
   stone_slab, every slope/slab family (and shape picking in the hotbar), sandstone, gravel, snow,
   ice, log, leaves, coal/iron/gold ore. Regenerate the tables; the registry hash changes. Keep the
   `shapeFamilies` mechanism in `gen.mjs`, unused.
-- [ ] **Textures**: remove the removed blocks' tiles from `render/textures.ts`.
-- [ ] **Worldgen cuts** (`server/core/worldgen`): rivers, lakes, ponds, waterfalls, `Column::water`,
+- [x] **Textures**: remove the removed blocks' tiles from `render/textures.ts`.
+- [x] **Worldgen cuts** (`server/core/worldgen`): rivers, lakes, ponds, waterfalls, `Column::water`,
   the valley floor `V` and `D` (`rivers.*`); climate, the biome table, rain shadows, snow lines
   (`biomes.*`, `SampleClimate`); the ridged cascade, belts, ranges, massifs; the 3D density and
   overhangs; caves; the stability pass; ores; boulders and trees; slope stage 5b (`slopes.*`);
   multi-continent layout, plates, island plates and the shelf/abyss profile (one island at the
   origin remains in the interim).
-- [ ] **Tint pipeline**: `TintGrid`, WASM `dwell_worldgen_tint`, the worker's tint job,
+- [x] **Tint pipeline**: `TintGrid`, WASM `dwell_worldgen_tint`, the worker's tint job,
   `TintField`, the `tints` vertex attribute, `TINT_MASKS` and atlas alpha, `LodSurface` tints,
   `tint` in block data.
-- [ ] **Test worlds**: the flat world gets the stone core instead of bedrock (`BEDROCK_LAYERS`
+- [x] **Test worlds**: the flat world gets the stone core instead of bedrock (`BEDROCK_LAYERS`
   removed); the movement playground becomes a structure file loaded by the controller tests (D7),
   `kGeneratorPlayground` removed.
-- [ ] **Tools**: `dwell_worldgen_inspect`'s `biomes` and `valley` modes and the biome map in F4 go
+- [x] **Tools**: `dwell_worldgen_inspect`'s `biomes` and `valley` modes and the biome map in F4 go
   (height map only).
-- [ ] **Tests**: remove `rivers_test`, `climate_test`, `vegetation_test`, `cascade_test`,
+- [x] **Tests**: remove `rivers_test`, `climate_test`, `vegetation_test`, `cascade_test`,
   `slopes_test`, `slope_terrain_test`, `water_search.h`, `biome_search.h` and the controller's
   launch-pad scenario; regenerate chunk and LOD goldens; hotbar count in `e2e/edit.spec.ts` = 5.
-- [ ] **Docs**: `ARCHITECTURE.md` §6.1, §6.3, §6.6, §7.4; `WORLD_GENERATION.md` cut to what remains
+- [x] **Docs**: `ARCHITECTURE.md` §6.1, §6.3, §6.6, §7.4; `WORLD_GENERATION.md` cut to what remains
   (and its sky-island part removed with `docs/reference/aether-floating-islands.md`);
   `SLOPE_BLOCKS.md` trimmed to the shape mechanism; `BLOCK_REGISTRY.md` examples;
   `PLAYER_CONTROLLER.md` launch-pad text; `CLAUDE.md`'s hotbar note.
 
 Exit criteria
-- [ ] The registry holds exactly air, grass, dirt, stone, sand, water and ladder (a test lists them).
-- [ ] No code references a removed block, generator stage or tint (build and grep check).
-- [ ] Native, WASM and Vitest suites pass with regenerated goldens; e2e passes (known failures in
-  `CLAUDE.md` aside).
-- [ ] Chunk and LOD generation time measured against generator version 11 (`… bench`).
+- [x] The registry holds exactly air, grass, dirt, stone, sand, water and ladder (a test lists them).
+- [x] No code references a removed block, generator stage or tint (build and grep check).
+- [x] Native, WASM and Vitest suites pass with regenerated goldens.
+- [x] Chunk and LOD generation time measured against generator version 11 (`… bench`).
+- [ ] e2e passes in CI (known failures in `CLAUDE.md` aside) — not runnable here; checked on the PR.
+
+**Measured** (`dwell_worldgen_inspect <seed> bench`, Release, seeds 0 and 20260925): a chunk
+1.03–1.07 ms (version 11) → 0.07 ms (version 12); LOD sections 0.9–2.1 ms → 0.54–0.84 ms per
+section across levels 1–12. Over seeds the island reaches 28–32 km and the sea starts 19–22 km from
+the origin.
+
+**Deviations and notes**
+- **Interim terrain** (generator version 12): one island (`worldgen/island.h`: a noisy, warped
+  25 km circle), a 2D height field (inland rise, hills, bumps; sea floor −20 m) and a fill by depth
+  (grass over dirt, sand at the shore and under water, stone). Sea level stays at face-local 0 and
+  the world at 8,192 km until Phase 16. Noise fields read hashed per-seed offset coordinates, since
+  gradient noise is zero on its lattice (round coordinates in every world read 0).
+- **The movement playground** is a text structure file (`playground.structure`, parsed by
+  `core/structure.h`: `fill` boxes of named block states) stamped over the flat world by the netcode
+  tests; the client's `playground` world type went too (old index records stay readable: the store is
+  append-only; resetting one starts it as a flat world).
+- **Shaped-block tests removed with the families:** `slope_test.cpp`, the slope cases of the shape,
+  mesher, LOD mesher, edit and interaction tests, and the client's shape-picking tests; the
+  controller's half-height steps are static boxes now. The shape table and adjacency tests remain,
+  over the cube. Phase 18 restores shaped coverage with adaptive blocks.
+- **LOD slopes** (the mesher's slope pieces, `slopePieces.ts`, `PIECE_NEAREST`) and the shape
+  placement preview were cut with the slope stage and shape picking.
+- `indestructible` stays a block property with no block using it (the structural anchor of Phase 20
+  may); the `kUnbreakable` check is untested meanwhile.
+- The LOD surface's per-column data shrank from 6 floats to 4 (tints removed) and the F4 map column
+  from 4 bytes to 3 (height and flags).
 
 ---
 
@@ -2029,6 +2059,10 @@ Exit criteria
 natural) and with the rule table as data.
 
 **Status:** Not started. Replaces Phase 9e (its original plan stays under Phase 9 for the record).
+
+Note (Phase 15): the shaped-block tests (controller slope scenarios, shape-table rows, mesher and
+LOD slope cases) were removed with the placed families; this phase restores shaped coverage for the
+adaptive blocks, and LOD sloped tops (the LOD mesher's slope pieces were cut too).
 
 Deliverables
 - [ ] **Shapes**: the 12 corner and 6 ridge shapes added to `shapes.mjs` as corner-height data;

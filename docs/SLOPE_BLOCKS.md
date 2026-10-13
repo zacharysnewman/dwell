@@ -1,46 +1,16 @@
-# Dwell — Slope Blocks: Shapes, Collision, Building, Terrain and LOD
+# Dwell — Slope Blocks: the Shape Mechanism
 
-> **Next: the baseline rework** (`IMPLEMENTATION_PLAN.md` Phases 15 and 18): Phase 15 removes the
-> placed slope and slab families (no crafted material is left) and the terrain slope stage; Phase 18
-> makes natural blocks shape themselves from their neighbours
-> ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md), [ADR 0024](./adr/0024-adaptive-natural-blocks.md)).
-> The shape mechanism and table below stay; this file is trimmed to them in Phase 15.
->
-> **Status: [built, Phase 9]** — implemented as designed below, with the decisions recorded in
-> [ADR 0016](./adr/0016-slope-blocks.md); the built mechanisms live in
-> [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1 voxel shapes and the registry, §6.3 generation, §6.5
-> building, §6.6 LOD) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md) (§6.2 blocks, steps,
-> slopes), and this file keeps the rationale and the shape tables.
->
-> **Differences from the design below** (what was built):
-> - A shape is *four corner heights in halves of a cell plus a split diagonal and an inversion
->   flag*; the §1.2 table is checked against the baked geometry (`shared/blocks/shapes.mjs`, tests in
->   C++ and TypeScript: volumes by the divergence theorem, closure, winding, convexity).
-> - Faces culled only where a neighbour covers them entirely (§3.1): partly covered faces stay, so
->   some back-to-back interior faces remain (the exhaustive adjacency test proves no holes).
-> - `SurfaceHeightAt` of an inverted piece is the top of its solid (1 where it has thickness).
-> - Terrain (§5): the "continuous surface" is the highest zero of the density (closed form per
->   lattice layer, so overhang noise is included); corner heights are the mean of four columns
->   rounded to a half; the piece is the exact shape or the nearest (`PIECE_NEAREST`); columns with
->   caves or overhang pockets under their surface stay cubes. **Since 0.3.1 / 0.4.1:** one surface
->   cell per column, on solid cells — corners that do not fit one cell (steeper than a block per
->   cell, or a block from a half-height) are clamped to the cell holding the column's own surface,
->   so steep ground and cliffs get a sloped lip on every step instead of cubes (§5 step 2's "the
->   cell above is considered instead" stacked two pieces with a gap under the upper one in 0.3.0;
->   fixed in place, without a new generator version, by the owner's decision). 99.8 % of shaped columns lie within half a block of the surface (worst 0.72 m); shared
->   edges at the same level differ by half a block in 5.7 % of neighbouring pairs, never more.
-> - LOD (§3.2): a column's piece is clamped to its own cell (a corner above the cell's top gives a
->   gentler facet); sea floors stay flat; walls follow the slopes' edges.
-> - The creative palette (§6): one slot per material and a shape key (R, Shift+R, or the button beside
->   the hotbar); `stone_slab` has no slot of its own; a preview outline shows the shape.
-> - Not built: the "smooth" brush (§6, optional), faces' triangle merging along a ridge, top-slab
->   shortcuts. Frame-time budgets on a desktop and a phone, the WASM/native divergence check and the
->   browser end-to-end tests are CI's to confirm.
+> **Status: [built, Phase 9; trimmed in Phase 15].** The baseline rework
+> ([`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md) §3.7, [ADR 0025](./adr/0025-baseline-world.md))
+> removed the placed slope and slab families (no block uses `shapeFamilies` any more: the list is
+> empty), shape picking in the hotbar, the terrain's slope stage and the LOD's slope pieces. What
+> stays is the **shape mechanism** below — a shape as four corner heights, the families a block can
+> opt into by data, the baked geometry, collision and meshing — which Phase 18's adaptive natural
+> blocks ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md), [ADR 0024](./adr/0024-adaptive-natural-blocks.md))
+> build on. Decisions: [ADR 0016](./adr/0016-slope-blocks.md) (amended by ADR 0025). The built
+> mechanisms live in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 and
+> [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md) §6.2.
 
-Slopes touch nearly every system: the block registry (Phase 8, [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)),
-the chunk and LOD meshers, terrain collision and the player controller, prediction parity, block
-editing and the creative palette, the terrain generator, and later the physics clusters (Phases
-11–13). That is why it is its own phase.
 
 ## 1. The geometry
 
@@ -119,8 +89,8 @@ namespaced blocks with typed properties, canonical state strings such as
 the `u16` voxel, and world files that store palettes as strings. (An earlier draft of this section
 proposed a hand-made id formula; the registry replaces it.)
 
-- **Families per shapeable material** (stone, dirt, grass, sand, sandstone, gravel, snow, log,
-  planks later, …), generated from the block data files: `dwell:<m>_slope[facing, flooded, half,
+- **Families per shapeable material** (Phase 9: stone, dirt, grass, sand, sandstone, gravel, snow,
+  log; since Phase 15 none — the `shapeFamilies` list is empty), generated from the block data files: `dwell:<m>_slope[facing, flooded, half,
   shape]` — `shape` = the 9 pieces of §1.2 (`wedge`, `outer`, `inner`, `gentle_low`,
   `gentle_high`, `gentle_outer_low`, `gentle_outer_high`, `gentle_inner_low`,
   `gentle_inner_high`), `facing` = the direction it descends toward, `half` = `bottom` (upright) or
@@ -159,22 +129,6 @@ surface above — with the exact same arithmetic on both sides (ADR 0010 rules: 
   culls water faces against it accordingly. Placing a slope into water makes it flooded; breaking
   a flooded slope leaves water.
 
-### 3.2 LOD
-
-The LOD's biggest visual gain: distant terrain stops looking like stacked cubes.
-
-- **No format change.** LOD sections keep storing materials per cell. The **LOD mesher derives
-  shapes** from surface heights at mesh time, with the same corner-height rule as the generator
-  (§5), scaled to the cell size: generated sections already carry each column's exact surface
-  (`core::LodSurfaces`); downsampled (modified) sections use the top filled cell of each column.
-  Corner heights are the average of the four columns meeting at the corner, quantised to half a
-  cell, then matched to a piece.
-- Applies at every level, so mountains seen from 50 km read as faceted slopes rather than
-  terraces.
-- The chunk/LOD boundary keeps the existing two-pass depth split; both sides approximate the same
-  surface, so the seam stays small. A test checks the LOD slope surface stays within half a cell
-  of the true surface at sampled sites.
-
 ## 4. Collision and the player controller
 
 - **Terrain collision** (`terrain_collision.h`): the per-chunk `MeshShape` gains the sloped
@@ -194,69 +148,3 @@ The LOD's biggest visual gain: distant terrain stops looking like stacked cubes.
   wall, a slope under a low ceiling for crouching), run natively and in WASM, at the origin and
   ~8,000 km out, plus the native↔WASM divergence check and the golden trace (regenerated only
   if a scenario intentionally changes).
-
-## 5. Terrain generation: shaping the surface
-
-The generator knows the continuous surface height `h(x, z)` (base height plus noise) before it
-rounds it to voxels. Slopes are chosen from it **per cell, from corner heights**, so neighbouring
-cells agree without reading each other (no neighbour reads, §6.3):
-
-1. For a column's top voxel whose surface is a plain heightfield locally (no overhang noise or
-   cave air within the cell's neighbourhood), take `h` at the cell's four corners
-   (corner points are shared by the four cells around them, so adjacent cells see the same
-   numbers).
-2. Relative to the cell's floor, quantise each corner height to {0, ½, 1} (below → the cell is
-   air; above → a full cube, and the cell above is considered instead).
-3. Match the four quantised heights to the shape table (§1.2, in any of 4 orientations): full,
-   slab, wedge, gentle low/high wedge, outer/inner corners of either family. Combinations not in
-   the set (saddles, mixed runs) map to the nearest piece by a fixed rule (e.g. raise the lowest
-   corner), so the result is still deterministic.
-4. The material is the surface material the column already chooses (grass, sand, snow, …) in its
-   shaped state; a piece whose open part lies below the local water level (sea, rivers, lakes) is
-   `flooded=true`, so lake and sea floors are sloped too.
-
-Gentle pieces appear on gentle ground and standard pieces on slopes near 45°; anything steeper
-stays a cliff of cubes with a shaped lip (built in 0.3.1 / 0.4.1: every column's top cell is shaped,
-clamped to one cell, on solid cells). Slopes are a generator stage like the others, so this is
-a **generator version bump** with regenerated goldens; the point queries (`SolidAt`, `GroundY`)
-and `GenerateLod`'s surfaces follow the same rule. Islands (Phase 12, cancelled) and cave floors keep cubes
-at first; extending the rule to them is a later tuning step.
-
-## 6. Building
-
-- **Palette:** the creative palette offers each shapeable material's shapes (a shape selector
-  next to the material; a key and a touch button cycle shapes).
-- **Orientation from context:** yaw from the player's facing (the slope rises away from the
-  player, like stairs), inverted when placing against a ceiling or the upper half of a side face.
-  A preview outline shows the exact shape before placing.
-- **Validation** (`CheckBlockEdit`): the placed shape must not overlap players — tested against
-  the shape's true volume, not the cell — and must be a `Placeable` state. Breaking a shaped
-  block gives its base material.
-- **Optional tools** (later): a "smooth" brush that applies the terrain rule (§5) to a selected
-  area of player-built blocks.
-
-## 7. Later phases
-
-- **Phase 20 (voxel awakening):** integrity treats any two solid voxels sharing a face as connected
-  (partial coverage included, so a slope supports what sits on it). Cluster bodies use one convex
-  shape per voxel from the registry (inner corners as two wedges), and mass from density ×
-  volume.
-- **Phases 21–22:** debris and re-baking snap to the 24 orientations; a shaped voxel re-bakes into
-  the state whose orientation matches, or as a full block when none does.
-
-## 8. How Phase 9 is checked
-
-- Shape table: the corner heights, volumes, coverage and convexity of every variant computed from
-  its triangles and compared to §1.2; the slope families' canonical strings round-trip and the
-  registries agree on both sides.
-- Meshing: no holes or z-fighting between any pair of adjacent shapes (an exhaustive test over all
-  shape pairs on all six sides: every surface point is covered by exactly one face); sloped faces
-  lit by normal.
-- Controller: the slope scenarios above, natively and in WASM, both origins; the `maxSlopeAngle`
-  test fails on 45° and passes on the new value.
-- Terrain: on sampled sites the shaped surface is within half a block of `h`, adjacent cells'
-  shared corners agree, slopes below the water level are flooded; determinism goldens.
-- LOD: the LOD slope surface within half a cell of the true surface; frame time within budget.
-- Building: placing every shape in every orientation (e2e, like the existing "break and place every
-  palette block" test), seen identically by a second client.
-- Manual: walking a sloped landscape and building a sloped roof, reviewed by the owner.

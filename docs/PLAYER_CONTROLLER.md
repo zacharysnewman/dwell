@@ -292,15 +292,13 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   up is −y: the controller gains a face sign through every vertical quantity and probe, proven by a
   mirror-equivalence suite ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
   **[built, Phase 9]** `maxSlopeAngle` is **50°**: a standard slope's face is exactly 45°, so the
-  limit must not hinge on float rounding of its normal (a test pins it). Slope scenarios
-  (`server/tests/player/slope_test.cpp`; natively, in WASM and ~8,000 km out): up and down standard
-  and gentle ramps in all four directions without leaving the ground (the ground snap holds a
-  player to a 45° descent), across a hip and a valley, standing still on a slope (no sliding), a
-  slope into a wall, crouching under a sloped ceiling, the in-game slope playground and generated
-  sloped terrain; no gain in speed and no launch (a rise per tick is at most a step-up).
-  Ray probes and the uncrouch overlap test read the exact shape (`core/block_shape.h`); the
-  controller golden trace of cubes and slabs is bit-for-bit unchanged (the box ray cast is kept as
-  a differential test), and the scenario has a fifth player on the slope features.
+  limit must not hinge on float rounding of its normal (a test pins it). Ray probes and the uncrouch
+  overlap test read the exact shape (`core/block_shape.h`; the box ray cast is kept as a
+  differential test). **[Phase 15]** The slope-block scenarios (`slope_test.cpp`) went with the
+  placed slope and slab families — no shaped block is left until Phase 18's adaptive blocks, which
+  bring their own; ramps remain as Tier 1 boxes, and half-height steps (stairs, the scenario's step)
+  are static boxes (`PlayerTestWorld::HalfStep`). The scenario's fifth player stands by the half
+  step; the golden trace was regenerated.
 - `maxStepHeight` 0.55 m (PPC: 0.45): half-block **slabs** (0.5 m) are stepped up without leaving
   the ground, full 1 m blocks need a **jump** (jump height 1.25 m clears one block); step-up also
   applies to cluster debris. Walking off a 1 m ledge is a short fall (larger than the step reach),
@@ -593,9 +591,9 @@ divergence added per tick. The whole ported player and netcode suite also passes
 
 **Built:** the PPC's headless Quantum tests are ported to C++ (doctest) in `server/tests/player`,
 using a `PlayerTestWorld` builder (`player_test_world.h`) with voxel primitives (floor, block
-steps, slab steps, walls, 1×2 doorways, 1-tall crawlspaces, ladder columns, water pools), Tier 1
+steps, half steps (static boxes since Phase 15), walls, 1×2 doorways, 1-tall crawlspaces, ladder columns, water pools), Tier 1
 boxes (kinematic or dynamic) as platforms and ramps, scheduled kicks and explosions, and per-player
-event counters. Expectations use Dwell's default config (recommended feel, voxel capsule):
+event counters. Expectations use Dwell's default config (recommended feel, voxel capsule): The **movement playground** — a block step, a doorway, a crawlspace, a ladder to a ledge and a pool near the spawn — is a structure file (`playground.structure`, `core/structure.h`) stamped over the flat world by the netcode tests (Phase 15; it was generator version 1 with slab stairs, slope features and a launch pad). The launch-pad knockback test is now a server-issued knockback.
 
 | PPC suite | Dwell equivalent |
 |---|---|

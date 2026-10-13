@@ -27,8 +27,8 @@ constexpr int kFaceMinY = core::kMidplaneY;
 constexpr int kLattice = 4;
 constexpr float kLatticeStep = 0.25f;  // 1 / kLattice, exact
 
-// The ground meets sea level at the coast. The land's rise inland (m, approached far inland) and the
-// distance inland (m) at which it is half done.
+// The ground meets sea level at the coast. The land's rise inland (m, approached far inland) and
+// the distance inland (m) at which it is half done.
 constexpr float kInlandRise = 90.0f;
 constexpr float kRiseHalf = 6'000.0f;
 // The sea floor: its depth (m below sea level) offshore, reached linearly over this distance (m).
@@ -87,12 +87,12 @@ TerrainGenerator::Corner TerrainGenerator::SampleCorner(std::int32_t lx, std::in
 TerrainGenerator::Corner TerrainGenerator::SampleLod(std::int64_t x, std::int64_t z,
                                                      std::int64_t cell) const {
   const std::int64_t nx = x + offset_x_, nz = z + offset_z_;
-  return {island_.CoastAt(x, z,
-                          OctavesResolved(island::kCoastWavelength, island::kCoastOctaves, cell)),
-          Fbm2(seeds_.hills, nx, nz, kHillWavelength, kHillOctaves,
-               OctavesResolved(kHillWavelength, kHillOctaves, cell)),
-          Fbm2(seeds_.bumps, nx, nz, kBumpWavelength, kBumpOctaves,
-               OctavesResolved(kBumpWavelength, kBumpOctaves, cell))};
+  return {
+      island_.CoastAt(x, z, OctavesResolved(island::kCoastWavelength, island::kCoastOctaves, cell)),
+      Fbm2(seeds_.hills, nx, nz, kHillWavelength, kHillOctaves,
+           OctavesResolved(kHillWavelength, kHillOctaves, cell)),
+      Fbm2(seeds_.bumps, nx, nz, kBumpWavelength, kBumpOctaves,
+           OctavesResolved(kBumpWavelength, kBumpOctaves, cell))};
 }
 
 Column TerrainGenerator::Finish(const Corner& c) {
@@ -139,7 +139,7 @@ std::optional<std::int32_t> TerrainGenerator::GroundY(std::int32_t x, std::int32
 // --- 3: chunks --------------------------------------------------------------------------------
 
 void TerrainGenerator::ChunkColumns(std::int32_t x0, std::int32_t z0,
-                                   std::vector<Column>& cols) const {
+                                    std::vector<Column>& cols) const {
   constexpr int S = kChunkSize, nl = S / kLattice + 1;
   const std::int32_t lx0 = FloorDiv(x0, kLattice), lz0 = FloorDiv(z0, kLattice);
   std::vector<Corner> corners(static_cast<std::size_t>(nl * nl));

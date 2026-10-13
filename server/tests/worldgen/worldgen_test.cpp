@@ -18,7 +18,6 @@
 #include "dwell/worldgen/noise.h"
 #include "dwell/worldgen/terrain.h"
 
-
 using namespace dwell;
 using core::Chunk;
 using core::ChunkCoord;
@@ -171,7 +170,8 @@ TEST_SUITE("worldgen: terrain") {
     const TerrainGenerator gen(0);
     const auto [cx, cz] = CoastOnAxis(gen);
     std::vector<ChunkCoord> coords = {{0, 0, 0}, {0, 2, 0}, {-1, -3, 3}};
-    for (const auto& [x, z] : {std::pair{cx, cz}, std::pair{cx + 600, cz}, std::pair{-9000, 4000}}) {
+    for (const auto& [x, z] :
+         {std::pair{cx, cz}, std::pair{cx + 600, cz}, std::pair{-9000, 4000}}) {
       coords.push_back(core::ChunkOf(x, static_cast<int>(gen.ColumnAt(x, z).height), z));
     }
     for (const ChunkCoord& c : coords) {
@@ -257,7 +257,8 @@ TEST_SUITE("worldgen: terrain") {
       int sky = 0, checked = 0;
       for (const auto& [cx, cz] :
            {std::pair{0, 0}, {5, -3}, {-14, -36}, {700, -12}, {249990, 10}, {-3, 249000}}) {
-        const int surface = worldgen::FloorDiv(static_cast<int>(gen.ColumnAt(cx * S, cz * S).height), S);
+        const int surface =
+            worldgen::FloorDiv(static_cast<int>(gen.ColumnAt(cx * S, cz * S).height), S);
         for (int cy = surface - 2; cy <= surface + 6; ++cy) {
           const ChunkCoord c{cx, cy, cz};
           CAPTURE(c.x);
@@ -289,15 +290,16 @@ TEST_SUITE("worldgen: terrain") {
     CHECK_FALSE(air({0, -1, 0}));
   }
 
-  TEST_CASE("the fill: grass over dirt inland, sand at the shore and under water, sea to its level") {
+  TEST_CASE(
+      "the fill: grass over dirt inland, sand at the shore and under water, sea to its level") {
     const TerrainGenerator gen(0);
     const auto [cx, cz] = CoastOnAxis(gen);
     int water = 0, grass = 0, sand = 0;
     // Across the coast, from 200 m inland to 200 m out to sea.
     for (std::int32_t x = cx - 200; x <= cx + 200; x += 40) {
       const int h = static_cast<int>(gen.ColumnAt(x, cz).height);
-      for (const int cy : {worldgen::FloorDiv(h, S) - 1, worldgen::FloorDiv(h, S),
-                           worldgen::FloorDiv(h, S) + 1}) {
+      for (const int cy :
+           {worldgen::FloorDiv(h, S) - 1, worldgen::FloorDiv(h, S), worldgen::FloorDiv(h, S) + 1}) {
         const ChunkCoord c = core::ChunkOf(x, cy * S, cz);
         const Chunk chunk = Generated(gen, c);
         for (int z = 0; z < S; ++z)
@@ -399,9 +401,10 @@ TEST_SUITE("worldgen: golden") {
       for (const core::Face face : {core::Face::kA, core::Face::kB}) {
         const auto [x, z] = CoastOnAxis(worldgen::BifacialTerrain(seed).Local(face));
         for (const std::int32_t dx : {-96, 0, 96}) {
-          cases.push_back({seed,
-                           {worldgen::FloorDiv(x + dx, S), face == core::Face::kA ? kSurface : kSurfaceB,
-                            worldgen::FloorDiv(z, S)}});
+          cases.push_back(
+              {seed,
+               {worldgen::FloorDiv(x + dx, S), face == core::Face::kA ? kSurface : kSurfaceB,
+                worldgen::FloorDiv(z, S)}});
         }
       }
     }

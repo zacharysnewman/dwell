@@ -28,8 +28,9 @@ namespace dwell::worldgen {
 
 // 2D fields of one column.
 struct Column {
-  float coast = 0;   // signed distance to the coast (m): > 0 land, < 0 sea
-  float height = 0;  // ground height (m, face-local, sea level 0): the top voxel is ceil(height) − 1
+  float coast = 0;  // signed distance to the coast (m): > 0 land, < 0 sea
+  float height =
+      0;  // ground height (m, face-local, sea level 0): the top voxel is ceil(height) − 1
   bool outside = false;  // beyond the world's disc: nothing is generated
 };
 

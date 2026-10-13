@@ -194,7 +194,8 @@ TEST_SUITE("block shapes: adjacency") {
       }
     }
     MESSAGE(checked << " samples; back-to-back interior faces: " << doubled);
-    CHECK(checked >= 6 * kSamples * kSamples * static_cast<long>(distinct.size() * distinct.size()));
+    CHECK(checked >=
+          6 * kSamples * kSamples * static_cast<long>(distinct.size() * distinct.size()));
   }
 }
 

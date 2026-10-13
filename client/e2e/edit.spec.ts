@@ -3,7 +3,6 @@
 // server.
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { PIECES, facingToward, pieceState } from '../src/interact/shapes';
 import { stateId } from '../src/world/blocks';
 import { INVITE_FILE } from './global-setup';
 
@@ -91,7 +90,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await page.goto('./?world=flat');
   await ready(page);
   const slots = await page.locator('.hotbar-slot').count();
-  expect(slots).toBe(14);
+  expect(slots).toBe(5);
   const ground = await aim(page);
   expect(ground.face).toBe(2);
   const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);
@@ -122,47 +121,7 @@ interface Placement {
   material: number;
 }
 
-/** Places and breaks every shape piece facing each way, checking the state the palette promised. */
-async function placeEveryPiece(page: Page): Promise<void> {
-  await page.keyboard.press('Digit1'); // stone: comes in every shape
-  for (const piece of PIECES.slice(1)) {
-    await call(page, `d.piece('${piece}')`);
-    for (const yaw of [0, 90, 180, 270]) {
-      const label = `${piece} looking ${String(yaw)}°`;
-      await call(page, `d.look(${String(yaw)}, -45)`);
-      await expect.poll(async () => (await state(page))?.target ?? null).not.toBeNull();
-      // The slope rises away from the player, upright on the ground.
-      const expected = pieceState('dwell:stone', piece, facingToward(yaw), 'bottom');
-      await expect
-        .poll(async () => (await call<Placement | null>(page, 'd.placement()'))?.material ?? -1, {
-          message: label,
-        })
-        .toBe(expected);
-      const placement = await call<Placement>(page, 'd.placement()');
-      await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
-      expect(await call<boolean>(page, `d.edit('place')`), label).toBe(true);
-      await expect.poll(() => voxel(page, placement.cell), { message: label }).toBe(expected);
-      // Breaking targets the new shape itself, and leaves air behind.
-      await expect
-        .poll(async () => (await state(page))?.target?.cell.join() ?? '', { message: label })
-        .toBe(placement.cell.join());
-      await page.waitForTimeout(120);
-      expect(await call<boolean>(page, `d.edit('break')`), label).toBe(true);
-      await expect.poll(() => voxel(page, placement.cell), { message: label }).toBe(0);
-    }
-  }
-}
-
-test('local mode: every shape in every facing is placed as promised, then broken', async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  await page.goto('./?world=flat');
-  await ready(page);
-  await placeEveryPiece(page);
-});
-
-test('a placed slope shows as the same state to a second client on a native server', async ({
+test('a placed block shows as the same state to a second client on a native server', async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -173,19 +132,15 @@ test('a placed slope shows as the same state to a second client on a native serv
   await b.goto(`./${invite}`);
   await ready(a);
   await ready(b);
-  await a.keyboard.press('Digit1');
   // Players spawn side by side: build away from the other one (the server refuses a block placed
   // into a player).
   const yaw = await yawAwayFrom(a, b);
-  for (const piece of ['wedge', 'inner', 'gentle_outer_high', 'slab'] as const) {
-    await call(a, `d.piece('${piece}')`);
+  for (const key of ['Digit1', 'Digit5'] as const) {
+    await a.keyboard.press(key); // stone, then sand
     await call(a, `d.look(${String(yaw)}, -45)`);
     await expect.poll(async () => (await state(a))?.target ?? null).not.toBeNull();
-    const expected = pieceState('dwell:stone', piece, facingToward(yaw), 'bottom');
-    await expect
-      .poll(async () => (await call<Placement | null>(a, 'd.placement()'))?.material ?? -1)
-      .toBe(expected);
     const placement = await call<Placement>(a, 'd.placement()');
+    const expected = placement.material;
     await a.waitForTimeout(120);
     expect(await call<boolean>(a, `d.edit('place')`)).toBe(true);
     await expect.poll(() => voxel(a, placement.cell), { timeout: 5_000 }).toBe(expected);

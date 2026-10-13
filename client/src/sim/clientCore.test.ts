@@ -1,4 +1,5 @@
 // Runs the real client sim (WASM) under Node: streamed chunks, prediction from a snapshot, input,
+import { stateId } from '../world/blocks';
 // block edits and targeting, voxels for meshing.
 // Skipped until `npm run build:wasm` has been run, unless DWELL_REQUIRE_WASM is set (CI).
 import { existsSync } from 'node:fs';
@@ -14,7 +15,7 @@ import { ChunkGenerator, type DwellWorldgenFactory } from '../worldgen/generator
 const wasmJs = new URL('../../public/wasm/dwell_core.js', import.meta.url);
 const worldgenJs = new URL('../../public/wasm/dwell_worldgen.js', import.meta.url);
 const skip = !existsSync(wasmJs) && !process.env.DWELL_REQUIRE_WASM;
-const GENERATOR_PLAYGROUND = 1;
+const GENERATOR_FLAT = 0;
 
 const controller: ControllerState = {
   flags: ControllerFlags.grounded,
@@ -38,14 +39,14 @@ const controller: ControllerState = {
 };
 
 describe.skipIf(skip)('client sim core (WASM)', () => {
-  /** A client sim holding the playground's chunks around the origin, as streaming would. */
+  /** A client sim holding the flat world's chunks around the origin, as streaming would. */
   async function load(): Promise<ClientCore> {
     const mod = (await import(/* @vite-ignore */ wasmJs.href)) as { default: DwellCoreFactory };
     const core = await ClientCore.load(mod.default);
     const wg = (await import(/* @vite-ignore */ worldgenJs.href)) as {
       default: DwellWorldgenFactory;
     };
-    const gen = await ChunkGenerator.load(wg.default, GENERATOR_PLAYGROUND, 0n);
+    const gen = await ChunkGenerator.load(wg.default, GENERATOR_FLAT, 0n);
     for (let y = -1; y <= 0; y++)
       for (let z = -2; z <= 1; z++)
         for (let x = -2; x <= 1; x++) core.setChunk([x, y, z], 0, gen.generate([x, y, z]));
@@ -108,10 +109,10 @@ describe.skipIf(skip)('client sim core (WASM)', () => {
   it('returns a chunk with its apron for meshing', async () => {
     const core = await load();
     const padded = core.paddedChunk(0, -1, 0);
-    // The playground's grass top layer is y = −1, i.e. local y 31 of chunk row −1.
-    expect(padded[paddedIndex(5, 31, 5)]).toBe(4);
+    // The flat world's grass top layer is y = −1, i.e. local y 31 of chunk row −1.
+    expect(padded[paddedIndex(5, 31, 5)]).toBe(stateId('dwell:grass'));
     expect(padded[paddedIndex(5, 32, 5)]).toBe(0); // the apron above: chunk row 0, air
-    expect(padded[paddedIndex(-1, 30, 5)]).toBe(3); // the apron at −X: chunk −1's dirt
+    expect(padded[paddedIndex(-1, 30, 5)]).toBe(stateId('dwell:dirt')); // the apron at −X: chunk −1's dirt
     expect(core.paddedChunk(40, 10, 40).every((m) => m === 0)).toBe(true); // not streamed: air
   });
 
@@ -145,7 +146,7 @@ describe.skipIf(skip)('client sim core (WASM)', () => {
 
   it('drops removed chunks', async () => {
     const core = await load();
-    expect(core.voxel(5, -1, 5)).toBe(4);
+    expect(core.voxel(5, -1, 5)).toBe(stateId('dwell:grass'));
     core.removeChunk([0, -1, 0]);
     expect(core.chunkCount()).toBe(31);
     expect(core.voxel(5, -1, 5)).toBe(0);

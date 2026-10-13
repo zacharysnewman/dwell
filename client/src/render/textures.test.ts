@@ -106,6 +106,13 @@ describe('texture atlas', () => {
 describe('atlas alpha', () => {
   it('is opaque everywhere (the biome tint masks were removed with the tints, Phase 15)', () => {
     const atlas = buildAtlas();
-    for (let i = 3; i < atlas.data.length; i += 4 * 97) expect(atlas.data[i]).toBe(255);
+    for (const name of TILES) {
+      const r = tileRect(name);
+      const x0 = Math.round(r.u0 * ATLAS_SIZE);
+      const y0 = Math.round(r.v0 * ATLAS_SIZE);
+      for (let y = 0; y < TILE; y += 5)
+        for (let x = 0; x < TILE; x += 5)
+          expect(atlas.data[((y0 + y) * ATLAS_SIZE + x0 + x) * 4 + 3], name).toBe(255);
+    }
   });
 });

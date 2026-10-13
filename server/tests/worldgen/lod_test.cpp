@@ -20,7 +20,6 @@
 #include "dwell/worldgen/bifacial.h"
 #include "dwell/worldgen/terrain.h"
 
-
 using namespace dwell;
 using core::Chunk;
 using core::ChunkCoord;
@@ -209,7 +208,8 @@ TEST_SUITE("lod: downsample") {
     CHECK(block([](int x, int, int) { return x == 0 ? M::kDirt : M::kAir; }) == M::kDirt);
     CHECK(block([](int x, int, int) { return x == 1 ? M::kDirt : M::kAir; }) == M::kDirt);
     // A 1×1 pillar: 2 of 8.
-    CHECK(block([](int x, int, int z) { return x == 0 && z == 0 ? M::kDirt : M::kAir; }) == M::kAir);
+    CHECK(block([](int x, int, int z) { return x == 0 && z == 0 ? M::kDirt : M::kAir; }) ==
+          M::kAir);
     // Three of eight is air too.
     CHECK(block([](int x, int y, int z) {
             return x + y + z <= 1 && !(x == 0 && y == 0 && z == 0) ? M::kStone : M::kAir;

@@ -69,7 +69,7 @@ describe('BlockInteraction', () => {
         action: BlockEditAction.Place,
         cell: [3, 0, 4],
         face: 5,
-        material: 3, // dirt
+        material: 2, // dirt
       },
     ]);
   });

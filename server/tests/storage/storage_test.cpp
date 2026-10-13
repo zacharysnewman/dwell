@@ -79,7 +79,8 @@ SaveBatch GoldenBatch() {
                      1700000000,        0};
   // Stone and dirt; a flooded west ladder and water (the files name them by string).
   b.chunks.push_back({{0, 0, 0}, 3, Filled(dwell::core::Materials::kStone)});
-  b.chunks.push_back({{-250000, 191, 250000}, 1, Filled(dwell::core::Materials::kLadderFacingWestFloodedTrue)});
+  b.chunks.push_back(
+      {{-250000, 191, 250000}, 1, Filled(dwell::core::Materials::kLadderFacingWestFloodedTrue)});
   PlayerRecord p;
   p.key = Key(7);
   p.display_name = "Golden";

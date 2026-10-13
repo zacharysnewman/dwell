@@ -138,9 +138,9 @@ describe('LOD section mesher (§6.6)', () => {
     expect(quads(m.water)).toBe(1); // only the surface: sides hidden by the apron's water
     // The sand's sides are hidden by the apron's sand (skirts); water never gets skirts.
     for (const face of [0, 1, 4, 5]) expect(quads(m.skirts[face] ?? m.water)).toBe(1);
-    const top = lodColor(4, 0);
+    const top = lodColor(GRASS, 0);
     expect(top).toBe(averageTileColor('grass'));
-    expect(lodColor(2, 1)).toBe(averageTileColor('stone'));
+    expect(lodColor(STONE, 1)).toBe(averageTileColor('stone'));
   });
 
   it('writes linear vertex colours: the textured chunks are sRGB, decoded before lighting', () => {

@@ -98,10 +98,10 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 11, §6.3) by
-   default; `?world=playground|flat` and `?seed=N` (local mode) or
-   `--generator N` and `--seed N` (`dwell_server`) pick another generator or seed. The
-   **playground** (version 1) is the flat world plus movement test features near the spawn.
+   dedicated servers generate the **procedural terrain** world (generator version 12, §6.3) by
+   default; `?world=flat` and `?seed=N` (local mode) or `--generator N` and `--seed N`
+   (`dwell_server`) pick another generator or seed. (The movement playground, version 1, became a
+   test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
    **[built, Phase 3e]** Local worlds are saved in the browser: one world file per generator and
    seed in OPFS (`dwell/worlds/local-g<generator>-s<seed>.dwellworld`, §6.4), every 5 s and when
    the page is hidden or closed; a reload continues the same world. **[built, Phase 5a]** Worlds
@@ -301,7 +301,7 @@ a tick), runs the due 60 Hz steps (`FixedStep`: carries remainders, drops backlo
 steps), and sleeps until the next step or at most 2 ms. Physics steps with Jolt's thread pool.
 **Built (Phase 2):** each `Server::Step` takes one input per joined player from its jitter-buffered
 queue (§9.3), runs the player controller pipeline, applies its server-side consequences (fall
-damage, debug launch pads → knockback; there is no void: a body that leaves the disc falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps physics, respawns dead
+damage; there is no void: a body that leaves the disc falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps physics, respawns dead
 players after `RESPAWN_SECONDS`, and every 3rd tick sends each client a `PhysicsSnapshot`.
 **Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3); players
 spawn at the generator's spawn point. **Built (Phase 3b):** each step first integrates the chunks
@@ -361,13 +361,13 @@ are capped at 512. Reliable writes queue while SCTP buffers are full.
 | `protocol/` **[built]** | Codecs mirroring the C++ ones (including the chunk palette + RLE, `chunkVoxels.ts`), constants generated from `shared/protocol`. |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB. |
 | `local/` **[built]** | Local mode: `LocalCore` wrapper over the WASM exports and the module worker hosting it; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handles (the database, its journal, and a WAL for opening a dedicated server's file), opened by the worker before the core starts and handed to its VFS as `dwellFiles`; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. **[built, Phase 6]** The index records each world's `appVersion` and is a cross-version contract (append-only; unknown fields and unreadable records are preserved on rewrite); worlds without a version are listed apart; `worldAccess.ts` says whether this build may open a world (§6.4); `LocalCore.load` throws when the world file is locked to another version (`dwell_local_create` returns 3). |
-| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick, frame rate — `fps.ts`, per full second); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns around the player from a worldgen worker, coloured by biome and hill-shaded, with the player's heading; Phase 10: `-` and `=` zoom from 8 m per column out to the whole disc at 128 km, centred on the origin, with the player a dot on it); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, the full-detail distance, §6.6, and the tone-mapping exposure — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices, and a Versions link to the launcher's version page (Phase 6b); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
+| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick, frame rate — `fps.ts`, per full second); HUD (crosshair, health, death message; background work such as terrain loading is a small status in the bottom-left corner, never over the view — `game/hudText.ts`) and the F3 debug overlay (on touch screens the connection status and the overlay stack below the top hotbar) (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns around the player from a worldgen worker, coloured by height and hill-shaded, with the player's heading; Phase 10: `-` and `=` zoom from 8 m per column out to the whole disc at 128 km, centred on the origin, with the player a dot on it); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot cut from the texture atlas, the selected one highlighted and named; tapping a slot selects it); the settings menu (`settingsMenu.ts`: a ☰ button in the top-left corner opening a panel of sliders — the height fog's distance, density and height, the full-detail distance, §6.6, and the tone-mapping exposure — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable). **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices, and a Versions link to the launcher's version page (Phase 6b); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
 | `interact/` **[built]** | `BlockInteraction` (§6.5): targets the block under the crosshair each frame (`ClientCore.target` from the eye, `REACH_DISTANCE`), the palette (`PALETTE`: every placeable material, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. |
 | `world/` **[built]** | The block registry (`blocks.gen.ts` generated from `shared/blocks/`, `blocks.ts`: canonical strings, parse, properties, registry hash, §6.1; checked against the same vector as the C++ one) and, over it, the render styles and the placeable set (`materials.ts`). `ChunkStreamer` (`chunkStream.ts`): applies `ChunkData` (Generated via the worldgen pool, Explicit decoded) and `ChunkUnload` to the client sim, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first, and tells the game when the terrain around the player is loaded (§6.3). |
-| `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's biome/height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
+| `worldgen/` **[built]** | Worldgen worker pool (`pool.ts`, `worker.ts`): module workers each running `dwell_worldgen.wasm` — the server's C++ terrain generator alone — for `Generated` chunks and the verification hash; jobs in request order, cancellable until handed to a worker (§5.1, §6.3); also samples the terrain's height map for the debug map (Phase 3e). **[built, Phase 4]** The module exports `GenerateLod` and the LOD column bounds (`ChunkGenerator.lod`, `.lodBounds`), which the pool runs for LOD sections behind chunk jobs (§6.6). |
 | `lod/` **[built, Phase 4]** | The grid and coordinates (`grid.ts`, mirroring `lod.h`); `LodSystem` (`lodSystem.ts`): the LOD octree around the camera (§6.6, ADR 0012) — screen-space-error selection (`frustum.ts`), parent-until-children-ready swaps with the streamed chunks as level 0, the LOD index and `LodRequest`s for modified sections, jobs by projected cell size to the worldgen and meshing pools, skirts, and a cache bounded by `LOD_CACHE_MB` (the pixel error coarsens while the view's own sections exceed it); `ChunkRequest`s for full detail beyond the streamed view, and a velocity lookahead (§6.6). |
 | `mesh/` **[built, Phase 3d]** | Greedy mesher (`mesher.ts`, pure TypeScript) and its worker pool (`pool.ts`, `worker.ts`: `cores − 2` module workers, 1–4 (at most 2 on phones), two jobs each; voxels in and geometry out as transferred buffers). Input: a chunk's voxels with a one-voxel apron from its neighbours (34³). Faces are culled like collision (hidden by full cubes; water by water; slab sides by slabs; a slab's top always open; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, slabs and ladders stay one quad per face. Render meshes only: collision stays in the sim core (`TerrainCollision`, the same C++ as the server, unit quads, PLAYER_CONTROLLER.md §5), so prediction collides with exactly the server's geometry. **[built, Phase 4c]** LOD sections in the same workers (`lodMesher.ts`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. |
-| `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material; a section's surface and skirts are one geometry and one draw call, `lodSection.ts`, its index rewritten when the sides whose skirts show change; chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Terrain is static: world matrices are computed when an object is placed rather than for the whole scene in each pass, and the CPU copies of chunk and LOD vertex data are dropped once uploaded to the GPU. `?batch=1` instead draws the chunks and LOD sections in three batches, a draw call each per pass (§6.6, experimental); `?scale=` scales the resolution; `stats()` reports the frame's draw calls and triangles (F3). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, ice (pale blue with white cracks), logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry the face tint (and the flat colour of untextured materials). **[built, Phase 11c]** *Biome tint*: grass and leaves are multiplied by their biome's colour (§6.3): a per-vertex `tint` attribute from the mesher (`tints`), applied by the chunk shader where the atlas alpha (1 − the tinted share of a texel, `TINT_MASKS`) says so. **[built, Phase 7]** The look (`look.ts`, plain data shared by both meshers, the lights and the fog; WORLD_GENERATION.md §1): one per-face RGB tint table — warm on top, cooler on the sides, blue underneath — replaces the scalar face shade in the chunk and LOD meshers alike; a warm sun and a green-bounce hemisphere light; ACES filmic tone mapping with an exposure, done in each material's shader (no extra pass); and a **sky sphere**, a full-screen triangle drawn first in the far pass (`sky.ts`), whose function `skyColor` (and its GLSL twin) the height fog also fades to. Block colours and tiles are tuned to the measured palette; water is turquoise. |
+| `render/` **[built: terrain chunks, LOD sections, player capsules, camera, debug lines, block outline]** | Thin Dwell-owned render interface (chunk meshes, dynamic body meshes, player views, camera rig, debug draw) implemented on **Three.js / WebGL2** ([ADR 0002](./adr/0002-client-renderer.md)). Chunks use packed custom geometry and a Lambert material whose shader repeats a texture once per block across merged quads (`uv` in blocks, a per-vertex atlas `tile` rectangle, `textureGrad` of tile + fract(uv) so mip selection has no seams); positions are camera-relative. Game code never touches Three.js objects directly. **[built, Phase 4c]** LOD section meshes (flat colour per material; a section's surface and skirts are one geometry and one draw call, `lodSection.ts`, its index rewritten when the sides whose skirts show change; chunks hidden where LOD draws) and a two-pass depth split — a far pass, then a depth clear and a near pass (§6.6). Terrain is static: world matrices are computed when an object is placed rather than for the whole scene in each pass, and the CPU copies of chunk and LOD vertex data are dropped once uploaded to the GPU. `?batch=1` instead draws the chunks and LOD sections in three batches, a draw call each per pass (§6.6, experimental); `?scale=` scales the resolution; `stats()` reports the frame's draw calls and triangles (F3). Height fog (`heightFog.ts`: three.js's fog chunks replaced by an exponential atmosphere's haze, set from the settings menu, §6.6). Built: chunk meshes from the meshing workers (water in a transparent pass), capsule players, the camera (75° vertical field of view, capped at 100° horizontal on wide screens, `fov.ts`), debug line segments, and the outline of the targeted block (Phase 3d; half height on slabs). **Block textures** (`textures.ts`): generated at startup from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, side with a grass fringe, dirt bottom), stone (also slabs), the terrain generator's sand, banded sandstone, gravel, snow, ice (pale blue with white cracks), logs (bark sides, ringed ends), leaves, and coal, iron, and gold ores (stone with mineral clusters), plus dirt, cracked bedrock, rippled water, ladders (rails and rungs), and the launch pad (ring and arrow); every visible material is textured (a test checks it); packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters (mipmapped without bleeding, nearest-filtered up close), built once per page (`sharedAtlas`; the hotbar's swatches come from it). Vertex colours carry the face tint (and the flat colour of untextured materials). (The biome tint of Phase 11c — a per-vertex `tints` attribute and atlas alpha masks — went with the biomes in Phase 15.) **[built, Phase 7]** The look (`look.ts`, plain data shared by both meshers, the lights and the fog; WORLD_GENERATION.md §1): one per-face RGB tint table — warm on top, cooler on the sides, blue underneath — replaces the scalar face shade in the chunk and LOD meshers alike; a warm sun and a green-bounce hemisphere light; ACES filmic tone mapping with an exposure, done in each material's shader (no extra pass); and a **sky sphere**, a full-screen triangle drawn first in the far pass (`sky.ts`), whose function `skyColor` (and its GLSL twin) the height fog also fades to. Block colours and tiles are tuned to the measured palette; water is turquoise. |
 | `physics/` | Debris world (Phase 21) in the sim-core WASM; the prediction world lives in `sim/`. The client does not use separate Jolt JS bindings. |
 | `interp/` | Tier 1 transform interpolation (and bounded extrapolation), Phase 20; player interpolation is in `game/remotes.ts`. |
 | `debris/` | Tier 2 cosmetic debris spawn, simulation, and cleanup. |
@@ -398,46 +398,45 @@ lower on mobile.
 ### 6.1 Grid & chunks **[in progress]**
 
 > **Prototype content.** Every material that exists today — its name, look, and role (the
-> grass/dirt/stone layering, sand, snow, logs and leaves, the coal/iron/gold ores) — and the
-> terrain's style (§6.3: biomes, trees, boulders, ore distribution) are **placeholders** that
-> exercise the systems: meshing, textures, collision shapes, streaming, generation, and editing.
-> They are not Dwell's block set or world design and deliberately do not constrain it. The
-> architecture fixes only the *mechanisms*: a `u16` block-state id with per-state properties
-> (shape, liquid, climbable, strength, density, render style), one block registry generated from data
-> files shared by server and client, and an indestructible anchor layer at the bottom of the world. Real
-> content replaces the prototype set later, through the generator version and the block data files,
-> without architectural change.
+> grass/dirt/stone layering, sand at the shore) — and the terrain's style (§6.3: one island) are
+> **placeholders** that exercise the systems: meshing, textures, collision shapes, streaming,
+> generation, and editing. They are not Dwell's block set or world design and deliberately do not
+> constrain it. The architecture fixes only the *mechanisms*: a `u16` block-state id with per-state
+> properties (shape, liquid, climbable, strength, density, render style) and one block registry
+> generated from data files shared by server and client. Real content replaces the prototype set
+> later, through the generator version and the block data files, without architectural change.
 
-Built (Phases 1–3a; registry Phase 8): the prototype blocks — air, bedrock, stone, dirt, grass,
-stone slab, ladders, water, a debug launch pad, and the terrain generator's sand, sandstone, gravel,
-snow, ice (a frozen sea's surface), log, leaves, and coal/iron/gold ores, plus a slab and nine slope shapes of the shapeable
-materials (below) — where each state has a collision **shape** (`Empty`, `Full`, `Shaped`: a slab or a
-slope, geometry below), `climbable` + facing, `liquid`, `flooded` and `launch_speed`
-(PLAYER_CONTROLLER.md §6);
-32³ chunks with revisions (generated chunks
-start at revision 0); `VoxelWorld`, generate-on-access with eviction of unmodified chunks on the
-server, and *streamed* (no generator; missing chunks read as air) in the client sim; a flat test world (grass top face at y = 0,
-bedrock at the bottom); and a **playground** generator (flat world plus slab stairs, a block step,
-a 1×2 doorway, a crawlspace, a ladder to a ledge, a pool, and a launch pad near the spawn) for
-movement testing. **Terrain collision** (`terrain_collision.h`, Phase 2; regions Phase 3c): static
-Jolt bodies with a `MutableCompoundShape` of per-chunk `MeshShape`s (the polygons of every shape's
-exposed faces, no greedy merge), built around players, rebuilt in the same tick as an edit, and unloaded far from
-players. For the 8,192 km world each body sits at the centre of a 2 048 m *region* and holds every
-chunk around the players *anchored* to it, so its sub-shape offsets stay small; a player collides
-only with its anchor's body and re-anchors, with hysteresis, well inside the next region — there is
-no seam under a player (PLAYER_CONTROLLER.md §5). The procedural terrain generator and streaming are
-built (§6.3), and so are block edits (§6.5, Phase 3d): the placeable set is the registry's
-`palette` data (a state's `placeable` flag; not air, liquid, indestructible or a launch pad), the
-client reads the same flags from the generated TypeScript registry, and tests check both sides.
+Built (Phases 1–3a; registry Phase 8; cut to the baseline in Phase 15, ADR 0025): the prototype
+blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists them) — where
+each state has a collision **shape** (`Empty`, `Full`, or `Shaped`, below), `climbable` + facing,
+`liquid`, `flooded` and `indestructible` (PLAYER_CONTROLLER.md §6; no block is indestructible
+since bedrock went: the property stays for the structural anchor of Phase 20). Phase 15 removed
+bedrock, the debug launch pad (and its `launch_speed` property, decision D6), the stone slab and
+every slope and slab family, sandstone, gravel, snow, ice, log, leaves and the three ores, with
+their texture tiles. 32³ chunks with revisions (generated chunks start at revision 0);
+`VoxelWorld`, generate-on-access with eviction of unmodified chunks on the server, and *streamed*
+(no generator; missing chunks read as air) in the client sim; a flat test world (grass top face at
+y = 0, stone down to the midplane, its core — no bedrock). The movement playground is a structure
+file the tests stamp over the flat world (§6.3). **Terrain collision** (`terrain_collision.h`,
+Phase 2; regions Phase 3c): static Jolt bodies with a `MutableCompoundShape` of per-chunk
+`MeshShape`s (the polygons of every shape's exposed faces, no greedy merge), built around players,
+rebuilt in the same tick as an edit, and unloaded far from players. For the 8,192 km world each
+body sits at the centre of a 2 048 m *region* and holds every chunk around the players *anchored*
+to it, so its sub-shape offsets stay small; a player collides only with its anchor's body and
+re-anchors, with hysteresis, well inside the next region — there is no seam under a player
+(PLAYER_CONTROLLER.md §5). The procedural terrain generator and streaming are built (§6.3), and so
+are block edits (§6.5, Phase 3d): the placeable set is the registry's `palette` data (a state's
+`placeable` flag; not air, liquid or indestructible), the client reads the same flags from the
+generated TypeScript registry, and tests check both sides.
 
 **Block registry [built, Phase 8]** ([ADR 0015](./adr/0015-block-registry.md),
 [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md)). Voxels are runtime **state ids** of a registry of
 namespaced blocks with typed properties; a state's canonical string is
 `ns:name[k=v,…]` (all properties, keys alphabetical: `dwell:ladder[facing=north,flooded=false]`).
-Blocks are data (`shared/blocks/*.json`: properties, shape, density, liquid, climbable, launch
-speed, palette membership, look, colour, textures); `shared/blocks/gen.mjs` generates the C++
-tables (`blocks.gen.h`: `MaterialInfo` per state, block and property tables, `Materials::k…`
-constants, `kRegistryHash`) and the TypeScript tables (`blocks.gen.ts`, with `world/blocks.ts` for
+Blocks are data (`shared/blocks/*.json`: properties, shape, density, liquid, climbable, palette
+membership, look, colour, textures); `shared/blocks/gen.mjs` generates the C++ tables
+(`blocks.gen.h`: `MaterialInfo` per state, block and property tables, `Materials::k…` constants,
+`kRegistryHash`) and the TypeScript tables (`blocks.gen.ts`, with `world/blocks.ts` for
 parse/write/properties and `world/materials.ts` for draw styles), plus a shared vector
 (`vectors.txt`); CI fails on stale output. State ids are dense `u16`, assigned in declaration order
 (air = 0), each block's states in property order (keys alphabetical, the last varying fastest). The
@@ -448,40 +447,33 @@ pattern, ADR 0015 — deferred); on disk, chunk palettes hold **world state ids*
 (§6.4).
 
 **Adaptive natural blocks [planned, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
-[ADR 0024](./adr/0024-adaptive-natural-blocks.md), proposed). Natural blocks (block data
-`"adaptive": true`) will be stored as cubes and shaped at use from the 3 × 3 columns around them by
-five rules baked into one table in `shared/blocks/` (6,561 neighbourhoods → shape and facing), read
-by the server and the client alike; the shape set gains 12 corner shapes and 6 half-height ridge
-shapes; adaptive materials lose their placed slope and slab families, and the generator's slope
-stage (step 5b, §6.3) goes. Until then, the shapes below are as built.
+[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). Natural blocks (block data `"adaptive": true`)
+will be stored as cubes and shaped at use from the 3 × 3 columns around them by a rule table kept as
+data in `shared/blocks/`, read by the server and the client alike, on the shape mechanism below.
 
-**Shapes and slope blocks [built, Phase 9]** ([ADR 0016](./adr/0016-slope-blocks.md),
+**Shapes [built, Phase 9; no shaped block since Phase 15]** ([ADR 0016](./adr/0016-slope-blocks.md),
 [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). Every solid state has a **shape**: its top surface is given
 by four corner heights in halves of a cell (NW, NE, SE, SW), split into two planar triangles along
-one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube is (2, 2, 2, 2),
-a slab (1, 1, 1, 1). The nine slope shapes — wedge, outer (hip) and inner (valley) corner, each at 1:1
-(45°) and the gentle 1:2 (26.57°) pitch in a low and a high piece — in four facings and two halves
-are generated per shapeable material (`shapeFamilies` in the block data: stone, dirt, grass, sand,
-sandstone, gravel, snow, log) as the blocks `dwell:<m>_slope[facing,flooded,half,shape]` (144
-states) and `dwell:<m>_slab[flooded,half]`; `flooded` means water fills the shape's open part. The
-geometry is baked once by `shared/blocks/shapes.mjs` (`gen.mjs`) into both languages: each shape's
-closed, outward-wound polygons tagged with the cell face they lie on (or the sloped surface), its
-side profiles for culling, volume, convexity and extent — one table, so server, WASM client and
-meshers agree. `core/block_shape.h` (`ShapeOf`, `SolidSpanAt`/`SurfaceHeightAt`, `FaceCovered`,
-`RayEnterShape`, `VerticalSegmentDistanceSq`; `+ − × /`, `min`, `max` only, ADR 0010) answers every
-point query: the **terrain collision mesh** adds each shape's polygons (a cell face is skipped where
-a neighbour's opposite face covers it entirely; sloped faces never are), **block targeting**
-(`RaycastBlock`, the controller's ray probes) enters the exact shape (a block without a solid, a
-ladder, is targeted and seen as its whole cell), the **edit check** tests the
-capsule against the placed shape's true volume, and the controller's overlap test (uncrouching) uses
-the true surface. The exhaustive adjacency test checks that no pair of shapes leaves a hole on any
-side. The meshers draw polygons with their true normals and a face tint interpolated by the normal
-(`render/look.ts` `normalTint`, shared with the LOD). Sloped faces take the top tile, projected
-along their dominant axis; an upright piece's side faces take the side tile measured down from
-their own top edge, so its top (a grass side's fringe) runs along a slope's edge and a slab's top
-rather than the cell's top. Water in a flooded shape: the server sets
-`flooded` from the cell on placement (placed into water: flooded; anywhere else: dry — no water from
-nothing), breaking a flooded shape leaves water, and a flooded cell counts as water for swimming.
+one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube is (2, 2, 2, 2). The
+mechanism stays: `shapeFamilies` in the block data generates a material's slope and slab families
+(nine slope shapes in four facings and two halves, and the slab; `flooded` means water fills the
+shape's open part) — but since Phase 15 no block uses it (the list is empty), so the shape table
+holds the empty shape and the cube until Phase 18. The geometry is baked once by
+`shared/blocks/shapes.mjs` (`gen.mjs`) into both languages: each shape's closed, outward-wound
+polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
+culling, volume, convexity and extent — one table, so server, WASM client and meshers agree.
+`core/block_shape.h` (`ShapeOf`, `SolidSpanAt`/`SurfaceHeightAt`, `FaceCovered`, `RayEnterShape`,
+`VerticalSegmentDistanceSq`; `+ − × /`, `min`, `max` only, ADR 0010) answers every point query: the
+**terrain collision mesh** adds each shape's polygons, **block targeting** (`RaycastBlock`, the
+controller's ray probes) enters the exact shape (a block without a solid, a ladder, is targeted and
+seen as its whole cell), the **edit check** tests the capsule against the placed shape's true
+volume, and the controller's overlap test (uncrouching) uses the true surface. The exhaustive
+adjacency test checks every pair of shapes in the table. The chunk mesher draws shaped polygons with
+their true normals and a face tint interpolated by the normal (`render/look.ts` `normalTint`).
+A state with a `flooded` property (today the ladder) takes it from its cell on placement (placed
+into water: flooded; anywhere else: dry — no water from nothing), breaking a flooded state leaves
+water, and a flooded cell counts as water for swimming. Shape picking in the hotbar (the R key, the
+placement preview) went with the placed families.
 
 - Voxel = 1 m cube; `uint16` block-state ID (0 = air). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
@@ -523,68 +515,52 @@ Terrain is **procedural, seeded, and deterministic**: an unmodified chunk is a p
 generation is deterministic, the network and disk only need to carry *differences* from the
 generated baseline.
 
-The pipeline structure below (deterministic stages, lattice-sampled fields, order-independent
-features) is architecture; its current *content* — the biomes, surface materials, ores, trees and
-boulders — is prototype (§6.1).
+The pipeline structure below (deterministic stages, lattice-sampled fields) is architecture; its
+current *content* — one island, its heights and surface materials — is prototype (§6.1).
 
-**[built, Phases 7, 10, 11a, 11b and 11c; planned, 12]** The world's look and shape are redesigned in
-[`WORLD_GENERATION.md`](./WORLD_GENERATION.md): a first pass at a warm, colourful fantasy palette,
-lighting and sky, rendering only (Phase 7, built); continents from Voronoi plates with guaranteed
-ocean between them (Phase 10, built: *Continents from Voronoi plates* below); drainage-consistent
-terrain — rivers as noise contours in valley floors, lakes and water above sea level (Phase 11a,
-built: *Rivers, lakes and water above sea level* below), the mountain detail cascade (Phase 11b,
-built: step 2 of *Generator pipeline* below), and the climate, a
-biome table and biome-tinted vegetation (Phase 11c, built: *Climate, biomes and vegetation* below). A dome of sky islands (Phase 12) was
-planned and is **cancelled** (owner, 2026-10-12): the **baseline rework** (`IMPLEMENTATION_PLAN.md`
-Phases 14–19, [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md)) will replace this section's
-generator with terrain definitions (data) on a 50 km disc and cut the rivers, climate, biomes and
-features described below; until then they are as built.
+**[built, Phase 15]** The **baseline rework** (`IMPLEMENTATION_PLAN.md` Phases 14–19,
+[`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md), [ADR 0025](./adr/0025-baseline-world.md)) cut
+the generator down to an **interim** one: one island at the origin, a 2D height field and a fill by
+depth — no continents, plates, rivers, lakes, climate, biomes, tints, mountain cascade, 3D density,
+caves, ores, trees, boulders or slope stage (their ADRs 0017–0022 are superseded). Its parameters
+are code constants: Phase 17 replaces it with an evaluator of terrain definitions (data,
+[ADR 0026](./adr/0026-terrain-definitions.md)); Phase 16 resizes the world to the 50 km disc
+(the island is already sized for it: 20–30 km in radius). The colour pass of Phase 7
+([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1) stays.
 **[built, Phase 13]** The world is **bifacial**: a second face on the disc's underside, mirrored
 about the midplane (y = −2,048), with its own terrain, and gravity toward the midplane on both
 sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md);
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
-**Built (Phases 3a, 3c, 10, 11a, 11b, 11c):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
-`src/worldgen/`) is **generator version 11** (3c: the planet-scale world as version 3; Phase 4 adds
-super tall massifs as version 4; Phase 9c shapes the surface with slopes as version 5; Phase 10
-replaces the land/sea noise with the plate layout as version 6, whose slope rule the 0.4.1 patch
-fixes in place, below; Phase 11a adds rivers, lakes and water above sea level as version 7; version 8 puts the climate at
-continental scale ([ADR 0019](./adr/0019-continental-scale-climate.md), below); version 9 (Phase 11b) takes the
-mountains' detail from the derivative-damped ridged cascade ([ADR 0021](./adr/0021-mountain-detail-cascade.md));
-version 10 (Phase 11c) adds the climate's continent biases and rain shadows, the biome table, wetland
-ponds and biome-tinted vegetation ([ADR 0022](./adr/0022-climate-biome-table-vegetation.md));
-version 11 (Phase 13) takes bedrock out of the bottom of face A and adds face B, a second terrain
-below the midplane ([ADR 0023](./adr/0023-bifacial-world.md), *Bifacial world* below);
-versions 2–9 are retired — a world
-saved with one loads as the flat world; the version launcher opens the build that saved it, §2.1) and
-the default for dedicated servers and local mode. Versions 0 (flat) and 1 (playground) remain for
-tests and movement work. Players spawn at the generator's spawn point: the first level, open,
-tree-free dry land found in an 8 m spiral — around the nearest river or lake within 288 m of the
-origin if there is one (a spawn beside water), else around the origin. A chunk takes ~1 ms to generate natively
-(Release; ~1.5 ms in WASM at Phase 10, not re-measured since), anywhere in the world (`dwell_worldgen_inspect`). Debug tooling:
-`dwell_worldgen_inspect [seed] [x] [z] [m/char] [slice]` prints an ASCII biome/height map (with
-biome shares, timings, and the spawn; blank beyond the rim) or a 1:1 vertical section, at any
-coordinates; **(Phase 10)** `dwell_worldgen_inspect [seed] disc out.ppm [km/px] [continents|height]`
-writes the whole disc as a PPM (land by continent id, islands, internal plate edges, the sea shaded by
-distance from the coast; or a hill-shaded height map from the full pipeline) and prints the
-continents' areas and the land share, `… [seed] stats [seeds]` tabulates the layout over many
-seeds, and `… [seed] bench` times chunk and LOD generation (reported in every worldgen change); **(Phase 11c)** `… [seed] biomes [seeds] [km]` tabulates the land's biome shares (and the spawn's biome) over seeds;
-**(Phase 11a)** `… [seed] map out.ppm x z [pixels] [m/px] [hillshade|biome|valley]` writes a local
-area as a PPM: relief lit from the north-west with rivers, lakes and the sea in blue (shaded by
-depth), the biomes, or the valley floor `V` with the channels' wetness; `… [seed] view out.png x y z yaw
-pitch [w h range fov]` is a first-person terrain screenshot without a browser — a multithreaded ray
-march of the generator's heightfield (relief, biome colours, water by depth, haze), ~1.5 s for
-800×450 — for reviewing generator changes; the browser script `client/scripts/shots.ts` stays for the
-game's own look (trees, blocks, lighting, LOD). In
-game (Phase 3e), F4 shows the terrain's biome/height map around the player — and, since Phase 10,
-`-` and `=` zoom it out and in, from 8 m per column (1 km across) to the whole disc (128 km per
-column) — and the F3 overlay the player's chunk regenerated and diffed against the world's; the overlay's **Copy
-block info** button (or F6) copies the targeted block and the 5 × 5 × 5 cells around it as JSON
-(`debug/blockDump.ts`: canonical state strings by palette index, with the world's seed and generator
-version, the build, and the player's position and view) — or shows it to copy by hand where the
-clipboard is refused — so a spot can be regenerated and examined exactly; `dwell_world FILE
-diff` does the same for a world file (§6.4). **Built (Phase 3b):** streaming, the verification chunk, and the generation pools
-(below).
+**Built (Phases 3a, 3c, 13, 15):** the generator (`server/core/include/dwell/worldgen/terrain.h`,
+`src/worldgen/`) is **generator version 12** (Phase 15's interim baseline generator; versions 2–11
+were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
+B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
+build that saved it, §2.1). It is announced in Welcome as generator **8** (`kGeneratorTerrain`), the
+default for dedicated servers and local mode; version **0** (flat) remains for tests. The **movement
+playground** (generator 1 until Phase 15) is now a **structure file**
+(`server/tests/player/playground.structure`, below) that the controller and netcode tests stamp over
+the flat world; no world uses it. Players spawn on the first dry, level 5 × 5 patch (top voxels at
+one height, at least 2 m above sea level) found in an 8 m spiral from the origin. Debug tooling:
+`dwell_worldgen_inspect [seed] [x] [z] [m/char] [slice]` prints an ASCII height map (with timings
+and the spawn; blank beyond the rim) or a 1:1 vertical section, at any coordinates;
+`… [seed] disc out.ppm [m/px] [coast|height]` writes the island and the sea within 40 km of the
+origin (land and sea by the layout's coast distance, or a hill-shaded height map) and prints the
+land share and the island's extent; `… [seed] stats [seeds]` tabulates the island's extent and the
+spawn over many seeds; `… [seed] bench` times chunk and LOD generation (reported in every worldgen
+change); `… [seed] map out.ppm x z [pixels] [m/px]` writes a local height map (relief lit from the
+north-west, the shore in sand, the sea by depth); `… [seed] view out.png x y z yaw pitch [w h range
+fov]` is a first-person terrain screenshot without a browser — a multithreaded ray march of the
+generator's heightfield — for reviewing generator changes; the browser script
+`client/scripts/shots.ts` stays for the game's own look. In game (Phase 3e), F4 shows the terrain's
+**height map** around the player (the biome map went with the biomes) — `-` and `=` zoom it out and
+in, from 8 m per column (1 km across) to the whole disc — and the F3 overlay the player's chunk
+regenerated and diffed against the world's; the overlay's **Copy block info** button (or F6) copies
+the targeted block and the 5 × 5 × 5 cells around it as JSON (`debug/blockDump.ts`: canonical state
+strings by palette index, with the world's seed and generator version, the build, and the player's
+position and view) — or shows it to copy by hand where the clipboard is refused — so a spot can be
+regenerated and examined exactly; `dwell_world FILE diff` does the same for a world file (§6.4).
+**Built (Phase 3b):** streaming, the verification chunk, and the generation pools (below).
 
 #### World bounds **[built, Phase 3c]**
 A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
@@ -605,22 +581,15 @@ A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
   translations in double precision, and debug lines are drawn relative to their first point. The
   player controller suite, golden trace and netcode tests run both at the origin and ~8,000 km
   from it (`--dwell-origin-x=far`), natively and in WASM, with the same results.
-- **Scale of terrain:** (prototype content, §6.1) since generator version 6 (Phase 10; version 7 adds
-  rivers, lakes and valley floors on top, *Rivers, lakes and water above sea level* below), **12–13
-  continents** of ~2–7.5 million km² in cells of 2,560 km — a quarter to a third of the disc is land —
-  with at least 300 km of open ocean between any two, island chains in the ocean, an ocean ring
-  512 km wide at the rim, and an ocean floor of continental shelf, slope and abyss (−1,200 to
-  −1,800 m; *Continents from Voronoi plates* below). On the landmasses a placeholder planet-scale
-  layer (generator versions 3–4; a 262 km fBm now only modulates relief): ranges up to ~1 950 m,
-  **massifs** in the cores of the largest ranges whose crests rise a further 3,600 m (peaks
-  ~5.3–5.6 km, about 1 % of land above 3 km; kept under `WORLD_MAX_Y` with room for trees). The
-  full-detail world (~5 × 10¹³ chunks) is never generated wholesale — distant terrain comes from the
-  LOD system (§6.6).
+- **Scale of terrain:** (prototype content, §6.1) since generator version 12 (Phase 15) **one
+  island** 20–30 km in radius at the origin (*Interim island layout* below), land up to ~130 m above
+  sea level and a sea floor 20 m deep; the rest of the 8,192 km disc is open sea until Phase 16
+  shrinks the world to 50 km. The full-detail world is never generated wholesale — distant terrain
+  comes from the LOD system (§6.6).
 
 The terrain generators leave everything below `WORLD_BOTTOM_Y` and at or above `WORLD_MAX_Y`
 empty. The terrain has **no bedrock**: the rock at the midplane is ordinary stone and can be dug
-through; the flat and playground test worlds keep `BEDROCK_LAYERS` = 4 of indestructible bedrock at
-the bottom of face A, and no face B. The anchor for structural integrity (§7.1) is the core zone
+through, in the flat test world too (its `BEDROCK_LAYERS` went in Phase 15), which has no face B. The anchor for structural integrity (§7.1) is the core zone
 of `CORE_ANCHOR_LAYERS` (8) either side of the midplane, by position (Phase 20).
 
 #### Bifacial world **[built, Phase 13]**
@@ -633,9 +602,9 @@ player on face B stands upside down in the world.
   world/face.ts`, are the one mapping.
 - **Generation.** `worldgen::BifacialTerrain` (`bifacial.h`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
-  `FaceSeed(seed, B)`, a hash through streams no stage uses — its own continents, rivers, climate and
-  features. A chunk of face B is the face-local chunk flipped vertically (`MirrorMaterial`: slabs and
-  slopes swap `half`, every other state is its own mirror). Generation stays a pure function of
+  `FaceSeed(seed, B)`, a hash through streams no stage uses — its own island and hills. A chunk of
+  face B is the face-local chunk flipped vertically (`MirrorMaterial`: a state with a `half` swaps it
+  — none since Phase 15 — every other state is its own mirror). Generation stays a pure function of
   `(seed, version, chunk)`. Air chunks, the sky floor and the disc are per face; spawn is on face A;
   streaming, edits and the chunk rows cover both (`kMinChunkY` = −320).
 - **Gravity.** `PlayerController::face` (±1) is the side of the midplane the body is on; the
@@ -662,237 +631,52 @@ player on face B stands upside down in the world.
   lit by the other face's light (§5). The meshers' baked face shading (warm tops, cool sides) does
   not follow the frame: moving the sun and moon separately is phase 2 (`FUTURE.md`).
 
-#### Continents from Voronoi plates **[built, Phase 10]**
-([ADR 0017](./adr/0017-continents-from-voronoi-plates.md); design and rationale in
-[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2; `worldgen/continents.h`.) The disc's land and sea
-come from a layout, a pure function of (seed, world coordinates) like every stage:
-- **Two Voronoi layers** on jittered grids centred on the origin: continent cells of 2,560 km and
-  plates of 256 km, one site per cell in the middle 60 % of it, both looked up at a domain-warped
-  point (a 76.8 km vector noise). A seed-hashed number (12–13) of continent cells are land — the
-  origin's always, with its site on the origin — the rest ocean; a plate is land when its cell is and
-  its site lies 90 km inside the border (a few edge plates are bays), sea otherwise, and 5 % of ocean
-  plates far from any continent are island plates, holding blob islands of 8–24 km radius.
-- **The signed coast distance** `s` (m, positive on land) is half the difference of the distances to
-  the nearest sea and land plate sites (zero on the bisectors between them; saturating at ±256 km),
-  plus fractal coast detail — nine octaves of noise from 400 km to 1.6 km, amplitude 100 km falling
-  ×0.65 per octave — that fades out far from the coast. The 1.4 km octaves of the old
-  continentalness stay on the 4 m lattice.
-- **Separation, guaranteed.** Land of a continent is clamped to stay `OCEAN_GAP` (300 km, widened by
-  the warp's stretch and a slack) from every other land cell's side of the border, so any two
-  continents are at least 300 km apart whatever the noise does; islands keep 750 km from land
-  cells' borders; nothing is land within 512 km of the rim. Tests check all three by sampling
-  (`continents_test.cpp`).
-- **Per continent** (hashed from its id, a cell): interior elevation, mountainousness, temperature
-  and humidity bias, wind direction and shelf width (`ContinentRecord`); and for land, the distance
-  to the nearest internal plate edge and its convergence, exported in `Column` for Phase 11.
-- **The macro lattice.** The layout's fields are exact at the corners of a 256 m lattice
-  (cached per thread) and bilinear between: chunks (through their 4 m lattice), point queries
-  (`ColumnAt` and the rest) and the level of detail read the same values, and the layout costs a
-  chunk about four lattice corners. `TerrainGenerator::LandAt` evaluates the layout at a point
-  exactly, without the lattice, for statistics and tools.
-- **Terrain from it:** on land, continentalness rises as `s / (s + 40 km)` and the base height rises
-  from the coastal lowland to the continent's interior (plus its elevation); at sea the base height
-  follows the shelf (to −150 m at its edge, 80–160 km out), the continental slope and the abyss.
-  Hills and ranges begin 0.5 km offshore of the coast and are full 4 km inland.
+#### Interim island layout **[built, Phase 15; replaced by the terrain definition's layout in Phase 17]**
 
-#### Rivers, lakes and water above sea level **[built, Phase 11a]**
-([ADR 0018](./adr/0018-drainage-consistent-terrain.md); design in
-[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.2–3.3; `worldgen/rivers.h`, `rivers.cpp`, and
-`Finish` in `terrain.cpp`.) Land is a **valley floor** `V` with relief standing away from the rivers:
-`height = V + D × relief − carve`.
-- **Rivers are the zero contours of three Perlin noises** (great river 200 km, river 6 km, stream
-  1.5 km wavelength), each on a hash-shifted lattice (Perlin is exactly zero at lattice points, which
-  would put every tier through the origin), the small ones displaced by a meander noise (700 m), the
-  great one by a 30 km one (2.5 km), and the small ones present only where a 12 km *spring* noise is
-  high (so they begin and end as gullies). Channels are carved into `V` with a `(1 − s)⁴` profile
-  (14 m, 6 m and 2.5 m deep), fading out where the undamped relief above `V` is large (streams above
-  ~0.6–1.8 km of relief, rivers ~0.15–0.8 km, great rivers on the 3–5.5 km massifs).
-- **`V` is smooth** (the layout's macro-lattice coast distance, never the local octaves): the shore's
-  2 m for the first 5 km, the coast's lowland and the continent's elevation from 5 to 30 km inland,
-  a slow rise `250 m × (s / (s + 150 km))²`, uplift belts along convergent plate edges (120 m of
-  `V`, 900 m of relief within 60 km) and 12 % of the ranges' relief. Great rivers therefore meet the
-  sea at sea level. The relief (the old hills — now never below zero, so the ground is never below `V`
-  — mountains, ranges, belts) is multiplied by **D**, the product over the tiers of a smoothstep of
-  |noise|: 0 in a bed, 1 away from every channel, so every river lies in a valley and ridges stand
-  between rivers.
-- **Water above sea level** is `Column::water`: open voxels below it are water (sea level, or the
-  surface of the river or lake in the column). A river's surface is a **terrace** of `V − 1 m`
-  (boundaries every 4 m, each moved by a hashed −1, 0 or +1: steps of 2–6 m; sea level below the
-  first), taken per column from the interpolated `V` and never interpolated itself, so the step
-  between two pools is a vertical face — a **waterfall**. Lakes (a 12 km grid, 35 % of cells, ≥ 20 km
-  inland, 0.7–2.0 km in radius) have a flat surface (the terrace of `V` at the centre less 3 m), a
-  bowl-shaped bed and a berm around the shore. Water is static; edits behave as before.
-- **Under water**: caves start 12 m deeper below any channel, lake or sea floor shallower than 40 m;
-  overhangs shrink to 1–2.5 m on most land (they were up to 17 m) and vanish in channels; beds are
-  gravel (deep) or sand.
-- **Level of detail** ([ADR 0020](adr/0020-lod-rivers-at-their-width.md)): `GenerateLod` samples the
-  same fields at cell centres. A tier's *valley* (its distance factor) stays while the cell resolves
-  it — the stream's up to 512 m cells, the river's up to 1,024 m, the great river's always — and only
-  then takes the mean of its ramp. A *channel* (carve and water) is never widened: it is sampled at
-  its own width, so a cell is water where full detail is mostly water; the stream's, a thread a few
-  metres wide, is not drawn from 32 m cells (`rivers::Tier::channel_cell`). Each wet column's surface
-  carries its water's level for the client to draw it at (§6.6). `SkyFloor`/`IsAirChunk` and
-  `LodBoundsAt` count water above sea level as terrain.
-- **Checks** (`rivers_test.cpp`): beds are no higher than the ground 50–500 m to either side
-  (800 m–2.5 km for great rivers); great rivers' water is at sea level within 5 km of the coast
-  (12 mouths over 4 seeds); no water voxel has air below it and every horizontal water/air contact is
-  a step down to a lower pool (143,000 water voxels, 564 such contacts, 0 elsewhere); no cave air in
-  the 12 m under any water; the terrace steps are 2–6 m; chunks with water are never taken for air;
-  and the spawn is beside water where there is some.
+`worldgen/island.h`: the signed distance to the coast (m, > 0 on land) of one island at the
+origin — `radius − |p + warp(p)| + detail(p)`, where the radius is 25 km plus a smooth 20 km-wavelength
+noise of up to ±5 km, the warp a 6 km two-octave vector noise of up to ±3 km, and the detail five
+octaves of fractal noise from a 4 km wavelength (±1.6 km). The distance uses the correctly rounded
+double square root (deterministic, as ADR 0017's bisectors did). Every noise field is read at
+coordinates shifted by a hashed per-seed offset (`NoiseOffset`, `noise.h`): gradient noise is zero on
+its lattice, which the origin and the level of detail's cell centres would otherwise sit on. Over
+seeds the island reaches 28–32 km and the sea starts 19–22 km from the origin
+(`dwell_worldgen_inspect … stats`). The level of detail keeps the coast detail's octaves its cell
+resolves.
 
-#### Climate, biomes and vegetation **[built, Phase 11c]**
-([ADR 0022](./adr/0022-climate-biome-table-vegetation.md); design in
-[`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §3.5–3.7; `worldgen/biomes.h`, `biomes.cpp`,
-`SampleClimate` and `Finish` in `terrain.cpp`.)
-- **Climate.** *Temperature* is a 1,200 km noise plus the continent's record bias (±10 °C, scaled
-  to 0.55 of that) and a land offset, less the **lapse rate** (6.5 °C per km of ground height).
-  *Humidity* is a 600 km noise plus the record's bias plus nearness to the sea
-  (`1 / (1 + coast / 300 km)`) less a **rain shadow**: the highest smooth ground (the valley
-  floor's rise, the uplift belts, two octaves of the ranges) 20, 60 and 150 km *upwind* — against
-  the continent's prevailing wind — over the ground here, from 150 m higher (weights 1, 0.85,
-  0.65; 2 km higher is a full shadow of −0.9). The shadow lives on an 8 km lattice (16 cells at the
-  level of detail), interpolated and cached per thread. Across seeds the lee side of a range is
-  0.4 drier than the windward side.
-- **The biome table is data** (`BiomeDef`, one row per biome, and a rectangle table over ground
-  temperature × humidity). 19 biomes: the sea (ocean, deep, frozen), the coast (beach, sea cliff),
-  banks (riverbank, lake shore) and the land's climate biomes — meadow, broadleaf forest, blossom
-  grove, autumn woods, conifer forest, wetland, savanna, dunes, tundra, alpine meadow, bare rock,
-  snowfield. Selection: snowfield where the ground's temperature is below −0.45 (at any height);
-  on ground over 250 m, alpine meadow below the tree line (−0.28), then bare rock (−0.36); else
-  the first matching rectangle; then the terrain's overrides (beach, sea cliff, banks). A small
-  noise roughens the borders. Each row holds the **surface layers** (top material and depth, filler,
-  steep-ground rule: `SurfaceMaterial` reads them), the **trees** (chance per 7 m cell and shapes),
-  the **grass and foliage tints**, the boulder chance and whether a distant forest shows a canopy. The
-  generator's content is prototype (§6.1); the rows are what the real world style replaces.
-  Over 8 seeds the land is 14–19 % meadow, 11–21 % snowfield, 8–13 % savanna, 4–14 % dunes and
-  each other climate biome 1.2–11 %.
-- **Wetland ponds**: small lakes (5–16 m across, 1–3 m deep; one in two 128 m cells) at the surface
-  of the valley floor's integer height, in cells whose centre is wetland-humid, inland and at most
-  8 m above the valley floor, with a low berm; nothing in the level of detail's cells over 4 m.
-- **Vegetation is tinted by biome, not made of variant blocks** (ADR 0022). `grass` and `leaves`
-  carry a `tint` mark in the block data (client side); each biome row holds a grass and a foliage
-  colour (multipliers in 1/64: meadow yellow-green, autumn woods orange leaves and golden grass,
-  blossom grove pink, conifer teal, savanna olive, …). Nothing is stored in voxels or sent over the
-  network: `TerrainGenerator::TintGrid(cx, cz)` (WASM `dwell_worldgen_tint`, a worldgen-worker job)
-  gives a chunk column's tint as 3 × 3 points 16 m apart — the biomes' colours blurred 3 × 3, so
-  neighbouring chunks agree on their edge and borders blend over ~30 m. The client's `ChunkStreamer`
-  fetches a column's grid once (cached), holds a chunk's meshing until it has it, and gives it to the
-  mesher (`TintField`: a `tints` vertex attribute, the grid's bilinear value at the vertex, 1 for
-  untinted blocks, so merged quads blend between their corners); the chunk shader multiplies the
-  texture by it where the atlas alpha says so (alpha = 1 − the tinted share of the texel: grass top
-  and leaves wholly, the grass side's fringe but not its dirt; the opaque passes ignore alpha). The
-  level of detail's surface data carries each column's tint (`LodSurface::tint_grass/foliage`, 6
-  floats per column), which the LOD mesher multiplies into the flat colours of tinted materials at
-  each vertex; sections the player has modified have no surface data and draw untinted from afar.
-  Tree *shapes* — oak, spruce and the blossom tree (a short trunk, a wide round crown) — come from
-  the biome row; per-tree colours do not exist (the owner will design the trees later). A distant
-  forest keeps its colour: in `GenerateLod`, in cells over 4 m, a forested column's top is `leaves`
-  (tinted).
-- **Checks** (`climate_test.cpp`, `vegetation_test.cpp`, `cascade_test.cpp`): snow only where the
-  ground's temperature is low and every cold column snow; the alpine bands; lee sides drier
-  (0.41 against 0.00); continents differ in climate; shares for 8 seeds; the table is well formed
-  and covers every temperature and humidity; ponds hold still water (no water voxel floats or
-  spills beside air); a chunk's tint grid agrees with its neighbours' on shared edges, blends
-  smoothly (no step over a third of the biomes' range), reaches the table's colours inside a
-  biome and agrees with the level of detail's; a forested site's level-4 surface is leaves; and in
-  the client the mesher, LOD mesher, atlas masks, streamer and pool tests cover the tint.
+#### Structure files **[built, Phase 15]**
 
-#### Generator pipeline **[built]**
-Executed per chunk. Every stage reads only noise and hashes of world coordinates, never another
-chunk's data, so chunks can be generated in any order and in parallel. 2D fields are sampled on a
-4-column lattice and 3D noise on a 4-voxel lattice, then interpolated (bilinear in x, z, then
-linear in y); the chunk path and the point queries (`ColumnAt`, `SolidAt`, `GroundY`) share that
-arithmetic, so features placed by point queries agree with the chunks.
+`core/structure.h`: hand-built voxel geometry as data — a text file of `fill x0 y0 z0 x1 y1 z1
+<block state>` lines (inclusive boxes; blocks named by canonical state string, never by id; later
+lines win), parsed with line-numbered errors and stamped over a base generator (`WithStructure`,
+with a matching air test). The movement playground the controller tests walk — a block step, a
+doorway, a crawlspace, a ladder to a ledge and a pool — is one
+(`server/tests/player/playground.structure`, decision D7). Placed slabs and slopes went with the
+shaped families, so the tests' half-height steps are static boxes.
 
-1. **Climate (2D).** Continentalness is the signed distance to the coast of the continent layout
-   (above), mapped to −1..1; fBm gives erosion. **Since version 8** temperature is a 1,200 km noise
-   (95 %) and humidity a 600 km one, each with a small local pair, so climate zones are hundreds of
-   kilometres across ([ADR 0019](./adr/0019-continental-scale-climate.md)); the ground's temperature
-   falls 6.5 °C per km of height (the lapse rate), so snow lies on high ground and in cold regions.
-   **Since version 10** the continents' records bias both, humidity falls with distance from the sea
-   and in a range's rain shadow, and the column's biome is chosen from the biome table (above) —
-   no longer a handful of fixed classes, and no mountains biome. Smooth climate weights (desert,
-   snowy, forest, plains) remain only to set the hills' amplitude.
-   Version 3 adds the planet-scale fields (a 262 km fBm that now modulates relief, a 49 km ridged
-   fBm for ranges).
-2. **Base height (2D).** On land the valley floor `V` (above: a smooth rise from the shore's 2 m
-   with the continent's elevation, belts and a share of the ranges) plus `D` × the relief — the
-   biome-blended hills (amplitude 4–12 m, never negative), ridged fractal mountains where
-   continentalness is high and erosion low (up to ~190 m), the uplift belts along convergent plate
-   edges (900 m) and the planet-scale ranges (1,800 m at a
-   crest, 5,400 m where the 262 km field is highest: the massifs of version 4) — less the rivers'
-   carve and with lakes (and, since version 10, wetland ponds) cut in. **Since version 9 [built, Phase 11b]** the belts', the mountains'
-   and the ranges' sharp detail (the last two a further 300 m) is the **derivative-damped ridged
-   cascade** (`noise.h`, `DampedRidges2`), in [0, 1]: nine octaves from a 4 km wavelength down to
-   a 16 m lattice, each `a_i × ridge_i × damp_i × prev` with `ridge = 1 − 1.5 |n|` from gradient
-   noise with its **analytic derivative** (`Perlin2d`: closed form from the quintic fade, `+ − ×`
-   only), `damp = 1 / (1 + 0.6 |G|²)` over the slope `G` accumulated so far (steep ground stops
-   gaining detail) and `prev` the coarser octaves' result (valleys stay smooth: the detail
-   multiplies with height). It is evaluated at the 4 m lattice corners only on land where an
-   uplift weight is not zero, and scaled by `D`, so rivers keep their valleys. The level of detail
-   keeps the octaves its cell resolves, and a cell resolving fewer than two reads the mean (0.55); its lattice is shifted by a hashed offset (Perlin noise is zero on its lattice, where coarse cells' centres lie); at sea the shelf, slope and abyss profile of the coast distance
-   (ocean floor ~−1,500 m) plus the hills.
-3. **Density (3D).** `density = (height − y) + overhang × overhangNoise3D(x, y, z)`; solid where
-   `density > 0`. The overhang amplitude is 1–2.5 m on land and up to ~10 m on mountain faces (version
-   7; it was ~3.5 m and up to ~17 m), giving overhangs and cliffs, and zero in river channels and
-   lakes.
-4. **Caves (3D).** Carve "spaghetti" tunnels (`a² + b² < t` of two noises) and "cheese" caverns
-   (one noise above a threshold), faded in from 3 m to 15 m below the surface (15 m to 27 m under a
-   river, a lake or a shallow sea floor) and out just above the bottom of the face (the core is solid).
-5. **Surface & strata.** A top-down column pass counts solid voxels below open sky or sea (cave
-   air does not start a surface): the biome's layers (grass, meadow or golden grass over dirt;
-   snow over dirt on snowfields; sand over sandstone on dunes and beaches; gravel on bare rock and
-   riverbanks), sand or gravel under water (gravel in frozen seas, whose top water voxel is `ice`), the biome's steep-ground rule
-   (stone; sandstone on dunes) on steep slopes; stone below. Open space below the column's water level
-   (`Column::water`: sea level, or a river's or lake's surface) fills with water; the bottom four
-   layers are stone (there is no bedrock: face A's rock continues into face B's).
-5b. **Slopes [built, Phase 9c; to be removed in Phase 15, with Phase 18, where natural top blocks are shaped by the
-   adaptive-block rules instead, `ADAPTIVE_BLOCKS.md` §4.3]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §5). Each column has a
-   *continuous surface*: the highest zero of its density going down from the sky, closed-form per
-   lattice layer (density is linear in y between layers), valid only where solid cells lie under it
-   and open ones over it. A cell corner's height is the mean of the four columns around it, rounded
-   to a half. Each column has **one surface cell**, with solid cells under it and open cells over
-   it (since the 0.3.1 and 0.4.1 patches): where the four corners fit one cell, that cell, exactly; where they
-   span more (ground steeper than a block per cell, or a block from a half-height to the next), the
-   cell holding the column's own surface, within the corners' span (a column above or below all
-   its corners — a peak, a cliff's top, a pit — may keep a cube at its own height), with the
-   corners clamped to it
-   — so a step of the surface carries a slope on top and a piece never rests on another piece's
-   slope. The cell stays within a block of the column's own surface. Its piece comes from the
-   (clamped) corner heights relative to its floor — the nine shapes in four orientations and the
-   slab where they match exactly, otherwise the nearest piece (`PIECE_NEAREST`, generated: raise
-   the lowest corner on a tie). The cells the column rises into, and the one under the piece, are
-   filled solid. Neighbouring cells, and chunks, share corners, so nothing reads a neighbour's data
-   (a chunk computes the surface of every column next to one near it). Columns among whose nine
-   columns one has no clean surface (a cave or overhang pocket at the surface) stay cubes. The
-   material is the column's surface material; shapes below the column's water level are flooded. Sampled over
-   generated terrain, 99.8 % of shaped columns lie within half a block of the continuous surface
-   (worst 0.72 m); neighbouring shaped cells at the same level differ at their shared edge by at
-   most half a block (in 5.7 % of pairs, where the nearest-piece rule bends a corner or a steep cell
-   is clamped); every shaped cell stands on a full one; and of ~11,000 one-block steps sampled on
-   gentle ground and in mountains, none is left as two bare cubes (0.3.0: 39 %, and 14 % of shaped
-   cells hung over a gap). The fix changed the terrain within the generator version and the 0.3 and
-   0.4 lines (patches 0.3.1 and 0.4.1), by the owner's decision (2026-10-06): worlds of the lines
-   take it for every chunk not yet edited, and edited (saved) chunks keep the old slopes, so a seam
-   can show where they meet. Point queries
-   (`SurfaceAt`, `SlopePieceAt`) apply the same rule from scratch, and a test checks them against
-   the chunk path cell for cell across chunk borders. Slopes cost ~25 % more per chunk
-   (10.5 ms against 8.4 ms, Debug).
-6. **Stability pass.** Solid components that do not touch a chunk face and have fewer than 48
-   voxels are removed (to water in open water, otherwise air), so newly generated terrain does not
-   collapse the first time a nearby voxel changes. The check is within the chunk: a piece that
-   crosses a chunk border is kept. Large generated overhangs are allowed and are subject to normal
-   integrity rules once edited.
-7. **Ores.** Seeded blobs per 16³ cell replace stone: coal (y ≤ 136), iron (y ≤ 8), gold
-   (y ≤ −48).
-8. **Features.** Boulders (24 m cells) and trees (7 m cells; the biome's shapes — oak, spruce
-   and blossom trees, version 10) at hashed positions per cell, on the ground found by `GroundY`; each writes
-   only voxels inside the chunk being generated. Boulders and leaves fill only air, logs air and
-   leaves, and features apply in a fixed order (boulders, then trees, each by cell), so
-   overlapping features resolve the same way in every chunk. A trunk starts one voxel below the
-   ground `GroundY` found (logs also replace a slope piece), so it stands on solid ground where the
-   slope stage shaved the ground voxel. Hand-authored structures come later. The spawn is the first
-   level patch (corners within half a block, solid cells under two open ones) on that surface.
+
+#### Generator pipeline **[built, Phase 15: generator version 12]**
+Executed per chunk. Every stage reads only noise of world coordinates, never another chunk's data,
+so chunks can be generated in any order and in parallel. The 2D fields are sampled on a 4-column
+lattice and interpolated bilinearly; the chunk path and the point queries (`ColumnAt`, `SolidAt`,
+`GroundY`) share that arithmetic.
+
+1. **Layout (2D).** The coast distance of the interim island (above).
+2. **Height (2D).** On land the ground rises from sea level at the coast toward 90 m inland
+   (`90 · c / (c + 6 km)` for coast distance `c`), with hills of ±30 m (a 2 km, four-octave fBm)
+   faded in from 0.5 to 4 km inland; at sea the floor falls linearly to −20 m over 2.5 km; small
+   bumps (±2.5 m, a 128 m three-octave fBm) everywhere. Heights over the island span about 0–130 m
+   above sea level (sea level is face-local 0; Phase 16 moves it to `h` = 32 over a 10-layer core).
+3. **Fill.** A column is solid from the face's bottom (the midplane) to its top voxel
+   (`ceil(height) − 1`): stone, under a skin of grass over three of dirt on land, or three of sand
+   at the shore (a top voxel less than 2 m above sea level) and under water. Open space below sea
+   level is water. There is no 3D density: no overhangs, caves, floating pieces or stability pass,
+   and no ores or features. Chunks above every column's height (and above sea level) are air,
+   known without generating them (`IsAirChunk`).
+
+A chunk takes ~0.07 ms to generate natively and a LOD section 0.55–0.85 ms (Release, `… bench`),
+against ~1.05 ms and 0.9–2.1 ms for generator version 11.
+
 
 #### Determinism **[built]**
 Server (native), local mode (WASM), and client (WASM) must produce **bit-identical** chunks
@@ -904,13 +688,10 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   rounded `sqrt` of the continent layout, which IEEE 754 fixes to the last bit (x86-64 `sqrtsd`,
   WebAssembly `f64.sqrt`; [ADR 0017](./adr/0017-continents-from-voronoi-plates.md) amends ADR 0010).
 - A golden test (`server/tests/worldgen/golden/chunk-hashes.txt`) hashes chunks across the
-  pipeline for two seeds — surface, caves, deep rock, the core (the rows either side of the midplane), sky, the top of the world, ocean,
-  mountains, the rim, terrain ~8,000 km out, and a massif ~5.4 km up — and, since Phase 10, for
-  both seeds a coast, the middle of an ocean gap between two continents (its seabed and the water
-  over it), an island, another continent's interior and the abyss, and, since Phase 11a, a lake, a
-  stream, a river, a great river and a waterfall, and, since Phase 13, chunks of face B (the rows
-  either side of the midplane, flipped caves and rock, its sea and its surfaces with turned-over
-  slopes); CI runs it natively and under
+  pipeline for two seeds — the surface at the spawn, deep rock, the core (the rows either side of the
+  midplane), sky, the top of the world, the coast of each face's island where it crosses the +x
+  axis (and just inland and offshore), the open sea, the rim and the sea ~8,000 km out — and chunks
+  of face B (the rows either side of the midplane and its island's surface); CI runs it natively and under
   WASM (Node) and in the client's worldgen module.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
@@ -1105,8 +886,8 @@ Players break and place blocks. Server-authoritative like every voxel change
   view of the eye (checked first, so a far request reads nothing); a targetable cell; the eye in
   front of the targeted face and a ray to its centre or one of four points near its corners
   reaching the target first (line of sight; on a shape, the sample points lie on the polygons whose
-  normal points through the requested face); Break — not indestructible (bedrock, in the flat test worlds), leaving water
-  where a flooded shape stood; Place — a placeable state, into an air or liquid cell inside the
+  normal points through the requested face); Break — not indestructible, leaving water
+  where a flooded state stood; Place — a placeable state, into an air or liquid cell inside the
   world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
   player's capsule, tested against the shape's true volume. Accepted edits of a step are batched into one
   `VoxelModification` (one entry per chunk, its revision + 1) sent to each client streaming a
@@ -1115,21 +896,15 @@ Players break and place blocks. Server-authoritative like every voxel change
   and client alike — rebuilds before the next tick's probes (PLAYER_CONTROLLER.md §5). Rejections
   are counted per session (`SessionStats`), with the last reason.
 - **Inventory:** creative-style and infinite — every *placeable* material in the (prototype, §6.1)
-  material table is always available: all but air, liquids (water), the indestructible anchor
-  (bedrock, which only the test worlds have: placed bedrock could never be removed) and debug materials (the launch pad); nothing is
-  consumed or collected. Ladders are one hotbar slot: placed against a side face the ladder is
+  material table is always available: all but air and liquids (water) — since Phase 15 stone, dirt,
+  grass, sand and ladders, five hotbar slots; nothing is consumed or collected. Ladders are one hotbar slot: placed against a side face the ladder is
   mounted on that block, facing out of it; on a top or bottom face it faces the player. A hotbar
   HUD shows the palette with the selected block highlighted; number keys (1–9, 0) and the scroll
   wheel (desktop) or tapping a hotbar slot (touch) change the selection. Selection is client-side
-  UI state and travels in each `BlockEditRequest`. **[built, Phase 9b]** The hotbar has one slot per
-  material, and the shaped families are *pieces* of it, not slots: the **shape key** (R, Shift+R
-  back, or the button beside the hotbar) cycles the cube, the slab and the nine slope shapes for
-  the materials that have families. A slope descends toward the player (rising away like stairs)
-  and hangs from the ceiling against a block's underside or the upper half of a side face (the
-  view ray's height on the face); a preview outline (`render/shapeEdges.ts`) shows the exact
-  shape at the cell before placing. All of a family's states are placeable, the server accepting
-  any of them with `flooded` normalised from the cell. Collected, finite inventories are out of scope
-  for now.
+  UI state and travels in each `BlockEditRequest`. The hotbar has one slot per block (ladders as
+  one); the shape key and the placement preview of Phase 9b went with the placed shapes (Phase 15).
+  Collected, finite inventories are out of scope for now.
+for now.
 
 ### 6.6 Level of Detail: the Whole-World View **[built, Phase 4]** (frame-rate check on real hardware outstanding)
 
@@ -1164,8 +939,7 @@ in ADR 0012; at 2 px a view from the ground draws ~8,200 sections, at 4 px ~2,80
 
 **[built, Phase 4a]** The grid and coordinates (`server/core/include/dwell/core/lod.h`, mirrored by
 `client/src/lod/grid.ts` and tested on both sides), `Downsample`, `GenerateLod` for every
-generator (the terrain's in `worldgen/terrain.cpp`; the flat and playground worlds share a flat
-one, the playground's features being far below a cell) and the column bounds that classify
+generator (the terrain's in `worldgen/terrain.cpp`; the flat world's in `lod.cpp`) and the column bounds that classify
 sections without generating them (`LodBoundsAt`, `LodKindFromBounds`), exported by
 `dwell_worldgen.wasm` (`dwell_worldgen_lod`, `dwell_worldgen_lod_bounds`; `ChunkGenerator.lod`
 and `.lodBounds` in `worldgen/generator.ts`). A section takes 1–9 ms to generate in WASM, its
@@ -1182,21 +956,10 @@ order (`EncodeLodCells`; `writeLodCells` in TypeScript); a terrain section near 
   the client generates them itself. Each cell samples the pipeline at its **centre column and
   bottom voxel** — the voxel whose solidity decides a floor under `Downsample` (below) — so
   generated and downsampled sections agree: fractal octaves whose lattice is finer than a cell
-  are dropped (still normalised by the full amplitude; ridged sums by the kept one), tunnels
-  (~4 m wide) are carved only in 2 m cells, caves only within three cells of the surface (deeper
-  cave air is never seen from afar, and leaving it solid keeps LOD meshes free of enclosed
-  faces), trees only in cells up to 4 m and boulders up to 2 m (a cell takes a feature's
-  material when the feature fills at least half of it; from 8 m cells a forested column's top is its
-  canopy leaf instead, Phase 11c), ores and the stability pass not at all;
-  surface materials follow the column's depth in metres. **(Phase 10)** The continent layout
-  (§6.3) is read from the macro lattice in cells narrower than 256 m, and evaluated at the cell's
-  centre in wider ones with the coast octaves the cell can resolve — at anchors every 4 columns,
-  the columns between interpolated only inside a continent's interior or the deep sea, every column
-  exact at coasts, shelves and channels — and the thresholded erosion and ridged fields a cell is too
-  wide for read their world means, not zero (zero flattened every interior). The apron below a face
-  reads as stone (the other face's rock), so the midplane is never drawn. Measured against the downsample of generated
-  chunks at the spawn and a site of each biome (levels 1–2, 3 on bare rock): ≥ 96% of cells
-  agree in class (air, liquid, solid) and ≥ 97% of columns' surfaces are within one cell
+  are dropped (still normalised by the full amplitude), and surface materials follow the depth in
+  metres of the cell's top voxel below the column's surface. The apron below a face reads as stone
+  (the other face's rock), so the midplane is never drawn. Measured against the downsample of
+  generated chunks at the spawn, the coast, a hillside and the sea (levels 1–3)
   (`lod: generation` tests the tolerance: 95%, 95%, mean under half a cell).
 - *Modified* sections (any modified chunk below them) are the downsample of their 8 children,
   recursively; unmodified children come from `GenerateLod`, level-0 children are chunks. A 2×2×2
@@ -1281,8 +1044,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   other face can be seen past the edge. A culled section is never scheduled, never makes its parent
   wait and is evicted like any unused one. Sections of level ≥ 7 hold rows of both faces, so they
   are meshed for the viewer's face: the other face's rows are filled with stone (nothing is drawn
-  against stone) and the biome tints are the viewer's face's (`MeshSectionOptions.tint`); they are
-  meshed again when the camera's face changes.
+  against stone), and seen from face B they are meshed without column surfaces (face A's would be
+  wrong there); they are meshed again when the camera's face changes.
 - A parent stays drawn until **all its children** are ready (meshed, or known empty or buried),
   then they swap in; unused children are evicted only as whole sibling sets, least recently used
   first, while the cache is over `LOD_CACHE_MB` — the view never has holes. **The view itself
@@ -1374,37 +1137,28 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   top, as `Downsample` keeps it (`lod: sea`). Every level draws water as the chunks do: a
   see-through surface (opacity 0.55, visible from both sides) 1/8 m below the cell grid, where the
   chunks' water surface sits (the mesher's `waterDrop`, in cells), over the floor at its true
-  depth. River and lake water stands above sea level at a whole metre that is not on the cells'
-  grid: the column surface carries each wet column's water level, and the mesher draws the water's
-  top — and its side faces up to it — there, not at its top liquid cell's top (which put a river at
-  121 m at 128 m in 16 m cells, over its banks, and at 512 m in 512 m cells), with a floor in that
-  cell kept strictly below it — so near and distant water join without a step, a seam or a change of look. (Opaque
+  depth. The column surface carries each wet column's water level (the sea's; until Phase 15 also
+  rivers' and lakes' above sea level, off the cells' grid), and the mesher draws the water's top —
+  and its side faces up to it — there, with a floor in that cell kept strictly below it — so near
+  and distant water join without a step, a seam or a change of look. (Opaque
   water blocks, then a floor tinted as seen through water from level 3, came first; the tint
   showed a seam, a brighter band and a hard edge where it began, in playtests.) All LOD sections'
   water is one three.js `BatchedMesh` (`render/three/meshBatch.ts`): one draw call per pass,
   sorted and culled per section. Drawn per section it added ~25% more draw calls in a coastal
   view; batched it is within a few percent of the tinted floor's, for ~3–8% more triangles.
-- **Coarse columns keep the plate edges.** From level 8 (256 m cells) the continent layout is
-  evaluated per column (`TerrainGenerator::LodLayout`, interpolated across continental interiors);
-  it includes the internal plate edges, whose convergent ones raise the valley floor and the relief
-  (the uplift belts). (Without them, as until the LOD river fix, every coarse column lacked the
-  belts and its surface lay 55–80 m below full detail's on average — taken at first for a limit of
-  the dropped range octaves.) Coarse columns are unbiased within a few metres at every level and,
-  around rivers, within a metre up to 128 m cells and a few beyond (`lod: column surfaces`,
-  `lod: river valleys and their water`).
 - **Column surfaces** (true heights at a distance): a cell counts as filled from its bottom voxel,
   so drawing each column's top cell to its top lifted the ground by up to a cell — ~220 m at level
   8, ~2 km at level 12 — and seas to +2,048 m (level 12) and +6,144 m (level 13): the horizon
   stood too tall, with steps where levels met (playtest). `GenerateLod` therefore also returns
-  each column's exact surface (`core::LodSurface`: height, material, wet — a sea's or a river's
-  floor — and the water's level), unbiased
+  each column's exact surface (`core::LodSurface`: height, material, wet — a sea floor — and the
+  water's level; the biome tints it carried until Phase 15 went with the tints), unbiased
   to a few metres at every level (`lod: column surfaces`); the client's worldgen worker passes it
   on, and the mesher draws the top of the column's surface cell at that height, in half-cell
   steps (at most 1/4 cell — a pixel or two — off; finer steps cost several times the triangles),
   except on **shores**: a dry column beside a wet one (by the wet flag, or a liquid topmost cell —
   the sea in the apron row of a section whose bottom is sea level) is drawn at its exact height
-  and never as a slope piece, since against flat water a quarter cell shows — half-cell steps
-  put a bank a metre above a river under its water (121.5 m drawn at 120 m in 16 m cells) and
+  since against flat water a quarter cell shows — half-cell steps put a bank a metre above a
+  river under its water (121.5 m drawn at 120 m in 16 m cells) and
   beaches flush with the sea, or raised it to its cell's top, sand standing metres out of the
   water (playtest on 0.6.1-dev.18; ~10 % more triangles over a typical landscape),
   with walls to lower neighbours, tops of equal height merged into rectangles and walls into
@@ -1419,18 +1173,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   cracks along section borders, found in a playtest.) The cells themselves — and so the
   server, `Downsample`, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
-- **Slopes [built, Phase 9d]** ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §3.2): distant terrain reads
-  as facets, not terraces. With `slopes` (on in the game), the mesher derives the same pieces as
-  the generator (§6.3 5b) from heights alone — no format change, at every level: a column's height
-  is its generated surface where the section carries it and the cell holds it, else the top of its
-  topmost solid cell (so modified sections slope too); a corner's height is the mean of the four
-  columns around it, rounded to a half *of a cell*; the column's surface cell is drawn as the
-  piece for its corners clamped to the cell (`PIECE_NEAREST`, generated and shared with C++), as
-  triangles with true normals and the shared normal tint. A cliff (corners more than a cell
-  apart; unlike the generator since 0.3.1 / 0.4.1, which slopes the top of such columns too), a sea floor, an empty or full piece, or a column without all nine neighbours stays as
-  before; walls between columns follow the slopes' edges (trapezoids), so sloped neighbours meet
-  without a gap and a step down to a flat or cliff column still has its wall, skirts included.
-  Flat ground keeps its merged rectangles.
+- **Slopes [built, Phase 9d; removed in Phase 15]**: distant terrain was drawn as the slope pieces
+  of the generator's slope stage; both went with the placed shapes. Tops are flat at their surface
+  height until Phase 18's adaptive blocks shape them again.
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
@@ -1589,7 +1334,6 @@ to be tuned; they live in `shared/protocol/constants` and are consumed by both s
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
 | `FLIGHT_CEILING` | 24 000 000 m | Highest feet position in creative flight (§9.1; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
 | `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 39 / 4 | Flight speed slider: highest level (2^19.5 × `fly.speed`) and its bit position in `PlayerInput.buttons` (§9.1) |
-| `BEDROCK_LAYERS` | 4 | Indestructible layers at the bottom of the flat and playground test worlds only (the terrain has no bedrock) |
 | `SEA_LEVEL` | 0 | Water fill height |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
 | `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
@@ -1955,7 +1699,8 @@ Details and measurements: PLAYER_CONTROLLER.md §8.
 - **Server-originated impulses** (knockback, explosion) arrive as a reliable `PlayerEvent` with the
   tick and the player's `inputSeq` they were applied at; the client inserts them into history at
   that input and replays. Snapshots carry `lastKnockbackSeq`, so a snapshot that overtakes its event
-  is smoothed like a knockback rather than snapped. Built with the debug launch pad (Phase 2).
+  is smoothed like a knockback rather than snapped. Built with the debug launch pad (Phase 2; the pad
+  was removed in Phase 15, the netcode test now issues the knockback from the server).
 - The prediction logic is C++ (`player::Predictor`), shared by the browser client (its own WASM
   instance on the main thread) and the native latency/loss tests.
 - Native and WASM Jolt are not assumed bit-identical. Divergence is minimized (Jolt
@@ -2242,7 +1987,7 @@ No platform needs a trusted certificate to join any server (ADR 0008).
   unknown button bits fail decoding. The per-session queue is capped at 16. Rejections are counted
   per session (`SessionStats`).
 - **[built, Phase 3d]** Block edits are checked for reach, line of sight, rate (token bucket),
-  and permissions (`ServerConfig::edits`); bedrock cannot be broken, only palette materials can be
+  and permissions (`ServerConfig::edits`); indestructible states cannot be broken, only palette materials can be
   placed, and placements into blocks, outside the world, or overlapping any player capsule are
   rejected (§6.5). At most 8 requests per session queue per tick; `ChunkResync` answers only chunks
   the client is streamed, at most `MAX_RESYNC_CHUNKS` per request.

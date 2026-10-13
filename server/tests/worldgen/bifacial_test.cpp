@@ -166,8 +166,8 @@ TEST_SUITE("bifacial: generation") {
 
   TEST_CASE("point queries by face agree with the chunk path") {
     const BifacialTerrain gen(11);
-    for (const ChunkCoord c :
-         {ChunkCoord{0, -66, 0}, ChunkCoord{5, -129, 5}, ChunkCoord{0, -130, 0}, ChunkCoord{0, -131, 0}}) {
+    for (const ChunkCoord c : {ChunkCoord{0, -66, 0}, ChunkCoord{5, -129, 5},
+                               ChunkCoord{0, -130, 0}, ChunkCoord{0, -131, 0}}) {
       Chunk chunk;
       gen.Generate(c, chunk);
       for (int z = 0; z < S; z += 3)

@@ -5,6 +5,7 @@ import { meshChunk, PADDED_VOLUME, paddedIndex, type MeshArrays } from './mesher
 
 const WATER = stateId('dwell:water');
 const GRASS = stateId('dwell:grass');
+const STONE = stateId('dwell:stone');
 const LADDER_NORTH = stateId('dwell:ladder[facing=north,flooded=false]');
 const UNKNOWN = 65_000;
 
@@ -65,7 +66,7 @@ describe('greedy chunk mesher', () => {
 
   it('merges a floor of one material into one quad per side', () => {
     const cells: [number, number, number, number][] = [];
-    for (let z = 0; z < 32; z++) for (let x = 0; x < 32; x++) cells.push([x, 0, z, 2]);
+    for (let z = 0; z < 32; z++) for (let x = 0; x < 32; x++) cells.push([x, 0, z, STONE]);
     const { opaque } = meshChunk(voxels(cells));
     // Top, bottom, and one strip per side.
     expect(quads(opaque)).toBe(6);

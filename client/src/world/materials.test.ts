@@ -3,18 +3,11 @@ import { MATERIALS, materialStyle, PLACEABLE } from './materials';
 
 describe('material styles', () => {
   it('mirror the registry state for state, in id order', () => {
-    // The explicit blocks first, then each shapeable material's slope and slab families.
-    const explicit = MATERIALS.map((m) => m.name).slice(0, 29);
-    expect(explicit).toEqual([
+    expect(MATERIALS.map((m) => m.name)).toEqual([
       'dwell:air',
-      'dwell:bedrock',
       'dwell:stone',
       'dwell:dirt',
       'dwell:grass',
-      'dwell:stone_slab[flooded=false,half=bottom]',
-      'dwell:stone_slab[flooded=false,half=top]',
-      'dwell:stone_slab[flooded=true,half=bottom]',
-      'dwell:stone_slab[flooded=true,half=top]',
       'dwell:ladder[facing=north,flooded=false]',
       'dwell:ladder[facing=north,flooded=true]',
       'dwell:ladder[facing=east,flooded=false]',
@@ -24,35 +17,12 @@ describe('material styles', () => {
       'dwell:ladder[facing=west,flooded=false]',
       'dwell:ladder[facing=west,flooded=true]',
       'dwell:water',
-      'dwell:launch_pad',
       'dwell:sand',
-      'dwell:sandstone',
-      'dwell:gravel',
-      'dwell:snow',
-      'dwell:ice',
-      'dwell:log',
-      'dwell:leaves',
-      'dwell:coal_ore',
-      'dwell:iron_ore',
-      'dwell:gold_ore',
     ]);
-    const families = MATERIALS.slice(29).map((m) => m.name.replace(/\[.*$/, ''));
-    expect(new Set(families)).toEqual(
-      new Set(
-        ['stone', 'dirt', 'grass', 'sand', 'sandstone', 'gravel', 'snow', 'log']
-          .flatMap((m) => [`dwell:${m}_slope`, `dwell:${m}_slab`])
-          .filter((n) => n !== 'dwell:stone_slab'),
-      ),
-    );
   });
 
   it('mark the placeable set of the C++ registry (Placeable, block_edit_test.cpp)', () => {
-    // The shaped families are all placeable (the shape key picks among them); the other states are
-    // the palette's slots.
-    const names = PLACEABLE.map((id) => MATERIALS[id]?.name ?? '');
-    const shaped = names.filter((n) => /_(slope|slab)\[/.test(n));
-    expect(shaped.length).toBe(8 * (144 + 4));
-    expect(names.filter((n) => !shaped.includes(n))).toEqual([
+    expect(PLACEABLE.map((id) => MATERIALS[id]?.name ?? '')).toEqual([
       'dwell:stone',
       'dwell:dirt',
       'dwell:grass',
@@ -61,15 +31,6 @@ describe('material styles', () => {
       'dwell:ladder[facing=south,flooded=false]',
       'dwell:ladder[facing=west,flooded=false]',
       'dwell:sand',
-      'dwell:sandstone',
-      'dwell:gravel',
-      'dwell:snow',
-      'dwell:ice',
-      'dwell:log',
-      'dwell:leaves',
-      'dwell:coal_ore',
-      'dwell:iron_ore',
-      'dwell:gold_ore',
     ]);
   });
 

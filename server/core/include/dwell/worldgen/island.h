@@ -3,11 +3,11 @@
 #include <cstdint>
 
 // The interim land layout (Phase 15, ARCHITECTURE.md §6.3): one island at the origin, replacing the
-// continents of Voronoi plates (ADR 0017). Its coast is a circle of kRadius m whose radius varies by
-// smooth noise, seen through a domain warp, with fractal coast detail added. Everything is a pure
-// function of (world seed, world coordinates), integer-hashed (noise.h), so chunks, point queries
-// and the level of detail agree and native and WASM builds are bit-identical (ADR 0010; the distance
-// from the origin uses the correctly rounded square root, as ADR 0017's bisectors did).
+// continents of Voronoi plates (ADR 0017). Its coast is a circle of kRadius m whose radius varies
+// by smooth noise, seen through a domain warp, with fractal coast detail added. Everything is a
+// pure function of (world seed, world coordinates), integer-hashed (noise.h), so chunks, point
+// queries and the level of detail agree and native and WASM builds are bit-identical (ADR 0010; the
+// distance from the origin uses the correctly rounded square root, as ADR 0017's bisectors did).
 //
 // The parameters are code constants for now: Phase 17 moves the layout into the terrain definition
 // (data, ADR 0026), so this is a placeholder, not a system to extend.

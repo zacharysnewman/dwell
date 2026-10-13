@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DISC_ZOOM,
-  LOWLAND_COLOR,
   MAP_COLUMN_BYTES,
   MAP_SIZE,
   MAP_ZOOMS,
@@ -43,7 +42,8 @@ describe('terrain map overlay', () => {
     expect(heightColor(0)).toBe(SHORE_COLOR);
     expect(heightColor(1)).toBe(SHORE_COLOR);
     expect(heightColor(-0.01)).toBe(SEA_SHALLOW);
-    expect(heightColor(2)).toBe(LOWLAND_COLOR);
+    expect(heightColor(2)).not.toBe(SHORE_COLOR);
+    expect(heightColor(0.01 + 2)).not.toBe(SHORE_COLOR);
     expect(heightColor(-40)).not.toBe(heightColor(-1));
     expect(heightColor(150)).not.toBe(heightColor(10));
   });

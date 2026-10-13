@@ -20,7 +20,7 @@ inline constexpr int kScenarioPlayers = 5;
 inline void ScenarioWorld(PlayerTestWorld& w) {
   w.Floor(0, 24);
   w.Box(Vec3(-6, 0, 6), Vec3(2, 0.5f, 5), Euler(-20, 0, 0));  // ramp
-  w.HalfStep(4, 0, 6, 7, 10);                                  // half step
+  w.HalfStep(4, 0, 6, 7, 10);                                 // half step
   w.Fill(-1, 1, 7, 1, 1, 9, core::Materials::kStone);         // crawlspace roof
   w.Fill(10, 0, 2, 14, 2, 6, core::Materials::kStone);        // ledge
   w.Fill(12, 0, 1, 12, 2, 1, core::Materials::kLadderN);      // ladder
