@@ -17,7 +17,9 @@
     "vite.launcher.config.ts",
     "playwright.config.ts",
     "playwright.site.config.ts",
+    "playwright.webgpu.config.ts",
     "e2e",
+    "e2e-webgpu",
     "scripts"
   ]
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates protocol constants for C++ and TypeScript from constants.json.
+// Generates protocol constants for C++, TypeScript and Rust from constants.json.
 // Outputs are checked in; CI regenerates and fails on any diff.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -168,3 +168,82 @@ tsFlags('WelcomeFlags', c.welcomeFlags);
 ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
 
+
+// ---- Rust (crates/dwell-protocol, ADR 0028) ------------------------------------------------------
+const snake = (k) => k.replace(/([A-Z])/g, '_$1').toUpperCase();
+const pascalKey = (k) => k[0].toUpperCase() + k.slice(1);
+const rs = [];
+rs.push(`// ${header}`);
+rs.push('');
+rs.push(`pub const PROTOCOL_VERSION: u16 = ${c.protocolVersion};`);
+rs.push(`pub const SIM_HZ: u32 = ${c.simHz};`);
+rs.push(`pub const SNAPSHOT_HZ: u32 = ${c.snapshotHz};`);
+rs.push(`pub const MAX_DATAGRAM_BYTES: usize = ${c.maxDatagramBytes};`);
+rs.push(`pub const MAX_RELIABLE_MESSAGE_BYTES: usize = ${c.maxReliableMessageBytes};`);
+rs.push(`pub const CHUNK_SIZE: i32 = ${c.chunkSize};`);
+rs.push(`pub const AUTH_DOMAIN_TAG: &str = "${c.authDomainTag}";`);
+rs.push(`pub const MAX_INPUTS_PER_DATAGRAM: usize = ${c.maxInputsPerDatagram};`);
+const rsGroup = (mod, obj, typeOf) => {
+  rs.push('');
+  rs.push(`pub mod ${mod} {`);
+  for (const [k, v] of enumEntries(obj)) {
+    const t = typeOf(k, v);
+    const value = t === 'f32' && Number.isInteger(v) ? `${v}.0` : `${v}`;
+    rs.push(`    pub const ${snake(k)}: ${t} = ${value};`);
+  }
+  rs.push('}');
+};
+// Player distances and radii (metres) are floats, the rest integers (as in C++).
+rsGroup('players', c.players, (k) => (/Distance|Radius/.test(k) ? 'f32' : 'i64'));
+rsGroup('world', c.world, () => 'i64');
+rsGroup('lod', c.lod, () => 'i64');
+rsGroup('limits', c.limits, () => 'usize');
+const rsEnum = (name, obj) => {
+  rs.push('');
+  rs.push('#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]');
+  rs.push('#[repr(u8)]');
+  rs.push(`pub enum ${name} {`);
+  for (const [k, v] of enumEntries(obj)) rs.push(`    ${pascalKey(k)} = ${v},`);
+  rs.push('}');
+  rs.push('');
+  rs.push(`impl ${name} {`);
+  rs.push(`    pub const MAX: u8 = ${maxOf(obj)};`);
+  rs.push('');
+  rs.push('    pub const fn from_u8(v: u8) -> Option<Self> {');
+  rs.push('        match v {');
+  for (const [k, v] of enumEntries(obj)) rs.push(`            ${v} => Some(Self::${pascalKey(k)}),`);
+  rs.push('            _ => None,');
+  rs.push('        }');
+  rs.push('    }');
+  rs.push('}');
+};
+rsEnum('Channel', c.channels);
+rsEnum('MessageType', c.messageTypes);
+rsEnum('RejectReason', c.rejectReasons);
+rsEnum('TransportKind', c.transportKinds);
+rsEnum('PlayerState', c.playerStates);
+rsEnum('GroundKind', c.groundKinds);
+rsEnum('PlayerEventKind', c.playerEventKinds);
+rsEnum('DamageCause', c.damageCauses);
+rsEnum('ChunkForm', c.chunkForms);
+rsEnum('LodForm', c.lodForms);
+rsEnum('BlockEditAction', c.blockEditActions);
+rsEnum('VoxelModificationReason', c.voxelModificationReasons);
+rsEnum('HostState', c.hostStates);
+const rsFlags = (mod, type, obj) => {
+  rs.push('');
+  rs.push(`pub mod ${mod} {`);
+  let mask = 0;
+  for (const [k, v] of enumEntries(obj)) {
+    rs.push(`    pub const ${snake(k)}: ${type} = ${v};`);
+    mask |= v;
+  }
+  rs.push(`    pub const ALL: ${type} = ${mask};`);
+  rs.push('}');
+};
+rsFlags('input_buttons', 'u16', c.inputButtons);
+rsFlags('player_flags', 'u8', c.playerFlags);
+rsFlags('controller_flags', 'u8', c.controllerFlags);
+rsFlags('welcome_flags', 'u8', c.welcomeFlags);
+rs.push('');
+writeFileSync(join(root, 'crates/dwell-protocol/src/constants.gen.rs'), rs.join('\n'));

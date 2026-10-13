@@ -1,0 +1,11 @@
+[package]
+name = "dwell-blocks"
+description = "Dwell's block registry: tables generated from shared/blocks (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[lints]
+workspace = true

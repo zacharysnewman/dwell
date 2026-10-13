@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates the block registries for C++ and TypeScript from shared/blocks/*.json
+// Generates the block registries for C++, TypeScript and Rust from shared/blocks/*.json
 // (docs/BLOCK_REGISTRY.md). Outputs are checked in; CI regenerates and fails on any diff.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -439,6 +439,98 @@ for (let first = 0; first < states.length; first += CHUNK) ts.push(`  ...STATES_
 ts.push('];');
 ts.push('');
 writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.join('\n'));
+
+// ---- Rust (crates/dwell-blocks, ADR 0028): tables only; code looks states up by name --------------
+{
+  const rf = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
+  const rstr = (v) => JSON.stringify(v);
+  const rs = [];
+  rs.push(`// ${header}`);
+  rs.push('');
+  rs.push('use crate::types::*;');
+  rs.push('');
+  rs.push('/// FNV-1a 64 over the canonical state strings (each followed by a newline) in runtime id order.');
+  rs.push(`pub const REGISTRY_HASH: u64 = 0x${hashHex};`);
+  rs.push('');
+  const values = [];
+  const props = [];
+  const blockRows = [];
+  for (const b of blocks) {
+    const begin = props.length;
+    for (const p of b.props) {
+      props.push(`    PropertyDef { name: ${rstr(p.name)}, first_value: ${values.length}, value_count: ${p.values.length} },`);
+      for (const v of p.values) values.push(`    ${rstr(v)},`);
+    }
+    blockRows.push(
+      `    BlockDef { name: ${rstr(b.id)}, first_state: ${b.first}, state_count: ${b.count}, first_property: ${begin}, property_count: ${b.props.length} },`,
+    );
+  }
+  rs.push(`pub static PROPERTY_VALUES: [&str; ${values.length}] = [`);
+  rs.push(...values);
+  rs.push('];');
+  rs.push('');
+  rs.push(`pub static PROPERTIES: [PropertyDef; ${props.length}] = [`);
+  rs.push(...props);
+  rs.push('];');
+  rs.push('');
+  rs.push(`pub static BLOCKS: [BlockDef; ${blocks.length}] = [`);
+  rs.push(...blockRows);
+  rs.push('];');
+  rs.push('');
+  const faces = [];
+  const shapes = [];
+  for (const t of shapeTable) {
+    const sh = t.shape;
+    const first = faces.length;
+    for (const face of sh?.faces ?? []) {
+      const pts = [...face.pts, ...Array(4 - face.pts.length).fill([0, 0, 0])];
+      faces.push(`    ShapeFace { tag: ${face.tag}, count: ${face.pts.length}, v: [${pts.map((q) => `[${q.map(rf).join(', ')}]`).join(', ')}] },`);
+    }
+    shapes.push(
+      sh
+        ? `    ShapeInfo { first_face: ${first}, face_count: ${sh.faces.length}, corners: [${sh.corners.join(', ')}], inverted: ${sh.inverted}, diagonal: ${sh.diagonal}, convex: ${sh.convex}, volume: ${rf(sh.volume)}, sides: [${sh.sides.map((q) => `[${q.join(', ')}]`).join(', ')}], full_top: ${sh.fullTop}, full_bottom: ${sh.fullBottom}, min_y: ${rf(sh.minY)}, max_y: ${rf(sh.maxY)} },`
+        : '    ShapeInfo::EMPTY,',
+    );
+  }
+  rs.push(`pub static SHAPE_FACES: [ShapeFace; ${faces.length}] = [`);
+  rs.push(...faces);
+  rs.push('];');
+  rs.push('');
+  rs.push(`pub static SHAPES: [ShapeInfo; ${shapes.length}] = [`);
+  rs.push(...shapes);
+  rs.push('];');
+  rs.push('');
+  const RS_SHAPES = { empty: 'Empty', full: 'Full', shaped: 'Shaped' };
+  rs.push(`pub static STATES: [StateInfo; ${states.length}] = [`);
+  for (const st of states) {
+    const d = st.block.def;
+    const t = d.textures ? (typeof d.textures === 'string' ? { top: d.textures, side: d.textures, bottom: d.textures } : d.textures) : null;
+    const facing = d.facingProperty ? `Facing::${pascal(st.values[d.facingProperty])}` : 'Facing::None';
+    const fields = [
+      `name: ${rstr(st.string)}`,
+      `block: ${blocks.indexOf(st.block)}`,
+      `density_kg_m3: ${rf(d.density)}`,
+      `solid: ${d.shape !== 'empty'}`,
+      `indestructible: ${!!d.indestructible}`,
+      `shape: VoxelShape::${RS_SHAPES[d.shape]}`,
+      `shape_index: ${st.shapeIndex}`,
+      `flooded: ${st.flooded}`,
+      `climbable: ${!!d.climbable}`,
+      `facing: ${facing}`,
+      `climb_speed_scale: ${rf(d.climbSpeedScale ?? 1)}`,
+      `liquid: ${!!d.liquid}`,
+      `placeable: ${!!st.placeable}`,
+      `look: ${rstr(st.block.look)}`,
+      `color: 0x${d.color.replace('#', '').toLowerCase()}`,
+      `opacity: ${rf(d.opacity ?? 1)}`,
+      `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
+    ];
+    rs.push(`    StateInfo { ${fields.join(', ')} },`);
+  }
+  rs.push('];');
+  rs.push('');
+  writeFileSync(join(root, 'crates/dwell-blocks/src/blocks.gen.rs'), rs.join('\n'));
+}
 
 // ---- Shared vector: the canonical strings in id order and the hash (both sides' tests read it) -----
 const vec = [`# ${header}`, `hash ${hashHex}`, ...states.map((s) => `${s.id} ${s.string}`), ''];

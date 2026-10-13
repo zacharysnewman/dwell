@@ -1,0 +1,152 @@
+//! Dwell's browser client (ADR 0028). In 24a it holds the WebGPU probe: the smallest wgpu renderer
+//! that draws to an offscreen target and to a canvas, used to prove WebGPU in headless Chromium on
+//! CI before the renderer work (24e) starts.
+
+#[cfg(target_arch = "wasm32")]
+mod web;
+
+/// Side of the probe's square render target, in pixels.
+pub const PROBE_SIZE: u32 = 64;
+/// The probe clears to this colour (RGBA8) and draws a triangle in [`PROBE_TRIANGLE`] over it.
+pub const PROBE_CLEAR: [u8; 4] = [0, 0, 255, 255];
+pub const PROBE_TRIANGLE: [u8; 4] = [255, 128, 0, 255];
+
+const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+/// A device on the browser's WebGPU adapter. `None` when WebGPU is unavailable.
+pub async fn request_device(
+    instance: &wgpu::Instance,
+    surface: Option<&wgpu::Surface<'_>>,
+) -> Result<(wgpu::Adapter, wgpu::Device, wgpu::Queue), String> {
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            compatible_surface: surface,
+            ..Default::default()
+        })
+        .await
+        .map_err(|e| format!("no WebGPU adapter: {e}"))?;
+    let (device, queue) = adapter
+        .request_device(&wgpu::DeviceDescriptor::default())
+        .await
+        .map_err(|e| format!("no WebGPU device: {e}"))?;
+    Ok((adapter, device, queue))
+}
+
+/// The probe's pipeline for a colour target of `format`.
+pub fn triangle_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("probe"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("probe"),
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(format.into())],
+        }),
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// Records the probe's pass: clear, then the triangle.
+pub fn draw_triangle(
+    encoder: &mut wgpu::CommandEncoder,
+    pipeline: &wgpu::RenderPipeline,
+    view: &wgpu::TextureView,
+) {
+    let [r, g, b, a] = PROBE_CLEAR.map(|c| f64::from(c) / 255.0);
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("probe"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        ..Default::default()
+    });
+    pass.set_pipeline(pipeline);
+    pass.draw(0..3, 0..1);
+}
+
+/// Renders the probe offscreen and reads it back: RGBA8 rows of [`PROBE_SIZE`] pixels.
+pub async fn render_offscreen(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<Vec<u8>, String> {
+    let size = wgpu::Extent3d {
+        width: PROBE_SIZE,
+        height: PROBE_SIZE,
+        depth_or_array_layers: 1,
+    };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("probe"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    // 64 px × 4 B = 256 B per row: already the required row alignment.
+    let row = PROBE_SIZE * 4;
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("probe readback"),
+        size: u64::from(row * PROBE_SIZE),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let pipeline = triangle_pipeline(device, FORMAT);
+    let mut encoder = device.create_command_encoder(&Default::default());
+    draw_triangle(
+        &mut encoder,
+        &pipeline,
+        &texture.create_view(&Default::default()),
+    );
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row),
+                rows_per_image: None,
+            },
+        },
+        size,
+    );
+    queue.submit([encoder.finish()]);
+
+    let (tx, rx) = futures_channel::oneshot::channel();
+    readback.map_async(wgpu::MapMode::Read, .., move |r| {
+        let _ = tx.send(r);
+    });
+    rx.await
+        .map_err(|_| "readback dropped".to_string())?
+        .map_err(|e| format!("readback failed: {e}"))?;
+    let pixels = readback
+        .get_mapped_range(..)
+        .map_err(|e| format!("readback range: {e}"))?
+        .to_vec();
+    Ok(pixels)
+}

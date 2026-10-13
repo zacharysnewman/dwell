@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | ⏳ Not started — ADR 0028 accepted (2026-10-13); C++/TS feature work stops after Phase 15 |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24a built (workspace, generated protocol/blocks crates, `rust` CI job, WebGPU probe passing locally in headless Chromium); outstanding for 24a: its first CI run; C++/TS feature work stops after Phase 15 |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -1977,30 +1977,39 @@ Three.js renderer with one Rust codebase that reproduces the Phase 15 baseline o
 platforms (GitHub Pages, Electron, Capacitor, native dedicated servers), with a faster build and
 test pipeline ([ADR 0028](./adr/0028-rust-port.md)). Runs after Phase 15 and before Phase 16.
 
-**Status:** Not started. ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
+**Status:** In progress — 24a built: the workspace, `dwell-protocol` and `dwell-blocks` from the
+generators, the `rust` CI job and the WebGPU probe (passing locally in headless Chromium on
+SwiftShader); outstanding for 24a: the job's first CI run. ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
 the C++/TS tree and replaces it at the cutover (24f); the old tree takes only fixes until then.
-Open decisions, to put to the owner at the start of 24b: world storage (SQLite or a Dwell-owned
-chunk format on OPFS) and the compression codec; Monocypher's replacements.
+Storage, compression and crypto decided by Claude at the owner's request (2026-10-13, ADR 0028
+§8): `redb` (files natively, OPFS in the browser), LZ4 (`lz4_flex`), `ed25519-dalek`.
 
 ### 24a — Workspace, generators and pipeline
-- [ ] Cargo workspace at the repo root (`crates/`): `dwell-protocol`, `dwell-blocks`, `dwell-world`
+- [x] Cargo workspace at the repo root (`crates/`). Crates are added as their sub-phase starts
+  (deviation: an empty crate per name up front would only be noise); 24a adds `dwell-protocol`,
+  `dwell-blocks` and `dwell-client`. Planned: `dwell-protocol`, `dwell-blocks`, `dwell-world`
   (voxels, chunks, storage), `dwell-worldgen`, `dwell-physics` (Rapier wrapper and player
   controller), `dwell-sim` (tick, netcode), `dwell-net` (moved from `server/net/wt`; the C ABI and
-  cbindgen header removed), `dwell-server` (binary), `dwell-client` (WASM, wgpu), `dwell-tools`
+  cbindgen header removed; it stays at `server/net/wt`, excluded from the workspace, while the C++
+  build links it), `dwell-server` (binary), `dwell-client` (WASM, wgpu), `dwell-tools`
   (inspect, scenario trace, divergence).
-- [ ] `shared/blocks/gen.mjs` and `shared/protocol/gen.mjs` emit Rust (and TS only where TS still
+- [x] `shared/blocks/gen.mjs` and `shared/protocol/gen.mjs` emit Rust (and TS only where TS still
   reads them); CI fails on stale output.
-- [ ] CI: `cargo fmt`, `clippy -D warnings`, `cargo nextest` (native), the WASM build once per run
-  through `wasm-bindgen`, `sccache`/`rust-cache`; runs alongside the existing jobs until 24f.
+- [ ] CI: `cargo fmt`, `clippy -D warnings` (native and wasm32), `cargo nextest`, the WASM build once
+  per run through `wasm-bindgen`, `rust-cache`; runs alongside the existing jobs until 24f. Built
+  (the `rust` job); not yet run on CI.
 - [ ] **Headless WebGPU in CI proven first**: Playwright's Chromium draws a wgpu triangle on the
-  runners (software adapter); the result decides how e2e covers rendering.
+  runners (software adapter); the result decides how e2e covers rendering. Built: `dwell-client`'s
+  probe draws offscreen (pixels read back and checked) and to a canvas; passes locally with
+  SwiftShader's Vulkan (`--use-webgpu-adapter=swiftshader`) and fails with WebGPU disabled; not yet
+  run on CI.
 
 ### 24b — Core: blocks, chunks, worldgen, storage
 - [ ] Block registry and states from `shared/blocks` data, by name.
 - [ ] Chunks and the voxel grid; the Phase 15 generator (one island, the stone core) ported, with
   new goldens that agree natively and in WASM.
-- [ ] World storage and compression per the owner's decision; crypto replacements, still
-  verifiable by the master server (its vectors pass).
+- [ ] World storage on `redb` (a file natively, an OPFS backend in the browser) with LZ4 chunk
+  blobs; Ed25519 checks on `ed25519-dalek`, passing the master's vectors.
 
 ### 24c — Physics and the player controller on Rapier
 - [ ] `dwell-physics` wraps Rapier (`rapier3d-f64`, `enhanced-determinism`); no Rapier types

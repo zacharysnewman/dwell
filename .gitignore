@@ -2,3 +2,6 @@
 *.dwellworld
 *.dwellworld-*
 !server/tests/storage/golden/*.dwellworld
+
+# Rust workspace build output (ADR 0028).
+/target/

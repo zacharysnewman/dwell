@@ -89,12 +89,17 @@ Compatibility: bit-exact with today's worlds, terrain and protocol, or **a new c
    and generators, which emit Rust instead of C++ (and TS only where TS still reads them, e.g. the
    master's vectors); CI still fails on stale output.
 
-Decided later, during the port (these need the owner's input):
-- **World storage.** SQLite (`rusqlite` natively, a WASM SQLite build in the browser) or a
-  Dwell-owned chunk-blob format (files natively, OPFS in a worker in the browser), and the
-  compression codec (zstd through C, or a pure-Rust codec such as LZ4).
-- **Crypto.** Monocypher's replacements (e.g. `ed25519-dalek`, `chacha20poly1305`), kept
-  compatible with what the master server verifies.
+8. **Storage, compression and crypto** (the owner left these to Claude, optimising for speed of
+   the game and of the build, 2026-10-13):
+   - **World storage is `redb`**, a pure-Rust embedded key-value store (ACID, copy-on-write B-trees):
+     chunks are blobs keyed by chunk coordinates, plus a metadata table. Natively it uses files; in
+     the browser a `redb` storage backend over an **OPFS sync access handle** in the worker that runs
+     local mode. One format, one code path, no C. SQLite and its WASM build go.
+   - **Compression is LZ4** (`lz4_flex`, pure Rust) for chunk blobs on disk and on the wire: it
+     decompresses several times faster than zstd at a somewhat lower ratio, and voxel chunks (long
+     runs of few block states) still compress well. zstd goes.
+   - **Crypto is `ed25519-dalek`** (pure Rust). Monocypher is used only for Ed25519 signature checks
+     (`crypto_ed25519_check`, the master's receipts); the master's vectors pin compatibility.
 
 ## Consequences
 
