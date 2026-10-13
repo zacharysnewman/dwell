@@ -3,6 +3,7 @@
 // (WebRTC between the pages); each sees the other move, and a guest's edit; stopping hosting
 // disconnects the guest with a reason.
 import { expect, test, type Page } from '@playwright/test';
+import { stateId } from '../src/world/blocks';
 import { MASTER_URL } from './global-setup';
 
 type Vec3 = [number, number, number];
@@ -130,8 +131,8 @@ test('friend world: host from the game menu, join by code, play together, stop h
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
   await guest.keyboard.press('Digit1'); // stone
   expect(await call<boolean>(guest, `d.edit('place')`)).toBe(true);
-  await expect.poll(() => voxel(host, cell), { timeout: 10_000 }).toBe(2);
-  await expect.poll(() => voxel(guest, cell), { timeout: 10_000 }).toBe(2);
+  await expect.poll(() => voxel(host, cell), { timeout: 10_000 }).toBe(stateId('dwell:stone'));
+  await expect.poll(() => voxel(guest, cell), { timeout: 10_000 }).toBe(stateId('dwell:stone'));
 
   // Stopping hosting disconnects the guest with a reason; the host keeps playing.
   await host.locator('#menu-button').click();
