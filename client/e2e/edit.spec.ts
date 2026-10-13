@@ -135,6 +135,13 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   }
 });
 
+/**
+ * How long an edit may take to show on both pages. The server answers within milliseconds, but
+ * every check waits for the page's main thread, and under software rendering (SwiftShader) a frame
+ * of the first seconds of play has taken 3–4.7 s (measured with the CPU throttled 4×).
+ */
+const EDIT_ARRIVES_MS = 20_000;
+
 interface Placement {
   cell: Vec3;
   material: number;
@@ -143,7 +150,7 @@ interface Placement {
 test('a placed block shows as the same state to a second client on a native server', async ({
   browser,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const invite = readFileSync(INVITE_FILE, 'utf8');
   const contexts = [await browser.newContext(), await browser.newContext()];
   try {
@@ -163,13 +170,17 @@ test('a placed block shows as the same state to a second client on a native serv
       const expected = placement.material;
       // edit() refuses (and sends nothing) without a target or within BLOCK_EDIT_INTERVAL_MS.
       await expect.poll(() => call<boolean>(a, `d.edit('place')`)).toBe(true);
-      await expect.poll(() => voxel(a, placement.cell), { timeout: 5_000 }).toBe(expected);
-      await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(expected);
+      await expect
+        .poll(() => voxel(a, placement.cell), { timeout: EDIT_ARRIVES_MS })
+        .toBe(expected);
+      await expect
+        .poll(() => voxel(b, placement.cell), { timeout: EDIT_ARRIVES_MS })
+        .toBe(expected);
       await lookAt(a, placement.cell);
       await expect.poll(() => call<boolean>(a, `d.edit('break')`)).toBe(true);
-      await expect.poll(() => voxel(b, placement.cell), { timeout: 5_000 }).toBe(0);
+      await expect.poll(() => voxel(b, placement.cell), { timeout: EDIT_ARRIVES_MS }).toBe(0);
       // And on the builder's page, or its next aim still finds the block and places beside it.
-      await expect.poll(() => voxel(a, placement.cell), { timeout: 5_000 }).toBe(0);
+      await expect.poll(() => voxel(a, placement.cell), { timeout: EDIT_ARRIVES_MS }).toBe(0);
     }
   } finally {
     await Promise.all(contexts.map((c) => c.close()));

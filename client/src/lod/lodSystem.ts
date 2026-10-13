@@ -27,6 +27,7 @@ import {
   lodChild,
   lodId,
   isFaceBSection,
+  lodFirstRow,
   lodRowFace,
   MAX_ALIGNED_LEVEL,
   lodInWorld,
@@ -192,7 +193,10 @@ const NEIGHBOURS: readonly (readonly [number, number, number])[] = [
 
 const neighbourId = (c: LodCoord, d: readonly [number, number, number]): number =>
   lodId(c[0], c[1] + d[0], c[2] + d[1], c[3] + d[2]);
-const boundsKey = (level: number, i: number, k: number): number => lodId(level, i, 0, k);
+/** A column of sections (level, i, ·, k) as one number: its first row's id (row 0 lies outside
+ * the world at most levels, where lodId is −1 for every column). */
+const boundsKey = (level: number, i: number, k: number): number =>
+  lodId(level, i, lodFirstRow(level), k);
 
 export class LodSystem {
   private readonly nodes = new Map<number, Node>();
