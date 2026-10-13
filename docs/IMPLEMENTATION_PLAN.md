@@ -33,10 +33,11 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started |
-| 17 — Terrain definitions (terrain as data) | ⏳ Not started |
-| 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started |
-| 19 — WebGPU, looks & textures | ⏳ Not started — needs Phase 15 only |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | ⏳ Not started — ADR 0028 accepted (2026-10-13); C++/TS feature work stops after Phase 15 |
+| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
+| 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
+| 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
+| 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
 | 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
@@ -67,6 +68,9 @@ Phases 9–11, cancels Phase 12, re-sizes Phase 13's world and takes over 9e (as
 Phases 14–17 (voxel awakening, tiered physics, sleep/re-bake, dedicated servers and packaging) are
 now **20–23**; references in this plan, `ARCHITECTURE.md`, the sub-specs and code comments use the
 new numbers, ADRs keep the numbers of their day.
+On 2026-10-13 the owner decided to port Dwell to Rust ([ADR 0028](./adr/0028-rust-port.md)) and
+added it as **Phase 24**, numbered last so no other phase is renumbered but **run after Phase 15
+and before Phase 16**; Phases 16–23 are then built in Rust.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -1863,7 +1867,7 @@ The owner's answers (2026-10-12; `BASELINE_EVALUATION.md` §7 records them too):
 | D1 | "10 layers of stone" | A fixed core of 10 stone layers per face from the midplane; higher ground is stone under a soil skin |
 | D2 | Build sphere radius | 50 km (= the world radius) |
 | D3 | Flight at the sphere | **No movement limit** (changed from the proposal, held at the boundary): the sphere bounds building and storage only; players may fly anywhere |
-| D4 | WebGL fallback | WebGPU first; Three's WebGL2 backend only as an automatic fallback, all shaders in TSL; **the settings menu shows which backend the device is using** (added by the owner) |
+| D4 | WebGL fallback | WebGPU first; Three's WebGL2 backend only as an automatic fallback, all shaders in TSL; **the settings menu shows which backend the device is using** (added by the owner) — **superseded** by ADR 0028 (2026-10-13): WebGPU only, on wgpu in Rust, no fallback and no backend readout |
 | D5 | Face B's terrain | Same definition as face A, own seed (own island); selectable per face |
 | D6 | Launch pads | Remove the block, `launch_speed` and its tests |
 | D7 | Movement playground world | Becomes a structure file the controller tests load |
@@ -1963,6 +1967,87 @@ the origin.
   may); the `kUnbreakable` check is untested meanwhile.
 - The LOD surface's per-column data shrank from 6 floats to 4 (tints removed) and the F4 map column
   from 4 bytes to 3 (height and flags).
+
+---
+
+## Phase 24 — Rust Port: One Cargo Workspace, Rapier, a wgpu Client
+
+**Goal:** Replace the C++ server and core, the Emscripten build, Jolt, and the TypeScript sim and
+Three.js renderer with one Rust codebase that reproduces the Phase 15 baseline on the same
+platforms (GitHub Pages, Electron, Capacitor, native dedicated servers), with a faster build and
+test pipeline ([ADR 0028](./adr/0028-rust-port.md)). Runs after Phase 15 and before Phase 16.
+
+**Status:** Not started. ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
+the C++/TS tree and replaces it at the cutover (24f); the old tree takes only fixes until then.
+Open decisions, to put to the owner at the start of 24b: world storage (SQLite or a Dwell-owned
+chunk format on OPFS) and the compression codec; Monocypher's replacements.
+
+### 24a — Workspace, generators and pipeline
+- [ ] Cargo workspace at the repo root (`crates/`): `dwell-protocol`, `dwell-blocks`, `dwell-world`
+  (voxels, chunks, storage), `dwell-worldgen`, `dwell-physics` (Rapier wrapper and player
+  controller), `dwell-sim` (tick, netcode), `dwell-net` (moved from `server/net/wt`; the C ABI and
+  cbindgen header removed), `dwell-server` (binary), `dwell-client` (WASM, wgpu), `dwell-tools`
+  (inspect, scenario trace, divergence).
+- [ ] `shared/blocks/gen.mjs` and `shared/protocol/gen.mjs` emit Rust (and TS only where TS still
+  reads them); CI fails on stale output.
+- [ ] CI: `cargo fmt`, `clippy -D warnings`, `cargo nextest` (native), the WASM build once per run
+  through `wasm-bindgen`, `sccache`/`rust-cache`; runs alongside the existing jobs until 24f.
+- [ ] **Headless WebGPU in CI proven first**: Playwright's Chromium draws a wgpu triangle on the
+  runners (software adapter); the result decides how e2e covers rendering.
+
+### 24b — Core: blocks, chunks, worldgen, storage
+- [ ] Block registry and states from `shared/blocks` data, by name.
+- [ ] Chunks and the voxel grid; the Phase 15 generator (one island, the stone core) ported, with
+  new goldens that agree natively and in WASM.
+- [ ] World storage and compression per the owner's decision; crypto replacements, still
+  verifiable by the master server (its vectors pass).
+
+### 24c — Physics and the player controller on Rapier
+- [ ] `dwell-physics` wraps Rapier (`rapier3d-f64`, `enhanced-determinism`); no Rapier types
+  outside it.
+- [ ] The controller per `PLAYER_CONTROLLER.md`, re-tuned; every scenario suite ported (voxel
+  geometry, crouch, steps and air, step smoothness, knockback), at the origin, ~8,000 km out and on
+  face B; golden traces re-recorded.
+- [ ] Native↔WASM divergence check in Rust.
+
+### 24d — Server, netcode and networking
+- [ ] Tick loop, snapshots, prediction and reconciliation, input validation, fall damage and
+  respawn; the netcode suites ported (150 ms / 20 ms / 5 % link).
+- [ ] `dwell-server`: WebTransport and WebRTC through `dwell-net` directly, hosting, the master
+  client (registration, receipts).
+- [ ] Browser networking in `dwell-client` through `web-sys` (WebTransport, WebRTC data channels).
+
+### 24e — Client on wgpu
+- [ ] wgpu renderer, WebGPU only, WGSL shaders; an "unsupported" screen without WebGPU.
+- [ ] Chunk meshing and LOD in Rust, in Web Workers with their own WASM instances (no
+  `SharedArrayBuffer`); the near/far passes and the whole-world view.
+- [ ] The Phase 7 look ported: palette, face tints, sky, height fog, tone mapping, exposure; block
+  textures; the camera and field of view; the block outline and debug lines.
+- [ ] Input (keyboard, mouse, touch), prediction and interpolation, block editing, local mode (the
+  sim in a worker), browser world storage.
+- [ ] The DOM UI (menus, settings, server browser, HUD) kept in TS over a small `wasm-bindgen` API;
+  Three.js and the TS sim, protocol and render code removed from the client.
+
+### 24f — Shells and cutover
+- [ ] Electron and Capacitor run the Rust client; the launcher and release scripts build it.
+- [ ] The e2e suite passes against the Rust client and server.
+- [ ] The C++ tree, CMake, Emscripten, Jolt and Three.js deleted; `shared/licenses` and
+  `THIRD_PARTY_NOTICES` regenerated.
+- [ ] `ARCHITECTURE.md` and `PLAYER_CONTROLLER.md` rewritten for the Rust build; `CLAUDE.md`
+  updated (project description, the SQLite build note).
+- [ ] The owner raises `package.json` to the next MINOR (a new compatibility line).
+
+Exit criteria
+- [ ] Every native suite, WASM suite and e2e test of the Phase 15 baseline has a Rust counterpart
+  that passes in CI (WebGPU covered as 24a decides).
+- [ ] Worldgen goldens agree natively and in WASM; the divergence check passes.
+- [ ] 64 players < 1 ms/tick (native Release, `enhanced-determinism` on).
+- [ ] Frame time at least matches the Three.js build on a desktop and a phone (measured).
+- [ ] CI wall time under 6 minutes on a warm cache; a one-line change in the sim rebuilds and
+  tests locally in under a minute (measured).
+- [ ] No CMake or Emscripten in the repository.
+- [ ] Manual: the owner plays the baseline in a browser, in Electron and on a phone, and compares
+  before/after screenshots of the look.
 
 ---
 
@@ -2100,6 +2185,11 @@ Exit criteria
 textures described by data.
 
 **Status:** Not started. Needs Phase 15 only.
+
+**Re-scoped by ADR 0028 (2026-10-13):** the WebGPU backend, TSL materials, the WebGL2 fallback and
+the settings menu's renderer readout are replaced by Phase 24's wgpu client (WebGPU only, WGSL). What
+remains here, after Phase 24, is the look registry and textures as data, built on wgpu; the
+deliverables below are rewritten for that when the phase starts.
 
 Deliverables
 - [ ] **CI first**: Playwright's Chromium runs WebGPU headless (flags and a software adapter) for

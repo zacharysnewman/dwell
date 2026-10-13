@@ -1,6 +1,6 @@
 # 0027. WebGPU renderer: Three's `WebGPURenderer` with TSL materials, a WebGL2 fallback, and a look registry
 
-- Status: Accepted
+- Status: Superseded by [0028](0028-rust-port.md)
 - Date: 2026-10-12
 - Resolves: Phase 14 of the implementation plan (the baseline's decision D4,
   [`BASELINE_EVALUATION.md`](../BASELINE_EVALUATION.md) §7)

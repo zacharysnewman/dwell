@@ -7,6 +7,12 @@
 > must update this file in the same change. See `CLAUDE.md`.
 >
 > Status legend used below: **[planned]** not yet built · **[in progress]** · **[built]**
+>
+> **[planned] Rust port (ADR 0028, Phase 24).** The C++ server and core, its Emscripten build, Jolt,
+> and the TypeScript sim and Three.js renderer are to be replaced by one Rust codebase: a Cargo
+> workspace for the server, sim core and client, Rapier physics, and a wgpu client (WebGPU only).
+> The menus and UI, the master server and the release scripts stay TypeScript. Until the cutover,
+> this document describes the C++/TS build; it is rewritten at the cutover.
 
 ---
 
@@ -19,7 +25,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 |---|---|
 | Authoritative server | C++20, Jolt Physics; **hosted by players** — dedicated servers or friend worlds (§10, ADR 0003) |
 | Client | TypeScript; physics/prediction via the shared C++ sim core (Jolt linked in) compiled to WebAssembly |
-| Renderer | Three.js, WebGL2 first, behind a thin render interface (ADR 0002) |
+| Renderer | Three.js, WebGL2 first, behind a thin render interface (ADR 0002); **[planned, Phase 24]** wgpu in a Rust client, WebGPU only (ADR 0028) |
 | Client shells | Browser (GitHub Pages) → Electron (desktop) → Capacitor (iOS/Android) |
 | Transport | Dedicated servers: WebTransport (HTTP/3 / QUIC), WebRTC fallback. Friend worlds: WebRTC data channels (ADR 0008) |
 | Services | **[in progress, Phase 5b: Worker, signing and deploy pipeline built]** Master server on Cloudflare Workers + Durable Objects: server listing, join codes, cert-hash distribution, WebRTC signaling, TURN credentials (Cloudflare TURN) (§10.3, ADR 0013) |
@@ -2033,7 +2039,7 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | # | Decision | Current leaning |
 |---|---|---|
 | 1 | ~~Server WebTransport/QUIC library~~ | **Resolved:** Rust `wtransport` behind a C ABI — [ADR 0001](./adr/0001-webtransport-server-library.md) |
-| 2 | ~~Client renderer~~ | **Resolved:** Three.js on WebGL2 behind a thin render interface — [ADR 0002](./adr/0002-client-renderer.md); the backend moves to WebGPU (`WebGPURenderer`, TSL materials, an automatic WebGL2 fallback shown in the settings menu, a look registry) — [ADR 0027](./adr/0027-webgpu-renderer.md) **[planned, Phase 19]** |
+| 2 | ~~Client renderer~~ | **Resolved:** Three.js on WebGL2 behind a thin render interface — [ADR 0002](./adr/0002-client-renderer.md); the backend moves to WebGPU (`WebGPURenderer`, TSL materials, an automatic WebGL2 fallback shown in the settings menu, a look registry) — [ADR 0027](./adr/0027-webgpu-renderer.md), **superseded** by [ADR 0028](./adr/0028-rust-port.md): one Rust codebase with a wgpu client, WebGPU only, Rapier instead of Jolt **[planned, Phase 24]** |
 | 3 | ~~Server hosting~~ | **Resolved:** player-hosted dedicated servers + friend worlds + master server — [ADR 0003](./adr/0003-multiplayer-hosting-model.md); identity [ADR 0004](./adr/0004-player-identity.md); domain [ADR 0005](./adr/0005-domain-and-origins.md) |
 | 4 | ~~Browser multithreading / cross-origin isolation~~ | **Resolved:** single-threaded web sim core + worker pools; threads natively and in Electron — [ADR 0007](./adr/0007-threading-model.md) |
 | 5 | ~~World persistence format~~ | **Resolved:** one SQLite database per world holding all data — [ADR 0006](./adr/0006-world-persistence-sqlite.md) |
@@ -2053,4 +2059,4 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 19 | Block identity and voxel shapes: the material table vs. namespaced block states; slopes under water | Namespaced block states with string palettes on disk (owner, 2026-10-05): **resolved for identity by [ADR 0015](./adr/0015-block-registry.md) (Phase 8)**; `flooded` for slopes under water and the shapes are decided by Phase 9's ADR — [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md), [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md). Baseline (2026-10-12): six blocks, natural blocks shaped by their neighbours from a rule table held as data — [ADR 0024](./adr/0024-adaptive-natural-blocks.md), placed slope and slab families removed — [ADR 0025](./adr/0025-baseline-world.md) **[planned, Phases 15 and 18]** |
 | 20 | ~~Release pipeline: versions loaded from tags, worlds locked to their compatibility line~~ | **Resolved:** one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`, SemVer 2.0.0 from `0.1.0`, worlds opening only in builds of their version's compatibility line at or after the version that last saved them, all rights reserved — [ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md) |
 | 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness, reaching the rim | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust; the rim ocean kept; face B reuses face A's generator, biomes and islands. Recorded by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9. Amended by the baseline (2026-10-12): the midplane at y = 0, a 10-layer stone core per face instead of a ~4 km crust, face B's terrain by terrain definition with its own seed — [ADR 0025](./adr/0025-baseline-world.md) **[planned, Phases 16–17]** |
-| 22 | ~~The baseline (owner, 2026-10-12): the build limit's shape and radius, flight at it, the stone layers, face B's terrain, launch pads, the movement playground, terrain scale, the midplane, how far terrain is data, the WebGL fallback~~ | **Resolved (Phase 14):** decisions D1–D10 of [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md) §7 — a 50 km disc around a midplane at 0, a 10-layer core, a 50 km build sphere that bounds building but not movement, the same terrain definition on both faces with their own seeds, launch pads removed, the playground a structure file, one island of ~20–30 km — [ADR 0025](./adr/0025-baseline-world.md); terrain as data over a fixed vocabulary of node kinds — [ADR 0026](./adr/0026-terrain-definitions.md); WebGPU with an automatic WebGL2 fallback — [ADR 0027](./adr/0027-webgpu-renderer.md) |
+| 22 | ~~The baseline (owner, 2026-10-12): the build limit's shape and radius, flight at it, the stone layers, face B's terrain, launch pads, the movement playground, terrain scale, the midplane, how far terrain is data, the WebGL fallback~~ | **Resolved (Phase 14):** decisions D1–D10 of [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md) §7 — a 50 km disc around a midplane at 0, a 10-layer core, a 50 km build sphere that bounds building but not movement, the same terrain definition on both faces with their own seeds, launch pads removed, the playground a structure file, one island of ~20–30 km — [ADR 0025](./adr/0025-baseline-world.md); terrain as data over a fixed vocabulary of node kinds — [ADR 0026](./adr/0026-terrain-definitions.md); WebGPU with an automatic WebGL2 fallback — [ADR 0027](./adr/0027-webgpu-renderer.md) (D4 superseded by [ADR 0028](./adr/0028-rust-port.md): WebGPU only, no fallback) |
