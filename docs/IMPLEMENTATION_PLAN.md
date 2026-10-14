@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite passing natively and in WASM, the e2e suite 32/32 locally on the Rust client and `dwell-server`; outstanding: the new CI jobs' first run, Electron on the Rust client, the docs rewrite, frame-time and CI-time measurements, the owner's manual check, and the owner raising `package.json` (a new compatibility line: world files are redb now) |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite passing natively and in WASM, the e2e suite 32/32 locally on the Rust client and `dwell-server`; outstanding: the new CI jobs' first run, Electron on the Rust client, frame-time and CI-time measurements, the owner's manual check, and the owner raising `package.json` (a new compatibility line: world files are redb now) |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -1984,7 +1984,7 @@ client running in the browser with workers, local mode on OPFS and the TS shell 
 C++ tree, CMake, Emscripten, Jolt and Three.js are deleted (24f); every Rust suite passes, natively
 and under WASM, and the e2e suite passes 32 of 32 locally against the Rust client and
 `dwell-server`. Outstanding: the first CI run of the new jobs (the branch has not run CI), Electron
-run on the Rust client (its CI smoke test), the docs rewrite for the Rust build, the frame-time
+run on the Rust client (its CI smoke test), the frame-time
 comparison and CI wall time (measured), the owner's manual play and look comparison, and the
 owner raising `package.json` to the next MINOR (world files moved from SQLite to redb: a new
 compatibility line). ADR 0028 accepted (2026-10-13). Storage, compression and crypto decided by
@@ -2172,8 +2172,8 @@ Deviations (24e, so far):
   `THIRD_PARTY_NOTICES` regenerated (`gen.py` walks `cargo metadata` for `dwell-server` and
   `dwell-client`; the generators no longer write C++). The worldgen goldens and the playground
   structure moved to `shared/`.
-- [ ] `ARCHITECTURE.md` and `PLAYER_CONTROLLER.md` rewritten for the Rust build; `CLAUDE.md`
-  updated (project description, the SQLite build note).
+- [x] `ARCHITECTURE.md` and `PLAYER_CONTROLLER.md` rewritten for the Rust build; `CLAUDE.md`
+  updated (project description; the SQLite build note replaced by running WebGPU in a sandbox).
 - [ ] The owner raises `package.json` to the next MINOR (a new compatibility line).
 
 Exit criteria
