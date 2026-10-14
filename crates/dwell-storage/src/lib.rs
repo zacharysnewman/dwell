@@ -11,4 +11,6 @@ mod store;
 
 pub use codec::*;
 pub use db::*;
+/// The storage a world file lives on (a file natively, OPFS in the browser, memory in tests).
+pub use redb::StorageBackend;
 pub use store::*;

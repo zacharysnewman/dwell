@@ -2,6 +2,8 @@
 //! that draws to an offscreen target and to a canvas, used to prove WebGPU in headless Chromium on
 //! CI before the renderer work (24e) starts.
 
+pub mod local;
+pub mod net;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

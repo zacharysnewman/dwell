@@ -2,3 +2,7 @@
 # deterministic suites (worldgen goldens) are checked in WASM as well as natively.
 [target.wasm32-wasip1]
 runner = "tools/wasi-run.mjs"
+
+# The browser client's WebTransport bindings are behind web-sys's unstable-API flag.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg=web_sys_unstable_apis"]

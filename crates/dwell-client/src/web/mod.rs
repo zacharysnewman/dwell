@@ -1,5 +1,8 @@
 //! The JS API (`wasm-bindgen`): what the page calls.
 
+pub mod local_worker;
+pub mod transport;
+
 use wasm_bindgen::prelude::*;
 
 fn instance() -> wgpu::Instance {
