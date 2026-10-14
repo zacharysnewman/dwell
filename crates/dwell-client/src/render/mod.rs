@@ -287,6 +287,7 @@ enum Kind {
 }
 
 /// One draw, collected before the passes record.
+#[derive(Clone)]
 struct DrawItem {
     kind: Kind,
     water: bool,
@@ -299,11 +300,38 @@ struct DrawItem {
     mesh: DrawMesh,
     /// The arena page the mesh is in (filled in by `collect`): draws from a page bind it once.
     page: usize,
+    /// The depth passes it is drawn in (bit per pass).
+    passes: u8,
+    /// Its place in the draw order (`draw_order`, filled in by `collect`).
+    key: u128,
+}
+
+/// The draw order as one integer. Opaque first, then the see-through, then lines; the see-through
+/// far to near; the opaque by pipeline and page (each bound once, `render`), then near to far, so
+/// the GPU's depth test rejects what nearer meshes hide before shading it (their order does not
+/// change the picture: depth decides). Distances compare by their f32 bits (non-negative floats
+/// order as their bits do).
+fn draw_order(d: &DrawItem) -> u128 {
+    let rank = u128::from(u8::from(d.water) + 2 * u8::from(d.kind == Kind::Line));
+    let dist = (d.offset[0] * d.offset[0] + d.offset[1] * d.offset[1] + d.offset[2] * d.offset[2])
+        .to_bits();
+    let rest: u128 = if d.kind == Kind::Line {
+        0
+    } else if d.water {
+        u128::from(u32::MAX - dist)
+    } else {
+        (u128::from(d.kind as u8) << 72)
+            | (u128::from(u8::from(d.no_depth)) << 64)
+            | ((d.page as u128 & 0xffff_ffff) << 32)
+            | u128::from(dist)
+    };
+    rank << 96 | rest
 }
 
 /// No turn.
 const NO_ROTATION: [f32; 2] = [1.0, 0.0];
 
+#[derive(Clone)]
 enum DrawMesh {
     Chunk(ChunkCoord, bool),
     Section(i64, bool, u8),
@@ -988,21 +1016,31 @@ impl Renderer {
         }
     }
 
+    /// The draws of both depth passes (`passes`: each pass's near and far view depth), in one sweep
+    /// over the chunks and sections (gathering each pass on its own walked everything twice).
     fn collect(
         &self,
-        near: f64,
-        far: f64,
+        passes: [(f64, f64); 2],
         chunk_visible: &dyn Fn(ChunkCoord) -> bool,
-    ) -> Vec<DrawItem> {
+    ) -> [Vec<DrawItem>; 2] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
         let water = [1.0, 1.0, 1.0, WATER_OPACITY];
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
         let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
         let view = PassView::new(self.eye, forward, aspect);
-        let reaches = |origin: V3, size: f64| view.holds(origin, size, near, far);
+        // Which passes (bit per pass) a box reaches into.
+        let reaches = |origin: V3, size: f64| -> u8 {
+            u8::from(view.holds(origin, size, passes[0].0, passes[0].1))
+                | u8::from(view.holds(origin, size, passes[1].0, passes[1].1)) << 1
+        };
         for (&coord, c) in &self.chunks {
-            if !chunk_visible(coord) || !reaches(c.origin, f64::from(CHUNK_SIZE)) {
+            let passes = if chunk_visible(coord) {
+                reaches(c.origin, f64::from(CHUNK_SIZE))
+            } else {
+                0
+            };
+            if passes == 0 {
                 continue;
             }
             let r = self.rel(c.origin);
@@ -1017,6 +1055,8 @@ impl Renderer {
                     tint: plain,
                     rotation: NO_ROTATION,
                     page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Chunk(coord, false),
                 });
             }
@@ -1030,6 +1070,8 @@ impl Renderer {
                     tint: water,
                     rotation: NO_ROTATION,
                     page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Chunk(coord, true),
                 });
             }
@@ -1046,7 +1088,8 @@ impl Renderer {
             let Some(s) = self.sections.get(&id) else {
                 continue;
             };
-            if !reaches(s.origin, s.cell * 32.0) {
+            let passes = reaches(s.origin, s.cell * 32.0);
+            if passes == 0 {
                 continue;
             }
             let r = self.rel(s.origin);
@@ -1061,6 +1104,8 @@ impl Renderer {
                     tint: level_tint(s, 1.0),
                     rotation: NO_ROTATION,
                     page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Section(id, false, mask),
                 });
             }
@@ -1074,12 +1119,15 @@ impl Renderer {
                     tint: level_tint(s, WATER_OPACITY),
                     rotation: NO_ROTATION,
                     page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Section(id, true, 0),
                 });
             }
         }
         // Stand-ins: the source section's surface, clipped to the hole's box (its own skirts off).
         for st in self.stand_ins.iter().take(MAX_STAND_INS) {
+            let passes = 3;
             let Some(s) = self.sections.get(&st.id).filter(|s| s.opaque.is_some()) else {
                 continue;
             };
@@ -1094,11 +1142,14 @@ impl Renderer {
                 tint: level_tint(s, 1.0),
                 rotation: NO_ROTATION,
                 page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Section(st.id, false, 0),
             });
         }
         for v in self.players.values() {
-            if !reaches(v.feet, 4.0) {
+            let passes = reaches(v.feet, 4.0);
+            if passes == 0 {
                 continue;
             }
             // The mesh is posed and coloured in feet-local space; the draw turns it to the yaw.
@@ -1113,10 +1164,13 @@ impl Renderer {
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: [yaw.cos(), yaw.sin()],
                 page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Player(player_shape(v)),
             });
         }
-        if let Some((cell, _height)) = self.outline.filter(|(c, _)| reaches(*c, 2.0)) {
+        if let Some((cell, _height)) = self.outline.filter(|(c, _)| reaches(*c, 2.0) != 0) {
+            let passes = reaches(cell, 2.0);
             let r = self.rel([cell[0] - 0.002, cell[1] - 0.002, cell[2] - 0.002]);
             let c = hex(0x101418).map(|v| v as f32);
             out.push(DrawItem {
@@ -1128,10 +1182,15 @@ impl Renderer {
                 tint: [c[0], c[1], c[2], 0.8],
                 rotation: NO_ROTATION,
                 page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Outline,
             });
         }
-        if self.debug.is_some() && near < NEAR_PLANE * 2.0 {
+        // Debug lines: in the pass that draws from the near plane.
+        let passes = u8::from(passes[0].0 < NEAR_PLANE * 2.0)
+            | u8::from(passes[1].0 < NEAR_PLANE * 2.0) << 1;
+        if self.debug.is_some() && passes != 0 {
             out.push(DrawItem {
                 kind: Kind::Line,
                 water: false,
@@ -1141,33 +1200,30 @@ impl Renderer {
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: NO_ROTATION,
                 page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Debug,
             });
         }
         for d in &mut out {
             d.page = self.mesh_of(&d.mesh).0.region.page;
+            d.key = draw_order(d);
         }
-        // Opaque first, then the see-through, then lines; within the see-through, far to near.
-        // The opaque ones by pipeline (each set once, `render`), then near to far, so the GPU's depth
-        // test rejects what nearer meshes hide before shading it (their order does not change the
-        // picture: depth decides).
-        out.sort_by(|a, b| {
-            let rank = |d: &DrawItem| u8::from(d.water) + 2 * u8::from(d.kind == Kind::Line);
-            let dist = |d: &DrawItem| {
-                d.offset[0] * d.offset[0] + d.offset[1] * d.offset[1] + d.offset[2] * d.offset[2]
-            };
-            let opaque = !a.water && a.kind != Kind::Line;
-            rank(a).cmp(&rank(b)).then(if a.water && b.water {
-                dist(b).total_cmp(&dist(a))
-            } else if opaque {
-                (a.kind as u8, a.no_depth, a.page)
-                    .cmp(&(b.kind as u8, b.no_depth, b.page))
-                    .then(dist(a).total_cmp(&dist(b)))
+        // One stable sort by a precomputed key (draw_order), then each pass takes its draws in that
+        // order.
+        out.sort_by_key(|d| d.key);
+        let mut split: [Vec<DrawItem>; 2] = [Vec::with_capacity(out.len()), Vec::new()];
+        for d in out {
+            if d.passes == 3 {
+                split[1].push(d.clone());
+                split[0].push(d);
+            } else if d.passes & 1 != 0 {
+                split[0].push(d);
             } else {
-                std::cmp::Ordering::Equal
-            })
-        });
-        out
+                split[1].push(d);
+            }
+        }
+        split
     }
 
     fn ensure_targets(&mut self) {
@@ -1220,8 +1276,7 @@ impl Renderer {
         let altitude = local_y - f64::from(dwell_world::WORLD_MAX_Y);
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
-        let draws: [Vec<DrawItem>; 2] =
-            std::array::from_fn(|i| self.collect(passes[i].0, passes[i].1, chunk_visible));
+        let draws = self.collect(passes, chunk_visible);
         for (i, (near, far)) in passes.iter().enumerate() {
             let u = self.frame_uniforms(&basis, *near, *far);
             self.queue
@@ -1470,6 +1525,54 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draw_order_opaque_near_to_far_by_pipeline_then_water_far_to_near_then_lines() {
+        let item = |kind: Kind, water: bool, dist: f32, page: usize| DrawItem {
+            kind,
+            water,
+            no_depth: false,
+            offset: [dist, 0.0, 0.0, 1.0],
+            clip: None,
+            tint: [1.0; 4],
+            rotation: NO_ROTATION,
+            mesh: DrawMesh::Outline,
+            page,
+            passes: 1,
+            key: 0,
+        };
+        let mut items = [
+            item(Kind::Line, false, 1.0, 0),
+            item(Kind::Flat, true, 5.0, 0),
+            item(Kind::Flat, false, 50.0, 1),
+            item(Kind::Terrain, false, 30.0, 0),
+            item(Kind::Flat, true, 50.0, 0),
+            item(Kind::Flat, false, 20.0, 1),
+            item(Kind::Terrain, false, 10.0, 0),
+            item(Kind::Flat, false, 90.0, 0),
+        ];
+        for d in &mut items {
+            d.key = draw_order(d);
+        }
+        items.sort_by_key(|d| d.key);
+        let got: Vec<(bool, f32, usize)> = items
+            .iter()
+            .map(|d| (d.water, d.offset[0], d.page))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (false, 10.0, 0), // terrain, near to far
+                (false, 30.0, 0),
+                (false, 90.0, 0), // flat, page 0 then page 1, each near to far
+                (false, 20.0, 1),
+                (false, 50.0, 1),
+                (true, 50.0, 0), // water far to near
+                (true, 5.0, 0),
+                (false, 1.0, 0), // lines last
+            ]
+        );
+    }
 
     #[test]
     fn touching_index_ranges_draw_as_one() {

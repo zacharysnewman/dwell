@@ -740,14 +740,7 @@ impl LodSystem {
     }
 
     fn culled_node(&self, n: &Node) -> bool {
-        if self.near_rim || n.coord.level > MAX_ALIGNED_LEVEL {
-            return false;
-        }
-        let on_b = is_face_b_section(n.coord);
-        if on_b == (self.view_face == -1) {
-            return false;
-        }
-        box_distance(self.position, n.lo, n.hi) > OTHER_FACE_NEAR_M
+        face_culled(n, self.near_rim, self.view_face, self.position)
     }
 
     /// Level ≥ 7 sections are meshed for the viewer's face only: mesh them again on a change.
@@ -872,15 +865,26 @@ impl LodSystem {
 
     /// Touches the children not culled, wanting those not ready; true when all are ready.
     fn touch_kids(&mut self, kids: &[LodId]) -> bool {
+        // One lookup per child: culled, touched (as `touch`) and ready from the same node.
+        let (frame, near_rim, view_face, position) =
+            (self.frame, self.near_rim, self.view_face, self.position);
         let mut all_ready = true;
         for &kid in kids {
-            let n = self.n(kid);
-            if self.culled_node(n) {
+            let n = self.nodes.get_mut(&kid).expect("node");
+            if face_culled(n, near_rim, view_face, position) {
                 continue;
             }
-            let ready = ready_node(n);
-            self.touch(kid);
-            if !ready {
+            if n.last_used != frame {
+                self.in_use += n.bytes + n.cell_bytes();
+            }
+            n.last_used = frame;
+            if (n.needs_answer || n.stale) && n.asked.is_none() {
+                self.due.push(kid);
+            }
+            if n.remesh {
+                self.remeshed.push(kid);
+            }
+            if !ready_node(n) {
                 all_ready = false;
                 self.wanted.push(kid);
             }
@@ -1634,6 +1638,19 @@ impl LodSystem {
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
         }
     }
+}
+
+/// A section wholly on the face the camera is not on (`view_face`), far from it: not loaded or
+/// drawn. Never near the rim.
+fn face_culled(n: &Node, near_rim: bool, view_face: i32, position: Vec3) -> bool {
+    if near_rim || n.coord.level > MAX_ALIGNED_LEVEL {
+        return false;
+    }
+    let on_b = is_face_b_section(n.coord);
+    if on_b == (view_face == -1) {
+        return false;
+    }
+    box_distance(position, n.lo, n.hi) > OTHER_FACE_NEAR_M
 }
 
 /// Ready to draw or to stand in: known, and meshed if it has content.
