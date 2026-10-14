@@ -36,6 +36,9 @@ Output per scenario, in `OUT/<scenario>/`:
   `mark`, `__dwell.state()`, `renderStats()` and `memory()`.
 - `<name>.png` for each `shot`, `<name>.trace.json` for each `traceStart`/`traceStop` (open in
   Chrome DevTools → Performance → Load profile, or read it with a script).
+- `<name>.profile.txt` for each trace: the V8 sampling profiler's self and inclusive time per
+  function and thread (the page's main thread, each worker), busiest first (`scripts/profile.ts`;
+  Rust functions appear by name, with their hash suffix).
 - A summary printed as it runs: frame interval percentiles and fps, each per-frame series' mean,
   p95, p99 and max, totals (jobs done, chunks and sections uploaded, bytes, ticks), each job kind's
   run and queue times, and long tasks.
@@ -64,7 +67,7 @@ fields, ranges and names fail with the entry named):
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name}` | saves everything above under `name` |
 | `shot {name}` | screenshot |
-| `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8) |
+| `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 
@@ -117,3 +120,12 @@ browser tools (e.g. the Chrome DevTools MCP: `evaluate_script`, `performance_sta
   `scripts/bench.ts`, a row in the steps table.
 - A hook the steps need: a method on `__dwell` (`client/src/main.ts`) over a `Client` export
   (`crates/dwell-client/src/web/app.rs`).
+
+## Comparing builds
+
+Serve the other build on another port (for example a `git worktree` of the older commit, built with
+`npm run build:wasm && npx vite build` and served with `npx vite preview --port 4174`) and run the
+same scenarios against both: `npm run bench -- <scenario…> --base http://localhost:4174 --out A`,
+then without `--base` into `B`, and compare the two `report.json` files' `telemetry.frames`
+(and the screenshots, pixel by pixel). A worktree needs its own `target/`: cargo names a path
+crate's artifacts the same wherever it is, so sharing one directory mixes the two builds.
