@@ -230,6 +230,28 @@ pub struct Hud {
     pub damaged: bool,
 }
 
+/// A camera a tool places (tests, the views runner, ARCHITECTURE.md §6.6): the renderer and the
+/// LOD view from it while the player stays where it is. Full-detail chunks still stream around the
+/// player only, so away from the player the view is the LOD's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewOverride {
+    pub eye: [f64; 3],
+    /// Degrees, as the player's look (yaw 0 = +Z; pitch toward the face's up).
+    pub yaw_deg: f64,
+    pub pitch_deg: f64,
+}
+
+impl ViewOverride {
+    /// The face the eye is over (1: A above the midplane, −1: B).
+    fn face(&self) -> f64 {
+        if self.eye[1] >= f64::from(dwell_world::MIDPLANE_Y) {
+            1.0
+        } else {
+            -1.0
+        }
+    }
+}
+
 /// The whole-world view's settings (§6.6).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LodSettings {
@@ -279,6 +301,8 @@ pub struct Game<S: Scene> {
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
     map: Option<Vec<u8>>,
+    /// A placed camera, if a tool set one.
+    view: Option<ViewOverride>,
 }
 
 impl<S: Scene> Game<S> {
@@ -344,6 +368,7 @@ impl<S: Scene> Game<S> {
             verified: None,
             pending_lod: None,
             map: None,
+            view: None,
         };
         match verification {
             Some(c) => game
@@ -353,6 +378,14 @@ impl<S: Scene> Game<S> {
             None => game.verify(0),
         }
         game
+    }
+
+    /// Places the camera (None: back to the player's eyes).
+    pub fn set_view(&mut self, view: Option<ViewOverride>) {
+        self.view = view;
+    }
+    pub fn view(&self) -> Option<ViewOverride> {
+        self.view
     }
 
     /// Turns the whole-world view on once the verification is known (`?lod=0` leaves it off).
@@ -791,6 +824,12 @@ impl<S: Scene> Game<S> {
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input);
         }
+        if let Some(v) = self.view {
+            self.scene
+                .borrow_mut()
+                .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
+            self.scene.borrow_mut().set_block_outline(None, 1.0);
+        }
         self.update_lod(&c, now_ms, input);
 
         self.hud.health = self.health;
@@ -839,20 +878,26 @@ impl<S: Scene> Game<S> {
             return;
         }
         let viewport = dwell_lod::lod_viewport(self.viewport_css.0, self.viewport_css.1);
+        let (position, yaw_deg, pitch_deg) = match self.view {
+            Some(v) => (v.eye, v.yaw_deg, v.face() * v.pitch_deg),
+            None => (
+                if self.dead {
+                    self.death_feet
+                } else {
+                    c.position
+                },
+                input.look.yaw,
+                // The world pitch: a face-B player's up is −y.
+                f64::from(c.face) * input.look.pitch,
+            ),
+        };
         let camera = LodCamera {
-            position: if self.dead {
-                self.death_feet
-            } else {
-                c.position
-            },
-            yaw_deg: input.look.yaw,
-            // The world pitch: a face-B player's up is −y.
-            pitch_deg: f64::from(c.face) * input.look.pitch,
+            position,
+            yaw_deg,
+            pitch_deg,
             fov_y_deg: viewport.fov_y_deg,
             aspect: viewport.aspect,
             height_px: viewport.height_px,
-            // Detail loads ahead of where the player is heading (§6.6).
-            velocity: (!self.dead).then_some(c.velocity),
         };
         let mut host = LodHost {
             pool_gen: ChunkJobs(self.pool.clone()),

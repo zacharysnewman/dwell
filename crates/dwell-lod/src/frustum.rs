@@ -27,8 +27,6 @@ pub struct LodCamera {
     pub fov_y_deg: f64,
     pub aspect: f64,
     pub height_px: f64,
-    /// Camera velocity (m/s): detail loads ahead along it (see `LodSystem`).
-    pub velocity: Option<Vec3>,
 }
 
 /// The drawing's field of view, aspect and height for LOD selection.
@@ -159,7 +157,6 @@ mod tests {
             fov_y_deg: v.fov_y_deg,
             aspect: v.aspect,
             height_px: v.height_px,
-            velocity: None,
         });
         // A 1 m cell 1 km away covers under a CSS pixel there.
         assert!(cell.pixels_per_radian / 1000.0 < 1.0);

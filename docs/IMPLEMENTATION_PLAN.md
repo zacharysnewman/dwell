@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 1 — Server core, protocol, transports, local mode | ✅ Complete |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made) |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off, super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) with a velocity lookahead, a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1); outstanding: the frame-rate check on a desktop and a mobile device |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off, super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1); outstanding: the frame-rate check on a desktop and a mobile device |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; follow-up built: one sky sphere that turns as a unit; the owner approved the before/after and the frame time (2026-10-06) |
@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD bounds cache keyed per column again (near chunks above the first column's height were hidden); the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); outstanding: the frame-time measurement and the owner's manual check |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); outstanding: the frame-time measurement and the owner's manual check, including a long session's frame rate |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -818,7 +818,9 @@ Deviations and additions (4c):
   1.5 s ahead along the camera's velocity. `chunk_request_test.cpp` (sent after the view, range
   and rate limits, explicit modified chunks with their edits, kept and unloaded by radius) and
   `lodSystem.test.ts` "asks for the chunks beyond the view…" and "looks ahead along the velocity…"
-  failed before (no requests); the kept-view-chunk case failed before its fix. The full-detail
+  failed before (no requests); the kept-view-chunk case failed before its fix. (The lookahead was
+  removed on 2026-10-14, playtest: it looked bad; detail loads by the camera's position alone.)
+  The full-detail
   distance is then a setting (playtest request): a "Full detail" slider in the settings menu,
   96–352 m (default 256 m desktop, 128 m phone), which decides where chunks are drawn instead of
   the pixel error; "draws full detail out to the chosen distance…" failed on the pixel-error rule.
@@ -1985,8 +1987,31 @@ C++ tree, CMake, Emscripten, Jolt and Three.js are deleted (24f); every Rust sui
 and under WASM, and the e2e suite passes 32 of 32 locally against the Rust client and
 `dwell-server`, and every CI job passes on the Rust build (Electron's smoke test included).
 `package.json` raised to 0.10.0, the new compatibility line (world files moved from SQLite to
-redb). CI takes ~4 min on a warm cache. Outstanding: the frame-time comparison and the owner's
-manual play and look comparison. ADR 0028 accepted (2026-10-13). Storage, compression and crypto decided by
+redb). CI takes ~4 min on a warm cache. Playtest follow-ups (2026-10-14, built with regression
+tests): the atlas's mipmaps stop where a tile's gutter is one texel wide (filtering smaller levels
+at a tile's edge reached the neighbouring tiles and the atlas's empty space: a grey, see-through
+grid on distant ground at grazing angles; gone in before/after browser screenshots); each depth pass
+draws what reaches its depth range along the view axis (by distance, terrain toward the sides of
+the view nearer than the split in depth could be in neither pass; suspected as the cause of the gaps
+seen from high up, but the gaps did not reproduce in a browser on the old code, at 0.3–2.5 km, still
+or flying fast, with the owner's settings, so the cause stays open); meshes,
+targets and the draw uniforms destroy their GPU buffers when replaced (wgpu's WebGPU backend does
+not on drop, so GPU memory grew until the garbage collector ran and the frame rate fell over a
+session); the LOD no longer loads ahead along the camera's velocity (it looked bad; distances are
+from the camera's position alone). Named views (built, the owner's request): a tool places the
+camera (`Game::set_view`, `__dwell.placeCamera`; the player stays at the spawn), views are entries
+in `client/views/views.json` (checked by `scripts/views.ts`), `e2e/views.ts` opens one and waits
+for the LOD to settle, `scripts/shots.ts` shoots them; `game_local.rs` checks that the LOD refines
+under a camera placed 6 km away (failing without the override), `e2e/views.spec.ts` that a view
+settles in a browser. Under software rendering the LOD at the owner's settings 1 km up takes
+minutes to settle (jobs start once a frame, and SwiftShader draws a few frames a second; natively
+the same view settles in 74 s of game time), so the high views wait up to 600 s; a views file with
+`scale` 0.25 settles faster (1 km: 475 s, 2.5 km: 385 s; neither showed gaps). Fix found with it:
+`?debug=1` never showed the F3 text (the switch arrived before the game existed and was dropped;
+`e2e/views.spec.ts` failed on it, now kept by the client and applied when the game starts). The
+gaps seen from high up are not pursued further (owner, 2026-10-14: no need to reproduce them).
+Outstanding: the frame-time comparison and the owner's manual play and look comparison,
+including whether the frame rate now holds over a long session. ADR 0028 accepted (2026-10-13). Storage, compression and crypto decided by
 Claude at the owner's request (2026-10-13, ADR 0028 §8): `redb` (files natively, OPFS in the
 browser), LZ4 (`lz4_flex`), `ed25519-dalek`.
 

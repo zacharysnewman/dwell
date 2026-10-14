@@ -1,0 +1,116 @@
+{
+  "$comment": "Named views for screenshots and e2e specs (scripts/views.ts describes the fields; scripts/shots.ts and e2e/views.ts use them). A camera position places the camera there, the player staying at the spawn; none is the player's eyes.",
+  "views": [
+    {
+      "name": "spawn",
+      "notes": "The player's eyes at the spawn, looking at the horizon: the frame-time view.",
+      "seed": 7,
+      "camera": {
+        "yaw": 0,
+        "pitch": 0
+      }
+    },
+    {
+      "name": "horizon-haze",
+      "notes": "Ground near the horizon from the player's eyes, a phone-shaped window: the grey see-through grid on distant ground (playtest 2026-10-14).",
+      "seed": 7,
+      "camera": {
+        "yaw": 0,
+        "pitch": -6
+      },
+      "window": {
+        "width": 800,
+        "height": 1000
+      }
+    },
+    {
+      "name": "high-1000-wide",
+      "notes": "1 km up looking down at 35°, a wide window and the owner's settings: the gaps seen from high up (playtest 2026-10-14).",
+      "seed": 7,
+      "camera": {
+        "position": [0, 1000, 0],
+        "yaw": 0,
+        "pitch": -35
+      },
+      "window": {
+        "width": 1275,
+        "height": 639
+      },
+      "settings": {
+        "fog": {
+          "distanceM": 4124,
+          "density": 0.73,
+          "heightM": 1500
+        },
+        "detail": {
+          "distanceM": 96,
+          "pixelError": 3,
+          "memoryMb": 1024
+        }
+      },
+      "debug": true,
+      "settleS": 600
+    },
+    {
+      "name": "high-2500-wide",
+      "notes": "As high-1000-wide, 2.5 km up.",
+      "seed": 7,
+      "camera": {
+        "position": [0, 2500, 0],
+        "yaw": 0,
+        "pitch": -35
+      },
+      "window": {
+        "width": 1275,
+        "height": 639
+      },
+      "settings": {
+        "fog": {
+          "distanceM": 4124,
+          "density": 0.73,
+          "heightM": 1500
+        },
+        "detail": {
+          "distanceM": 96,
+          "pixelError": 3,
+          "memoryMb": 1024
+        }
+      },
+      "debug": true,
+      "settleS": 600
+    },
+    {
+      "name": "disc",
+      "notes": "The whole disc from the flight ceiling (24,000 km).",
+      "seed": 7,
+      "camera": {
+        "position": [0, 24000000, 0],
+        "yaw": 0,
+        "pitch": -89
+      }
+    },
+    {
+      "name": "e2e-placed",
+      "notes": "For e2e/views.spec.ts: a placed camera 300 m above the spawn with the coarsest LOD, so it settles quickly under software rendering, and the F3 overlay (?debug=1).",
+      "seed": 7,
+      "camera": {
+        "position": [0, 300, 0],
+        "yaw": 0,
+        "pitch": -35
+      },
+      "window": {
+        "width": 640,
+        "height": 360
+      },
+      "settings": {
+        "detail": {
+          "distanceM": 96,
+          "pixelError": 16,
+          "memoryMb": 256
+        }
+      },
+      "settleS": 90,
+      "debug": true
+    }
+  ]
+}

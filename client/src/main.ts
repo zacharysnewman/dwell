@@ -93,6 +93,13 @@ interface DwellDebug {
   fly(on: boolean): void;
   /** Sets the flight speed level, as the slider does. */
   flySpeed(level: number): void;
+  /**
+   * Places the camera at `position` looking along yaw/pitch (degrees): the view and the LOD come
+   * from there while the player stays put (e2e/views). False before the game has started.
+   */
+  placeCamera(position: Vec3, yaw: number, pitch: number): boolean;
+  /** Back to the player's eyes. */
+  releaseCamera(): void;
   /** The last frame's draw calls and triangles. */
   renderStats(): RenderStats;
   /** What the game knows it holds in memory (ui/memory.ts), once playing. */
@@ -369,6 +376,10 @@ async function start(): Promise<App | null> {
     },
     flySpeed: (level) => {
       client.flySpeed(level);
+    },
+    placeCamera: ([x, y, z], yaw, pitch) => client.placeCamera(x, y, z, yaw, pitch),
+    releaseCamera: () => {
+      client.releaseCamera();
     },
     renderStats: () => client.renderStats() as RenderStats,
     memory: () => memoryReport(app),
