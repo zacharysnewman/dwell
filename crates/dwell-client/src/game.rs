@@ -33,6 +33,7 @@ use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
 use crate::render::{Line, PlayerView, StandIn};
+use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
 const MAX_TICKS_PER_FRAME: f64 = 5.0;
@@ -145,6 +146,49 @@ pub struct ClientState {
     pub max_step_height: f64,
     pub radius: f64,
     pub standing_height: f64,
+}
+
+/// The tick's controller state and input, for the telemetry's trace.
+fn record_tick(c: &ClientState, input: &InputFrame) {
+    use dwell_protocol::input_buttons;
+    let flag = |f: u8| c.controller_flags & f != 0;
+    let sample = TickSample {
+        seq: input.seq,
+        at_ms: telemetry::now_ms(),
+        feet: [
+            c.position[0],
+            c.position[1] - f64::from(c.face) * c.half_height,
+            c.position[2],
+        ],
+        velocity: c.velocity,
+        state: player_state_name(c.state),
+        grounded: flag(controller_flags::GROUNDED),
+        crouched: flag(controller_flags::CROUCHING),
+        touching_wall: c.touching_wall,
+        ceiling_blocked: c.ceiling_blocked,
+        move_input: [
+            f64::from(input.move_x) / 127.0,
+            f64::from(input.move_y) / 127.0,
+        ],
+        jump: input.buttons & input_buttons::JUMP != 0,
+        crouch: input.buttons & input_buttons::CROUCH != 0,
+    };
+    telemetry::with(|t| t.tick(sample));
+}
+
+fn player_state_name(s: PlayerState) -> &'static str {
+    match s {
+        PlayerState::Idle => "idle",
+        PlayerState::Walking => "walking",
+        PlayerState::Running => "running",
+        PlayerState::Crouching => "crouching",
+        PlayerState::Sliding => "sliding",
+        PlayerState::Jumping => "jumping",
+        PlayerState::Falling => "falling",
+        PlayerState::Climbing => "climbing",
+        PlayerState::Swimming => "swimming",
+        PlayerState::Flying => "flying",
+    }
 }
 
 fn v3(v: Vec3) -> [f64; 3] {
@@ -695,17 +739,21 @@ impl<S: Scene> Game<S> {
         touch: Option<&TouchState>,
         now: &mut dyn FnMut() -> f64,
     ) {
-        let done = self.pool.borrow_mut().poll();
-        self.on_jobs(done);
+        let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
+        telemetry::add("jobs.done", done.len() as f64);
+        telemetry::span("jobs.apply", || self.on_jobs(done));
         let elapsed = self.last_frame_ms.map_or(0.0, |l| now_ms - l);
         self.last_frame_ms = Some(now_ms);
         self.accumulator =
             (self.accumulator + elapsed * self.tick_rate).min(MAX_TICKS_PER_FRAME * TICK_MS);
+        let t0 = telemetry::now_ms();
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
             self.tick(input, touch);
+            telemetry::add("ticks.count", 1.0);
         }
-        self.draw(now_ms, input, now);
+        telemetry::add("ticks", telemetry::now_ms() - t0);
+        telemetry::span("game.draw", || self.draw(now_ms, input, now));
     }
 
     fn tick(&mut self, input: &mut KeyboardMouseInput, touch: Option<&TouchState>) {
@@ -727,6 +775,7 @@ impl<S: Scene> Game<S> {
             })));
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
+        record_tick(&self.current, &frame);
         // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
         let turn = self.flip.tick(self.current.face);
         if turn != 0.0 {
@@ -753,11 +802,13 @@ impl<S: Scene> Game<S> {
             let a = p.position[i] + p.render_offset[i];
             a + (c.position[i] + c.render_offset[i] - a) * alpha
         });
-        self.streamer.mesh_dirty(
-            if c.active { center } else { [0.5, 64.0, 0.5] },
-            MESH_BUDGET_MS,
-            &mut *now,
-        );
+        telemetry::span("mesh_dirty", || {
+            self.streamer.mesh_dirty(
+                if c.active { center } else { [0.5, 64.0, 0.5] },
+                MESH_BUDGET_MS,
+                &mut *now,
+            );
+        });
 
         // Remote players, interpolated.
         let views = self.remotes.sample(now_ms);
@@ -830,7 +881,7 @@ impl<S: Scene> Game<S> {
                 .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
             self.scene.borrow_mut().set_block_outline(None, 1.0);
         }
-        self.update_lod(&c, now_ms, input);
+        telemetry::span("lod", || self.update_lod(&c, now_ms, input));
 
         self.hud.health = self.health;
         if self.debug_visible {

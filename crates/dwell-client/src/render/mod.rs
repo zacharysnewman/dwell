@@ -687,9 +687,16 @@ impl Renderer {
     pub fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
         self.chunks.remove(&coord);
         let Some(m) = meshes else { return };
+        let t0 = crate::telemetry::now_ms();
         let (opaque, water) = (
             GpuMesh::textured(&self.device, &m.opaque),
             GpuMesh::textured(&self.device, &m.transparent),
+        );
+        crate::telemetry::add("upload.chunk", crate::telemetry::now_ms() - t0);
+        crate::telemetry::add("upload.chunks", 1.0);
+        crate::telemetry::add(
+            "upload.bytes",
+            (opaque.as_ref().map_or(0, |m| m.bytes) + water.as_ref().map_or(0, |m| m.bytes)) as f64,
         );
         if opaque.is_none() && water.is_none() {
             return;
@@ -718,8 +725,15 @@ impl Renderer {
         let Some(m) = meshes else { return };
         let mut parts: Vec<&FlatMesh> = vec![&m.opaque];
         parts.extend(m.skirts.iter());
+        let t0 = crate::telemetry::now_ms();
         let opaque = GpuMesh::flat(&self.device, &parts);
         let water = GpuMesh::flat(&self.device, &[&m.water]);
+        crate::telemetry::add("upload.section", crate::telemetry::now_ms() - t0);
+        crate::telemetry::add("upload.sections", 1.0);
+        crate::telemetry::add(
+            "upload.bytes",
+            (opaque.as_ref().map_or(0, |m| m.bytes) + water.as_ref().map_or(0, |m| m.bytes)) as f64,
+        );
         let level = cell_size.log2().round().max(0.0) as usize;
         self.sections.insert(
             id,

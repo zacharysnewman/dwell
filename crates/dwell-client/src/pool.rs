@@ -76,6 +76,23 @@ pub enum Purpose {
     Diff(Coord),
 }
 
+impl Purpose {
+    /// The telemetry names of this kind of job's wait (queued in the pool) and run (from
+    /// submitting to a worker until its result is polled, the trip included).
+    fn telemetry_names(&self) -> (&'static str, &'static str) {
+        match self {
+            Purpose::Chunk(..) => ("job.chunk.wait", "job.chunk.run"),
+            Purpose::ChunkMesh(..) => ("job.chunk_mesh.wait", "job.chunk_mesh.run"),
+            Purpose::Bounds(..) => ("job.bounds.wait", "job.bounds.run"),
+            Purpose::Section(..) => ("job.section.wait", "job.section.run"),
+            Purpose::SectionMesh(..) => ("job.section_mesh.wait", "job.section_mesh.run"),
+            Purpose::Verify => ("job.verify.wait", "job.verify.run"),
+            Purpose::Map => ("job.map.wait", "job.map.run"),
+            Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
+        }
+    }
+}
+
 /// A finished job with its purpose.
 pub type Done = (Purpose, Output);
 
@@ -83,6 +100,8 @@ pub struct Pool {
     jobs: Box<dyn Jobs>,
     next: u32,
     purposes: HashMap<u32, (Purpose, bool)>,
+    /// When each job was queued and started (telemetry).
+    times: HashMap<u32, (f64, f64)>,
     /// Waiting for room: generation, meshing.
     queued: [VecDeque<(u32, Job)>; 2],
     in_flight: [usize; 2],
@@ -96,6 +115,7 @@ impl Pool {
             jobs,
             next: 1,
             purposes: HashMap::new(),
+            times: HashMap::new(),
             queued: Default::default(),
             in_flight: [0; 2],
         }))
@@ -111,6 +131,8 @@ impl Pool {
         self.next = self.next.wrapping_add(1).max(1);
         let mesh = job.is_mesh();
         self.purposes.insert(id, (purpose, mesh));
+        let now = crate::telemetry::now_ms();
+        self.times.insert(id, (now, now));
         self.queued[usize::from(mesh)].push_back((id, job));
         self.pump();
     }
@@ -123,6 +145,7 @@ impl Pool {
         };
         if let Some((id, _)) = q.remove(at) {
             self.purposes.remove(&id);
+            self.times.remove(&id);
         }
         true
     }
@@ -134,6 +157,9 @@ impl Pool {
                     break;
                 };
                 self.in_flight[kind] += 1;
+                if let Some(t) = self.times.get_mut(&id) {
+                    t.1 = crate::telemetry::now_ms();
+                }
                 self.jobs.submit(id, job);
             }
         }
@@ -147,6 +173,11 @@ impl Pool {
                 continue;
             };
             self.in_flight[usize::from(mesh)] -= 1;
+            if let Some((queued, started)) = self.times.remove(&id) {
+                let (wait, run) = purpose.telemetry_names();
+                crate::telemetry::sample(wait, started - queued);
+                crate::telemetry::sample(run, crate::telemetry::now_ms() - started);
+            }
             out.push((purpose, output));
         }
         self.pump();

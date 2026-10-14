@@ -106,6 +106,51 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
+  telemetry(): Telemetry;
+  /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
+  telemetryFrames(): { names: string[]; frames: number[][] };
+  /** The kept player controller ticks, oldest first. */
+  ticks(): TickSample[];
+  /** Forgets the telemetry so far: measure from here. */
+  telemetryReset(): void;
+}
+
+/** A distribution's summary (telemetry.rs `Stats`). */
+export interface TelemetryStats {
+  n: number;
+  mean: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  max: number;
+  sum: number;
+}
+
+export interface Telemetry {
+  /** Per-frame series (ms, or counts per frame), `interval` the time between frames. */
+  frames: Record<string, TelemetryStats>;
+  /** Per-event series (e.g. `job.chunk_mesh.run`, ms). */
+  samples: Record<string, TelemetryStats>;
+  counters: Record<string, number>;
+  frameCount: number;
+}
+
+/** One controller tick (telemetry.rs `TickSample`). */
+export interface TickSample {
+  seq: number;
+  atMs: number;
+  feet: Vec3;
+  velocity: Vec3;
+  state: string;
+  grounded: boolean;
+  crouched: boolean;
+  touchingWall: boolean;
+  ceilingBlocked: boolean;
+  /** Movement input: x right, y forward, −1 to 1. */
+  move: [number, number];
+  jump: boolean;
+  crouch: boolean;
 }
 
 /** World-file tools for tests and debugging, on every page (the main menu included). */
@@ -384,6 +429,12 @@ async function start(): Promise<App | null> {
     renderStats: () => client.renderStats() as RenderStats,
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
+    telemetry: () => client.telemetry() as Telemetry,
+    telemetryFrames: () => client.telemetryFrames() as { names: string[]; frames: number[][] },
+    ticks: () => client.telemetryTicks() as TickSample[],
+    telemetryReset: () => {
+      client.telemetryReset();
+    },
   };
 
   const frame = (now: number): void => {
