@@ -3,6 +3,7 @@
 //! (`dwell-blocks`); built-in ones the engine needs are resolved once into [`M`].
 
 pub mod edit;
+pub mod hash;
 pub mod lod;
 pub mod structure;
 mod voxel;

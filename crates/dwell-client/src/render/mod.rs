@@ -9,7 +9,7 @@ pub mod display;
 pub mod geometry;
 pub mod shaders;
 
-use std::collections::HashMap;
+use dwell_world::hash::HashMap;
 
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
@@ -82,6 +82,8 @@ pub struct StandIn {
 }
 
 struct GpuMesh {
+    /// The vertices, attributes interleaved (one buffer to bind per draw: binding each stream was
+    /// most of the frame's WebGPU calls, docs/DEV_TOOLS.md profile 2026-10-14).
     vertex: Vec<wgpu::Buffer>,
     index: wgpu::Buffer,
     /// Index ranges: [0] the surface; for LOD sections, [1 + face] each side's skirt.
@@ -126,6 +128,33 @@ impl ToLeBytes for u32 {
     }
 }
 
+/// Index ranges with the empty ones dropped and touching ones joined: a section's surface and the
+/// skirts drawn with it are consecutive in its index buffer, so most draw as one call.
+fn merge_ranges(ranges: Vec<std::ops::Range<u32>>) -> Vec<std::ops::Range<u32>> {
+    let mut out: Vec<std::ops::Range<u32>> = Vec::with_capacity(ranges.len());
+    for r in ranges.into_iter().filter(|r| !r.is_empty()) {
+        match out.last_mut() {
+            Some(last) if last.end == r.start => last.end = r.end,
+            _ => out.push(r),
+        }
+    }
+    out
+}
+
+/// Streams of `n` floats per vertex, interleaved vertex by vertex (in the pipelines' attribute
+/// order, `vertex_layout`).
+fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
+    let count = streams.first().map_or(0, |(s, n)| s.len() / n);
+    let stride: usize = streams.iter().map(|(_, n)| n).sum();
+    let mut out = Vec::with_capacity(count * stride);
+    for v in 0..count {
+        for (s, n) in streams {
+            out.extend_from_slice(&s[v * n..(v + 1) * n]);
+        }
+    }
+    out
+}
+
 impl GpuMesh {
     fn textured(device: &wgpu::Device, m: &MeshArrays) -> Option<Self> {
         if m.indices.is_empty() {
@@ -133,10 +162,18 @@ impl GpuMesh {
         }
         let v = wgpu::BufferUsages::VERTEX;
         Some(Self {
-            vertex: [&m.positions, &m.normals, &m.colors, &m.uvs, &m.tiles]
-                .iter()
-                .map(|a| buffer(device, "chunk", floats(a), v))
-                .collect(),
+            vertex: vec![buffer(
+                device,
+                "chunk",
+                floats(&interleave(&[
+                    (&m.positions, 3),
+                    (&m.normals, 3),
+                    (&m.colors, 3),
+                    (&m.uvs, 2),
+                    (&m.tiles, 4),
+                ])),
+                v,
+            )],
             index: buffer(device, "chunk", u32s(&m.indices), wgpu::BufferUsages::INDEX),
             parts: std::iter::once(0..m.indices.len() as u32).collect(),
             bytes: m.byte_len() as u64,
@@ -160,11 +197,12 @@ impl GpuMesh {
         }
         let v = wgpu::BufferUsages::VERTEX;
         Some(Self {
-            vertex: vec![
-                buffer(device, "flat", floats(&p), v),
-                buffer(device, "flat", floats(&n), v),
-                buffer(device, "flat", floats(&c), v),
-            ],
+            vertex: vec![buffer(
+                device,
+                "flat",
+                floats(&interleave(&[(&p, 3), (&n, 3), (&c, 3)])),
+                v,
+            )],
             index: buffer(device, "flat", u32s(&idx), wgpu::BufferUsages::INDEX),
             bytes: 4 * (p.len() + n.len() + c.len() + idx.len()) as u64,
             parts,
@@ -370,8 +408,10 @@ impl Renderer {
             bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout)],
             immediate_size: 0,
         });
-        let attrs = |locations: &[(u32, u32)]| -> Vec<(u64, [wgpu::VertexAttribute; 1])> {
-            locations
+        // One interleaved buffer per mesh (`interleave`): (stride, attributes at their offsets).
+        let attrs = |locations: &[(u32, u32)]| -> (u64, Vec<wgpu::VertexAttribute>) {
+            let mut offset = 0u64;
+            let attributes = locations
                 .iter()
                 .map(|&(location, n)| {
                     let format = match n {
@@ -379,21 +419,21 @@ impl Renderer {
                         3 => wgpu::VertexFormat::Float32x3,
                         _ => wgpu::VertexFormat::Float32x4,
                     };
-                    (
-                        u64::from(n) * 4,
-                        [wgpu::VertexAttribute {
-                            format,
-                            offset: 0,
-                            shader_location: location,
-                        }],
-                    )
+                    let a = wgpu::VertexAttribute {
+                        format,
+                        offset,
+                        shader_location: location,
+                    };
+                    offset += u64::from(n) * 4;
+                    a
                 })
-                .collect()
+                .collect();
+            (offset, attributes)
         };
         let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
-        let mut pipelines = HashMap::new();
+        let mut pipelines = HashMap::default();
         for kind in [Kind::Terrain, Kind::Flat, Kind::Line] {
             for water in [false, true] {
                 for no_depth in [false, true] {
@@ -402,16 +442,11 @@ impl Renderer {
                         Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
                         Kind::Line => ("line_vs", "line_fs", &line_attrs),
                     };
-                    let buffers: Vec<Option<wgpu::VertexBufferLayout>> = a
-                        .iter()
-                        .map(|(stride, attr)| {
-                            Some(wgpu::VertexBufferLayout {
-                                array_stride: *stride,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: attr,
-                            })
-                        })
-                        .collect();
+                    let buffers = [Some(wgpu::VertexBufferLayout {
+                        array_stride: a.0,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &a.1,
+                    })];
                     let blend =
                         (water || kind == Kind::Line).then_some(wgpu::BlendState::ALPHA_BLENDING);
                     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -550,13 +585,13 @@ impl Renderer {
             draw_buffer,
             draw_group,
             draw_capacity: 1024,
-            chunks: HashMap::new(),
-            sections: HashMap::new(),
+            chunks: HashMap::default(),
+            sections: HashMap::default(),
             shown: Vec::new(),
             stand_ins: Vec::new(),
             level_colors: false,
-            players: HashMap::new(),
-            capsules: HashMap::new(),
+            players: HashMap::default(),
+            capsules: HashMap::default(),
             outline: None,
             outline_mesh,
             debug: None,
@@ -654,10 +689,12 @@ impl Renderer {
         let idx: Vec<u32> = (0..points.len() as u32).collect();
         let v = wgpu::BufferUsages::VERTEX;
         GpuMesh {
-            vertex: vec![
-                buffer(device, "lines", floats(&p), v),
-                buffer(device, "lines", floats(&c), v),
-            ],
+            vertex: vec![buffer(
+                device,
+                "lines",
+                floats(&interleave(&[(&p, 3), (&c, 3)])),
+                v,
+            )],
             index: buffer(device, "lines", u32s(&idx), wgpu::BufferUsages::INDEX),
             parts: std::iter::once(0..idx.len() as u32).collect(),
             bytes: 4 * (p.len() + c.len() + idx.len()) as u64,
@@ -1044,13 +1081,21 @@ impl Renderer {
             });
         }
         // Opaque first, then the see-through, then lines; within the see-through, far to near.
+        // The opaque ones by pipeline (each set once, `render`), then near to far, so the GPU's depth
+        // test rejects what nearer meshes hide before shading it (their order does not change the
+        // picture: depth decides).
         out.sort_by(|a, b| {
             let rank = |d: &DrawItem| u8::from(d.water) + 2 * u8::from(d.kind == Kind::Line);
             let dist = |d: &DrawItem| {
-                -(d.offset[0] * d.offset[0] + d.offset[1] * d.offset[1] + d.offset[2] * d.offset[2])
+                d.offset[0] * d.offset[0] + d.offset[1] * d.offset[1] + d.offset[2] * d.offset[2]
             };
+            let opaque = !a.water && a.kind != Kind::Line;
             rank(a).cmp(&rank(b)).then(if a.water && b.water {
-                dist(a).total_cmp(&dist(b))
+                dist(b).total_cmp(&dist(a))
+            } else if opaque {
+                (a.kind as u8, a.no_depth)
+                    .cmp(&(b.kind as u8, b.no_depth))
+                    .then(dist(a).total_cmp(&dist(b)))
             } else {
                 std::cmp::Ordering::Equal
             })
@@ -1175,6 +1220,7 @@ impl Renderer {
                 ..Default::default()
             });
             pass.set_bind_group(0, &self.frame_groups[i], &[]);
+            let mut bound: Option<(Kind, bool, bool)> = None;
             if i == 0 {
                 pass.set_pipeline(&self.sky_pipeline);
                 pass.set_bind_group(1, &self.draw_group, &[0]);
@@ -1223,13 +1269,18 @@ impl Renderer {
                         (m, vec![m.parts[0].clone()])
                     }
                 };
-                pass.set_pipeline(&self.pipelines[&(d.kind, d.water, d.no_depth)]);
+                // Each WebGPU call crosses from WASM to JS: set only what changes.
+                let key = (d.kind, d.water, d.no_depth);
+                if bound != Some(key) {
+                    pass.set_pipeline(&self.pipelines[&key]);
+                    bound = Some(key);
+                }
                 pass.set_bind_group(1, &self.draw_group, &[offset]);
                 for (k, b) in mesh.vertex.iter().enumerate() {
                     pass.set_vertex_buffer(k as u32, b.slice(..));
                 }
                 pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
-                for r in ranges.into_iter().filter(|r| !r.is_empty()) {
+                for r in merge_ranges(ranges) {
                     triangles += u64::from(r.len() as u32 / 3);
                     pass.draw_indexed(r, 0, 0..1);
                     calls += 1;
@@ -1379,6 +1430,25 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn touching_index_ranges_draw_as_one() {
+        assert_eq!(
+            merge_ranges(vec![0..6, 6..9, 9..9, 12..15, 15..18]),
+            vec![0..9, 12..18]
+        );
+        assert!(merge_ranges(vec![3..3, 5..5]).is_empty());
+    }
+
+    #[test]
+    fn streams_interleave_vertex_by_vertex() {
+        let p = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let uv = [7.0, 8.0, 9.0, 10.0];
+        assert_eq!(
+            interleave(&[(&p, 3), (&uv, 2)]),
+            vec![1.0, 2.0, 3.0, 7.0, 8.0, 4.0, 5.0, 6.0, 9.0, 10.0]
+        );
+    }
 
     #[test]
     fn software_adapters_draw_without_multisampling() {

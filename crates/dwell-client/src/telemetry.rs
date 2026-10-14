@@ -10,12 +10,12 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 
-/// Frames kept for the summary (10 s at 60 Hz).
-pub const FRAMES_KEPT: usize = 600;
-/// Event samples kept per name.
-pub const SAMPLES_KEPT: usize = 2048;
-/// Controller ticks kept (10 s at 60 Hz).
-pub const TICKS_KEPT: usize = 600;
+/// Frames kept for the summary (60 s at 60 Hz, 30 s at 120: a scenario's whole measured stretch).
+pub const FRAMES_KEPT: usize = 3600;
+/// Event samples kept per name (a fast flight finishes thousands of jobs of a kind).
+pub const SAMPLES_KEPT: usize = 16384;
+/// Controller ticks kept (60 s at 60 Hz).
+pub const TICKS_KEPT: usize = 3600;
 
 /// One frame's values: the time it started and each per-frame series' total.
 #[derive(Clone, Debug, PartialEq)]

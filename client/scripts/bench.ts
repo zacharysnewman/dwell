@@ -16,6 +16,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
+import { formatProfile, profileOf, work } from './profile.ts';
 import { parseScenarios, scenarioView, type Scenario, type Step } from './scenarios.ts';
 import { viewStorage, viewUrl } from './views.ts';
 
@@ -301,12 +302,28 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'traceStart':
       await run.browser.startTracing(page, {
         screenshots: true,
-        categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'gpu', 'v8'],
+        categories: [
+          'devtools.timeline',
+          'disabled-by-default-devtools.timeline',
+          'gpu',
+          'v8',
+          // The sampling profiler: `<name>.profile.txt` (scripts/profile.ts).
+          'disabled-by-default-v8.cpu_profiler',
+        ],
       });
       return;
     case 'traceStop': {
       const trace = await run.browser.stopTracing();
       writeFileSync(join(run.dir, `${s.name}.trace.json`), trace);
+      const threads = profileOf(JSON.parse(trace.toString('utf8')) as unknown);
+      writeFileSync(join(run.dir, `${s.name}.profile.txt`), formatProfile(threads));
+      for (const t of threads.slice(0, 3)) {
+        const top = work(t)
+          .slice(0, 6)
+          .map((x) => `${x.name} ${f(x.selfMs)}`)
+          .join(', ');
+        console.log(`  profile ${t.thread}: ${f(t.totalMs)} ms busy — ${top}`);
+      }
       return;
     }
   }

@@ -72,13 +72,13 @@ One `Telemetry` per thread (the main thread's is exported). Three kinds of metri
 call site:
 
 - **Per-frame series** — `telemetry::add(name, value)` or `telemetry::span(name, || …)`: summed
-  over the frame; kept for the last 600 frames; summarised as mean/p50/p95/p99/max/sum.
+  over the frame; kept for the last 3600 frames; summarised as mean/p50/p95/p99/max/sum.
   `interval` is the time between frames (`requestAnimationFrame` timestamps).
 - **Event samples** — `telemetry::sample(name, value)`: one value per event (a job's time); the
-  last 2048 per name.
+  last 16384 per name.
 - **Counters** — `telemetry::count(name, n)`: running totals.
 - **Controller ticks** — one `TickSample` per predicted tick: feet, velocity, state, grounded,
-  crouched, wall and ceiling contact, the input's movement, jump and crouch; the last 600.
+  crouched, wall and ceiling contact, the input's movement, jump and crouch; the last 3600.
 
 What is recorded now:
 

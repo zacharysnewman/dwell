@@ -9,7 +9,8 @@
 //! browser's local mode) the jobs run on the calling thread within a time budget. The same pool
 //! generates unmodified sections for full-chunk-mode clients.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use dwell_world::hash::{HashMap, HashSet};
+use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -144,14 +145,14 @@ impl LodPropagation {
             generator,
             shared,
             workers,
-            sections: HashMap::new(),
-            dirty: HashSet::new(),
-            in_flight: HashSet::new(),
+            sections: HashMap::default(),
+            dirty: HashSet::default(),
+            in_flight: HashSet::default(),
             written: Vec::new(),
             next_revision: 1,
-            generated: HashMap::new(),
+            generated: HashMap::default(),
             generated_order: VecDeque::new(),
-            generating: HashSet::new(),
+            generating: HashSet::default(),
         }
     }
 

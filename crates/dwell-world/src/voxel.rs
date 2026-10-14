@@ -1,7 +1,7 @@
 //! Voxel storage (ARCHITECTURE.md §6.1): 32³ chunks, the world's bounds and two faces, and the
 //! voxel grid that generates, loads or streams chunks.
 
-use std::collections::HashMap;
+use crate::hash::HashMap;
 use std::sync::{Arc, LazyLock};
 
 use dwell_blocks::{StateId, require};
@@ -381,7 +381,7 @@ impl VoxelWorld {
             generator: Some(generator),
             air,
             saved: None,
-            chunks: HashMap::new(),
+            chunks: HashMap::default(),
             epoch: 0,
             next_stamp: 1,
             generated_on_access: 0,

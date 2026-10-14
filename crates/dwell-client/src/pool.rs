@@ -2,8 +2,9 @@
 //! at most the workers' capacity in flight, remembers what each job is for, and hands the
 //! streamer, the LOD system and the debug tools their collaborator traits.
 
+use dwell_world::hash::HashMap;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use dwell_game::chunk_stream::{ChunkSource, Coord, MeshJob, Mesher};
@@ -114,8 +115,8 @@ impl Pool {
         Rc::new(RefCell::new(Self {
             jobs,
             next: 1,
-            purposes: HashMap::new(),
-            times: HashMap::new(),
+            purposes: HashMap::default(),
+            times: HashMap::default(),
             queued: Default::default(),
             in_flight: [0; 2],
         }))

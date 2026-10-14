@@ -4,8 +4,9 @@
 //! free: time is passed in, the renderer is a [`Scene`] and the workers a [`Pool`], so it runs
 //! natively under test as it does in the browser.
 
+use dwell_world::hash::HashSet;
 use std::cell::RefCell;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use dwell_game::block_interaction::{BlockInteraction, BlockTarget};
@@ -386,7 +387,7 @@ impl<S: Scene> Game<S> {
             scene,
             outbox,
             remotes: RemotePlayers::default(),
-            proxies: HashSet::new(),
+            proxies: HashSet::default(),
             recent: VecDeque::new(),
             accumulator: 0.0,
             last_frame_ms: None,
@@ -562,7 +563,7 @@ impl<S: Scene> Game<S> {
                     1.0
                 };
                 self.remotes.push(s.server_tick, &s.remotes, now_ms);
-                let mut seen = HashSet::new();
+                let mut seen = HashSet::default();
                 for r in self.remotes.latest() {
                     if r.is_dead() {
                         continue;
@@ -812,7 +813,7 @@ impl<S: Scene> Game<S> {
 
         // Remote players, interpolated.
         let views = self.remotes.sample(now_ms);
-        let mut drawn = HashSet::new();
+        let mut drawn = HashSet::default();
         for v in &views {
             drawn.insert(v.player_id);
             let view = self.player_view(

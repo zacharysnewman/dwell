@@ -15,7 +15,8 @@
 //! [`LodSystem::on_lod_bounds`], [`LodSystem::on_generated`] or [`LodSystem::on_meshed`], and
 //! results whose token is no longer current are ignored.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use dwell_world::hash::{HashMap, HashSet};
+use std::collections::VecDeque;
 
 use dwell_mesh::{SURFACE_STRIDE, SectionMeshes, section_bytes};
 use dwell_protocol::{
@@ -409,34 +410,34 @@ pub struct LodSystem {
 impl LodSystem {
     pub fn new(options: LodOptions) -> Self {
         let mut s = Self {
-            nodes: HashMap::new(),
+            nodes: HashMap::default(),
             seq: 0,
-            bounds: HashMap::new(),
-            index: HashMap::new(),
-            indexed: HashSet::new(),
+            bounds: HashMap::default(),
+            index: HashMap::default(),
+            indexed: HashSet::default(),
             full_mode: false,
             frame: 0,
             token: 0,
             generating: 0,
             meshing: 0,
-            gen_jobs: HashMap::new(),
-            mesh_jobs: HashMap::new(),
+            gen_jobs: HashMap::default(),
+            mesh_jobs: HashMap::default(),
             cache_bytes: 0,
-            asking: HashSet::new(),
+            asking: HashSet::default(),
             request_credit: 0.0,
             last_request_ms: None,
             received: VecDeque::new(),
             selection: Selection::default(),
-            refined: HashSet::new(),
-            covered: HashSet::new(),
-            covered_ancestors: HashSet::new(),
-            drawable_since: HashMap::new(),
+            refined: HashSet::default(),
+            covered: HashSet::default(),
+            covered_ancestors: HashSet::default(),
+            drawable_since: HashMap::default(),
             detail_m: None,
             view_face: 1,
             near_rim: false,
             position: [0.0; 3],
             camera_chunk: ChunkCoord::default(),
-            chunk_asked: HashMap::new(),
+            chunk_asked: HashMap::default(),
             chunk_credit: 0.0,
             last_chunk_request_ms: None,
             wanted_chunks: Vec::new(),
@@ -955,7 +956,7 @@ impl LodSystem {
     fn find_covered(&mut self, p: Vec3, now_ms: f64, host: &dyn LodHost) {
         self.covered.clear();
         self.covered_ancestors.clear();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let at = section_at(1, p);
         let r = 2; // the streamed sphere (VIEW_RADIUS_CHUNKS) spans ±2 level-1 sections
         for j in at.j - r..=at.j + r {

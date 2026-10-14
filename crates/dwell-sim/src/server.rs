@@ -3,7 +3,8 @@
 //! (§4.3). The same type runs in the native server, in the browser's local mode, and in
 //! friend-world hosts. Sessions are kept in id order, so every pass over them is deterministic.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use dwell_world::hash::{HashMap, HashSet};
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -328,13 +329,13 @@ impl Session {
             edit_credit: 0.0,
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
-            streamed: HashSet::new(),
+            streamed: HashSet::default(),
             stream_center: None,
             stream_complete: false,
             chunk_credit: 0.0,
             stream_stats: StreamStats::default(),
             chunk_requests: VecDeque::new(),
-            requested: HashSet::new(),
+            requested: HashSet::default(),
             chunk_request_credit: wc::CHUNK_REQUESTS_PER_SECOND as f64,
             lod_index_sent: false,
             lod_requests: VecDeque::new(),
@@ -493,9 +494,9 @@ impl Server {
             view_offsets: Vec::new(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),
             explicit_wanted: Vec::new(),
-            saved: Arc::new(Mutex::new(HashMap::new())),
-            dirty: HashSet::new(),
-            in_flight: HashMap::new(),
+            saved: Arc::new(Mutex::new(HashMap::default())),
+            dirty: HashSet::default(),
+            in_flight: HashMap::default(),
             departed: Vec::new(),
             next_save_tick: 0,
             save_stats: SaveStats::default(),
@@ -505,8 +506,8 @@ impl Server {
             ),
             index_updates: BTreeMap::new(),
             next_index_update_tick: 0,
-            lod_unsaved: HashSet::new(),
-            lod_in_flight: HashMap::new(),
+            lod_unsaved: HashSet::default(),
+            lod_in_flight: HashMap::default(),
             lod_rebuild: false,
             config,
         };
@@ -1403,7 +1404,7 @@ impl Server {
             .collect();
         // Changes of this tick per chunk, in the order chunks were first touched.
         let mut changed: Vec<ChunkChanges> = Vec::new();
-        let mut index: HashMap<ChunkCoord, usize> = HashMap::new();
+        let mut index: HashMap<ChunkCoord, usize> = HashMap::default();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
