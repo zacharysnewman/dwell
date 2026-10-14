@@ -1,0 +1,43 @@
+//! Dwell's client game logic (ADR 0028, Phase 24e), ported from `client/src/game`, `predict`,
+//! `interact` and `world`: remote player interpolation, first-person eye smoothing, the camera's
+//! turn-over between the faces, the HUD's text, the prediction gate, creative flight, the
+//! keyboard/mouse and touch input state machines, block targeting and edit requests, and the
+//! client's chunk streaming. Platform-free: time is passed in, collaborators (renderer, mesher,
+//! worldgen, network) are traits or callbacks, so it all runs natively under test and in the browser.
+
+pub mod block_interaction;
+pub mod chunk_diff;
+pub mod chunk_stream;
+pub mod eye;
+pub mod face_flip;
+pub mod flight;
+pub mod flight_speed;
+pub mod gate;
+pub mod hud_text;
+pub mod input;
+pub mod remotes;
+pub mod touch;
+
+/// The face as a sign: +1 face A (head up), −1 face B (head down) (BIFACIAL_WORLD.md §6).
+pub type FaceSign = i32;
+
+/// Rounds half up, like JavaScript's `Math.round`.
+pub(crate) fn js_round(v: f64) -> f64 {
+    (v + 0.5).floor()
+}
+
+/// JavaScript's `%` on numbers (the result takes the dividend's sign), then wrapped into [0, m).
+pub(crate) fn wrap_degrees(v: f64) -> f64 {
+    ((v % 360.0) + 360.0) % 360.0
+}
+
+/// Vitest's `toBeCloseTo(expected, digits)`: |actual − expected| < 10^−digits / 2.
+#[cfg(test)]
+#[track_caller]
+pub(crate) fn assert_close(actual: f64, expected: f64, digits: i32) {
+    let tolerance = 10f64.powi(-digits) / 2.0;
+    assert!(
+        (actual - expected).abs() < tolerance,
+        "expected {actual} to be within {tolerance} of {expected}"
+    );
+}

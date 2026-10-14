@@ -1,0 +1,17 @@
+[package]
+name = "dwell-mesh"
+description = "Dwell's chunk and LOD meshers: voxels to render buffers, pure data (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-look = { path = "../dwell-look" }
+dwell-protocol = { path = "../dwell-protocol" }
+dwell-world = { path = "../dwell-world" }
+
+[lints]
+workspace = true
