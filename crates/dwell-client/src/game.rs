@@ -851,8 +851,6 @@ impl<S: Scene> Game<S> {
             fov_y_deg: viewport.fov_y_deg,
             aspect: viewport.aspect,
             height_px: viewport.height_px,
-            // Detail loads ahead of where the player is heading (§6.6).
-            velocity: (!self.dead).then_some(c.velocity),
         };
         let mut host = LodHost {
             pool_gen: ChunkJobs(self.pool.clone()),

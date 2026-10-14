@@ -1102,9 +1102,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   (and every level above refines down to them), and beyond it the finest level drawn is 1 — except
   the streamed view's own chunks around the player, which always show. Chunks the client already
   holds are asked for once as well, so the server keeps them after they leave the view.
-  **Lookahead:** distances for refinement and load order are the nearer of the camera's and of
-  where it will be `LOOKAHEAD_S` (1.5 s, at most `MAX_LOOKAHEAD_M`, 1 km) along its velocity, so
-  detail — chunks included — loads ahead of a moving player. **The player's surroundings never wait for coarse levels:** a level-1
+  Distances for refinement and load order are from the camera's position alone: detail does not
+  load ahead along its velocity (it did, and looked bad; removed 2026-10-14). **The player's surroundings never wait for coarse levels:** a level-1
   section around the camera whose chunks have been drawable for `FORCE_CHUNKS_AFTER_MS` (1 s)
   is always reached — the walk descends to it through ancestors whose children are not all
   ready, drawing the ready siblings and drawing, for each unready one, its nearest ready ancestor's mesh
@@ -1418,7 +1417,6 @@ in the code yet.
 | `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels; a setting (1–16) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
 | LOD error scale (client, `dwell-lod` `system.rs`) | ×1.15 steps, 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
 | Full-detail distance (client, `dwell-lod` `detail.rs`) | 256 m desktop / 128 m mobile (96–352 m) | Chunks are drawn out to it (a setting; §6.6) |
-| LOD lookahead (client, `dwell-lod` `system.rs` `LOOKAHEAD_S`, `MAX_LOOKAHEAD_M`) | 1.5 s, at most 1 km | Distances are the nearer of the camera's and of its position this far ahead along its velocity (§6.6) |
 | `LOD_NEAR_SPLIT_M` | 1 024 m | Distance splitting the near and far depth passes |
 | `OTHER_FACE_NEAR_M` / `RIM_VIEW_M` (client, `dwell-lod` `system.rs`) | 512 m / 16 384 m | Other-face LOD sections nearer than the first, or anywhere within the second of the rim, are kept (§6.6) |
 | `LOD_CACHE_MB` | 256 (desktop) / 96 (mobile); a setting (32–1,024) | Client cache of LOD section content and meshes; the view is held within it (error scale) |

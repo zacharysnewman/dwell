@@ -289,7 +289,6 @@ fn camera(position: Vec3, yaw_deg: f64, pitch_deg: f64) -> LodCamera {
         fov_y_deg: 75.0,
         aspect: 16.0 / 9.0,
         height_px: 1080.0,
-        velocity: None,
     }
 }
 
@@ -1098,36 +1097,6 @@ fn never_asks_for_buried_chunks_underground_only_the_streamed_view_is_drawn() {
     assert!(below.requested().is_empty());
     // The streamed chunks around the camera are still drawn (caves stay visible).
     assert!(below.lod.chunk_visible(chunk_of(deep)));
-}
-
-#[test]
-fn looks_ahead_along_the_velocity_what_the_camera_heads_for_is_asked_for_first() {
-    let body = [0.5, 1.6, 0.5];
-    let mut t = ChunkSetup::new(body, 4.0);
-    let moving = LodCamera {
-        velocity: Some([100.0, 0.0, 0.0]),
-        ..camera(body, 90.0, -10.0)
-    };
-    t.run(&moving, 300);
-    let order = t.requested();
-    let ahead = order.iter().position(|&c| c == cc(5, -1, 0));
-    let behind = order.iter().position(|&c| c == cc(-5, -1, 0));
-    // 150 m ahead is where it will be: that ground outranks the same distance behind.
-    let ahead = ahead.expect("asked for the ground ahead");
-    assert!(behind.is_none_or(|b| ahead < b));
-    assert_eq!(lookahead(&moving), Some([150.5, 1.6, 0.5]));
-    let still = LodCamera {
-        velocity: Some([0.0; 3]),
-        ..moving
-    };
-    assert_eq!(lookahead(&still), None);
-    // Fast flight looks at most MAX_LOOKAHEAD_M ahead.
-    let fast = LodCamera {
-        velocity: Some([0.0, 10_000.0, 0.0]),
-        ..moving
-    };
-    let y = lookahead(&fast).expect("moving")[1];
-    assert!((y - (1.6 + MAX_LOOKAHEAD_M)).abs() < 0.005);
 }
 
 #[test]

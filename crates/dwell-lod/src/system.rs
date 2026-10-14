@@ -6,8 +6,8 @@
 //! `Generated` answer covers the section's whole subtree. Jobs go coarsest first, then nearest;
 //! content and meshes live in a cache bounded by the cache budget. Beyond the streamed view, the
 //! chunks a refined level-1 section needs are asked of the server (ChunkRequest, within
-//! RENDER_RADIUS_CHUNKS), nearest first. Distances look ahead along the camera's velocity, so
-//! detail loads before the camera arrives.
+//! RENDER_RADIUS_CHUNKS), nearest first. Distances are from the camera's position alone (not
+//! ahead along its velocity).
 //!
 //! The collaborators are traits ([`LodHost`]): the generator ([`SectionSource`]), the mesher
 //! ([`SectionMesher`]), the renderer ([`LodView`]), the streamed chunks ([`ChunkReadiness`]) and
@@ -226,9 +226,6 @@ pub const FORCE_CHUNKS_AFTER_MS: f64 = 1000.0;
 pub const OTHER_FACE_NEAR_M: f64 = 512.0;
 /// Within this of the rim the other face can be seen past the edge: nothing is culled.
 pub const RIM_VIEW_M: f64 = 16_384.0;
-/// Distances look this far ahead along the camera's velocity (s), and at most this far (m).
-pub const LOOKAHEAD_S: f64 = 1.5;
-pub const MAX_LOOKAHEAD_M: f64 = 1024.0;
 /// A requested chunk that has not arrived is asked for again after this long (ms).
 pub const CHUNK_REQUEST_RETRY_MS: f64 = 10_000.0;
 /// Chunks are asked for within this many chunks of the camera (the server's radius, less a margin).
@@ -268,18 +265,6 @@ fn neighbour_id(c: LodCoord, d: [i32; 3]) -> LodId {
 /// A column's bounds are kept per (level, i, k): the id of the column's first in-world row.
 fn bounds_key(level: i32, i: i32, k: i32) -> LodId {
     lod_id(level, i, dwell_world::lod::first_row(level), k)
-}
-
-/// Where the camera will be LOOKAHEAD_S from now (at most MAX_LOOKAHEAD_M away), if it moves.
-pub fn lookahead(camera: &LodCamera) -> Option<Vec3> {
-    let v = camera.velocity?;
-    let speed = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    if speed < 0.5 {
-        return None;
-    }
-    let t = LOOKAHEAD_S.min(MAX_LOOKAHEAD_M / speed);
-    let p = camera.position;
-    Some([p[0] + v[0] * t, p[1] + v[1] * t, p[2] + v[2] * t])
 }
 
 /// Lines for the F3 overlay.
@@ -394,8 +379,6 @@ pub struct LodSystem {
     drawable_since: HashMap<LodId, f64>,
     /// Full-detail distance (m): chunks within it, never beyond; None: by pixel error.
     detail_m: Option<f64>,
-    /// Where the camera will be (LOOKAHEAD_S along its velocity), if it moves.
-    ahead: Option<Vec3>,
     /// The face the camera is on (1: A, −1: B), and whether it is near the rim (see culled).
     view_face: i32,
     near_rim: bool,
@@ -449,7 +432,6 @@ impl LodSystem {
             covered_ancestors: HashSet::new(),
             drawable_since: HashMap::new(),
             detail_m: None,
-            ahead: None,
             view_face: 1,
             near_rim: false,
             position: [0.0; 3],
@@ -586,7 +568,6 @@ impl LodSystem {
         self.near_rim = p[0].hypot(p[2]) > f64::from(WORLD_RADIUS) - RIM_VIEW_M;
         self.position = p;
         let frustum = Frustum::new(*camera);
-        self.ahead = lookahead(camera);
         let cs = f64::from(CHUNK_SIZE);
         self.camera_chunk = ChunkCoord::new(
             (p[0] / cs).floor() as i32,
@@ -1041,13 +1022,10 @@ impl LodSystem {
         }
     }
 
-    /// Distance to a box from the camera, or from where it is heading if that is nearer.
+    /// Distance to a box from the camera: detail loads by where the camera is, not where it is
+    /// heading (loading ahead along the velocity looked bad, playtest 2026-10-14).
     fn distance(&self, lo: Vec3, hi: Vec3, frustum: &Frustum) -> f64 {
-        let d = frustum.distance(lo, hi);
-        match self.ahead {
-            Some(a) => d.min(box_distance(a, lo, hi)),
-            None => d,
-        }
+        frustum.distance(lo, hi)
     }
 
     /// The chunks of a refined level-1 section, to ask the server for (see send_chunk_requests).
