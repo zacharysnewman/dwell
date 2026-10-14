@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD bounds cache keyed per column again (near chunks above the first column's height were hidden); the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); outstanding: the frame-time measurement, CI wall time (~17.5 min, target 6), the owner's manual check |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); outstanding: the frame-time measurement and the owner's manual check |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -1985,8 +1985,8 @@ C++ tree, CMake, Emscripten, Jolt and Three.js are deleted (24f); every Rust sui
 and under WASM, and the e2e suite passes 32 of 32 locally against the Rust client and
 `dwell-server`, and every CI job passes on the Rust build (Electron's smoke test included).
 `package.json` raised to 0.10.0, the new compatibility line (world files moved from SQLite to
-redb). Outstanding: the frame-time comparison, CI wall time (the `rust` job takes ~17.5 min, over
-the 6-minute target), and the owner's manual play and look comparison. ADR 0028 accepted (2026-10-13). Storage, compression and crypto decided by
+redb). CI takes ~4 min on a warm cache. Outstanding: the frame-time comparison and the owner's
+manual play and look comparison. ADR 0028 accepted (2026-10-13). Storage, compression and crypto decided by
 Claude at the owner's request (2026-10-13, ADR 0028 §8): `redb` (files natively, OPFS in the
 browser), LZ4 (`lz4_flex`), `ed25519-dalek`.
 
@@ -2185,9 +2185,9 @@ Exit criteria
 - [x] 64 players < 1 ms/tick (native Release, `enhanced-determinism` on): 0.48 ms locally
   (`scenario` test `sixty_four_players…`, also a step of the `rust` CI job).
 - [ ] Frame time at least matches the Three.js build on a desktop and a phone (measured).
-- [ ] CI wall time under 6 minutes on a warm cache; a one-line change in the sim rebuilds and
-  tests locally in under a minute (measured). Not met yet: the `rust` job took ~17.5 min (clippy
-  ~5, tests ~6.5, the WebGPU probe ~2); the other jobs finish in under 4.
+- [x] CI wall time under 6 minutes on a warm cache; a one-line change in the sim rebuilds and
+  tests locally in under a minute (measured): CI ~4 min on a warm cache (~17.5 min cold, the
+  `rust` job's first build); `cargo test -p dwell-sim` after a one-line change 37 s.
 - [x] No CMake or Emscripten in the repository (one third-party crate, `aws-lc-sys` under the
   server's TLS stack, runs CMake in its own build script).
 - [ ] Manual: the owner plays the baseline in a browser, in Electron and on a phone, and compares
