@@ -1182,8 +1182,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - **Depth:** 5 cm to beyond 16 000 km does not fit one depth buffer, so the frame renders a far
   pass and then, after a depth clear, a near pass (0.05 m to `LOD_NEAR_SPLIT_M`). Each pass draws the meshes whose box
   reaches its range of depth along the view axis, which is what its near and far planes clip (a
-  test by straight-line distance left gaps toward the sides of the view, where terrain nearer than
-  the split in depth is farther in distance), so a section straddling the split is clipped at it.
+  test by straight-line distance could miss terrain toward the sides of the view, where it is
+  nearer than the split in depth but farther in distance), so a section straddling the split is clipped at it.
   The far pass's near plane is just inside the split (0.95 × `LOD_NEAR_SPLIT_M`) and moves out to
   0.8 × the camera's face-local altitude when that is farther (nothing is nearer up there),
   keeping depth precise from orbit.
