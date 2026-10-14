@@ -18,6 +18,10 @@ pub trait Jobs {
     fn submit(&mut self, id: u32, job: Job);
     /// Finished jobs.
     fn poll(&mut self) -> Vec<(u32, Output)>;
+    /// Each worker's memory (bytes), where the jobs run in workers.
+    fn memory(&self) -> Vec<f64> {
+        Vec::new()
+    }
 }
 
 /// Runs jobs on the calling thread when polled (tests, and a fallback without workers).
@@ -147,6 +151,11 @@ impl Pool {
         }
         self.pump();
         out
+    }
+
+    /// The workers' memory (bytes).
+    pub fn memory(&self) -> Vec<f64> {
+        self.jobs.memory()
     }
 
     /// Jobs queued or running: generation, meshing.

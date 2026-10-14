@@ -181,3 +181,16 @@ pub fn start() {
         web_sys::console::error_1(&format!("Dwell panicked: {info}").into());
     }));
 }
+
+/// The app version that last saved a world file (its bytes), or undefined (debug tools, e2e).
+#[wasm_bindgen(js_name = worldFileVersion)]
+pub fn world_file_version(bytes: Vec<u8>) -> Option<String> {
+    crate::local::world_file_version(bytes)
+}
+
+/// A world file's bytes rewritten to say `version` last saved it (debug tools, e2e: a world
+/// "saved by another version", RELEASES.md §6).
+#[wasm_bindgen(js_name = setWorldFileVersion)]
+pub fn set_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, JsError> {
+    crate::local::with_world_file_version(bytes, version).map_err(|e| JsError::new(&e))
+}

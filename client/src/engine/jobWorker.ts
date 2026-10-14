@@ -4,7 +4,7 @@
 import { JobWorker, loadWasm } from './wasm';
 
 interface WorkerScope {
-  postMessage(message: ArrayBuffer, transfer: Transferable[]): void;
+  postMessage(message: ArrayBuffer | { memory: number }, transfer?: Transferable[]): void;
   onmessage:
     | ((
         e: MessageEvent<ArrayBuffer | { t: 'init'; generatorVersion?: number; worldSeed?: bigint }>,
@@ -16,9 +16,18 @@ const scope = self as unknown as WorkerScope;
 let worker: JobWorker | null = null;
 const queued: ArrayBuffer[] = [];
 
+let memory: WebAssembly.Memory | null = null;
+let reported = 0;
+
 function run(w: JobWorker, job: ArrayBuffer): void {
   const out = w.run(new Uint8Array(job));
   scope.postMessage(out.buffer as ArrayBuffer, [out.buffer as ArrayBuffer]);
+  // The module's memory grows, never shrinks: say when it has (the F3 memory line).
+  const bytes = memory?.buffer.byteLength ?? 0;
+  if (bytes !== reported) {
+    reported = bytes;
+    scope.postMessage({ memory: bytes });
+  }
 }
 
 scope.onmessage = (e) => {
@@ -28,7 +37,8 @@ scope.onmessage = (e) => {
     else queued.push(msg);
     return;
   }
-  void loadWasm().then(() => {
+  void loadWasm().then((exports) => {
+    memory = (exports as { memory?: WebAssembly.Memory }).memory ?? null;
     const w =
       msg.generatorVersion === undefined || msg.worldSeed === undefined
         ? JobWorker.mesher()

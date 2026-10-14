@@ -48,6 +48,8 @@ impl JobWorker {
 struct WorkerSlot {
     worker: Worker,
     busy: usize,
+    /// The worker's WebAssembly memory (bytes), as it last reported it.
+    memory: Rc<std::cell::Cell<f64>>,
     _onmessage: Closure<dyn FnMut(MessageEvent)>,
 }
 
@@ -74,10 +76,17 @@ impl WebJobs {
             for _ in 0..count {
                 let worker: Worker = make_worker.call0(&JsValue::NULL)?.dyn_into()?;
                 let sink = done.clone();
+                let memory: Rc<std::cell::Cell<f64>> = Rc::default();
+                let reported = memory.clone();
                 let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
                     let data = e.data();
                     if data.is_instance_of::<js_sys::ArrayBuffer>() {
                         sink.borrow_mut().push_back(Uint8Array::new(&data).to_vec());
+                    } else if let Some(bytes) = Reflect::get(&data, &"memory".into())
+                        .ok()
+                        .and_then(|m| m.as_f64())
+                    {
+                        reported.set(bytes);
                     }
                 });
                 worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
@@ -95,6 +104,7 @@ impl WebJobs {
                 slots[kind].push(WorkerSlot {
                     worker,
                     busy: 0,
+                    memory,
                     _onmessage: onmessage,
                 });
             }
@@ -108,6 +118,14 @@ impl WebJobs {
 }
 
 impl Jobs for WebJobs {
+    /// Each worker's WebAssembly memory (bytes): generation workers, then meshing ones.
+    fn memory(&self) -> Vec<f64> {
+        self.slots
+            .iter()
+            .flatten()
+            .map(|s| s.memory.get())
+            .collect()
+    }
     fn capacity(&self, mesh: bool) -> usize {
         // Two per worker: one running, one already there when it finishes.
         2 * self.slots[usize::from(mesh)].len()

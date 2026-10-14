@@ -319,6 +319,17 @@ impl WorldDb {
         meta_from(|k| self.meta_bytes(k))
     }
 
+    /// Records `version` as the app version that last saved the world (debug tools and tests:
+    /// a world "saved by another version", RELEASES.md §6).
+    pub fn set_app_version_last(&self, version: &str) -> Result<(), String> {
+        let txn = self.db.begin_write().map_err(err)?;
+        txn.open_table(META)
+            .map_err(err)?
+            .insert("app_version_last", version.as_bytes())
+            .map_err(err)?;
+        txn.commit().map_err(err)
+    }
+
     /// A world file's meta read without opening it for writing (the file is opened read-only, so
     /// nothing is written to it): the version lock is checked before a host touches a world it
     /// may not open (RELEASES.md §6). `Ok(None)` for a missing file or one without meta.

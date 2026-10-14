@@ -396,7 +396,7 @@ fn structures_stamp_over_a_base_generator_only_inside_their_boxes() {
 fn the_movement_playground_loads() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../server/tests/player/playground.structure"
+        "/../../shared/structures/playground.structure"
     );
     let p = Structure::load(std::path::Path::new(path)).expect("loads");
     assert_eq!(p.at([9, 0, 9]), Some(s("dwell:ladder[facing=north]")));

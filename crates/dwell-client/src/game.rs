@@ -420,6 +420,11 @@ impl<S: Scene> Game<S> {
         );
     }
 
+    /// The job workers' memory (bytes), for the F3 memory line.
+    pub fn worker_memory(&self) -> Vec<f64> {
+        self.pool.borrow().memory()
+    }
+
     pub fn lod(&mut self) -> Option<&mut LodSystem> {
         self.lod.as_mut()
     }

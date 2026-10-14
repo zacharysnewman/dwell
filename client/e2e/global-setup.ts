@@ -37,11 +37,11 @@ async function startMaster(): Promise<ChildProcess> {
   throw new Error('the local master did not start within 60 s');
 }
 
-/** The dwell_server binary the suite runs. */
+/** The dwell-server binary the suite runs (`cargo build --release -p dwell-server`). */
 export function serverBin(): string {
   return (
     process.env.DWELL_SERVER_BIN ??
-    fileURLToPath(new URL('../../server/build/dev/app/dwell_server', import.meta.url))
+    fileURLToPath(new URL('../../target/release/dwell-server', import.meta.url))
   );
 }
 

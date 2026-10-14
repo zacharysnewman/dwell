@@ -153,6 +153,25 @@ pub fn encode_outbox(out: &[Outgoing]) -> Vec<u8> {
     b
 }
 
+/// The app version that last saved a world file (its bytes), or None (not a world file, no meta).
+pub fn world_file_version(bytes: Vec<u8>) -> Option<String> {
+    let db = WorldDb::open_backend(dwell_storage::BytesFile::new(bytes)).ok()?;
+    db.load_meta().map(|m| m.app_version_last)
+}
+
+/// A world file's bytes rewritten to say `version` last saved it (debug tools and the e2e suite: a
+/// world "saved by another version", RELEASES.md §6). Errors when the bytes are not a world file.
+pub fn with_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, String> {
+    let file = dwell_storage::BytesFile::new(bytes);
+    let db = WorldDb::open_backend(file.clone())?;
+    if db.load_meta().is_none() {
+        return Err("not a saved world (no meta)".into());
+    }
+    db.set_app_version_last(version)?;
+    drop(db);
+    Ok(file.bytes())
+}
+
 /// Wall-clock budget hint for hosts that cannot measure time (see dwell_sim::clock).
 pub const TICK_BUDGET: Duration = Duration::from_millis(4);
 
@@ -166,38 +185,7 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
 
     /// A world "file" that outlives the core using it.
-    #[derive(Debug, Clone, Default)]
-    struct SharedBytes(Arc<Mutex<Vec<u8>>>);
-    impl StorageBackend for SharedBytes {
-        fn len(&self) -> Result<u64, std::io::Error> {
-            Ok(self.0.lock().unwrap().len() as u64)
-        }
-        fn read(&self, offset: u64, out: &mut [u8]) -> Result<(), std::io::Error> {
-            let b = self.0.lock().unwrap();
-            let o = offset as usize;
-            out.copy_from_slice(
-                b.get(o..o + out.len())
-                    .ok_or(std::io::ErrorKind::UnexpectedEof)?,
-            );
-            Ok(())
-        }
-        fn set_len(&self, len: u64) -> Result<(), std::io::Error> {
-            self.0.lock().unwrap().resize(len as usize, 0);
-            Ok(())
-        }
-        fn sync_data(&self) -> Result<(), std::io::Error> {
-            Ok(())
-        }
-        fn write(&self, offset: u64, data: &[u8]) -> Result<(), std::io::Error> {
-            let mut b = self.0.lock().unwrap();
-            let o = offset as usize;
-            if b.len() < o + data.len() {
-                b.resize(o + data.len(), 0);
-            }
-            b[o..o + data.len()].copy_from_slice(data);
-            Ok(())
-        }
-    }
+    type SharedBytes = dwell_storage::BytesFile;
 
     fn join(core: &mut LocalCore) -> u16 {
         let key = SigningKey::from_bytes(&[3; 32]);
@@ -268,6 +256,41 @@ mod tests {
             u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize,
             out.len()
         );
+    }
+
+    #[test]
+    fn a_world_files_version_is_read_and_rewritten_through_its_format() {
+        let file = SharedBytes::default();
+        let mut core = LocalCore::create(
+            1,
+            dwell_world::GENERATOR_FLAT,
+            Some(file.clone()),
+            Box::new(SeededEntropy(1)),
+        )
+        .unwrap();
+        join(&mut core);
+        core.advance(0.1);
+        assert!(core.save());
+        drop(core);
+        assert_eq!(
+            world_file_version(file.bytes()).as_deref(),
+            Some(APP_VERSION)
+        );
+        let rewritten = with_world_file_version(file.bytes(), "9.9.9").unwrap();
+        assert_eq!(
+            world_file_version(rewritten.clone()).as_deref(),
+            Some("9.9.9")
+        );
+        let refused = LocalCore::create(
+            1,
+            dwell_world::GENERATOR_FLAT,
+            Some(SharedBytes::new(rewritten)),
+            Box::new(SeededEntropy(1)),
+        );
+        assert!(matches!(refused, Err(LocalError::VersionLocked(m)) if m.contains("9.9.9")));
+        // Bytes that are not a world file are refused, not rewritten.
+        assert!(with_world_file_version(vec![0; 64], "9.9.9").is_err());
+        assert_eq!(world_file_version(Vec::new()), None);
     }
 
     #[test]

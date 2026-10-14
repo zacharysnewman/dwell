@@ -1,6 +1,6 @@
 // Dwell desktop shell (ARCHITECTURE.md §2.2). Serves the same client build as GitHub Pages from a
-// secure custom protocol, so WebTransport, WebCrypto, and IndexedDB work. COOP/COEP headers make the
-// page cross-origin isolated, ready for the multithreaded sim-core build (ADR 0007).
+// secure custom protocol, so WebTransport, WebCrypto, WebGPU and IndexedDB work. COOP/COEP headers
+// make the page cross-origin isolated.
 //
 // Usage: electron . [--join=<invite query, e.g. "?join=127.0.0.1:4433&cert=...">] [--smoke]
 //   --smoke  load, wait until joined (or 20 s), print the status line, and exit (0 = joined).
@@ -18,9 +18,16 @@ const smoke = args.includes('--smoke');
 const joinArg = args.find((a) => a.startsWith('--join='));
 const query = joinArg ? joinArg.slice('--join='.length) : '';
 
+// The client renders with WebGPU (ADR 0028). Chromium enables it by default on Windows and macOS;
+// on Linux it is still behind a flag and needs Vulkan.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-unsafe-webgpu');
+  app.commandLine.appendSwitch('enable-features', 'Vulkan');
+}
 if (smoke) {
-  // Headless CI machines have no GPU: render WebGL2 in software.
-  app.commandLine.appendSwitch('use-angle', 'swiftshader');
+  // Headless CI machines have no GPU: WebGPU on SwiftShader's Vulkan, in software.
+  app.commandLine.appendSwitch('use-vulkan', 'swiftshader');
+  app.commandLine.appendSwitch('use-webgpu-adapter', 'swiftshader');
   app.commandLine.appendSwitch('enable-unsafe-swiftshader');
 }
 

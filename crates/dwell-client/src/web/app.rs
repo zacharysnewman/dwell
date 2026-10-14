@@ -954,6 +954,16 @@ impl Client {
         }
     }
 
+    /// Each job worker's WebAssembly memory (bytes), for the F3 memory line.
+    #[wasm_bindgen(js_name = workerMemory)]
+    pub fn worker_memory(&self) -> Vec<f64> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(Vec::new, |g| g.worker_memory())
+    }
+
     /// Closes the connection.
     pub fn close(&self) {
         let mut s = self.inner.borrow_mut();

@@ -1,5 +1,5 @@
 //! The worldgen goldens: the Rust generator reproduces, hash for hash, the chunks and LOD sections
-//! recorded by the C++ generator (server/tests/worldgen/golden, generator version 12). The same
+//! recorded by the C++ generator (shared/worldgen/golden, generator version 12). The same
 //! test runs under wasm32 in CI, so native and WASM agree too (ADR 0010).
 
 use dwell_world::lod::{LodCells, LodCoord, lod_hash};
@@ -30,7 +30,7 @@ fn check_registry(golden: &str) {
 #[test]
 fn chunks_match_the_golden_hashes() {
     let (registry, rows) = rows(include_str!(
-        "../../../server/tests/worldgen/golden/chunk-hashes.txt"
+        "../../../shared/worldgen/golden/chunk-hashes.txt"
     ));
     check_registry(&registry);
     assert!(rows.len() >= 30);
@@ -55,7 +55,7 @@ fn chunks_match_the_golden_hashes() {
 #[test]
 fn lod_sections_match_the_golden_hashes() {
     let (registry, rows) = rows(include_str!(
-        "../../../server/tests/worldgen/golden/lod-hashes.txt"
+        "../../../shared/worldgen/golden/lod-hashes.txt"
     ));
     check_registry(&registry);
     assert!(rows.len() >= 10);

@@ -2125,10 +2125,17 @@ Built so far (24e; nothing above is ticked until the client runs end to end on i
   Rust. The TS shell (menus, HUD, settings, master, rooms, hosting) drives it; Three.js, the
   TS sim, meshers, worldgen, LOD, game logic, protocol codec, session and transports are
   removed. A local world plays in Chromium (terrain, LOD to the horizon, editing, the HUD).
-- Outstanding: the e2e suite against the Rust client and `dwell-server` (with 24f), the CI client
-  jobs on the Rust build, and the frame-time comparison.
+- The e2e suite runs against the Rust client and `dwell-server`: 32 of 32 locally (Chromium headed
+  under Xvfb on SwiftShader's WebGPU). The CI client, e2e and release jobs build the Rust client
+  (`npm run build:wasm`: cargo and wasm-bindgen) instead of the Emscripten core; Electron turns
+  WebGPU on (Linux, and SwiftShader for its smoke test).
+- Outstanding: those CI jobs' first run, and the frame-time comparison.
 
 Deviations (24e, so far):
+- `?batch=1` (batched terrain draws) is dropped: the wgpu renderer draws each chunk and section
+  (`e2e/batching.spec.ts` became `terrainDraw.spec.ts`). The version-lock e2e rewrites the world
+  file's version through the client's own world-file code (`__dwell.setWorldFileVersion`): redb
+  checksums its pages, so the SQLite-era byte patch cannot work.
 - Room peer transports (friend worlds' WebRTC through the master's signalling) and the local
   loopback stay in TS and are handed to the Rust session as a generic JS transport object; Rust
   owns WebTransport and the dedicated-server WebRTC path.

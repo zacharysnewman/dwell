@@ -1,6 +1,14 @@
 import { buildInfo, formatBuildInfo, recordedVersion } from './buildInfo';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
-import { Client, hotbarSwatch, loadWasm, pingServer, swatchSize } from './engine/wasm';
+import {
+  Client,
+  hotbarSwatch,
+  loadWasm,
+  pingServer,
+  setWorldFileVersion,
+  swatchSize,
+  worldFileVersion,
+} from './engine/wasm';
 import {
   connectLocal,
   connectToCode,
@@ -90,6 +98,10 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /** The app version that last saved a world file (its bytes), or undefined. */
+  worldFileVersion(bytes: Uint8Array): string | undefined;
+  /** A world file's bytes rewritten to say `version` last saved it (RELEASES.md §6). */
+  setWorldFileVersion(bytes: Uint8Array, version: string): Uint8Array;
 }
 
 declare global {
@@ -350,6 +362,8 @@ async function start(): Promise<App | null> {
     renderStats: () => client.renderStats() as RenderStats,
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
+    worldFileVersion: (bytes) => worldFileVersion(bytes),
+    setWorldFileVersion: (bytes, version) => setWorldFileVersion(bytes, version),
   };
 
   const frame = (now: number): void => {
@@ -370,7 +384,7 @@ function memoryReport(app: App): MemoryReport | null {
   return {
     coreBytes: wasmMemoryBytes(),
     serverBytes: app.loopback ? app.loopback.heapBytes : null,
-    worldgenBytes: [],
+    worldgenBytes: [...app.client.workerMemory()],
     meshBytes: render.meshBytes,
     screenBytes: render.screenBytes,
     jsHeapBytes: jsHeapBytes(),

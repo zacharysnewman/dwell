@@ -57,7 +57,7 @@ fn shifted(g: ChunkGenerator) -> ChunkGenerator {
 
 static PLAYGROUND: LazyLock<Arc<Structure>> = LazyLock::new(|| {
     // The movement playground (PLAYER_CONTROLLER.md §9), shared with the C++ suites until the cutover.
-    let text = include_str!("../../../server/tests/player/playground.structure");
+    let text = include_str!("../../../shared/structures/playground.structure");
     Arc::new(Structure::parse(text).expect("the playground structure"))
 });
 
