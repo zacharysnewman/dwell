@@ -3,7 +3,6 @@ dist-launcher/
 dist-site/
 node_modules/
 package-lock.json
-public/wasm/
 test-results/
 playwright-report/
 src/world/blocks.gen.ts

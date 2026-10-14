@@ -1,6 +1,7 @@
 # 0006. World persistence: one SQLite database per world, holding all data
 
-- Status: Accepted
+- Status: Accepted; its engine superseded by [ADR 0028](0028-rust-port.md) §8 (redb and LZ4 replace
+  SQLite and zstd; the one-file-per-world model and its tables stand)
 - Date: 2026-09-25
 - Resolves: ARCHITECTURE.md Open Decisions #5
 

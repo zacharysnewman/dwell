@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates the block registries for C++ and TypeScript from shared/blocks/*.json
+// Generates the block registries for C++, TypeScript and Rust from shared/blocks/*.json
 // (docs/BLOCK_REGISTRY.md). Outputs are checked in; CI regenerates and fails on any diff.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -208,117 +208,16 @@ for (const s of states) {
 const colorNum = (c) => `0x${c.replace('#', '').toLowerCase()}`;
 const num = (v) => (Number.isInteger(v) ? `${v}.0f` : `${v}f`);
 
-// ---- C++ ---------------------------------------------------------------------------------------
-const cpp = [];
-cpp.push(`// ${header}`);
-cpp.push('#pragma once');
-cpp.push('');
-cpp.push('#include <array>');
-cpp.push('#include <cstddef>');
-cpp.push('#include <cstdint>');
-cpp.push('#include <string_view>');
-cpp.push('');
-cpp.push('#include "dwell/core/block_types.h"');
-cpp.push('');
-cpp.push('namespace dwell::core {');
-cpp.push('');
-cpp.push(`inline constexpr std::size_t kBlockCount = ${blocks.length};`);
-cpp.push(`inline constexpr std::size_t kPropertyCount = ${blocks.reduce((n, b) => n + b.props.length, 0)};`);
-cpp.push(`// FNV-1a 64 over the canonical state strings (each followed by '\\n') in runtime id order.`);
-cpp.push(`inline constexpr std::uint64_t kRegistryHash = 0x${hashHex}ull;`);
-cpp.push('');
-cpp.push('// Runtime state ids, by name (non-default property values are appended to the name).');
-cpp.push('namespace Materials {');
-for (const s of states) cpp.push(`inline constexpr MaterialId ${s.constName} = ${s.id};`);
-cpp.push(`inline constexpr MaterialId kCount = ${states.length};`);
-cpp.push('}  // namespace Materials');
-cpp.push('');
-const values = [];
-const propDefs = [];
-for (const b of blocks) {
-  b.propBegin = propDefs.length;
-  for (const p of b.props) {
-    propDefs.push(`    {"${p.name}", ${values.length}, ${p.values.length}},`);
-    for (const v of p.values) values.push(`    "${v}",`);
-  }
-}
-cpp.push('inline constexpr std::array<std::string_view, ' + Math.max(values.length, 1) + '> kPropertyValues{{');
-cpp.push(...(values.length ? values : ['    "",']));
-cpp.push('}};');
-cpp.push('');
-cpp.push('inline constexpr std::array<PropertyDef, ' + Math.max(propDefs.length, 1) + '> kProperties{{');
-cpp.push(...(propDefs.length ? propDefs : ['    {"", 0, 0},']));
-cpp.push('}};');
-cpp.push('');
-cpp.push('inline constexpr std::array<BlockDef, kBlockCount> kBlocks{{');
-for (const b of blocks) {
-  cpp.push(`    {"${b.id}", ${b.first}, ${b.count}, ${b.propBegin}, ${b.props.length}},`);
-}
-cpp.push('}};');
-cpp.push('');
-const f = (v) => (Number.isInteger(v) ? `${v}.0f` : `${v}f`);
-const faceRows = [];
-const shapeRows = [];
-for (const t of shapeTable) {
-  const sh = t.shape;
-  const first = faceRows.length;
-  for (const face of sh?.faces ?? []) {
-    const pts = [...face.pts, ...Array(4 - face.pts.length).fill([0, 0, 0])];
-    faceRows.push(`    {${face.tag}, ${face.pts.length}, {${pts.map((p) => `{${p.map(f).join(', ')}}`).join(', ')}}},`);
-  }
-  shapeRows.push(
-    sh
-      ? `    {${first}, ${sh.faces.length}, {${sh.corners.join(', ')}}, ${sh.inverted}, ${sh.diagonal}, ${sh.convex}, ${f(sh.volume)}, {{${sh.sides.map((p) => `{${p.join(', ')}}`).join(', ')}}}, ${sh.fullTop}, ${sh.fullBottom}, ${f(sh.minY)}, ${f(sh.maxY)}},`
-      : `    {0, 0, {0, 0, 0, 0}, false, 0, true, 0.0f, {{{0, 0}, {0, 0}, {0, 0}, {0, 0}}}, false, false, 0.0f, 0.0f},`,
-  );
-}
-cpp.push(`inline constexpr std::array<ShapeFace, ${Math.max(faceRows.length, 1)}> kShapeFaces{{`);
-cpp.push(...faceRows);
-cpp.push('}};');
-cpp.push('');
-cpp.push(`inline constexpr std::array<ShapeInfo, ${shapeRows.length}> kShapes{{`);
-cpp.push(...shapeRows);
-cpp.push('}};');
-cpp.push('');
-cpp.push('inline constexpr std::array<MaterialInfo, Materials::kCount> kMaterials{{');
-states.forEach((s, i) => {
-  const d = s.block.def;
-  const facing = d.facingProperty ? `Facing::k${pascal(s.values[d.facingProperty])}` : 'Facing::kNone';
-  const f = [
-    `.name = "${s.string}"`,
-    `.density_kg_m3 = ${num(d.density)}`,
-    `.solid = ${d.shape !== 'empty'}`,
-    `.indestructible = ${!!d.indestructible}`,
-    `.shape = VoxelShape::${SHAPES[d.shape]}`,
-    `.shape_index = ${s.shapeIndex}`,
-    `.flooded = ${s.flooded}`,
-    `.climbable = ${!!d.climbable}`,
-    `.facing = ${facing}`,
-    `.climb_speed_scale = ${num(d.climbSpeedScale ?? 1)}`,
-    `.liquid = ${!!d.liquid}`,
-    `.placeable = ${!!s.placeable}`,
-    `.block = ${blocks.indexOf(s.block)}`,
-  ];
-  cpp.push(`    {${f.join(', ')}},  // ${i}`);
-});
-cpp.push('}};');
-cpp.push('');
-cpp.push('}  // namespace dwell::core');
-cpp.push('');
-writeFileSync(join(root, 'server/core/include/dwell/core/blocks.gen.h'), cpp.join('\n'));
-
 // ---- TypeScript --------------------------------------------------------------------------------
 const ts = [];
 ts.push(`// ${header}`);
-ts.push("import type { TileName } from '../render/textures';");
-ts.push('');
 ts.push("export type MaterialLook = 'cube' | 'shaped' | 'ladder' | 'water';");
 ts.push('');
-ts.push('/** Texture tiles (render/textures.ts) per face group; untextured materials use `color`. */');
+ts.push('/** Texture tiles (dwell-mesh textures.rs) per face group; untextured materials use `color`. */');
 ts.push('export interface MaterialTextures {');
-ts.push('  top: TileName;');
-ts.push('  side: TileName;');
-ts.push('  bottom: TileName;');
+ts.push('  top: string;');
+ts.push('  side: string;');
+ts.push('  bottom: string;');
 ts.push('}');
 ts.push('');
 ts.push('export interface BlockProperty {');
@@ -439,6 +338,98 @@ for (let first = 0; first < states.length; first += CHUNK) ts.push(`  ...STATES_
 ts.push('];');
 ts.push('');
 writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.join('\n'));
+
+// ---- Rust (crates/dwell-blocks, ADR 0028): tables only; code looks states up by name --------------
+{
+  const rf = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
+  const rstr = (v) => JSON.stringify(v);
+  const rs = [];
+  rs.push(`// ${header}`);
+  rs.push('');
+  rs.push('use crate::types::*;');
+  rs.push('');
+  rs.push('/// FNV-1a 64 over the canonical state strings (each followed by a newline) in runtime id order.');
+  rs.push(`pub const REGISTRY_HASH: u64 = 0x${hashHex};`);
+  rs.push('');
+  const values = [];
+  const props = [];
+  const blockRows = [];
+  for (const b of blocks) {
+    const begin = props.length;
+    for (const p of b.props) {
+      props.push(`    PropertyDef { name: ${rstr(p.name)}, first_value: ${values.length}, value_count: ${p.values.length} },`);
+      for (const v of p.values) values.push(`    ${rstr(v)},`);
+    }
+    blockRows.push(
+      `    BlockDef { name: ${rstr(b.id)}, first_state: ${b.first}, state_count: ${b.count}, first_property: ${begin}, property_count: ${b.props.length} },`,
+    );
+  }
+  rs.push(`pub static PROPERTY_VALUES: [&str; ${values.length}] = [`);
+  rs.push(...values);
+  rs.push('];');
+  rs.push('');
+  rs.push(`pub static PROPERTIES: [PropertyDef; ${props.length}] = [`);
+  rs.push(...props);
+  rs.push('];');
+  rs.push('');
+  rs.push(`pub static BLOCKS: [BlockDef; ${blocks.length}] = [`);
+  rs.push(...blockRows);
+  rs.push('];');
+  rs.push('');
+  const faces = [];
+  const shapes = [];
+  for (const t of shapeTable) {
+    const sh = t.shape;
+    const first = faces.length;
+    for (const face of sh?.faces ?? []) {
+      const pts = [...face.pts, ...Array(4 - face.pts.length).fill([0, 0, 0])];
+      faces.push(`    ShapeFace { tag: ${face.tag}, count: ${face.pts.length}, v: [${pts.map((q) => `[${q.map(rf).join(', ')}]`).join(', ')}] },`);
+    }
+    shapes.push(
+      sh
+        ? `    ShapeInfo { first_face: ${first}, face_count: ${sh.faces.length}, corners: [${sh.corners.join(', ')}], inverted: ${sh.inverted}, diagonal: ${sh.diagonal}, convex: ${sh.convex}, volume: ${rf(sh.volume)}, sides: [${sh.sides.map((q) => `[${q.join(', ')}]`).join(', ')}], full_top: ${sh.fullTop}, full_bottom: ${sh.fullBottom}, min_y: ${rf(sh.minY)}, max_y: ${rf(sh.maxY)} },`
+        : '    ShapeInfo::EMPTY,',
+    );
+  }
+  rs.push(`pub static SHAPE_FACES: [ShapeFace; ${faces.length}] = [`);
+  rs.push(...faces);
+  rs.push('];');
+  rs.push('');
+  rs.push(`pub static SHAPES: [ShapeInfo; ${shapes.length}] = [`);
+  rs.push(...shapes);
+  rs.push('];');
+  rs.push('');
+  const RS_SHAPES = { empty: 'Empty', full: 'Full', shaped: 'Shaped' };
+  rs.push(`pub static STATES: [StateInfo; ${states.length}] = [`);
+  for (const st of states) {
+    const d = st.block.def;
+    const t = d.textures ? (typeof d.textures === 'string' ? { top: d.textures, side: d.textures, bottom: d.textures } : d.textures) : null;
+    const facing = d.facingProperty ? `Facing::${pascal(st.values[d.facingProperty])}` : 'Facing::None';
+    const fields = [
+      `name: ${rstr(st.string)}`,
+      `block: ${blocks.indexOf(st.block)}`,
+      `density_kg_m3: ${rf(d.density)}`,
+      `solid: ${d.shape !== 'empty'}`,
+      `indestructible: ${!!d.indestructible}`,
+      `shape: VoxelShape::${RS_SHAPES[d.shape]}`,
+      `shape_index: ${st.shapeIndex}`,
+      `flooded: ${st.flooded}`,
+      `climbable: ${!!d.climbable}`,
+      `facing: ${facing}`,
+      `climb_speed_scale: ${rf(d.climbSpeedScale ?? 1)}`,
+      `liquid: ${!!d.liquid}`,
+      `placeable: ${!!st.placeable}`,
+      `look: ${rstr(st.block.look)}`,
+      `color: 0x${d.color.replace('#', '').toLowerCase()}`,
+      `opacity: ${rf(d.opacity ?? 1)}`,
+      `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
+    ];
+    rs.push(`    StateInfo { ${fields.join(', ')} },`);
+  }
+  rs.push('];');
+  rs.push('');
+  writeFileSync(join(root, 'crates/dwell-blocks/src/blocks.gen.rs'), rs.join('\n'));
+}
 
 // ---- Shared vector: the canonical strings in id order and the hash (both sides' tests read it) -----
 const vec = [`# ${header}`, `hash ${hashHex}`, ...states.map((s) => `${s.id} ${s.string}`), ''];

@@ -3,9 +3,9 @@
 // (render/look.ts), ARCHITECTURE.md §5, §6.6. The settings
 // are kept in this browser. In a game the panel is also the game menu (Phase 5a): Resume and Quit
 // to main menu above the sliders; it opens when the pointer is released (Esc).
-import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from '../lod/detail';
-import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from '../render/fog';
-import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from '../render/look';
+import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
+import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
+import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -36,7 +36,7 @@ export interface Settings {
   detail: DetailSettings;
   /** Tone-mapping exposure (render/look.ts). */
   exposure: number;
-  /** Sky rotation in degrees, 0–360 (render/skyFrame.ts; this browser only). */
+  /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
 }
 

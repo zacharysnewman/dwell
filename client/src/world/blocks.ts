@@ -1,7 +1,7 @@
 // The block registry (docs/BLOCK_REGISTRY.md, ARCHITECTURE.md §6.1): namespaced blocks with typed
 // properties, canonical state strings and dense runtime state ids. The tables are generated
-// (blocks.gen.ts, from shared/blocks/*.json) and mirror the C++ registry id for id; this is the
-// lookup and string layer over them (C++: block_registry.h).
+// (blocks.gen.ts, from shared/blocks/*.json) and mirror the Rust registry id for id; this is the
+// lookup and string layer over them (Rust: crates/dwell-blocks).
 import {
   BLOCK_DEFS,
   REGISTRY_HASH,

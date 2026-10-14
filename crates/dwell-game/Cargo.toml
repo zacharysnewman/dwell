@@ -1,0 +1,17 @@
+[package]
+name = "dwell-game"
+description = "Dwell's client game logic: remote interpolation, eye smoothing, input and touch state machines, flight, block interaction, chunk streaming (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-physics = { path = "../dwell-physics" }
+dwell-protocol = { path = "../dwell-protocol" }
+dwell-world = { path = "../dwell-world" }
+
+[lints]
+workspace = true

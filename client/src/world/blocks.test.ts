@@ -85,7 +85,7 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
   it('is the registry the determinism goldens were generated with (regenerate them when ids move)', () => {
     for (const name of ['chunk-hashes', 'lod-hashes']) {
       const text = readFileSync(
-        new URL(`../../../server/tests/worldgen/golden/${name}.txt`, import.meta.url),
+        new URL(`../../../shared/worldgen/golden/${name}.txt`, import.meta.url),
         'utf8',
       );
       const recorded = /^# registry ([0-9a-f]+)$/m.exec(text)?.[1];

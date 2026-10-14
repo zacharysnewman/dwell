@@ -1,7 +1,8 @@
 // End-to-end tests (Phase 1 exit criteria): a real native server and the built client in Chromium.
-// Prerequisites: `npm run build:wasm && npm run build` here, the server built with the `dev`
-// CMake preset (or DWELL_SERVER_BIN pointing at dwell_server), and `npm ci` in services/master
-// (the local master for friend worlds).
+// Prerequisites: `npm run build:wasm && npm run build` here, `cargo build --release -p dwell-server`
+// (or DWELL_SERVER_BIN pointing at a dwell-server), and `npm ci` in services/master (the local
+// master for friend worlds). WebGPU: headless Chromium's software adapter loses its device when a
+// canvas presents, so the browser runs headed (under Xvfb on CI: `xvfb-run npx playwright test`).
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
@@ -20,12 +21,18 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://localhost:4173/dwell/',
+    // Headed: see above. The software adapter (SwiftShader's Vulkan) draws WebGPU without a GPU.
+    headless: false,
     launchOptions: {
       // Local sandboxes may provide a preinstalled Chromium; CI uses `playwright install`.
       ...(process.env.DWELL_CHROMIUM ? { executablePath: process.env.DWELL_CHROMIUM } : {}),
       // Two players run side by side: keep background pages' timers and frames running.
       args: [
         '--enable-unsafe-swiftshader',
+        '--enable-unsafe-webgpu',
+        '--enable-features=Vulkan',
+        '--use-vulkan=swiftshader',
+        '--use-webgpu-adapter=swiftshader',
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
         '--disable-backgrounding-occluded-windows',

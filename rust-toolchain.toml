@@ -1,4 +1,4 @@
-# Pinned Rust toolchain for all Rust code in the repo (server/net/wt; later services/).
+# Pinned Rust toolchain for all Rust code in the repo (the workspace, crates/).
 [toolchain]
 channel = "1.94.1"
 components = ["clippy", "rustfmt"]

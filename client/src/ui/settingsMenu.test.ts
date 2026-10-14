@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { FOG_LIMITS, sanitizeFog } from '../render/fog';
+import { FOG_LIMITS, sanitizeFog } from './viewSettings';
 import {
   DETAIL_LIMITS,
   defaultDetail,
   detailLimits,
   MOBILE_MEMORY_MAX_MB,
   sanitizeDetail,
-} from '../lod/detail';
+} from './detailSettings';
 import {
   formatMetres,
   settingsJson,

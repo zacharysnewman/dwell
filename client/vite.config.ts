@@ -88,15 +88,13 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(version),
   },
   plugins: [releaseFiles()],
-  // Module workers so the local-mode worker can load the WASM core with a dynamic import.
+  // Module workers: the job and local-mode workers load the Rust client's WASM module.
   worker: {
     format: 'es',
   },
   build: {
     target: 'es2022',
     sourcemap: true,
-    // Three.js's WebGLRenderer alone is ~500 kB minified (~130 kB gzip).
-    chunkSizeWarningLimit: 700,
   },
   test: {
     environment: 'node',

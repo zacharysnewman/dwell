@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { SHAPES, STATE_DEFS, parseState, type ShapeDef, type ShapeFace } from './blocks';
-import { faceCovered } from '../mesh/mesher';
 
 type V3 = readonly [number, number, number];
 
@@ -73,98 +72,4 @@ describe('shape table', () => {
     expect(isConvex(shapeOf('dwell:stone'))).toBe(true);
     expect(SHAPES[0]?.faces).toEqual([]);
   });
-});
-
-// Whether (a, b) on the plane of `axis` lies inside a polygon (projected along the axis).
-function inPolygon(f: ShapeFace, axis: number, a: number, b: number): boolean {
-  const u = (axis + 1) % 3;
-  const v = (axis + 2) % 3;
-  let sign = 0;
-  for (let i = 0; i < f.pts.length; i++) {
-    const p = vertex(f, i);
-    const q = vertex(f, (i + 1) % f.pts.length);
-    const c = (q[u] ?? 0) - (p[u] ?? 0);
-    const cross2 = c * (b - (p[v] ?? 0)) - ((q[v] ?? 0) - (p[v] ?? 0)) * (a - (p[u] ?? 0));
-    if (Math.abs(cross2) < 1e-9) continue;
-    const s = cross2 > 0 ? 1 : -1;
-    if (sign === 0) sign = s;
-    else if (s !== sign) return false;
-  }
-  return sign !== 0;
-}
-
-/** Height of the shape's top surface at (x, z) in the cell (cells; mirrors SurfaceHeight in block_shape.cpp). */
-function surface(s: ShapeDef, x: number, z: number): number {
-  const h = (i: number): number => (s.corners[i] ?? 0) / 2;
-  if (s.diagonal === 0) {
-    return x >= z
-      ? h(0) + (h(1) - h(0)) * x + (h(2) - h(1)) * z
-      : h(0) + (h(2) - h(3)) * x + (h(3) - h(0)) * z;
-  }
-  return x + z <= 1
-    ? h(0) + (h(1) - h(0)) * x + (h(3) - h(0)) * z
-    : h(2) + (h(3) - h(2)) * (1 - x) + (h(1) - h(2)) * (1 - z);
-}
-
-/** Is there solid on the plane of the cell face `face`, at in-plane point (a, b)? */
-function solidOnFace(s: ShapeDef, face: number, a: number, b: number): boolean {
-  const axis = face >> 1;
-  if (axis === 1) return face === 2 ? s.fullTop : s.fullBottom;
-  // a runs along u = axis + 1, b along v = axis + 2: for ±X (y, z), for ±Z (x, y).
-  const x = axis === 0 ? (face === 0 ? 1 : 0) : a;
-  const z = axis === 0 ? b : face === 4 ? 1 : 0;
-  const y = axis === 0 ? a : b;
-  const h = surface(s, x, z);
-  const lo = s.inverted ? 1 - h : 0;
-  const hi = s.inverted ? 1 : h;
-  return hi - lo > 1e-6 && y > lo + 1e-6 && y < hi - 1e-6;
-}
-
-describe('shape adjacency', () => {
-  it('leaves no holes between any two shapes on any side (the mesher culls exactly)', () => {
-    const distinct = new Map<number, ShapeDef>();
-    for (const st of STATE_DEFS) {
-      if (st.shape !== 0 && !distinct.has(st.shape))
-        distinct.set(st.shape, SHAPES[st.shape] as ShapeDef);
-    }
-    expect(distinct.size).toBeGreaterThanOrEqual(1);
-    const N = 7;
-    let checked = 0;
-    const failures: string[] = [];
-    for (const [ia, a] of [...distinct.entries()]) {
-      for (const [ib, b] of [...distinct.entries()]) {
-        for (let face = 0; face < 6; face++) {
-          const axis = face >> 1;
-          const opposite = face ^ 1;
-          const coveredA = faceCovered(a, face, b);
-          const coveredB = faceCovered(b, opposite, a);
-          for (let i = 0; i < N; i++) {
-            for (let j = 0; j < N; j++) {
-              const pu = (i + 0.31) / N;
-              const pv = (j + 0.57) / N;
-              const drawn =
-                (coveredA
-                  ? 0
-                  : a.faces.filter((f) => f.tag === face && inPolygon(f, axis, pu, pv)).length) +
-                (coveredB
-                  ? 0
-                  : b.faces.filter((f) => f.tag === opposite && inPolygon(f, axis, pu, pv)).length);
-              const inA = solidOnFace(a, face, pu, pv);
-              const inB = solidOnFace(b, opposite, pu, pv);
-              checked++;
-              // Solid on exactly one side: that surface is drawn once. Neither: nothing is drawn.
-              if ((inA !== inB && drawn !== 1) || (!inA && !inB && drawn !== 0)) {
-                if (failures.length < 5)
-                  failures.push(
-                    `${String(ia)} | ${String(ib)} face ${String(face)} at ${String(pu)},${String(pv)}: drawn ${String(drawn)}`,
-                  );
-              }
-            }
-          }
-        }
-      }
-    }
-    expect(failures).toEqual([]);
-    expect(checked).toBeGreaterThan(0);
-  }, 120_000);
 });

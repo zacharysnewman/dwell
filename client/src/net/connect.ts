@@ -1,5 +1,9 @@
-// Chooses how to reach a server and runs the session (ARCHITECTURE.md §8.1, §10).
+// Chooses how to reach a server and hands the connection to the Rust client (ARCHITECTURE.md
+// §8.1, §10): it connects to dedicated servers itself (WebTransport, or WebRTC to their ICE-lite
+// endpoint) and runs the session; friend worlds' peer connections and local mode's loopback are
+// made here and handed to it as transports.
 import { IndexedDbKeyStore, loadOrCreateDeviceKey, type DeviceKey } from '../identity/deviceKey';
+import type { Client } from '../engine/wasm';
 import type { Invite } from './invite';
 import { MasterClient, MasterError, serverInvite } from './master';
 import { parseInvite } from './invite';
@@ -8,50 +12,58 @@ import { RoomSocket } from './roomSocket';
 import { GENERATORS, type LocalWorld } from '../local/world';
 import { sameLine } from '../version/semver';
 import { LoopbackTransport } from './loopback';
-import { SimulatedTransport, type NetConditions } from './netsim';
-import { ClientSession } from './session';
 import type { Transport } from './Transport';
-import { isWebRtcSupported, WebRtcTransport } from './webRtc';
-import { isWebTransportSupported, WebTransportTransport } from './webTransport';
+
+export type TransportPreference = 'auto' | 'webtransport' | 'webrtc';
 
 export interface ConnectOptions {
-  displayName: string;
   clientVersion: string;
   transport?: TransportPreference;
-  /** Simulated latency / jitter / loss (`?netsim=`), for testing prediction. */
-  netsim?: NetConditions | null;
   /** Local mode: the world to open (from the menu, or `?world=`, `?seed=`). */
   localWorld?: LocalWorld;
-}
-
-function simulate(transport: Transport, options: ConnectOptions): Transport {
-  return options.netsim ? new SimulatedTransport(transport, options.netsim) : transport;
 }
 
 export class TransportUnavailableError extends Error {
   override name = 'TransportUnavailableError';
 }
 
-export type TransportPreference = 'auto' | 'webtransport' | 'webrtc';
+export function isWebTransportSupported(): boolean {
+  return typeof globalThis.WebTransport === 'function';
+}
+
+export function isWebRtcSupported(): boolean {
+  return typeof globalThis.RTCPeerConnection === 'function';
+}
+
+/** The device key, loaded once, and given to the client to sign its joins with (ADR 0004). */
+export async function identify(client: Client): Promise<DeviceKey> {
+  const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
+  client.setIdentity(key.publicKey, (transcript: Uint8Array<ArrayBuffer>) => key.sign(transcript));
+  return key;
+}
 
 /**
- * Opens the best available transport to the invited server (ARCHITECTURE.md §8.1): WebTransport
- * when supported, otherwise — or if it fails — WebRTC when the invite allows it (ADR 0008).
+ * Connects to the invited server (ARCHITECTURE.md §8.1): WebTransport when supported, otherwise —
+ * or if it fails — WebRTC when the invite allows it (ADR 0008).
  */
-export async function openTransport(
+export async function connectToInvite(
+  client: Client,
   invite: Invite,
   preference: TransportPreference = 'auto',
-): Promise<Transport> {
+): Promise<void> {
   const canWebRtc = invite.webrtc !== null && isWebRtcSupported();
   if (preference !== 'webrtc' && isWebTransportSupported()) {
     try {
-      return await WebTransportTransport.connect(invite.url, invite.certHash);
+      await client.connectWebTransport(invite.url, invite.certHash);
+      return;
     } catch (err) {
       if (preference === 'webtransport' || !canWebRtc) throw err;
     }
   }
   if (canWebRtc && invite.webrtc && preference !== 'webtransport') {
-    return WebRtcTransport.connect(invite.webrtc, invite.certHash);
+    const w = invite.webrtc;
+    await client.connectWebRtc(w.ip, w.port, w.ufrag, w.pwd, invite.certHash);
+    return;
   }
   throw new TransportUnavailableError(
     invite.webrtc
@@ -60,31 +72,22 @@ export async function openTransport(
   );
 }
 
-export async function connectToInvite(
-  invite: Invite,
-  options: ConnectOptions,
-): Promise<ClientSession> {
-  const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
-  const transport = simulate(await openTransport(invite, options.transport), options);
-  const session = new ClientSession(transport, key, options);
-  session.start();
-  return session;
-}
-
 /**
- * A joined local world: its session, a way to save the world now (e.g. before quitting), and what
- * hosting it needs (the loopback to relay guests through, and the player's key).
+ * A joined local world: a way to save the world now (e.g. before quitting), and what hosting it
+ * needs (the loopback to relay guests through, and the player's key).
  */
 export interface LocalSession {
-  session: ClientSession;
   save: () => Promise<boolean>;
   loopback: LoopbackTransport;
   key: DeviceKey;
 }
 
 /** Starts the integrated server in a worker and joins it (local mode, ARCHITECTURE.md §2.1). */
-export async function connectLocal(options: ConnectOptions): Promise<LocalSession> {
-  const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
+export async function connectLocal(
+  client: Client,
+  key: DeviceKey,
+  options: ConnectOptions,
+): Promise<LocalSession> {
   const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
   const world = options.localWorld ?? { worldSeed: 0, generatorVersion: GENERATORS.terrain };
   const loopback = await LoopbackTransport.start(worker, world);
@@ -96,10 +99,8 @@ export async function connectLocal(options: ConnectOptions): Promise<LocalSessio
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') save();
   });
-  const transport = simulate(loopback, options);
-  const session = new ClientSession(transport, key, options);
-  session.start();
-  return { session, save: () => loopback.save(), loopback, key };
+  client.connectTransport(loopback);
+  return { save: () => loopback.save(), loopback, key };
 }
 
 /** How long a guest waits after the room says the host left, for the host's Reject to arrive. */
@@ -134,13 +135,14 @@ export class HostVersionError extends Error {
 /**
  * Joins whatever a join code names (§10.3): a dedicated server (connected to directly, like an
  * invite link: the master supplies its current address and certificate) or a browser-hosted
- * friend world (connectToRoom).
+ * friend world (connectToRoom). Returns what to do once joined (a server's receipt).
  */
 export async function connectToCode(
+  client: Client,
   master: MasterClient,
   code: string,
   options: ConnectOptions,
-): Promise<ClientSession> {
+): Promise<{ onJoined?: () => void }> {
   let found;
   try {
     found = await master.resolve({ code });
@@ -156,22 +158,20 @@ export async function connectToCode(
   if (hostVersion && !sameLine(hostVersion, options.clientVersion)) {
     throw new HostVersionError(hostVersion, options.clientVersion);
   }
-  if (found.kind === 'room') return connectToRoom(master, code, options);
+  if (found.kind === 'room') {
+    await connectToRoom(client, master, code);
+    return {};
+  }
   const invite = parseInvite(`?${new URLSearchParams(serverInvite(found.server)).toString()}`);
   if (!invite) throw new Error('The master gave an unusable address for that server.');
-  const session = await connectToInvite(invite, options);
+  await connectToInvite(client, invite, options.transport);
   // Once joined, confirm it to the master: players' receipts verify a public server (5e).
   const serverCode = found.server.code;
-  let confirmed = false;
-  const unsubscribe = session.subscribe((state) => {
-    if (state.phase !== 'joined' || confirmed) return;
-    confirmed = true;
-    queueMicrotask(() => {
-      unsubscribe();
-    });
-    master.receipt(serverCode).catch(() => undefined);
-  });
-  return session;
+  return {
+    onJoined: () => {
+      master.receipt(serverCode).catch(() => undefined);
+    },
+  };
 }
 
 /**
@@ -180,10 +180,10 @@ export async function connectToCode(
  * while playing, so the room counts this guest and can say when the host leaves.
  */
 export async function connectToRoom(
+  client: Client,
   master: MasterClient,
   code: string,
-  options: ConnectOptions,
-): Promise<ClientSession> {
+): Promise<void> {
   if (!isWebRtcSupported()) throw new TransportUnavailableError('This browser has no WebRTC.');
   let socket: RoomSocket;
   let iceServers: RTCIceServer[];
@@ -221,36 +221,28 @@ export async function connectToRoom(
     throw room.hostLeft ? new Error('The host left.') : roomError(err);
   }
   const peer = transport;
-  const session = new ClientSession(
-    simulate(
-      {
-        kind: peer.kind,
-        binding: peer.binding,
-        setHandlers: (handlers) => {
-          peer.setHandlers({
-            ...handlers,
-            onClose: (info) => {
-              socket.close();
-              handlers.onClose(info);
-            },
-          });
-        },
-        sendReliable: (channel, bytes) => {
-          peer.sendReliable(channel, bytes);
-        },
-        sendDatagram: (bytes) => {
-          peer.sendDatagram(bytes);
-        },
-        close: () => {
+  const wrapped: Transport = {
+    kind: peer.kind,
+    binding: peer.binding,
+    setHandlers: (handlers) => {
+      peer.setHandlers({
+        ...handlers,
+        onClose: (info) => {
           socket.close();
-          peer.close();
+          handlers.onClose(info);
         },
-      },
-      options,
-    ),
-    await loadOrCreateDeviceKey(new IndexedDbKeyStore()),
-    options,
-  );
-  session.start();
-  return session;
+      });
+    },
+    sendReliable: (channel, bytes) => {
+      peer.sendReliable(channel, bytes);
+    },
+    sendDatagram: (bytes) => {
+      peer.sendDatagram(bytes);
+    },
+    close: () => {
+      socket.close();
+      peer.close();
+    },
+  };
+  client.connectTransport(wrapped);
 }

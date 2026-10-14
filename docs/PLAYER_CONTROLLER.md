@@ -3,33 +3,37 @@
 > Part of the architecture documentation (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §9).
 > Keep this file current under the same rule as `ARCHITECTURE.md` (see `CLAUDE.md`).
 >
-> Status: **[built]** (Phase 2) — the controller, voxel queries, terrain collision, networking with
-> prediction and reconciliation, and presentation (`server/core/include/dwell/player`,
-> `server/core/src/player`, `server/tests/player`, `client/src/game`). Not yet: animation (no
-> character models), and the Tier 1 interactions of §6.6 (push cap, crush, riding clusters —
-> Phase 20).
+> Status: **[built]** (Phase 2; on Rust and Rapier since Phase 24, [ADR 0028](./adr/0028-rust-port.md))
+> — the controller, voxel queries, terrain collision, networking with prediction and
+> reconciliation, and presentation (`crates/dwell-physics`, its suites in
+> `crates/dwell-physics/tests`; the server side in `crates/dwell-sim`; the client side in
+> `crates/dwell-game` and `crates/dwell-client`). Not yet: animation (no character models), and the
+> Tier 1 interactions of §6.6 (push cap, crush, riding clusters — Phase 20).
 
 This spec ports the **Physics Player Controller (PPC)** —
 [`zacharysnewman/physics-player-controller`](https://github.com/zacharysnewman/physics-player-controller),
 specifically its deterministic Photon Quantum 3 port in `Quantum~/` — into Dwell's architecture:
-C++20, Jolt Physics, a server-authoritative simulation with client prediction, and a voxel world.
+Rust, Rapier (`rapier3d-f64` with `enhanced-determinism`), a server-authoritative simulation with
+client prediction, and a voxel world.
 
 The PPC's **behaviour, layer model, system order, tuning, and bug fixes are kept**. What changes is
-the *host*: Quantum ECS systems become ordered C++ passes in `server/core/player`, Quantum physics
-becomes Jolt, `FP` fixed-point becomes `float`, Quantum rollback becomes server reconciliation, and
-generic colliders/triggers become voxel-grid queries and voxel materials.
+the *host*: Quantum ECS systems become ordered Rust passes in `crates/dwell-physics`
+(`controller.rs`), Quantum physics becomes Rapier behind Dwell's own wrapper (`physics.rs`: `Physics`,
+an opaque `BodyHandle`, `DVec3`/`Vec3`; no Rapier types outside the crate), `FP` fixed-point
+becomes `f32` (positions `f64`), Quantum rollback becomes server reconciliation, and generic
+colliders/triggers become voxel-grid queries and voxel materials.
 
 ---
 
 ## 1. Model
 
-The player is a **dynamic Jolt rigid body** (capsule) driven by **velocity layers**:
+The player is a **dynamic Rapier rigid body** (capsule) driven by **velocity layers**:
 
 1. Each tick, independent layers compute velocity contributions — *horizontal* (walk/run,
    external pushes), *vertical* (gravity, jump, ground following, launches), and optional
-   *exclusive* layers (climb, swim) that replace the others while active.
+   *exclusive* layers (climb, swim, fly) that replace the others while active.
 2. The aggregate pass sums them into a **target velocity** and writes it directly to the body.
-3. The Jolt step resolves contacts. Anything that moved the body away from its target — a
+3. The Rapier step resolves contacts. Anything that moved the body away from its target — a
    collision, a falling cluster, an explosion — is detected on the next tick as the difference
    between the body's actual velocity and last tick's contribution, **absorbed** into an
    *external velocity* term, and **decays** (friction on the ground, drag in the air).
@@ -38,9 +42,9 @@ That absorption loop is what makes the character *physically reactive* — it is
 structures, thrown by explosions, carried by moving clusters, and pushes loose blocks — while the
 layers keep the movement tight and responsive.
 
-This supersedes the earlier `CharacterVirtual` design. A kinematic/virtual character cannot be
-pushed by the solver; the PPC model gets that for free and the Quantum port has already fixed the
-classic dynamic-controller problems (hovering, slope launches, stair hops, double jumps).
+A kinematic character cannot be pushed by the solver; the PPC model gets that for free and the
+Quantum port has already fixed the classic dynamic-controller problems (hovering, slope launches,
+stair hops, double jumps).
 
 ---
 
@@ -48,108 +52,117 @@ classic dynamic-controller problems (hovering, slope launches, stair hops, doubl
 
 | PPC Quantum | Dwell |
 |---|---|
-| `PPCCharacter` component (DSL) | `struct PlayerController` — plain data, trivially copyable (for rewind/replay and snapshots) |
-| `PPCConfig` asset (`FP` fields) | `struct PlayerControllerConfig` — `float` fields, defined in `shared/protocol` and identical on server and client |
-| `SystemMainThreadFilter` systems in `PPCSystemGroup` | Ordered free functions `player::step*(PlayerCtx&)` called by `player::tick()` |
-| `PhysicsBody3D` dynamic, `RotationFreeze.FreezeAll`, `GravityScale 0`, no sleeping | Jolt `EMotionType::Dynamic`, `mAllowedDOFs = EAllowedDOFs::TranslationX\|Y\|Z`, `mGravityFactor = 0`, `mAllowSleeping = false`, `mLinearDamping = 0` |
-| Frictionless `PhysicsMaterial` (created on demand) | Body `mFriction = 0`, `mRestitution = 0` |
-| `Shape3D.CreateCapsule(radius, extent)` | `JPH::CapsuleShape(halfHeightOfCylinder, radius)` — same convention (`extent` = half cylinder height) |
-| Crouch shape swap + `ResetCenterOfMass`/`ResetInertia` | `BodyInterface::SetShape(id, crouchCapsule, updateMassProperties = true, EActivation::Activate)`; both capsules are prebuilt |
-| `f.Physics3D.RaycastAll` / `OverlapShape` | `VoxelQuery` (grid DDA / cell overlap) for terrain **plus** Jolt `NarrowPhaseQuery::CastRay` / `CollideShape` for dynamic layers (§5) |
-| `PPCLadder` trigger entities | **Climbable voxel materials** with facing variants (§6.3) |
-| `EntityRef` ground | `GroundRef { kind: None \| Terrain \| Tier1Body \| Player; id }` |
-| `FP` seconds for timers | **Integer ticks** (config seconds rounded to ticks at load) |
+| `PPCCharacter` component (DSL) | `struct PlayerController` — plain data, `Copy` (for history buffers and snapshots) |
+| `PPCConfig` asset (`FP` fields) | `struct PlayerControllerConfig` (`config.rs`) — `f32` fields, one Rust definition the server and the client both compile |
+| `SystemMainThreadFilter` systems in `PPCSystemGroup` | Ordered passes `Players::step_*` run by `Players::tick()` |
+| `PhysicsBody3D` dynamic, `RotationFreeze.FreezeAll`, `GravityScale 0`, no sleeping | `RigidBodyBuilder::dynamic()` with `lock_rotations()`, `gravity_scale(0)`, `can_sleep(false)`, `linear_damping(0)`, and `ccd_enabled(true)` (§6.7) |
+| Frictionless `PhysicsMaterial` (created on demand) | Collider `friction(0)`, `restitution(0)`, both with the `Min` combine rule |
+| `Shape3D.CreateCapsule(radius, extent)` | `SharedShape::capsule_y(halfCylinder, radius)` — same convention (`extent` = half cylinder height) |
+| Crouch shape swap + `ResetCenterOfMass`/`ResetInertia` | `Collider::set_shape` with the crouched capsule; the collider's fixed mass keeps the body's mass |
+| `f.Physics3D.RaycastAll` / `OverlapShape` | `VoxelQuery` (grid DDA / cell overlap) for terrain **plus** Rapier's query pipeline (`cast_ray_and_get_normal` / `intersect_shape`) for moving bodies (§5) |
+| `PPCLadder` trigger entities | **Climbable blocks** with a facing property (§6.3) |
+| `EntityRef` ground | `enum GroundRef { None, Terrain, Tier1Body(BodyHandle), Player(BodyHandle) }` (`query.rs`) |
+| `FP` seconds for timers | **Integer ticks** (stored as ticks in the config) |
 | `f.DeltaTime` | Fixed `1 / SIM_HZ` (60 Hz) |
-| `PPCInputBridge` partial hook | `PlayerInput` decoded from the `PlayerInput` datagram (§8) |
-| `PPCForces.AddVelocity` / `AddExplosion` | `player::addVelocity()`, and the server explosion system (ARCHITECTURE §7.2) calling it for players |
-| Quantum events (`PPCJumped`, `PPCLanded`, …) | `PlayerEvents` bitset + payload per tick; drives fall damage (server) and audio/animation (client) |
+| `PPCInputBridge` partial hook | `Input` dequantized from the `PlayerInput` datagram (§8, `net.rs`) |
+| `PPCForces.AddVelocity` / `AddExplosion` | `Players::add_velocity()` / `add_explosion()`, called by the server for knockbacks and explosions (ARCHITECTURE §7.2) |
+| Quantum events (`PPCJumped`, `PPCLanded`, …) | `events` bits + `landed_speed` per tick; drives fall damage (server) and audio/animation (client) |
 | Quantum rollback (full-world determinism) | Server authority + local-player prediction and reconciliation (§8) |
-| Unity's left-handed axes | Right-handed, Y up (Jolt, Three.js): camera-right at yaw 0 is −X (§9) |
-| `PPCCameraView`, `PPCAnimatorView`, `PPCDebugView` | Client `render/` camera rig, animation driver, debug overlay (§9) |
+| Unity's left-handed axes | Right-handed, Y up (Rapier, the wgpu renderer): camera-right at yaw 0 is −X (§9) |
+| `PPCCameraView`, `PPCAnimatorView`, `PPCDebugView` | Client camera, eye smoothing and debug overlay (`dwell-client`, `dwell-game`; §9) |
 
-**One implementation.** The controller lives only in C++ (`server/core/player`). The client runs
-the same code through the WASM build of `server/core` (the build already needed for local mode),
-so prediction and authority never drift because of two implementations. See ARCHITECTURE §5.
+**One implementation.** The controller lives only in Rust (`crates/dwell-physics`). The server
+(`dwell-sim`) runs it natively; the browser client runs the same crate compiled to
+`wasm32-unknown-unknown` inside its own module (`dwell-client`), so prediction and authority never
+drift because of two implementations. See ARCHITECTURE §5.
 
 ---
 
 ## 3. State
 
-```cpp
-namespace dwell::player {
+```rust
+// crates/dwell-physics/src/controller.rs
+pub enum State { Idle, Walking, Running, Crouching, Sliding, Jumping, Falling, Climbing, Swimming, Flying }
 
-enum class State : uint8_t { Idle, Walking, Running, Crouching, Sliding, Jumping, Falling, Climbing, Swimming, Flying };
+pub struct Input {                    // one tick; buttons are held state, presses are detected in-sim
+    pub move_x: f32, pub move_y: f32, // x = right, y = forward, camera-relative, |move| <= 1
+    pub look_yaw: f32,                // degrees; yaw 0 = +Z, 90 = +X
+    pub look_pitch: f32,              // degrees; positive = up
+    pub jump: bool, pub run: bool, pub crouch: bool,
+    pub fly: bool,                    // creative flight mode is on (Dwell addition, §6.7)
+    pub fly_speed: u8,                // flight speed level (Dwell addition, §6.7)
+}
 
-struct Input {                    // one tick; buttons are held state, edges are detected in-sim
-  float move_x, move_y;           // x = right, y = forward, camera-relative, |move| <= 1
-  float look_yaw, look_pitch;     // degrees; yaw 0 = +Z, 90 = +X; pitch positive = up
-  bool  jump, run, crouch;
-  bool  fly;                      // creative flight mode is on (Dwell addition, §6.7)
-};
+pub enum GroundRef { None, Terrain, Tier1Body(BodyHandle), Player(BodyHandle) }   // query.rs
 
-struct GroundRef { enum Kind : uint8_t { None, Terrain, Tier1Body, Player } kind; uint32_t id; };  // id: Jolt BodyID
+pub struct GroundInfo {
+    pub grounded: bool, pub was_grounded: bool,  // THE grounded flag every pass uses (PPC semantics)
+    pub normal: Vec3, pub slope_angle: f32, pub gap: f32,
+    pub ground: GroundRef,
+    pub ceiling_blocked: bool, pub touching_wall: bool, pub wall_normal: Vec3,
+}
 
-struct GroundInfo {
-  bool  grounded, was_grounded;   // THE grounded flag every pass uses (PPC semantics)
-  Vec3  normal;  float slope_angle, gap;
-  GroundRef ground;
-  bool  ceiling_blocked, touching_wall;  Vec3 wall_normal;
-};
+pub struct HorizontalLayer { pub current: Vec3, pub external: Vec3, pub contribution: Vec3 }
+pub struct VerticalLayer   { pub accumulated_y: f32, pub platform_y: f32, pub last_platform_y: f32,
+                             pub target_y: f32, pub step_grace: u8 }
+pub struct JumpState       { pub buffer_ticks: u16, pub coyote_ticks: u16,
+                             pub jumping: bool, pub jumped_this_tick: bool }
+pub struct ClimbState      { pub climbing: bool, pub ladder: Cell, pub velocity: Vec3,
+                             pub has_released: bool, pub released: Cell }
+pub struct SwimState       { pub swimming: bool, pub submerged: f32, pub velocity: Vec3 }  // Dwell addition
+pub struct FlyState        { pub flying: bool, pub velocity: Vec3 }                        // Dwell addition
+pub struct PlatformState   { pub ground: GroundRef, pub ground_velocity: Vec3,
+                             pub base_velocity: Vec3, pub yaw_delta: f32 }
 
-struct HorizontalLayer { Vec3 current, external, contribution; };
-struct VerticalLayer   { float accumulated_y, platform_y, last_platform_y, target_y; uint8_t step_grace; };
-struct JumpState       { uint16_t buffer_ticks, coyote_ticks; bool jumping, jumped_this_tick; };
-struct CrouchState     { bool crouching; };
-struct ClimbState      { bool climbing; Cell ladder; Vec3 velocity; bool has_released; Cell released; };
-struct SwimState       { bool swimming; float submerged; Vec3 velocity; };            // Dwell addition
-struct FlyState        { bool flying; Vec3 velocity; };                               // Dwell addition
-struct PlatformState   { GroundRef ground; Vec3 ground_velocity, base_velocity; float yaw_delta; };
-
-struct PlayerController {        // static_assert(std::is_trivially_copyable_v<PlayerController>)
-  Input input, previous_input;
-  State state;
-  GroundInfo ground;
-  HorizontalLayer horizontal;  VerticalLayer vertical;
-  JumpState jump;  CrouchState crouch;  ClimbState climb;  SwimState swim;  FlyState fly;
-  PlatformState platform;
-  Vec3 target_velocity;
-  uint32_t events;                // Events:: bits raised this tick (Jumped, Landed, CrouchChanged,
-  float landed_speed;             //   Climb/Swim/FlyStarted/Ended); Landed's impact speed
-};
-
+#[derive(Clone, Copy)]
+pub struct PlayerController {
+    pub input: Input, pub previous_input: Input,
+    pub state: State,
+    pub ground: GroundInfo,
+    pub horizontal: HorizontalLayer, pub vertical: VerticalLayer,
+    pub jump: JumpState, pub crouching: bool,
+    pub climb: ClimbState, pub swim: SwimState, pub fly: FlyState,
+    pub platform: PlatformState,
+    pub target_velocity: Vec3,
+    pub face: i8,          // +1 face A, −1 face B (§11)
+    pub events: u32,       // events:: bits raised this tick (JUMPED, LANDED, CROUCH_CHANGED,
+    pub landed_speed: f32, //   CLIMB/SWIM/FLY_STARTED/ENDED); LANDED's impact speed
 }
 ```
 
 `PlatformState` has no previous position/rotation: the PPC needed them for platforms moved by
-script, but Jolt moves kinematic bodies by their velocity, so every carrying body is read with
-`Body::GetPointVelocity` (§6.6). `Players` (`controller.h`) owns the players of one physics world:
-`Spawn`, `SetInput`, `Tick` (the §4 pipeline for every player), `AddVelocity`, `AddExplosion`, and
-state access (`controller`, `Restore`, `Teleport`) for snapshots and reconciliation.
+script, but Rapier moves kinematic (velocity-based) bodies by their velocity, so every carrying
+body is read with its point velocity (`Physics::point_velocity`, `v + ω × r`; §6.6). `Players`
+(`controller.rs`) owns the players of one physics world: `spawn`, `despawn`, `set_input`, `tick`
+(the §4 pipeline for every player), `add_velocity`, `add_explosion`, and state access
+(`controller`, `restore`, `teleport`, `position`, `velocity`, `feet`, `head`) for snapshots and
+reconciliation.
 
-The Jolt `BodyID` and the prebuilt standing/crouched capsule shapes are held beside this struct,
-not inside it, so `PlayerController` stays a copyable value for history buffers.
+The body and collider handles, the player's config and last step's contact normals are held beside
+this struct (in `Players`), not inside it, so `PlayerController` stays a copyable value for history
+buffers.
 
 ---
 
 ## 4. Per-tick pipeline
 
-The server main loop (ARCHITECTURE §4.2) runs, for every player, **before** `PhysicsSystem::Update`:
+The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics::step`:
 
 | # | Pass | PPC origin | Job |
 |---|---|---|---|
-| 1 | `stepInput` | `PPCInputSystem` | `previousInput = input`; take this tick's input; clamp `|move| <= 1` |
-| 2 | `stepProbe` | `PPCProbeSystem` | Ground ring (16 + centre), ceiling ring, 4 axis wall rays via `VoxelQuery` + dynamic bodies (§5) |
-| 3 | `stepPlatform` | `PPCPlatformSystem` | Velocity of the ground under the player (`v + ω × r` for Tier 1 bodies; zero for terrain; zero for players unless `carriedByCharacters`) |
-| 4 | `stepFly` | — (Dwell) | Exclusive creative-flight layer while `fly` is held (§6.7) |
-| 5 | `stepCrouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test |
-| 6 | `stepJump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulatedY = max(accumulatedY, jumpV + platformY)`; no coyote after a real jump |
-| 7 | `stepClimb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
-| 8 | `stepSwim` | — (Dwell) | Exclusive layer in water voxels (§6.4); not while flying |
-| 9 | `stepHorizontal` | `PPCMovementLayerSystem` | Absorb external; accel/decel/reverse in the platform's frame; air control; step-up |
-| 10 | `stepVertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
-| 11 | `stepAggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.targetY, 0)`; `BodyInterface::SetLinearVelocity` |
-| 12 | `stepState` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Crouching > Jumping/Falling > Running/Walking/Idle |
-| — | *Jolt `PhysicsSystem::Update(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
+| 1 | `step_input` | `PPCInputSystem` | `previous_input = input`; take this tick's input; switch face if across the midplane (§11); clamp `|move| <= 1` |
+| 2 | `step_probe` | `PPCProbeSystem` | Ground ring (16 + centre), ceiling ring, 4 axis wall rays via `VoxelQuery` + moving bodies (§5) |
+| 3 | `step_platform` | `PPCPlatformSystem` | Velocity of the ground under the player (`v + ω × r` for Tier 1 bodies; zero for terrain; zero for players unless `carried_by_characters`) |
+| 4 | `step_fly` | — (Dwell) | Exclusive creative-flight layer while `fly` is held (§6.7) |
+| 5 | `step_crouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test |
+| 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`; no coyote after a real jump; auto-jump (§6.2) |
+| 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
+| 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
+| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
+| 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
+| 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
+| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Crouching > Jumping/Falling > Running/Walking/Idle |
+| — | *`Physics::step(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
 
 Each pass's behaviour is exactly the PPC Quantum system's, including its fixes over the Unity
 package (listed in the PPC `Quantum~/CHANGELOG.md`): single shared `grounded` flag that turns off
@@ -157,121 +170,127 @@ while rising faster than the ground; stair "stay on ground" probe reach; ground 
 one-tick snap (no hovering, no slope launches); capsule always centred on the body during crouch;
 no double jump from coyote time; ladder face snap, jump-off launch, look-down threshold. As in
 Quantum, the passes run pass-major (each pass for every player, then the next pass). Before the
-passes, `Tick` makes sure terrain collision exists around every player and syncs edited chunks
-(§5).
+passes, `tick` makes sure terrain collision exists around every player and syncs changed chunks
+(§5), then reads each player body's contact normals from the last step (`Physics::contact_normals`,
+at most 8, from Rapier's narrow phase). Sines, cosines and the like come from `libm`, so native and
+WASM builds compute them identically (§8.3).
 
-**Dwell deviations** (each covered by a test in `server/tests/player`):
+**Dwell deviations** (each covered by a test in `crates/dwell-physics/tests`):
 - **Blocked motion is not absorbed.** The PPC absorbs *any* difference between the body's velocity
   and last tick's contribution, including the velocity a wall removes while the player walks into
   it. That leaves a phantom push-back that never decays in the air (air drag 0), so a player
   holding forward against a block could not jump onto it — the core voxel move. The horizontal
-  layer therefore removes, per contact normal recorded by a Jolt `ContactListener` during the last
-  step, the part of the deviation that only cancels the player's own push into that contact:
-  `into` is last tick's whole target velocity (horizontal contribution and vertical target) into
-  the normal, and at most `into × |horizontal part of the normal|` is removed along the normal's
-  horizontal direction. Counting the vertical drive matters on stairs: the ground snap drives the
-  capsule down into the edge of the step it is leaving, and that edge's sideways push-out would
-  otherwise become momentum that carries the player down several steps. Pushes by moving bodies
-  are still absorbed.
+  layer therefore removes, per contact normal of the body's contacts in the last step, the part of
+  the deviation that only cancels the player's own push into that contact: `into` is last tick's
+  whole target velocity (horizontal contribution and vertical target) into the normal, and at most
+  `into × |horizontal part of the normal|` is removed along the normal's horizontal direction.
+  Counting the vertical drive matters on stairs: the ground snap drives the capsule down into the
+  edge of the step it is leaving, and that edge's sideways push-out would otherwise become momentum
+  that carries the player down several steps (`stepping_down_a_stairs_corner_gains_no_momentum`).
+  Pushes by moving bodies are still absorbed.
 - **Edge lift is not absorbed.** The same holds vertically. Driving forward into a contact whose
   normal faces partly up (a block's top edge under the capsule's rounded bottom, while jumping
   over it) deflects the drive upwards by `into_h × normal.y` per contact, where `into_h` is last
-  tick's horizontal contribution into the normal. In the air, the vertical layer takes that lift
-  (summed over contacts, at most the upward deviation) out of the deviation before absorbing it.
-  Absorbed, it acted as a second jump while clearing a block (apex 2.1 m for a 1.25 m jump, landing
-  far past a lone block) and floated the player up a staircase of full blocks on a single jump.
+  tick's horizontal contribution into the normal; the horizontal pass sums this *drive lift*. In
+  the air, the vertical layer takes it (at most the upward deviation) out of the deviation before
+  absorbing it. Absorbed, it acted as a second jump while clearing a block (apex 2.1 m for a 1.25 m
+  jump, landing far past a lone block) and floated the player up a staircase of full blocks on a
+  single jump (`clearing_a_blocks_top_edge_does_not_launch`,
+  `one_jump_climbs_one_step_of_a_diagonal_staircase`).
+- **Edge lift is not a launch.** While grounded, the launch check (an upward deviation above
+  `explained = max(target_y, ground's vertical velocity)`) also subtracts the drive lift: the
+  solver rolls the capsule over the edge of a step just climbed with up to ~2.6 m/s of upward
+  velocity, which would otherwise read as a launch.
 - **Step-up nudge.** After lifting onto a step, the capsule also moves forward by
-  `radius + stepProbeDistance − ringRadius + 1 cm`, so the probe ring (inside the slimmer voxel
-  capsule) is over the step and the ground snap doesn't pull the player back down. The nudge is
-  part of the tick's movement, not extra: that tick's horizontal contribution drops by
-  `nudge / dt` along the move (never below zero), so stepping onto a slab, landing on a block's
-  edge from a jump, or walking up a slope (a step-up every tick) moves no faster than the speed.
-  `current` is unchanged, so full speed resumes next tick.
+  `radius + step_probe_distance − ring_radius + 1 cm`, so the probe ring (inside the capsule) is
+  over the step and the ground snap doesn't pull the player back down. The nudge is part of the
+  tick's movement, not extra: that tick's horizontal contribution drops by `nudge / dt` along the
+  move (never below zero), so stepping onto a half step, landing on a block's edge from a jump, or
+  walking up a slope (a step-up every tick) moves no faster than the speed
+  (`stepping_up_never_moves_the_player_faster_than_its_speed`). `current` is unchanged, so full
+  speed resumes next tick.
 - **Step grace.** For 6 ticks after a step-up, only an upward deviation above 1.5 m/s counts as a
-  launch: Jolt's speculative contact on the step's convex edge nudges the capsule up as it crosses.
-- **Step probe height.** The step ray starts at `max(centre, feet + maxStepHeight + 5 cm)`, so a
-  crouched player (centre below a slab's top) can still step onto slabs.
+  launch: the solver nudges the capsule up as it crosses the step's edge.
+- **Step probe height.** The step ray starts at `max(centre, feet + max_step_height + 5 cm)`, so a
+  crouched player (centre below a half step's top) can still step onto half steps.
 
 ---
 
 ## 5. Voxel queries (probes)
 
 The PPC probes are generic physics ray casts. Dwell answers them from the **voxel grid** for static
-terrain and from **Jolt** only for things that move:
+terrain and from **Rapier** only for things that move:
 
 ```
-struct ProbeHit { float distance; Vec3 point, normal; GroundRef ground; };
+struct ProbeHit { distance: f32, point: DVec3, normal: Vec3, ground: GroundRef }
 
-bool castSolid(origin, dir, maxDist, layers, self, ProbeHit&):
-    a = voxelDDA(grid, origin, dir, maxDist)            // Amanatides–Woo walk over solid cells
-    b = jolt.CastRay(origin, dir*maxDist, layers ∩ {TIER1, PLAYER}, ignore = self)
-    return nearest(a, b)
+cast_ray(origin, dir, max, me, bodies) -> Option<ProbeHit>:
+    a = cast_voxels(origin, dir, max)              // Amanatides–Woo walk over the cells' shapes
+    b = bodies ? cast_bodies(origin, dir, a.distance or max, me) : None
+                                                   // Rapier ray cast, Tier 1 + Character groups, excluding me
+    nearest(a, b)
 
-bool overlapsSolid(center, capsule, self):              // crouch stand-up, climb, swim
-    cellsIn(capsule.aabb).any(solid && boxIntersectsCapsule)
-      || jolt.CollideShape(capsule, layers ∩ {TIER1, PLAYER}, ignore = self)
+overlaps_solid(capsule, me):                       // crouch stand-up
+    overlaps_voxels(capsule)                       // exact capsule axis–shape distance per cell
+      || rapier.intersect_shape(capsule, Tier 1 + Character groups, excluding me)
 ```
 
 Why:
 - **Exact and cheap.** A DDA over a few cells is far cheaper than ~40 mesh ray casts per player
   per tick (the PPC's main cost: 16 characters ≈ 3.3 ms/tick in Quantum). It scales to many players
   on one server.
-- **No mesh-seam artifacts.** Grid normals are exact axis-aligned face normals; there are no
-  triangle-edge normals at chunk or greedy-mesh seams.
+- **No seam artifacts.** Grid normals are exact face normals; there are no triangle-edge normals
+  at chunk or mesh seams.
 - **Same answer on server and client**, since both hold the same chunk data.
 
-**Built** (`VoxelQuery`, `voxel_query.h`):
-- `CastVoxels` walks cells Amanatides–Woo style and intersects the ray with each cell's *shape box*
-  (full cube, or the bottom half for slabs). A hit is the ray *entering* a shape from free space;
-  a ray that starts inside solid terrain only hits after leaving it (like a surface mesh). Positions
-  are double precision (`RVec3`, ADR 0011); the walk runs in float relative to the origin's cell,
-  and segment–box distances relative to the capsule centre, so probes are equally exact anywhere
-  in the 8,192 km world.
-- `CastBodies` is a Jolt `NarrowPhaseQuery::CastRay` restricted to the `Tier1` and `Character`
-  layers, ignoring the player's own body. `CastRay` returns the nearer of the two. A ring of probes
-  first asks the broad phase once (`BodiesNear`) and skips Jolt when no moving body is in reach —
-  the common case — which keeps 64 players' passes at ~0.42 ms/tick (Release; ~0.48 ms ~8,000 km
-  from the origin).
-- `OverlapsSolid` tests the vertical capsule against solid cell shapes exactly (segment–box
-  distance) and against moving bodies with `CollideShape`. `SubmergedFraction` samples the centre
-  column. Voxel lookups cache the last chunk.
+**Built** (`VoxelQuery`, `query.rs`):
+- `cast_voxels` walks cells Amanatides–Woo style and intersects the ray with each cell's *shape*
+  from the block shape table (`dwell_blocks::shape::ray_enter_shape`; the baseline's solid blocks
+  are all full cubes). A hit is the ray *entering* a shape from free space; faces lying against a
+  solid neighbour are internal, so a ray that starts inside solid terrain only hits after leaving
+  it (like a surface mesh). Positions are double precision (`DVec3`, ADR 0011); the walk runs in
+  `f32` relative to the origin's cell, and segment–box distances relative to the capsule centre, so
+  probes are equally exact anywhere in the 8,192 km world.
+- `cast_bodies` is a Rapier ray cast restricted to the `Tier1` and `Character` collision groups,
+  excluding the player's own body. `cast_ray` returns the nearer of the two. A ring of probes
+  first asks the broad phase once (`bodies_near`) and skips Rapier when no moving body is in reach
+  — the common case — which keeps 64 players' passes at ~0.48 ms/tick (Release; ~0.51 ms
+  ~8,000 km from the origin).
+- `overlaps_solid` tests the vertical capsule against solid cell shapes exactly (axis segment to
+  shape distance, `vertical_segment_distance_sq`) and against moving bodies with Rapier's
+  `intersect_shape`. `submerged_fraction` samples the centre column (liquid or flooded cells).
+- `FaceQuery` (`frame.rs`) wraps these for a face-B player's mirrored frame (§11).
 
-**Terrain collision** (`core/terrain_collision.h`): static bodies whose `MutableCompoundShape`
-holds one `MeshShape` per chunk (added on demand around players, replaced in place on edit). Chunk
-meshes emit every exposed face as its own unit quad on the grid — not greedy-merged — and adjacent
-slabs hide their shared faces. Both choices remove ghost contacts: Jolt's enhanced internal edge
-removal voids edges by shared vertex positions *within one body pair*, so seams between separate
-chunk bodies, or T-junctions from merged faces, would bump the capsule (verified by the seam test:
-no loss of ground crossing chunk borders in 8 directions).
-
-**Regions and anchors** (Phase 3c, ADR 0011). One body for the whole 8,192 km world would put
-sub-shapes kilometres from its origin, where float offsets are inexact. So each body sits at the
-centre of a *region* (64³ chunks, 2 048 m) and holds the chunks around the players *anchored* to it
-— including chunks beyond the region's border; a chunk's `MeshShape` is shared by every body that
-holds it. Dividing chunks between bodies by position was tried first and bumped the capsule 5.6 cm
-at a region border. Instead:
-- A player's anchor is the region it is in, kept (hysteresis) until it is more than 8 chunks outside
-  that region; the new anchor's body gets the ground around the player before the player switches.
-- A Jolt `GroupFilter` lets a character collide only with its anchor's terrain body (other bodies
-  collide with every terrain body), so there is never a seam under a player.
-- Verified by `walking across terrain collision regions never loses the ground` (a region border
-  and an anchor switch, axis and diagonal, no lift or airborne tick), at the origin and ~8,000 km
-  out.
+**Terrain collision** (`TerrainCollision`, `terrain.rs`): one static body with one Rapier (Parry)
+`Voxels` collider for the whole world, holding the solid cells of the chunks around players. Parry
+classifies each voxel by its neighbours, so the capsule slides across voxel edges and chunk borders
+without catching on internal edges (`walking_across_chunk_seams_in_every_direction_never_loses_the_ground`:
+no loss of ground crossing chunk borders in 8 directions). With `f64` positions it is exact anywhere
+in the world, so it needs no regions, anchors or seams between bodies. Every solid state collides
+as its full cell: the baseline has only cubes (Phase 15); shaped blocks (Phase 18) will need their
+own colliders.
+- Chunks are added on demand: each tick, `Players::tick` makes sure every chunk within
+  `3 m + min(2 ticks of travel, 64 m)` of each player is in the collider. Each loaded chunk keeps
+  its stamp, revision and a bit mask of its solid cells; a chunk with no solid cells keeps no mask,
+  so passing through the sky (fast flight) costs no memory per chunk. Every 64 ticks, chunks more
+  than 2 chunks from every player are dropped.
+- Rapier caps body speed at 400 m/s by default; spawning a player raises the world's limit to
+  cover creative flight at the ceiling (`Physics::raise_max_linear_velocity`, §6.7).
 
 Rules that keep the grid and the physics world consistent:
-- A voxel edit rebuilds the affected chunk's collision `MeshShape` **in the same tick** on the
-  server: `TerrainCollision::Sync` (run at the start of every `Players::Tick`) rebuilds chunks
-  whose own or neighbours' revisions changed. Block edits (ARCHITECTURE.md §6.5) apply at the start
-  of the server step, before that pass; the client applies a `VoxelModification` to its streamed
-  world and its prediction world rebuilds the same way before its next predicted tick (tested
-  natively in `netcode: block edits` and in WASM in `clientCore.test.ts`). Probes read voxels
-  through a cached chunk pointer tied to the world's epoch, which advances whenever a chunk is
-  created, replaced or removed — including a chunk first created by an edit where the air test had
-  read open sky.
-- The player body enables Jolt's `mEnhancedInternalEdgeRemoval` so the capsule slides over mesh
-  and chunk seams without catching on internal edges.
-- Non-cube voxel shapes extend the DDA with a per-material sub-cell shape box; slabs
-  (`VoxelShape::kSlabBottom`) are built, and the probe interface does not change.
+- A voxel edit updates the collider **in the same tick** on the server: `TerrainCollision::sync`
+  (run in every `Players::tick`, before the passes) re-reads every loaded chunk whose stamp or
+  revision changed — edits, streamed or replaced chunks — and sets only the cells that differ.
+  Block edits (ARCHITECTURE.md §6.5) apply at the start of the server step, before that pass; the
+  client applies a `VoxelModification` to its streamed world and its prediction world syncs the
+  same way before its next predicted tick (`a_block_placed_in_front_is_collided_with_in_the_same_tick`
+  in `scenario.rs`, and
+  `a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_prediction` in
+  `crates/dwell-sim/tests/netcode.rs`).
+- Probes read voxels from the world (`VoxelWorld::read`, generating a chunk if needed), so a probe
+  and the collider see the same cells.
+- Non-cube voxel shapes extend the DDA through the block shape table; the probe interface does not
+  change.
 
 ---
 
@@ -283,42 +302,39 @@ through a 1-wide, 2-tall doorway. Dwell's defaults (§7): **radius 0.3, height 1
 openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.2 Blocks, steps, slopes
-- Cubes and slabs have axis-aligned faces; **[built, Phase 9]** slope blocks add faces at 45° (the
-  standard slope) and 26.57° (the gentle one) to static terrain — a hip or valley's *line* is
-  shallower (35.26°, 19.47°), but its faces keep the pitch of their straight slopes — and generated
-  terrain is made of them ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) §4). Slope logic matters on
-  terrain now, and on **Tier 1 bodies** (rotated clusters).
-  **[planned, Phase 13]** The bifacial world puts a second face on the disc's underside, where
-  up is −y: the controller gains a face sign through every vertical quantity and probe, proven by a
-  mirror-equivalence suite ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
-  **[built, Phase 9]** `maxSlopeAngle` is **50°**: a standard slope's face is exactly 45°, so the
-  limit must not hinge on float rounding of its normal (a test pins it). Ray probes and the uncrouch
-  overlap test read the exact shape (`core/block_shape.h`; the box ray cast is kept as a
-  differential test). **[Phase 15]** The slope-block scenarios (`slope_test.cpp`) went with the
-  placed slope and slab families — no shaped block is left until Phase 18's adaptive blocks, which
-  bring their own; ramps remain as Tier 1 boxes, and half-height steps (stairs, the scenario's step)
-  are static boxes (`PlayerTestWorld::HalfStep`). The scenario's fifth player stands by the half
-  step; the golden trace was regenerated.
-- `maxStepHeight` 0.55 m (PPC: 0.45): half-block **slabs** (0.5 m) are stepped up without leaving
+- The baseline's blocks are full cubes with axis-aligned faces: Phase 15 cut the placed slope and
+  slab families and terrain slope shaping ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). The shape
+  mechanism stays in the probes (§5) for Phase 18's adaptive blocks, which bring their own
+  scenarios. Slope logic matters on **Tier 1 bodies** (rotated clusters; ramps in the tests are
+  rotated Tier 1 boxes, `walks_up_and_down_a_20_degree_ramp_staying_grounded`), and half-height
+  steps (stairs, the scenario's step) are static Tier 1 boxes (`PlayerTestWorld::half_step`).
+- `max_slope_angle` is **50°**: a standard 45° slope face must not hinge on float rounding of its
+  normal (`the_slope_limit_leaves_room_for_45_degrees`).
+- The bifacial world puts a second face on the disc's underside, where up is −y; the controller
+  runs in a face-local frame there (§11, [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
+- `max_step_height` 0.55 m (PPC: 0.45): half-height steps (0.5 m) are stepped up without leaving
   the ground, full 1 m blocks need a **jump** (jump height 1.25 m clears one block); step-up also
-  applies to cluster debris. Walking off a 1 m ledge is a short fall (larger than the step reach),
-  so there is no stair snapping on full blocks.
-- **Auto-jump** (Dwell addition, config `autoJump`, default on for touch input): when grounded and
-  not crouched, moving into a 1-block obstacle (top between `maxStepHeight` and 1.05 m above the
-  feet, probed 0.2 m beyond the capsule) with 2 free cells above it triggers a jump. It runs
-  in-sim, so it is predicted like any other input.
+  applies to Tier 1 bodies (the step ray casts moving bodies too). Walking off a 1 m ledge is a
+  short fall (larger than the step reach), so there is no stair snapping on full blocks
+  (`a_one_metre_ledge_is_a_fall_not_a_step`).
+- **Auto-jump** (Dwell addition, config `movement.auto_jump`, on in the touch preset
+  `PlayerControllerConfig::touch()`): when grounded and not crouched, moving into a 1-block
+  obstacle (top between `max_step_height` and 1.05 m above the feet, probed 0.2 m beyond the
+  capsule) with 2 free cells above it triggers a jump. It runs in-sim, so it is predicted like any
+  other input.
 - **Edge guard** (Dwell addition, optional, off by default): while crouched and grounded, the
   horizontal layer zeroes, per axis (X, Z), movement after which no ray of the ground ring would
-  find ground within `maxStepHeight` (classic sneak-at-edges).
+  find ground within `max_step_height` (classic sneak-at-edges).
 
 ### 6.3 Ladders as voxels
 - PPC ladders are trigger colliders with a `PPCLadder` component. In Dwell a ladder is a
-  **climbable material** in the material table (`climbable = true`) with **facing variants**
-  (`ladder_n/e/s/w`), so no voxel format change is needed.
-- Detection: any climbable cell the capsule overlaps (exact capsule–box test). The ladder is a
-  thin plate (0.1 m) on the cell's back face; the ladder frame (facing axis, plate depth) comes from
-  the cell and its facing variant, replacing the trigger box's transform and extents in
-  `ClimbVelocity`/`AwayFromLadder`. The face snap therefore holds the capsule against the wall the
+  **climbable block** in the block data (`shared/blocks`, `"climbable": true`) with a **facing
+  property** (`dwell:ladder[facing=north|east|south|west]`); the generated state table gives each
+  state's `climbable`, `facing` and `climb_speed_scale`.
+- Detection: any climbable cell the capsule overlaps (capsule–cell test). The ladder is a thin
+  plate (0.1 m) on the cell's back face; the ladder frame (facing axis, plate position) comes from
+  the cell and its facing, replacing the trigger box's transform and extents in the climb velocity
+  and the jump-off direction. The face snap therefore holds the capsule against the wall the
   ladder is mounted on.
 - A contiguous ladder column counts as one ladder for `released` purposes: a ladder you let go of is
   not re-grabbed until the capsule has left every cell of that column.
@@ -329,18 +345,19 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   a climb going, it never starts one: grabbed from the ledge, the face snap would pull the player
   back against the ledge and block the way down. Getting on at the top means stepping off the
   ledge onto the ladder cells themselves.
-- Vines and scaffolding use the same flag with different speeds (`climbSpeedScale` per material).
+- The climb speed is `climb.speed × climb_speed_scale` of the ladder's block state, so other
+  climbable blocks can climb at their own speed by data alone.
 
 ### 6.4 Water (Dwell addition)
-- `submerged` = fraction of the capsule height inside water cells (centre column). Above
-  `swim.enterFraction` the exclusive **swim layer** takes over: move input in the look direction
-  (pitch included), jump = ascend, crouch = descend; the body's velocity is pulled towards that
-  wish velocity with exponential `drag`, plus buoyancy `buoyancy × (submerged − floatFraction)`, so
-  a player at rest floats with 70 % submerged (eyes above water). Below `swim.exitFraction` it hands
-  back to the normal layers (hysteresis) with the current velocity; holding jump at that moment
-  jumps out (onto a bank). The layer holds the other layers exactly like the climb layer does, so
-  leaving the water is not read as an external force. Water 1 m deep (≤ 0.55 of the capsule) is
-  walked through.
+- `submerged` = fraction of the capsule height inside water (liquid or flooded) cells, sampled in
+  the centre column. Above `swim.enter_fraction` the exclusive **swim layer** takes over: move
+  input in the look direction (pitch included), jump = ascend, crouch = descend; the body's
+  velocity is pulled towards that wish velocity with exponential `drag`, plus buoyancy
+  `buoyancy × (submerged − float_fraction)`, so a player at rest floats with 70 % submerged (eyes
+  above water). Below `swim.exit_fraction` it hands back to the normal layers (hysteresis) with the
+  current velocity; holding jump at that moment jumps out (onto a bank). The layer holds the other
+  layers exactly like the climb layer does, so leaving the water is not read as an external force.
+  Water 1 m deep (≤ 0.55 of the capsule) is walked through.
 
 ### 6.5 Terrain changing under or into the player
 - **Block removed under the feet:** the next probe finds no ground → walk-off rules apply (keep
@@ -353,21 +370,20 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.6 Interaction with Tier 1 bodies and other players
 - **Being pushed / hit:** natural solver response; absorbed as external velocity and decayed.
-- **Riding:** `stepPlatform` uses the Tier 1 body's linear + angular velocity at the player's
+- **Riding:** `step_platform` uses the Tier 1 body's linear + angular velocity at the player's
   position; the horizontal layer accelerates in that frame, and the vertical layer follows its
-  vertical velocity, so standing on a falling slab or tipping tower needs no input. `yawDelta` turns
-  the camera with rotating bodies.
-- **Push strength.** The aggregate pass sets velocity directly, which by itself would let an 80 kg
-  player shove a 20-tonne cluster. A `ContactListener` caps this: in `OnContactAdded` /
-  `OnContactPersisted` between a player and a Tier 1 body, `ContactSettings::mInvMassScale` for the
-  cluster is scaled so the effective push force never exceeds `maxPushForce`. Clusters heavier than
-  `pushableMassLimit` are treated as immovable by players (scale 0). The player is still fully
-  pushed *by* the cluster.
-- **Crush:** from the same contact listener. A player with contacts of roughly opposing normals
-  (dot < −0.7) where one is a Tier 1 body approaching faster than `crushSpeed`, sustained for
-  `crushTicks`, is crushed (damage/death, ARCHITECTURE §9.6).
+  vertical velocity, so standing on a falling slab or tipping tower needs no input. `yaw_delta`
+  turns the camera with rotating bodies (clamped to `max_platform_yaw_speed`).
+- **Push strength [planned, Phase 20].** The aggregate pass sets velocity directly, which by itself
+  would let an 80 kg player shove a 20-tonne cluster. Contacts between a player and a Tier 1 body
+  are to be limited so the effective push force never exceeds `max_push_force`; clusters heavier
+  than `pushable_mass_limit` are immovable by players. The player is still fully pushed *by* the
+  cluster. (The config fields exist; the contact mechanism on Rapier is built with the clusters.)
+- **Crush [planned, Phase 20]:** from the player's contacts. A player with contacts of roughly
+  opposing normals (dot < −0.7) where one is a Tier 1 body approaching faster than `crush_speed`,
+  sustained for `crush_ticks`, is crushed (damage/death, ARCHITECTURE §9.6).
 - **Other players:** both are dynamic bodies. Standing on a head is grounded but not carried unless
-  `carriedByCharacters` (PPC default: off).
+  `carried_by_characters` (PPC default: off).
 - **Gravity mismatch (intended):** players use the PPC's snappier `gravity` (20 m/s², Source feel);
   Tier 1 bodies use world gravity (9.81 m/s²). A player standing on a free-falling slab falls faster
   than it, so they stay on it instead of floating off.
@@ -375,89 +391,93 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 ### 6.7 Creative flight (Dwell addition) **[built, Phase 4]**
 A flight mode for the player's own body — server-authoritative and predicted like every other
 layer — so a player can rise from the ground to see the whole world (ARCHITECTURE §6.6).
-- **Input.** `fly` is a *mode* bit held in every input frame while flight is on (`InputButtons.fly`);
-  the client toggles it (double-tap Space or the touch Jump button within 300 ms, or the touch Fly
-  button). The server clears the bit for players its flight policy excludes (`--flight
-  everyone|ops|nobody`, default everyone; `Welcome` says whether this player may fly), so a client
-  that sends it anyway just walks.
-- **Layer.** `stepFly` runs before crouch, so flying cancels climbing and swimming and stands a
-  crouched player up (the exclusive rule of `stepCrouch`). While flying there is no gravity: the
+- **Input.** `fly` is a *mode* bit held in every input frame while flight is on (`input_buttons::FLY`);
+  the client toggles it (`dwell-game`'s `FlightToggle`: double-tap Space or the touch Jump button
+  within 300 ms, or the touch Fly button). The server clears the bit for players its flight policy
+  excludes (`dwell-server --flight everyone|ops|nobody`, default everyone; `Welcome` says whether
+  this player may fly), so a client that sends it anyway just walks.
+- **Layer.** `step_fly` runs before crouch, so flying cancels climbing and swimming and stands a
+  crouched player up (the exclusive rule of `step_crouch`). While flying there is no gravity: the
   body's velocity is eased towards the wish with exponential `fly.drag` — horizontal from the move
   input along the camera's yaw, up with jump, down with crouch — at
-  `max(min(fly.speed × run × (1 + max(0, feet − SEA_LEVEL) / fly.boostHeight), cap),
-  fly.speed × run × FlySpeedFactor(input.flySpeed))` (run = `fly.runFactor` while running, else
-  1; cap = `fly.terrainSpeed` below `WORLD_MAX_Y`, else none), so speed grows with height and the
+  `max(min(fly.speed × run × (1 + max(0, feet − SEA_LEVEL) / fly.boost_height), cap),
+  fly.speed × run × fly_speed_factor(input.fly_speed))` (run = `fly.run_factor` while running, else
+  1; cap = `fly.terrain_speed` below `WORLD_MAX_Y`, else none), so speed grows with height and the
   climb is exponential.
-  `input.flySpeed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 39, carried in bits
-  4–9 of the input's `buttons`, protocol v9): `FlySpeedFactor(L) = 2^(L/2)` — computed with `ldexp`
-  and the correctly rounded `sqrt(2)`, so native and WASM agree exactly — is a true minimum speed;
-  level 0 (factor 1) is the height-based speed alone, and level 39 (2^19.5 ≈ 741,000) stays just
-  under the factor at the ceiling, within the body's velocity limit. Below `WORLD_MAX_Y` the
-  height-based speed is capped at `fly.terrainSpeed`: collision around the player is built a few
-  ticks ahead (its reach is capped at 64 m of travel), and the server has to generate the chunks
-  being flown through. The slider's minimum overrides the cap (a playtest request): faster than
-  about 64 m per tick near the terrain, the player may pass through ground whose collision is not
-  built yet, and the view runs ahead of streaming. Collision is
-  unchanged — `LinearCast` motion keeps a fast dive from tunnelling into the ground.
+  `input.fly_speed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 39, carried in bits
+  4–9 of the input's `buttons`, protocol v9): `fly_speed_factor(L) = 2^(L/2)` — computed with
+  `libm::ldexpf` and the correctly rounded `sqrt(2)`, so native and WASM agree exactly — is a true
+  minimum speed; level 0 (factor 1) is the height-based speed alone, and level 39
+  (2^19.5 ≈ 741,000) stays just under the factor at the ceiling, within the world's velocity
+  limit. Below `WORLD_MAX_Y` the height-based speed is capped at `fly.terrain_speed`: collision
+  around the player is built a couple of ticks ahead (its reach is capped at 64 m of travel), and
+  the server has to generate the chunks being flown through. The slider's minimum overrides the cap
+  (a playtest request): faster than about 64 m per tick near the terrain, the player may pass
+  through ground whose collision is not built yet, and the view runs ahead of streaming. Collision
+  is unchanged — the player body's continuous collision detection (Rapier CCD) keeps a fast dive
+  from tunnelling into the ground (`diving_at_the_bands_top_speed_stops_on_the_ground`).
 - **Limits.** The feet stop at `fly.ceiling` (`FLIGHT_CEILING`, 24,000 km: from there the 8,192 km
-  disc fills about two thirds of the view) and |x|, |z| at `fly.horizontalLimit` (just past the
+  disc fills about two thirds of the view) and |x|, |z| at `fly.horizontal_limit` (just past the
   rim); the velocity is clamped to arrive exactly, as a tick up there covers hundreds of
-  kilometres. The player body's Jolt velocity limit is raised to the fastest flight speed.
+  kilometres. Spawning a player raises the physics world's velocity limit (Rapier's default is
+  400 m/s) above the fastest flight speed.
 - **Leaving flight** hands back to the normal layers with the current velocity, like leaving
   water: the player falls, and a hard landing does fall damage. Landing while flying does not end
-  flight (the vertical layer, which reports `Landed`, is skipped), so flying into the ground is
+  flight (the vertical layer, which reports `LANDED`, is skipped), so flying into the ground is
   harmless.
 - **Prediction.** The client normally waits for the terrain around the player before predicting
   (collision needs it); a flying player keeps predicting, since flight outruns chunk streaming and
-  the server's collision corrects any difference.
+  the server's collision corrects any difference (`dwell-game`'s `gate::prediction_may_run`).
 
 ---
 
 ## 7. Configuration
 
-`PlayerControllerConfig` lives in `server/core/include/dwell/player/config.h` — both sides run the
-same C++ (the client through the WASM core), so it needs no TypeScript mirror. Presets:
-`DefaultConfig()` (desktop), `TouchConfig()` (auto-jump), `UnityParityConfig()`. Durations are
-stored as ticks. Defaults follow the PPC's **recommended feel** (Source
-engine movement, checked against Halo 3); rows marked ◆ differ from the PPC default for voxels.
+`PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the
+same crate, so it needs no mirror. Its fields are grouped in sections (`cfg.movement.walk_speed`).
+Presets: `PlayerControllerConfig::default()` (desktop; the server and the client both use it),
+`touch()` (auto-jump), `unity_parity()`. Durations are stored as ticks. Defaults follow the PPC's
+**recommended feel** (Source engine movement, checked against Halo 3); rows marked ◆ differ from the
+PPC default for voxels.
 
 | Section | Field | Dwell default | PPC default | Notes |
 |---|---|---|---|---|
-| Body | `radius` ◆ | 0.3 m | 0.5 | Fits 1-wide gaps |
-| | `standingHeight` ◆ | 1.8 m | 2.0 | Fits 2-tall doorways |
+| `body` | `radius` ◆ | 0.3 m | 0.5 | Fits 1-wide gaps |
+| | `standing_height` ◆ | 1.8 m | 2.0 | Fits 2-tall doorways |
 | | `mass` ◆ | 80 kg | 1 | Real mass: voxel clusters use real densities |
 | | `gravity` | 20 m/s² | ×2 of 10 | Absolute value instead of a scale |
-| | `eyeHeight` ◆ | 1.62 m / 0.8 m crouched | (view) | Client camera |
-| Movement | `walkSpeed` / `runSpeed` | 5 / 8 m/s | same | |
-| | `acceleration` / `deceleration` / `reverseDeceleration` | 50 / 12 / 60 m/s² | same | |
-| | `airControl` | 0.2 | same | |
-| | `maxStepHeight` ◆ | 0.55 m | 0.45 | Slabs step up; full blocks need a jump |
-| | `airExternalDrag` / `groundExternalFriction` | 0 /s / 15 m/s² | same | |
-| | `carriedByCharacters` | false | same | |
-| | `autoJump` ◆ | false (touch preset: true) | — | Dwell addition |
-| | `edgeGuard` ◆ | false | — | Dwell addition |
-| | `maxPushForce` ◆ | 800 N | — | Contact mass scaling |
-| | `pushableMassLimit` ◆ | 400 kg | — | Heavier clusters are immovable by players |
-| Probes | `groundProbeMargin` / `ceilingProbeMargin` | 0.15 / 0.10 m | same | |
-| | `maxSlopeAngle` | 50° ◆ (Phase 9; 45° would hinge on rounding at a standard slope's 45°) | same | |
-| Jump | `height` | 1.25 m | same | Clears one block |
-| | `bufferTime` / `coyoteTime` ◆ | 0.2 / 0.2 s (12 / 12 ticks) | 0.2 / 0.1 s | Stored as ticks. Coyote time doubled: 0.1 s felt stingy next to other games |
-| Crouch | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |
-| | `speed` / `midAirBoost` | 1.6 m/s / 0 | same | |
-| Climb | `speed` / `lookDownThreshold` | 3 m/s / 30° | same | |
-| | `jumpOffVelocity` / `snapStrength` | (0, 4, 3) m/s / 10 /s | same | |
-| Swim ◆ | `speed` / `enterFraction` / `exitFraction` | 3 m/s / 0.6 / 0.4 | — | Dwell addition |
-| | `buoyancy` / `drag` / `floatFraction` | 12 m/s² / 2 /s / 0.7 | — | |
-| Fly ◆ | `speed` / `runFactor` / `boostHeight` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × max(1 + height above sea / boostHeight, 2^(speed level / 2)) |
-| | `terrainSpeed` / `ceiling` / `horizontalLimit` | 400 m/s / 24,000 km / 8,400 km | — | Below `WORLD_MAX_Y` / feet height / \|x\|, \|z\| |
-| Damage ◆ | `fallDamageMinSpeed` / `fallDamagePerSpeed` | 12 m/s / 8 per m/s | — | From the `Landed` event's impact speed |
-| | `crushSpeed` / `crushTicks` | 4 m/s / 6 | — | |
-| Advanced | `stepProbeDistance` / `probeRingRadius` / `wallCheckDistance` | 0.01 m / 0.9 / 0.16 m | same | |
-| | `externalAbsorbThreshold` | 0.01 m/s | same | Tune against native↔WASM noise (§8.3) |
-| | `maxPlatformYawSpeed` | 360 °/s | same | |
+| | `eye_height` / `crouch_eye_height` ◆ | 1.62 m / 0.8 m | (view) | Client camera |
+| `movement` | `walk_speed` / `run_speed` | 5 / 8 m/s | same | |
+| | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 12 / 60 m/s² | same | |
+| | `air_control` | 0.2 | same | |
+| | `max_step_height` ◆ | 0.55 m | 0.45 | Half steps step up; full blocks need a jump |
+| | `air_external_drag` / `ground_external_friction` | 0 /s / 15 m/s² | same | |
+| | `carried_by_characters` | false | same | |
+| | `auto_jump` ◆ | false (touch preset: true) | — | Dwell addition |
+| | `edge_guard` ◆ | false | — | Dwell addition |
+| | `max_push_force` ◆ | 800 N | — | Contact limit (Phase 20) |
+| | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
+| `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
+| | `max_slope_angle` | 50° ◆ (45° would hinge on rounding at a 45° face) | same | |
+| `jump` | `height` | 1.25 m | same | Clears one block |
+| | `buffer_ticks` / `coyote_ticks` ◆ | 12 / 12 ticks (0.2 / 0.2 s) | 0.2 / 0.1 s | Coyote time doubled: 0.1 s felt stingy next to other games |
+| `crouch` | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |
+| | `speed` / `mid_air_boost` | 1.6 m/s / 0 | same | |
+| `climb` | `speed` / `look_down_threshold` | 3 m/s / 30° | same | |
+| | `jump_off_up` / `jump_off_away` / `snap_strength` | 4 m/s / 3 m/s / 10 /s | `jumpOffVelocity` (0, 4, 3) | |
+| `swim` ◆ | `speed` / `enter_fraction` / `exit_fraction` | 3 m/s / 0.6 / 0.4 | — | Dwell addition |
+| | `buoyancy` / `drag` / `float_fraction` | 12 m/s² / 2 /s / 0.7 | — | |
+| `band` ◆ | `boost_gravities` | 2 | — | The flip band (§11) |
+| `fly` ◆ | `speed` / `run_factor` / `boost_height` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × max(1 + height above sea / boost_height, 2^(speed level / 2)) |
+| | `terrain_speed` / `ceiling` / `horizontal_limit` | 400 m/s / 24,000 km / 8,400 km | — | Below `WORLD_MAX_Y` / feet height / \|x\|, \|z\| |
+| `damage` ◆ | `fall_damage_min_speed` / `fall_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `LANDED` event's impact speed |
+| | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
+| `advanced` | `step_probe_distance` / `probe_ring_radius` / `wall_check_distance` | 0.01 m / 0.9 / 0.16 m | same | |
+| | `external_absorb_threshold` | 0.01 m/s | same | Far above native↔WASM noise (none measured, §8.3) |
+| | `max_platform_yaw_speed` | 360 °/s | same | |
 
 A **Unity parity** preset (PPC `ApplyUnityParity`, with Dwell's body dimensions) is kept for
-comparison testing.
+comparison testing (`air_drag_decays_an_air_kick_unity_parity`).
 
 ---
 
@@ -465,195 +485,211 @@ comparison testing.
 
 The PPC relies on Quantum's rollback of the whole world. Dwell predicts **only the local player**
 against a small client physics world, and the server is authoritative. The prediction logic is
-C++ (`player::Predictor`, `predictor.h`): natively it backs the latency/loss tests, and in the
-browser it runs in the client's own WASM instance of the sim core on the main thread
-(`dwell_client_*` exports, `client/src/sim/clientCore.ts`).
+Rust (`Predictor`, `predictor.rs`): natively it backs the predictor and netcode suites, and in the
+browser it runs in the client's WASM module, driven by the game loop (`dwell-client`'s `game.rs`:
+fixed 60 Hz ticks, input datagrams, reconciliation, the tick-rate nudge).
 
 ### 8.1 Client prediction world
-Owned by the `Predictor` (same Jolt settings as the server):
-- static terrain collision from the client's chunks (same `TerrainCollision` and `VoxelQuery`;
-  until Phase 3b streams chunks, clients generate them from the seed and generator version in
-  `Welcome`);
-- **kinematic** capsules for remote players at their **latest snapshot position, dead-reckoned by
-  their velocity** until the next snapshot (at most 0.5 s). Measured against the alternative of
-  extrapolating to the predicted present: head-on bumps corrected with 0.17–0.23 m per-tick
-  rendered steps and no snaps, versus snaps of 1–2 m (an extrapolated kinematic proxy shoves the
-  local player, while on the server two equal-mass bodies stop each other). Tier 1 proxies
-  (present-time within `PREDICT_PROXY_RADIUS`, ARCHITECTURE §9.4) arrive in Phase 20;
+Owned by the `Predictor` (the same `Physics` settings as the server):
+- static terrain collision from the chunks the client has streamed (the same `TerrainCollision`
+  and `VoxelQuery`);
+- **kinematic** (velocity-based) capsules for remote players at their **latest snapshot position,
+  dead-reckoned by their velocity** until the next snapshot (at most 0.5 s). Measured against the
+  alternative of extrapolating to the predicted present: head-on bumps corrected with 0.17–0.23 m
+  per-tick rendered steps and no snaps, versus snaps of 1–2 m (an extrapolated kinematic proxy
+  shoves the local player, while on the server two equal-mass bodies stop each other). Tier 1
+  proxies (present-time within `PREDICT_PROXY_RADIUS`, ARCHITECTURE §9.4) arrive in Phase 20;
 - the local player as the only dynamic body, with the server's body settings.
 
 ### 8.2 Loop
-- **Input:** each client tick samples input, quantizes it once (TypeScript `quantizeInput`,
-  mirroring C++ `QuantizeInput`: move clamped to the unit circle, `i8` axes, button bits, yaw as a
+- **Input:** each client tick samples input, quantizes it once (`dwell_physics::net::quantize_input`,
+  called by `dwell-game`'s input: move clamped to the unit circle, `i8` axes, button bits, yaw as a
   wrapped `i16` fraction of a turn, pitch `i16` for ±90°), predicts with the *dequantized* value
-  (the server dequantizes the same integers, so both simulate identical input), stores
-  `{inputSeq, input, PlayerController, position, velocity}` in a 256-tick ring, and sends a
-  `PlayerInput` datagram carrying the newest 4 inputs.
-- **Server:** inputs queue per session ordered by `inputSeq` (§11 validation; see ARCHITECTURE
-  §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it runs dry the
-  last input repeats and the buffer re-primes; beyond 6 queued inputs the oldest are skipped. The
-  snapshot reports the queue length (`inputBuffer`); the client nudges its tick rate ±2 % to keep
-  it between 1 and 4 (clock drift between client and server otherwise starves or floods it).
-- **Snapshot (20 Hz):** compared with the stored entry for `ackInputSeq`: position within 1 cm,
+  (`dequantize_input`; the server dequantizes the same integers, so both simulate identical input),
+  stores `{seq, input, PlayerController, position, velocity, touched}` in a 256-tick ring, and sends
+  a `PlayerInput` datagram carrying the newest 4 inputs (`MAX_INPUTS_PER_DATAGRAM`).
+- **Server** (`dwell-sim`): inputs queue per session ordered by `inputSeq` (§11 validation; see
+  ARCHITECTURE §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it
+  runs dry the last input repeats and the buffer re-primes; beyond 6 queued inputs the oldest are
+  skipped. The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
+  ±2 % to keep it between 1 and 4 (clock drift between client and server otherwise starves or
+  floods it).
+- **Snapshot (20 Hz):** compared with the stored entry for `ack_input_seq`: position within 1 cm,
   velocity within 5 cm/s, controller flags equal, external velocity within 5 cm/s → nothing to do
   (the common case). Otherwise the server state is restored (resumable controller state from §8.4
   over the stored entry, which supplies the input) and every unacknowledged input is replayed
   (pipeline + prediction-world step).
 - **Smoothing:** the visible position is `predicted + offset`; a replay adds `before − after` to
   the offset so the view doesn't jump, and the offset decays with a 0.1 s time constant. A
-  correction above `RECONCILE_SNAP_DISTANCE` snaps (offset cleared) — except knockback
-  corrections, smoothed up to 4× that distance.
+  correction above `RECONCILE_SNAP_DISTANCE` (1 m) snaps (offset cleared) — except knockback
+  corrections and corrections while the player touched a remote player's proxy, which are smoothed
+  up to `KNOCKBACK_SNAP_FACTOR` (4) × that distance. A bump into another player, like a knockback,
+  is learnt of a round trip late, and Rapier's player-vs-player contacts mispredict by up to
+  ~1.3 m; each history entry records whether the local capsule touched (or nearly touched) a proxy.
 - **Knockback:** the server applies server-originated velocity changes after the controller pass,
-  before the physics step, and sends `PlayerEvent(Knockback)` with the `inputSeq` processed that
-  tick. The client records it, restores its own predicted state at `inputSeq − 1`, and replays
+  before the physics step, and sends `PlayerEvent(Knockback)` with the `input_seq` processed that
+  tick. The client records it, restores its own predicted state at `input_seq − 1`, and replays
   with the kick inserted after that input's pipeline. When the snapshot overtakes the event (they
-  travel on different channels), the snapshot's `lastKnockbackSeq` tells the client the
+  travel on different channels), the snapshot's `last_knockback_seq` tells the client the
   correction is a knockback.
 - Replays are cheap: one dynamic body in a near-empty world, ~6–12 ticks at typical RTTs.
 
-**Measured** (`netcode: prediction`, in-process network simulator, two clients):
-- 150 ms RTT, 20 ms jitter, 5 % loss: ~1 % of snapshots replay, position error at the
+**Measured** (`crates/dwell-sim/tests/netcode.rs`: the real server and per-client predictors over
+simulated links, two clients; Release):
+- 150 ms RTT, 20 ms jitter, 5 % loss: under 1 % of snapshots replay, position error at the
   acknowledged input p95 < 1 mm, no snaps. The residual corrections are one tick of motion
   (≤ 13 cm at run speed) when jitter starves the server's input buffer.
-- Launch-pad knockback: no snaps, largest rendered step 0.6 m per tick.
-- Head-on bump: no snaps, largest rendered step ≤ 0.23 m.
+- Server knockback (14 m/s up while walking): no snaps, largest rendered step ~0.6 m per tick.
+- Head-on bump: no snaps, largest rendered step ≤ 0.26 m.
 - Input takes effect on the next predicted tick.
 
 ### 8.3 Divergence budget **[built]**
-Native and WASM Jolt are not assumed bit-identical. Jolt is built with
-`JPH_CROSS_PLATFORM_DETERMINISTIC` and everything without FMA contraction (`-ffp-contract=off`),
-and the result is **measured** in CI: `dwell_scenario_trace` runs the five-player scenario natively
-and under Node (WASM), and `server/tools/divergence.mjs` compares them. Measured: positions
-bit-identical over all 600 ticks; velocities within 1.2 × 10⁻⁷ m/s (float rounding in the trig
-functions), far below `externalAbsorbThreshold` (0.01 m/s), which the check enforces for the
-divergence added per tick. The whole ported player and netcode suite also passes under WASM
-(`dwell_player_tests.js`).
+Native and WASM builds are not assumed bit-identical; the result is **measured**. Rapier is built
+with `enhanced-determinism` and the controller takes its transcendental functions from `libm`. The
+five-player golden trace (§10) is stored as shortest round-trip floats and must match bit for bit
+in the origin frame, natively and under `wasm32-wasip1` (CI runs the deterministic suites, the whole
+`dwell-physics` suite among them, with `cargo test --target wasm32-wasip1`, Node's WASI as the
+runner, `tools/wasi-run.mjs`): that run is the native↔WASM divergence check. Measured: positions,
+velocities and states bit-identical over all 600 ticks, so no divergence eats into
+`external_absorb_threshold` (0.01 m/s).
 
 ### 8.4 Wire format
 - `PlayerInput`: analog move vector (`i8 moveX, moveY`) for gamepads and touch sticks; `jump`,
-  `run`, `crouch`, `fly` in the `u16` button bitfield; quantized yaw and pitch (ARCHITECTURE §8.3).
+  `run`, `crouch`, `fly` and the flight speed level in the `u16` button bitfield; quantized yaw and
+  pitch (ARCHITECTURE §8.3).
 - The local player's snapshot block carries the body state (capsule centre `f64×3`, velocity
-  `f32`),
-  flags, health, `State`, `inputBuffer`, `lastKnockbackSeq`, and the controller state needed to
-  resume simulation exactly (47 bytes, +12 while climbing, +8 after letting go of a ladder):
-  flags (grounded, jumping, crouching, climbing, hasReleased, swimming, flying); horizontal `current`,
-  `external`, and `contribution` (x, z); vertical `accumulatedY`, `platformY`, `targetY`; the
-  ground's vertical velocity; the ground reference (kind + player id); jump buffer and coyote ticks;
-  step grace; ladder and released cells. Per-tick scratch (inputs, events, probe results, climb,
-  swim and fly velocities) is recomputed.
+  `f32`), flags, health, `State`, `input_buffer`, `last_knockback_seq`, and the controller state
+  needed to resume simulation exactly (`ControllerState`, `to_net` / `from_net` in `net.rs`;
+  47 bytes, +12 while climbing, +8 after letting go of a ladder): flags (grounded, jumping,
+  crouching, climbing, hasReleased, swimming, flying, faceB); horizontal `current`, `external`, and
+  `contribution` (x, z); vertical `accumulated_y`, `platform_y`, `target_y`; the ground's vertical
+  velocity; the ground reference (kind + player id; Tier 1 grounds go on the wire with Phase 20);
+  jump buffer and coyote ticks; step grace; ladder and released cells. Per-tick scratch (inputs,
+  events, probe results, climb, swim and fly velocities) is recomputed.
 - Remote players receive only feet position (`i32×3` at 1/256 m, `posfix`), velocity (`f16`), view
   angles, `State`, and flags.
 - **[built, Phase 3c — protocol v4, ARCHITECTURE §8.3, ADR 0011]** For the 8,192 km world the
-  controller runs on double-precision Jolt, the local player's capsule centre is `pos64` (exact, so
-  reconciliation compares like for like anywhere) and remote feet positions `posfix`. Vertical
-  controller fields (`accumulatedY`, `platformY`, `targetY`) stay `f32`: they are velocities and
-  platform heights, not the player's height. `pos64` accepts ±`POS64_LIMIT` (33,554 km), covering
-  creative flight up to its ceiling (protocol v7); a flying player's remote `posfix` position
-  clamps at ±8,388 km.
+  controller runs on double-precision Rapier (`rapier3d-f64`), the local player's capsule centre is
+  `pos64` (exact, so reconciliation compares like for like anywhere) and remote feet positions
+  `posfix`. Vertical controller fields (`accumulated_y`, `platform_y`, `target_y`) stay `f32`: they
+  are velocities and platform heights, not the player's height. `pos64` accepts ±`POS64_LIMIT`
+  (33,554 km), covering creative flight up to its ceiling (protocol v7); a flying player's remote
+  `posfix` position clamps at ±8,388 km.
 
 ---
 
 ## 9. Client presentation (from the PPC view layer) **[built, except animation]**
 
-- **Camera** (`client/src/game/game.ts`, eye height in `game/eye.ts`): first-person at the
-  smoothed render position (interpolated between the last two ticks plus the correction offset).
-  **Field of view** (`render/fov.ts`): 75° vertical, but never more than 100° horizontal — wider
-  screens (16:9 desktop, landscape phones) get a narrower vertical field of view. An uncapped wide
-  view made forward and backward walking look faster than strafing at the same speed (playtest);
-  the sim itself moves at the same speed in every direction (`player: walking` test).
+- **Camera** (`dwell-client`'s `game.rs`, eye height in `dwell-game`'s `eye.rs`): first-person at
+  the smoothed render position (interpolated between the last two ticks plus the correction
+  offset). **Field of view** (`dwell-client`'s `render/camera.rs`): 75° vertical, but never more
+  than 100° horizontal — wider screens (16:9 desktop, landscape phones) get a narrower vertical
+  field of view. An uncapped wide view made forward and backward walking look faster than strafing
+  at the same speed (playtest); the sim itself moves at the same speed in every direction
+  (`every_direction_moves_at_the_same_speed`).
   The eye height is computed once per tick from the feet (never the capsule centre, whose height
   changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
   camera must not show, and each is folded into an offset that decays:
   - **Steps** (PPC `SmoothSteps`, extended to both directions): a grounded feet change of 0.1 m up
-    to `maxStepHeight` in one tick (the step-up lift, or the ground snap down a stair) decays at
+    to `max_step_height` in one tick (the step-up lift, or the ground snap down a stair) decays at
     4 m/s plus 6/s of the remaining offset, so it never lags more than one step.
   - **Crouch**: the sim's crouch is instant, and in mid-air it moves the feet by the height
     difference (the head stays put). The eye change on the crouch tick, less the tick's own
     vertical motion, decays at 12/s.
   - Offsets beyond a step (or 2 m for crouch) are teleports and are not smoothed.
 
-  `platform.yawDelta` turns the camera with rotating ground. Dwell's world is **right-handed, Y up**: yaw 0 looks along +Z, and right of +Z is −X (the
-  PPC's Unity convention is left-handed); the controller's camera-right vector follows this.
-- **Players:** remote players are capsules with a visor, interpolated 100 ms in the past; dead
-  players are drawn lying down (a cosmetic pose; the physics ragdoll moves to Phase 21 with the
-  client debris world). While dead, the camera orbits the body until respawn.
+  `platform.yaw_delta` turns the camera with rotating ground. Dwell's world is **right-handed, Y
+  up**: yaw 0 looks along +Z, and right of +Z is −X (the PPC's Unity convention is left-handed); the
+  controller's camera-right vector (`camera_right`) follows this.
+- **Players:** remote players are capsules with a visor, interpolated 100 ms in the past
+  (`dwell-game`'s `remotes.rs`, `INTERP_DELAY_MS`); dead players are drawn grey and lying on the ground (`dwell-client`'s
+  `render/geometry.rs`; the
+  physics ragdoll moves to Phase 21 with the client debris world). While dead, the camera looks
+  down at the body from behind and above, turning around it with the look yaw, until respawn.
 - **Animation:** not yet — there are no character models. The parameters listed by the PPC
   (`Speed`, `IsGrounded`, … from `State`, velocity, and flags) are all available client-side.
 - **Debug overlay** (F3): state, ground ref and gap, wall/ceiling/submersion, position, velocity,
   layer velocities (current, external, target), prediction stats (snapshots, replays, snaps,
   knockback replays, error at ack, last correction, smoothing offset), server input buffer, tick
   rate, RTT; probe rays (ground ring, walls) and the velocity vector drawn in 3D.
-- **Network condition simulator:** `?netsim=<rtt ms>,<jitter ms>,<loss %>` wraps the transport.
+- **Network condition simulator:** `?netsim=<rtt ms>,<jitter ms>,<loss %>` wraps the transport
+  (`dwell-client`'s `net/netsim.rs`).
 
 ---
 
 ## 10. Testing (porting the PPC test suite)
 
-**Built:** the PPC's headless Quantum tests are ported to C++ (doctest) in `server/tests/player`,
-using a `PlayerTestWorld` builder (`player_test_world.h`) with voxel primitives (floor, block
-steps, half steps (static boxes since Phase 15), walls, 1×2 doorways, 1-tall crawlspaces, ladder columns, water pools), Tier 1
-boxes (kinematic or dynamic) as platforms and ramps, scheduled kicks and explosions, and per-player
-event counters. Expectations use Dwell's default config (recommended feel, voxel capsule): The **movement playground** — a block step, a doorway, a crawlspace, a ladder to a ledge and a pool near the spawn — is a structure file (`playground.structure`, `core/structure.h`) stamped over the flat world by the netcode tests (Phase 15; it was generator version 1 with slab stairs, slope features and a launch pad). The launch-pad knockback test is now a server-issued knockback.
+**Built:** the PPC's headless Quantum tests are ported to Rust in `crates/dwell-physics/tests`,
+using a `PlayerTestWorld` builder (`tests/common/mod.rs`) with voxel primitives (floor, block
+steps, half steps (static Tier 1 boxes), walls, 1×2 doorways, 1-tall crawlspaces, ladder columns,
+water pools), Tier 1 boxes (static, kinematic or dynamic) as platforms and ramps, scheduled kicks
+and explosions, and per-player event counters. Expectations use Dwell's default config
+(recommended feel, voxel capsule). The **movement playground** — a block step, a doorway, a
+crawlspace, a ladder to a ledge and a pool near the spawn — is a structure file
+(`shared/structures/playground.structure`) stamped over the flat world by the netcode suite
+(Phase 15; it was generator version 1 with slab stairs, slope features and a launch pad). The
+launch-pad knockback test is a server-issued knockback.
 
 | PPC suite | Dwell equivalent |
 |---|---|
-| Phase1Skeleton | Stands still without drift or tipping; heavy cluster pushes the player |
-| Phase2Movement | Probes, speeds, accel/decel/reverse, walls, no diagonal speed-up, step-up on slabs, blocked by full blocks, air control, external absorption and decay |
-| Phase3Vertical | Fall and land event, jump apex, buffer, coyote, no double jump, ceiling, launch |
-| Phase4Crouch | Feet planted, crouch into a crawlspace, blocked stand-up, mid-air tuck |
-| Phase5Platform | Riding translating, rotating, and falling Tier 1 bodies; jump-off keeps momentum; explosion |
-| Phase6Climb | Ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
-| CharacterStacking / GroundedConsistency / StepSmoothness | Same scenarios on voxel geometry |
-| GoldenTrace | Four-player scenario: identical across repeated runs; within 1 mm of `server/tests/player/golden/scenario-trace.txt` (regenerate with `DWELL_UPDATE_GOLDEN=1`; regenerated in Phase 3c for double precision, which tipped one borderline crouch-under-a-ledge fit); native↔WASM compared by `divergence.mjs` (§8.3) |
-| — (Dwell) | Built: swim enter/float/dive/exit, shallow water, creative flight (`flight_test.cpp`: hover, rise/sink/move, speed growing with height, the terrain-band cap and the ceiling, a fast dive stopping on the ground; the server's flight policy in `netcode_test.cpp`), auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams, collision-mesh unit tests; networked players (`netcode_test.cpp`, `netsim.h`: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps. Later phases: placement rejection (3), crush and push-force cap (4) |
+| Phase1Skeleton | `movement.rs`: the body's settings, stands still without drift or tipping; a heavy cluster pushes the player |
+| Phase2Movement | `movement.rs`: probes, speeds, accel/decel/reverse, walls, no diagonal speed-up, step-up on half steps, blocked by full blocks, air control, external absorption and decay |
+| Phase3Vertical | `vertical_crouch.rs`: fall and land event, jump apex, buffer, coyote, no double jump, ceiling, launch, a 20° ramp |
+| Phase4Crouch | `vertical_crouch.rs`: feet planted, crouch into a crawlspace, blocked stand-up, mid-air tuck |
+| Phase5Platform | `platform_climb_swim.rs`: riding translating, rotating, elevating and dynamic Tier 1 bodies; jump-off keeps momentum; explosion |
+| Phase6Climb | `platform_climb_swim.rs`: ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
+| CharacterStacking / GroundedConsistency / StepSmoothness | `scenario.rs`: the same scenarios on voxel geometry (standing on heads, half-step stairs, stair corners, ledges) |
+| GoldenTrace | `scenario.rs`: the five-player scenario is identical across repeated runs and matches `tests/golden/scenario.trace` bit for bit in the origin frame (natively and under `wasm32-wasip1`, §8.3); far from the origin and on face B every state must match and positions stay within 1 mm. Re-record with `DWELL_UPDATE_GOLDEN=1` (origin frame only); re-recorded on Rapier in Phase 24 |
+| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap and the ceiling, the speed level, flying round the rim to face B, a fast dive stopping on the ground); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
 
-Performance gate: 64 players' controller passes (excluding the Jolt step) under 1 ms/tick —
-measured at ~0.42 ms in the Release build with double-precision Jolt (~0.43 ms before it), ~0.48 ms
-~8,000 km from the origin; checked by `player: performance` (strict under `NDEBUG`, loose in Debug
-builds).
+Performance gate: 64 players' controller passes (excluding the physics step) under 1 ms/tick —
+measured at ~0.48 ms in a Release build with `enhanced-determinism` on, ~0.51 ms ~8,000 km from the
+origin; checked by `sixty_four_players_controller_passes_cost_under_1_ms_per_tick` (`scenario.rs`;
+strict in optimised builds, 25 ms in unoptimised ones; a release step of the CI `rust` job).
 
 **Far from the origin** (ADR 0011): every test describes its world in a local frame that
-`test_origin.h` places in the world; `--dwell-origin-x=far` (in `tests/main.cpp`) puts it
-7 999 488 m east (a whole number of collision regions), and the player and netcode suites, the
-golden trace and the performance gate pass there unchanged, natively and in WASM (CI runs both).
-World-level tests cover the rest: walking off the rim of the disc into the void kills
-(`streaming_test.cpp`).
+`tests/common/mod.rs` places in the world; `DWELL_ORIGIN_X=far` puts it 7 999 488 m east, and the
+whole `dwell-physics` suite — the golden trace and the performance gate included — and the netcode
+suite pass there unchanged (CI runs both; the `wasm32-wasip1` run is in the origin frame).
+World-level tests cover the rest: walking off the rim of the disc falls toward the midplane, not
+into a void (`crates/dwell-sim/tests/streaming.rs`).
 
 ## 11. The bifacial world (Phase 13) **[built]**
 
 ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §3, §6.) Down is
 always toward the midplane (y = −2,048), so a face-B player stands upside down.
 
-- **The face-local frame** (`player/face_frame.h`). The controller is written for an upright player.
+- **The face-local frame** (`frame.rs`). The controller is written for an upright player.
   `PlayerController::face` (±1) says which side the body is on; for face B every pass runs in the
   *mirror image* of the world — heights y → −4,096 − y (voxel rows y → −4,097 − y, the frame the
-  face's terrain is generated in), vertical velocities and contact normals negated, slabs and
-  slopes turned over — where gravity points to −y as ever. `Players::Pos/Vel/SetPos/SetVel` and
-  `FaceQuery` (the voxel queries) cross the boundary; on face A the maps are the identity, so face A
-  is bit-identical to before (the golden trace is unchanged). `Players::Position`, `Velocity`,
-  `Feet` and `Head` stay in the world (`Feet` is above `Head` on face B). The face switches when
-  the body centre is more than 5 cm across the midplane; the layers' vertical state is mirrored with
-  it. An upside-down player's right is the frame's left, so `move_x` is negated on face B (the
-  heading `yaw` is a world azimuth and unchanged as far as the controller goes; the client turns its
-  mouse the other way, and turns its heading by 180° when its face changes, so the server only sees
-  the inputs).
+  face's terrain is generated in), vertical velocities and contact normals negated, shaped blocks
+  turned over (`dwell_blocks::mirror`) — where gravity points to −y as ever. `Frame` maps positions,
+  velocities, rows and states, and `FaceQuery` (the voxel queries) and the passes' private
+  `pos`/`vel`/`set_pos`/`set_vel` cross the boundary; on face A the maps are the identity, so face A
+  plays exactly as the upright controller. `Players::position`, `velocity`, `feet` and `head` stay in
+  the world (`feet` is above `head` on face B). The face switches (in `step_input`) when the body
+  centre is more than 5 cm across the midplane; the layers' vertical state is mirrored with it. An
+  upside-down player's right is the frame's left, so `move_x` is negated on face B (the heading
+  `yaw` is a world azimuth and unchanged as far as the controller goes; the client turns its mouse
+  the other way, and turns its heading by 180° when its face changes, so the server only sees the
+  inputs).
 - **The flip band.** In open air within `FLIP_BAND` (4 m) of the midplane a player moves as when
   swimming (the swim layer), without buoyancy or drag. Moving toward the midplane it is accelerated
   by `band.boost_gravities` (2) × gravity, so it is carried across; moving away, the midplane's pull
   (`gravity · h / band`) fades to zero at it. The player's own jump/crouch/look input steers as in
-  water. Nothing slows the body, so it swings across the midplane under gravity.
+  water. Nothing slows the body, so it swings across the midplane under gravity. Dynamic Tier 1
+  bodies get the same gravity by side and band from `Physics::step` (`tier1_bifacial.rs`).
 - **Crossing.** Digging through the core or going over the rim brings a player to the band; on the
   far side "down" points back, so the player presses jump (up, away from the midplane) to go on.
-  `controllerFlags.faceB` / `playerFlags.faceB` (protocol v12) carry the face.
-- **Mirror equivalence.** `dwell_tests --dwell-face=b` puts the controller suites' local frame on
-  face B (`test_origin.h`: geometry, spawns, velocities, inputs and rotations mirrored) and every
-  case holds, natively and under WASM, at the origin and ~8,000 km out (the VoxelQuery ray-cast
-  tests, which test world-frame geometry, are skipped). Controller decisions are identical; Jolt's
-  contact solver is not bit-symmetric where a capsule rests against a face at exactly its radius, so
-  the five-player golden trace agrees to 0.1 mm for the first second and within 0.2 m after ten (the
-  scenario's jumps amplify a sub-millimetre push-out difference); states match on every row.
+  `controller_flags::FACE_B` / `player_flags::FACE_B` (protocol v12) carry the face.
+- **Mirror equivalence.** `DWELL_FACE=b cargo nextest run -p dwell-physics` puts the controller
+  suites' local frame on face B (`tests/common/mod.rs`: geometry, spawns, velocities, inputs and
+  rotations mirrored) and every case holds (CI runs it; the two `voxel_query.rs` ray-cast tests,
+  which test world-frame geometry, are skipped). Controller decisions are identical: the five-player
+  golden trace matches every state on face B with positions within 1 mm.
 - **Camera and look** (§9): eye height is measured along the player's up; the view's pitch is toward
-  that up; the camera turns over when the face changes: the heading turns by 180° and the view is drawn rotated
-  about the camera's right axis by π, easing to 0 over 0.5 s (a half forward somersault, nose first;
-  `game/faceFlip.ts`, `render/three/aimCamera.ts`). In the flip band a body can swing across the
-  midplane and back, and each crossing turns the heading round again (no hysteresis).
+  that up; the camera turns over when the face changes: the heading turns by 180° and the view is
+  drawn rotated about the camera's right axis by π, easing to 0 over 0.5 s (a half forward
+  somersault, nose first; `dwell-game`'s `face_flip.rs`, applied by `dwell-client`'s
+  `render/camera.rs`). In the flip band a body can swing across the midplane and back, and each
+  crossing turns the heading round again (no hysteresis).

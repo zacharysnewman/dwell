@@ -15,7 +15,7 @@ export default tseslint.config(
       'dist/',
       'dist-site/',
       'dist-launcher/',
-      'public/wasm/',
+      'src/pkg/',
       'test-results/',
       'playwright-report/',
     ],

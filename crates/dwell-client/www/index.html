@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- The WebGPU probe page (Phase 24a): client/e2e-webgpu loads it in headless Chromium. -->
+<meta charset="utf-8" />
+<title>Dwell WebGPU probe</title>
+<canvas id="c" width="64" height="64"></canvas>
+<script type="module">
+  import init, { probeOffscreen, probeCanvas, probeScene } from './pkg/dwell_client.js';
+  const result = {};
+  try {
+    await init();
+    result.pixels = Array.from(await probeOffscreen());
+    // The scene before the canvas: after a canvas surface is dropped, headless Chromium's
+    // software adapter (SwiftShader) hands out no more adapters on the page.
+    result.scene = Array.from(await probeScene());
+    result.adapter = await probeCanvas(document.getElementById('c'));
+  } catch (e) {
+    result.error = String(e?.message ?? e);
+  }
+  window.__probe = result;
+</script>

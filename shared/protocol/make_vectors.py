@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Reference encoder for protocol golden vectors (independent of the C++ and TS codecs).
+"""Reference encoder for protocol golden vectors (independent of the Rust codec).
 
 Writes shared/protocol/vectors.txt. Each line is `<name> <hex>`; names starting with `!` are
 malformed inputs that every decoder must reject. The field values used here are mirrored in the
-C++ (server/tests/protocol_test.cpp) and TS (client/src/protocol/messages.test.ts) tests.
+Rust codec's tests (crates/dwell-protocol/tests/vectors.rs).
 """
 import json
 import struct

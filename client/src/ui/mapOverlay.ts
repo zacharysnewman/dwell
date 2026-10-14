@@ -1,11 +1,10 @@
 // Height map overlay (F4; Phase 3e debug tooling, ARCHITECTURE.md §6.3): the terrain generator's
-// columns around the player, sampled in a worldgen worker (worldgen/generator.ts `map`), coloured by
+// columns around the player, sampled in a job worker (dwell-client's jobs `Map`), coloured by
 // height and hill-shaded. `-` and `=` zoom out and in, from the player's surroundings (1 km across)
 // to the whole disc. The colours are prototype (§6.1); the baseline has no biomes (ADR 0025).
 
-import { MAP_COLUMN_BYTES } from '../worldgen/generator';
-
-export { MAP_COLUMN_BYTES };
+/** Bytes per sampled column of the map (height i16 little-endian, outside flag; jobs/mod.rs). */
+export const MAP_COLUMN_BYTES = 3;
 
 /** The sea, by depth: shallow and deep (blended to 20 m). */
 export const SEA_SHALLOW = 0x50bedc;

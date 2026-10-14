@@ -62,13 +62,23 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
+      - name: Rust toolchain and the wasm32 target (keep in sync with rust-toolchain.toml)
+        run: |
+          rustup toolchain install 1.94.1 --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain 1.94.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
       - run: npm ci
+      # The Rust client's module and its types (src/pkg), which the shell imports.
+      - run: npm run build:wasm
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
 
   client:
-    name: Client (WASM suites, test, build)
+    name: Client (test, build)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -80,122 +90,22 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
-      - name: Cache Emscripten
-        uses: actions/cache@v4
-        with:
-          path: ~/emsdk
-          key: emsdk-6.0.10-${{ runner.os }}
-      - name: Install Emscripten (keep in sync with ARCHITECTURE.md §3.1)
+      - name: Rust toolchain and the wasm32 target (keep in sync with rust-toolchain.toml)
         run: |
-          [ -d ~/emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
-          ~/emsdk/emsdk install 6.0.10
-          ~/emsdk/emsdk activate 6.0.10
-          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
-          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+          rustup toolchain install 1.94.1 --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain 1.94.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
       - run: npm ci
-      - name: Build local-mode WASM core
+      - name: Build the Rust client (WASM, wasm-bindgen)
         run: npm run build:wasm
-      - name: Player controller suite under WASM (Node)
-        run: node ../server/build/wasm/tools/dwell_player_tests.js
-      - name: Player controller suite under WASM, ~8,000 km from the origin (ADR 0011)
-        run: node ../server/build/wasm/tools/dwell_player_tests.js --dwell-origin-x=far
-      - name: Player controller suite under WASM on face B, the mirror image (ADR 0023)
-        run: node ../server/build/wasm/tools/dwell_player_tests.js --dwell-face=b -tse="netcode*"
-      - name: Worldgen suite under WASM (Node) — golden chunk hashes match native (ADR 0010)
-        run: node ../server/build/wasm/tools/dwell_worldgen_tests.js
-      - name: Storage suite under WASM (Node) — the browser's VFS; opens the natively written world file (§6.4)
-        run: node ../server/build/wasm/tools/dwell_storage_tests.js
       - run: npm test
-        env:
-          DWELL_REQUIRE_WASM: '1'
       # `npm run build` type-checks too; format and lint run in the client-lint job.
       - run: npm run build
       - name: Build the launcher (RELEASES.md §5)
         run: npm run build:launcher
-
-  server-lint:
-    name: Server (formats, clippy, Rust tests, generated header)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y clang-format
-      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
-        run: rustup toolchain install 1.94.1 --profile minimal --component clippy,rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: server/net/wt
-      - name: Third-party notices are up to date (RELEASES.md §2)
-        run: python3 shared/licenses/gen.py --check
-      - name: C++ format
-        run: find server/core server/app server/tests \( -name '*.cpp' -o -name '*.h' \) ! -name '*.gen.h' | xargs clang-format --dry-run --Werror
-      - name: Rust format, clippy, tests
-        working-directory: server/net/wt
-        run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
-      - name: C header is up to date (cbindgen)
-        run: |
-          cargo install cbindgen --version 0.29.4 --locked
-          server/net/wt/gen-header.sh
-          git diff --exit-code -- server/net/wt/include
-
-  server:
-    name: Server (C++ build and tests)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
-      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
-        run: rustup toolchain install 1.94.1 --profile minimal
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: server/net/wt
-      - name: Configure
-        working-directory: server
-        run: cmake --preset dev
-      - name: Build
-        working-directory: server
-        run: cmake --build --preset dev
-      - name: Test
-        working-directory: server
-        run: ctest --preset dev
-      - name: Player and netcode suites ~8,000 km from the origin (ADR 0011)
-        working-directory: server
-        run: build/dev/tests/dwell_tests --dwell-origin-x=far -ts="player*,netcode*"
-      - name: Player suites on face B, the mirror image of face A (ADR 0023)
-        working-directory: server
-        run: |
-          build/dev/tests/dwell_tests --dwell-face=b -ts="player*"
-          build/dev/tests/dwell_tests --dwell-face=b --dwell-origin-x=far -ts="player*"
-      - name: Smoke-run server
-        # The server runs until signalled: start it, then after 10 s ask it to stop (SIGINT) and
-        # require a clean shutdown (--preserve-status: its own exit code, not timeout's 124).
-        run: timeout --preserve-status --signal=INT 10s server/build/dev/app/dwell_server --world '' --visibility none
-
-  server-perf:
-    name: Server (player controller performance gate, Release)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
-      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
-        run: rustup toolchain install 1.94.1 --profile minimal
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: server/net/wt
-      - name: Player controller performance gate and golden trace (Release)
-        working-directory: server
-        run: |
-          cmake --preset release
-          cmake --build --preset release --target dwell_tests
-          build/release/tests/dwell_tests -ts="player: performance,player: scenario"
-          build/release/tests/dwell_tests --dwell-origin-x=far -ts="player: performance,player: scenario"
 
   e2e:
     # The browser suite is serial (one worker, fixed ports), so it is split across runners; each
@@ -217,47 +127,34 @@ jobs:
             platforms/electron/package-lock.json
             services/master/package-lock.json
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb
-      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
-        run: rustup toolchain install 1.94.1 --profile minimal
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: server/net/wt
-      - name: Cache Emscripten
-        uses: actions/cache@v4
-        with:
-          path: ~/emsdk
-          key: emsdk-6.0.10-${{ runner.os }}
-      - name: Install Emscripten (keep in sync with ARCHITECTURE.md §3.1)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Rust toolchain and the wasm32 target (keep in sync with rust-toolchain.toml)
         run: |
-          [ -d ~/emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
-          ~/emsdk/emsdk install 6.0.10
-          ~/emsdk/emsdk activate 6.0.10
-          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
-          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
-      - name: Build native server
-        working-directory: server
-        run: cmake --preset dev -DDWELL_BUILD_TESTS=OFF && cmake --build --preset dev --target dwell_server
-      - name: Build client (with local-mode WASM)
+          rustup toolchain install 1.94.1 --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain 1.94.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - name: Build the dedicated server (dwell-server)
+        run: cargo build --release -p dwell-server
+      - name: Build client (the Rust client's WASM)
         working-directory: client
         run: |
           npm ci
           npm run build:wasm
           npm run build
-      - name: Native↔WASM controller divergence (PLAYER_CONTROLLER.md §8.3)
-        if: matrix.shard == 1
-        run: |
-          cmake --build server/build/dev --target dwell_scenario_trace
-          node server/tools/divergence.mjs server/build/dev/tools/dwell_scenario_trace server/build/wasm/tools/dwell_scenario_trace.js
       - name: Install Playwright Chromium
         working-directory: client
         run: npx playwright install --with-deps chromium
       - name: Install the master server (a local `wrangler dev` for friend-world tests)
         working-directory: services/master
         run: npm ci
+      # Headed under Xvfb: headless Chromium's software WebGPU loses its device when a canvas
+      # presents (playwright.config.ts).
       - name: Browser end-to-end tests (shard ${{ matrix.shard }}/4)
         working-directory: client
-        run: npx playwright test --shard=${{ matrix.shard }}/4
+        run: xvfb-run -a -s "-screen 0 1280x800x24" npx playwright test --shard=${{ matrix.shard }}/4
       - name: Launcher end-to-end tests (a locally assembled site with three versions)
         if: matrix.shard == 1
         working-directory: client
@@ -267,18 +164,67 @@ jobs:
         working-directory: platforms/electron
         run: |
           npm ci
-          ../../server/build/dev/app/dwell_server --port 4433 --visibility none > server.log &
+          ../../target/release/dwell-server --port 4433 --visibility none > server.log &
           sleep 2
           QUERY="?$(grep -o 'invite link: .*' server.log | cut -d'?' -f2)"
           xvfb-run -a npx electron . --smoke --no-sandbox "--join=$QUERY"
           xvfb-run -a npx electron . --smoke --no-sandbox "--join=?local=1"
+
+  rust:
+    # The Rust workspace (ADR 0028): the third-party notices, format, clippy (native and the
+    # client's wasm32 target), tests in three frames and under WASM, the performance gate, and the
+    # WebGPU probe in headless Chromium.
+    name: Rust workspace (notices, fmt, clippy, tests, WebGPU probe)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Rust toolchain (keep in sync with rust-toolchain.toml)
+        run: |
+          rustup toolchain install 1.94.1 --profile minimal --component clippy,rustfmt
+          rustup target add wasm32-unknown-unknown wasm32-wasip1 --toolchain 1.94.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,wasm-bindgen@0.2.129
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo clippy -p dwell-client --target wasm32-unknown-unknown -- -D warnings
+      # After a build: it reads each crate's licence from its downloaded source.
+      - name: Third-party notices are up to date (RELEASES.md §2)
+        run: python3 shared/licenses/gen.py --check
+      - name: Tests
+        run: cargo nextest run --workspace
+      - name: Player controller ~8,000 km from the origin and on face B (ADR 0011, ADR 0023)
+        run: |
+          DWELL_ORIGIN_X=far cargo nextest run -p dwell-physics
+          DWELL_FACE=b cargo nextest run -p dwell-physics
+          DWELL_ORIGIN_X=far cargo nextest run -p dwell-sim --test netcode
+      - name: Deterministic suites under WASM (worldgen goldens, the controller's golden trace as the native↔WASM divergence check, ADR 0010; Node's WASI, tools/wasi-run.mjs)
+        run: cargo test -p dwell-blocks -p dwell-protocol -p dwell-world -p dwell-worldgen -p dwell-physics --target wasm32-wasip1
+      - name: 64 players' controller passes under 1 ms per tick (Release, enhanced-determinism on)
+        run: cargo test --release -p dwell-physics --test scenario sixty_four -- --nocapture
+      - name: WebGPU probe in headless Chromium
+        working-directory: client
+        run: |
+          npm ci
+          npm run build:probe
+          npx playwright install --with-deps chromium
+          npm run e2e:webgpu
 
   # The one check to require in branch protection: the jobs above come and go (and the e2e matrix
   # has one name per shard) but this stays, and a skipped or failed job fails it.
   ci:
     name: CI
     if: always()
-    needs: [protocol, master, client-lint, client, server-lint, server, server-perf, e2e]
+    needs: [protocol, master, client-lint, client, e2e, rust]
     runs-on: ubuntu-24.04
     steps:
       - name: Every job passed

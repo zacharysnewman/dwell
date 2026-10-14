@@ -3,34 +3,32 @@
 // core refuses a world file last saved by a version this build may not open, and says which.
 import { expect, test, type Page } from '@playwright/test';
 
+interface WorldFileHooks {
+  worldFileVersion(bytes: Uint8Array): string | undefined;
+  setWorldFileVersion(bytes: Uint8Array, version: string): Uint8Array;
+}
+
 /**
- * Rewrites the app version a saved world file records as its last saver (`app_version_last` in the
- * `meta` table) to 9.9.9, in place: the same length, so the SQLite file stays valid. Every copy of
- * the row is rewritten (a page may keep a freed older one).
+ * Rewrites the world file to say version 9.9.9 last saved it (`app_version_last` in its meta),
+ * through the client's own world-file code (window.__dwellTools, on the main menu).
  */
-async function claimSavedByNewerVersion(page: Page, id: string): Promise<number> {
+async function claimSavedByNewerVersion(page: Page, id: string): Promise<string | undefined> {
+  await page.waitForFunction(() => '__dwellTools' in globalThis);
   return page.evaluate(async (worldId) => {
+    const hooks = (globalThis as { __dwellTools?: WorldFileHooks }).__dwellTools;
     const root = await navigator.storage.getDirectory();
     const dir = await (await root.getDirectoryHandle('dwell')).getDirectoryHandle('worlds');
     const handle = await dir.getFileHandle(`${worldId}.dwellworld`);
     const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer());
-    const key = new TextEncoder().encode('app_version_last');
-    let rewritten = 0;
-    for (let i = 0; i + key.length + 5 <= bytes.length; i++) {
-      if (!key.every((b, j) => bytes[i + j] === b)) continue;
-      const at = i + key.length;
-      const value = new TextDecoder().decode(bytes.subarray(at, at + 5));
-      if (!/^\d\.\d\.\d$/.test(value)) continue;
-      bytes.set(new TextEncoder().encode('9.9.9'), at);
-      rewritten++;
-    }
+    const rewritten = hooks?.setWorldFileVersion(bytes, '9.9.9');
+    if (!rewritten) throw new Error('no world-file hooks');
     // The page that saved it may still hold the file for a moment.
     for (let attempt = 0; ; attempt++) {
       try {
         const writable = await handle.createWritable();
-        await writable.write(bytes);
+        await writable.write(new Uint8Array(rewritten));
         await writable.close();
-        return rewritten;
+        return hooks?.worldFileVersion(rewritten);
       } catch (err) {
         if (attempt >= 50) throw err;
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -39,20 +37,15 @@ async function claimSavedByNewerVersion(page: Page, id: string): Promise<number>
   }, id);
 }
 
-/** The first five characters of each `app_version_last` value in the world file (read only). */
-async function recordedVersions(page: Page, id: string): Promise<string[]> {
+/** The app version the world file records as its last saver (read only). */
+async function recordedVersion(page: Page, id: string): Promise<string | undefined> {
+  await page.waitForFunction(() => '__dwellTools' in globalThis);
   return page.evaluate(async (worldId) => {
+    const hooks = (globalThis as { __dwellTools?: WorldFileHooks }).__dwellTools;
     const root = await navigator.storage.getDirectory();
     const dir = await (await root.getDirectoryHandle('dwell')).getDirectoryHandle('worlds');
     const handle = await dir.getFileHandle(`${worldId}.dwellworld`);
-    const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer());
-    const key = new TextEncoder().encode('app_version_last');
-    const found: string[] = [];
-    for (let i = 0; i + key.length + 5 <= bytes.length; i++) {
-      if (!key.every((b, j) => bytes[i + j] === b)) continue;
-      found.push(new TextDecoder().decode(bytes.subarray(i + key.length, i + key.length + 5)));
-    }
-    return found;
+    return hooks?.worldFileVersion(new Uint8Array(await (await handle.getFile()).arrayBuffer()));
   }, id);
 }
 
@@ -82,7 +75,7 @@ test('a world saved by a newer version is refused, with the version to use, and 
   await page.goto('./'); // leave the game (the world file is released)
   await expect(page.locator('#main-menu')).toBeVisible();
 
-  expect(await claimSavedByNewerVersion(page, id)).toBeGreaterThan(0);
+  expect(await claimSavedByNewerVersion(page, id)).toBe('9.9.9');
 
   // The index still says this build played it; the file itself says otherwise.
   await page.goto(`./?play=${id}`);
@@ -97,8 +90,6 @@ test('a world saved by a newer version is refused, with the version to use, and 
     ),
   ).toBe(false);
   await page.waitForTimeout(1_500);
-  // The refusal wrote nothing: every copy of the row still reads 9.9.9.
-  const recorded = await recordedVersions(page, id);
-  expect(recorded.length).toBeGreaterThan(0);
-  expect(recorded.every((v) => v === '9.9.9')).toBe(true);
+  // The refusal wrote nothing: the file still says 9.9.9.
+  expect(await recordedVersion(page, id)).toBe('9.9.9');
 });

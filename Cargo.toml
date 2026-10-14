@@ -1,0 +1,24 @@
+# Dwell (ADR 0028): one workspace for the server, sim core, client and tools.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+license-file = "LICENSE"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev]
+# Physics and worldgen are unusably slow unoptimised; dependencies are built optimised once.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

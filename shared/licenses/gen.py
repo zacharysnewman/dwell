@@ -2,12 +2,14 @@
 """Generates THIRD_PARTY_NOTICES at the repository root (stdlib only).
 
 Sources:
-- shared/licenses/third_party.json and texts/: components that are not Rust crates (C/C++ libraries
-  fetched by CMake, npm runtime dependencies, the Emscripten runtime);
-- `cargo metadata` for server/net/wt: every crate linked into the native server (normal
-  dependencies on any platform; build scripts' and tests' dependencies are not shipped). Each
-  crate's license text is read from its downloaded source; the few crates that publish no license
-  file all offer MIT, and get its standard text (texts/MIT-template.txt) with their authors.
+- shared/licenses/third_party.json and texts/: components that are not Rust crates (the client's
+  npm runtime dependencies);
+- `cargo metadata` for the workspace (ADR 0028): every crate linked into the native server
+  (`dwell-server`, native targets) and into the browser client (`dwell-client`, wasm32) — normal
+  dependencies for that platform; build scripts' and tests' dependencies are not shipped, nor are
+  the workspace's own crates. Each crate's license text is read from its downloaded source; the
+  few crates that publish no license file all offer MIT, and get its standard text
+  (texts/MIT-template.txt) with their authors.
 
 For a crate offered under a choice of licenses ("MIT OR Apache-2.0") the most permissive is used
 (see PREFERENCE); for combined licenses ("ISC AND Apache-2.0") every license file the crate
@@ -24,7 +26,11 @@ import sys
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 HERE = os.path.join(ROOT, "shared", "licenses")
-CRATE = os.path.join(ROOT, "server", "net", "wt")
+# What ships: (workspace crate, platform it is built for, where it is used).
+SHIPPED = [
+    ("dwell-server", "x86_64-unknown-linux-gnu", "native server"),
+    ("dwell-client", "wasm32-unknown-unknown", "browser client (WASM)"),
+]
 OUT = os.path.join(ROOT, "THIRD_PARTY_NOTICES")
 
 # Lower is preferred when a crate offers a choice.
@@ -115,6 +121,9 @@ def crate_texts(pkg):
         # A few crates publish no license file. They all offer MIT: use its standard text with the
         # crate's authors (MIT requires the copyright notice and permission notice).
         if "MIT" not in used:
+            # Apache-2.0 needs no copyright line in its text: its standard text (texts/Apache-2.0.txt).
+            if used == ["Apache-2.0"]:
+                return "Apache-2.0", [read(os.path.join(HERE, "texts", "Apache-2.0.txt"))]
             sys.exit(f"{pkg['name']} {pkg['version']}: no license file in {root} and no MIT option")
         holders = ", ".join(re.sub(r"\s*<[^>]*>", "", a) for a in pkg.get("authors") or [])
         template = read(os.path.join(HERE, "texts", "MIT-template.txt"))
@@ -136,20 +145,28 @@ def crate_texts(pkg):
 
 
 def cargo_crates():
-    meta = json.loads(subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--locked"],
-        cwd=CRATE, check=True, capture_output=True, text=True).stdout)
-    pkgs = {p["id"]: p for p in meta["packages"]}
-    nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
-    root = next(p["id"] for p in meta["packages"] if p["name"] == "dwell-net")
-    seen, stack = set(), [root]
-    while stack:
-        for dep in nodes[stack.pop()]["deps"]:
-            normal = any(k["kind"] is None for k in dep["dep_kinds"])
-            if normal and dep["pkg"] not in seen:
-                seen.add(dep["pkg"])
-                stack.append(dep["pkg"])
-    return sorted((pkgs[i] for i in seen), key=lambda p: (p["name"], p["version"]))
+    """Each shipped third-party crate, with where it is used."""
+    used = {}  # package id -> (package, [where])
+    for root_name, platform, where in SHIPPED:
+        meta = json.loads(subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--locked",
+             "--filter-platform", platform],
+            cwd=ROOT, check=True, capture_output=True, text=True).stdout)
+        pkgs = {p["id"]: p for p in meta["packages"]}
+        nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
+        root = next(p["id"] for p in meta["packages"] if p["name"] == root_name)
+        seen, stack = set(), [root]
+        while stack:
+            for dep in nodes[stack.pop()]["deps"]:
+                normal = any(k["kind"] is None for k in dep["dep_kinds"])
+                if normal and dep["pkg"] not in seen:
+                    seen.add(dep["pkg"])
+                    stack.append(dep["pkg"])
+        for i in seen:
+            if pkgs[i]["source"] is None:
+                continue  # the workspace's own crates
+            used.setdefault(i, (pkgs[i], []))[1].append(where)
+    return sorted(used.values(), key=lambda e: (e[0]["name"], e[0]["version"]))
 
 
 def generate():
@@ -159,11 +176,11 @@ def generate():
     for c in components:
         entries.append((f"{c['name']} {c['version']}", c["license"], c["used_in"], c["url"],
                         [read(os.path.join(HERE, "texts", c["text"]))]))
-    for pkg in cargo_crates():
+    for pkg, where in cargo_crates():
         lic, texts = crate_texts(pkg)
         url = pkg.get("repository") or f"https://crates.io/crates/{pkg['name']}"
-        entries.append((f"{pkg['name']} {pkg['version']}", lic, "native server (Rust crate)",
-                        url, texts))
+        entries.append((f"{pkg['name']} {pkg['version']}", lic,
+                        " and ".join(where) + " (Rust crate)", url, texts))
 
     groups = {}  # text -> [labels], in first-seen order
     for label, _, _, _, texts in entries:
@@ -177,7 +194,7 @@ def generate():
         "license. Dwell itself is not open source: see LICENSE.",
         "",
         "Generated by shared/licenses/gen.py from shared/licenses/third_party.json and",
-        "server/net/wt/Cargo.lock. Do not edit by hand.",
+        "the workspace's Cargo.lock. Do not edit by hand.",
         "",
         "=" * 79,
         "COMPONENTS",

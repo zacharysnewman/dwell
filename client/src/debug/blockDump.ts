@@ -2,10 +2,16 @@
 // cells around it as JSON, with the world and build they came from, so a report of how the
 // terrain looks somewhere can be regenerated and examined exactly (e.g. which slope piece the
 // generator chose, from the seed and the coordinates) instead of read off a screenshot.
-import type { BlockTarget } from '../sim/clientCore';
 import { stateString } from '../world/blocks';
 
 type Vec3 = [number, number, number];
+
+/** A targeted block (§6.5): its cell and the face the view ray entered through. */
+export interface BlockTarget {
+  cell: Vec3;
+  /** 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z. */
+  face: number;
+}
 
 export interface BlockDumpInput {
   /** The state id at a cell of the client's world (0 for air or a cell it does not hold). */

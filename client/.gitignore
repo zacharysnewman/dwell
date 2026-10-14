@@ -2,7 +2,7 @@ node_modules/
 dist/
 dist-launcher/
 dist-site/
-# Built by `npm run build:wasm` (server/wasm); not committed.
-public/wasm/
+# The Rust client (wasm-bindgen output of `npm run build:wasm`); not committed.
+src/pkg/
 test-results/
 playwright-report/

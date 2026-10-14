@@ -1,0 +1,17 @@
+[package]
+name = "dwell-look"
+description = "Dwell's look (Phase 7): face tints, lights, the sky, height fog and the sky frame, as data shared by the meshers and the renderer (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-protocol = { path = "../dwell-protocol" }
+
+[dev-dependencies]
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+
+[lints]
+workspace = true

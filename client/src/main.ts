@@ -1,23 +1,30 @@
 import { buildInfo, formatBuildInfo, recordedVersion } from './buildInfo';
-import { blockDump, formatBlockDump, type BlockDump } from './debug/blockDump';
-import { Game, type GameDebugState } from './game/game';
-import { BlockInteraction, PALETTE, type EditAction } from './interact/blockInteraction';
-import { MeshPool } from './mesh/pool';
+import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
+import {
+  Client,
+  hotbarSwatch,
+  loadWasm,
+  pingServer,
+  setWorldFileVersion,
+  swatchSize,
+  worldFileVersion,
+} from './engine/wasm';
 import {
   connectLocal,
-  connectToInvite,
   connectToCode,
+  connectToInvite,
   HostVersionError,
-  openTransport,
+  identify,
   type ConnectOptions,
   type LocalSession,
+  type TransportPreference,
 } from './net/connect';
-import { pingServer } from './net/statusPing';
 import { enableHosting } from './hostWorld';
 import { formatCode } from './net/joinCode';
 import { configuredMasterUrl, MasterClient, serverInvite } from './net/master';
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from './identity/deviceKey';
 import { parseInvite } from './net/invite';
+import type { SessionReport } from './net/sessionState';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
 import { WorldIndex } from './local/worldIndex';
@@ -26,38 +33,47 @@ import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldF
 import { launchOf, launcherHref, pastedInvite } from './ui/launch';
 import { MainMenu, type MainMenuDeps } from './ui/mainMenu';
 import { loadRecent, rememberServer } from './ui/recentServers';
-import { parseNetConditions } from './net/netsim';
-import type { ClientSession, SessionState, SessionStats } from './net/session';
-import { KeyboardMouseInput } from './predict/input';
-import { skyAngle, skyFrame, skySwitches } from './render/skyFrame';
-import { prefersTouch, TouchControls } from './predict/touch';
-import {
-  createRenderer,
-  RendererUnavailableError,
-  type Renderer,
-  type RenderStats,
-} from './render';
-import { displayOptions } from './render/display';
-import { ClientCore } from './sim/clientCore';
-import { importDwellCore } from './sim/module';
-import { MessageType } from './protocol/constants.gen';
-import type { ChunkCoord } from './protocol/messages';
-import { Hotbar, slotForKey } from './ui/hotbar';
+import { prefersTouch, TouchControls } from './ui/touchControls';
+import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
-import { countChanged } from './world/chunkDiff';
 import { formatStatus } from './ui/statusOverlay';
+import { startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
-import { ChunkStreamer } from './world/chunkStream';
-import { defaultWorkerCount, WorldgenPool } from './worldgen/pool';
-import { LodSystem } from './lod/lodSystem';
-import { defaultDetail } from './lod/detail';
-import { lodViewport } from './lod/frustum';
+
+/** Most time a lobby ping may take, connecting included (§8.3). */
+const PING_TIMEOUT_MS = 5000;
+
+type Vec3 = [number, number, number];
+
+/** What automated tests read through `window.__dwell.state()` (the Rust client's debugState). */
+export interface GameDebugState {
+  playerId: number;
+  active: boolean;
+  feet: Vec3;
+  health: number;
+  dead: boolean;
+  remotes: { playerId: number; feet: Vec3; dead: boolean }[];
+  stats: Record<string, number>;
+  terrain: Record<string, number>;
+  terrainReady: boolean;
+  target: BlockTarget | null;
+  lod: Record<string, unknown> | null;
+  flying: boolean;
+}
+
+interface RenderStats {
+  calls: number;
+  triangles: number;
+  meshBytes: number;
+  screenBytes: number;
+  pixelRatio: number;
+}
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
 interface DwellDebug {
@@ -66,7 +82,7 @@ interface DwellDebug {
   look(yaw: number, pitch: number): void;
   view(): { yaw: number; pitch: number };
   /** Breaks or places at the crosshair, as a click does (§6.5). */
-  edit(action: EditAction): boolean;
+  edit(action: 'break' | 'place'): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
@@ -85,10 +101,28 @@ interface DwellDebug {
   blockDump(): BlockDump | null;
 }
 
+/** World-file tools for tests and debugging, on every page (the main menu included). */
+interface DwellTools {
+  /** The app version that last saved a world file (its bytes), or undefined. */
+  worldFileVersion(bytes: Uint8Array): string | undefined;
+  /** A world file's bytes rewritten to say `version` last saved it (RELEASES.md §6). */
+  setWorldFileVersion(bytes: Uint8Array, version: string): Uint8Array;
+}
+
 declare global {
   interface Window {
     __dwell?: DwellDebug;
+    __dwellTools?: DwellTools;
   }
+}
+
+/** Loads the WASM module and offers its world-file tools (window.__dwellTools). */
+async function loadTools(): Promise<void> {
+  wasmMemory = ((await loadWasm()) as { memory?: WebAssembly.Memory }).memory ?? null;
+  window.__dwellTools = {
+    worldFileVersion: (bytes) => worldFileVersion(bytes),
+    setWorldFileVersion: (bytes, version) => setWorldFileVersion(bytes, version),
+  };
 }
 
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
@@ -105,176 +139,38 @@ function showFatal(message: string): void {
 
 interface App {
   canvas: HTMLCanvasElement;
-  renderer: Renderer;
-  input: KeyboardMouseInput;
-  touch: TouchControls;
+  client: Client;
+  touch: TouchControls | null;
   hud: Hud;
   map: MapOverlay;
-  game: Game | null;
-  interaction: BlockInteraction | null;
-  core: ClientCore | null;
+  hotbar: Hotbar | null;
   settings: SettingsMenu | null;
+  flightSpeed: FlightSpeedControl;
   /** Frames per second, shown in the status line. */
   fps: FpsMeter;
-  /** What the game knows it holds in memory (F3), once playing. */
-  memory: (() => MemoryReport) | null;
+  /** The local world's loopback (its server's memory), while playing one. */
+  loopback: LoopbackTransport | null;
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
+  playing: boolean;
 }
 
-function start(): App {
-  element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
-  const canvas = element('view', HTMLCanvasElement);
+/** The ?scale= drawing-buffer scale (comparing performance on a device). */
+function displayScale(search: string): number {
+  const scale = Number(new URLSearchParams(search).get('scale') ?? 1);
+  return Number.isFinite(scale) ? Math.min(2, Math.max(0.25, scale)) : 1;
+}
 
-  // Comparing performance on a device: ?batch=1 and ?scale= (render/display.ts).
-  const display = displayOptions(location.search);
-  let renderer: Renderer;
-  try {
-    renderer = createRenderer(canvas, { batched: display.batched });
-  } catch (err) {
-    showFatal(err instanceof RendererUnavailableError ? err.message : 'Dwell failed to start.');
-    throw err;
+/** Workers per pool: generation and meshing each get this many (fewer on phones). */
+function defaultWorkerCount(mobile: boolean): number {
+  const cores = navigator.hardwareConcurrency || 4;
+  return Math.max(1, Math.min(mobile ? 2 : 4, cores - 2));
+}
+
+function lockPointer(canvas: HTMLCanvasElement): void {
+  if ('requestPointerLock' in canvas) {
+    Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
   }
-
-  const resize = (): void => {
-    renderer.resize(
-      canvas.clientWidth,
-      canvas.clientHeight,
-      Math.min(window.devicePixelRatio, 2) * display.scale,
-    );
-  };
-  new ResizeObserver(resize).observe(canvas);
-  resize();
-
-  const input = new KeyboardMouseInput(canvas);
-  // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
-  const touch = new TouchControls(document.body, input);
-  const app: App = {
-    canvas,
-    renderer,
-    input,
-    touch,
-    hud: new Hud(document.body),
-    map: new MapOverlay(document.body),
-    game: null,
-    interaction: null,
-    core: null,
-    settings: null,
-    fps: new FpsMeter(),
-    memory: null,
-    world: null,
-  };
-  touch.visible = prefersTouch();
-  app.input.touch = touch.state;
-  // The sky turns as a unit (render/skyFrame.ts): the settings slider, `?skyrot=` and `?skyspin=`.
-  const skyDebug = skySwitches(location.search);
-  let skySettingDeg = 0;
-  const skyStart = performance.now();
-  // Settings (top left): fog and full-detail distance, applied as the sliders move.
-  app.settings = new SettingsMenu(document.body, prefersTouch(), (s) => {
-    renderer.setFog(s.fog);
-    renderer.setExposure(s.exposure);
-    skySettingDeg = s.skyRotation;
-    app.game?.lod?.setDetailDistance(s.detail.distanceM);
-    app.game?.lod?.setQuality(s.detail.pixelError, s.detail.memoryMb * 1048576);
-  });
-  window.addEventListener('touchstart', () => (touch.visible = true), {
-    once: true,
-    passive: true,
-  });
-  // No F3 on a phone: ?debug=1 opens the debug overlay.
-  if (new URLSearchParams(location.search).get('debug') === '1') app.hud.toggleDebug();
-  app.input.onToggle = (key) => {
-    if (key === 'F3') app.hud.toggleDebug();
-    if (key === 'F6') copyBlockDump(app);
-    if (key === 'F4') app.map.toggle();
-    if (key === 'Minus') app.map.zoomBy(1);
-    if (key === 'Equal') app.map.zoomBy(-1);
-  };
-  window.__dwell = {
-    state: () => app.game?.debugState() ?? null,
-    press: (code, down) => {
-      app.input.setKey(code, down);
-    },
-    look: (yaw, pitch) => {
-      app.input.yaw = yaw;
-      app.input.pitch = pitch;
-    },
-    view: () => ({ yaw: app.input.yaw, pitch: app.input.pitch }),
-    edit: (action) => app.game?.edit(action, performance.now()) ?? false,
-    select: (slot) => app.interaction?.select(slot),
-    placement: () => app.interaction?.placement() ?? null,
-    voxel: (x, y, z) => app.core?.voxel(x, y, z) ?? 0,
-    fly: (on) => {
-      app.input.flight.set(on);
-    },
-    flySpeed: (level) => {
-      app.input.flight.speedLevel = level;
-    },
-    renderStats: () => renderer.stats(),
-    memory: () => app.memory?.() ?? null,
-    blockDump: () => blockDumpOf(app),
-  };
-  app.hud.onCopyBlocks = () => {
-    copyBlockDump(app);
-  };
-  // Block interaction (§6.5): clicks and taps edit, number keys, the wheel and the hotbar select.
-  app.input.onAction = (action) => app.game?.edit(action, performance.now());
-  app.input.onDigit = (code) => {
-    const slot = slotForKey(code);
-    if (slot !== null && slot < PALETTE.length) app.interaction?.select(slot);
-  };
-  app.input.onScroll = (delta) => app.interaction?.scroll(delta);
-  // Creative flight (§8.3): double-tap Space or Jump, or the Fly button.
-  touch.onDebug = () => {
-    app.hud.toggleDebug();
-  };
-  touch.onFly = () => {
-    input.flight.toggle();
-  };
-  touch.onJumpPress = (nowMs) => {
-    input.flight.jumpPressed(nowMs);
-  };
-  // Flight speed (§6.7): a slider while flying, the − and = keys, kept in this browser.
-  const flightSpeed = new FlightSpeedControl(document.body, (level) => {
-    input.flight.speedLevel = level;
-  });
-  input.flight.speedLevel = loadFlySpeedLevel();
-  flightSpeed.show(input.flight.speedLevel);
-  input.flight.onSpeedChange = (level) => {
-    flightSpeed.show(level);
-    saveFlySpeedLevel(level);
-  };
-  window.addEventListener('keydown', (e) => {
-    // Not while typing in a text field (the slider itself still takes the keys).
-    const typing = e.target instanceof HTMLInputElement && e.target.type !== 'range';
-    if (!input.flight.flying || typing) return;
-    if (e.code === 'Minus' || e.code === 'NumpadSubtract') input.flight.speedLevel -= 1;
-    if (e.code === 'Equal' || e.code === 'NumpadAdd') input.flight.speedLevel += 1;
-  });
-  input.flight.onChange = (flying) => {
-    touch.setFlight(input.flight.allowed, flying);
-    flightSpeed.visible = flying;
-  };
-  touch.onTap = () => {
-    const action = app.interaction?.touchAction;
-    if (action) app.game?.edit(action, performance.now());
-  };
-  touch.onPlaceMode = (place) => {
-    if (app.interaction) app.interaction.touchAction = place ? 'place' : 'break';
-  };
-
-  let last = performance.now();
-  const frame = (now: number): void => {
-    app.fps.frame(now);
-    app.game?.frame(now);
-    renderer.setSkyFrame(skyFrame(skyAngle(skySettingDeg, skyDebug, (now - skyStart) / 1000)));
-    renderer.renderFrame((now - last) / 1000);
-    last = now;
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
-  return app;
 }
 
 function displayName(): string {
@@ -282,200 +178,293 @@ function displayName(): string {
   return fromUrl?.trim() ?? 'Player';
 }
 
-/**
- * Starts the game once the session has joined: the client's own sim core runs prediction, and the
- * worldgen workers generate the chunks the server streams as Generated (§6.3).
- */
-function play(
-  app: App,
-  session: ClientSession,
-  joined: Extract<SessionState, { phase: 'joined' }>,
-  /** A local world's worker (its server core's memory), or null on a server. */
-  loopback: LoopbackTransport | null,
-) {
-  app.world = { seed: joined.worldSeed, generatorVersion: joined.generatorVersion };
-  // Creative flight is the server's to allow (Welcome, §8.3).
-  app.input.flight.allowed = joined.mayFly;
-  app.touch.setFlight(joined.mayFly, app.input.flight.flying);
-  void (async () => {
-    // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
-    const fullChunks = new URLSearchParams(location.search).get('chunks') === 'full';
-    const workers = defaultWorkerCount(prefersTouch());
-    const pool = WorldgenPool.create(joined.generatorVersion, joined.worldSeed, workers);
-    let core: ClientCore;
-    try {
-      core = await ClientCore.load(await importDwellCore());
-    } catch (err) {
-      app.hud.setMessage(
-        `Simulation unavailable: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
+/** The F3 debug overlay and the client's own drawing of it go on and off together. */
+function toggleDebug(app: App): void {
+  app.hud.toggleDebug();
+  app.client.setDebugVisible(app.hud.debugVisible);
+}
+
+/** Keyboard and mouse: the DOM's events, forwarded to the client's input (dwell-game input.rs). */
+function forwardInput(app: App): void {
+  const { canvas, client } = app;
+  window.addEventListener('keydown', (e) => {
+    if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
+  });
+  window.addEventListener('keyup', (e) => {
+    client.keyUp(e.code);
+  });
+  window.addEventListener('blur', () => {
+    client.blur();
+  });
+  // Not every browser has pointer lock (iOS Safari doesn't); touch looks by dragging instead.
+  canvas.addEventListener('click', () => {
+    if (document.pointerLockElement !== canvas) lockPointer(canvas);
+  });
+  document.addEventListener('pointerlockchange', () => {
+    client.setPointerLocked(document.pointerLockElement === canvas);
+  });
+  canvas.addEventListener('mousedown', (e) => {
+    client.mouseDown(e.button, performance.now());
+  });
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    client.mouseMove(e.movementX, e.movementY);
+  });
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      client.wheel(e.deltaY);
+    },
+    { passive: true },
+  );
+  // Flight speed (§6.7): the − and = keys while flying (not while typing in a text field).
+  window.addEventListener('keydown', (e) => {
+    const typing = e.target instanceof HTMLInputElement && e.target.type !== 'range';
+    if (!client.flying() || typing) return;
+    if (e.code === 'Minus' || e.code === 'NumpadSubtract')
+      client.flySpeed(client.flySpeedLevel() - 1);
+    if (e.code === 'Equal' || e.code === 'NumpadAdd') client.flySpeed(client.flySpeedLevel() + 1);
+  });
+}
+
+/** What the client's input asked of the shell since the last frame. */
+function handleEvents(app: App): void {
+  for (const e of app.client.takeEvents() as { t: string; value: unknown }[]) {
+    if (e.t === 'toggle') {
+      if (e.value === 'F3') toggleDebug(app);
+      if (e.value === 'F6') copyBlockDump(app);
+      if (e.value === 'F4') app.map.toggle();
+      if (e.value === 'Minus') app.map.zoomBy(1);
+      if (e.value === 'Equal') app.map.zoomBy(-1);
+    } else if (e.t === 'slot') {
+      app.hotbar?.setSelected(e.value as number);
+    } else if (e.t === 'flight' || e.t === 'flightAllowed') {
+      const flying = app.client.flying();
+      app.touch?.setFlight(app.client.flightAllowed(), flying);
+      app.flightSpeed.visible = flying;
+    } else if (e.t === 'flySpeed') {
+      app.flightSpeed.show(e.value as number);
+      saveFlySpeedLevel(e.value as number);
     }
-    let stats: SessionStats | null = null;
-    session.subscribe((_state, s) => {
-      stats = s;
+  }
+}
+
+/** The HUD from the client's latest frame. */
+function showHud(app: App, now: number): void {
+  const h = app.client.hud() as {
+    message?: string;
+    status?: string;
+    health?: number;
+    debug?: string | null;
+    damaged?: boolean;
+  };
+  if (h.message === undefined) return;
+  if (h.damaged) app.hud.flashDamage(now);
+  app.hud.setHealth(h.health ?? 0, now);
+  app.hud.setMessage(h.message);
+  app.hud.setStatus(h.status ?? '');
+  if (h.debug) app.hud.setDebug(h.debug);
+}
+
+async function start(): Promise<App | null> {
+  element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
+  const canvas = element('view', HTMLCanvasElement);
+  const params = new URLSearchParams(location.search);
+  const scale = displayScale(location.search);
+  const mobile = prefersTouch();
+  let client: Client;
+  try {
+    await loadTools();
+    client = await Client.create(canvas, {
+      displayName: displayName(),
+      clientVersion: recordedVersion(),
+      makeWorker: () =>
+        new Worker(new URL('./engine/jobWorker.ts', import.meta.url), { type: 'module' }),
+      workers: defaultWorkerCount(mobile),
+      lod: params.get('lod') !== '0',
+      lodColors: params.get('lodcolors') === '1',
+      // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
+      fullChunks: params.get('chunks') === 'full',
+      netsim: params.get('netsim') ?? undefined,
+      search: location.search,
     });
-    const meshPool = MeshPool.create(workers);
-    const terrain = new ChunkStreamer(core, pool, meshPool, app.renderer, (coords) => {
-      session.sendControl({ type: MessageType.ChunkResync, coords });
-    });
-    const interaction = new BlockInteraction(core, (m) => {
-      session.sendControl(m);
-    });
-    const hotbar = new Hotbar(document.body, PALETTE, (slot) => {
-      interaction.select(slot);
-    });
-    interaction.onSelect = (slot) => {
-      hotbar.setSelected(slot);
-    };
-    interaction.select(0);
-    app.interaction = interaction;
-    app.core = core;
-    const game = new Game(
-      joined.playerId,
-      core,
-      app.renderer,
-      app.input,
-      app.hud,
-      {
-        send: (m) => {
-          session.sendGameDatagram(m);
-        },
-        rttMs: () => stats?.datagramRttMs ?? stats?.rttMs ?? null,
-      },
-      terrain,
-      interaction,
-      (x, y, z) => core.voxel(x, y, z),
+  } catch (err) {
+    showFatal(startupMessage(err, 'gpu' in navigator));
+    console.error(err);
+    return null;
+  }
+
+  const resize = (): void => {
+    client.resize(
+      canvas.clientWidth,
+      canvas.clientHeight,
+      Math.min(window.devicePixelRatio, 2) * scale,
     );
-    app.memory = () => {
-      const render = app.renderer.stats();
-      return {
-        coreBytes: core.heapBytes(),
-        serverBytes: loopback ? loopback.heapBytes : null,
-        worldgenBytes: pool.heapBytes(),
-        meshBytes: render.meshBytes,
-        screenBytes: render.screenBytes,
-        jsHeapBytes: jsHeapBytes(),
-      };
-    };
-    startDebugTools(app, pool, core, terrain, game);
-    session.onGame((m, bytes) => {
-      game.onGameMessage(m, bytes, performance.now());
-    });
-    app.game = game;
+  };
+  new ResizeObserver(resize).observe(canvas);
+  resize();
 
-    // Verification (§6.3): the server streams Generated chunks only if our generator reproduces
-    // its verification chunk bit for bit; a hash of 0 (or a failed worker) selects full-chunk mode.
-    let hash = 0n;
-    if (!fullChunks) {
-      try {
-        hash = (await pool.generate(joined.verificationChunk)).hash;
-      } catch {
-        hash = 0n;
-      }
-    }
-    session.sendControl({ type: MessageType.WorldgenCheck, hash });
+  const app: App = {
+    canvas,
+    client,
+    touch: null,
+    hud: new Hud(document.body),
+    map: new MapOverlay(document.body),
+    hotbar: null,
+    settings: null,
+    flightSpeed: new FlightSpeedControl(document.body, (level) => {
+      client.flySpeed(level);
+    }),
+    fps: new FpsMeter(),
+    loopback: null,
+    world: null,
+    playing: false,
+  };
+  // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
+  const touch = new TouchControls(document.body, client);
+  app.touch = touch;
+  touch.visible = mobile;
+  window.addEventListener('touchstart', () => (touch.visible = true), {
+    once: true,
+    passive: true,
+  });
+  forwardInput(app);
+  // Settings (top left): fog, detail, exposure and the sky, applied as the sliders move.
+  app.settings = new SettingsMenu(document.body, mobile, (s) => {
+    client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
+    client.setExposure(s.exposure);
+    client.setSkyRotation(s.skyRotation);
+    client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
+  });
+  // No F3 on a phone: ?debug=1 opens the debug overlay.
+  if (params.get('debug') === '1') toggleDebug(app);
+  app.hud.onCopyBlocks = () => {
+    copyBlockDump(app);
+  };
+  client.flySpeed(loadFlySpeedLevel());
+  app.flightSpeed.show(client.flySpeedLevel());
+  window.__dwell = {
+    state: () => client.debugState() as GameDebugState | null,
+    press: (code, down) => {
+      client.press(code, down);
+    },
+    look: (yaw, pitch) => {
+      client.setLook(yaw, pitch);
+    },
+    view: () => {
+      const [yaw = 0, pitch = 0] = client.look();
+      return { yaw, pitch };
+    },
+    edit: (action) => client.edit(action, performance.now()),
+    select: (slot) => {
+      client.select(slot);
+    },
+    placement: () =>
+      client.placement() as { cell: [number, number, number]; material: number } | null,
+    voxel: (x, y, z) => client.voxel(x, y, z),
+    fly: (on) => {
+      client.fly(on);
+    },
+    flySpeed: (level) => {
+      client.flySpeed(level);
+    },
+    renderStats: () => client.renderStats() as RenderStats,
+    memory: () => memoryReport(app),
+    blockDump: () => blockDumpOf(app),
+  };
 
-    // The whole-world view (§6.6): generated here unless in full-chunk mode (?lod=0 turns it off).
-    const params = new URLSearchParams(location.search);
-    if (params.get('lod') !== '0') {
-      const detail = app.settings?.current.detail ?? defaultDetail(prefersTouch());
-      const lod = new LodSystem(
-        pool,
-        meshPool,
-        app.renderer,
-        terrain,
-        (sections) => {
-          session.sendControl({ type: MessageType.LodRequest, sections });
-        },
-        {
-          pixelError: detail.pixelError,
-          cacheBytes: detail.memoryMb * 1048576,
-          maxGenerationJobs: pool.capacity,
-          maxMeshJobs: meshPool.capacity,
-          // Full detail beyond the streamed view: chunks asked for by the LOD (§6.6).
-          requestChunks: (coords) => {
-            session.sendControl({ type: MessageType.ChunkRequest, coords });
-          },
-        },
-      );
-      lod.setFullMode(hash === 0n);
-      lod.setDetailDistance(detail.distanceM);
-      app.renderer.setChunkVisibility((c) => lod.chunkVisible(c));
-      app.renderer.setLodLevelColors(params.get('lodcolors') === '1');
-      game.viewport = () => lodViewport(app.canvas.clientWidth, app.canvas.clientHeight);
-      game.lod = lod;
-    }
-  })();
+  const frame = (now: number): void => {
+    app.fps.frame(now);
+    client.frame(now);
+    handleEvents(app);
+    showHud(app, now);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  return app;
+}
+
+/** The WebAssembly memories and GPU estimates (F3's memory line), once playing. */
+function memoryReport(app: App): MemoryReport | null {
+  if (!app.playing) return null;
+  const render = app.client.renderStats() as RenderStats;
+  return {
+    coreBytes: wasmMemoryBytes(),
+    serverBytes: app.loopback ? app.loopback.heapBytes : null,
+    worldgenBytes: [...app.client.workerMemory()],
+    meshBytes: render.meshBytes,
+    screenBytes: render.screenBytes,
+    jsHeapBytes: jsHeapBytes(),
+  };
+}
+
+let wasmMemory: WebAssembly.Memory | null = null;
+function wasmMemoryBytes(): number {
+  return wasmMemory?.buffer.byteLength ?? 0;
+}
+
+/** Once joined: the hotbar, the block dump's world, and the debug tools. */
+function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): void {
+  app.playing = true;
+  app.world = { seed: joined.worldSeed, generatorVersion: joined.generatorVersion };
+  const size = swatchSize();
+  const slots = app.client.palette().map((name, i) => ({ name, swatch: hotbarSwatch(i), size }));
+  app.hotbar = new Hotbar(document.body, slots, (slot) => {
+    app.client.select(slot);
+  });
+  app.client.select(0);
+  app.touch?.setFlight(joined.mayFly, app.client.flying());
+  startDebugTools(app);
 }
 
 /**
  * Debug tooling (Phase 3e): the F4 terrain map around the player, and in the F3 overlay the
- * player's chunk regenerated and diffed against the one the world holds.
+ * player's chunk regenerated and diffed against the one the world holds, and the memory line.
  */
-function startDebugTools(
-  app: App,
-  pool: WorldgenPool,
-  core: ClientCore,
-  terrain: ChunkStreamer,
-  game: Game,
-): void {
-  let busy = false;
+function startDebugTools(app: App): void {
   let mapKey = '';
-  let mapBytes: Uint8Array<ArrayBuffer> | null = null;
+  let mapBytes: Uint8Array | null = null;
+  let mapWanted = '';
   setInterval(() => {
-    if (app.hud.debugVisible && app.memory) game.memoryNote = formatMemory(app.memory());
-    const s = game.debugState();
-    if (busy || !s.active) return;
-    const [x, y, z] = s.feet.map(Math.floor) as [number, number, number];
-    const jobs: Promise<void>[] = [];
-    if (app.map.visible) {
-      const view = app.map.view(x, z);
-      const key = `${String(view.x0)},${String(view.z0)},${String(view.step)}`;
-      if (key === mapKey) {
-        // The same part of the world (the whole disc never changes): only the marker moves.
-        app.map.draw(mapBytes, app.input.yaw, view, x, z);
-      } else {
-        jobs.push(
-          pool.map({ ...view, n: MAP_SIZE }).then((bytes) => {
-            mapKey = key;
-            mapBytes = bytes;
-            app.map.draw(bytes, app.input.yaw, view, x, z);
-          }),
-        );
-      }
-    }
+    const client = app.client;
     if (app.hud.debugVisible) {
-      const c: ChunkCoord = [x >> 5, y >> 5, z >> 5];
-      const revision = terrain.revision(c);
-      if (revision === null) {
-        game.debugNote = '';
-      } else {
-        jobs.push(
-          pool.generate(c).then((generated) => {
-            const changed = countChanged(core.paddedChunk(...c), generated.voxels);
-            game.debugNote = `chunk (${c.join(', ')}) rev ${String(revision)} · ${String(changed)} voxels differ from generation`;
-          }),
-        );
-      }
+      const report = memoryReport(app);
+      if (report) client.setMemoryNote(formatMemory(report));
+      client.requestDiff();
     }
-    busy = true;
-    void Promise.allSettled(jobs).then(() => {
-      busy = false;
-    });
+    const s = client.debugState() as GameDebugState | null;
+    if (!s?.active || !app.map.visible) return;
+    const [x, , z] = s.feet.map(Math.floor) as Vec3;
+    const yaw = client.look()[0] ?? 0;
+    const view = app.map.view(x, z);
+    const key = `${String(view.x0)},${String(view.z0)},${String(view.step)}`;
+    const arrived = client.takeMap();
+    if (arrived) {
+      mapKey = mapWanted;
+      mapBytes = arrived.length > 0 ? arrived : null;
+    }
+    if (key === mapKey) {
+      // The same part of the world (the whole disc never changes): only the marker moves.
+      app.map.draw(mapBytes, yaw, view, x, z);
+    } else if (key !== mapWanted) {
+      mapWanted = key;
+      client.requestMap(view.x0, view.z0, view.step, MAP_SIZE, 0);
+    }
   }, 1000);
 }
 
 /** The block dump (F6, or the debug overlay's button) of the client's world, once playing. */
 function blockDumpOf(app: App): BlockDump | null {
-  const core = app.core;
-  const game = app.game;
-  if (!core || !game) return null;
+  const s = app.client.debugState() as GameDebugState | null;
+  if (!s) return null;
+  const [yaw = 0, pitch = 0] = app.client.look();
   return blockDump({
-    voxel: (x, y, z) => core.voxel(x, y, z),
-    target: app.interaction?.target ?? null,
-    feet: game.debugState().feet,
-    view: { yaw: app.input.yaw, pitch: app.input.pitch },
+    voxel: (x, y, z) => app.client.voxel(x, y, z),
+    target: s.target,
+    feet: s.feet,
+    view: { yaw, pitch },
     world: app.world,
     build: { version: buildInfo.version, sha: buildInfo.sha },
   });
@@ -538,13 +527,17 @@ function menuMaster(): MainMenuDeps['master'] {
     ping: async (server) => {
       const invite = parseInvite(`?${new URLSearchParams(serverInvite(server)).toString()}`);
       if (!invite) throw new Error('unusable server address');
-      return (await pingServer(() => openTransport(invite))).rttMs;
+      const w = invite.webrtc;
+      const rtc = w ? [w.ip, w.port, w.ufrag, w.pwd] : undefined;
+      await loadWasm();
+      return pingServer(invite.url, invite.certHash, rtc, PING_TIMEOUT_MS);
     },
   };
 }
 
-function openMainMenu(app: App, message?: string): void {
-  app.touch.visible = false;
+/** The main menu: DOM only, so it opens without WebGPU (and before the game client starts). */
+function openMainMenu(app: App | null, message?: string): void {
+  if (app?.touch) app.touch.visible = false;
   const master = menuMaster();
   new MainMenu(document.body, {
     index: new WorldIndex(storage()),
@@ -567,9 +560,7 @@ function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
   if (!settings) return;
   settings.addGameActions(
     () => {
-      if ('requestPointerLock' in app.canvas) {
-        Promise.resolve(app.canvas.requestPointerLock()).catch(() => undefined);
-      }
+      lockPointer(app.canvas);
     },
     () => {
       const saved = save ? save() : Promise.resolve(true);
@@ -658,50 +649,53 @@ async function connect(app: App): Promise<void> {
       ? `${invite.host}:${String(invite.port)}`
       : worldName;
   const forced = params.get('transport');
+  const preference: TransportPreference =
+    forced === 'webrtc' || forced === 'webtransport' ? forced : 'auto';
   const options: ConnectOptions = {
-    displayName: displayName(),
     clientVersion: recordedVersion(),
-    transport: forced === 'webrtc' || forced === 'webtransport' ? forced : 'auto',
-    netsim: parseNetConditions(params.get('netsim')),
+    transport: preference,
     ...(localWorld ? { localWorld } : {}),
   };
   status.textContent = localWorld ? `Starting ${target}…` : `Connecting to ${target}…`;
+  const client = app.client;
   try {
-    let session: ClientSession;
+    const key = await identify(client);
     let local: LocalSession | null = null;
+    let onJoined: (() => void) | undefined;
     if (code) {
       const base = configuredMasterUrl();
       if (!base) throw new Error('this build has no master server configured');
-      const key = await loadOrCreateDeviceKey(new IndexedDbKeyStore());
-      session = await connectToCode(new MasterClient(base, key), code, options);
+      ({ onJoined } = await connectToCode(client, new MasterClient(base, key), code, options));
     } else if (invite) {
-      session = await connectToInvite(invite, options);
+      await connectToInvite(client, invite, preference);
     } else {
-      local = await connectLocal(options);
-      session = local.session;
+      local = await connectLocal(client, key, options);
+      app.loopback = local.loopback;
     }
     enableGameMenu(app, local?.save ?? null);
     // A local world can be opened to friends (Host…, Phase 5c).
     if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;
-    let latest: [SessionState, SessionStats] | null = null;
     const showStatus = () => {
-      if (latest) {
-        status.textContent = formatStatus(target, session.transportKind, ...latest, app.fps.fps);
-      }
-    };
-    // The frame rate changes without session events: refresh the line every second too.
-    setInterval(showStatus, 1000);
-    session.subscribe((state, stats) => {
-      latest = [state, stats];
-      showStatus();
-      if (state.phase === 'joined' && !started) {
+      const s = client.sessionState() as SessionReport;
+      const stats = s.stats ?? {
+        rttMs: null,
+        datagramRttMs: null,
+        serverTick: 0,
+        hostPaused: false,
+      };
+      status.textContent = formatStatus(target, s.transport, s, stats, app.fps.fps);
+      if (s.phase === 'joined' && !started) {
         started = true;
         const joinedInvite = invite ? pastedInvite(location.search) : null;
         if (joinedInvite) rememberServer(storage(), joinedInvite, Date.now());
-        play(app, session, state, local?.loopback ?? null);
+        onJoined?.();
+        play(app, s);
       }
-    });
+    };
+    // The session's state is polled: twice a second is quick enough for the join and the line.
+    setInterval(showStatus, 500);
+    showStatus();
   } catch (err) {
     if (err instanceof HostVersionError && code) {
       // The host runs another version line: the launcher opens a build of it (RELEASES.md §5). If
@@ -716,4 +710,14 @@ async function connect(app: App): Promise<void> {
   }
 }
 
-void connect(start());
+// The main menu needs no game client (nor WebGPU): it opens at once. Anything else starts the
+// client, and shows the unsupported screen where it cannot.
+if (launchOf(location.search).kind === 'menu') {
+  element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
+  openMainMenu(null);
+  void loadTools();
+} else {
+  void start().then((app) => {
+    if (app) void connect(app);
+  });
+}

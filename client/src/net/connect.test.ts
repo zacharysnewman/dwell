@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DeviceKey } from '../identity/deviceKey';
+import type { Client } from '../engine/wasm';
 import { connectToCode, HostVersionError } from './connect';
 import { MasterClient, type ServerEntry } from './master';
 
@@ -38,7 +39,9 @@ function master(reply: unknown): { client: MasterClient; calls: string[] } {
   return { client, calls };
 }
 
-const options = { displayName: 'x', clientVersion: '0.1.0' };
+const options = { clientVersion: '0.1.0' };
+/** Never reached: these joins stop (or fail) before connecting. */
+const game = {} as unknown as Client;
 
 // RELEASES.md §7: any build on the host's compatibility line can join; the code of a host on
 // another line leads to a build of that line, through the launcher.
@@ -48,7 +51,7 @@ describe('joining a code whose host runs another version line', () => {
       kind: 'server',
       server: { ...server, appVersion: '0.2.0' },
     });
-    const err = await connectToCode(client, 'ABCDEF', options).catch((e: unknown) => e);
+    const err = await connectToCode(game, client, 'ABCDEF', options).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(HostVersionError);
     expect(err).toMatchObject({ hostVersion: '0.2.0', buildVersion: '0.1.0' });
     expect((err as Error).message).toContain('0.2.0');
@@ -62,7 +65,9 @@ describe('joining a code whose host runs another version line', () => {
       display: 'ABC-DEF',
       appVersion: '0.2.0-dev.3',
     });
-    await expect(connectToCode(client, 'ABCDEF', options)).rejects.toBeInstanceOf(HostVersionError);
+    await expect(connectToCode(game, client, 'ABCDEF', options)).rejects.toBeInstanceOf(
+      HostVersionError,
+    );
     expect(calls).toEqual(['https://m.test/v1/resolve']);
   });
 
@@ -73,7 +78,7 @@ describe('joining a code whose host runs another version line', () => {
         kind: 'server',
         server: { ...server, ...(appVersion === undefined ? {} : { appVersion }) },
       });
-      const err = await connectToCode(client, 'ABCDEF', options).catch((e: unknown) => e);
+      const err = await connectToCode(game, client, 'ABCDEF', options).catch((e: unknown) => e);
       expect(err).not.toBeInstanceOf(HostVersionError);
     }
   });
