@@ -39,7 +39,8 @@ pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const WATER_OPACITY: f32 = 0.55;
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
-const DRAW_STRIDE: u64 = 256;
+/// Bytes per draw in the draws storage array (`Draw` in the shaders: five vec4f).
+const DRAW_STRIDE: u64 = 80;
 const MAX_STAND_INS: usize = 64;
 /// Debug tints of LOD levels (setLodLevelColors), sRGB.
 const LEVEL_TINTS: [u32; 20] = [
@@ -396,8 +397,8 @@ impl Renderer {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
                     min_binding_size: wgpu::BufferSize::new(80),
                 },
                 count: None,
@@ -665,7 +666,7 @@ impl Renderer {
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("draws"),
             size: slots * DRAW_STRIDE,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -676,7 +677,7 @@ impl Renderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &buffer,
                     offset: 0,
-                    size: wgpu::BufferSize::new(80),
+                    size: None,
                 }),
             }],
         });
@@ -1220,15 +1221,15 @@ impl Renderer {
                 ..Default::default()
             });
             pass.set_bind_group(0, &self.frame_groups[i], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
             let mut bound: Option<(Kind, bool, bool)> = None;
             if i == 0 {
                 pass.set_pipeline(&self.sky_pipeline);
-                pass.set_bind_group(1, &self.draw_group, &[0]);
                 pass.draw(0..3, 0..1);
                 calls += 1;
             }
             for d in pass_draws {
-                let offset = (slot * DRAW_STRIDE) as u32;
+                let instance = slot as u32;
                 slot += 1;
                 let (mesh, ranges): (&GpuMesh, Vec<std::ops::Range<u32>>) = match &d.mesh {
                     DrawMesh::Chunk(c, w) => {
@@ -1275,14 +1276,13 @@ impl Renderer {
                     pass.set_pipeline(&self.pipelines[&key]);
                     bound = Some(key);
                 }
-                pass.set_bind_group(1, &self.draw_group, &[offset]);
                 for (k, b) in mesh.vertex.iter().enumerate() {
                     pass.set_vertex_buffer(k as u32, b.slice(..));
                 }
                 pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
                 for r in merge_ranges(ranges) {
                     triangles += u64::from(r.len() as u32 / 3);
-                    pass.draw_indexed(r, 0, 0..1);
+                    pass.draw_indexed(r, 0, instance..instance + 1);
                     calls += 1;
                 }
             }
