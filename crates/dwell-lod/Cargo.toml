@@ -1,0 +1,17 @@
+[package]
+name = "dwell-lod"
+description = "Dwell's client whole-world view: LOD selection, stand-ins, requests and the cache (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-mesh = { path = "../dwell-mesh" }
+dwell-protocol = { path = "../dwell-protocol" }
+dwell-world = { path = "../dwell-world" }
+
+[lints]
+workspace = true

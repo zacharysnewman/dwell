@@ -13,7 +13,10 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["webgpu", "wgsl"] }
 futures-channel = "0.3"
+bytemuck = "1"
 dwell-blocks = { path = "../dwell-blocks" }
+dwell-look = { path = "../dwell-look" }
+dwell-mesh = { path = "../dwell-mesh" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-sim = { path = "../dwell-sim" }
 dwell-storage = { path = "../dwell-storage" }
@@ -34,6 +37,7 @@ web-sys = { version = "0.3", features = [
 
 [dev-dependencies]
 ed25519-dalek = "2"
+naga = { version = "30.0.1", features = ["wgsl-in"] }
 
 [lints]
 workspace = true

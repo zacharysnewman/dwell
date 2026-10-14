@@ -54,3 +54,16 @@ pub async fn probe_canvas(canvas: web_sys::HtmlCanvasElement) -> Result<String, 
     queue.present(frame);
     Ok(format!("{:?}", adapter.get_info()))
 }
+
+/// Renders the renderer's smoke scene offscreen and returns its pixels (RGBA8, `SCENE_SIZE`
+/// square).
+#[wasm_bindgen(js_name = probeScene)]
+pub async fn probe_scene() -> Result<Vec<u8>, JsError> {
+    let instance = instance();
+    let (_, device, queue) = crate::request_device(&instance, None)
+        .await
+        .map_err(|e| JsError::new(&e))?;
+    crate::render_scene(device, queue)
+        .await
+        .map_err(|e| JsError::new(&e))
+}

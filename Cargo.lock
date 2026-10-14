@@ -610,7 +610,10 @@ version = "0.0.0"
 name = "dwell-client"
 version = "0.0.0"
 dependencies = [
+ "bytemuck",
  "dwell-blocks",
+ "dwell-look",
+ "dwell-mesh",
  "dwell-protocol",
  "dwell-sim",
  "dwell-storage",
@@ -618,6 +621,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "futures-channel",
  "js-sys",
+ "naga",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -630,6 +634,16 @@ version = "0.0.0"
 dependencies = [
  "dwell-blocks",
  "dwell-physics",
+ "dwell-protocol",
+ "dwell-world",
+]
+
+[[package]]
+name = "dwell-lod"
+version = "0.0.0"
+dependencies = [
+ "dwell-blocks",
+ "dwell-mesh",
  "dwell-protocol",
  "dwell-world",
 ]

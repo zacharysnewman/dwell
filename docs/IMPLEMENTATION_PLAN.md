@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24a built (workspace, generated protocol/blocks crates, `rust` CI job, WebGPU probe passing locally in headless Chromium); 24b built (world, worldgen reproducing the C++ goldens natively and in WASM, redb storage, protocol codec, Ed25519); 24c built (Rapier physics, the player controller and predictor; every controller suite in the three frames, golden trace bit-exact natively and in WASM, 64 players ~0.5 ms/tick); 24d in progress (`dwell-sim` server core with every server and netcode suite passing, `dwell-net` in the workspace; the `dwell-server` binary; next: browser networking with the wgpu client); outstanding: the `rust` job's first CI run, the OPFS backend (with 24e); C++/TS feature work stops after Phase 15 |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24a built (workspace, generated protocol/blocks crates, `rust` CI job, WebGPU probe passing locally in headless Chromium); 24b built (world, worldgen reproducing the C++ goldens natively and in WASM, redb storage, protocol codec, Ed25519); 24c built (Rapier physics, the player controller and predictor; every controller suite in the three frames, golden trace bit-exact natively and in WASM, 64 players ~0.5 ms/tick); 24d in progress (`dwell-sim` server core with every server and netcode suite passing, `dwell-net` in the workspace; the `dwell-server` binary; browser networking with the wgpu client); 24e in progress (meshers, look, game logic and LOD crates; client networking, local mode on OPFS; the wgpu renderer drawing in headless Chromium; next: the app and game loop, workers, the TS shell rewire); outstanding: the `rust` job's first CI run; C++/TS feature work stops after Phase 15 |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -1986,7 +1986,10 @@ controller, voxel queries, wire conversions and predictor, every controller suit
 three frames, the golden trace bit-exact natively and in WASM, 64 players at ~0.5 ms/tick;
 outstanding for 24c: the new CI steps' first run. 24d in progress: the server core
 (`dwell-sim`) and `dwell-net` built, every server and netcode suite passing; outstanding: the
-browser networking (with the client, 24e). The `dwell-server` binary is built. ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
+browser networking (with the client, 24e). The `dwell-server` binary is built. 24e in progress:
+the client logic crates (meshers, look, game logic, LOD), client networking, local mode with the
+OPFS backend, and the wgpu renderer built and tested; outstanding: the app and game loop, workers,
+the TS shell rewire and removing the old client code. ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
 the C++/TS tree and replaces it at the cutover (24f); the old tree takes only fixes until then.
 Storage, compression and crypto decided by Claude at the owner's request (2026-10-13, ADR 0028
 §8): `redb` (files natively, OPFS in the browser), LZ4 (`lz4_flex`), `ed25519-dalek`.
@@ -2024,7 +2027,8 @@ Storage, compression and crypto decided by Claude at the owner's request (2026-1
   state ids mapped by string, the save thread; the C++ storage tests that need no server are
   ported) with LZ4 chunk and LOD blobs; Ed25519 checks on `ed25519-dalek` (`dwell-protocol::auth`),
   passing the master's WebCrypto vectors.
-- [ ] The OPFS storage backend for the browser: built with the client (24e), which runs it.
+- [ ] The OPFS storage backend for the browser: built with the client (24e), which runs it. Built
+  (`dwell-client`'s `LocalWorld`); not yet run in a browser.
 
 Deviation (24b): the protocol codec (`dwell-protocol`: every message, palette + RLE, posfix, the
 auth transcript) was ported here rather than in 24d, because storage stores chunks in its encoding;
@@ -2090,6 +2094,36 @@ Deviations (24d, so far):
   sim in a worker), browser world storage.
 - [ ] The DOM UI (menus, settings, server browser, HUD) kept in TS over a small `wasm-bindgen` API;
   Three.js and the TS sim, protocol and render code removed from the client.
+
+Built so far (24e; nothing above is ticked until the client runs end to end on it):
+- Client logic crates, ported with their TS tests: `dwell-mesh` (the chunk and LOD meshers, the
+  texture atlas; buffers cross-checked identical to the TS output), `dwell-look` (palette, face
+  tints, sky gradient with its generated WGSL, sun and moon, fog, exposure, the sky frame),
+  `dwell-game` (input, touch, flight, the eye and face flip, remotes, block interaction, the chunk
+  streamer, the HUD text) and `dwell-lod` (the LOD selection, grid, frustum and detail settings).
+- Networking and local mode in `dwell-client`: the session state machine, framing, datagram
+  batching limits, the WebRTC answer, simulated net conditions; WebTransport and WebRTC
+  transports over `web-sys`; `LocalCore` (the `dwell-sim` server stepped in the client) with an
+  OPFS storage backend (`LocalWorld`, a `FileSystemSyncAccessHandle` for `redb`).
+- The wgpu renderer (`dwell-client::render`): terrain chunks, LOD sections with skirts and
+  clipped stand-ins, players, the block outline, debug lines, the sky, height fog, ACES tone
+  mapping and exposure; camera-relative drawing in two depth passes split at
+  `LOD_NEAR_SPLIT_M`; the mipmapped atlas. A smoke scene renders in headless Chromium
+  (`client/e2e-webgpu/renderer.spec.ts`: sky, lit terrain and a player read back from the GPU).
+- Outstanding: the `wasm-bindgen` app and game loop, the mesh and generation workers, the TS
+  shell's rewire onto it (keeping `window.__dwell` for e2e), the "unsupported" screen, and removing
+  Three.js and the TS sim, protocol and render code.
+
+Deviations (24e, so far):
+- Room peer transports (friend worlds' WebRTC through the master's signalling) and the local
+  loopback stay in TS and are handed to the Rust session as a generic JS transport object; Rust
+  owns WebTransport and the dedicated-server WebRTC path.
+- `dwell-lod` keys column bounds by the column's first in-world row: the TS keyed them by row 0,
+  which is below the world at levels 1–17, so every column there shared one bounds entry (hidden
+  by uniform test worlds; `keeps_each_columns_bounds_apart`). The TS client is deleted at the
+  cutover, so it is not fixed there.
+- After a canvas surface is dropped, headless Chromium's SwiftShader adapter hands out no more
+  adapters on the page, so the probe page renders the scene before the canvas probe.
 
 ### 24f — Shells and cutover
 - [ ] Electron and Capacitor run the Rust client; the launcher and release scripts build it.
