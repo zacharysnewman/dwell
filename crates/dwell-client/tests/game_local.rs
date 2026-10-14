@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use dwell_client::game::{Game, Scene, Send};
+use dwell_client::game::{Game, Scene, Send, ViewOverride};
 use dwell_client::jobs::Runner;
 use dwell_client::local::{LOCAL_SESSION, LocalCore};
 use dwell_client::net::session::{Out, Session, SessionState};
@@ -27,6 +27,9 @@ use ed25519_dalek::{Signer, SigningKey};
 struct Recorder {
     chunks: std::collections::HashSet<ChunkCoord>,
     sections: usize,
+    /// Each section held: its origin and cell size.
+    held: std::collections::HashMap<i64, ([f64; 3], f64)>,
+    shown: Vec<i64>,
     camera: Option<[f64; 3]>,
     outline: Option<[f64; 3]>,
 }
@@ -41,14 +44,21 @@ impl Scene for Recorder {
     }
     fn set_lod_section(
         &mut self,
-        _id: i64,
-        _origin: [f64; 3],
-        _cell: f64,
+        id: i64,
+        origin: [f64; 3],
+        cell: f64,
         meshes: Option<&SectionMeshes>,
     ) {
         self.sections += usize::from(meshes.is_some());
+        if meshes.is_some() {
+            self.held.insert(id, (origin, cell));
+        } else {
+            self.held.remove(&id);
+        }
     }
-    fn show_lod_sections(&mut self, _visible: &[(i64, u8)]) {}
+    fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
+        self.shown = visible.iter().map(|&(id, _)| id).collect();
+    }
     fn show_lod_stand_ins(&mut self, _stand_ins: &[StandIn]) {}
     fn set_player(&mut self, _id: u32, _view: Option<PlayerView>) {}
     fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
@@ -263,4 +273,58 @@ fn the_whole_world_view_generates_and_meshes_sections() {
     );
     let stats = rig.game.as_ref().unwrap().debug_state().lod.unwrap();
     assert!(stats.nodes > 0);
+}
+
+#[test]
+fn a_placed_camera_views_the_world_from_there() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 2.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: None,
+            full_mode: false,
+        });
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    // 6 km from the player, 600 m up, looking down: the LOD refines around the placed camera.
+    let eye = [feet[0] + 6000.0, 600.0, feet[2]];
+    let view = ViewOverride {
+        eye,
+        yaw_deg: 0.0,
+        pitch_deg: -60.0,
+    };
+    rig.game.as_mut().unwrap().set_view(Some(view));
+    let fine_below = |r: &Rig| {
+        let scene = r.scene.borrow();
+        scene.shown.iter().any(|id| {
+            scene.held.get(id).is_some_and(|&(o, cell)| {
+                let size = cell * 32.0;
+                let near = |k: usize| o[k] - 200.0 <= eye[k] && eye[k] <= o[k] + size + 200.0;
+                cell <= 4.0 && near(0) && near(2)
+            })
+        })
+    };
+    assert!(
+        rig.run_until(60 * 60, |r| fine_below(r)),
+        "fine sections drawn under the placed camera: {:?}",
+        rig.game.as_ref().unwrap().debug_state().lod
+    );
+    assert_eq!(rig.scene.borrow().camera, Some(eye));
+    assert_eq!(rig.game.as_ref().unwrap().view(), Some(view));
+    // The player stayed where it was.
+    let now = rig.game.as_ref().unwrap().debug_state().feet;
+    assert!((now[0] - feet[0]).abs() < 1.0 && (now[2] - feet[2]).abs() < 1.0);
+
+    // Released: the camera is back at the player's eyes.
+    rig.game.as_mut().unwrap().set_view(None);
+    rig.run_until(2, |_| false);
+    let camera = rig.scene.borrow().camera.unwrap();
+    assert!((camera[0] - feet[0]).abs() < 2.0 && (camera[2] - feet[2]).abs() < 2.0);
 }

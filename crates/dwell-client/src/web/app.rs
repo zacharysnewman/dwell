@@ -527,6 +527,25 @@ impl Client {
         s.input.look.yaw = yaw;
         s.input.look.pitch = pitch;
     }
+    /// Places the camera at (x, y, z) looking along yaw/pitch (degrees) for tools and tests: the
+    /// renderer and the LOD view from there while the player stays put (`releaseCamera` ends it).
+    #[wasm_bindgen(js_name = placeCamera)]
+    pub fn place_camera(&self, x: f64, y: f64, z: f64, yaw: f64, pitch: f64) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.set_view(Some(crate::game::ViewOverride {
+            eye: [x, y, z],
+            yaw_deg: yaw,
+            pitch_deg: pitch,
+        }));
+        true
+    }
+    #[wasm_bindgen(js_name = releaseCamera)]
+    pub fn release_camera(&self) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.set_view(None);
+        }
+    }
     /// [yaw, pitch] in degrees.
     pub fn look(&self) -> Vec<f64> {
         let s = self.inner.borrow();
@@ -893,6 +912,7 @@ impl Client {
                 set(&r, "asking", l.asking as u32);
                 set(&r, "cacheBytes", l.cache_bytes as f64);
                 set(&r, "inUseBytes", l.in_use_bytes as f64);
+                set(&r, "errorScale", l.error_scale);
                 r.into()
             }),
         );
