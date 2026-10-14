@@ -16,6 +16,11 @@ export class Hud {
   private damageUntil = 0;
   /** The debug overlay's "Copy block info" button (or F6): dump the blocks around the target. */
   onCopyBlocks: (() => void) | null = null;
+  /** Its Map (F4) and Close (F3) buttons. */
+  onToggleMap: (() => void) | null = null;
+  onCloseDebug: (() => void) | null = null;
+  private readonly hint: HTMLDivElement;
+  private hintTimer = 0;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -34,13 +39,40 @@ export class Hud {
     this.debug.id = 'debug-overlay';
     this.debug.hidden = true;
     this.debugText = document.createElement('pre');
-    const copy = document.createElement('button');
-    copy.id = 'debug-copy';
-    copy.type = 'button';
-    copy.textContent = 'Copy block info';
-    copy.title = 'The targeted block and its neighbours as JSON (F6)';
-    copy.addEventListener('click', () => this.onCopyBlocks?.());
-    this.debug.append(copy, this.debugText); // first: a phone's overlay clips its long text
+    // The header: what the overlay is, and its tools with their keys (first: a phone's overlay
+    // scrolls its long text under it).
+    const head = document.createElement('div');
+    head.className = 'debug-head';
+    const title = document.createElement('span');
+    title.className = 'debug-title';
+    title.textContent = 'Debug';
+    const tool = (id: string, label: string, key: string, title: string, run: () => void) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      if (id) b.id = id;
+      b.className = 'debug-button';
+      b.title = title;
+      const k = document.createElement('kbd');
+      k.textContent = key;
+      b.append(label, k);
+      b.addEventListener('click', run);
+      return b;
+    };
+    head.append(
+      title,
+      tool(
+        'debug-copy',
+        'Copy block info',
+        'F6',
+        'The targeted block and its neighbours as JSON',
+        () => this.onCopyBlocks?.(),
+      ),
+      tool('', 'Map', 'F4', 'The terrain map around you (− and = zoom)', () =>
+        this.onToggleMap?.(),
+      ),
+      tool('', 'Close', 'F3', 'Hide the debug overlay', () => this.onCloseDebug?.()),
+    );
+    this.debug.append(head, this.debugText);
     // Where the clipboard is refused: the dump in a box to select and copy by hand.
     this.dump = document.createElement('div');
     this.dump.id = 'debug-dump';
@@ -54,6 +86,9 @@ export class Hud {
     this.dump.append(this.dumpText, close);
     this.note = document.createElement('div');
     this.note.id = 'hud-note';
+    this.hint = document.createElement('div');
+    this.hint.id = 'start-hint';
+    this.hint.hidden = true;
     this.root.append(
       crosshair,
       this.health,
@@ -62,6 +97,7 @@ export class Hud {
       this.debug,
       this.dump,
       this.note,
+      this.hint,
     );
     parent.append(this.root);
   }
@@ -102,6 +138,18 @@ export class Hud {
     this.dump.hidden = false;
     this.dumpText.focus();
     this.dumpText.select();
+  }
+
+  /** A hint at the foot of the view (the keys, when a game starts), fading after `ms`. */
+  showHint(text: string, ms = 9000): void {
+    this.hint.textContent = text;
+    this.hint.hidden = false;
+    this.hint.classList.remove('fading');
+    window.clearTimeout(this.hintTimer);
+    this.hintTimer = window.setTimeout(() => {
+      this.hint.classList.add('fading');
+      this.hintTimer = window.setTimeout(() => (this.hint.hidden = true), 800);
+    }, ms);
   }
 
   /** A short note under the middle of the view that clears itself (the centre message is the game's). */

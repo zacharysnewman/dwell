@@ -47,7 +47,7 @@ test('a public server and a public friend world are listed, and joined from the 
     await host.locator('#host-start').click();
     const display = (await host.locator('#host-code').textContent({ timeout: 15_000 })) ?? '';
     const worldCode = display.replace('-', '');
-    await host.locator('#menu-button').click(); // close the menu
+    await host.locator('#settings-menu .gm-close').click(); // close the menu
 
     // A third browser's server browser lists the friend world, with its players…
     await player.goto(`./?${master}`);

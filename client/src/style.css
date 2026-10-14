@@ -1,3 +1,47 @@
+/* Dwell's shell: the menus and the HUD over the game's canvas.
+   The look comes from the game's own world: a daylight sky over terraced voxel ground. One idea
+   carries it — voxel extrusion: main buttons are grass blocks (a green top over an earth side that
+   sinks when pressed), the title is extruded like a block, and the main menu stands on stepped
+   hills. Everything else stays quiet: frosted sky-glass panels with dark ink. */
+
+:root {
+  --sky-deep: #5e8fd6;
+  --sky: #86b3ea;
+  --haze: #d7e6f5;
+  --grass-light: #8fd15a;
+  --grass: #6db33f;
+  --grass-dark: #4e8a2b;
+  --earth: #7a5236;
+  --earth-dark: #5b3b26;
+  --ink: #1f2b38;
+  --ink-soft: #4b5b6c;
+  --line: rgb(31 43 56 / 14%);
+  --paper: rgb(246 250 255 / 90%);
+  --paper-solid: #f6faff;
+  --glass: rgb(16 24 34 / 52%);
+  --glass-strong: rgb(14 20 30 / 80%);
+  --glass-line: rgb(255 255 255 / 22%);
+  --danger: #c8443a;
+
+  --font-display:
+    ui-rounded, 'SF Pro Rounded', 'Arial Rounded MT Bold', 'Nunito', system-ui, sans-serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --safe-top: max(10px, env(safe-area-inset-top));
+  --safe-right: max(10px, env(safe-area-inset-right));
+  --safe-bottom: max(10px, env(safe-area-inset-bottom));
+  --safe-left: max(10px, env(safe-area-inset-left));
+
+  /* Stacking, bottom to top: the canvas, the touch zones, the HUD (its buttons above the zones),
+     HUD widgets, the menu button, the menus. */
+  --z-touch: 2;
+  --z-hud: 3;
+  --z-widgets: 4;
+  --z-menu-button: 6;
+  --z-menu: 20;
+}
+
 html,
 body {
   margin: 0;
@@ -8,9 +52,43 @@ body {
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
-  background: #0b0d12;
-  color: #e6e8ee;
-  font-family: system-ui, sans-serif;
+  background: var(--sky);
+  color: #fff;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--sky-deep);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgb(31 43 56 / 18%);
+  color: var(--ink);
+  font: 600 12px/1.4 var(--font-mono);
+  text-align: center;
+}
+
+kbd.phrase {
+  font: 600 13px/1.4 var(--font-body);
 }
 
 #view {
@@ -21,50 +99,1110 @@ body {
   touch-action: none;
 }
 
-#net-status:empty {
-  display: none;
-}
-
-#net-status {
-  position: fixed;
-  left: calc(max(8px, env(safe-area-inset-left)) + 48px);
-  top: max(8px, env(safe-area-inset-top));
-  max-width: calc(100vw - 64px);
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 60%);
-  font:
-    13px ui-monospace,
-    monospace;
-}
-
-#build-info {
-  position: fixed;
-  left: max(8px, env(safe-area-inset-left));
-  bottom: max(8px, env(safe-area-inset-bottom));
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 50%);
-  font:
-    12px ui-monospace,
-    monospace;
-  pointer-events: none;
-}
-
 #fatal:not([hidden]) {
   position: fixed;
   inset: 0;
+  z-index: 30;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: 24px;
   text-align: center;
-  background: #0b0d12;
+  background: linear-gradient(180deg, var(--sky-deep), var(--haze));
+  color: var(--ink);
+  font: 600 18px/1.5 var(--font-body);
 }
+
+/* ---------- Buttons ---------- */
+
+/* The grass block: the main action of a view. */
+.block-button,
+.menu-button-main {
+  padding: 11px 20px;
+  border: 0;
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--grass-light), var(--grass) 55%);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 30%),
+    0 4px 0 var(--earth),
+    0 7px 12px rgb(31 43 56 / 22%);
+  color: #fff;
+  font: 800 15px/1.1 var(--font-display);
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 28%);
+  transition:
+    transform 80ms ease-out,
+    box-shadow 80ms ease-out;
+}
+
+.block-button:hover,
+.menu-button-main:hover {
+  background: linear-gradient(180deg, #9ddd66, #77bf47 55%);
+}
+
+.block-button:active,
+.menu-button-main:active {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 30%),
+    0 1px 0 var(--earth),
+    0 2px 4px rgb(31 43 56 / 22%);
+}
+
+.block-button:disabled,
+.menu-button-main:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+/* Everything else: quiet, on the panel. */
+.quiet-button,
+.menu-button-small {
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgb(31 43 56 / 10%);
+  color: var(--ink);
+  font: 600 14px/1.2 var(--font-body);
+}
+
+.menu-button-small {
+  padding: 6px 11px;
+  font-size: 13px;
+}
+
+.quiet-button:hover,
+.menu-button-small:hover {
+  border-color: rgb(31 43 56 / 30%);
+}
+
+.quiet-button:active,
+.menu-button-small:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.menu-confirm {
+  border-color: var(--danger);
+  background: #fde9e7;
+  color: var(--danger);
+}
+
+.menu-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- Main menu (ui/mainMenu.ts) ---------- */
+
+#main-menu {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-menu);
+  overflow-y: auto;
+  color: var(--ink);
+  touch-action: pan-y;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The sky and two ranges of terraced hills, the far one hazy. */
+.mm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    var(--sky-deep) 0%,
+    var(--sky) 42%,
+    var(--haze) 78%,
+    #eef4fa 100%
+  );
+}
+
+.mm-backdrop::before,
+.mm-backdrop::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.mm-backdrop::before {
+  height: 46vh;
+  background: linear-gradient(180deg, #a9c7c4, #c9dbe0);
+  clip-path: polygon(
+    0% 62%,
+    7% 62%,
+    7% 54%,
+    13% 54%,
+    13% 46%,
+    20% 46%,
+    20% 52%,
+    29% 52%,
+    29% 40%,
+    36% 40%,
+    36% 32%,
+    42% 32%,
+    42% 44%,
+    51% 44%,
+    51% 56%,
+    60% 56%,
+    60% 48%,
+    68% 48%,
+    68% 38%,
+    74% 38%,
+    74% 30%,
+    81% 30%,
+    81% 42%,
+    88% 42%,
+    88% 52%,
+    94% 52%,
+    94% 46%,
+    100% 46%,
+    100% 100%,
+    0% 100%
+  );
+}
+
+.mm-backdrop::after {
+  height: 24vh;
+  background: linear-gradient(180deg, var(--grass-light) 0%, var(--grass) 35%, var(--grass-dark));
+  clip-path: polygon(
+    0% 40%,
+    10% 40%,
+    10% 30%,
+    18% 30%,
+    18% 46%,
+    31% 46%,
+    31% 58%,
+    44% 58%,
+    44% 50%,
+    55% 50%,
+    55% 62%,
+    67% 62%,
+    67% 52%,
+    78% 52%,
+    78% 36%,
+    86% 36%,
+    86% 26%,
+    93% 26%,
+    93% 40%,
+    100% 40%,
+    100% 100%,
+    0% 100%
+  );
+  opacity: 0.92;
+}
+
+.menu-panel {
+  box-sizing: border-box;
+  max-width: 1080px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 28px) var(--safe-right) calc(var(--safe-bottom) + 24px)
+    var(--safe-left);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.mm-hero {
+  text-align: center;
+}
+
+/* The wordmark, extruded like a block: snow-white top, a grass layer, then earth. */
+.wordmark {
+  margin: 0;
+  color: #fff;
+  font: 900 clamp(64px, 13vw, 128px) / 0.95 var(--font-display);
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 1px 0 #e3f1d6,
+    0 2px 0 var(--grass-light),
+    0 3px 0 var(--grass),
+    0 4px 0 var(--grass),
+    0 5px 0 var(--grass-dark),
+    0 6px 0 var(--earth),
+    0 7px 0 var(--earth),
+    0 8px 0 var(--earth-dark),
+    0 9px 0 var(--earth-dark),
+    0 18px 24px rgb(31 43 56 / 28%);
+}
+
+.mm-tagline {
+  margin: 14px 0 0;
+  color: var(--ink);
+  font: 600 16px/1.4 var(--font-display);
+  opacity: 0.8;
+}
+
+#menu-message:empty {
+  display: none;
+}
+
+#menu-message {
+  align-self: center;
+  max-width: 640px;
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--paper-solid);
+  box-shadow: 0 6px 18px rgb(31 43 56 / 16%);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.mm-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (min-width: 860px) {
+  .mm-columns {
+    grid-template-columns: 1.15fr 1fr;
+  }
+}
+
+.mm-card {
+  min-width: 0;
+  padding: 18px 20px 20px;
+  border-radius: 18px;
+  background: var(--paper);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 70%) inset,
+    0 14px 34px rgb(31 43 56 / 18%);
+}
+
+.mm-card h2,
+#server-browser h2,
+#legacy-worlds h2 {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font: 800 19px/1.2 var(--font-display);
+}
+
+#server-browser h2,
+#legacy-worlds h2 {
+  margin-top: 22px;
+  font-size: 16px;
+}
+
+.mm-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.mm-card-head h2 {
+  margin: 0;
+}
+
+.menu-hint {
+  margin: 6px 0 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+#create-world {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 70%);
+}
+
+#create-world[hidden] {
+  display: none;
+}
+
+.menu-field {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font: 600 14px var(--font-body);
+}
+
+.menu-field input,
+.menu-field select,
+.menu-join-form input,
+.lobby-search-form input,
+#host-panel input,
+#host-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: 16px var(--font-body); /* 16px: iOS Safari doesn't zoom into the field */
+}
+
+.menu-field input:focus,
+.menu-field select:focus,
+.menu-join-form input:focus,
+.lobby-search-form input:focus {
+  border-color: var(--sky-deep);
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(94 143 214 / 25%);
+}
+
+#world-list,
+#recent-servers,
+#lobby-list,
+#nearby-list,
+#legacy-worlds ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.world-item:first-child {
+  border-top: 0;
+}
+
+.world-info {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.world-name {
+  overflow: hidden;
+  color: var(--ink);
+  font: 800 17px/1.2 var(--font-display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-details {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.world-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.world-actions .menu-button-small {
+  padding: 6px 10px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-soft);
+}
+
+.world-actions .menu-button-small:hover {
+  background: #fff;
+  color: var(--ink);
+}
+
+.world-actions .menu-confirm,
+.world-actions .menu-confirm:hover {
+  border-color: var(--danger);
+  background: #fde9e7;
+  color: var(--danger);
+}
+
+.menu-empty {
+  padding: 10px 0 2px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.menu-join-form,
+.lobby-search-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.menu-join-form input {
+  flex: 1;
+}
+
+#recent-servers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#nearby-list li {
+  margin: 0 0 6px;
+}
+
+.lobby-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lobby-ping {
+  align-self: center;
+  min-width: 44px;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.lobby-reason {
+  color: var(--danger);
+}
+
+.lobby-join:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The version line at the foot of the main menu. */
+#about {
+  margin-top: auto;
+  padding-top: 8px;
+  color: var(--ink);
+  text-align: center;
+}
+
+#about .menu-hint {
+  color: var(--ink);
+  opacity: 0.85;
+}
+
+#about a {
+  color: var(--ink);
+}
+
+#about-details .menu-hint {
+  max-width: 560px;
+  margin: 6px auto;
+}
+
+/* ---------- The game menu (ui/settingsMenu.ts) ---------- */
+
+#menu-button {
+  position: fixed;
+  left: var(--safe-left);
+  top: var(--safe-top);
+  z-index: var(--z-menu-button);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* Three bars. */
+.menu-glyph,
+.menu-glyph::before,
+.menu-glyph::after {
+  display: block;
+  width: 18px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.menu-glyph {
+  position: relative;
+}
+
+.menu-glyph::before,
+.menu-glyph::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.menu-glyph::before {
+  top: -6px;
+}
+
+.menu-glyph::after {
+  top: 6px;
+}
+
+body.menu-open #menu-button {
+  visibility: hidden;
+}
+
+.game-menu {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-menu);
+  display: grid;
+  place-items: center;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: rgb(18 30 46 / 38%);
+  -webkit-backdrop-filter: blur(6px) saturate(0.9);
+  backdrop-filter: blur(6px) saturate(0.9);
+  color: var(--ink);
+  touch-action: pan-y;
+}
+
+.game-menu[hidden] {
+  display: none;
+}
+
+.gm-sheet {
+  display: grid;
+  grid-template:
+    'head head' auto
+    'tabs pages' 1fr
+    'foot foot' auto
+    / 190px 1fr;
+  width: min(1000px, 100%);
+  height: min(760px, 100%);
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--paper-solid);
+  box-shadow: 0 24px 60px rgb(10 20 35 / 40%);
+}
+
+.gm-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 10px 24px;
+}
+
+.gm-title {
+  margin: 0;
+  font: 900 28px/1.1 var(--font-display);
+}
+
+.gm-sub {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.gm-sub:empty {
+  display: none;
+}
+
+.gm-close {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+}
+
+.gm-close::before,
+.gm-close::after {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 18.5px;
+  width: 16px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--ink);
+  transform: rotate(45deg);
+}
+
+.gm-close::after {
+  transform: rotate(-45deg);
+}
+
+.gm-tabs {
+  grid-area: tabs;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 16px 16px;
+}
+
+.gm-tab {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: 700 15px var(--font-display);
+  text-align: left;
+}
+
+.gm-tab:hover {
+  background: rgb(31 43 56 / 6%);
+  color: var(--ink);
+}
+
+.gm-tab[aria-selected='true'] {
+  background: #fff;
+  box-shadow:
+    inset 4px 0 0 var(--grass),
+    0 2px 6px rgb(31 43 56 / 10%);
+  color: var(--ink);
+}
+
+.gm-pages {
+  grid-area: pages;
+  overflow-y: auto;
+  padding: 6px 24px 24px 12px;
+  overscroll-behavior: contain;
+}
+
+.gm-page[hidden] {
+  display: none;
+}
+
+.gm-lead {
+  margin: 4px 0 14px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.gm-group {
+  margin-bottom: 22px;
+}
+
+.gm-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+  font: 800 16px var(--font-display);
+}
+
+/* A small grass block before each group's title. */
+.gm-group h2::before {
+  content: '';
+  width: 10px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--grass);
+  box-shadow: 0 3px 0 var(--earth);
+}
+
+.gm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px 22px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.settings-name {
+  font: 700 14px var(--font-body);
+}
+
+.settings-value {
+  color: var(--grass-dark);
+  font: 700 13px var(--font-mono);
+}
+
+.settings-hint {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* Sliders: a track filled with grass up to the value, and a block for a thumb. */
+.settings-row input[type='range'],
+#flight-speed input[type='range'] {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 26px;
+  margin: 2px 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: none;
+}
+
+.settings-row input[type='range']::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--grass) var(--fill, 50%),
+    rgb(31 43 56 / 12%) var(--fill, 50%)
+  );
+}
+
+.settings-row input[type='range']::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgb(31 43 56 / 12%);
+}
+
+.settings-row input[type='range']::-moz-range-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--grass);
+}
+
+.settings-row input[type='range']::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -7px;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow:
+    inset 0 -4px 0 var(--grass-dark),
+    0 0 0 2px var(--grass-dark),
+    0 3px 6px rgb(31 43 56 / 25%);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.settings-row input[type='range']::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--grass-dark);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: inset 0 -4px 0 var(--grass-dark);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-json {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: 12px var(--font-mono);
+  resize: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.settings-json[hidden] {
+  display: none;
+}
+
+/* Controls: what each key does, keys as keycaps. */
+.control-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 6px 22px;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.control-action {
+  font: 600 14px var(--font-body);
+}
+
+.control-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.keys-or {
+  margin: 0 3px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.control-when {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+/* Debug: the tools as buttons, on or off. */
+.debug-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.debug-tool {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.debug-tool:hover {
+  border-color: rgb(31 43 56 / 30%);
+}
+
+.debug-tool[aria-pressed='true'] {
+  border-color: var(--grass);
+  box-shadow: inset 0 0 0 1.5px var(--grass);
+}
+
+.debug-tool[aria-pressed='true'] .debug-tool-name::after {
+  content: ' · on';
+  color: var(--grass-dark);
+}
+
+.debug-tool-name {
+  font: 700 15px var(--font-display);
+}
+
+.debug-tool-when {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.gm-foot {
+  grid-area: foot;
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 14px 18px 16px 24px;
+  border-top: 1px solid var(--line);
+  background: rgb(255 255 255 / 60%);
+}
+
+.menu-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.gm-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font: 12px var(--font-mono);
+}
+
+/* Narrow or short screens (phones either way up): the sheet fills the screen, tabs in a row. */
+@media (max-width: 720px), (max-height: 520px) {
+  .game-menu {
+    padding: 0;
+  }
+
+  .gm-sheet {
+    grid-template:
+      'head' auto
+      'tabs' auto
+      'pages' 1fr
+      'foot' auto
+      / 1fr;
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .gm-head {
+    padding: calc(var(--safe-top) + 4px) calc(var(--safe-right) + 6px) 6px
+      calc(var(--safe-left) + 10px);
+  }
+
+  .gm-title {
+    font-size: 22px;
+  }
+
+  .gm-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 2px calc(var(--safe-right) + 6px) 8px calc(var(--safe-left) + 6px);
+    scrollbar-width: none;
+  }
+
+  .gm-tab {
+    flex: none;
+    padding: 8px 14px;
+  }
+
+  .gm-tab[aria-selected='true'] {
+    box-shadow:
+      inset 0 -3px 0 var(--grass),
+      0 2px 6px rgb(31 43 56 / 10%);
+  }
+
+  .gm-pages {
+    padding: 4px calc(var(--safe-right) + 8px) 16px calc(var(--safe-left) + 8px);
+  }
+
+  .gm-foot {
+    padding: 10px calc(var(--safe-right) + 8px) calc(var(--safe-bottom) + 2px)
+      calc(var(--safe-left) + 8px);
+  }
+
+  .gm-note {
+    display: none;
+  }
+
+  .menu-actions {
+    flex: 1;
+    justify-content: flex-end;
+  }
+}
+
+/* ---------- Host (ui/hostPanel.ts), a page of the game menu ---------- */
+
+#host-panel {
+  max-width: 560px;
+}
+
+#host-panel h2 {
+  margin: 14px 0 8px;
+  font: 800 16px var(--font-display);
+}
+
+.host-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 0 var(--line);
+  font-weight: 600;
+}
+
+.host-row select {
+  width: auto;
+  padding: 6px 10px;
+}
+
+#host-panel input {
+  margin-bottom: 8px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#host-panel button {
+  width: 100%;
+  margin-top: 6px;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--grass-light), var(--grass) 55%);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 30%),
+    0 4px 0 var(--earth);
+  color: #fff;
+  font: 800 15px var(--font-display);
+  text-shadow: 0 1px 0 rgb(0 0 0 / 28%);
+}
+
+#host-panel button:active {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 30%),
+    0 1px 0 var(--earth);
+}
+
+.host-code {
+  margin: 6px 0 10px;
+  color: var(--ink);
+  font: 800 34px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-align: center;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.host-qr {
+  display: block;
+  width: 168px;
+  height: 168px;
+  margin: 10px auto;
+  padding: 8px;
+  border-radius: 12px;
+  background: #fff;
+  image-rendering: pixelated;
+}
+
+/* ---------- HUD (ui/hud.ts and the widgets around it) ---------- */
 
 #hud {
   position: fixed;
   inset: 0;
+  z-index: var(--z-hud);
   pointer-events: none;
+}
+
+#hud button,
+#debug-overlay,
+#debug-dump {
+  pointer-events: auto;
 }
 
 #crosshair {
@@ -75,71 +1213,162 @@ body {
   height: 6px;
   margin: -3px 0 0 -3px;
   border-radius: 50%;
-  background: rgb(255 255 255 / 80%);
-  box-shadow: 0 0 2px rgb(0 0 0 / 80%);
+  background: rgb(255 255 255 / 85%);
+  box-shadow: 0 0 0 1.5px rgb(0 0 0 / 35%);
 }
 
 #health {
   position: absolute;
   left: 50%;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  width: 220px;
-  height: 10px;
-  margin-left: -110px;
-  border-radius: 5px;
-  background: rgb(0 0 0 / 50%);
+  bottom: var(--safe-bottom);
+  width: 200px;
+  height: 8px;
+  margin-left: -100px;
   overflow: hidden;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
 }
 
 #health > div {
   height: 100%;
-  background: #4fc26b;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--grass-light), var(--grass));
   transition: width 0.2s;
 }
 
 #health.hurt > div {
-  background: #e24a3b;
+  background: #e2574a;
 }
 
 #center-message {
   position: absolute;
   left: 0;
   right: 0;
-  top: 40%;
+  top: 38%;
+  padding: 0 24px;
   text-align: center;
-  font-size: 28px;
-  text-shadow: 0 1px 4px rgb(0 0 0 / 80%);
+  font: 800 30px/1.2 var(--font-display);
+  text-shadow: 0 2px 10px rgb(0 0 0 / 55%);
 }
 
+#hud-note {
+  position: absolute;
+  top: calc(50% + 36px);
+  left: 50%;
+  transform: translateX(-50%);
+  font: 600 14px var(--font-body);
+  text-shadow: 0 1px 3px rgb(0 0 0 / 80%);
+}
+
+/* The keys, when a game starts: a pill above the hotbar that fades. */
+#start-hint {
+  position: absolute;
+  bottom: calc(var(--safe-bottom) + 96px);
+  left: 50%;
+  max-width: calc(100vw - 140px);
+  padding: 9px 16px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font: 600 13px var(--font-body);
+  text-align: center;
+  transform: translateX(-50%);
+  transition: opacity 0.8s;
+}
+
+#start-hint.fading {
+  opacity: 0;
+}
+
+#start-hint[hidden] {
+  display: none;
+}
+
+/* Background work (terrain loading): bottom left. */
 #status-chip:empty {
   display: none;
 }
 
-/* Background work (terrain loading): bottom left, above the build label. */
 #status-chip {
   position: absolute;
-  left: max(8px, env(safe-area-inset-left));
-  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 30px);
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 50%);
-  font:
-    12px ui-monospace,
-    monospace;
+  left: var(--safe-left);
+  bottom: var(--safe-bottom);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--glass);
+  font: 12px var(--font-mono);
 }
 
+/* The connection line: a pill beside the menu button. */
+#net-status:empty {
+  display: none;
+}
+
+#net-status {
+  position: fixed;
+  left: calc(var(--safe-left) + 54px);
+  top: calc(var(--safe-top) + 7px);
+  z-index: var(--z-widgets);
+  box-sizing: border-box;
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 64px);
+  overflow: hidden;
+  padding: 6px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font: 12px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The build: in the menus (their own lines), not over the game. */
+#build-info {
+  position: fixed;
+  left: var(--safe-left);
+  bottom: var(--safe-bottom);
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--glass);
+  font: 11px var(--font-mono);
+  pointer-events: none;
+}
+
+body.in-game #build-info,
+body:has(#main-menu) #build-info {
+  display: none;
+}
+
+/* F3: what the game reports, in a panel under its tools. */
 #debug-overlay {
   position: absolute;
-  right: max(8px, env(safe-area-inset-right));
-  top: max(8px, env(safe-area-inset-top));
+  right: var(--safe-right);
+  top: calc(var(--safe-top) + 54px);
+  box-sizing: border-box;
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100dvh - 200px);
   margin: 0;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 60%);
-  font:
-    12px ui-monospace,
-    monospace;
-  white-space: pre;
+  overflow: auto;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font: 11.5px/1.45 var(--font-mono);
+  white-space: pre-wrap;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+  scrollbar-color: rgb(255 255 255 / 30%) transparent;
+  scrollbar-width: thin;
+}
+
+#debug-overlay[hidden] {
+  display: none;
 }
 
 #debug-overlay pre {
@@ -148,25 +1377,45 @@ body {
   white-space: inherit;
 }
 
-#debug-copy,
-#debug-dump button {
-  margin-top: 6px;
-  padding: 4px 10px;
-  border: 1px solid rgb(255 255 255 / 50%);
-  border-radius: 4px;
-  background: rgb(255 255 255 / 15%);
-  color: inherit;
-  font: inherit;
-  pointer-events: auto;
+.debug-head {
+  position: sticky;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  white-space: normal;
 }
 
-#hud-note {
-  position: absolute;
-  top: calc(50% + 40px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 14px;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+.debug-title {
+  margin-right: auto;
+  font: 800 13px var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.debug-button,
+#debug-dump button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+  font: 600 12px var(--font-body);
+}
+
+.debug-button:hover {
+  background: rgb(255 255 255 / 22%);
+}
+
+.debug-button kbd {
+  padding: 0 5px;
+  font-size: 10.5px;
+  box-shadow: none;
 }
 
 /* A block dump the clipboard refused (debug/blockDump.ts), to select and copy by hand. */
@@ -175,10 +1424,10 @@ body {
   inset: 10%;
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  border-radius: 6px;
-  background: rgb(0 0 0 / 80%);
-  pointer-events: auto;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--glass-strong);
 }
 
 #debug-dump[hidden] {
@@ -187,22 +1436,28 @@ body {
 
 #debug-dump textarea {
   flex: 1;
-  font:
-    11px ui-monospace,
-    monospace;
+  border-radius: 8px;
+  font: 11px var(--font-mono);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#debug-dump button {
+  align-self: flex-end;
+  padding: 6px 14px;
 }
 
 /* Block hotbar (ui/hotbar.ts): above the health bar; at the top on touch screens. */
 #hotbar {
   position: fixed;
   left: 50%;
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 20px);
-  transform: translateX(-50%);
+  bottom: calc(var(--safe-bottom) + 16px);
+  z-index: var(--z-widgets);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  z-index: 2;
+  gap: 5px;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -211,56 +1466,57 @@ body {
 }
 
 #hotbar-label {
-  font:
-    600 13px system-ui,
-    sans-serif;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 80%);
+  font: 800 14px var(--font-display);
+  text-shadow: 0 1px 4px rgb(0 0 0 / 70%);
   text-transform: capitalize;
 }
 
 .hotbar-slots {
   display: flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 6px;
-  background: rgb(0 0 0 / 40%);
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
 .hotbar-slot {
   position: relative;
-  width: 36px;
-  height: 36px;
-  padding: 2px;
+  width: 40px;
+  height: 40px;
+  padding: 3px;
   border: 2px solid transparent;
-  border-radius: 4px;
+  border-radius: 8px;
   background: rgb(255 255 255 / 8%);
   pointer-events: auto;
   touch-action: none;
+  transition: transform 80ms ease-out;
 }
 
 .hotbar-slot.selected {
   border-color: #fff;
-  background: rgb(255 255 255 / 25%);
+  background: rgb(255 255 255 / 22%);
+  transform: translateY(-3px);
 }
 
 .hotbar-slot canvas {
   width: 100%;
   height: 100%;
+  border-radius: 3px;
   image-rendering: pixelated;
 }
 
-/* The shape button: the piece placed from slots that come in slopes and slabs (key R). */
 #hotbar-shape {
   min-width: 64px;
-  height: 36px;
-  padding: 0 8px;
-  border: 2px solid transparent;
-  border-radius: 4px;
-  background: rgb(255 255 255 / 8%);
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: var(--glass);
   color: #fff;
-  font:
-    600 11px system-ui,
-    sans-serif;
+  font: 700 12px var(--font-body);
   text-transform: capitalize;
   pointer-events: auto;
   touch-action: none;
@@ -272,187 +1528,24 @@ body {
 
 .hotbar-key {
   position: absolute;
-  left: 2px;
-  top: 0;
+  left: 3px;
+  top: 1px;
   color: #fff;
-  font:
-    600 10px system-ui,
-    sans-serif;
+  font: 700 10px var(--font-body);
   text-shadow: 0 1px 2px #000;
 }
 
-@media (pointer: coarse) {
-  /* The hotbar takes the top centre: the connection status goes below it, the debug overlay
-     below that, across the screen (it is wider than a phone's half). */
-  #net-status {
-    top: calc(max(8px, env(safe-area-inset-top)) + 80px);
-    font-size: 11px;
-  }
-
-  #debug-overlay {
-    top: calc(max(8px, env(safe-area-inset-top)) + 112px);
-    left: max(8px, env(safe-area-inset-left));
-    max-height: calc(100dvh - 180px);
-    overflow: hidden;
-    font-size: 10px;
-    white-space: pre-wrap;
-  }
-
-  #hotbar {
-    top: max(8px, env(safe-area-inset-top));
-    bottom: auto;
-    flex-direction: column-reverse;
-  }
-
-  .hotbar-key {
-    display: none;
-  }
-}
-
-/* Touch controls (predict/touch.ts). Left half: floating stick; right half: look; buttons right. */
-#touch-controls {
-  position: fixed;
-  inset: 0;
-  touch-action: none;
-}
-
-#touch-controls[hidden] {
-  display: none;
-}
-
-.touch-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  touch-action: none;
-}
-
-/* Debug overlay toggle (F3 on touch): top right, clear of the hotbar. */
-#touch-debug {
-  position: absolute;
-  top: max(8px, env(safe-area-inset-top));
-  right: max(8px, env(safe-area-inset-right));
-  width: 40px;
-  height: 40px;
-  border: 2px solid rgb(255 255 255 / 45%);
-  border-radius: 50%;
-  background: rgb(0 0 0 / 35%);
-  color: #fff;
-  font:
-    italic 700 18px Georgia,
-    serif;
-  touch-action: none;
-}
-
-#touch-debug.pressed {
-  background: rgb(255 255 255 / 40%);
-  color: #111;
-}
-
-#touch-move {
-  left: 0;
-  width: 45%;
-}
-
-#touch-look {
-  right: 0;
-  width: 55%;
-}
-
-.stick {
-  position: absolute;
-  width: 112px;
-  height: 112px;
-  margin: -56px 0 0 -56px;
-  border-radius: 50%;
-  border: 2px solid rgb(255 255 255 / 45%);
-  background: rgb(0 0 0 / 18%);
-  pointer-events: none;
-}
-
-.stick[hidden] {
-  display: none;
-}
-
-.stick.running {
-  border-color: rgb(255 214 90 / 85%);
-}
-
-.stick-knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 55%);
-}
-
-.touch-buttons {
-  position: absolute;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(28px, env(safe-area-inset-bottom));
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-}
-
-.touch-buttons button {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  border: 2px solid rgb(255 255 255 / 50%);
-  background: rgb(0 0 0 / 30%);
-  color: #fff;
-  font:
-    600 13px system-ui,
-    sans-serif;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.touch-buttons #touch-jump {
-  width: 80px;
-  height: 80px;
-}
-
-.touch-buttons button.flying,
-.touch-buttons button.pressed {
-  background: rgb(255 255 255 / 40%);
-  color: #111;
-}
-
-#rotate-hint {
-  display: none;
-}
-
-@media (orientation: portrait) and (pointer: coarse) {
-  #rotate-hint {
-    position: fixed;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    padding: 24px;
-    text-align: center;
-    font-size: 20px;
-    background: rgb(11 13 18 / 88%);
-    z-index: 10;
-  }
-}
-
-/* Terrain map overlay (F4, ui/mapOverlay.ts). */
+/* Terrain map (F4, ui/mapOverlay.ts): under the menu button. */
 #map-overlay {
   position: fixed;
-  left: max(8px, env(safe-area-inset-left));
-  top: 56px;
-  padding: 4px;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 60%);
-  font:
-    11px ui-monospace,
-    monospace;
+  left: var(--safe-left);
+  top: calc(var(--safe-top) + 56px);
+  z-index: var(--z-widgets);
+  padding: 6px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--glass-strong);
+  font: 11px var(--font-mono);
   pointer-events: none;
 }
 
@@ -464,336 +1557,25 @@ body {
   display: block;
   width: 256px;
   height: 256px;
+  border-radius: 6px;
   image-rendering: pixelated;
 }
 
-/* Settings menu (ui/settingsMenu.ts): a button in the top-left corner and its panel below. */
-#menu-button {
-  position: fixed;
-  left: max(8px, env(safe-area-inset-left));
-  top: max(8px, env(safe-area-inset-top));
-  z-index: 5;
-  width: 40px;
-  height: 40px;
-  border: 2px solid rgb(255 255 255 / 45%);
-  border-radius: 8px;
-  background: rgb(0 0 0 / 45%);
-  color: #fff;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-#menu-button[aria-expanded='true'] {
-  background: rgb(255 255 255 / 40%);
-  color: #111;
-}
-
-#settings-menu {
-  position: fixed;
-  left: max(8px, env(safe-area-inset-left));
-  top: calc(max(8px, env(safe-area-inset-top)) + 48px);
-  z-index: 5;
-  width: min(300px, calc(100vw - 16px));
-  max-height: calc(100dvh - 72px);
-  overflow-y: auto;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgb(11 13 18 / 85%);
-  font-size: 13px;
-  touch-action: pan-y;
-}
-
-#settings-menu[hidden] {
-  display: none;
-}
-
-#settings-menu h2 {
-  margin: 0 0 6px;
-  font-size: 14px;
-}
-
-.settings-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 8px;
-  margin-bottom: 10px;
-}
-
-.settings-value {
-  font:
-    12px ui-monospace,
-    monospace;
-}
-
-.settings-row input {
-  grid-column: 1 / -1;
-  width: 100%;
-  margin: 2px 0;
-  touch-action: none;
-}
-
-.settings-hint {
-  grid-column: 1 / -1;
-  color: rgb(230 232 238 / 60%);
-  font-size: 11px;
-}
-
-.settings-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.settings-json {
-  box-sizing: border-box;
-  width: 100%;
-  margin-top: 8px;
-  border: 1px solid rgb(255 255 255 / 30%);
-  border-radius: 4px;
-  background: rgb(0 0 0 / 40%);
-  color: inherit;
-  font:
-    11px ui-monospace,
-    monospace;
-  resize: none;
-  -webkit-user-select: text;
-  user-select: text;
-}
-
-.settings-json[hidden] {
-  display: none;
-}
-
-.settings-reset,
-.settings-copy {
-  padding: 4px 12px;
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 4px;
-  background: rgb(255 255 255 / 10%);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-/* Game menu actions at the top of the ☰ panel (ui/settingsMenu.ts, in a game). */
-.menu-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.menu-actions button {
-  padding: 8px 12px;
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 6px;
-  background: rgb(255 255 255 / 12%);
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-/* Main menu (ui/mainMenu.ts): a centred panel over the empty view, scrolling on short screens. */
-#main-menu {
-  position: fixed;
-  inset: 0;
-  z-index: 4;
-  overflow-y: auto;
-  padding: max(56px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  box-sizing: border-box;
-  background: #0b0d12;
-  touch-action: pan-y;
-  -webkit-user-select: text;
-  user-select: text;
-}
-
-.menu-panel {
-  max-width: 560px;
-  margin: 0 auto;
-}
-
-.menu-panel h1 {
-  margin: 0 0 8px;
-  font-size: 32px;
-  letter-spacing: 0.04em;
-}
-
-.menu-panel h2 {
-  margin: 20px 0 8px;
-  font-size: 16px;
-}
-
-#menu-message:empty {
-  display: none;
-}
-
-#menu-message {
-  margin: 0 0 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgb(255 255 255 / 10%);
-  font-size: 13px;
-}
-
-.menu-hint {
-  margin: 4px 0 8px;
-  color: rgb(230 232 238 / 60%);
-  font-size: 12px;
-}
-
-.menu-button-main,
-.menu-button-small {
-  padding: 8px 14px;
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 6px;
-  background: rgb(255 255 255 / 12%);
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.menu-button-small {
-  padding: 6px 10px;
-  font-size: 13px;
-}
-
-.menu-button-main {
-  background: rgb(120 170 255 / 30%);
-}
-
-/* A text-style button: About in the main menu's version line. */
-.menu-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: rgb(150 190 255);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-#about a {
-  color: rgb(150 190 255);
-  font-size: 12px;
-}
-
-.menu-confirm {
-  border-color: #ff8a80;
-  background: rgb(255 80 60 / 30%);
-}
-
-#create-world {
-  display: grid;
-  gap: 8px;
-  margin: 10px 0;
-  padding: 12px;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 6%);
-}
-
-#create-world[hidden] {
-  display: none;
-}
-
-.menu-field {
-  display: grid;
-  grid-template-columns: 64px 1fr;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.menu-field input,
-.menu-field select,
-.menu-join-form input,
-.lobby-search-form input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  padding: 7px 8px;
-  border: 1px solid rgb(255 255 255 / 30%);
-  border-radius: 6px;
-  background: rgb(0 0 0 / 40%);
-  color: inherit;
-  font: inherit;
-  font-size: 16px; /* 16px: iOS Safari doesn't zoom into the field */
-}
-
-#world-list,
-#recent-servers {
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.world-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgb(255 255 255 / 10%);
-}
-
-.world-info {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.world-name {
-  overflow: hidden;
-  font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.world-details {
-  color: rgb(230 232 238 / 60%);
-  font-size: 12px;
-}
-
-.world-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.menu-empty {
-  padding: 8px 0;
-  color: rgb(230 232 238 / 60%);
-}
-
-.menu-join-form,
-.lobby-search-form {
-  display: flex;
-  gap: 8px;
-}
-
-#recent-servers li {
-  display: inline-block;
-  margin: 0 6px 6px 0;
-}
-
-/* Flight speed slider (ui/flightSpeedControl.ts), top right while flying, below the ⓘ button. */
+/* Flight speed (ui/flightSpeedControl.ts): top right while flying. */
 #flight-speed {
   position: fixed;
-  right: max(8px, env(safe-area-inset-right));
-  top: calc(max(8px, env(safe-area-inset-top)) + 52px);
-  z-index: 3;
-  width: min(240px, calc(100vw - 16px));
+  right: var(--safe-right);
+  top: calc(var(--safe-top) + 54px);
+  z-index: var(--z-widgets);
   box-sizing: border-box;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgb(0 0 0 / 55%);
-  font-size: 12px;
+  width: min(250px, calc(100vw - 20px));
+  padding: 8px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font: 600 12px var(--font-body);
   touch-action: none;
 }
 
@@ -809,116 +1591,261 @@ body {
 
 .flight-speed-value {
   justify-self: end;
-  font:
-    12px ui-monospace,
-    monospace;
+  font: 12px var(--font-mono);
 }
 
-#flight-speed input {
-  grid-column: 1 / -1;
-  width: 100%;
-  margin: 2px 0;
+#flight-speed input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 30%);
+}
+
+#flight-speed input[type='range']::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: inset 0 -3px 0 var(--grass-dark);
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .flight-speed-hint {
   grid-column: 1 / -1;
-  color: rgb(230 232 238 / 60%);
+  color: rgb(255 255 255 / 70%);
   font-size: 11px;
+  font-weight: 400;
 }
 
-/* Host… in the game menu (ui/hostPanel.ts). */
-#host-panel {
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgb(255 255 255 / 20%);
+/* ---------- Touch controls (ui/touchControls.ts) ---------- */
+
+#touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-touch);
+  touch-action: none;
 }
 
-#host-panel[hidden] {
+#touch-controls[hidden] {
   display: none;
 }
 
-.host-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+.touch-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  touch-action: none;
 }
 
-#host-panel select,
-#host-panel input {
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 4px;
-  background: rgb(0 0 0 / 40%);
-  color: inherit;
-  font: inherit;
+#touch-move {
+  left: 0;
+  width: 45%;
 }
 
-#host-panel input {
-  box-sizing: border-box;
-  width: 100%;
-  margin-bottom: 6px;
-  padding: 4px 6px;
-  -webkit-user-select: text;
-  user-select: text;
+#touch-look {
+  right: 0;
+  width: 55%;
 }
 
-#host-panel button {
-  width: 100%;
-  margin-top: 4px;
-  padding: 8px 12px;
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 6px;
-  background: rgb(255 255 255 / 12%);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.host-code {
-  margin: 4px 0 8px;
-  font:
-    bold 28px ui-monospace,
-    monospace;
-  letter-spacing: 0.08em;
-  text-align: center;
-  -webkit-user-select: text;
-  user-select: text;
-}
-
-.host-qr {
-  display: block;
-  width: 160px;
-  height: 160px;
-  margin: 8px auto;
-  image-rendering: pixelated;
-}
-
-/* Server browser (ui/serverBrowser.ts): the lobby list in the main menu. */
-#lobby-list {
-  margin: 6px 0 0;
+/* The debug overlay's button (F3 on touch): top right, clear of the hotbar. */
+#touch-debug {
+  position: absolute;
+  top: var(--safe-top);
+  right: var(--safe-right);
+  z-index: 1;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  list-style: none;
+  border: 1px solid var(--glass-line);
+  border-radius: 50%;
+  background: var(--glass);
+  color: #fff;
+  font:
+    italic 800 19px Georgia,
+    serif;
+  touch-action: none;
 }
 
-.lobby-filter {
+#touch-debug.pressed {
+  background: #fff;
+  color: var(--ink);
+}
+
+.stick {
+  position: absolute;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border: 2px solid rgb(255 255 255 / 50%);
+  border-radius: 50%;
+  background: rgb(16 24 34 / 22%);
+  pointer-events: none;
+}
+
+.stick[hidden] {
+  display: none;
+}
+
+.stick.running {
+  border-color: var(--grass-light);
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 65%);
+}
+
+.touch-buttons {
+  position: absolute;
+  right: var(--safe-right);
+  bottom: calc(var(--safe-bottom) + 18px);
+  z-index: 1;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 10px;
+  align-items: flex-end;
 }
 
-.lobby-ping {
-  align-self: center;
-  min-width: 44px;
-  text-align: right;
+.touch-buttons button {
+  width: 62px;
+  height: 62px;
+  border: 1.5px solid rgb(255 255 255 / 45%);
+  border-radius: 50%;
+  background: rgb(16 24 34 / 38%);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font: 800 13px var(--font-display);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.lobby-reason {
-  color: #ffb4a8;
+.touch-buttons #touch-jump {
+  width: 80px;
+  height: 80px;
+  font-size: 15px;
 }
 
-.lobby-join:disabled {
-  opacity: 0.4;
-  cursor: default;
+.touch-buttons button.flying,
+.touch-buttons button.pressed {
+  border-color: #fff;
+  background: rgb(255 255 255 / 85%);
+  color: var(--ink);
+}
+
+/* ---------- Touch screens ---------- */
+
+@media (pointer: coarse) {
+  /* The hotbar takes the top centre; the connection pill goes below it, the debug overlay below
+     that, across the screen. */
+  #hotbar {
+    top: var(--safe-top);
+    bottom: auto;
+    flex-direction: column-reverse;
+  }
+
+  .hotbar-key {
+    display: none;
+  }
+
+  #net-status {
+    left: var(--safe-left);
+    top: calc(var(--safe-top) + 84px);
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right));
+    padding: 4px 10px;
+    font-size: 10.5px;
+  }
+
+  #debug-overlay {
+    left: var(--safe-left);
+    right: var(--safe-right);
+    width: auto;
+    top: calc(var(--safe-top) + 116px);
+    max-height: min(42dvh, calc(100dvh - 240px));
+    font-size: 10px;
+  }
+
+  #map-overlay {
+    top: calc(var(--safe-top) + 116px);
+  }
+
+  #start-hint {
+    top: calc(var(--safe-top) + 120px);
+    bottom: auto;
+    max-width: calc(100vw - 40px);
+  }
+
+  #health {
+    width: 140px;
+    margin-left: -70px;
+  }
+}
+
+/* Upright phones: the buttons in a block above Jump, so the stick has room. */
+@media (pointer: coarse) and (orientation: portrait) {
+  .touch-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 58px);
+    grid-template-areas:
+      'edit fly'
+      'run crouch'
+      'jump jump';
+    gap: 10px;
+    justify-items: center;
+  }
+
+  .touch-buttons button {
+    width: 58px;
+    height: 58px;
+    font-size: 12px;
+  }
+
+  #touch-edit {
+    grid-area: edit;
+  }
+
+  #touch-fly {
+    grid-area: fly;
+  }
+
+  #touch-run {
+    grid-area: run;
+  }
+
+  #touch-crouch {
+    grid-area: crouch;
+  }
+
+  .touch-buttons #touch-jump {
+    grid-area: jump;
+    width: 76px;
+    height: 76px;
+  }
+
+  #touch-move {
+    width: 50%;
+  }
+
+  #touch-look {
+    width: 50%;
+  }
+
+  #health {
+    bottom: calc(var(--safe-bottom) + 4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
 }
