@@ -26,6 +26,16 @@ pub const NEAR_SPLIT: f64 = dwell_protocol::lod::NEAR_SPLIT_M as f64;
 pub const NEAR_PLANE: f64 = 0.05;
 pub const FAR_PLANE: f64 = 5e7;
 pub const SAMPLES: u32 = 4;
+
+/// Multisampling for an adapter: 4× on a GPU; none on a CPU (software) adapter, where every sample
+/// is the main thread's own time (CI's SwiftShader drops to a few frames a second with 4×).
+pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
+    if device_type == wgpu::DeviceType::Cpu {
+        1
+    } else {
+        SAMPLES
+    }
+}
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const WATER_OPACITY: f32 = 0.55;
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
@@ -213,7 +223,10 @@ pub struct Renderer {
     format: wgpu::TextureFormat,
     size: (u32, u32),
     pixel_ratio: f64,
-    targets: Option<(wgpu::TextureView, wgpu::TextureView)>,
+    /// The multisampled colour target (none with one sample: drawn into the frame's target) and the
+    /// depth buffer.
+    targets: Option<(Option<wgpu::TextureView>, wgpu::TextureView)>,
+    samples: u32,
     draw_layout: wgpu::BindGroupLayout,
     pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
     sky_pipeline: wgpu::RenderPipeline,
@@ -268,6 +281,16 @@ const DEAD_COLOR: u32 = 0x6b6b6b;
 impl Renderer {
     /// A renderer drawing into `format` targets (a canvas's, or an offscreen texture's).
     pub fn new(device: wgpu::Device, queue: wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        Self::with_samples(device, queue, format, SAMPLES)
+    }
+
+    /// A renderer with `samples` per pixel (1 or 4, `samples_for`).
+    pub fn with_samples(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        format: wgpu::TextureFormat,
+        samples: u32,
+    ) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("dwell"),
             source: wgpu::ShaderSource::Wgsl(shaders::source().into()),
@@ -407,7 +430,7 @@ impl Renderer {
                             bias: Default::default(),
                         }),
                         multisample: wgpu::MultisampleState {
-                            count: SAMPLES,
+                            count: samples,
                             ..Default::default()
                         },
                         multiview_mask: None,
@@ -441,7 +464,7 @@ impl Renderer {
                 bias: Default::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: SAMPLES,
+                count: samples,
                 ..Default::default()
             },
             multiview_mask: None,
@@ -492,6 +515,7 @@ impl Renderer {
             size: (1, 1),
             pixel_ratio: 1.0,
             targets: None,
+            samples,
             draw_layout,
             pipelines,
             sky_pipeline,
@@ -1036,7 +1060,7 @@ impl Renderer {
                     label: Some(label),
                     size,
                     mip_level_count: 1,
-                    sample_count: SAMPLES,
+                    sample_count: self.samples,
                     dimension: wgpu::TextureDimension::D2,
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -1044,7 +1068,8 @@ impl Renderer {
                 })
                 .create_view(&Default::default())
         };
-        self.targets = Some((make(self.format, "colour"), make(DEPTH, "depth")));
+        let colour = (self.samples > 1).then(|| make(self.format, "colour"));
+        self.targets = Some((colour, make(DEPTH, "depth")));
     }
 
     /// Draws one frame into `target` (a canvas texture or an offscreen one, `format`, the size
@@ -1104,9 +1129,9 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(if i == 0 { "far" } else { "near" }),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: colour,
+                    view: colour.as_ref().unwrap_or(target),
                     depth_slice: None,
-                    resolve_target: (i == 1).then_some(target),
+                    resolve_target: colour.as_ref().and((i == 1).then_some(target)),
                     ops: wgpu::Operations {
                         load: if i == 0 {
                             wgpu::LoadOp::Clear(wgpu::Color {
@@ -1277,6 +1302,13 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn software_adapters_draw_without_multisampling() {
+        assert_eq!(samples_for(wgpu::DeviceType::Cpu), 1);
+        assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu), SAMPLES);
+        assert_eq!(samples_for(wgpu::DeviceType::IntegratedGpu), SAMPLES);
+    }
 
     #[test]
     fn mipmaps_average_in_linear_light() {

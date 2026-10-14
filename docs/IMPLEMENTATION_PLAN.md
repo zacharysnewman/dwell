@@ -2158,6 +2158,9 @@ Deviations (24e, so far):
   no longer exists") as soon as a WebGPU canvas presents, even from plain JS: the probe page
   renders its offscreen scene before the canvas probe, and the browser e2e suite runs Chromium
   headed under Xvfb.
+- On a CPU (software) adapter the renderer draws without MSAA (`render::samples_for`): CI's
+  SwiftShader at 4× starved the page's main thread, so terrain meshed too slowly and remote
+  players' updates arrived late (two e2e cases failed on CI). A GPU keeps 4×.
 - `std::time` panics on wasm32-unknown-unknown: the server core counts work items instead of
   measuring time there (24d), and world files take their save time from JS.
 
