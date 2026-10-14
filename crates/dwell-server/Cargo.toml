@@ -1,0 +1,26 @@
+[package]
+name = "dwell-server"
+description = "Dwell's dedicated server: the server core behind the network front-end, world files, master registration (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[[bin]]
+name = "dwell-server"
+path = "src/main.rs"
+
+[dependencies]
+dwell-net = { path = "../dwell-net" }
+dwell-protocol = { path = "../dwell-protocol" }
+dwell-sim = { path = "../dwell-sim" }
+dwell-storage = { path = "../dwell-storage" }
+dwell-world = { path = "../dwell-world" }
+ctrlc = "3"
+getrandom = "0.3"
+if-addrs = "0.13"
+serde_json = "1"
+
+[lints]
+workspace = true

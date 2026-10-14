@@ -157,6 +157,30 @@ impl std::fmt::Debug for WorldDb {
     }
 }
 
+/// The world's meta from its `meta` table rows; `None` without a seed (a new world).
+fn meta_from(get: impl Fn(&str) -> Option<Vec<u8>>) -> Option<WorldMeta> {
+    let seed = get("world_seed")?;
+    let text = |k: &str| {
+        get(k)
+            .and_then(|b| String::from_utf8(b).ok())
+            .unwrap_or_default()
+    };
+    Some(WorldMeta {
+        world_seed: u64_of(&seed),
+        generator_version: get("generator_version").map_or(0, |b| u64_of(&b) as u32),
+        world_tick: get("world_tick").map_or(0, |b| u64_of(&b) as u32),
+        created_at: get("created_at").map_or(0, |b| u64_of(&b) as i64),
+        saved_at: get("saved_at").map_or(0, |b| u64_of(&b) as i64),
+        spawn: get("spawn").filter(|b| b.len() == 24).map(|b| {
+            std::array::from_fn(|i| {
+                f64::from_le_bytes(b[i * 8..i * 8 + 8].try_into().expect("8 bytes"))
+            })
+        }),
+        app_version_created: text("app_version_created"),
+        app_version_last: text("app_version_last"),
+    })
+}
+
 impl WorldDb {
     /// Opens or creates the world file at `path`.
     pub fn open(path: &Path) -> Result<Arc<Self>, String> {
@@ -177,7 +201,30 @@ impl WorldDb {
         Self::open_backend(redb::backends::InMemoryBackend::new())
     }
 
+    /// Whether an existing file is at this build's format and registry with every table: then
+    /// opening it commits no transaction.
+    fn current(db: &Database) -> bool {
+        let Ok(txn) = db.begin_read() else {
+            return false;
+        };
+        let Ok(meta) = txn.open_table(META) else {
+            return false;
+        };
+        let value = |k: &str| meta.get(k).ok().flatten().map(|v| u64_of(v.value()));
+        value("format_version") == Some(FORMAT_VERSION)
+            && value("registry_hash") == Some(REGISTRY_HASH)
+            && txn.open_table(SETTINGS).is_ok()
+            && txn.open_table(CHUNKS).is_ok()
+            && txn.open_table(LOD_SECTIONS).is_ok()
+            && txn.open_table(PLAYERS).is_ok()
+            && txn.open_table(PERMISSIONS).is_ok()
+            && txn.open_table(BLOCK_STATES).is_ok()
+    }
+
     fn setup(db: Database) -> Result<Arc<Self>, String> {
+        if Self::current(&db) {
+            return Self::ready(db);
+        }
         let txn = db.begin_write().map_err(err)?;
         {
             let mut meta = txn.open_table(META).map_err(err)?;
@@ -220,6 +267,10 @@ impl WorldDb {
             txn.open_table(BLOCK_STATES).map_err(err)?;
         }
         txn.commit().map_err(err)?;
+        Self::ready(db)
+    }
+
+    fn ready(db: Database) -> Result<Arc<Self>, String> {
         let world = Arc::new(Self {
             db,
             states: Mutex::new(States::default()),
@@ -256,27 +307,24 @@ impl WorldDb {
 
     /// `None` for a new world (no meta written yet).
     pub fn load_meta(&self) -> Option<WorldMeta> {
-        let seed = self.meta_bytes("world_seed")?;
-        let get = |k: &str| self.meta_bytes(k);
-        let text = |k: &str| {
-            get(k)
-                .and_then(|b| String::from_utf8(b).ok())
-                .unwrap_or_default()
+        meta_from(|k| self.meta_bytes(k))
+    }
+
+    /// A world file's meta read without opening it for writing (the file is opened read-only, so
+    /// nothing is written to it): the version lock is checked before a host touches a world it
+    /// may not open (RELEASES.md §6). `Ok(None)` for a missing file or one without meta.
+    pub fn peek_meta(path: &Path) -> Result<Option<WorldMeta>, String> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let db = redb::ReadOnlyDatabase::open(path).map_err(err)?;
+        let txn = db.begin_read().map_err(err)?;
+        let Ok(t) = txn.open_table(META) else {
+            return Ok(None);
         };
-        Some(WorldMeta {
-            world_seed: u64_of(&seed),
-            generator_version: get("generator_version").map_or(0, |b| u64_of(&b) as u32),
-            world_tick: get("world_tick").map_or(0, |b| u64_of(&b) as u32),
-            created_at: get("created_at").map_or(0, |b| u64_of(&b) as i64),
-            saved_at: get("saved_at").map_or(0, |b| u64_of(&b) as i64),
-            spawn: get("spawn").filter(|b| b.len() == 24).map(|b| {
-                std::array::from_fn(|i| {
-                    f64::from_le_bytes(b[i * 8..i * 8 + 8].try_into().expect("8 bytes"))
-                })
-            }),
-            app_version_created: text("app_version_created"),
-            app_version_last: text("app_version_last"),
-        })
+        Ok(meta_from(|k| {
+            t.get(k).ok().flatten().map(|v| v.value().to_vec())
+        }))
     }
 
     /// Modified chunks in the file and their revisions.

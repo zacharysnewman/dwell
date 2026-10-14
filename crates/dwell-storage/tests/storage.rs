@@ -357,3 +357,27 @@ fn the_lod_cache_is_dropped_when_the_registry_changes() {
     let _ = std::fs::remove_file(&path);
     let _ = STATES.len();
 }
+
+#[test]
+fn peeking_a_world_files_meta_writes_nothing() {
+    let path = temp_path("untouched");
+    {
+        let db = WorldDb::open(&path).unwrap();
+        db.save(&SaveBatch {
+            meta: Some(meta()),
+            ..SaveBatch::default()
+        })
+        .unwrap();
+    }
+    let before = std::fs::read(&path).unwrap();
+    // The version lock reads the meta first, read-only (RELEASES.md §6)…
+    let peeked = WorldDb::peek_meta(&path).unwrap().expect("meta");
+    assert_eq!(peeked.world_seed, meta().world_seed);
+    // (Opening for writing always rewrites redb's header: open and closed flags.)
+    assert!(
+        std::fs::read(&path).unwrap() == before,
+        "peek_meta modified the file"
+    );
+    assert!(WorldDb::peek_meta(&temp_path("missing")).unwrap().is_none());
+    let _ = std::fs::remove_file(&path);
+}

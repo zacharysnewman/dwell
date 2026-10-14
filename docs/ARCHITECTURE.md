@@ -29,7 +29,8 @@
 > (the authoritative server core: sessions and the handshake, the tick, snapshots, input
 > validation, fall damage and respawn, terrain streaming, chunk and LOD requests, LOD propagation,
 > block edits, hosting, persistence on redb) and `dwell-net` (WebTransport and WebRTC, the master
-> client) in the workspace; still to come: the `dwell-server` binary and browser networking. Until the cutover, this document
+> client) in the workspace; and `dwell-server` (the dedicated server binary: launch options, world settings and the version
+> lock, master heartbeats); still to come: browser networking. Until the cutover, this document
 > otherwise describes the C++/TS build; it is rewritten at the cutover.
 
 ---
@@ -239,6 +240,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   /dwell-storage     World files on redb (LZ4 blobs), the save thread.
   /dwell-sim         The authoritative server core (no sockets or OS calls): sessions, the tick,
                      snapshots, streaming, LOD propagation, edits, hosting, persistence; the app version.
+  /dwell-server      The dedicated server binary: options, world file settings and permissions, the
+                     version lock (read-only peek), master heartbeats, the fixed-step loop.
   /dwell-net         WebTransport (wtransport) and WebRTC (str0m) behind one event queue; master-server
                      registration. A copy of server/net/wt with a safe API (the C++ links the old one
                      until the cutover).
