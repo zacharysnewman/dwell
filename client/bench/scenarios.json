@@ -57,6 +57,28 @@
       ]
     },
     {
+      "name": "jump-onto-block",
+      "notes": "Places a block in front of the spawn, walks into it and jumps with forward held (owner, 2026-10-14: the jump usually failed to clear one block): the player should land on top (grounded 1 m up), then walk off its far side.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "select", "slot": 0 },
+        { "do": "look", "yaw": 90, "pitch": -50 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.5 },
+        { "do": "look", "yaw": 90, "pitch": 0 },
+        { "do": "mark" },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 1.5 },
+        { "do": "hold", "code": "Space", "s": 0.1 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "wait", "s": 0.5 },
+        { "do": "record", "name": "jump" },
+        { "do": "shot", "name": "after" }
+      ]
+    },
+    {
       "name": "jump-in-place",
       "notes": "Jumps on flat ground at the spawn: the controller trace shows the jump's peak.",
       "steps": [
