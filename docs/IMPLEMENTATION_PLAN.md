@@ -2004,8 +2004,11 @@ in `client/views/views.json` (checked by `scripts/views.ts`), `e2e/views.ts` ope
 for the LOD to settle, `scripts/shots.ts` shoots them; `game_local.rs` checks that the LOD refines
 under a camera placed 6 km away (failing without the override), `e2e/views.spec.ts` that a view
 settles in a browser. Under software rendering the LOD at the owner's settings 1 km up takes
-minutes to settle (generation is CPU-bound beside SwiftShader), so the high views wait up to
-300 s. Outstanding: the gaps seen from high up (cause not found), the frame-time comparison and the owner's manual play and look comparison,
+minutes to settle (jobs start once a frame, and SwiftShader draws a few frames a second; natively
+the same view settles in 74 s of game time), so the high views wait up to 600 s; a views file with
+`scale` 0.25 settles faster (1 km: 475 s, 2.5 km: 385 s; neither showed gaps). Fix found with it:
+`?debug=1` never showed the F3 text (the switch arrived before the game existed and was dropped;
+`e2e/views.spec.ts` failed on it, now kept by the client and applied when the game starts). Outstanding: the gaps seen from high up (cause not found), the frame-time comparison and the owner's manual play and look comparison,
 including whether the frame rate now holds over a long session. ADR 0028 accepted (2026-10-13). Storage, compression and crypto decided by
 Claude at the owner's request (2026-10-13, ADR 0028 §8): `redb` (files natively, OPFS in the
 browser), LZ4 (`lz4_flex`), `ed25519-dalek`.

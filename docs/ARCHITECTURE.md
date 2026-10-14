@@ -632,8 +632,9 @@ duplicate names fail with the entry and field named; Vitest adds a fixture view 
 (`__dwell.placeCamera`, the client's `Game::set_view`: the renderer and the LOD view from there
 while the player stays at the spawn, so away from it the view is the LOD's; no protocol change),
 and waits until the LOD has nothing left to generate, mesh or ask for; `client/scripts/shots.ts`
-shoots any of them into PNGs with their LOD stats, for comparing builds. Adding a view is adding an
-entry. Decided with the owner (2026-10-14): a client-only placed camera rather than a server
+shoots any of them into PNGs with their LOD stats, for comparing builds (`--views FILE` for another
+views file). Adding a view is adding an entry. Under software rendering a high view at fine
+settings takes minutes to settle: the LOD starts jobs once a frame, at a few frames a second. Decided with the owner (2026-10-14): a client-only placed camera rather than a server
 teleport (a protocol change), and views as a data file with a runner rather than helpers alone;
 the views are per build (checked in), added by hand or by a tool. **[planned]** The
 C++ build's command-line tools — `dwell_worldgen_inspect` (ASCII and image height maps, the

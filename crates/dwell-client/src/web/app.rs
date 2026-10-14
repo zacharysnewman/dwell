@@ -205,6 +205,8 @@ struct Inner {
     started_ms: Option<f64>,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
+    /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
+    debug_visible: bool,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -317,6 +319,7 @@ impl Client {
             sky_setting_deg: 0.0,
             started_ms: None,
             shell_events: Vec::new(),
+            debug_visible: false,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -743,7 +746,9 @@ impl Client {
     }
     #[wasm_bindgen(js_name = setDebugVisible)]
     pub fn set_debug_visible(&self, visible: bool) {
-        if let Some(g) = &mut self.inner.borrow_mut().game {
+        let mut s = self.inner.borrow_mut();
+        s.debug_visible = visible;
+        if let Some(g) = &mut s.game {
             g.debug_visible = visible;
         }
     }
@@ -1197,6 +1202,7 @@ impl Inner {
         let size = self.renderer.borrow().size();
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
+        game.debug_visible = self.debug_visible;
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }
