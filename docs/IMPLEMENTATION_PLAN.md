@@ -2110,7 +2110,14 @@ Built so far (24e; nothing above is ticked until the client runs end to end on i
   mapping and exposure; camera-relative drawing in two depth passes split at
   `LOD_NEAR_SPLIT_M`; the mipmapped atlas. A smoke scene renders in headless Chromium
   (`client/e2e-webgpu/renderer.spec.ts`: sky, lit terrain and a player read back from the GPU).
-- Outstanding: the `wasm-bindgen` app and game loop, the mesh and generation workers, the TS
+- The game loop (`dwell-client::game`, game.ts ported): prediction ticks, input datagrams,
+  reconciliation, remote players, the eye and face flip, terrain streaming, the whole-world view,
+  block targeting and edits, the HUD text and debug overlay, behind a `Scene` trait the renderer
+  implements. Background jobs (`jobs`, `pool`): generation, LOD bounds and sections, the debug
+  map and meshing, with a byte codec for workers, run inline natively. `tests/game_local.rs`
+  joins a local world through the real session and handshake: the terrain streams and is meshed,
+  the player walks, breaks a block and sees it gone, and LOD sections are generated and meshed.
+- Outstanding: the `wasm-bindgen` app around the game loop, the mesh and generation workers, the TS
   shell's rewire onto it (keeping `window.__dwell` for e2e), the "unsupported" screen, and removing
   Three.js and the TS sim, protocol and render code.
 

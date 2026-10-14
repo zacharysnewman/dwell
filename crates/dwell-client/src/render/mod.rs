@@ -66,7 +66,7 @@ pub struct Line {
 /// An ancestor section drawn clipped to a box (world metres) where the traversal has nothing ready.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StandIn {
-    pub id: u32,
+    pub id: i64,
     pub lo: V3,
     pub hi: V3,
 }
@@ -196,7 +196,7 @@ struct DrawItem {
 
 enum DrawMesh {
     Chunk(ChunkCoord, bool),
-    Section(u32, bool, u8),
+    Section(i64, bool, u8),
     Capsule(u64),
     Outline,
     Debug,
@@ -218,9 +218,8 @@ pub struct Renderer {
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
     chunks: HashMap<ChunkCoord, Chunk>,
-    chunk_visible: Option<Box<dyn Fn(ChunkCoord) -> bool>>,
-    sections: HashMap<u32, Section>,
-    shown: HashMap<u32, u8>,
+    sections: HashMap<i64, Section>,
+    shown: Vec<(i64, u8)>,
     stand_ins: Vec<StandIn>,
     level_colors: bool,
     players: HashMap<u32, PlayerView>,
@@ -483,9 +482,8 @@ impl Renderer {
             draw_group,
             draw_capacity: 1024,
             chunks: HashMap::new(),
-            chunk_visible: None,
             sections: HashMap::new(),
-            shown: HashMap::new(),
+            shown: Vec::new(),
             stand_ins: Vec::new(),
             level_colors: false,
             players: HashMap::new(),
@@ -645,7 +643,7 @@ impl Renderer {
     /// scaled by `cell_size`). Nothing shows until `show_lod_sections` lists it.
     pub fn set_lod_section(
         &mut self,
-        id: u32,
+        id: i64,
         origin: V3,
         cell_size: f64,
         meshes: Option<&SectionMeshes>,
@@ -669,15 +667,11 @@ impl Renderer {
         );
     }
     /// The sections to draw from now on, each with the sides (bit per face) whose skirt shows.
-    pub fn show_lod_sections(&mut self, visible: HashMap<u32, u8>) {
-        self.shown = visible;
+    pub fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
+        self.shown = visible.to_vec();
     }
-    pub fn show_lod_stand_ins(&mut self, stand_ins: Vec<StandIn>) {
-        self.stand_ins = stand_ins;
-    }
-    /// Which terrain chunks are drawn (LOD draws instead of the others); `None`: all of them.
-    pub fn set_chunk_visibility(&mut self, visible: Option<Box<dyn Fn(ChunkCoord) -> bool>>) {
-        self.chunk_visible = visible;
+    pub fn show_lod_stand_ins(&mut self, stand_ins: &[StandIn]) {
+        self.stand_ins = stand_ins.to_vec();
     }
     pub fn set_lod_level_colors(&mut self, on: bool) {
         self.level_colors = on;
@@ -820,7 +814,12 @@ impl Renderer {
     }
 
     /// The draws of one pass: everything whose distance range meets [near, far].
-    fn collect(&self, near: f64, far: f64) -> Vec<DrawItem> {
+    fn collect(
+        &self,
+        near: f64,
+        far: f64,
+        chunk_visible: &dyn Fn(ChunkCoord) -> bool,
+    ) -> Vec<DrawItem> {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
         let water = [1.0, 1.0, 1.0, WATER_OPACITY];
@@ -850,9 +849,7 @@ impl Renderer {
             d2.sqrt() <= far && far_corner.sqrt() >= near
         };
         for (&coord, c) in &self.chunks {
-            if self.chunk_visible.as_ref().is_some_and(|f| !f(coord))
-                || !reaches(c.origin, f64::from(CHUNK_SIZE))
-            {
+            if !chunk_visible(coord) || !reaches(c.origin, f64::from(CHUNK_SIZE)) {
                 continue;
             }
             let r = self.rel(c.origin);
@@ -888,7 +885,7 @@ impl Renderer {
             };
             [t[0], t[1], t[2], alpha]
         };
-        for (&id, &mask) in &self.shown {
+        for &(id, mask) in &self.shown {
             let Some(s) = self.sections.get(&id) else {
                 continue;
             };
@@ -1027,7 +1024,12 @@ impl Renderer {
 
     /// Draws one frame into `target` (a canvas texture or an offscreen one, `format`, the size
     /// given to `resize`).
-    pub fn render(&mut self, target: &wgpu::TextureView) {
+    /// `chunk_visible` says which terrain chunks to draw (the LOD draws instead of the others).
+    pub fn render(
+        &mut self,
+        target: &wgpu::TextureView,
+        chunk_visible: &dyn Fn(ChunkCoord) -> bool,
+    ) {
         self.ensure_targets();
         let basis = aim(self.yaw, self.pitch, self.face, self.flip);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
@@ -1041,7 +1043,7 @@ impl Renderer {
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws: [Vec<DrawItem>; 2] =
-            std::array::from_fn(|i| self.collect(passes[i].0, passes[i].1));
+            std::array::from_fn(|i| self.collect(passes[i].0, passes[i].1, chunk_visible));
         for (i, (near, far)) in passes.iter().enumerate() {
             let u = self.frame_uniforms(&basis, *near, *far);
             self.queue
@@ -1208,6 +1210,42 @@ fn downsample(src: &[u8], size: usize) -> Vec<u8> {
         }
     }
     out
+}
+
+impl crate::game::Scene for Renderer {
+    fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
+        Renderer::set_terrain_chunk(self, coord, meshes);
+    }
+    fn set_lod_section(
+        &mut self,
+        id: i64,
+        origin: V3,
+        cell_size: f64,
+        meshes: Option<&SectionMeshes>,
+    ) {
+        Renderer::set_lod_section(self, id, origin, cell_size, meshes);
+    }
+    fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
+        Renderer::show_lod_sections(self, visible);
+    }
+    fn show_lod_stand_ins(&mut self, stand_ins: &[StandIn]) {
+        Renderer::show_lod_stand_ins(self, stand_ins);
+    }
+    fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
+        Renderer::set_player(self, id, view);
+    }
+    fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
+        Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
+    }
+    fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
+        Renderer::set_block_outline(self, cell, height);
+    }
+    fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
+        Renderer::set_debug_lines(self, lines);
+    }
+    fn stats(&self) -> RenderStats {
+        Renderer::stats(self)
+    }
 }
 
 #[cfg(test)]

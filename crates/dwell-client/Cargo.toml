@@ -15,12 +15,16 @@ wgpu = { version = "30.0.1", default-features = false, features = ["webgpu", "wg
 futures-channel = "0.3"
 bytemuck = "1"
 dwell-blocks = { path = "../dwell-blocks" }
+dwell-game = { path = "../dwell-game" }
+dwell-lod = { path = "../dwell-lod" }
 dwell-look = { path = "../dwell-look" }
 dwell-mesh = { path = "../dwell-mesh" }
+dwell-physics = { path = "../dwell-physics" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-sim = { path = "../dwell-sim" }
 dwell-storage = { path = "../dwell-storage" }
 dwell-world = { path = "../dwell-world" }
+dwell-worldgen = { path = "../dwell-worldgen" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "=0.2.129"

@@ -2,8 +2,11 @@
 //! that draws to an offscreen target and to a canvas, used to prove WebGPU in headless Chromium on
 //! CI before the renderer work (24e) starts.
 
+pub mod game;
+pub mod jobs;
 pub mod local;
 pub mod net;
+pub mod pool;
 pub mod render;
 #[cfg(target_arch = "wasm32")]
 mod web;
@@ -215,6 +218,6 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
     );
     // Looking along −Z from above the chunk's +Z edge, the horizon across the middle.
     renderer.set_camera([16.0, 11.0, 24.0], 180.0, -12.0, 1.0, 0.0);
-    renderer.render(&texture.create_view(&Default::default()));
+    renderer.render(&texture.create_view(&Default::default()), &|_| true);
     read_back(&device, &queue, &texture).await
 }
