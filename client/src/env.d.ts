@@ -7,3 +7,13 @@ interface ImportMetaEnv {
   /** The master server (ARCHITECTURE.md §10.3); set by the Pages build from a repository variable. */
   readonly VITE_MASTER_URL?: string;
 }
+
+/** OPFS sync access handles (workers only; not in TypeScript's DOM lib): local worlds' files. */
+interface FileSystemSyncAccessHandle {
+  read(buffer: BufferSource, options?: { at?: number }): number;
+  write(buffer: BufferSource, options?: { at?: number }): number;
+  getSize(): number;
+  truncate(size: number): void;
+  flush(): void;
+  close(): void;
+}

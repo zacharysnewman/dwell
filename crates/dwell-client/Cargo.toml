@@ -37,6 +37,7 @@ web-sys = { version = "0.3", features = [
     "WebTransportSendStream", "WebTransportDatagramDuplexStream", "WebTransportCloseInfo", "RtcPeerConnection",
     "RtcPeerConnectionState", "RtcDataChannel", "RtcDataChannelInit", "RtcDataChannelState", "RtcDataChannelType",
     "RtcSdpType", "RtcSessionDescriptionInit", "FileSystemSyncAccessHandle", "FileSystemReadWriteOptions",
+    "Worker", "Performance", "console",
 ] }
 
 [dev-dependencies]

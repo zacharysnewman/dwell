@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "build:wasm": "cd ../server && cmake --preset wasm >/dev/null && cmake --build --preset wasm",
+    "build:wasm": "cd .. && cargo build -p dwell-client --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir client/src/pkg target/wasm32-unknown-unknown/release/dwell_client.wasm",
     "e2e": "playwright test",
     "build:launcher": "vite build -c vite.launcher.config.ts",
     "site:fixture": "node --experimental-strip-types scripts/localSite.ts",
@@ -25,14 +25,12 @@
     "e2e:webgpu": "playwright test -c playwright.webgpu.config.ts"
   },
   "dependencies": {
-    "qrcode-generator": "2.0.4",
-    "three": "0.186.1"
+    "qrcode-generator": "2.0.4"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.56.1",
     "@types/node": "22.20.4",
-    "@types/three": "0.186.0",
     "eslint": "10.11.0",
     "globals": "17.12.0",
     "prettier": "3.9.9",

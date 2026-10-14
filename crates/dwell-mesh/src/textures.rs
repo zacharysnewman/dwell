@@ -327,3 +327,61 @@ mod tests {
         assert_eq!(build_atlas().len(), ATLAS_SIZE * ATLAS_SIZE * 4);
     }
 }
+
+/// A small picture of a block state for the hotbar: its side texture, or its flat colour
+/// (`TILE` × `TILE` RGBA8, sRGB).
+pub fn swatch(state: dwell_blocks::StateId) -> Vec<u8> {
+    let style = crate::style::material_style(state);
+    let Some(textures) = style.textures else {
+        let [r, g, b] = [
+            (style.color >> 16) as u8,
+            (style.color >> 8) as u8,
+            style.color as u8,
+        ];
+        return [r, g, b, 255].repeat(TILE * TILE);
+    };
+    let atlas = shared_atlas();
+    let rect = tile_rect(textures.side);
+    let (x0, y0) = (
+        (rect.u0 * ATLAS_SIZE as f64).round() as usize,
+        (rect.v0 * ATLAS_SIZE as f64).round() as usize,
+    );
+    let mut out = Vec::with_capacity(TILE * TILE * 4);
+    // Top row first: the picture's top is the tile's highest v (the atlas's row y0 + TILE − 1).
+    for y in 0..TILE {
+        let at = ((y0 + TILE - 1 - y) * ATLAS_SIZE + x0) * 4;
+        out.extend_from_slice(&atlas[at..at + TILE * 4]);
+    }
+    out
+}
+
+fn shared_atlas() -> &'static [u8] {
+    static ATLAS: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    ATLAS.get_or_init(build_atlas)
+}
+
+#[cfg(test)]
+mod swatch_tests {
+    use super::*;
+
+    #[test]
+    fn swatches_are_a_tile_of_the_side_texture_or_the_flat_colour() {
+        let grass = swatch(dwell_blocks::require("dwell:grass"));
+        assert_eq!(grass.len(), TILE * TILE * 4);
+        assert!(
+            grass.chunks(4).any(|p| p != &grass[..4]),
+            "a texture varies"
+        );
+        // The swatch's top-left texel is the tile's top row (highest v) in the atlas.
+        let stone = swatch(dwell_blocks::require("dwell:stone"));
+        let r = tile_rect("stone");
+        let (x, y) = (
+            (r.u0 * ATLAS_SIZE as f64).round() as usize,
+            (r.v1 * ATLAS_SIZE as f64).round() as usize - 1,
+        );
+        let o = (y * ATLAS_SIZE + x) * 4;
+        assert_eq!(stone[..4], shared_atlas()[o..o + 4]);
+        let air = swatch(0);
+        assert!(air.chunks(4).all(|p| p == [0, 0, 0, 255]), "a flat colour");
+    }
+}

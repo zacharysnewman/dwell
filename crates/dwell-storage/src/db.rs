@@ -106,10 +106,19 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+/// Unix time (s). `SystemTime::now` panics on wasm32-unknown-unknown (no clock): the browser's
+/// local mode asks JS.
 fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as i64)
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        (js_sys::Date::now() / 1000.0) as i64
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64)
+    }
 }
 
 /// The id maps between the file's world state ids and this build's runtime ids.

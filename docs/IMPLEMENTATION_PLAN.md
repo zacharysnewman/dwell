@@ -2117,9 +2117,16 @@ Built so far (24e; nothing above is ticked until the client runs end to end on i
   map and meshing, with a byte codec for workers, run inline natively. `tests/game_local.rs`
   joins a local world through the real session and handshake: the terrain streams and is meshed,
   the player walks, breaks a block and sees it gone, and LOD sections are generated and meshed.
-- Outstanding: the `wasm-bindgen` app around the game loop, the mesh and generation workers, the TS
-  shell's rewire onto it (keeping `window.__dwell` for e2e), the "unsupported" screen, and removing
-  Three.js and the TS sim, protocol and render code.
+- The browser app (`dwell-client::web::app`, a wasm-bindgen `Client`): the WebGPU canvas, the
+  session over Rust's WebTransport and WebRTC (or a transport the shell hands over), the game loop,
+  the input and touch state machines, settings, the HUD's text and the `window.__dwell` hooks;
+  jobs in Web Workers running the same module (`web::jobs`, `engine/jobWorker.ts`); the local
+  world's worker on `LocalWorld` (one redb file in OPFS); the lobby ping and hotbar swatches in
+  Rust. The TS shell (menus, HUD, settings, master, rooms, hosting) drives it; Three.js, the
+  TS sim, meshers, worldgen, LOD, game logic, protocol codec, session and transports are
+  removed. A local world plays in Chromium (terrain, LOD to the horizon, editing, the HUD).
+- Outstanding: the e2e suite against the Rust client and `dwell-server` (with 24f), the CI client
+  jobs on the Rust build, and the frame-time comparison.
 
 Deviations (24e, so far):
 - Room peer transports (friend worlds' WebRTC through the master's signalling) and the local
@@ -2129,8 +2136,12 @@ Deviations (24e, so far):
   which is below the world at levels 1–17, so every column there shared one bounds entry (hidden
   by uniform test worlds; `keeps_each_columns_bounds_apart`). The TS client is deleted at the
   cutover, so it is not fixed there.
-- After a canvas surface is dropped, headless Chromium's SwiftShader adapter hands out no more
-  adapters on the page, so the probe page renders the scene before the canvas probe.
+- Headless Chromium's SwiftShader adapter loses the device ("A valid external Instance reference
+  no longer exists") as soon as a WebGPU canvas presents, even from plain JS: the probe page
+  renders its offscreen scene before the canvas probe, and the browser e2e suite runs Chromium
+  headed under Xvfb.
+- `std::time` panics on wasm32-unknown-unknown: the server core counts work items instead of
+  measuring time there (24d), and world files take their save time from JS.
 
 ### 24f — Shells and cutover
 - [ ] Electron and Capacitor run the Rust client; the launcher and release scripts build it.

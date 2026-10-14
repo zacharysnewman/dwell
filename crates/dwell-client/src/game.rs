@@ -277,6 +277,8 @@ pub struct Game<S: Scene> {
     /// The verification hash sent (None until the verification chunk is generated).
     verified: Option<u64>,
     pending_lod: Option<LodSettings>,
+    /// The latest F4 map (None until one arrives; an empty map without a terrain).
+    map: Option<Vec<u8>>,
 }
 
 impl<S: Scene> Game<S> {
@@ -341,6 +343,7 @@ impl<S: Scene> Game<S> {
             rtt_ms: None,
             verified: None,
             pending_lod: None,
+            map: None,
         };
         match verification {
             Some(c) => game
@@ -384,6 +387,37 @@ impl<S: Scene> Game<S> {
         lod.set_detail_distance(s.detail_distance_m);
         self.lod = Some(lod);
         self.pending_lod = None;
+    }
+
+    /// Asks for the F4 map: n × n column samples from (x0, z0), `step` apart, of `face`.
+    pub fn request_map(&mut self, x0: i32, z0: i32, step: i32, n: i32, face: u8) {
+        self.pool.borrow_mut().submit(
+            Purpose::Map,
+            crate::jobs::Job::Map {
+                x0,
+                z0,
+                step,
+                n,
+                face,
+            },
+        );
+    }
+    /// The latest map, once (height i16 LE and an outside flag per sample; empty without a terrain).
+    pub fn take_map(&mut self) -> Option<Vec<u8>> {
+        self.map.take()
+    }
+    /// Regenerates the chunk under the player and diffs it against the world (the F3 note).
+    pub fn request_diff(&mut self, c: Coord) {
+        if self.streamer.revision(c).is_none() {
+            self.debug_note.clear();
+            return;
+        }
+        self.pool.borrow_mut().submit(
+            Purpose::Diff(c),
+            crate::jobs::Job::Generate {
+                coord: ChunkCoord::from_array(c),
+            },
+        );
     }
 
     pub fn lod(&mut self) -> Option<&mut LodSystem> {
@@ -504,6 +538,24 @@ impl<S: Scene> Game<S> {
                     self.streamer.on_meshed(c, token, *m)
                 }
                 (Purpose::Verify, Output::Chunk { hash, .. }) => self.verify(hash),
+                (Purpose::Map, Output::Map(bytes)) => self.map = Some(bytes.unwrap_or_default()),
+                (Purpose::Diff(c), Output::Chunk { voxels, .. }) => {
+                    let revision = self.streamer.revision(c);
+                    let padded = dwell_game::chunk_stream::ChunkStore::padded_chunk(
+                        self.streamer.store_mut(),
+                        c,
+                    );
+                    self.debug_note = match (
+                        revision,
+                        dwell_game::chunk_diff::count_changed(&padded, &voxels),
+                    ) {
+                        (Some(rev), Ok(n)) => format!(
+                            "chunk ({}, {}, {}) rev {rev} · {n} voxels differ from generation",
+                            c[0], c[1], c[2]
+                        ),
+                        _ => String::new(),
+                    };
+                }
                 (Purpose::Verify, _) => self.verify(0),
                 (Purpose::Bounds(level, i, k), out) => {
                     if let Some(lod) = &mut self.lod {
@@ -1038,4 +1090,30 @@ fn probe_lines(center: [f64; 3], c: &ClientState) -> Vec<Line> {
         color: 0x3cc8ff,
     });
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_debug_overlay_shows_state_layers_and_prediction_stats() {
+        // ui/hud.test.ts's case.
+        let mut c = ClientState::of(&Predictor::new(PlayerControllerConfig::default()));
+        c.state = PlayerState::Running;
+        c.ground_kind = GroundKind::Terrain;
+        c.touching_wall = true;
+        c.render_offset = [0.0, 0.0, 0.03];
+        c.next_seq = 101;
+        c.stats.replays = 2;
+        let text = format_debug(&c, 83, 2, 1.0, 1, Some(151.4));
+        assert!(
+            text.contains("state Running · ground Terrain gap 0.00 · wall"),
+            "{text}"
+        );
+        assert!(text.contains("replays 2"));
+        assert!(text.contains("smoothing 3.00 cm"));
+        assert!(text.contains("RTT 151 ms"));
+        assert!(text.contains("health 83/100"));
+    }
 }

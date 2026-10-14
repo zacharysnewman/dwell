@@ -1,4 +1,3 @@
-#![allow(dead_code)] // wired into the app as it is built (24e)
 //! Browser transports (ARCHITECTURE.md §8.1): WebTransport to dedicated servers (ADR 0001) and
 //! WebRTC data channels to their ICE-lite endpoint (ADR 0008). Both deliver into one event queue
 //! the frame loop drains, so the session and the game stay poll-driven like the server.

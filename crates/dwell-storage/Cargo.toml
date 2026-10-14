@@ -14,6 +14,10 @@ dwell-world = { path = "../dwell-world" }
 lz4_flex = "0.14"
 redb = "4.3"
 
+# The browser has no std clock (local mode, wasm32-unknown-unknown): save times come from JS.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+js-sys = "0.3"
+
 [lints]
 workspace = true
 

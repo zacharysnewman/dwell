@@ -1,8 +1,13 @@
 // The block hotbar (ARCHITECTURE.md §6.5): the infinite palette with the selected block highlighted.
 // Number keys and the scroll wheel (desktop) or tapping a slot (touch) change the selection.
-import type { PaletteSlot } from '../interact/blockInteraction';
-import { sharedAtlas, TILE, tilePixels } from '../render/textures';
-import { materialStyle } from '../world/materials';
+
+/** A palette slot as the hotbar shows it: its name and picture (`Client.palette()`, `hotbarSwatch`). */
+export interface HotbarSlot {
+  name: string;
+  /** size × size RGBA8. */
+  swatch: Uint8Array;
+  size: number;
+}
 
 /** Key label of a slot: 1–9, then 0 for the tenth; later slots are reached by scrolling. */
 export function slotKey(slot: number): string {
@@ -25,7 +30,7 @@ export class Hotbar {
 
   constructor(
     parent: HTMLElement,
-    private readonly palette: readonly PaletteSlot[],
+    private readonly palette: readonly HotbarSlot[],
     onPick: (slot: number) => void,
   ) {
     this.root = document.createElement('div');
@@ -40,7 +45,7 @@ export class Hotbar {
       b.className = 'hotbar-slot';
       b.dataset.slot = String(i);
       b.title = slot.name;
-      b.append(swatch(slot.material));
+      b.append(swatch(slot));
       const key = slotKey(i);
       if (key) {
         const k = document.createElement('span');
@@ -77,23 +82,13 @@ export class Hotbar {
   }
 }
 
-/** A small picture of a material: its side texture, or its flat colour. */
-function swatch(material: number): HTMLCanvasElement {
+/** A slot's picture: its block's side texture, or its flat colour. */
+function swatch(slot: HotbarSlot): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
-  canvas.width = TILE;
-  canvas.height = TILE;
+  canvas.width = slot.size;
+  canvas.height = slot.size;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
-  const style = materialStyle(material);
-  if (style.textures) {
-    ctx.putImageData(
-      new ImageData(tilePixels(sharedAtlas(), style.textures.side), TILE, TILE),
-      0,
-      0,
-    );
-  } else {
-    ctx.fillStyle = `#${style.color.toString(16).padStart(6, '0')}`;
-    ctx.fillRect(0, 0, TILE, TILE);
-  }
+  if (!ctx || slot.swatch.length !== slot.size * slot.size * 4) return canvas;
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(slot.swatch), slot.size, slot.size), 0, 0);
   return canvas;
 }

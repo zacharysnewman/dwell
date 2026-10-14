@@ -1,10 +1,9 @@
-// Local-mode host (ARCHITECTURE.md §2.1): runs the WASM server core in a worker and exchanges
+// Local-mode host (ARCHITECTURE.md §2.1): runs the Rust server core (LocalWorld) in a worker and exchanges
 // protocol bytes with the main thread's LoopbackTransport.
 import { HostState } from '../protocol/constants.gen';
 import type { FromWorker, ToWorker } from './messages';
-import { importDwellCore } from '../sim/module';
 import { LocalCore, OutgoingKind } from './wasmCore';
-import { localWorldName, openWorldFiles } from './worldFiles';
+import { localWorldName, openWorldFile } from './worldFiles';
 
 interface WorkerScope {
   postMessage(message: FromWorker, transfer?: Transferable[]): void;
@@ -80,15 +79,10 @@ function handle(msg: ToWorker): void {
 async function start(worldSeed: number, generatorVersion: number, file?: string): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
-  const files = await openWorldFiles(file ?? localWorldName(generatorVersion, worldSeed));
+  const files = await openWorldFile(file ?? localWorldName(generatorVersion, worldSeed));
   if (!files) console.warn('Dwell: this local world will not be saved (no OPFS access).');
   try {
-    core = await LocalCore.load(
-      await importDwellCore(),
-      worldSeed,
-      generatorVersion,
-      files?.files ?? null,
-    );
+    core = await LocalCore.load(worldSeed, generatorVersion, files?.handle ?? null);
   } catch (err) {
     scope.postMessage({
       t: 'error',

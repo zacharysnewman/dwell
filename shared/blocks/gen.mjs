@@ -310,15 +310,13 @@ writeFileSync(join(root, 'server/core/include/dwell/core/blocks.gen.h'), cpp.joi
 // ---- TypeScript --------------------------------------------------------------------------------
 const ts = [];
 ts.push(`// ${header}`);
-ts.push("import type { TileName } from '../render/textures';");
-ts.push('');
 ts.push("export type MaterialLook = 'cube' | 'shaped' | 'ladder' | 'water';");
 ts.push('');
-ts.push('/** Texture tiles (render/textures.ts) per face group; untextured materials use `color`. */');
+ts.push('/** Texture tiles (dwell-mesh textures.rs) per face group; untextured materials use `color`. */');
 ts.push('export interface MaterialTextures {');
-ts.push('  top: TileName;');
-ts.push('  side: TileName;');
-ts.push('  bottom: TileName;');
+ts.push('  top: string;');
+ts.push('  side: string;');
+ts.push('  bottom: string;');
 ts.push('}');
 ts.push('');
 ts.push('export interface BlockProperty {');

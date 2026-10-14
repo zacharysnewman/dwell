@@ -1,10 +1,10 @@
-import type { SessionState, SessionStats } from '../net/session';
-import { RejectReason, TransportKind } from '../protocol/constants.gen';
+import type { SessionState, SessionStats } from '../net/sessionState';
+import { RejectReason } from '../protocol/constants.gen';
 
-const TRANSPORT_NAMES: Record<TransportKind, string> = {
-  [TransportKind.WebTransport]: 'WebTransport',
-  [TransportKind.WebRtc]: 'WebRTC',
-  [TransportKind.Loopback]: 'local',
+const TRANSPORT_NAMES: Record<string, string> = {
+  webtransport: 'WebTransport',
+  webrtc: 'WebRTC',
+  loopback: 'local',
 };
 
 function ms(v: number | null): string {
@@ -17,16 +17,17 @@ function ms(v: number | null): string {
  */
 export function formatStatus(
   target: string,
-  transport: TransportKind,
+  transport: string,
   state: SessionState,
   stats: SessionStats,
   fps: number | null = null,
 ): string {
   switch (state.phase) {
+    case 'connecting':
     case 'handshaking':
       return `Joining ${target}…`;
     case 'joined':
-      return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport]}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}${fps === null ? '' : ` · ${String(Math.round(fps))} fps`}`;
+      return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport] ?? transport}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}${fps === null ? '' : ` · ${String(Math.round(fps))} fps`}`;
     case 'rejected':
       return state.reason === RejectReason.Replaced || state.reason === RejectReason.ServerClosing
         ? `Disconnected from ${target}: ${state.message}`
