@@ -1281,13 +1281,14 @@ impl PassView {
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
 const FRAME_FLOATS: usize = 16 + 15 * 4;
 
-/// The atlas and its mipmaps, each with its side in texels: down to one texel per tile's cell.
-/// Smaller levels would average tiles with their neighbours and the atlas's empty (transparent)
-/// space, which a grazing view of distant ground samples.
+/// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
+/// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
+/// the neighbouring tiles and the atlas's empty (transparent) space, which a grazing view of
+/// distant ground samples: a grey, see-through grid along the block edges.
 fn atlas_levels() -> Vec<(Vec<u8>, usize)> {
     let mut levels = vec![(dwell_mesh::build_atlas(), dwell_mesh::ATLAS_SIZE)];
     while let Some(&(ref level, s)) = levels.last()
-        && s > dwell_mesh::ATLAS_CELLS
+        && s > dwell_mesh::ATLAS_SIZE / dwell_mesh::GUTTER
     {
         levels.push((downsample(level, s), s / 2));
     }
@@ -1384,31 +1385,51 @@ mod tests {
         assert_eq!(out[3], 255);
     }
 
+    /// Bilinear filtering of mip level (`texels`, `size`) at atlas coordinates (u, v), as the GPU
+    /// samples it (texel centres at half-integers, clamped at the edge), in 0–255 per channel.
+    fn bilinear(texels: &[u8], size: usize, u: f64, v: f64) -> [f64; 4] {
+        let (x, y) = (u * size as f64 - 0.5, v * size as f64 - 0.5);
+        let (x0, y0) = (x.floor(), y.floor());
+        let (fx, fy) = (x - x0, y - y0);
+        let at = |x: f64, y: f64, c: usize| {
+            let x = (x.max(0.0) as usize).min(size - 1);
+            let y = (y.max(0.0) as usize).min(size - 1);
+            f64::from(texels[(y * size + x) * 4 + c])
+        };
+        std::array::from_fn(|c| {
+            let top = at(x0, y0, c) * (1.0 - fx) + at(x0 + 1.0, y0, c) * fx;
+            let bottom = at(x0, y0 + 1.0, c) * (1.0 - fx) + at(x0 + 1.0, y0 + 1.0, c) * fx;
+            top * (1.0 - fy) + bottom * fy
+        })
+    }
+
     #[test]
-    fn every_mip_level_keeps_each_tile_to_itself() {
-        // At a grazing angle the sampler reaches the smallest mipmaps: a tile must not blend with
-        // its neighbours or the atlas's empty space there (the grey, see-through haze on distant
-        // ground, playtest 2026-10-14).
+    fn filtering_any_mip_level_at_a_tiles_edge_stays_on_that_tile() {
+        // A block's texture is sampled up to its tile's edges (fract(uv)), and the bilinear filter
+        // reaches half a texel past the sample: at every level the gutter must cover that, or
+        // distant ground picks up the neighbouring tiles and the atlas's empty space along every
+        // block edge (the grey, see-through grid near the horizon, playtest 2026-10-14).
         let levels = atlas_levels();
-        for (level, (texels, size)) in levels.iter().enumerate() {
-            let shift = level as u32;
-            for (t, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
-                let cx = (t % dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::CELL / 2;
-                let cy = (t / dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::CELL / 2;
-                let (x, y) = (cx >> shift, cy >> shift);
-                let at = (y * size + x) * 4;
-                let texel = &texels[at..at + 4];
-                assert_eq!(texel[3], 255, "{name} at mip {level} is see-through");
-                if level + 1 == levels.len() {
-                    let avg = hex(dwell_mesh::average_tile_color(name));
-                    for c in 0..3 {
-                        let want = (avg[c] * 255.0).round();
-                        let got = f64::from(texel[c]);
+        for (t, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+            let r = dwell_mesh::tile_rect(name);
+            let cell = [
+                (t % dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL,
+                (t / dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL,
+            ];
+            for (level, (texels, size)) in levels.iter().enumerate() {
+                let texel = dwell_mesh::ATLAS_SIZE / size;
+                for (u, v) in [(r.u0, r.v0), (r.u1, r.v0), (r.u0, r.v1), (r.u1, r.v1)] {
+                    // The filter's 2 × 2 texels lie in the tile's cell (the tile and its gutter).
+                    for (k, w) in [u, v].into_iter().enumerate() {
+                        let first = (w * *size as f64 - 0.5).floor();
+                        let (lo, hi) = (first as usize * texel, (first as usize + 2) * texel);
                         assert!(
-                            (got - want).abs() <= 3.0,
-                            "{name} at mip {level}: {texel:?}"
+                            first >= 0.0 && lo >= cell[k] && hi <= cell[k] + dwell_mesh::CELL,
+                            "{name} at mip {level}: filtering ({u}, {v}) reaches past its cell"
                         );
                     }
+                    let got = bilinear(texels, *size, u, v);
+                    assert_eq!(got[3], 255.0, "{name} at mip {level}, ({u}, {v})");
                 }
             }
         }
