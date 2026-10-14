@@ -1,0 +1,25 @@
+[package]
+name = "dwell-sim"
+description = "Dwell's authoritative server core: sessions, the tick, snapshots, terrain streaming, LOD propagation, persistence (ADR 0028)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-physics = { path = "../dwell-physics" }
+dwell-protocol = { path = "../dwell-protocol" }
+dwell-storage = { path = "../dwell-storage" }
+dwell-world = { path = "../dwell-world" }
+dwell-worldgen = { path = "../dwell-worldgen" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = "0.3"
+
+[dev-dependencies]
+ed25519-dalek = "2"
+
+[lints]
+workspace = true

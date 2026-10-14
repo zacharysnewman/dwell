@@ -9,7 +9,7 @@
 > character models), and the Tier 1 interactions of §6.6 (push cap, crush, riding clusters —
 > Phase 20).
 
-> **[in progress] Rust port (ADR 0028, Phase 24c built).** The controller is ported to Rust on
+> **[in progress] Rust port (ADR 0028, Phase 24c built; the server side in 24d).** The controller is ported to Rust on
 > Rapier in `crates/dwell-physics` (`controller.rs`, `query.rs`, `terrain.rs`, `net.rs`,
 > `predictor.rs`; suites in `crates/dwell-physics/tests`), with the same layers, passes and tuning.
 > Until the cutover this spec describes the C++ build; the Rust one differs in:
@@ -26,6 +26,9 @@
 > - **Golden trace:** re-recorded on Rapier with exact (round-trip) floats and held bit-exactly in
 >   the origin frame, natively and under `wasm32-wasip1`: that run is the native↔WASM divergence
 >   check. Far from the origin and on face B every state must match and positions stay within 1 mm.
+> - **Reconciliation (§8.2):** a correction made while the player touched another player's proxy
+>   is smoothed up to the knockback bound (4 × RECONCILE_SNAP_DISTANCE) before it snaps, like a
+>   knockback: a bump is learnt of a round trip late, and Rapier's mispredict by up to ~1.3 m.
 > - Not ported, because what they test no longer exists: the terrain-region crossing case and the
 >   Jolt collision-mesh cases of the scenario suite.
 

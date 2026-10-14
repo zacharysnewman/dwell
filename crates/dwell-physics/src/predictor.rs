@@ -50,6 +50,8 @@ struct Entry {
     controller: PlayerController,
     position: DVec3,
     velocity: Vec3,
+    /// The player touched a remote player's proxy this tick.
+    touched: bool,
 }
 
 struct Remote {
@@ -189,7 +191,29 @@ impl Predictor {
             controller: *self.players.controller(h),
             position: self.players.position(&self.physics, h),
             velocity: self.players.velocity(&self.physics, h),
+            touched: self.touching_remote(),
         };
+    }
+
+    /// Whether the local capsule touches (or nearly touches) a remote player's proxy.
+    fn touching_remote(&self) -> bool {
+        let Some(h) = self.handle else { return false };
+        let p = self.players.position(&self.physics, h);
+        let reach = f64::from(2.0 * self.config.body.radius) + 0.05;
+        let tall = f64::from(2.0 * self.config.half_height(false));
+        self.remotes.values().any(|r| {
+            let q = self.physics.position(r.body);
+            let (dx, dz) = (p.x - q.x, p.z - q.z);
+            dx * dx + dz * dz < reach * reach && (p.y - q.y).abs() < tall
+        })
+    }
+
+    /// Whether the prediction from `from` to the present touched a remote player.
+    fn touched_since(&self, from: u32) -> bool {
+        (from..=self.latest_seq).any(|seq| {
+            let e = &self.history[(seq % HISTORY) as usize];
+            e.seq == seq && e.touched
+        })
     }
 
     /// Predicts one tick with this (quantized) input; `input.seq` must equal `next_seq()`.
@@ -321,13 +345,18 @@ impl Predictor {
                 InputFrame::default()
             }
         };
+        // A bump into another player, like a knockback, is learnt of a round trip late: its
+        // correction is expected to be large and is smoothed further before snapping (Rapier's
+        // player-vs-player contacts make these up to ~1.3 m where Jolt's stayed under ~0.7 m).
+        let bumped = self.touched_since(ack);
         self.record(at_ack);
         self.latest_seq = self.latest_seq.max(ack);
         self.replay(world, ack + 1);
+        let bumped = bumped || self.touched_since(ack);
         let correction = (before - self.position()).as_vec3();
         self.stats.last_correction = correction.length();
         let snap = RECONCILE_SNAP_DISTANCE
-            * if knockback {
+            * if knockback || bumped {
                 KNOCKBACK_SNAP_FACTOR
             } else {
                 1.0
