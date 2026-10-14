@@ -4,6 +4,7 @@
 //! to the camera (origins in f64, offsets in f32), so the world stays precise far from the origin.
 //! It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
 
+pub mod arena;
 pub mod camera;
 pub mod display;
 pub mod geometry;
@@ -16,8 +17,8 @@ use dwell_look::sky_frame::{SkyFrame, sky_rest};
 use dwell_look::{DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
-use wgpu::util::DeviceExt;
 
+use arena::{Arena, ArenaRef, Region};
 use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
 pub use display::RenderStats;
 
@@ -82,28 +83,25 @@ pub struct StandIn {
     pub hi: V3,
 }
 
+/// A mesh in the arena's pages (arena.rs): its vertices with their attributes interleaved (one
+/// format per `Kind`) and its indices, drawn from `first_index` with `base_vertex`.
 struct GpuMesh {
-    /// The vertices, attributes interleaved (one buffer to bind per draw: binding each stream was
-    /// most of the frame's WebGPU calls, docs/DEV_TOOLS.md profile 2026-10-14).
-    vertex: Vec<wgpu::Buffer>,
-    index: wgpu::Buffer,
+    region: Region,
+    base_vertex: i32,
+    first_index: u32,
     /// Index ranges: [0] the surface; for LOD sections, [1 + face] each side's skirt.
     parts: Vec<std::ops::Range<u32>>,
     bytes: u64,
+    arena: ArenaRef,
 }
 
-fn buffer(
-    device: &wgpu::Device,
-    label: &str,
-    data: &[u8],
-    usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: data,
-        usage,
-    })
-}
+/// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts).
+const STRIDES: [u64; 3] = [
+    4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
+    4 * (3 + 3 + 3),         // Flat: position, normal, colour
+    4 * (3 + 3),             // Line: position, colour
+];
+
 fn floats(v: &[f32]) -> &[u8] {
     bytemuck_cast(v)
 }
@@ -157,31 +155,49 @@ fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
 }
 
 impl GpuMesh {
-    fn textured(device: &wgpu::Device, m: &MeshArrays) -> Option<Self> {
+    fn upload(
+        arena: &ArenaRef,
+        kind: Kind,
+        vertices: &[f32],
+        indices: &[u32],
+        parts: Vec<std::ops::Range<u32>>,
+        bytes: u64,
+    ) -> Self {
+        let mut a = arena.borrow_mut();
+        let region = a.upload(kind as usize, floats(vertices), u32s(indices));
+        Self {
+            base_vertex: a.base_vertex(&region),
+            first_index: (region.index_offset / 4) as u32,
+            region,
+            parts,
+            bytes,
+            arena: arena.clone(),
+        }
+    }
+
+    fn textured(arena: &ArenaRef, m: &MeshArrays) -> Option<Self> {
         if m.indices.is_empty() {
             return None;
         }
-        let v = wgpu::BufferUsages::VERTEX;
-        Some(Self {
-            vertex: vec![buffer(
-                device,
-                "chunk",
-                floats(&interleave(&[
-                    (&m.positions, 3),
-                    (&m.normals, 3),
-                    (&m.colors, 3),
-                    (&m.uvs, 2),
-                    (&m.tiles, 4),
-                ])),
-                v,
-            )],
-            index: buffer(device, "chunk", u32s(&m.indices), wgpu::BufferUsages::INDEX),
-            parts: std::iter::once(0..m.indices.len() as u32).collect(),
-            bytes: m.byte_len() as u64,
-        })
+        let vertices = interleave(&[
+            (&m.positions, 3),
+            (&m.normals, 3),
+            (&m.colors, 3),
+            (&m.uvs, 2),
+            (&m.tiles, 4),
+        ]);
+        Some(Self::upload(
+            arena,
+            Kind::Terrain,
+            &vertices,
+            &m.indices,
+            std::iter::once(0..m.indices.len() as u32).collect(),
+            m.byte_len() as u64,
+        ))
     }
+
     /// Flat meshes concatenated into one (an LOD section's surface and its six skirts).
-    fn flat(device: &wgpu::Device, meshes: &[&FlatMesh]) -> Option<Self> {
+    fn flat(arena: &ArenaRef, meshes: &[&FlatMesh]) -> Option<Self> {
         if meshes.iter().all(|m| m.indices.is_empty()) {
             return None;
         }
@@ -196,30 +212,40 @@ impl GpuMesh {
             idx.extend(m.indices.iter().map(|i| i + base));
             parts.push(start..idx.len() as u32);
         }
-        let v = wgpu::BufferUsages::VERTEX;
-        Some(Self {
-            vertex: vec![buffer(
-                device,
-                "flat",
-                floats(&interleave(&[(&p, 3), (&n, 3), (&c, 3)])),
-                v,
-            )],
-            index: buffer(device, "flat", u32s(&idx), wgpu::BufferUsages::INDEX),
-            bytes: 4 * (p.len() + n.len() + c.len() + idx.len()) as u64,
+        let bytes = 4 * (p.len() + n.len() + c.len() + idx.len()) as u64;
+        let vertices = interleave(&[(&p, 3), (&n, 3), (&c, 3)]);
+        Some(Self::upload(
+            arena,
+            Kind::Flat,
+            &vertices,
+            &idx,
             parts,
-        })
+            bytes,
+        ))
+    }
+
+    fn lines(arena: &ArenaRef, points: &[([f32; 3], [f32; 3])]) -> Self {
+        let p: Vec<f32> = points.iter().flat_map(|(p, _)| *p).collect();
+        let c: Vec<f32> = points.iter().flat_map(|(_, c)| *c).collect();
+        let idx: Vec<u32> = (0..points.len() as u32).collect();
+        let bytes = 4 * (p.len() + c.len() + idx.len()) as u64;
+        let vertices = interleave(&[(&p, 3), (&c, 3)]);
+        Self::upload(
+            arena,
+            Kind::Line,
+            &vertices,
+            &idx,
+            std::iter::once(0..idx.len() as u32).collect(),
+            bytes,
+        )
     }
 }
 
-/// WebGPU frees a buffer when it is destroyed, or whenever the page's garbage collector gets to it
-/// (wgpu's WebGPU backend does nothing on drop): a mesh destroys its buffers when it goes, or GPU
-/// memory grows with every replaced chunk and section.
+/// A mesh's regions go back to its page when it goes (the pages themselves are destroyed with the
+/// arena: wgpu's WebGPU backend frees nothing on drop).
 impl Drop for GpuMesh {
     fn drop(&mut self) {
-        for b in &self.vertex {
-            b.destroy();
-        }
-        self.index.destroy();
+        self.arena.borrow_mut().free(&self.region);
     }
 }
 
@@ -271,6 +297,8 @@ struct DrawItem {
     /// Turn about +y (cos, sin of the yaw): players face their heading.
     rotation: [f32; 2],
     mesh: DrawMesh,
+    /// The arena page the mesh is in (filled in by `collect`): draws from a page bind it once.
+    page: usize,
 }
 
 /// No turn.
@@ -310,6 +338,8 @@ pub struct Renderer {
     outline: Option<(V3, f64)>,
     outline_mesh: GpuMesh,
     debug: Option<GpuMesh>,
+    /// The GPU pages every mesh lives in (arena.rs).
+    arena: ArenaRef,
     eye: V3,
     yaw: f64,
     pitch: f64,
@@ -563,8 +593,9 @@ impl Renderer {
         });
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
         let edges = geometry::box_edges();
-        let outline_mesh = Self::lines_mesh(
-            &device,
+        let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
+        let outline_mesh = GpuMesh::lines(
+            &arena,
             &edges
                 .iter()
                 .map(|p| (*p, [1.0, 1.0, 1.0]))
@@ -596,6 +627,7 @@ impl Renderer {
             outline: None,
             outline_mesh,
             debug: None,
+            arena,
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
             pitch: -20.0,
@@ -684,24 +716,6 @@ impl Renderer {
         (buffer, group)
     }
 
-    fn lines_mesh(device: &wgpu::Device, points: &[([f32; 3], [f32; 3])]) -> GpuMesh {
-        let p: Vec<f32> = points.iter().flat_map(|(p, _)| *p).collect();
-        let c: Vec<f32> = points.iter().flat_map(|(_, c)| *c).collect();
-        let idx: Vec<u32> = (0..points.len() as u32).collect();
-        let v = wgpu::BufferUsages::VERTEX;
-        GpuMesh {
-            vertex: vec![buffer(
-                device,
-                "lines",
-                floats(&interleave(&[(&p, 3), (&c, 3)])),
-                v,
-            )],
-            index: buffer(device, "lines", u32s(&idx), wgpu::BufferUsages::INDEX),
-            parts: std::iter::once(0..idx.len() as u32).collect(),
-            bytes: 4 * (p.len() + c.len() + idx.len()) as u64,
-        }
-    }
-
     /// Resizes the drawing buffer to CSS pixels × device pixel ratio.
     pub fn resize(&mut self, width: u32, height: u32, pixel_ratio: f64) {
         self.size = (width.max(1), height.max(1));
@@ -727,8 +741,8 @@ impl Renderer {
         let Some(m) = meshes else { return };
         let t0 = crate::telemetry::now_ms();
         let (opaque, water) = (
-            GpuMesh::textured(&self.device, &m.opaque),
-            GpuMesh::textured(&self.device, &m.transparent),
+            GpuMesh::textured(&self.arena, &m.opaque),
+            GpuMesh::textured(&self.arena, &m.transparent),
         );
         crate::telemetry::add("upload.chunk", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.chunks", 1.0);
@@ -764,8 +778,8 @@ impl Renderer {
         let mut parts: Vec<&FlatMesh> = vec![&m.opaque];
         parts.extend(m.skirts.iter());
         let t0 = crate::telemetry::now_ms();
-        let opaque = GpuMesh::flat(&self.device, &parts);
-        let water = GpuMesh::flat(&self.device, &[&m.water]);
+        let opaque = GpuMesh::flat(&self.arena, &parts);
+        let water = GpuMesh::flat(&self.arena, &[&m.water]);
         crate::telemetry::add("upload.section", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.sections", 1.0);
         crate::telemetry::add(
@@ -821,7 +835,7 @@ impl Renderer {
                         colors: g.colors,
                         indices: g.indices,
                     };
-                    GpuMesh::flat(&self.device, &[&m]).expect("a capsule has faces")
+                    GpuMesh::flat(&self.arena, &[&m]).expect("a capsule has faces")
                 });
                 self.players.insert(id, v);
             }
@@ -853,7 +867,7 @@ impl Renderer {
                     [(rel(l.from), c), (rel(l.to), c)]
                 })
                 .collect();
-            Self::lines_mesh(&self.device, &pts)
+            GpuMesh::lines(&self.arena, &pts)
         });
     }
     pub fn stats(&self) -> RenderStats {
@@ -933,6 +947,47 @@ impl Renderer {
     }
 
     /// The draws of one pass: everything whose distance range meets [near, far].
+    /// A draw's mesh and the index ranges it draws (a section's surface and its shown skirts).
+    fn mesh_of(&self, m: &DrawMesh) -> (&GpuMesh, Vec<std::ops::Range<u32>>) {
+        match m {
+            DrawMesh::Chunk(c, w) => {
+                let chunk = &self.chunks[c];
+                let m = if *w {
+                    chunk.water.as_ref()
+                } else {
+                    chunk.opaque.as_ref()
+                }
+                .expect("collected");
+                (m, vec![m.parts[0].clone()])
+            }
+            DrawMesh::Section(id, w, mask) => {
+                let s = &self.sections[id];
+                let m = if *w {
+                    s.water.as_ref()
+                } else {
+                    s.opaque.as_ref()
+                }
+                .expect("collected");
+                let mut r = vec![m.parts[0].clone()];
+                r.extend(
+                    (0..6)
+                        .filter(|f| mask & (1 << f) != 0)
+                        .filter_map(|f| m.parts.get(1 + f).cloned()),
+                );
+                (m, r)
+            }
+            DrawMesh::Player(key) => {
+                let m = &self.capsules[key];
+                (m, vec![m.parts[0].clone()])
+            }
+            DrawMesh::Outline => (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()]),
+            DrawMesh::Debug => {
+                let m = self.debug.as_ref().expect("collected");
+                (m, vec![m.parts[0].clone()])
+            }
+        }
+    }
+
     fn collect(
         &self,
         near: f64,
@@ -961,6 +1016,7 @@ impl Renderer {
                     clip: None,
                     tint: plain,
                     rotation: NO_ROTATION,
+                    page: 0,
                     mesh: DrawMesh::Chunk(coord, false),
                 });
             }
@@ -973,6 +1029,7 @@ impl Renderer {
                     clip: None,
                     tint: water,
                     rotation: NO_ROTATION,
+                    page: 0,
                     mesh: DrawMesh::Chunk(coord, true),
                 });
             }
@@ -1003,6 +1060,7 @@ impl Renderer {
                     clip: None,
                     tint: level_tint(s, 1.0),
                     rotation: NO_ROTATION,
+                    page: 0,
                     mesh: DrawMesh::Section(id, false, mask),
                 });
             }
@@ -1015,6 +1073,7 @@ impl Renderer {
                     clip: None,
                     tint: level_tint(s, WATER_OPACITY),
                     rotation: NO_ROTATION,
+                    page: 0,
                     mesh: DrawMesh::Section(id, true, 0),
                 });
             }
@@ -1034,6 +1093,7 @@ impl Renderer {
                 clip,
                 tint: level_tint(s, 1.0),
                 rotation: NO_ROTATION,
+                page: 0,
                 mesh: DrawMesh::Section(st.id, false, 0),
             });
         }
@@ -1052,6 +1112,7 @@ impl Renderer {
                 clip: None,
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: [yaw.cos(), yaw.sin()],
+                page: 0,
                 mesh: DrawMesh::Player(player_shape(v)),
             });
         }
@@ -1066,6 +1127,7 @@ impl Renderer {
                 clip: None,
                 tint: [c[0], c[1], c[2], 0.8],
                 rotation: NO_ROTATION,
+                page: 0,
                 mesh: DrawMesh::Outline,
             });
         }
@@ -1078,8 +1140,12 @@ impl Renderer {
                 clip: None,
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: NO_ROTATION,
+                page: 0,
                 mesh: DrawMesh::Debug,
             });
+        }
+        for d in &mut out {
+            d.page = self.mesh_of(&d.mesh).0.region.page;
         }
         // Opaque first, then the see-through, then lines; within the see-through, far to near.
         // The opaque ones by pipeline (each set once, `render`), then near to far, so the GPU's depth
@@ -1094,8 +1160,8 @@ impl Renderer {
             rank(a).cmp(&rank(b)).then(if a.water && b.water {
                 dist(b).total_cmp(&dist(a))
             } else if opaque {
-                (a.kind as u8, a.no_depth)
-                    .cmp(&(b.kind as u8, b.no_depth))
+                (a.kind as u8, a.no_depth, a.page)
+                    .cmp(&(b.kind as u8, b.no_depth, b.page))
                     .then(dist(a).total_cmp(&dist(b)))
             } else {
                 std::cmp::Ordering::Equal
@@ -1186,6 +1252,7 @@ impl Renderer {
         let targets = self.targets.as_ref().expect("targets");
         let (colour, depth) = (targets.colour.as_ref().map(|c| &c.1), &targets.depth.1);
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
         let mut slot = 0u64;
         for (i, pass_draws) in draws.iter().enumerate() {
@@ -1223,6 +1290,7 @@ impl Renderer {
             pass.set_bind_group(0, &self.frame_groups[i], &[]);
             pass.set_bind_group(1, &self.draw_group, &[]);
             let mut bound: Option<(Kind, bool, bool)> = None;
+            let mut bound_page: Option<(usize, usize)> = None;
             if i == 0 {
                 pass.set_pipeline(&self.sky_pipeline);
                 pass.draw(0..3, 0..1);
@@ -1231,62 +1299,34 @@ impl Renderer {
             for d in pass_draws {
                 let instance = slot as u32;
                 slot += 1;
-                let (mesh, ranges): (&GpuMesh, Vec<std::ops::Range<u32>>) = match &d.mesh {
-                    DrawMesh::Chunk(c, w) => {
-                        let chunk = &self.chunks[c];
-                        let m = if *w {
-                            chunk.water.as_ref()
-                        } else {
-                            chunk.opaque.as_ref()
-                        }
-                        .expect("collected");
-                        (m, vec![m.parts[0].clone()])
-                    }
-                    DrawMesh::Section(id, w, mask) => {
-                        let s = &self.sections[id];
-                        let m = if *w {
-                            s.water.as_ref()
-                        } else {
-                            s.opaque.as_ref()
-                        }
-                        .expect("collected");
-                        let mut r = vec![m.parts[0].clone()];
-                        r.extend(
-                            (0..6)
-                                .filter(|f| mask & (1 << f) != 0)
-                                .filter_map(|f| m.parts.get(1 + f).cloned()),
-                        );
-                        (m, r)
-                    }
-                    DrawMesh::Player(key) => {
-                        let m = &self.capsules[key];
-                        (m, vec![m.parts[0].clone()])
-                    }
-                    DrawMesh::Outline => {
-                        (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()])
-                    }
-                    DrawMesh::Debug => {
-                        let m = self.debug.as_ref().expect("collected");
-                        (m, vec![m.parts[0].clone()])
-                    }
-                };
+                let (mesh, ranges) = self.mesh_of(&d.mesh);
                 // Each WebGPU call crosses from WASM to JS: set only what changes.
                 let key = (d.kind, d.water, d.no_depth);
                 if bound != Some(key) {
                     pass.set_pipeline(&self.pipelines[&key]);
                     bound = Some(key);
                 }
-                for (k, b) in mesh.vertex.iter().enumerate() {
-                    pass.set_vertex_buffer(k as u32, b.slice(..));
+                // A page holds many meshes: bound once for the draws from it in a row.
+                let page = (mesh.region.format, mesh.region.page);
+                if bound_page != Some(page) {
+                    let buffer = arena.buffer(page.0, page.1);
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    bound_page = Some(page);
                 }
-                pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
                 for r in merge_ranges(ranges) {
                     triangles += u64::from(r.len() as u32 / 3);
-                    pass.draw_indexed(r, 0, instance..instance + 1);
+                    let first = mesh.first_index;
+                    pass.draw_indexed(
+                        first + r.start..first + r.end,
+                        mesh.base_vertex,
+                        instance..instance + 1,
+                    );
                     calls += 1;
                 }
             }
         }
+        drop(arena);
         self.queue.submit([encoder.finish()]);
         self.stats.calls = calls;
         self.stats.triangles = triangles;
@@ -1545,9 +1585,9 @@ mod tests {
 
     /// Whether submitting a pass that binds `b` (a vertex or index buffer) fails because it was
     /// destroyed.
-    fn destroyed(r: &Renderer, b: &wgpu::Buffer) -> bool {
-        let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let target = r.device.create_texture(&wgpu::TextureDescriptor {
+    fn destroyed_on(device: &wgpu::Device, queue: &wgpu::Queue, b: &wgpu::Buffer) -> bool {
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let target = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
                 width: 4,
@@ -1562,7 +1602,7 @@ mod tests {
             view_formats: &[],
         });
         let view = target.create_view(&Default::default());
-        let mut encoder = r.device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1579,7 +1619,7 @@ mod tests {
                 pass.set_vertex_buffer(0, b.slice(..));
             }
         }
-        r.queue.submit([encoder.finish()]);
+        queue.submit([encoder.finish()]);
         let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
         match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
             std::task::Poll::Ready(e) => e.is_some_and(|e| e.to_string().contains("destroyed")),
@@ -1588,12 +1628,13 @@ mod tests {
     }
 
     #[test]
-    fn replaced_meshes_free_their_gpu_buffers() {
-        // On the web a dropped wgpu::Buffer stays allocated until the page's garbage collector
-        // finds it (wgpu's WebGPU backend does not destroy it): every replaced chunk, section and
-        // debug-lines mesh must be destroyed explicitly, or GPU memory grows and the frame rate
-        // falls over a session (playtest 2026-10-14). A second handle stands in for the page's.
+    fn replaced_meshes_free_their_gpu_memory() {
+        // Every replaced or removed chunk, section and debug-lines mesh must give its GPU memory
+        // back, or memory grows and the frame rate falls over a session (playtest 2026-10-14).
+        // Meshes live in arena pages (arena.rs): replacing them over and over reuses the same
+        // pages, and removing them all leaves nothing in use.
         let mut r = noop_renderer();
+        let outline = r.arena.borrow().used_bytes();
         let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
         for x in -1..=32 {
             for z in -1..=32 {
@@ -1601,26 +1642,6 @@ mod tests {
             }
         }
         let meshes = dwell_mesh::mesh_chunk(&padded, false).expect("meshed");
-        let coord = ChunkCoord { x: 0, y: 0, z: 0 };
-        r.set_terrain_chunk(coord, Some(&meshes));
-        let chunk = r.chunks[&coord]
-            .opaque
-            .as_ref()
-            .expect("opaque")
-            .index
-            .clone();
-        assert!(!destroyed(&r, &chunk));
-        r.set_terrain_chunk(coord, Some(&meshes));
-        assert!(destroyed(&r, &chunk), "a replaced chunk mesh");
-        let chunk = r.chunks[&coord]
-            .opaque
-            .as_ref()
-            .expect("opaque")
-            .index
-            .clone();
-        r.set_terrain_chunk(coord, None);
-        assert!(destroyed(&r, &chunk), "a removed chunk mesh");
-
         let quad = FlatMesh {
             positions: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
             normals: vec![0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
@@ -1632,25 +1653,54 @@ mod tests {
             water: quad,
             skirts: Default::default(),
         };
-        r.set_lod_section(7, [0.0; 3], 2.0, Some(&section));
-        let s = &r.sections[&7];
-        let (opaque, water) = (
-            s.opaque.as_ref().expect("opaque").vertex[0].clone(),
-            s.water.as_ref().expect("water").index.clone(),
-        );
-        r.set_lod_section(7, [0.0; 3], 2.0, None);
-        assert!(destroyed(&r, &opaque), "a removed section's surface");
-        assert!(destroyed(&r, &water), "a removed section's water");
-
         let line = Line {
             from: [0.0; 3],
             to: [1.0; 3],
             color: 0xffffff,
         };
-        r.set_debug_lines(Some(&[line]));
-        let lines = r.debug.as_ref().expect("lines").index.clone();
-        r.set_debug_lines(Some(&[line]));
-        assert!(destroyed(&r, &lines), "last frame's debug lines");
+        let replace = |r: &mut Renderer| {
+            for x in 0..4 {
+                r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, Some(&meshes));
+                r.set_lod_section(i64::from(x), [0.0; 3], 2.0, Some(&section));
+            }
+            r.set_debug_lines(Some(&[line]));
+        };
+        replace(&mut r);
+        let (pages, used) = (r.arena.borrow().page_bytes(), r.arena.borrow().used_bytes());
+        for _ in 0..500 {
+            replace(&mut r);
+        }
+        assert_eq!(
+            r.arena.borrow().page_bytes(),
+            pages,
+            "replacing reuses the pages"
+        );
+        assert_eq!(
+            r.arena.borrow().used_bytes(),
+            used,
+            "replaced meshes are freed"
+        );
+        for x in 0..4 {
+            r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, None);
+            r.set_lod_section(i64::from(x), [0.0; 3], 2.0, None);
+        }
+        r.set_debug_lines(None);
+        assert_eq!(
+            r.arena.borrow().used_bytes(),
+            outline,
+            "only the block outline is left"
+        );
+        // The pages themselves are destroyed with the renderer (wgpu's WebGPU backend does not
+        // destroy a buffer on drop).
+        let pages = r.arena.borrow().buffers();
+        let (device, queue) = (r.device.clone(), r.queue.clone());
+        drop(r);
+        for p in &pages {
+            assert!(
+                destroyed_on(&device, &queue, p),
+                "a page outlived the renderer"
+            );
+        }
     }
 
     #[test]
