@@ -172,6 +172,34 @@ impl GpuMesh {
     }
 }
 
+/// WebGPU frees a buffer when it is destroyed, or whenever the page's garbage collector gets to it
+/// (wgpu's WebGPU backend does nothing on drop): a mesh destroys its buffers when it goes, or GPU
+/// memory grows with every replaced chunk and section.
+impl Drop for GpuMesh {
+    fn drop(&mut self) {
+        for b in &self.vertex {
+            b.destroy();
+        }
+        self.index.destroy();
+    }
+}
+
+/// The multisampled colour target (none with one sample: drawn into the frame's target) and the
+/// depth buffer, destroyed when the drawing buffer is resized.
+struct Targets {
+    colour: Option<(wgpu::Texture, wgpu::TextureView)>,
+    depth: (wgpu::Texture, wgpu::TextureView),
+}
+
+impl Drop for Targets {
+    fn drop(&mut self) {
+        if let Some((t, _)) = &self.colour {
+            t.destroy();
+        }
+        self.depth.0.destroy();
+    }
+}
+
 struct Chunk {
     origin: V3,
     opaque: Option<GpuMesh>,
@@ -223,9 +251,7 @@ pub struct Renderer {
     format: wgpu::TextureFormat,
     size: (u32, u32),
     pixel_ratio: f64,
-    /// The multisampled colour target (none with one sample: drawn into the frame's target) and the
-    /// depth buffer.
-    targets: Option<(Option<wgpu::TextureView>, wgpu::TextureView)>,
+    targets: Option<Targets>,
     samples: u32,
     draw_layout: wgpu::BindGroupLayout,
     pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
@@ -550,7 +576,7 @@ impl Renderer {
     /// up close and filtered far away.
     fn atlas(device: &wgpu::Device, queue: &wgpu::Queue) -> (wgpu::TextureView, wgpu::Sampler) {
         let size = dwell_mesh::ATLAS_SIZE as u32;
-        let levels = 32 - size.leading_zeros();
+        let levels = atlas_levels().len() as u32;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("atlas"),
             size: wgpu::Extent3d {
@@ -565,32 +591,26 @@ impl Renderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        let mut level = dwell_mesh::build_atlas();
-        let mut s = size;
-        for mip in 0..levels {
+        for (mip, (level, s)) in atlas_levels().iter().enumerate() {
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &texture,
-                    mip_level: mip,
+                    mip_level: mip as u32,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                &level,
+                level,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(4 * s),
+                    bytes_per_row: Some(4 * *s as u32),
                     rows_per_image: None,
                 },
                 wgpu::Extent3d {
-                    width: s,
-                    height: s,
+                    width: *s as u32,
+                    height: *s as u32,
                     depth_or_array_layers: 1,
                 },
             );
-            if s > 1 {
-                level = downsample(&level, s as usize);
-                s /= 2;
-            }
         }
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("atlas"),
@@ -870,31 +890,10 @@ impl Renderer {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
         let water = [1.0, 1.0, 1.0, WATER_OPACITY];
-        let reaches = |origin: V3, size: f64| {
-            // The distance from the eye to the box [origin, origin + size]³ against the pass's range.
-            let d2: f64 = (0..3)
-                .map(|k| {
-                    let lo = origin[k] - self.eye[k];
-                    let d = if lo > 0.0 {
-                        lo
-                    } else if lo + size < 0.0 {
-                        -(lo + size)
-                    } else {
-                        0.0
-                    };
-                    d * d
-                })
-                .sum();
-            let far_corner: f64 = (0..3)
-                .map(|k| {
-                    (origin[k] - self.eye[k])
-                        .abs()
-                        .max((origin[k] + size - self.eye[k]).abs())
-                        .powi(2)
-                })
-                .sum();
-            d2.sqrt() <= far && far_corner.sqrt() >= near
-        };
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
+        let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
+        let view = PassView::new(self.eye, forward, aspect);
+        let reaches = |origin: V3, size: f64| view.holds(origin, size, near, far);
         for (&coord, c) in &self.chunks {
             if !chunk_visible(coord) || !reaches(c.origin, f64::from(CHUNK_SIZE)) {
                 continue;
@@ -1055,21 +1054,24 @@ impl Renderer {
             depth_or_array_layers: 1,
         };
         let make = |format, label| {
-            self.device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some(label),
-                    size,
-                    mip_level_count: 1,
-                    sample_count: self.samples,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                })
-                .create_view(&Default::default())
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size,
+                mip_level_count: 1,
+                sample_count: self.samples,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
         };
         let colour = (self.samples > 1).then(|| make(self.format, "colour"));
-        self.targets = Some((colour, make(DEPTH, "depth")));
+        self.targets = Some(Targets {
+            colour,
+            depth: make(DEPTH, "depth"),
+        });
     }
 
     /// Draws one frame into `target` (a canvas texture or an offscreen one, `format`, the size
@@ -1103,6 +1105,7 @@ impl Renderer {
         let total = (draws[0].len() + draws[1].len()) as u64;
         if total > self.draw_capacity {
             self.draw_capacity = total.next_power_of_two();
+            self.draw_buffer.destroy();
             (self.draw_buffer, self.draw_group) =
                 Self::draw_buffer(&self.device, &self.draw_layout, self.draw_capacity);
         }
@@ -1120,7 +1123,8 @@ impl Renderer {
         if !data.is_empty() {
             self.queue.write_buffer(&self.draw_buffer, 0, floats(&data));
         }
-        let (colour, depth) = self.targets.as_ref().expect("targets");
+        let targets = self.targets.as_ref().expect("targets");
+        let (colour, depth) = (targets.colour.as_ref().map(|c| &c.1), &targets.depth.1);
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let (mut calls, mut triangles) = (0u32, 0u64);
         let mut slot = 0u64;
@@ -1129,9 +1133,9 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(if i == 0 { "far" } else { "near" }),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: colour.as_ref().unwrap_or(target),
+                    view: colour.unwrap_or(target),
                     depth_slice: None,
-                    resolve_target: colour.as_ref().and((i == 1).then_some(target)),
+                    resolve_target: colour.and((i == 1).then_some(target)),
                     ops: wgpu::Operations {
                         load: if i == 0 {
                             wgpu::LoadOp::Clear(wgpu::Color {
@@ -1229,8 +1233,66 @@ impl Renderer {
     }
 }
 
+/// The camera as a pass's culling sees it: where it is, its view axis, and how much farther than
+/// its depth a point in the view can be (1 / the cosine of the angle out to a corner of the view).
+#[derive(Clone, Copy, Debug)]
+struct PassView {
+    eye: V3,
+    forward: V3,
+    stretch: f64,
+}
+
+impl PassView {
+    fn new(eye: V3, forward: V3, aspect: f64) -> Self {
+        let tan_y = (vertical_fov(aspect).to_radians() / 2.0).tan();
+        let tan_x = tan_y * aspect;
+        Self {
+            eye,
+            forward,
+            stretch: (1.0 + tan_x * tan_x + tan_y * tan_y).sqrt(),
+        }
+    }
+
+    /// Whether the box [origin, origin + size]³ has anything a pass drawing view depths [near, far]
+    /// draws. The passes clip by depth along the view axis, not by distance: a box beside the view
+    /// can be farther than `far` and still in front of the far plane.
+    fn holds(&self, origin: V3, size: f64, near: f64, far: f64) -> bool {
+        let (mut d2, mut z_lo, mut z_hi) = (0.0, 0.0, 0.0);
+        for ((o, e), f) in origin.iter().zip(self.eye).zip(self.forward) {
+            let lo = o - e;
+            let hi = lo + size;
+            let d = if lo > 0.0 {
+                lo
+            } else if hi < 0.0 {
+                -hi
+            } else {
+                0.0
+            };
+            d2 += d * d;
+            let (a, b) = (lo * f, hi * f);
+            z_lo += a.min(b);
+            z_hi += a.max(b);
+        }
+        // Nothing in the view at depth ≤ far is farther than far × stretch.
+        z_lo <= far && z_hi >= near && d2.sqrt() <= far * self.stretch
+    }
+}
+
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
 const FRAME_FLOATS: usize = 16 + 15 * 4;
+
+/// The atlas and its mipmaps, each with its side in texels: down to one texel per tile's cell.
+/// Smaller levels would average tiles with their neighbours and the atlas's empty (transparent)
+/// space, which a grazing view of distant ground samples.
+fn atlas_levels() -> Vec<(Vec<u8>, usize)> {
+    let mut levels = vec![(dwell_mesh::build_atlas(), dwell_mesh::ATLAS_SIZE)];
+    while let Some(&(ref level, s)) = levels.last()
+        && s > dwell_mesh::ATLAS_CELLS
+    {
+        levels.push((downsample(level, s), s / 2));
+    }
+    levels
+}
 
 /// Halves an RGBA8 sRGB image, averaging in linear light.
 fn downsample(src: &[u8], size: usize) -> Vec<u8> {
@@ -1320,6 +1382,212 @@ mod tests {
         assert_eq!(out.len(), 4);
         assert!((186..=190).contains(&out[0]), "{}", out[0]);
         assert_eq!(out[3], 255);
+    }
+
+    #[test]
+    fn every_mip_level_keeps_each_tile_to_itself() {
+        // At a grazing angle the sampler reaches the smallest mipmaps: a tile must not blend with
+        // its neighbours or the atlas's empty space there (the grey, see-through haze on distant
+        // ground, playtest 2026-10-14).
+        let levels = atlas_levels();
+        for (level, (texels, size)) in levels.iter().enumerate() {
+            let shift = level as u32;
+            for (t, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+                let cx = (t % dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::CELL / 2;
+                let cy = (t / dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::CELL / 2;
+                let (x, y) = (cx >> shift, cy >> shift);
+                let at = (y * size + x) * 4;
+                let texel = &texels[at..at + 4];
+                assert_eq!(texel[3], 255, "{name} at mip {level} is see-through");
+                if level + 1 == levels.len() {
+                    let avg = hex(dwell_mesh::average_tile_color(name));
+                    for c in 0..3 {
+                        let want = (avg[c] * 255.0).round();
+                        let got = f64::from(texel[c]);
+                        assert!(
+                            (got - want).abs() <= 3.0,
+                            "{name} at mip {level}: {texel:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_pass_draws_what_its_depth_range_holds_at_the_edge_of_the_view() {
+        // Looking along +z, a box 900 m ahead and 600 m to the side is nearer than the split in
+        // view depth (where the near pass draws it and the far pass clips it), though more than the
+        // split away in a straight line: it must be in the near pass, or neither pass draws it (the
+        // gaps in the ground seen from high up, playtest 2026-10-14).
+        let view = PassView::new([0.0; 3], [0.0, 0.0, 1.0], 2.0);
+        let origin = [600.0, -16.0, 884.0];
+        assert!(view.holds(origin, 32.0, NEAR_PLANE, NEAR_SPLIT));
+        assert!(!view.holds(origin, 32.0, NEAR_SPLIT * 0.95, FAR_PLANE));
+        // Beyond the split in depth: only the far pass.
+        let beyond = [600.0, -16.0, 1100.0];
+        assert!(!view.holds(beyond, 32.0, NEAR_PLANE, NEAR_SPLIT));
+        assert!(view.holds(beyond, 32.0, NEAR_SPLIT * 0.95, FAR_PLANE));
+        // Behind the eye, or too far aside to be in the view at all: neither.
+        assert!(!view.holds([0.0, 0.0, -100.0], 32.0, NEAR_PLANE, NEAR_SPLIT));
+        assert!(!view.holds([5000.0, 0.0, 500.0], 32.0, NEAR_PLANE, NEAR_SPLIT));
+    }
+
+    fn noop_renderer() -> Renderer {
+        let (device, queue) = wgpu::Device::noop(&Default::default());
+        Renderer::with_samples(device, queue, wgpu::TextureFormat::Rgba8Unorm, 1)
+    }
+
+    /// Whether submitting a pass that binds `b` (a vertex or index buffer) fails because it was
+    /// destroyed.
+    fn destroyed(r: &Renderer, b: &wgpu::Buffer) -> bool {
+        let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let target = r.device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = target.create_view(&Default::default());
+        let mut encoder = r.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations::default(),
+                })],
+                ..Default::default()
+            });
+            if b.usage().contains(wgpu::BufferUsages::INDEX) {
+                pass.set_index_buffer(b.slice(..), wgpu::IndexFormat::Uint32);
+            } else {
+                pass.set_vertex_buffer(0, b.slice(..));
+            }
+        }
+        r.queue.submit([encoder.finish()]);
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(e) => e.is_some_and(|e| e.to_string().contains("destroyed")),
+            std::task::Poll::Pending => panic!("error scope pending"),
+        }
+    }
+
+    #[test]
+    fn replaced_meshes_free_their_gpu_buffers() {
+        // On the web a dropped wgpu::Buffer stays allocated until the page's garbage collector
+        // finds it (wgpu's WebGPU backend does not destroy it): every replaced chunk, section and
+        // debug-lines mesh must be destroyed explicitly, or GPU memory grows and the frame rate
+        // falls over a session (playtest 2026-10-14). A second handle stands in for the page's.
+        let mut r = noop_renderer();
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        for x in -1..=32 {
+            for z in -1..=32 {
+                padded[dwell_mesh::padded_index(x, 0, z)] = dwell_blocks::require("dwell:stone");
+            }
+        }
+        let meshes = dwell_mesh::mesh_chunk(&padded, false).expect("meshed");
+        let coord = ChunkCoord { x: 0, y: 0, z: 0 };
+        r.set_terrain_chunk(coord, Some(&meshes));
+        let chunk = r.chunks[&coord]
+            .opaque
+            .as_ref()
+            .expect("opaque")
+            .index
+            .clone();
+        assert!(!destroyed(&r, &chunk));
+        r.set_terrain_chunk(coord, Some(&meshes));
+        assert!(destroyed(&r, &chunk), "a replaced chunk mesh");
+        let chunk = r.chunks[&coord]
+            .opaque
+            .as_ref()
+            .expect("opaque")
+            .index
+            .clone();
+        r.set_terrain_chunk(coord, None);
+        assert!(destroyed(&r, &chunk), "a removed chunk mesh");
+
+        let quad = FlatMesh {
+            positions: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            normals: vec![0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
+            colors: vec![1.0; 9],
+            indices: vec![0, 1, 2],
+        };
+        let section = SectionMeshes {
+            opaque: quad.clone(),
+            water: quad,
+            skirts: Default::default(),
+        };
+        r.set_lod_section(7, [0.0; 3], 2.0, Some(&section));
+        let s = &r.sections[&7];
+        let (opaque, water) = (
+            s.opaque.as_ref().expect("opaque").vertex[0].clone(),
+            s.water.as_ref().expect("water").index.clone(),
+        );
+        r.set_lod_section(7, [0.0; 3], 2.0, None);
+        assert!(destroyed(&r, &opaque), "a removed section's surface");
+        assert!(destroyed(&r, &water), "a removed section's water");
+
+        let line = Line {
+            from: [0.0; 3],
+            to: [1.0; 3],
+            color: 0xffffff,
+        };
+        r.set_debug_lines(Some(&[line]));
+        let lines = r.debug.as_ref().expect("lines").index.clone();
+        r.set_debug_lines(Some(&[line]));
+        assert!(destroyed(&r, &lines), "last frame's debug lines");
+    }
+
+    #[test]
+    fn frames_draw_cleanly_across_resizes_and_replaced_meshes() {
+        // Destroying the old targets, draw uniforms and meshes between frames is valid WebGPU.
+        let mut r = noop_renderer();
+        let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let target = r.device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: 64,
+                height: 64,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = target.create_view(&Default::default());
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        for x in -1..=32 {
+            for z in -1..=32 {
+                padded[dwell_mesh::padded_index(x, 0, z)] = dwell_blocks::require("dwell:grass");
+            }
+        }
+        let meshes = dwell_mesh::mesh_chunk(&padded, false).expect("meshed");
+        r.set_camera([16.0, 4.0, 16.0], 0.0, -30.0, 1.0, 0.0);
+        for frame in 0..4 {
+            r.resize(64, 64, 1.0 + f64::from(frame));
+            for x in 0..=frame {
+                r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, Some(&meshes));
+            }
+            r.render(&view, &|_| true);
+        }
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(e) => assert!(e.is_none(), "{e:?}"),
+            std::task::Poll::Pending => panic!("error scope pending"),
+        }
     }
 
     #[test]
