@@ -1,5 +1,5 @@
 // Height map overlay (F4; Phase 3e debug tooling, ARCHITECTURE.md §6.3): the terrain generator's
-// columns around the player, sampled in a worldgen worker (worldgen/generator.ts `map`), coloured by
+// columns around the player, sampled in a job worker (dwell-client's jobs `Map`), coloured by
 // height and hill-shaded. `-` and `=` zoom out and in, from the player's surroundings (1 km across)
 // to the whole disc. The colours are prototype (§6.1); the baseline has no biomes (ADR 0025).
 

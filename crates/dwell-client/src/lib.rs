@@ -1,6 +1,7 @@
-//! Dwell's browser client (ADR 0028). In 24a it holds the WebGPU probe: the smallest wgpu renderer
-//! that draws to an offscreen target and to a canvas, used to prove WebGPU in headless Chromium on
-//! CI before the renderer work (24e) starts.
+//! Dwell's browser client (ADR 0028): the session and transports (`net`, `web`), local mode
+//! (`local`), background jobs (`jobs`, `pool`), the game loop (`game`) and the wgpu renderer
+//! (`render`), with the JS API in `web` (wasm-bindgen). This file also holds the WebGPU probe and
+//! the renderer's smoke scene, which `client/e2e-webgpu` checks in headless Chromium.
 
 pub mod game;
 pub mod jobs;
@@ -216,6 +217,25 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             height: 1.8,
         }),
     );
+    // A dead player lying beside it, and one turned to face the camera's right.
+    for (id, feet, yaw, dead) in [
+        (2, [13.0, 9.0, 15.0], 0.0, true),
+        (3, [19.0, 9.0, 16.0], 90.0, false),
+    ] {
+        renderer.set_player(
+            id,
+            Some(render::PlayerView {
+                feet,
+                face: 1.0,
+                yaw,
+                crouched: false,
+                dead,
+                color: 0x3060ff,
+                radius: 0.4,
+                height: 1.8,
+            }),
+        );
+    }
     // Looking along −Z from above the chunk's +Z edge, the horizon across the middle.
     renderer.set_camera([16.0, 11.0, 24.0], 180.0, -12.0, 1.0, 0.0);
     renderer.render(&texture.create_view(&Default::default()), &|_| true);

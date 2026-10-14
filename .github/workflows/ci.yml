@@ -171,10 +171,10 @@ jobs:
           xvfb-run -a npx electron . --smoke --no-sandbox "--join=?local=1"
 
   rust:
-    # The Rust port's workspace (ADR 0028, Phase 24), alongside the C++/TS jobs until the cutover:
-    # format, clippy (native and the client's wasm32 target), tests, and the WebGPU probe in
-    # headless Chromium.
-    name: Rust workspace (fmt, clippy, tests, WebGPU probe)
+    # The Rust workspace (ADR 0028): the third-party notices, format, clippy (native and the
+    # client's wasm32 target), tests in three frames and under WASM, the performance gate, and the
+    # WebGPU probe in headless Chromium.
+    name: Rust workspace (notices, fmt, clippy, tests, WebGPU probe)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -197,6 +197,9 @@ jobs:
         run: |
           cargo clippy --workspace --all-targets -- -D warnings
           cargo clippy -p dwell-client --target wasm32-unknown-unknown -- -D warnings
+      # After a build: it reads each crate's licence from its downloaded source.
+      - name: Third-party notices are up to date (RELEASES.md §2)
+        run: python3 shared/licenses/gen.py --check
       - name: Tests
         run: cargo nextest run --workspace
       - name: Player controller ~8,000 km from the origin and on face B (ADR 0011, ADR 0023)
@@ -221,7 +224,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [protocol, master, client-lint, client, server-lint, server, server-perf, e2e, rust]
+    needs: [protocol, master, client-lint, client, e2e, rust]
     runs-on: ubuntu-24.04
     steps:
       - name: Every job passed

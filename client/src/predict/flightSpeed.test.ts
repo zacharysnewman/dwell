@@ -9,7 +9,7 @@ import {
   MAX_FLY_SPEED_LEVEL,
 } from './flightSpeed';
 
-describe('flight speed levels (mirror C++ FlySpeedFactor)', () => {
+describe('flight speed levels (mirror dwell-physics fly_speed_factor)', () => {
   it('double every two levels', () => {
     expect(flySpeedFactor(0)).toBe(1);
     expect(flySpeedFactor(1)).toBe(Math.SQRT2);

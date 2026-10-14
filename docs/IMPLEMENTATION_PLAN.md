@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24a built (workspace, generated protocol/blocks crates, `rust` CI job, WebGPU probe passing locally in headless Chromium); 24b built (world, worldgen reproducing the C++ goldens natively and in WASM, redb storage, protocol codec, Ed25519); 24c built (Rapier physics, the player controller and predictor; every controller suite in the three frames, golden trace bit-exact natively and in WASM, 64 players ~0.5 ms/tick); 24d in progress (`dwell-sim` server core with every server and netcode suite passing, `dwell-net` in the workspace; the `dwell-server` binary; browser networking with the wgpu client); 24e in progress (meshers, look, game logic and LOD crates; client networking, local mode on OPFS; the wgpu renderer drawing in headless Chromium; next: the app and game loop, workers, the TS shell rewire); outstanding: the `rust` job's first CI run; C++/TS feature work stops after Phase 15 |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite passing natively and in WASM, the e2e suite 32/32 locally on the Rust client and `dwell-server`; outstanding: the new CI jobs' first run, Electron on the Rust client, the docs rewrite, frame-time and CI-time measurements, the owner's manual check, and the owner raising `package.json` (a new compatibility line: world files are redb now) |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -1977,22 +1977,19 @@ Three.js renderer with one Rust codebase that reproduces the Phase 15 baseline o
 platforms (GitHub Pages, Electron, Capacitor, native dedicated servers), with a faster build and
 test pipeline ([ADR 0028](./adr/0028-rust-port.md)). Runs after Phase 15 and before Phase 16.
 
-**Status:** In progress — 24a built: the workspace, `dwell-protocol` and `dwell-blocks` from the
-generators, the `rust` CI job and the WebGPU probe (passing locally in headless Chromium on
-SwiftShader); outstanding for 24a: the job's first CI run. 24b built: blocks, the world, the
-generator (reproducing the C++ goldens natively and in WASM), redb storage, the protocol codec and
-Ed25519; outstanding: the OPFS backend (with 24e). 24c built: `dwell-physics` on Rapier, the
-controller, voxel queries, wire conversions and predictor, every controller suite passing in the
-three frames, the golden trace bit-exact natively and in WASM, 64 players at ~0.5 ms/tick;
-outstanding for 24c: the new CI steps' first run. 24d in progress: the server core
-(`dwell-sim`) and `dwell-net` built, every server and netcode suite passing; outstanding: the
-browser networking (with the client, 24e). The `dwell-server` binary is built. 24e in progress:
-the client logic crates (meshers, look, game logic, LOD), client networking, local mode with the
-OPFS backend, and the wgpu renderer built and tested; outstanding: the app and game loop, workers,
-the TS shell rewire and removing the old client code. ADR 0028 accepted (2026-10-13). Big-bang: the Rust tree is built alongside
-the C++/TS tree and replaces it at the cutover (24f); the old tree takes only fixes until then.
-Storage, compression and crypto decided by Claude at the owner's request (2026-10-13, ADR 0028
-§8): `redb` (files natively, OPFS in the browser), LZ4 (`lz4_flex`), `ed25519-dalek`.
+**Status:** In progress (24f, the cutover) — every sub-phase's code is built: the workspace and
+generators (24a), the world, worldgen, redb storage and protocol (24b), Rapier physics and the
+player controller (24c), the server core, `dwell-net` and `dwell-server` (24d), and the wgpu
+client running in the browser with workers, local mode on OPFS and the TS shell on top (24e). The
+C++ tree, CMake, Emscripten, Jolt and Three.js are deleted (24f); every Rust suite passes, natively
+and under WASM, and the e2e suite passes 32 of 32 locally against the Rust client and
+`dwell-server`. Outstanding: the first CI run of the new jobs (the branch has not run CI), Electron
+run on the Rust client (its CI smoke test), the docs rewrite for the Rust build, the frame-time
+comparison and CI wall time (measured), the owner's manual play and look comparison, and the
+owner raising `package.json` to the next MINOR (world files moved from SQLite to redb: a new
+compatibility line). ADR 0028 accepted (2026-10-13). Storage, compression and crypto decided by
+Claude at the owner's request (2026-10-13, ADR 0028 §8): `redb` (files natively, OPFS in the
+browser), LZ4 (`lz4_flex`), `ed25519-dalek`.
 
 ### 24a — Workspace, generators and pipeline
 - [x] Cargo workspace at the repo root (`crates/`). Crates are added as their sub-phase starts
@@ -2027,8 +2024,9 @@ Storage, compression and crypto decided by Claude at the owner's request (2026-1
   state ids mapped by string, the save thread; the C++ storage tests that need no server are
   ported) with LZ4 chunk and LOD blobs; Ed25519 checks on `ed25519-dalek` (`dwell-protocol::auth`),
   passing the master's WebCrypto vectors.
-- [ ] The OPFS storage backend for the browser: built with the client (24e), which runs it. Built
-  (`dwell-client`'s `LocalWorld`); not yet run in a browser.
+- [x] The OPFS storage backend for the browser: built with the client (24e), which runs it
+  (`dwell-client`'s `LocalWorld`, one redb file on a sync access handle; the e2e local-world
+  reload and version-lock specs pass on it).
 
 Deviation (24b): the protocol codec (`dwell-protocol`: every message, palette + RLE, posfix, the
 auth transcript) was ported here rather than in 24d, because storage stores chunks in its encoding;
@@ -2062,7 +2060,8 @@ Deviations (24c):
   respawn; the netcode suites ported (150 ms / 20 ms / 5 % link).
 - [x] `dwell-server`: WebTransport and WebRTC through `dwell-net` directly, hosting, the master
   client (registration; receipts are checked by the client, which keeps its master code in TS).
-- [ ] Browser networking in `dwell-client` through `web-sys` (WebTransport, WebRTC data channels).
+- [x] Browser networking in `dwell-client` through `web-sys` (WebTransport, WebRTC data channels):
+  the e2e join specs (WebTransport, the WebRTC fallback, codes, the lobby) pass on it.
 
 Deviations (24d, so far):
 - `dwell-sim` holds the server core (`server.rs`, LOD propagation, the worldgen pool, the app
@@ -2085,15 +2084,19 @@ Deviations (24d, so far):
   `crates/dwell-server/tests/host.rs`, with a smoke run of the binary.
 
 ### 24e — Client on wgpu
-- [ ] wgpu renderer, WebGPU only, WGSL shaders; an "unsupported" screen without WebGPU.
-- [ ] Chunk meshing and LOD in Rust, in Web Workers with their own WASM instances (no
-  `SharedArrayBuffer`); the near/far passes and the whole-world view.
-- [ ] The Phase 7 look ported: palette, face tints, sky, height fog, tone mapping, exposure; block
-  textures; the camera and field of view; the block outline and debug lines.
-- [ ] Input (keyboard, mouse, touch), prediction and interpolation, block editing, local mode (the
-  sim in a worker), browser world storage.
-- [ ] The DOM UI (menus, settings, server browser, HUD) kept in TS over a small `wasm-bindgen` API;
-  Three.js and the TS sim, protocol and render code removed from the client.
+- [x] wgpu renderer, WebGPU only, WGSL shaders; an "unsupported" screen without WebGPU (checked in
+  Chromium without an adapter; `ui/startupError.ts`).
+- [x] Chunk meshing and LOD in Rust, in Web Workers with their own WASM instances (no
+  `SharedArrayBuffer`); the near/far passes and the whole-world view (the e2e LOD and terrain
+  specs).
+- [x] The Phase 7 look ported: palette, face tints, sky, height fog, tone mapping, exposure; block
+  textures; the camera and field of view; the block outline and debug lines (the owner's
+  before/after comparison is the exit criterion below).
+- [x] Input (keyboard, mouse, touch), prediction and interpolation, block editing, local mode (the
+  sim in a worker), browser world storage (the e2e play, edit, touch and flight specs).
+- [x] The DOM UI (menus, settings, server browser, HUD) kept in TS over a small `wasm-bindgen` API;
+  Three.js and the TS sim, protocol codec and render code removed from the client (the generated
+  `protocol/constants.gen.ts` and block tables stay: the DOM UI reads them).
 
 Built so far (24e; nothing above is ticked until the client runs end to end on it):
 - Client logic crates, ported with their TS tests: `dwell-mesh` (the chunk and LOD meshers, the
@@ -2136,6 +2139,14 @@ Deviations (24e, so far):
   (`e2e/batching.spec.ts` became `terrainDraw.spec.ts`). The version-lock e2e rewrites the world
   file's version through the client's own world-file code (`__dwell.setWorldFileVersion`): redb
   checksums its pages, so the SQLite-era byte patch cannot work.
+- Found while documenting the cutover and fixed, each with a test seen red then green: players
+  were drawn upright, unturned and without their visor (the Three.js renderer's pose, yaw and
+  visor, now `render/geometry.rs` `player_mesh` and the draw's turn), and the capsule was wound
+  inside out; local worlds autosaved every 30 s instead of the C++ build's 5 s
+  (`LOCAL_AUTOSAVE_SECONDS`); without a WebGPU adapter the page showed wgpu's error rather than
+  the "needs WebGPU" screen (`ui/startupError.ts`); and the main menu waited for the game client
+  (and WebGPU) although it is DOM only (the launcher e2e caught it). World-file tools for tests
+  moved to `window.__dwellTools`, available on the menu.
 - Room peer transports (friend worlds' WebRTC through the master's signalling) and the local
   loopback stay in TS and are handed to the Rust session as a generic JS transport object; Rust
   owns WebTransport and the dedicated-server WebRTC path.
@@ -2151,10 +2162,16 @@ Deviations (24e, so far):
   measuring time there (24d), and world files take their save time from JS.
 
 ### 24f — Shells and cutover
-- [ ] Electron and Capacitor run the Rust client; the launcher and release scripts build it.
-- [ ] The e2e suite passes against the Rust client and server.
-- [ ] The C++ tree, CMake, Emscripten, Jolt and Three.js deleted; `shared/licenses` and
-  `THIRD_PARTY_NOTICES` regenerated.
+- [ ] Electron and Capacitor run the Rust client; the launcher and release scripts build it. The
+  release workflow builds it; Electron turns WebGPU on (Linux flags, SwiftShader for its smoke
+  test) but has not been run on it yet (its CI smoke test is the check). Capacitor is not built
+  yet (Phase 23): it will wrap this build.
+- [x] The e2e suite passes against the Rust client and server: 32 of 32 locally (Chromium headed
+  under Xvfb); CI's first run is outstanding.
+- [x] The C++ tree, CMake, Emscripten, Jolt and Three.js deleted; `shared/licenses` and
+  `THIRD_PARTY_NOTICES` regenerated (`gen.py` walks `cargo metadata` for `dwell-server` and
+  `dwell-client`; the generators no longer write C++). The worldgen goldens and the playground
+  structure moved to `shared/`.
 - [ ] `ARCHITECTURE.md` and `PLAYER_CONTROLLER.md` rewritten for the Rust build; `CLAUDE.md`
   updated (project description, the SQLite build note).
 - [ ] The owner raises `package.json` to the next MINOR (a new compatibility line).
@@ -2169,7 +2186,8 @@ Exit criteria
 - [ ] Frame time at least matches the Three.js build on a desktop and a phone (measured).
 - [ ] CI wall time under 6 minutes on a warm cache; a one-line change in the sim rebuilds and
   tests locally in under a minute (measured).
-- [ ] No CMake or Emscripten in the repository.
+- [x] No CMake or Emscripten in the repository (one third-party crate, `aws-lc-sys` under the
+  server's TLS stack, runs CMake in its own build script).
 - [ ] Manual: the owner plays the baseline in a browser, in Electron and on a phone, and compares
   before/after screenshots of the look.
 

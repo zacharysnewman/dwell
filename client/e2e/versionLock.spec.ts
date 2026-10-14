@@ -10,11 +10,12 @@ interface WorldFileHooks {
 
 /**
  * Rewrites the world file to say version 9.9.9 last saved it (`app_version_last` in its meta),
- * through the client's own world-file code (window.__dwell, on the main menu).
+ * through the client's own world-file code (window.__dwellTools, on the main menu).
  */
 async function claimSavedByNewerVersion(page: Page, id: string): Promise<string | undefined> {
+  await page.waitForFunction(() => '__dwellTools' in globalThis);
   return page.evaluate(async (worldId) => {
-    const hooks = (globalThis as { __dwell?: WorldFileHooks }).__dwell;
+    const hooks = (globalThis as { __dwellTools?: WorldFileHooks }).__dwellTools;
     const root = await navigator.storage.getDirectory();
     const dir = await (await root.getDirectoryHandle('dwell')).getDirectoryHandle('worlds');
     const handle = await dir.getFileHandle(`${worldId}.dwellworld`);
@@ -38,8 +39,9 @@ async function claimSavedByNewerVersion(page: Page, id: string): Promise<string 
 
 /** The app version the world file records as its last saver (read only). */
 async function recordedVersion(page: Page, id: string): Promise<string | undefined> {
+  await page.waitForFunction(() => '__dwellTools' in globalThis);
   return page.evaluate(async (worldId) => {
-    const hooks = (globalThis as { __dwell?: WorldFileHooks }).__dwell;
+    const hooks = (globalThis as { __dwellTools?: WorldFileHooks }).__dwellTools;
     const root = await navigator.storage.getDirectory();
     const dir = await (await root.getDirectoryHandle('dwell')).getDirectoryHandle('worlds');
     const handle = await dir.getFileHandle(`${worldId}.dwellworld`);

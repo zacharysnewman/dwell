@@ -12,29 +12,51 @@ Web client: <https://dropkickarcade.com/dwell/>
 
 ## Development
 
+Dwell is one Cargo workspace (`crates/`, ADR 0028): the server, the simulation core, and the
+browser client (Rust compiled to WebAssembly, rendering with wgpu on WebGPU). The DOM UI, the
+master server and the release scripts are TypeScript.
+
+### Rust workspace (`crates/`)
+
+Requires rustup (the pinned toolchain in `rust-toolchain.toml` installs automatically) and, for the
+browser client, the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` 0.2.129
+(`cargo install wasm-bindgen-cli --version 0.2.129 --locked`).
+
+```sh
+cargo test --workspace                           # every suite (cargo nextest works too)
+DWELL_ORIGIN_X=far cargo test -p dwell-physics   # the controller ~8,000 km from the origin
+DWELL_FACE=b cargo test -p dwell-physics         # … and on face B
+cargo test -p dwell-worldgen -p dwell-physics --target wasm32-wasip1   # under WASM (Node's WASI)
+DWELL_UPDATE_GOLDEN=1 cargo test -p dwell-physics --test scenario      # after intended controller changes
+cargo run --release -p dwell-server -- --help
+cargo run --release -p dwell-server             # prints an invite link, and its join code once registered
+```
+
 ### Client (`client/`)
 
-Requires Node 22+. Local mode needs the WASM core, built with Emscripten 6.0.10 (`EMSDK` set, e.g.
-`source ~/emsdk/emsdk_env.sh`).
+Requires Node 22+ and the Rust setup above. Browsers need WebGPU (Chrome and Edge; Safari 26 and
+Firefox where enabled).
 
 ```sh
 cd client
 npm ci
-npm run build:wasm   # server core → public/wasm (local mode)
+npm run build:wasm   # the Rust client → src/pkg (cargo + wasm-bindgen)
 npm run dev          # http://localhost:5173/dwell/ — the main menu (?local=1: straight into a local world)
 npm run lint && npm run typecheck && npm test
 npm run build        # outputs dist/
-npm run e2e          # Playwright against a native server and a local master (build the server
-                     # first; `npm ci` in services/master)
+npm run e2e          # Playwright against dwell-server and a local master (`cargo build --release
+                     # -p dwell-server`; `npm ci` in services/master). Chromium runs headed: on a
+                     # machine without a display, `xvfb-run npx playwright test`
 npm run e2e:site     # the launcher against a locally assembled three-version site (no server needed)
+npm run e2e:webgpu   # the WebGPU probe and the renderer's smoke scene (`npm run build:probe` first)
 ```
 
 **Versions and releases** ([`docs/RELEASES.md`](docs/RELEASES.md)): the app version is Semantic
 Versioning; the next version follows the newest release (`client/package.json` is a floor, raised
 only to start a new line). A build for
-another version: `DWELL_VERSION=0.2.0 npm run build` (served at `/dwell/v/0.2.0/`); the native
-server and the WASM core read the same version from `DWELL_VERSION` or `package.json` when CMake
-configures. Pushes to `main` publish dev builds as GitHub Releases; to release, run the Release
+another version: `DWELL_VERSION=0.2.0 npm run build:wasm && DWELL_VERSION=0.2.0 npm run build`
+(served at `/dwell/v/0.2.0/`); the Rust crates read the same version from `DWELL_VERSION` or
+`package.json` when they build (`crates/dwell-sim/build.rs`). Pushes to `main` publish dev builds as GitHub Releases; to release, run the Release
 workflow (optionally naming a version) or push a `v<version>` tag; merging a PR that raises
 `package.json` above the newest release releases that version. Local builds are `<version>-dev.local`
 and serve at `/dwell/` with no launcher; worlds are locked to their version's compatibility line.
@@ -51,34 +73,15 @@ whole-world view (LOD) is on by default; `?lodcolors=1` tints it by level, `?lod
 and Run (toggle) buttons; Fly toggles creative flight and the ⓘ button (top right) the debug
 overlay. On iOS, *Share → Add to Home Screen* runs it full screen. Safari has no
 WebTransport, so use local mode or a WebRTC invite there.
-The default world is procedural terrain (oceans, beaches, plains, forests, deserts, snowy land,
-mountains, caves); `?seed=N` picks the seed. `?world=playground` loads the movement playground
-instead (slab stairs, a block step, a doorway, a crawlspace, a ladder, a pool, and an orange launch
-pad just behind the spawn), and `?world=flat` a flat world. Terrain streams in around the player;
+The default world is procedural terrain (a placeholder island on a disc with a stone core);
+`?seed=N` picks the seed, and `?world=flat` loads a flat world. Terrain streams in around the player;
 the client generates untouched chunks itself in worker threads, and `?chunks=full` asks the server
 to send every chunk instead (full-chunk mode).
 
-### Server (`server/`)
+### Dedicated server (`dwell-server`)
 
-Requires CMake ≥ 3.24, Ninja, a C++20 compiler, and rustup (the pinned toolchain in
-`rust-toolchain.toml` installs automatically). Dependencies (Jolt, Monocypher, Corrosion, doctest)
-are fetched at configure time.
-
-```sh
-cd server
-cmake --preset dev
-cmake --build --preset dev
-ctest --preset dev
-DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="player: scenario"  # after intended controller changes
-DWELL_UPDATE_GOLDEN=1 ./build/dev/tests/dwell_tests -ts="worldgen: golden"   # after a generator version bump
-./build/dev/app/dwell_server --help
-./build/dev/app/dwell_server   # prints an invite link, and its join code once registered
-./build/dev/tools/dwell_worldgen_inspect 0 0 0 32          # ASCII biome map of seed 0 (32 m per character)
-./build/dev/tools/dwell_worldgen_inspect 0 0 0 1 slice     # vertical section through the origin
-```
-
-`--seed N` and `--generator N` (2 = procedural terrain, the default; 1 = movement playground;
-0 = flat) choose the world.
+`--seed N` and `--generator N` (8 = procedural terrain, the default; 0 = flat) choose a new world;
+a saved world keeps its own.
 
 The server registers with the master server (unlisted by default), so players can join it by its
 **join code**, by typing its **address** in the Join box (e.g. `192.168.1.50` on the same
@@ -90,16 +93,14 @@ dev`). `--advertise <ip>` sets the address in the invite link and the one the ma
 hostname). WebTransport listens on UDP 4433 and WebRTC on the next port by default; forward both
 for players outside your network.
 
-After changing the Rust crate's C ABI (`server/net/wt/src/lib.rs`), regenerate the header with
-`server/net/wt/gen-header.sh` (needs `cargo install cbindgen --version 0.29.4 --locked`). After
-editing `shared/protocol/constants.json`, run `node shared/protocol/gen.mjs` and
-`python3 shared/protocol/make_vectors.py`.
+After editing `shared/protocol/constants.json`, run `node shared/protocol/gen.mjs` and
+`python3 shared/protocol/make_vectors.py`; after editing `shared/blocks/*.json`,
+`node shared/blocks/gen.mjs` (CI fails on stale output).
 
-After adding, removing or upgrading a dependency that ships in a build (a CMake library, a client
-runtime `dependency`, a Rust crate, or the Emscripten version), update
-`shared/licenses/third_party.json` (and its `texts/`) if it is not a crate, then run
-`python3 shared/licenses/gen.py` (needs `cargo`) to regenerate `THIRD_PARTY_NOTICES`;
-`--check` fails if it is out of date.
+After adding, removing or upgrading a dependency that ships in a build (a Rust crate in the server
+or the client, or a client runtime `dependency`), update `shared/licenses/third_party.json` (and its
+`texts/`) if it is not a crate, then run `python3 shared/licenses/gen.py` (needs `cargo`) to
+regenerate `THIRD_PARTY_NOTICES`; `--check` fails if it is out of date.
 
 ### Desktop (`platforms/electron/`)
 

@@ -3,7 +3,9 @@
 ## Project
 
 Dwell is a server-authoritative, multiplayer-first voxel sandbox with large-scale dynamic
-physics. C++ server with Jolt Physics; TypeScript client running the shared C++ sim core (with Jolt) as WASM; WebTransport
+physics. One Rust codebase (ADR 0028): a Cargo workspace (`crates/`) for the dedicated server, the
+simulation core (Rapier physics) and the browser client (WASM, wgpu on WebGPU), with a TypeScript
+shell for the DOM UI, the master server and the release scripts; WebTransport and WebRTC
 networking. The client is deployed to GitHub Pages (`https://dropkickarcade.com/dwell/`) first,
 then wrapped in Electron and Capacitor. Game servers are hosted by players (dedicated servers
 and friend worlds), with a small master server for discovery; there are no official game servers.
@@ -178,35 +180,27 @@ that touches the public API, a release or the workflows:
 
 ## Known CI failures (e2e, not caused by feature work)
 
-Check these before chasing an e2e failure; they are red on `main` too:
+Check these before chasing an e2e failure. Both were seen with the C++/Three.js build before the
+Rust cutover (Phase 24); whether they persist on the Rust build is not yet known from CI (both pass
+locally on it):
 
-- `e2e/touch.spec.ts` "touch controls: stick, look, and jump": on CI the jump peak reads exactly
-  0.4158 m against a 0.5 m bar (every run, `main` included, deterministic there; it passes locally).
-  Not caused by Phase 13. Cause not found yet: if you fix it, find why CI's jump stops at 0.4158 m
-  rather than only widening the wait.
+- `e2e/touch.spec.ts` "touch controls: stick, look, and jump": on CI the jump peak read exactly
+  0.4158 m against a 0.5 m bar (every run, deterministic there; it passed locally). Cause not found:
+  if it recurs and you fix it, find why CI's jump stops short rather than only widening the wait.
 - `e2e/play.spec.ts` "two clients on a native server see each other move": one run showed a single
-  prediction snap (`snaps: 1`, `lastCorrection` ~2.1 m) and passed on other runs of the same code and
-  4 of 4 locally. Treat as an intermittent timing failure on loaded runners; if it fails twice in a row
-  on one commit, it is real.
+  prediction snap (`snaps: 1`, `lastCorrection` ~2.1 m) and passed on other runs of the same code.
+  Treat as an intermittent timing failure on loaded runners; if it fails twice in a row on one
+  commit, it is real.
 - The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (5); update it when the palette
   changes.
 
-## Building without sqlite.org
+## Running the browser in a sandbox
 
-The server and WASM builds fetch the SQLite amalgamation from `www.sqlite.org`
-(`server/cmake/Dependencies.cmake`). Some sandboxes (e.g. Claude Code on the web) block that host
-(HTTP 403). Take the amalgamation from npm instead, which the sandbox allows: `better-sqlite3`
-bundles `sqlite3.c` / `sqlite3.h`, and version 13.0.3 carries SQLite 3.53.4, the version the build
-pins. Point CMake at it with `FETCHCONTENT_SOURCE_DIR_SQLITE3`:
-
-```sh
-cd "$(mktemp -d)" && npm pack better-sqlite3@13.0.3 && tar xzf better-sqlite3-*.tgz
-grep -m1 'define SQLITE_VERSION ' package/deps/sqlite3/sqlite3.h   # must match Dependencies.cmake
-SQ="$PWD/package/deps/sqlite3"
-cd /path/to/dwell/server
-cmake --preset dev  -DFETCHCONTENT_SOURCE_DIR_SQLITE3="$SQ"   # native server (e2e)
-cmake --preset wasm -DFETCHCONTENT_SOURCE_DIR_SQLITE3="$SQ"   # WASM core (needs EMSDK, see CI)
-```
-
-If the pinned SQLite version changes, pick the `better-sqlite3` release that bundles it. This is
-for local builds only; CI downloads from sqlite.org as usual.
+The client renders with WebGPU. Without a GPU, Chromium uses SwiftShader's Vulkan
+(`--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader
+--use-webgpu-adapter=swiftshader`), but **headless** Chromium loses the WebGPU device as soon as a
+canvas presents ("A valid external Instance reference no longer exists"): run it headed under Xvfb
+(`xvfb-run -a npx playwright test`; `playwright.config.ts` sets `headless: false`). Offscreen
+rendering (the WebGPU probe, `npm run e2e:webgpu`) works headless. A preinstalled Chromium can be
+used with `DWELL_CHROMIUM=/path/to/chrome`. Panics in the WASM module are logged to the console
+with their message (a panic hook in `crates/dwell-client/src/web/mod.rs`).

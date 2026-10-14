@@ -191,13 +191,18 @@ struct DrawItem {
     offset: [f32; 4],
     clip: Option<([f32; 3], [f32; 3])>,
     tint: [f32; 4],
+    /// Turn about +y (cos, sin of the yaw): players face their heading.
+    rotation: [f32; 2],
     mesh: DrawMesh,
 }
+
+/// No turn.
+const NO_ROTATION: [f32; 2] = [1.0, 0.0];
 
 enum DrawMesh {
     Chunk(ChunkCoord, bool),
     Section(i64, bool, u8),
-    Capsule(u64),
+    Player(PlayerShape),
     Outline,
     Debug,
 }
@@ -223,7 +228,7 @@ pub struct Renderer {
     stand_ins: Vec<StandIn>,
     level_colors: bool,
     players: HashMap<u32, PlayerView>,
-    capsules: HashMap<u64, GpuMesh>,
+    capsules: HashMap<PlayerShape, GpuMesh>,
     outline: Option<(V3, f64)>,
     outline_mesh: GpuMesh,
     debug: Option<GpuMesh>,
@@ -242,9 +247,23 @@ fn linear(c: u32) -> [f32; 3] {
     hex(c).map(|v| srgb_to_linear(v) as f32)
 }
 
-fn player_key(radius: f32, height: f32) -> u64 {
-    (u64::from(radius.to_bits()) << 32) | u64::from(height.to_bits())
+/// What a player's mesh depends on: radius and height (bits), dead, colour, face B.
+type PlayerShape = (u32, u32, bool, u32, bool);
+
+fn player_shape(v: &PlayerView) -> PlayerShape {
+    let height = if v.crouched { v.height / 2.0 } else { v.height };
+    let color = if v.dead { DEAD_COLOR } else { v.color };
+    (
+        v.radius.to_bits(),
+        height.to_bits(),
+        v.dead,
+        color,
+        v.face < 0.0,
+    )
 }
+
+/// Dead players are grey (and lie down, geometry::player_mesh).
+const DEAD_COLOR: u32 = 0x6b6b6b;
 
 impl Renderer {
     /// A renderer drawing into `format` targets (a canvas's, or an offscreen texture's).
@@ -292,7 +311,7 @@ impl Renderer {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: true,
-                    min_binding_size: wgpu::BufferSize::new(64),
+                    min_binding_size: wgpu::BufferSize::new(80),
                 },
                 count: None,
             }],
@@ -578,7 +597,7 @@ impl Renderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &buffer,
                     offset: 0,
-                    size: wgpu::BufferSize::new(64),
+                    size: wgpu::BufferSize::new(80),
                 }),
             }],
         });
@@ -695,10 +714,11 @@ impl Renderer {
     pub fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
             Some(v) => {
-                let height = if v.crouched { v.height / 2.0 } else { v.height };
-                let key = player_key(v.radius, height);
+                let key = player_shape(&v);
                 self.capsules.entry(key).or_insert_with(|| {
-                    let g = geometry::capsule(v.radius, height, 6, 12);
+                    let (radius, height) = (f32::from_bits(key.0), f32::from_bits(key.1));
+                    let face = if key.4 { -1.0 } else { 1.0 };
+                    let g = geometry::player_mesh(radius, height, key.2, linear(key.3), face);
                     let m = FlatMesh {
                         positions: g.positions,
                         normals: g.normals,
@@ -865,6 +885,7 @@ impl Renderer {
                     offset,
                     clip: None,
                     tint: plain,
+                    rotation: NO_ROTATION,
                     mesh: DrawMesh::Chunk(coord, false),
                 });
             }
@@ -876,6 +897,7 @@ impl Renderer {
                     offset,
                     clip: None,
                     tint: water,
+                    rotation: NO_ROTATION,
                     mesh: DrawMesh::Chunk(coord, true),
                 });
             }
@@ -905,6 +927,7 @@ impl Renderer {
                     offset,
                     clip: None,
                     tint: level_tint(s, 1.0),
+                    rotation: NO_ROTATION,
                     mesh: DrawMesh::Section(id, false, mask),
                 });
             }
@@ -916,6 +939,7 @@ impl Renderer {
                     offset,
                     clip: None,
                     tint: level_tint(s, WATER_OPACITY),
+                    rotation: NO_ROTATION,
                     mesh: DrawMesh::Section(id, true, 0),
                 });
             }
@@ -934,6 +958,7 @@ impl Renderer {
                 offset: [r[0], r[1], r[2], s.cell as f32],
                 clip,
                 tint: level_tint(s, 1.0),
+                rotation: NO_ROTATION,
                 mesh: DrawMesh::Section(st.id, false, 0),
             });
         }
@@ -941,23 +966,18 @@ impl Renderer {
             if !reaches(v.feet, 4.0) {
                 continue;
             }
-            let height = if v.crouched { v.height / 2.0 } else { v.height };
-            let color = linear(if v.dead { 0x6b6b6b } else { v.color });
+            // The mesh is posed and coloured in feet-local space; the draw turns it to the yaw.
             let r = self.rel(v.feet);
-            // Upside down on face B: the capsule hangs from the feet.
-            let base = if v.face < 0.0 {
-                [r[0], r[1] - height, r[2]]
-            } else {
-                r
-            };
+            let yaw = (v.yaw as f32).to_radians();
             out.push(DrawItem {
                 kind: Kind::Flat,
                 water: false,
                 no_depth: false,
-                offset: [base[0], base[1], base[2], 1.0],
+                offset: [r[0], r[1], r[2], 1.0],
                 clip: None,
-                tint: [color[0], color[1], color[2], 1.0],
-                mesh: DrawMesh::Capsule(player_key(v.radius, height)),
+                tint: [1.0, 1.0, 1.0, 1.0],
+                rotation: [yaw.cos(), yaw.sin()],
+                mesh: DrawMesh::Player(player_shape(v)),
             });
         }
         if let Some((cell, _height)) = self.outline.filter(|(c, _)| reaches(*c, 2.0)) {
@@ -970,6 +990,7 @@ impl Renderer {
                 offset: [r[0], r[1], r[2], 1.0],
                 clip: None,
                 tint: [c[0], c[1], c[2], 0.8],
+                rotation: NO_ROTATION,
                 mesh: DrawMesh::Outline,
             });
         }
@@ -981,6 +1002,7 @@ impl Renderer {
                 offset: [0.0, 0.0, 0.0, 1.0],
                 clip: None,
                 tint: [1.0, 1.0, 1.0, 1.0],
+                rotation: NO_ROTATION,
                 mesh: DrawMesh::Debug,
             });
         }
@@ -1068,6 +1090,7 @@ impl Renderer {
                 data[at + 8..at + 12].copy_from_slice(&[hi[0], hi[1], hi[2], 0.0]);
             }
             data[at + 12..at + 16].copy_from_slice(&d.tint);
+            data[at + 16..at + 18].copy_from_slice(&d.rotation);
         }
         if !data.is_empty() {
             self.queue.write_buffer(&self.draw_buffer, 0, floats(&data));
@@ -1145,7 +1168,7 @@ impl Renderer {
                         );
                         (m, r)
                     }
-                    DrawMesh::Capsule(key) => {
+                    DrawMesh::Player(key) => {
                         let m = &self.capsules[key];
                         (m, vec![m.parts[0].clone()])
                     }

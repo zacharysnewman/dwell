@@ -1,5 +1,5 @@
 // Starts a local master server (`wrangler dev`, services/master) for friend worlds (Phase 5c) and
-// dedicated servers (5d), then a native dwell_server registered with it, and records the server's
+// dedicated servers (5d), then a native dwell-server registered with it, and records the server's
 // invite query and join code for the tests.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -54,7 +54,7 @@ export interface StartedServer {
 }
 
 /**
- * Starts a dwell_server registered with the local master (2 s heartbeats, Phase 5d) and waits
+ * Starts a dwell-server registered with the local master (2 s heartbeats, Phase 5d) and waits
  * for its invite link and join code.
  */
 export async function startServer(args: string[]): Promise<StartedServer> {
@@ -65,7 +65,7 @@ export async function startServer(args: string[]): Promise<StartedServer> {
     return await new Promise<StartedServer>((resolve, reject) => {
       let out = '';
       const timer = setTimeout(() => {
-        reject(new Error(`dwell_server did not print an invite link and a join code:\n${out}`));
+        reject(new Error(`dwell-server did not print an invite link and a join code:\n${out}`));
       }, 15_000);
       server.stdout.on('data', (chunk: Buffer) => {
         out += chunk.toString();
@@ -77,7 +77,7 @@ export async function startServer(args: string[]): Promise<StartedServer> {
         }
       });
       server.on('exit', (exit) => {
-        reject(new Error(`dwell_server exited (${String(exit)}):\n${out}`));
+        reject(new Error(`dwell-server exited (${String(exit)}):\n${out}`));
       });
     });
   } catch (err) {

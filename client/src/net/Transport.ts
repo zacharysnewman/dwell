@@ -12,8 +12,9 @@ export interface TransportHandlers {
 }
 
 /**
- * A connection to a server (ARCHITECTURE.md §8.1). Implementations: WebTransport (dedicated
- * servers), WebRTC (fallback and friend worlds; later), Loopback (local mode).
+ * A connection to a server that the shell makes and hands to the Rust client (ARCHITECTURE.md
+ * §8.1): WebRTC to a friend world's host (peer.ts) and Loopback to local mode's worker. The Rust
+ * client makes its own WebTransport and WebRTC links to dedicated servers.
  */
 export interface Transport {
   readonly kind: TransportKind;

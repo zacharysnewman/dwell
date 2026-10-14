@@ -42,6 +42,8 @@ struct Draw {
     clip_lo: vec4f,
     clip_hi: vec4f,
     tint: vec4f,
+    // x, y: cos and sin of a turn about +y (players' yaw); identity (1, 0) otherwise.
+    rotation: vec4f,
 };
 @group(1) @binding(0) var<uniform> draw: Draw;
 ";
@@ -175,12 +177,19 @@ struct FlatOut {
     @location(2) color: vec3f,
 };
 
+// The draw's turn about +y (Three.js's rotation.y): x' = x cos + z sin, z' = −x sin + z cos.
+fn turn(p: vec3f) -> vec3f {
+    let c = draw.rotation.x;
+    let s = draw.rotation.y;
+    return vec3f(p.x * c + p.z * s, p.y, -p.x * s + p.z * c);
+}
+
 @vertex
 fn flat_vs(v: FlatIn) -> FlatOut {
     var o: FlatOut;
-    o.rel = draw.offset.xyz + v.position * draw.offset.w;
+    o.rel = draw.offset.xyz + turn(v.position * draw.offset.w);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    o.normal = v.normal;
+    o.normal = turn(v.normal);
     o.color = v.color;
     return o;
 }

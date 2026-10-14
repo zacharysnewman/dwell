@@ -1,10 +1,7 @@
-# The Rust port (ADR 0028, Phase 24): one workspace for the server, sim core, client and tools.
-# Crates are added as their sub-phase starts. `server/net/wt` stays outside the workspace (the C++
-# build links it through Corrosion) until it moves to `crates/dwell-net` in 24d.
+# Dwell (ADR 0028): one workspace for the server, sim core, client and tools.
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["server/net/wt"]
 
 [workspace.package]
 version = "0.0.0"

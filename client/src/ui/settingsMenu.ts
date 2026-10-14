@@ -36,7 +36,7 @@ export interface Settings {
   detail: DetailSettings;
   /** Tone-mapping exposure (render/look.ts). */
   exposure: number;
-  /** Sky rotation in degrees, 0–360 (render/skyFrame.ts; this browser only). */
+  /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
 }
 

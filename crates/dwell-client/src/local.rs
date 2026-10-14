@@ -11,6 +11,9 @@ use dwell_sim::fixed_step::FixedStep;
 use dwell_sim::server::{EditPolicy, OutKind, Outgoing, Server, ServerConfig};
 use dwell_storage::{StorageBackend, WorldDb, WorldStore};
 
+/// How often a local world saves (a dedicated server saves less often).
+pub const LOCAL_AUTOSAVE_SECONDS: u32 = 5;
+
 /// The local player's session; friend-world guests get others.
 pub const LOCAL_SESSION: u32 = 1;
 
@@ -46,6 +49,8 @@ impl LocalCore {
             // Single-threaded in the browser: generation and LOD run on the tick within budgets.
             worldgen_threads: 0,
             lod_threads: Some(0),
+            // A browser tab can close at any moment: save often (and on hide or close, §6.4).
+            autosave_seconds: LOCAL_AUTOSAVE_SECONDS,
             ..ServerConfig::default()
         };
         let (mut persisted, mut storage_error) = (false, String::new());
@@ -178,7 +183,6 @@ pub const TICK_BUDGET: Duration = Duration::from_millis(4);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
 
     use dwell_protocol::*;
     use dwell_sim::entropy::SeededEntropy;
@@ -255,6 +259,28 @@ mod tests {
         assert_eq!(
             u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize,
             out.len()
+        );
+    }
+
+    #[test]
+    fn a_local_world_autosaves_every_few_seconds() {
+        // Local mode saves often (a browser tab can close at any moment): within 6 s of play.
+        let file = SharedBytes::default();
+        let mut core = LocalCore::create(
+            1,
+            dwell_world::GENERATOR_FLAT,
+            Some(file),
+            Box::new(SeededEntropy(1)),
+        )
+        .unwrap();
+        join(&mut core);
+        let before = core.server().save_stats().saves;
+        for _ in 0..6 * 60 {
+            core.advance(1.0 / 60.0);
+        }
+        assert!(
+            core.server().save_stats().saves > before,
+            "no autosave within 6 s"
         );
     }
 

@@ -41,6 +41,7 @@ import { SettingsMenu } from './ui/settingsMenu';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
+import { startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
@@ -98,6 +99,10 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+}
+
+/** World-file tools for tests and debugging, on every page (the main menu included). */
+interface DwellTools {
   /** The app version that last saved a world file (its bytes), or undefined. */
   worldFileVersion(bytes: Uint8Array): string | undefined;
   /** A world file's bytes rewritten to say `version` last saved it (RELEASES.md §6). */
@@ -107,7 +112,17 @@ interface DwellDebug {
 declare global {
   interface Window {
     __dwell?: DwellDebug;
+    __dwellTools?: DwellTools;
   }
+}
+
+/** Loads the WASM module and offers its world-file tools (window.__dwellTools). */
+async function loadTools(): Promise<void> {
+  wasmMemory = ((await loadWasm()) as { memory?: WebAssembly.Memory }).memory ?? null;
+  window.__dwellTools = {
+    worldFileVersion: (bytes) => worldFileVersion(bytes),
+    setWorldFileVersion: (bytes, version) => setWorldFileVersion(bytes, version),
+  };
 }
 
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
@@ -261,7 +276,7 @@ async function start(): Promise<App | null> {
   const mobile = prefersTouch();
   let client: Client;
   try {
-    wasmMemory = ((await loadWasm()) as { memory?: WebAssembly.Memory }).memory ?? null;
+    await loadTools();
     client = await Client.create(canvas, {
       displayName: displayName(),
       clientVersion: recordedVersion(),
@@ -276,11 +291,7 @@ async function start(): Promise<App | null> {
       search: location.search,
     });
   } catch (err) {
-    showFatal(
-      'navigator' in globalThis && !('gpu' in navigator)
-        ? 'Dwell needs WebGPU, which this browser does not have (or has turned off).'
-        : `Dwell failed to start: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    showFatal(startupMessage(err, 'gpu' in navigator));
     console.error(err);
     return null;
   }
@@ -362,8 +373,6 @@ async function start(): Promise<App | null> {
     renderStats: () => client.renderStats() as RenderStats,
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
-    worldFileVersion: (bytes) => worldFileVersion(bytes),
-    setWorldFileVersion: (bytes, version) => setWorldFileVersion(bytes, version),
   };
 
   const frame = (now: number): void => {
@@ -526,8 +535,9 @@ function menuMaster(): MainMenuDeps['master'] {
   };
 }
 
-function openMainMenu(app: App, message?: string): void {
-  if (app.touch) app.touch.visible = false;
+/** The main menu: DOM only, so it opens without WebGPU (and before the game client starts). */
+function openMainMenu(app: App | null, message?: string): void {
+  if (app?.touch) app.touch.visible = false;
   const master = menuMaster();
   new MainMenu(document.body, {
     index: new WorldIndex(storage()),
@@ -700,6 +710,14 @@ async function connect(app: App): Promise<void> {
   }
 }
 
-void start().then((app) => {
-  if (app) void connect(app);
-});
+// The main menu needs no game client (nor WebGPU): it opens at once. Anything else starts the
+// client, and shows the unsupported screen where it cannot.
+if (launchOf(location.search).kind === 'menu') {
+  element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
+  openMainMenu(null);
+  void loadTools();
+} else {
+  void start().then((app) => {
+    if (app) void connect(app);
+  });
+}

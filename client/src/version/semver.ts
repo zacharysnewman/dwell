@@ -1,6 +1,6 @@
 // The app version (RELEASES.md §3, §6): Semantic Versioning 2.0.0, and the compatibility lines that
 // lock worlds to builds. Pure functions, shared by the game, the launcher and the site scripts; the
-// C++ copy (server/core/src/app_version.cpp) is checked against the same vectors
+// Rust copy (crates/dwell-sim/src/app_version.rs) is checked against the same vectors
 // (shared/version/vectors.txt).
 
 export interface Version {
