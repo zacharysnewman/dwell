@@ -102,8 +102,10 @@ fn control_stream_world_stream_and_datagrams_round_trip() {
     ));
     assert!(net.send(session, Command::Datagram(b"dgram-down".to_vec())));
 
+    // The client stays connected until the server closes the session: dropped earlier, the server
+    // could see it leave first and the session would be gone before Close.
     let (conn, _tx, mut rx) = client;
-    rt.block_on(async move {
+    rt.block_on(async {
         let mut buf = [0u8; 9];
         rx.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, &frame(b"reply")[..]);
@@ -119,9 +121,12 @@ fn control_stream_world_stream_and_datagrams_round_trip() {
         assert_eq!(d.payload().as_ref(), b"dgram-down");
     });
 
+    // A pause before closing, as a host's next tick would give: the session must still be there.
+    std::thread::sleep(Duration::from_millis(300));
     assert!(net.send(session, Command::Close));
     let Event::Disconnected { session: closed } = next(&net) else {
         panic!("expected Disconnected")
     };
     assert_eq!(closed, session);
+    drop(conn);
 }
