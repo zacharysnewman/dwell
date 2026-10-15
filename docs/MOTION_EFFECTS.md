@@ -1,12 +1,12 @@
 # Motion effects: speed FOV and wind (Phase 29)
 
-**Status:** built; the owner's look in a browser outstanding (`IMPLEMENTATION_PLAN.md` Phase 29). Owner's brief (2026-10-14): "add
+**Status:** built, the owner's answers (2026-10-15) applied; the owner's look in a browser outstanding (`IMPLEMENTATION_PLAN.md` Phase 29). Owner's brief (2026-10-14): "add
 sprint wind effects and dynamic FOV adjustment (for a 'fast moving' effect). Should be using shaders
 for VFX."
 
 The owner was not asked CLAUDE.md's "ask before designing" questions before this was built; the
-defaults below were chosen by the coordinating agent and are recorded here with the open questions
-at the end.
+defaults below were chosen by the coordinating agent and are recorded here with the questions the
+owner then answered (2026-10-15, at the end).
 
 ## Decisions (defaults, 2026-10-14)
 
@@ -14,9 +14,9 @@ at the end.
 | --- | --- |
 | What gets added later? | More tuning of the same effects (strengths, rates, colours, counts), per controller state; possibly new effect layers (radial blur once the shared frame lands). |
 | Who adds it, with what? | Developers, by editing `shared/look/motion.json` (a tool could edit it: it is a flat validated data file). Players only choose on/off and the FOV boost's strength. |
-| Fixed in code | The effect vocabulary: a speed → FOV curve (eased walk→run, then log-scaled to a full speed), a critically damped spring, the caps, the streak shader's shape. |
-| Data | Every threshold, gain, rate, cap, per-state gain, streak count/length/width/opacity/colour, radii, vignette and flow speed. |
-| Per build / world / player | Tunables per build (checked in); the toggle and strength per player (this browser's settings). |
+| Fixed in code | The effect vocabulary: a speed → FOV curve (eased walk→run, then log-scaled to a full speed), the zoom formula, a critically damped spring, the streak shader's shape. |
+| Data | Every threshold, boost percentage, rate, per-state gain, streak count/length/width/opacity/colour, radii, vignette, flow speed and blur. |
+| Per build / world / player | Tunables per build (checked in); the Field of view setting, the toggle and the boost's strength per player (this browser's settings). |
 
 ## Inputs
 
@@ -29,19 +29,37 @@ at the end.
 - Walk and run speeds come from the controller config (`movement.walk_speed`, `run_speed`), not
   copies: the curves are expressed relative to them.
 
+## Field of view setting (owner, 2026-10-15)
+
+"Field of view" in the settings menu's Look group: the vertical FOV in degrees, default **75°**
+(the former constant), 60–100° in 1° steps, stored in the append-only `dwell.view` record
+(`{ fovDeg }`; unknown fields kept on rewrite). It is the **base** everywhere: the projection, the
+LOD's pixel error and frustum, each pass's culling (the block-target ray goes through the screen
+centre, which no FOV moves).
+
+The wide-screen rule is derived from the setting by one function, `dwell_lod::base_fov(setting,
+aspect)` (the renderer's `camera.rs` re-exports it): the old rule was "75° vertical, but at most
+100° horizontal", which bites beyond the aspect `A = tan(50°) / tan(37.5°) ≈ 1.553`. The same `A`
+holds for every setting: up to `A` the vertical FOV is the setting; wider screens keep the
+horizontal FOV the setting has at `A` — `base = 2·atan(tan(setting / 2) · A / aspect)`. At the
+default this is the old rule exactly (100° horizontal on wide screens); at 100° the horizontal cap
+is ≈ 123°, at 60° ≈ 84°.
+
 ## Dynamic FOV
 
-- `target_fov_boost(speed, state)`: 0 at walk speed, eased (smoothstep) to `fov.sprintBoostDeg` at
-  run speed, then up to `fov.flightBoostDeg` at `fov.fullMps` on a log scale (flight spans 11 m/s to
-  thousands of km/s).
+- `target_fov_boost(speed, state)` (a percentage): 0 at walk speed, eased (smoothstep) to
+  `fov.sprintBoostPct` (10 %) at run speed, then up to `fov.flightBoostPct` (20 %) at `fov.fullMps`
+  on a log scale (flight spans 11 m/s to thousands of km/s).
 - Smoothed by a **critically damped spring** (exact closed-form step, no overshoot): `widenRate`
   toward a wider target, `settleRate` back (fast to widen, slower to settle).
-- `effective_fov(base, boost, aspect)`: the screen's unboosted vertical FOV (75°, capped at 100°
-  horizontal) plus the boost, capped at `fov.maxHorizontalDeg` horizontal and `fov.maxVerticalDeg`
-  vertical, never narrower than the base. **The cap is raised to 118° for the boost** (from the base
-  view's 100°): a 16:9 screen is already at 100° horizontal unboosted, so with the old cap the boost
-  would do nothing on most desktops. 118° keeps the distortion a transient effect only at speed.
-- The game computes the frame's effective FOV once and hands the **same value** to the renderer
+- `effective_fov(base, boost)`: the boost is a **zoom-out** of the base, applied to the view's
+  half-height tangent as a camera zoom is: **`effective = 2·atan(tan(base / 2) · (1 + boost))`**
+  (owner, 2026-10-15). It feels the same at any base and tapers at wide ones: at 75° about 80.3°
+  sprinting and 85.3° at top flight speed; at 60° 64.8° and 69.4°; at 100° 105.3° and 110.1°. The
+  result is clamped to 120° vertical as a safety net. No other caps (the earlier 118°/100° boosted
+  caps are gone): a wide base gets a proportionate boost.
+- The game computes the frame's effective FOV once (`base_fov` of the setting at the drawing's
+  aspect, then `effective_fov`) and hands the **same value** to the renderer
   (projection, the sky's rays, each pass's culling) and to the LOD selection (frustum and the
   pixel-error / screen-space size). The block-target ray goes through the screen centre, which the
   FOV does not move.
@@ -75,9 +93,10 @@ within noise (p50 7.8 vs 7.2 ms).
 
 ## Settings
 
-"Speed effects" (on/off) and "FOV boost" (0–100 %) in the settings menu's Look group, stored under
-their own key, default on (off when the browser prefers reduced motion). Append-only: unknown
-fields in the stored record are kept on rewrite.
+"Field of view" (60–100°, above) in the Look group; "Speed effects" (on/off) and "FOV boost"
+(0–100 % of the data's boost) in the Motion group, stored under `dwell.motion`, default on (off
+when the browser prefers reduced motion). Both records are append-only: unknown fields in a stored
+record are kept on rewrite.
 
 ## Tunables
 
@@ -85,14 +104,14 @@ fields in the stored record are kept on rewrite.
 (`MOTION`), validated (unknown, missing, out of range: an error naming the entry; every controller
 state needs a gain), tested by `node --test shared/look/gen.test.mjs`, stale output failing CI.
 
-## Open questions for the owner
+## Decided (owner deferred to the recommendation, 2026-10-15)
 
-1. Strengths: +10° at sprint and +18° at full flight speed, and the 118° horizontal cap — too much,
-   too little?
-2. Should the face-B turn-over reset the effects (current) or hold them through the somersault?
-3. Should walking forward (5 m/s) show any effect, or only sprinting and faster (current: starts at
-   walk speed for the FOV, half-way to run speed for the wind)?
-4. Wind colour and density: white-blue streaks at the edges; any wish for tinting by environment
-   (dust, water, altitude)?
-5. The edge radial blur (in flight only): keep, stronger, or off?
-6. Should a remote player's or a vehicle's speed matter later (only the camera's now)?
+1. **Strengths:** a zoom-out of +10 % at a sprint and +20 % at top flight speed (above), with a
+   Field of view setting as the base.
+2. **Face-B turn-over:** the effects keep resetting on it — a zoom during the somersault would be
+   disorienting.
+3. **Walking speed:** no effect (the FOV boost starts at walk speed, the wind half-way to run).
+4. **Streak tinting:** none for now. Follow-up: underwater gets its own treatment with the water
+   work (Phase 26, W4).
+5. **Edge blur:** kept, as subtle as it is.
+6. **Speed sources:** the camera's actual velocity, whatever moves it (as now).

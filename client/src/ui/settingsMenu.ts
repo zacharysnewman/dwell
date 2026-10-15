@@ -7,6 +7,7 @@
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
+import { DEFAULT_FOV, FOV_LIMITS, VIEW_KEY, sanitizeFovSetting, viewRecord } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 import {
   MOTION_KEY,
@@ -50,6 +51,8 @@ export interface Settings {
   skyRotation: number;
   /** Speed effects: the FOV boost and the wind (docs/MOTION_EFFECTS.md). */
   motion: MotionSettings;
+  /** The vertical field of view in degrees (60–100; narrower on wide screens, dwell-lod's base_fov). */
+  fovDeg: number;
 }
 
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
@@ -59,6 +62,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
     motion: defaultMotion(reducedMotion),
+    fovDeg: DEFAULT_FOV,
   };
 }
 
@@ -81,6 +85,7 @@ export function settingsJson(s: Settings): string {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
     },
+    fovDeg: Math.round(s.fovDeg),
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -116,6 +121,7 @@ export function loadSettings(mobile: boolean): Settings {
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
+    fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
   };
 }
 
@@ -127,6 +133,7 @@ function save(s: Settings): void {
     localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
     // Append-only: fields a newer build stored are kept.
     localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
+    localStorage.setItem(VIEW_KEY, JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg)));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -228,6 +235,15 @@ function sections(
     {
       title: 'Look',
       sliders: [
+        {
+          label: 'Field of view',
+          hint: 'How much the view takes in, top to bottom (narrower on wide screens)',
+          ...FOV_LIMITS,
+          log: false,
+          format: (v) => `${String(Math.round(v))}°`,
+          get: (s) => s.fovDeg,
+          with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
+        },
         {
           label: 'Exposure',
           hint: 'How bright the picture is after tone mapping',

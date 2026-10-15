@@ -399,6 +399,7 @@ async function start(): Promise<App | null> {
     client.setExposure(s.exposure);
     client.setSkyRotation(s.skyRotation);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;

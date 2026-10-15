@@ -2752,13 +2752,20 @@ chosen are recorded in `MOTION_EFFECTS.md` with the open questions.
 - [x] Settings: Speed effects (off under `prefers-reduced-motion`) and FOV boost 0–100 %, stored
   append-only under `dwell.motion`.
 - [x] Bench scenarios `sprint-straight` and `fly-fast-turn`; the cost measured on `fly-low-fast`.
+- [x] The owner's answers (2026-10-15): a Field of view setting (60–100°, default 75°, append-only
+  `dwell.view`) as the base for the projection, the LOD and culling, with the wide-screen rule
+  derived from it (`dwell_lod::base_fov`); the boost as a zoom-out percentage of the base (+10 %
+  sprinting, +20 % at top flight speed, clamped to 120°; the boosted caps removed); the open
+  questions decided (`MOTION_EFFECTS.md`).
 
 **Exit criteria:**
 
 - [x] Unit tests: speed → target FOV, the spring, the caps, resets, the menu hold, a tunable changed
   by data changing the effect; the settings store's append-only test.
 - [x] A local world natively: sprinting widens the view for the renderer and the LOD alike, and
-  standing settles it back (`tests/game_local.rs`).
+  standing settles it back; the Field of view setting is the base for both (`tests/game_local.rs`).
+- [x] Setting → base FOV at 60/75/100° (wide screens included) and the boost → effective FOV at
+  0/10/20 % (unit tests).
 - [x] Cost: `fly-low-fast --unthrottled` on this Mac's GPU, effects on against off: the composite
   +0.2 ms GPU (p50 1.13 → 1.37 ms), no change in frame interval.
 - [ ] The owner looks at it in a browser and approves (subtle at sprint, stronger in fast flight,
