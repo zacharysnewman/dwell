@@ -143,6 +143,10 @@ pub struct Marcher {
     queue: wgpu::Queue,
     pub gpu: GpuScene,
     pub settings: MarchSettings,
+    /// The march's workgroup (`wgsl::WORKGROUP` square; profiling variants may change it).
+    pub(crate) workgroup: [u32; 2],
+    /// Whether the shade pass runs (profiling: the march alone).
+    pub(crate) shade: bool,
     pipeline: wgpu::ComputePipeline,
     shade_pipeline: wgpu::ComputePipeline,
     /// Kept to rebuild the pipeline from another source (profiling variants, tests).
@@ -402,6 +406,8 @@ impl Marcher {
             queue,
             gpu,
             settings: MarchSettings::default(),
+            workgroup: [wgsl::WORKGROUP; 2],
+            shade: true,
             pipeline,
             shade_pipeline,
             pipeline_layout: layout,
@@ -707,6 +713,7 @@ impl Marcher {
         }
         // The timestamps begin with the march and end with the shade pass.
         let (begin, end) = match timestamps {
+            Some(w) if !self.shade => (Some(w), None),
             Some(w) => (
                 w.beginning_of_pass_write_index
                     .map(|i| wgpu::ComputePassTimestampWrites {
@@ -732,10 +739,10 @@ impl Marcher {
             pass.set_bind_group(0, &self.frame_group, &[]);
             pass.set_bind_group(1, self.data_group.as_ref(), &[]);
             pass.set_bind_group(2, &targets.out_group, &[]);
-            let g = wgsl::WORKGROUP;
-            pass.dispatch_workgroups(targets.size.0.div_ceil(g), targets.size.1.div_ceil(g), 1);
+            let [gx, gy] = self.workgroup;
+            pass.dispatch_workgroups(targets.size.0.div_ceil(gx), targets.size.1.div_ceil(gy), 1);
         }
-        {
+        if self.shade {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("march shade"),
                 timestamp_writes: end,

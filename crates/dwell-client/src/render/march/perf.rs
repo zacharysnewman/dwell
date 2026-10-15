@@ -228,6 +228,20 @@ fn march_perf() {
             None => super::wgsl::source(),
         });
         m.settings.debug = *bits;
+        m.shade = env("DWELL_PERF_NOSHADE").is_none() && !variant.starts_with("noshade");
+        // The workgroup a variant's source declares.
+        m.workgroup = match file {
+            Some(f) => {
+                let src = std::fs::read_to_string(f).expect("variant source");
+                let at = src.find("@workgroup_size(").expect("a workgroup size") + 16;
+                let dims: Vec<u32> = src[at..at + src[at..].find(')').expect(")")]
+                    .split(',')
+                    .map(|d| d.trim().parse().expect("a size"))
+                    .collect();
+                [dims[0], dims.get(1).copied().unwrap_or(1)]
+            }
+            None => [super::wgsl::WORKGROUP; 2],
+        };
         eprintln!("variant {variant} (dbg {bits:#x})");
         for (view, at, yaw, pitch) in views {
             let frame = frame_for(at, yaw, pitch, size);
