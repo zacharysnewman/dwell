@@ -19,6 +19,8 @@ export interface BlockDef {
   first: number;
   count: number;
   properties: readonly BlockProperty[];
+  /** Its sound set (shared/sounds, docs/AUDIO.md); none: the sounds' fallback set. */
+  sound?: string;
 }
 
 /** One block state with how it is drawn (the physics side lives in the C++ core). */
@@ -72,12 +74,12 @@ export const REGISTRY_HASH = 0x04c8d81b0549dcb0n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
-  { id: 'dwell:stone', first: 1, count: 1, properties: [] },
-  { id: 'dwell:dirt', first: 2, count: 1, properties: [] },
-  { id: 'dwell:grass', first: 3, count: 1, properties: [] },
-  { id: 'dwell:ladder', first: 4, count: 8, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }] },
-  { id: 'dwell:water', first: 12, count: 1, properties: [] },
-  { id: 'dwell:sand', first: 13, count: 1, properties: [] },
+  { id: 'dwell:stone', first: 1, count: 1, properties: [], sound: 'dwell:stone' },
+  { id: 'dwell:dirt', first: 2, count: 1, properties: [], sound: 'dwell:dirt' },
+  { id: 'dwell:grass', first: 3, count: 1, properties: [], sound: 'dwell:grass' },
+  { id: 'dwell:ladder', first: 4, count: 8, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:wood' },
+  { id: 'dwell:water', first: 12, count: 1, properties: [], sound: 'dwell:water' },
+  { id: 'dwell:sand', first: 13, count: 1, properties: [], sound: 'dwell:sand' },
 ];
 
 export const SHAPES: readonly ShapeDef[] = [

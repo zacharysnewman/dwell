@@ -5,20 +5,20 @@
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
-      "name": "stone", "density": 2400, "shape": "full", "placeable": true,
+      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true,
       "color": "#bbafa6", "textures": "stone"
     },
     {
-      "name": "dirt", "density": 1500, "shape": "full", "placeable": true,
+      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true,
       "color": "#8a5a3a", "textures": "dirt"
     },
     {
-      "name": "grass", "density": 1400, "shape": "full", "placeable": true,
+      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true,
       "color": "#8dbf3f",
       "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
     {
-      "name": "ladder", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
+      "name": "ladder", "sound": "dwell:wood", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
       "facingProperty": "facing",
       "properties": {
         "facing": ["north", "east", "south", "west"],
@@ -30,11 +30,11 @@
       "color": "#a0703a", "textures": "ladder"
     },
     {
-      "name": "water", "density": 1000, "shape": "empty", "look": "water", "liquid": true,
+      "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "water", "liquid": true,
       "color": "#3fb2d6", "opacity": 0.55, "textures": "water"
     },
     {
-      "name": "sand", "density": 1600, "shape": "full", "placeable": true,
+      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true,
       "color": "#eed9a4", "textures": "sand"
     }
   ]
