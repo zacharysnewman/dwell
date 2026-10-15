@@ -2203,6 +2203,58 @@ mod tests {
         }
     }
 
+    #[test]
+    fn compare_mode_draws_cleanly_in_every_view_and_switches_back() {
+        // Two sets of targets, scissored sides, the placeholder marcher's pass, the difference
+        // pipeline and its counts' read back, timed or not: valid WebGPU throughout.
+        use crate::game::Scene;
+        for (samples, features) in [
+            (1, wgpu::Features::empty()),
+            (4, wgpu::Features::TIMESTAMP_QUERY),
+        ] {
+            for right in ["march", "raster"] {
+                for view in [
+                    compare::CompareView::Split,
+                    compare::CompareView::Blink,
+                    compare::CompareView::Difference,
+                ] {
+                    let mut r = noop_renderer_with(samples, features);
+                    r.select(Selection::parse("compare", Some(right)).unwrap());
+                    r.set_compare(Compare {
+                        view,
+                        divider: 0.3,
+                        blink_right: true,
+                    });
+                    assert!(r.compare_overlay().is_some());
+                    draws_cleanly(r);
+                }
+            }
+            let mut r = noop_renderer_with(samples, features);
+            r.select(Selection::single(TerrainKind::March));
+            assert!(r.compare_overlay().is_none());
+            draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn compare_mode_keeps_a_second_set_of_targets_only_while_on() {
+        use crate::game::Scene;
+        let mut r = noop_renderer();
+        r.resize(8, 8, 1.0);
+        r.ensure_targets();
+        assert_eq!(r.targets.len(), 1);
+        let one = r.stats().screen_bytes;
+        r.select(Selection::parse("compare", None).unwrap());
+        r.ensure_targets();
+        assert_eq!(r.targets.len(), 2);
+        assert!(r.difference_group.is_some());
+        assert!(r.stats().screen_bytes > one, "counted in the GPU memory");
+        r.select(Selection::default());
+        r.ensure_targets();
+        assert_eq!(r.targets.len(), 1);
+        assert!(r.difference_group.is_none());
+    }
+
     fn draws_cleanly(mut r: Renderer) {
         let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let target = r.device.create_texture(&wgpu::TextureDescriptor {

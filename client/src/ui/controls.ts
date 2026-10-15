@@ -57,6 +57,13 @@ export const DEBUG_KEYS: Control[] = [
   { action: 'Terrain map', keys: ['F4'] },
   { action: 'Map zoom', keys: ['−', '='], when: 'while the map is open' },
   { action: 'Copy block info', keys: ['F6'], when: 'the targeted block, as JSON' },
+  {
+    action: 'Compare view: split, blink, difference',
+    keys: ['F7'],
+    when: 'in compare mode (?renderer=compare, local builds)',
+  },
+  { action: 'Blink: swap the sides', keys: ['F8'], when: 'in compare mode' },
+  { action: 'Move the split', keys: ['Drag the divider'], when: 'in compare mode, split view' },
 ];
 
 export const TOUCH: Control[] = [

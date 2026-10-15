@@ -104,7 +104,8 @@ and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last on
 **Support:** the first run (the baseline's) asks the page what it offers — `__dwell.renderers()` and
 `__dwell.upscalers()`, each a list of names; a build without them offers `raster` and the browser's
 stretch only. Configurations the build can't run are **skipped with the reason** in the printed
-report and `compare.json` (today: every `march` entry, until the ray-marched renderer exists), not
+report and `compare.json` (today: every `march` entry — `renderers()` lists `march` only once
+`render/march.rs`'s `BUILT` is true, not while the placeholder fills its side magenta), not
 failed. A new configuration is one entry in the file; `baseline` names the one the others are
 compared with and `deltaE` the colour threshold (CIE76, default 2.3, about just noticeable).
 
@@ -147,8 +148,39 @@ worker, and the upload is counted per frame), so it isn't measured yet. It needs
 number carried through the remesh and a telemetry sample (`edit.visible`, ms from the request to the
 first frame drawn with its mesh), which the renderers record the same way.
 
-Not image agreement by cell id, face or depth yet: those need the renderers to expose an id/depth
-buffer (A2's compare mode); the bench compares colour only.
+Not image agreement by cell id, face or depth in the bench yet: the bench compares screenshots'
+colour only. In-game compare mode's difference view (below) compares coverage, view depth and
+colour on the GPU; cell id and face wait for the marcher to write ids (A3).
+
+## Renderer switch and compare mode (local builds)
+
+The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, §5; ARCHITECTURE.md
+§5 `render/`). **Local builds only** (dev server, `vite preview`, the bench): `__RENDERER_SWITCH__`
+(vite.config.ts) is off in the release workflow's builds (`DWELL_VERSION` set; force it with
+`DWELL_RENDERER_SWITCH=0|1`), where `?renderer=` is ignored and the mesher draws.
+
+- `?renderer=raster|march|compare` picks the terrain renderer; compare mode puts raster on the left
+  and, by default, the marcher on the right — `?compare=raster` puts raster on **both** sides (the
+  check that compare mode itself adds no difference). The marcher is a placeholder until A3: its
+  side is magenta and its labels say "not built".
+- The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
+  the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
+  render stats.
+- Keys (controls.ts): **F7** cycles split → blink → difference; **F8** blinks (swaps the side
+  shown); in split view drag the divider. A label per side shows its renderer, CPU time, GPU time
+  (`gpu.far`+`gpu.near`, `gpu.right.far`+`.near` for a raster right side, `gpu.march`), GPU memory,
+  scale and upscaler. Compare mode's timings carry both renderers' cost: use the bench for decisions.
+- Difference view: red where one side covers the pixel and the other doesn't, orange where view
+  depth differs by more than 1e-3 relative, yellow where the composited colours differ by ΔE > 2.3,
+  grey (the left side, dimmed) where they agree. The counts are read back:
+  `__dwell.compare().difference` is `{ pixels, coverage, depth, colour }` (a frame or two late).
+- Hooks: `__dwell.renderers()` and `upscalers()` (what the build offers, for `bench --compare`),
+  `renderer()`, `setRenderer(name, compare?)`, `compare()` (view, divider, overlay lines, the
+  difference counts; null outside compare mode), `setCompare(view?, divider?)`.
+
+Zero-difference check (Phase 25's A2 exit): open `?renderer=compare&compare=raster`, then
+`__dwell.setCompare('difference')`; after a frame or two `__dwell.compare().difference` reads 0 in
+every class.
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 
