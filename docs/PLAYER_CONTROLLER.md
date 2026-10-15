@@ -275,8 +275,9 @@ without catching on internal edges (`walking_across_chunk_seams_in_every_directi
 no loss of ground crossing chunk borders in 8 directions). With `f64` positions it is exact anywhere
 in the world, so it needs no regions, anchors or seams between bodies. **Shaped cells** (Phase 18)
 collide as one Parry `TriMesh` per chunk (`FIX_INTERNAL_EDGES`, at the chunk's corner) of their
-derived shapes' faces that no neighbour covers; a chunk's collision reads a two-cell apron and is
-rebuilt when any of the 27 chunks around it changes stamp or revision. Crossing between chunks'
+derived shapes' faces that no neighbour covers; a chunk's collision reads a two-cell apron, and a
+chunk with solid cells is rebuilt when any of the 27 chunks around it changes stamp or revision
+(an empty chunk watches only itself). Crossing between chunks'
 meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_the_ground`).
 - Chunks are added on demand: each tick, `Players::tick` makes sure every chunk within
   `3 m + min(2 ticks of travel, 64 m)` of each player is in the collider. Each loaded chunk keeps
