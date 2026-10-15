@@ -6,7 +6,7 @@
 > in [`ARCHITECTURE.md`](./ARCHITECTURE.md) — §6.1 (the flag, the table as data, the derivation,
 > shapes, terrain collision), §6.3 (spawn on the shaped surface), §6.5 (targeting), §6.6 (the rule
 > on LOD cells) — and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md) §5 and §6.2 (collision,
-> walking, the 56° slope limit). This file keeps the rationale and the tables, as
+> walking; steeper than 44° slides, owner 2026-10-15). This file keeps the rationale and the tables, as
 > [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) does for Phase 9. Outstanding (Phase 18 in
 > `IMPLEMENTATION_PLAN.md`): the two-client e2e, the playground's override export, the owner's walk.
 
@@ -29,7 +29,9 @@ sandbox floor, water and the ladder are not adaptive: a flat build surface stays
 - **One-block-wide shapes are half-height ridges**: a lone block is a half pyramid, a row a ridge
   with end caps, an L a ridge corner, plus T and cross pieces.
 - **A one-wide block against a higher one is a full 45° ramp up to it** (stairs of single
-  blocks are a run of ramps).
+  blocks are a run of ramps). **Owner decision (2026-10-15): faces steeper than 44° are
+  slides** — 45° ramps and ridge flanks and the saddles' 54.74° faces make the player slide, not
+  stairs; stairs will be their own block later. The shapes stay as designed.
 - Steeper ground (2 blocks or more between neighbours) is a cliff: the shaped top blocks meet the
   full cubes below, and the cubes' sides are the cliff face. Where a block sits diagonally below
   another, its side shows between them; that is expected, not a gap.
@@ -127,10 +129,11 @@ their surface is the fan of 8 triangles around the centre, merged into convex po
 facings, upright and hanging, the table appends 191 shapes. Convexity (for Phase 20): the half
 pyramid, ridge and ridge end are convex; the ridge corner, T and cross are not.
 
-Slopes, for walking: the gentle slopes are 26.57°, ramps and the standard pieces 45°, and the
-saddle's and dimple's faces from their crest to a floor corner arctan √2 ≈ **54.74°** — the
-"tetrahedral corner" Phase 9 rejected for placed slopes, which the owner's rules make. The
-controller's slope limit was raised to 56° so all of them are ground (PLAYER_CONTROLLER.md §6.2).
+Slopes, for walking: the gentle slopes are 26.57° (walkable), ramps, ridge flanks and the
+standard pieces 45°, and the saddle's and dimple's faces from their crest to a floor corner
+arctan √2 ≈ **54.74°** — the "tetrahedral corner" Phase 9 rejected for placed slopes, which the
+owner's rules make. Everything steeper than 44° is a slide (owner, 2026-10-15; built on its own
+branch, PLAYER_CONTROLLER.md §6.2).
 
 ## 6. Rationale, prototypes and evidence
 

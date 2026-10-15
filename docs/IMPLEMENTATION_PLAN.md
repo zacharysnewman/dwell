@@ -36,7 +36,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
-| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — started 2026-10-14 (Phase 17 found not to block it; see the phase) |
+| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (built separately) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
 | 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) and for Phase 25's renderer decision (A7, 2026-10-14: cluster rendering is built once, for the chosen renderer) |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
@@ -2346,7 +2346,7 @@ Exit criteria
 ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)), simplified by the baseline (every solid block is
 natural) and with the rule table as data.
 
-**Status:** In progress (started 2026-10-14). Replaces Phase 9e (its original plan stays under Phase 9 for the record). Built on the branch so far: nothing yet (this line is updated as each part lands).
+**Status:** Built and tested natively, in WASM (wasm32-wasip1) and in Vitest (2026-10-15); every deliverable done. Outstanding: the two-client e2e (not run on the branch: the e2e port is shared by other agents), the LOD seam check against chunks, and the owner's walk. A new compatibility line is needed (0.11.0, the owner raises `client/package.json`): the saved voxels, state strings and generated voxels are unchanged, but collision, spawn height and what a seed's terrain is change; the protocol is raised to v13 so that builds which shape differently never connect. Replaces Phase 9e (its original plan stays under Phase 9 for the record). Owner decision (2026-10-15): faces steeper than 44° slide (45° ramps and ridge flanks, saddles); sliding is built separately (`claude/slope-slide`), which owns the tests of steep faces.
 
 Dependencies (checked 2026-10-14): the rework's order puts Phase 18 after Phase 17 (terrain
 definitions, not started) and Phase 16 (not started). Neither blocks the adaptive blocks
@@ -2361,33 +2361,48 @@ LOD slope cases) were removed with the placed families; this phase restores shap
 adaptive blocks, and LOD sloped tops (the LOD mesher's slope pieces were cut too).
 
 Deliverables
-- [ ] **Shapes**: the 12 corner and 6 ridge shapes added to `shapes.mjs` as corner-height data;
-  geometry tests (closure, winding, volume, coverage).
-- [ ] **The table as data** (`shared/blocks/adaptive.json`): generated from the five rules, plus
+- [x] **Shapes**: the 12 corner and 6 ridge shapes added to `shapes.mjs` as corner-height data
+  (ridge shapes as 3 × 3 points); geometry tests (closure, winding, volume, coverage) over every
+  shape (`crates/dwell-blocks/tests/shapes.rs`).
+- [x] **The table as data** (`shared/blocks/adaptive.json`): generated from the five rules, plus
   per-neighbourhood **overrides**; the generator checks shape names and runs the exhaustive no-holes
-  adjacency test; C++ and TS readers from shared vectors.
-- [ ] **The Shape Playground** exports overrides in that format (republished to the same link,
+  adjacency test; a Rust reader from the shared vector (`adaptive_vectors.txt`; deviation below).
+- [x] **The Shape Playground** exports overrides in that format (republished to the same link,
   `docs/prototypes/README.md`).
-- [ ] `"adaptive": true` on grass, dirt, stone and sand (block data).
-- [ ] **Meshing, collision, targeting**: derived shapes in the chunk mesher, terrain collision,
+- [x] `"adaptive": true` on grass, dirt, stone and sand (block data).
+- [x] **Meshing, collision, targeting**: derived shapes in the chunk mesher, terrain collision,
   `RayEnterShape`, `SurfaceHeightAt`; edits re-shape and re-mesh neighbours.
-- [ ] **Terrain and LOD**: point queries, spawn and water read the shaped surface; the rule applied
+- [x] **Terrain and LOD**: point queries, spawn and water read the shaped surface; the rule applied
   on LOD cells; flooded shaped blocks at shores.
-- [ ] Docs: `ARCHITECTURE.md` §6.1, §6.5, §6.6; `ADAPTIVE_BLOCKS.md` reduced to rationale and tables;
+- [x] Docs: `ARCHITECTURE.md` §6.1, §6.5, §6.6; `ADAPTIVE_BLOCKS.md` reduced to rationale and tables;
   ADR 0024 as built.
 
 Exit criteria
-- [ ] The table equals the five rules plus overrides for all 6,561 neighbourhoods, in C++ and TS,
-  and reproduces every block of the owner's playground export.
-- [ ] No holes between any two neighbouring derived shapes at equal height (exhaustive test).
-- [ ] Controller scenarios on every new shape (ridges, saddles, half-and-half corners, 45° ramps; no
-  launches, hops or sliding at rest), native and WASM; the divergence check passes.
+- [x] The table equals the five rules plus overrides for all 6,561 neighbourhoods (node and Rust,
+  from the shared vector), and reproduces every block of the owner's playground export
+  (`adaptive.test.mjs`; `the_game_world_shapes_the_playground_like_the_owner_did`).
+- [x] No holes between any two neighbouring derived shapes at equal height (exhaustive test, in the
+  generator; and the mesher's pairwise test over every shape of the table).
+- [x] Controller scenarios on every new shape (ridges, saddles, half-and-half corners, 45° ramps): no
+  launches or hops walking over them, no sliding at rest on gentle ground, native and WASM; the
+  divergence check passes. (Resting on and climbing faces steeper than 44° moved to the slide work,
+  owner 2026-10-15.)
 - [ ] e2e: placing and breaking natural blocks re-shapes neighbours identically on two clients.
-- [ ] LOD seams against chunks checked; generation and meshing times against Phase 17's.
+- [ ] LOD seams against chunks checked.
+- [x] Generation and meshing times measured (against today's generator, Phase 17 not being built):
+  generation unchanged (the same voxels); chunk meshing ~1.5–2× the cube mesher's time around the
+  seed-7 spawn (21,594 triangles for 108 chunks against 6,358) after merging flat tops; frame
+  unchanged at 60 fps on the Mac (`frame.cpu` ~6 ms, `slopes-near-far`).
 - [ ] Manual: the owner walks the terrain and builds with natural blocks, comparing with the
   Adaptive Block Lab.
 
 Deviations:
+- **The table's source of truth** is `adaptive.json` = the rule set's name plus overrides; the
+  6,561 generated entries are output (`adaptive.gen.rs`, `adaptive_vectors.txt`), not stored in
+  the data file (a file of 6,561 rule-made rows would hide the overrides that are the data).
+- **`sandbox_floor`** (S2a's block, added here with identical lines) is the controller suites' and
+  the cube-mesher tests' cube: every baseline solid is now adaptive.
+- **Protocol v13** (no layout change), so that builds which shape differently never connect.
 - **Readers in Rust only.** The plan says "C++ and TS readers"; since the Rust port (Phase 24,
   ADR 0028) the server, the WASM client, the meshers and the controller are one Rust codebase, so
   one Rust reader serves them all. The TypeScript shell reads block tables only for a debug dump

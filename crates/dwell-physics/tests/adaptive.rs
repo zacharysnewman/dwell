@@ -270,7 +270,14 @@ fn standing_on_every_playground_block_rests_unless_its_ground_slides() {
         match steep {
             Some(true) => {
                 if (w.pos(e) - *s0).length() < 0.05 {
-                    stayed.push(format!("({x},{z})"));
+                    stayed.push(format!(
+                        "({x},{z}) {:?} under {} slope {} grounded {} at {}",
+                        c.state,
+                        c.ground.under_angle,
+                        c.ground.slope_angle,
+                        c.ground.grounded,
+                        w.pos(e)
+                    ));
                 }
                 continue;
             }
@@ -500,10 +507,11 @@ fn a_block_placed_beside_a_standing_player_reshapes_the_ground_without_a_launch(
 }
 
 #[test]
-fn every_slope_the_adaptive_table_makes_is_walkable() {
+fn every_slope_the_adaptive_table_makes_is_ground_and_the_steep_ones_slide() {
     // The steepest faces are the saddle's and the dimple's: from their crest (a raised diagonal)
-    // down to a floor corner, arctan(√2) ≈ 54.74° — the "tetrahedral corner" Phase 9 rejected for
-    // placed slopes, which the owner's rules make. They must be ground the controller stands on.
+    // down to a floor corner, arctan(√2) ≈ 54.74°. They must be ground (which slides): a face
+    // steeper than the slope limit is a wall, and a player rested on a saddle, ungrounded, with
+    // the limit at 50°.
     let mut steepest = 0.0f32;
     for &i in dwell_blocks::ADAPTIVE_UP.iter() {
         let s = &dwell_blocks::SHAPES[usize::from(i)];
@@ -517,11 +525,11 @@ fn every_slope_the_adaptive_table_makes_is_walkable() {
         }
     }
     assert!((steepest - 54.7356).abs() < 0.01, "{steepest}");
-    let limit = dwell_physics::config::PlayerControllerConfig::default()
-        .probes
-        .max_slope_angle;
+    let config = PlayerControllerConfig::default();
+    let limit = config.probes.max_slope_angle;
     assert!(
         steepest < limit - 1.0,
         "{steepest}° against a limit of {limit}°"
     );
+    assert!(steepest > config.slide.min_angle);
 }

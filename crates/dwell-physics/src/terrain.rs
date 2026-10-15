@@ -33,6 +33,9 @@ struct Loaded {
     /// What the mesh was built from (its vertices and triangles), so a rebuild that changes
     /// nothing keeps the collider — and the body's contacts with it.
     mesh_hash: u64,
+    /// It has solid cells, so its collision reads the chunks around it (they are watched); an
+    /// empty chunk's collision is empty whatever its neighbours, so only it is watched.
+    wide: bool,
 }
 
 type Mask = Box<[u64; CHUNK_VOLUME / 64]>;
@@ -49,8 +52,8 @@ pub struct TerrainCollision {
     body: RigidBodyHandle,
     collider: ColliderHandle,
     chunks: HashMap<ChunkCoord, Loaded>,
-    /// Every chunk of the 3 × 3 × 3 around a loaded chunk (a shape reads up to two cells across
-    /// its chunk's border).
+    /// Every chunk a loaded chunk's collision reads (`deps`: a shape reads up to two cells
+    /// across its chunk's border).
     watched: HashMap<ChunkCoord, Watch>,
 }
 
@@ -71,6 +74,11 @@ fn signature(world: &VoxelWorld, c: ChunkCoord) -> (u64, u32) {
     world
         .find(c)
         .map_or((0, 0), |ch| (ch.stamp(), ch.revision()))
+}
+
+/// The chunks a loaded chunk's collision reads: the 27 around it, or (empty) itself.
+fn deps(c: ChunkCoord, wide: bool) -> Vec<ChunkCoord> {
+    if wide { around(c).collect() } else { vec![c] }
 }
 
 fn around(c: ChunkCoord) -> impl Iterator<Item = ChunkCoord> {
@@ -144,7 +152,7 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
     let at = |x: i32, y: i32, z: i32| block[padded(x, y, z)];
     let shape_at =
         |x: i32, y: i32, z: i32| adaptive::shape_at(|dx, dy, dz| at(x + dx, y + dy, z + dz), up);
-    let voxels = *world.read(c).voxels();
+    let voxels = world.read(c).voxels(); // borrowed: a 64 KiB copy overflows a WASM stack
     for (i, &m) in voxels.iter().enumerate() {
         if !info(m).solid {
             continue;
@@ -279,8 +287,10 @@ impl TerrainCollision {
     fn load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) {
         let built = build(world, c);
         let mesh_hash = built.mesh_hash();
+        let wide = built.solid.is_some() || !built.triangles.is_empty();
         let old = self.chunks.remove(&c);
         let fresh = old.is_none();
+        let old_wide = old.as_ref().map(|o| o.wide);
         let (old_solid, old_mesh, old_hash) =
             old.map_or((None, None, 0), |o| (o.solid, o.mesh, o.mesh_hash));
         self.apply(physics, c, old_solid.as_ref(), built.solid.as_ref());
@@ -299,10 +309,14 @@ impl TerrainCollision {
                 solid,
                 mesh,
                 mesh_hash,
+                wide,
             },
         );
-        if fresh {
-            for d in around(c) {
+        if old_wide != Some(wide) {
+            if let Some(w) = old_wide {
+                self.unwatch(c, w);
+            }
+            for d in deps(c, wide) {
                 let (stamp, revision) = signature(world, d);
                 self.watched
                     .entry(d)
@@ -316,6 +330,17 @@ impl TerrainCollision {
         }
     }
 
+    fn unwatch(&mut self, c: ChunkCoord, wide: bool) {
+        for d in deps(c, wide) {
+            if let Some(w) = self.watched.get_mut(&d) {
+                w.users -= 1;
+                if w.users == 0 {
+                    self.watched.remove(&d);
+                }
+            }
+        }
+    }
+
     fn unload(&mut self, physics: &mut Physics, c: ChunkCoord) {
         let Some(old) = self.chunks.remove(&c) else {
             return;
@@ -324,14 +349,7 @@ impl TerrainCollision {
         if let Some(h) = old.mesh {
             physics.w.remove_collider(h);
         }
-        for d in around(c) {
-            if let Some(w) = self.watched.get_mut(&d) {
-                w.users -= 1;
-                if w.users == 0 {
-                    self.watched.remove(&d);
-                }
-            }
-        }
+        self.unwatch(c, old.wide);
     }
 
     /// Makes sure the chunks overlapping the box (world metres) are in the collider.

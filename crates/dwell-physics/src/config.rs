@@ -42,7 +42,9 @@ pub struct Movement {
 pub struct Probes {
     pub ground_probe_margin: f32,
     pub ceiling_probe_margin: f32,
-    /// Degrees: above the steepest face the adaptive shapes make (a saddle's 54.74°, Phase 18).
+    /// Degrees: the steepest ground; steeper faces are walls. Ground steeper than
+    /// `slide.min_angle` slides, so this stays above the steepest face the adaptive shapes make
+    /// (a saddle's 54.74°): at 50° a player rested, ungrounded, on a saddle (§6.8).
     pub max_slope_angle: f32,
 }
 

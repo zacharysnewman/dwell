@@ -555,8 +555,9 @@ as their full cube go into the `Voxels` collider; **shaped cells** — adaptive 
 Phase 18) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
 at the chunk's corner) of the faces of their derived shapes that no neighbour covers. A chunk's
 collision reads its voxels with a two-cell apron (a shape reads the columns around it, and its faces
-are culled against its neighbours' shapes), so it is rebuilt when any of the 27 chunks around it
-changes (each loaded chunk's neighbourhood is watched by stamp and revision). The procedural terrain generator and streaming are built (§6.3), and so
+are culled against its neighbours' shapes), so a chunk with solid cells is rebuilt when any of the
+27 chunks around it changes (watched by stamp and revision; an empty chunk watches only itself),
+and keeps its mesh collider when the rebuild makes the same triangles. The procedural terrain generator and streaming are built (§6.3), and so
 are block edits (§6.5, Phase 3d): the placeable set is the registry's `palette` data (a state's
 `placeable` flag; not air, liquid or indestructible), read from the same generated Rust registry by
 the server and the client.
