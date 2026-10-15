@@ -43,7 +43,7 @@ Output per scenario, in `OUT/<scenario>/`:
   Rust functions appear by name, with their hash suffix).
 - A summary printed as it runs: frame interval percentiles and fps, each per-frame series' mean,
   p95, p99 and max, totals (jobs done, chunks and sections uploaded, bytes, ticks), each job kind's
-  run and queue times, and long tasks.
+  run and queue times, the GPU pass times (`gpu.*`), and long tasks.
 
 ## Scenarios (`client/bench/scenarios.json`)
 
@@ -178,9 +178,12 @@ What is recorded now:
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result was polled (the worker's run, the transfers and the wait for the next frame) |
+| `gpu.far`, `gpu.near`, `gpu.composite`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes, the composite with the lines over it) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
 
 Timer resolution: without cross-origin isolation the browser's clock is coarsened to 0.1 ms, so
-sub-0.1 ms phases read 0 or 0.1.
+sub-0.1 ms phases read 0 or 0.1. Chrome rounds GPU timestamps to 65.536 µs unless it runs with
+`--enable-webgpu-developer-features`, which the bench passes (`--enable-features=WebGPUDeveloperFeatures`
+does not lift the rounding).
 
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
