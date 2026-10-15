@@ -65,8 +65,8 @@ is chosen from its 4 edge neighbours instead:
    a wedge (full 45° ramp) rising to the higher one. Rule 5 is checked before rule 4.
 
 Because the rules only ask "higher, the same, or lower" of 8 neighbours, the shape is a function
-of 3⁸ = 6,561 neighbourhoods. It is **baked into a table** (§4.1) that the C++ server and the
-TypeScript client both read, so collision, prediction and rendering agree exactly. Edges of the
+of 3⁸ = 6,561 neighbourhoods. It is **baked into a table** (§4.1) that the server and the
+client both read (one Rust crate, `dwell-blocks`, ADR 0028), so collision, prediction and rendering agree exactly. Edges of the
 world treat missing neighbours as the same height.
 
 ## 3. Definitions the rules need
@@ -101,8 +101,8 @@ world treat missing neighbours as the same height.
   shapes extend the model to 3 × 3 surface points (corners, edge midpoints, centre) — the form the
   prototypes use; `shapes.mjs` bakes their faces like any other shape.
 - **The rule table.** `shared/blocks/gen.mjs` also bakes the 6,561-entry table (neighbourhood →
-  shape, facing), generated from the five rules in one place, with test vectors for C++ and
-  TypeScript (as the shape table and the registry hash have today).
+  shape, facing), generated from the five rules in one place, with test vectors for the Rust
+  reader in `dwell-blocks` (as the shape table and the registry hash have today).
 - **Registry.** Adaptive blocks keep **only their cube state**: the shape is derived, never
   stored, so no new block states are needed and world files and edits carry the material alone.
   The placed slope and slab families of materials that become adaptive are removed from the
@@ -167,11 +167,11 @@ world treat missing neighbours as the same height.
 
 1. **Shapes and the table.** The 18 new shapes in `shapes.mjs` (corner shapes and the 3 × 3
    surface form), the rule table and its generator, `adaptive` in `dwell.json`, test vectors;
-   C++ and TS readers; geometry tests (closure, winding, volume, coverage) and an exhaustive
+   the `dwell-blocks` reader; geometry tests (closure, winding, volume, coverage) and an exhaustive
    adjacency test that two neighbouring derived shapes never leave a hole at a shared edge of
    equal-height neighbours.
 2. **Meshing, collision, targeting.** Derived shapes in the chunk mesher, terrain collision,
-   `RayEnterShape`, `SurfaceHeightAt`; edits re-mesh neighbours; controller scenarios on every new
+   `ray_enter_shape`, `surface_height_at`; edits re-mesh neighbours; controller scenarios on every new
    shape (walk over ridges, saddles, half-and-half corners, 45° single-block ramps; no launches,
    hops or sliding at rest), native and WASM.
 3. **Registry and building.** Remove the slope/slab families of adaptive materials; palette shape
@@ -182,8 +182,8 @@ world treat missing neighbours as the same height.
 
 ## 6. How it is checked (exit criteria)
 
-- The rule table equals the five rules for all 6,561 neighbourhoods, in C++ and TS, from shared
-  vectors; it reproduces every block of the owner's playground export (`prototypes/`).
+- The rule table equals the five rules for all 6,561 neighbourhoods, in the generator and in
+  `dwell-blocks`, from shared vectors; it reproduces every block of the owner's playground export (`prototypes/`).
 - No holes: for every pair of neighbourhoods that share an edge, the two derived shapes meet
   without a gap wherever both blocks are the same height (exhaustive test).
 - Controller scenarios on every new shape pass natively and in WASM; the divergence check passes.
