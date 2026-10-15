@@ -389,6 +389,22 @@ impl ColumnGrid {
     }
 }
 
+impl ColumnGrid {
+    /// From `to_words`'s words (`None` if too short).
+    pub fn from_words(w: &[u32]) -> Option<Self> {
+        if w.len() < COLUMN_WORDS {
+            return None;
+        }
+        let spans = (0..COLUMN_ENTRIES)
+            .map(|i| {
+                let e = w[i >> 1] >> ((i & 1) * 16);
+                ((e & 0xFF) as u8, ((e >> 8) & 0xFF) as u8)
+            })
+            .collect();
+        Some(Self { spans })
+    }
+}
+
 /// The span of region (rx, rz) of mip m read from a grid's words.
 pub fn column_span(words: &[u32], m: usize, rx: usize, rz: usize) -> (u8, u8) {
     let i = MIP_OFFSET[m] + rx + (32 >> m) * rz;

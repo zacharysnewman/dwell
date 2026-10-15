@@ -22,6 +22,6 @@ pub mod stats;
 
 pub use build::{BuildOptions, NodeBuild, Packing, build_chunk, build_node, build_section};
 pub use march::{Hit, March, MarchParams, Outcome, Ray, face_up, level_for};
-pub use scene::{GpuBuffers, Scene, chunk_node};
+pub use scene::{Dirty, GpuBuffers, Scene, chunk_node};
 pub use state::{MarchClass, StateTable};
 pub use stats::{StepHistogram, StepSummary};

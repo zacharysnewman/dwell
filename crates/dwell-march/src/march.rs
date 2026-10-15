@@ -194,7 +194,9 @@ pub fn level_for(t: f32, p: &MarchParams) -> u32 {
     if footprint < 2.0 {
         return 0;
     }
-    (footprint.log2().floor() as u32).min(MAX_LEVEL)
+    // ⌊log2⌋ from the exponent bits, exactly (the GPU's `log2` is approximate, and a float just
+    // under a power of two can round `log2` up to it): the WGSL marcher computes the same bits.
+    ((footprint.to_bits() >> 23).saturating_sub(127)).min(MAX_LEVEL)
 }
 
 /// The shape hook: whether a ray entering an occupied cell hits it, given its class and the
