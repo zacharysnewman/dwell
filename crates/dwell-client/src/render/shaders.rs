@@ -4,7 +4,7 @@
 //! only its own face's lights), ACES filmic tone mapping with exposure, sRGB encoding, then the
 //! height fog mixed toward the sky's colour in output space, as three's fog was.
 //!
-//! The frame is shared (RAY_MARCHING.md step A1, WATER.md W2): the scene passes write lit, linear
+//! The frame is shared (docs/RAY_MARCHED_RENDERER.md step A1, docs/WATER_RENDERING.md W2): the scene passes write lit, linear
 //! colour (premultiplied by coverage: alpha 0 where nothing is drawn) into an `rgba16float` target
 //! and each opaque fragment's view depth into an `r32float` one; the composite (`composite_fs`)
 //! tone-maps, encodes, fogs by the stored depth and puts the sky behind, into the canvas. Lines are
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn tone_mapping_and_fog_are_only_in_the_composite() {
         // The scene passes write linear colour: their fragment shaders never tone-map, encode or
-        // fog; the composite does all three (RAY_MARCHING.md A1).
+        // fog; the composite does all three (RAY_MARCHED_RENDERER.md A1).
         let src = super::source(4);
         let body = |name: &str| -> String {
             let at = src.find(&format!("fn {name}(")).expect(name);
