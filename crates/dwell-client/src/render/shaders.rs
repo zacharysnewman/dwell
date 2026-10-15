@@ -323,9 +323,27 @@ fn pixel_noise(p: vec2f) -> f32 {
 fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut {
     let draw = draws[i.draw];
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
-    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
-    let edge = max(fwidth(texel.a), 1e-3);
-    var cover = clamp((texel.a - 0.5) / edge + 0.5, 0.0, 1.0);
+    // The mip from the gradients with their anisotropy capped at 2: a quad seen edge-on would
+    // otherwise sample a level so coarse its gaps are covered (coverage-preserving mips fill a
+    // tile's last levels), drawing slivers of solid quad across the view.
+    var gx = dpdx(i.uv) * i.tile.zw;
+    var gy = dpdy(i.uv) * i.tile.zw;
+    let cap = 2.0 * min(length(gx), length(gy));
+    gx *= min(1.0, cap / max(length(gx), 1e-12));
+    gy *= min(1.0, cap / max(length(gy), 1e-12));
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, gx, gy);
+    // Up close the atlas is sampled nearest (crisp texels), which would cut blade edges into
+    // stairs: there the alpha is filtered bilinearly by hand from the four texels around the
+    // sample (level 0), so edges are smooth curves; from afar (a texel under a pixel) the mips'.
+    let size = vec2f(textureDimensions(atlas));
+    let st = atlas_uv * size - 0.5;
+    let f = fract(st);
+    let g = textureGather(3, atlas, atlas_sampler, (floor(st) + 1.0) / size);
+    let smooth_a = mix(mix(g.w, g.z, f.x), mix(g.x, g.y, f.x), f.y);
+    let texels = max(length(dpdx(st)), length(dpdy(st)));
+    let alpha = mix(texel.a, smooth_a, clamp(2.0 - 2.0 * texels, 0.0, 1.0));
+    let edge = max(fwidth(alpha), 1e-3);
+    var cover = clamp((alpha - 0.5) / edge + 0.5, 0.0, 1.0);
     if (i.fade.y > 0.0) {
         cover *= 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
     }
