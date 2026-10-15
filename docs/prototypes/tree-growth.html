@@ -832,7 +832,7 @@ function stage(sk, T, V, t, p) {
       if (!grown[k] || !nodes[k].children.some(c => !grown[c] && !V.pruned[c] && !T.rootish[c] && (!nodes[k].isTrunk || nodes[c].isTrunk))) continue;
       if (T.rootish[k]) continue;
       // A tuft no wider than the leaves the model has on that part of the tree.
-      const r = Math.min(p.tipRadius, Math.max(1, nodes[k].nearReach)) * grow;
+      const r = Math.max(Math.min(p.tipRadius, 1.2), Math.min(p.tipRadius, Math.max(1.5, nodes[k].nearReach)) * grow);
       if (r < 0.5) continue;
       const c = V.medialPos[k];
       const lift = [c[0], c[1] + 0.3, c[2]];
@@ -1287,7 +1287,7 @@ for (const [id, k] of [['j-angle', 'angle'], ['j-length', 'length'], ['j-droop',
   $(id).addEventListener('input', e => { state.jitter[k] = +e.target.value; syncControls(); });
   $(id).addEventListener('change', () => recompute(false));
 }
-$('tool-obstacle').addEventListener('click', () => { tool = !tool; if (tool && state.view !== 'grow') state.view = 'grow'; syncControls(); render(); });
+$('tool-obstacle').addEventListener('click', () => { tool = !tool; if (!tool) ghost.visible = false; if (tool && state.view !== 'grow') state.view = 'grow'; syncControls(); render(); });
 $('obstacle-clear').addEventListener('click', () => { delete state.obstacles[obstacleKey()]; recompute(false); });
 
 // Obstacle placement by clicking (a click, not an orbit drag).
