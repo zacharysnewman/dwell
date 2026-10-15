@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built and A2's bench `--compare` done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: the rest of A2 (the renderer seam and compare mode); local builds only until the owner's decision (A7); `package.json` raised to 0.11.1, a patch release of the 0.11 line; `package.json` raised to 0.11.2, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built, A2's bench `--compare` and A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: the rest of A2 (the renderer seam and compare mode); the rest of A3 (GPU march, brick jobs) outstanding; local builds only until the owner's decision (A7); `package.json` raised to 0.11.3, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) and S2a (floor block, sandbox world type) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
@@ -2581,11 +2581,13 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) and A2's bench `--compare` done; A1 (the shared frame and GPU timing) built, its exit
+**Status:** In progress — A0 (the ADR), A2's bench `--compare` and A3a (the CPU core in `crates/dwell-march`: layout,
+builders, pool, reference marcher) done; A1 (the shared frame and GPU timing) built, its exit
 check outstanding: the bench before/after is done (design doc §7, "A1 as built") and the picture
 differs slightly — antialiased edges, the sea's colour (water now blends in linear light), the
 outline no longer multisampled — which the owner approved (2026-10-14); the e2e suite passes on CI. Next:
-the rest of A2. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+the rest of A2. Outstanding in A3: the GPU march, worker brick jobs, uploads, overlays and
+telemetry (A3b). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2613,9 +2615,16 @@ Deliverables
   the bench item: edit-to-visible latency (needs an edit's sequence carried through the remesh to
   the frame that draws it; `DEV_TOOLS.md` TODO) and image agreement by cell id, face and depth
   (needs the renderers' id and depth buffers; the bench compares colour only).
-- [ ] **A3** — Marched terrain at every distance: the generated GPU state table; brick jobs in the
-  workers for chunks and LOD sections (palette bricks with column max-heights); the pool, allocator
-  and clipmap levels; the CPU reference marcher; the primary march at full resolution with the
+- [x] **A3a** — The CPU core (`crates/dwell-march`, pure Rust, native and `wasm32`): the GPU data
+  layout as `u32` words (clipmap levels and slots, 64-tree nodes, raw and 1/2/4-bit palette bricks,
+  column min-max grids, the state table from the registry's data); the builders (chunk → raw
+  bricks, LOD section → palette bricks, both with column grids and per-empty-brick distances); the
+  pool's size-class allocator and the clipmap levels (CPU side); the CPU reference marcher (integer
+  + fraction ray state, cone LOD, masks, column and brick-distance skips, step cap) with a
+  brute-force oracle; steps-per-ray statistics (`examples/march_steps.rs`).
+- [ ] **A3b** — Marched terrain at every distance on the GPU: the state table, pool and clipmap
+  uploaded (growth by `copy_buffer_to_buffer`); brick jobs in the workers for chunks and LOD
+  sections; the primary march at full resolution (a WGSL port of the reference marcher) with the
   hierarchy's masks and cone LOD; overlays through the `frag_depth` pass; steps-per-ray telemetry.
   `march` mode draws all terrain with no meshes.
 - [ ] **A4** — Empty-space skipping (design doc §4.3): column min-max heights, per-brick empty
@@ -2632,9 +2641,12 @@ Exit criteria
 - [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
   difference. (The owner approved the differences — edges, the sea's colour, the outline — 2026-10-14.)
 - [ ] A2: compare mode runs with raster on both sides and reports zero difference.
-- [ ] A3: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces);
-  the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near and
-  distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
+- [x] A3a: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces)
+  pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
+  without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
+  origin (bit-identical), face B as face A mirrored, a state added by data alone.
+- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near
+  and distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
   report on a desktop.
 - [ ] A4: steps-per-ray p99 down on `look-horizon` and `fly-high`; a comparison report on a desktop
   and a phone.
@@ -2644,6 +2656,16 @@ Exit criteria
 - [ ] A6: a comparison with lighting on and off; the owner's look.
 - [ ] A7: the owner's decision recorded in ADR 0029.
 
+
+Deviations
+- A3 is split into A3a (the CPU core) and A3b (the GPU side), so the finished part can be ticked.
+- Column min-max grids are built for chunks too, not only LOD sections (design doc §4.3 item 3):
+  on generated terrain they cut horizon rays' p99 from 455 to 83 steps for 2.7 KiB a node (the
+  measurements are in the design doc). The CPU reference also has A4's column and brick-distance
+  skips; A4 still needs them, and the rest of its list, on the GPU.
+- Water is its own `Transparent` march class: never occupied for primary rays (it stays a raster
+  pass, W6 later), its ids kept in mixed bricks. Level-0 bricks with shaped cells carry the optional
+  shape plane as a second fixed size class; the shape hook hits the cell's cube until A5.
 ---
 
 ## Phase 26 — Water and Fluid Looks
