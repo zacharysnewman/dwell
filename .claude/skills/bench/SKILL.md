@@ -13,11 +13,19 @@ Full reference: `docs/DEV_TOOLS.md`. Quick path:
 2. Build: `cd client && npm run build:wasm && npm run build`. Rebuild both after any Rust change
    (`npm run build` alone after shell-only changes). A `vite preview` already on :4173 serves the new
    `dist/` without restarting.
-3. Run: `npm run bench -- <scenario…> [--out DIR] [--unthrottled] [--swiftshader] [--file FILE]`.
+3. Run: `npm run bench -- <scenario…> [--out DIR] [--unthrottled] [--swiftshader] [--file FILE]
+   [--base URL]` (`--base` for a build already served, e.g. another worktree's on its own port).
    Put `--out` and throwaway `--file` scenarios in the session's scratchpad, not the repo.
 4. Read the printed summary; for detail, `OUT/<scenario>/report.json` (`records.<name>.ticks` for the
    controller trace, `.frames` for raw per-frame values, `.telemetry.samples` for job timings), the
    PNGs (Read them to see the frame) and `<name>.trace.json` (DevTools Performance).
+
+5. Renderers side by side: `npm run bench -- --compare <scenario…> [--configs a,b]` runs each
+   scenario once per configuration in `client/bench/configs.json` (renderer, scale, upscaler) and
+   writes `OUT/compare.json`, a printed table, and per `shot` a `<shot>.<config>.side.png` (baseline
+   left) and `.diff.png` (ΔE heatmap) with % of pixels over the threshold, mean and max ΔE.
+   Configurations the build can't run (no such renderer from `__dwell.renderers()`; today every
+   `march` one) are skipped with a note. Read the side and diff PNGs to see the difference.
 
 Tips:
 

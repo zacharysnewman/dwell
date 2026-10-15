@@ -88,6 +88,135 @@
         { "do": "wait", "s": 1.5 },
         { "do": "record", "name": "jump" }
       ]
+    },
+    {
+      "name": "look-horizon",
+      "notes": "From the player's eyes at the spawn, looking along the ground 3° below the horizon (heading +X): grazing rays, a ray marcher's worst case (docs/proposals/RAY_MARCHING.md §5).",
+      "split": "far",
+      "steps": [
+        { "do": "look", "yaw": 90, "pitch": -3 },
+        { "do": "settle", "maxS": 120 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "steady" },
+        { "do": "shot", "name": "horizon" }
+      ]
+    },
+    {
+      "name": "look-down",
+      "notes": "From the player's eyes at the spawn, looking 80° down at the ground: short rays, a ray marcher's best case.",
+      "split": "near",
+      "steps": [
+        { "do": "look", "yaw": 90, "pitch": -80 },
+        { "do": "settle", "maxS": 120 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "steady" },
+        { "do": "shot", "name": "down" }
+      ]
+    },
+    {
+      "name": "edit-burst",
+      "notes": "Places and breaks a block in front of the spawn 150 times each (300 edits, about one per 0.12 s, just over the edit interval): the cost of remeshing and uploading edited chunks.",
+      "split": "near",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "select", "slot": 0 },
+        { "do": "look", "yaw": 90, "pitch": -50 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "mark" },
+        {
+          "do": "repeat",
+          "times": 150,
+          "steps": [
+            { "do": "edit", "action": "place" },
+            { "do": "wait", "s": 0.12 },
+            { "do": "edit", "action": "break" },
+            { "do": "wait", "s": 0.12 }
+          ]
+        },
+        { "do": "record", "name": "burst" },
+        { "do": "shot", "name": "after" }
+      ]
+    },
+    {
+      "name": "fly-high",
+      "notes": "Flies up about 540 m (level 8 for 3 s), looks out and down 20° and flies +X for 10 s: far terrain, the LOD's distant levels streaming.",
+      "split": "far",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "fly", "on": true },
+        { "do": "flySpeed", "level": 8 },
+        { "do": "hold", "code": "Space", "s": 3 },
+        { "do": "look", "yaw": 90, "pitch": -20 },
+        { "do": "settle", "maxS": 120 },
+        { "do": "mark" },
+        { "do": "shot", "name": "high" },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 10 },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "record", "name": "flight" },
+        { "do": "shot", "name": "flight-end" }
+      ]
+    },
+    {
+      "name": "thermal-10min",
+      "notes": "Phone-oriented: ten minutes of flight 60 m up at level 4 (at least 44 m/s) round a 660 m square, for thermal throttling: the last minute's frame intervals against the first's. Run it on a phone (or with the device's own heat in mind); it takes over ten minutes.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "fly", "on": true },
+        { "do": "flySpeed", "level": 4 },
+        { "do": "hold", "code": "Space", "s": 1.5 },
+        { "do": "mark" },
+        { "do": "key", "code": "KeyW", "down": true },
+        {
+          "do": "repeat",
+          "times": 1,
+          "steps": [
+            { "do": "look", "yaw": 90, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": 180, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": -90, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": 0, "pitch": -10 },
+            { "do": "wait", "s": 15 }
+          ]
+        },
+        { "do": "record", "name": "first-minute" },
+        {
+          "do": "repeat",
+          "times": 8,
+          "steps": [
+            { "do": "look", "yaw": 90, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": 180, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": -90, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": 0, "pitch": -10 },
+            { "do": "wait", "s": 15 }
+          ]
+        },
+        { "do": "mark" },
+        {
+          "do": "repeat",
+          "times": 1,
+          "steps": [
+            { "do": "look", "yaw": 90, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": 180, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": -90, "pitch": -10 },
+            { "do": "wait", "s": 15 },
+            { "do": "look", "yaw": 0, "pitch": -10 },
+            { "do": "wait", "s": 15 }
+          ]
+        },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "record", "name": "last-minute" },
+        { "do": "shot", "name": "end" }
+      ]
     }
   ]
 }

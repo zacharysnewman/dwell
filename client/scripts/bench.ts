@@ -9,6 +9,9 @@
 //   --swiftshader    software WebGPU (no GPU: CI, Linux sandboxes); default is Chrome on the GPU
 //   --unthrottled    no vsync or frame-rate cap: frame intervals show the frame's real cost
 //   --file FILE      another scenarios file
+//   --compare        each scenario once per renderer configuration, compared (scripts/compare.ts)
+//   --configs A,B    with --compare: these configurations (and the baseline) only
+//   --configs-file F with --compare: another configurations file (default bench/configs.json)
 // Build first: `npm run build:wasm && npm run build`. Per scenario, OUT/<name>/ gets report.json
 // (each `record` step: telemetry summary, raw frames, ticks, long tasks, state), the screenshots and
 // traces; a summary prints as it goes.
@@ -16,9 +19,17 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
+import { compare, type ScenarioReport } from './compare.ts';
+import { supportOf } from './configs.ts';
 import { formatProfile, profileOf, work } from './profile.ts';
-import { parseScenarios, scenarioView, type Scenario, type Step } from './scenarios.ts';
-import { viewStorage, viewUrl } from './views.ts';
+import {
+  parseScenarios,
+  scenarioUrl,
+  scenarioView,
+  type Scenario,
+  type Step,
+} from './scenarios.ts';
+import { viewStorage } from './views.ts';
 
 interface Options {
   names: string[];
@@ -27,6 +38,9 @@ interface Options {
   swiftshader: boolean;
   unthrottled: boolean;
   file: string;
+  compare: boolean;
+  configs: string[];
+  configsFile: string;
 }
 
 function options(argv: string[]): Options {
@@ -37,6 +51,9 @@ function options(argv: string[]): Options {
     swiftshader: false,
     unthrottled: false,
     file: 'bench/scenarios.json',
+    compare: false,
+    configs: [],
+    configsFile: 'bench/configs.json',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -50,6 +67,9 @@ function options(argv: string[]): Options {
     else if (a === '--file') o.file = value();
     else if (a === '--swiftshader') o.swiftshader = true;
     else if (a === '--unthrottled') o.unthrottled = true;
+    else if (a === '--compare') o.compare = true;
+    else if (a === '--configs') o.configs = value().split(',').filter(Boolean);
+    else if (a === '--configs-file') o.configsFile = value();
     else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
     else o.names.push(a);
   }
@@ -66,7 +86,8 @@ async function reachable(url: string): Promise<boolean> {
 
 /** A served build: `--base`, one already on :4173, or `vite preview` started for the run. */
 async function serve(base: string | null): Promise<{ url: string; server: ChildProcess | null }> {
-  if (base) return { url: base.replace(/\/$/, ''), server: null };
+  // The server's root; a base given with the build's path (`…/dwell/`) works too.
+  if (base) return { url: base.replace(/\/$/, '').replace(/\/dwell$/, ''), server: null };
   const url = 'http://localhost:4173';
   if (await reachable(`${url}/dwell/`)) return { url, server: null };
   const server = spawn('npx', ['vite', 'preview', '--port', '4173', '--strictPort'], {
@@ -160,6 +181,8 @@ interface Run {
   dir: string;
   markMs: number;
   records: Record<string, unknown>;
+  /** Each `settle` step's seconds, in order. */
+  settles: number[];
 }
 
 async function record(run: Run, name: string): Promise<void> {
@@ -287,6 +310,7 @@ async function step(run: Run, s: Step): Promise<void> {
         if (quiet !== null && now - quiet >= 1000) break;
         await page.waitForTimeout(100);
       }
+      run.settles.push((Date.now() - start) / 1000);
       console.log(`  settled in ${f((Date.now() - start) / 1000)} s`);
       return;
     }
@@ -312,6 +336,9 @@ async function step(run: Run, s: Step): Promise<void> {
         ],
       });
       return;
+    case 'repeat':
+      for (let i = 0; i < s.times; i++) for (const inner of s.steps) await step(run, inner);
+      return;
     case 'traceStop': {
       const trace = await run.browser.stopTracing();
       writeFileSync(join(run.dir, `${s.name}.trace.json`), trace);
@@ -329,14 +356,14 @@ async function step(run: Run, s: Step): Promise<void> {
   }
 }
 
+/** Runs `sc` in a fresh context into `dir`; `params` add to its page address (`--compare`). */
 async function runScenario(
   browser: Browser,
   base: string,
-  out: string,
+  dir: string,
   sc: Scenario,
-): Promise<void> {
-  console.log(`${sc.name}: ${sc.notes}`);
-  const dir = join(out, sc.name);
+  params: Record<string, string> = {},
+): Promise<ScenarioReport> {
   mkdirSync(dir, { recursive: true });
   const context = await browser.newContext({ viewport: sc.window });
   const page = await context.newPage();
@@ -352,7 +379,8 @@ async function runScenario(
     },
     viewStorage(scenarioView(sc)),
   );
-  await page.goto(viewUrl(`${base}/dwell/`, scenarioView(sc)));
+  const url = scenarioUrl(`${base}/dwell/`, sc, params);
+  await page.goto(url);
   const gpu = await page.evaluate<unknown>(`(async () => {
     const a = await navigator.gpu?.requestAdapter();
     return a ? { ...a.info, vendor: a.info.vendor, architecture: a.info.architecture,
@@ -361,14 +389,25 @@ async function runScenario(
   if (!(await until(page, 'd.state()?.terrainReady === true', 120_000))) {
     throw new Error(`${sc.name}: the game did not start (${errors.join('; ')})`);
   }
-  const run: Run = { page, browser, dir, markMs: 0, records: {} };
-  for (const s of sc.steps) await step(run, s);
-  writeFileSync(
-    join(dir, 'report.json'),
-    `${JSON.stringify({ scenario: sc, gpu, errors, records: run.records }, null, 2)}\n`,
+  // The renderer seam's hooks (docs/DEV_TOOLS.md); a build without them has only `raster`.
+  const support = supportOf(
+    await call(page, `{ renderers: d.renderers?.() ?? null, upscalers: d.upscalers?.() ?? null }`),
   );
+  const run: Run = { page, browser, dir, markMs: 0, records: {}, settles: [] };
+  for (const s of sc.steps) await step(run, s);
+  const report: ScenarioReport = {
+    scenario: sc,
+    gpu,
+    errors,
+    records: run.records,
+    settles: run.settles,
+    url,
+    support,
+  };
+  writeFileSync(join(dir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   if (errors.length) console.log(`  page errors: ${errors.slice(0, 5).join(' | ')}`);
   await context.close();
+  return report;
 }
 
 async function main(): Promise<void> {
@@ -384,10 +423,24 @@ async function main(): Promise<void> {
   const { url, server } = await serve(o.base);
   const browser = await launch(o);
   console.log(
-    `bench: ${url} → ${o.out} (${o.swiftshader ? 'SwiftShader' : 'GPU'}${o.unthrottled ? ', unthrottled' : ''})`,
+    `bench: ${url} → ${o.out} (${o.swiftshader ? 'SwiftShader' : 'GPU'}${o.unthrottled ? ', unthrottled' : ''}${o.compare ? ', compare' : ''})`,
   );
   try {
-    for (const sc of chosen) await runScenario(browser, url, o.out, sc);
+    if (o.compare) {
+      await compare({
+        browser,
+        out: o.out,
+        scenarios: chosen,
+        configsFile: o.configsFile,
+        configNames: o.configs,
+        run: (sc, dir, params) => runScenario(browser, url, dir, sc, params),
+      });
+    } else {
+      for (const sc of chosen) {
+        console.log(`${sc.name}: ${sc.notes}`);
+        await runScenario(browser, url, join(o.out, sc.name), sc);
+      }
+    }
   } finally {
     await browser.close();
     server?.kill();
