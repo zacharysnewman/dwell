@@ -2,6 +2,8 @@
 //! the brick pool. Builds ([`crate::build`]) are placed here; [`Scene::gpu`] gives the words to
 //! upload, and the reference marcher ([`crate::march`]) reads the same structures.
 
+use std::collections::{BTreeMap, HashMap};
+
 use dwell_blocks::StateId;
 use dwell_world::{ChunkCoord, lod};
 
@@ -81,6 +83,11 @@ pub struct Scene {
     column_ids: IndexPool,
     /// Per node: its bricks (offset, words), to free on replace.
     node_bricks: Vec<Vec<(u32, usize)>>,
+    /// Per placed node: the grid rows its occupied cells span (lo, hi exclusive), and per level
+    /// how many nodes reach each bottom and top: the level's occupied rows ([`Scene::rows`]).
+    extents: HashMap<(u32, [i32; 3]), (i32, i32)>,
+    bottoms: Vec<BTreeMap<i32, u32>>,
+    tops: Vec<BTreeMap<i32, u32>>,
     dirty: Dirty,
 }
 
@@ -101,6 +108,9 @@ impl Scene {
             node_ids: IndexPool::default(),
             column_ids: IndexPool::default(),
             node_bricks: Vec::new(),
+            extents: HashMap::new(),
+            bottoms: vec![BTreeMap::new(); LEVEL_COUNT],
+            tops: vec![BTreeMap::new(); LEVEL_COUNT],
             dirty: Dirty {
                 layout: true,
                 ..Dirty::default()
@@ -135,7 +145,8 @@ impl Scene {
                 |lv| lv.info,
             );
             info.slot_base = base;
-            out.extend(info.to_words());
+            let rows = self.rows(l as u32).unwrap_or((i32::MAX, i32::MIN));
+            out.extend(info.to_words_with_rows(rows));
             if let Some(lv) = lv {
                 base += lv.slots.len() as u32;
             }
@@ -265,6 +276,24 @@ impl Scene {
     pub fn put(&mut self, level: u32, n: [i32; 3], build: &NodeBuild) {
         self.reserve(level, n, n);
         self.release(level, n);
+        // The rows its occupied cells span (in this level's cells from the node's bottom).
+        let rows = match build {
+            NodeBuild::Air => None,
+            NodeBuild::Solid(_) => Some((0, NODE_CELLS)),
+            NodeBuild::Node(d) => match &d.columns {
+                Some(cols) => {
+                    let (lo, hi) = cols.span(COLUMN_MIPS - 1, 0, 0);
+                    (lo < hi).then_some((i32::from(lo), i32::from(hi)))
+                }
+                None => Some((0, NODE_CELLS)),
+            },
+        };
+        let y0 = n[1] * NODE_CELLS;
+        self.set_extent(
+            level,
+            n,
+            rows.map(|(lo, hi)| ((y0 + lo) << level, (y0 + hi) << level)),
+        );
         let slot = match build {
             NodeBuild::Air => Slot::AllAir,
             NodeBuild::Solid(s) => Slot::AllSolid(*s),
@@ -312,6 +341,7 @@ impl Scene {
     /// Back to NONE (no data at this level).
     pub fn remove(&mut self, level: u32, n: [i32; 3]) {
         self.release(level, n);
+        self.set_extent(level, n, None);
         let base = self.slot_base(level);
         if let Some(lv) = self.levels[level as usize].as_mut()
             && let Some(i) = lv.info.slot_of(n)
@@ -333,6 +363,38 @@ impl Scene {
         let b = build_section(cells, &self.table);
         self.put(c.level as u32, [c.i, c.j, c.k], &b);
         b
+    }
+
+    fn set_extent(&mut self, level: u32, n: [i32; 3], rows: Option<(i32, i32)>) {
+        let l = level as usize;
+        let dec = |m: &mut BTreeMap<i32, u32>, k: i32| {
+            if let Some(c) = m.get_mut(&k) {
+                *c -= 1;
+                if *c == 0 {
+                    m.remove(&k);
+                }
+            }
+        };
+        if let Some((lo, hi)) = self.extents.remove(&(level, n)) {
+            dec(&mut self.bottoms[l], lo);
+            dec(&mut self.tops[l], hi);
+        }
+        if let Some((lo, hi)) = rows {
+            self.extents.insert((level, n), (lo, hi));
+            *self.bottoms[l].entry(lo).or_default() += 1;
+            *self.tops[l].entry(hi).or_default() += 1;
+        }
+    }
+
+    /// The grid rows level `level`'s occupied cells span (lo, hi exclusive): above `hi` and below
+    /// `lo` its whole box is air (RAY_MARCHED_RENDERER.md §4.3 item 3, the level's own max height).
+    /// `None`: nothing occupied.
+    pub fn rows(&self, level: u32) -> Option<(i32, i32)> {
+        let l = level as usize;
+        Some((
+            *self.bottoms[l].keys().next()?,
+            *self.tops[l].keys().next_back()?,
+        ))
     }
 
     /// The finest level with a box, and the coarsest.
@@ -433,6 +495,10 @@ mod tests {
         assert_eq!(g.levels.len(), LEVEL_COUNT * LEVEL_WORDS);
         assert_eq!(g.slots.len(), 3);
         assert_eq!(s.bounds(), Some(([320; 3], [416, 352, 352])));
+        // Occupied rows: the solid node at y = 10 fills its node's rows.
+        assert_eq!(s.rows(0), Some((320, 352)));
+        s.remove(0, [12, 10, 10]);
+        assert_eq!(s.rows(0), None);
     }
 
     #[test]
@@ -460,8 +526,9 @@ mod tests {
             step(&mut s);
             let d = s.take_dirty();
             let full = s.gpu();
+            // The levels' words (with their occupied rows) go up every frame in the uniforms.
+            mirror.levels = full.levels.clone();
             if d.layout {
-                mirror.levels = full.levels.clone();
                 mirror.slots = full.slots.clone();
             } else {
                 for &i in &d.slots {

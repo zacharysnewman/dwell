@@ -199,6 +199,26 @@ pub fn level_for(t: f32, p: &MarchParams) -> u32 {
     ((footprint.to_bits() >> 23).saturating_sub(127)).min(MAX_LEVEL)
 }
 
+/// The distance (metres) at which the cone LOD moves past level `level`:
+/// `2^(L+1) / (pixel_angle · lod_pixels)`, or [`BAND_END_NONE`] when it never does. The GPU gets
+/// these in the uniforms.
+pub fn band_end(level: u32, p: &MarchParams) -> f32 {
+    let per = p.pixel_angle * p.lod_pixels;
+    if per <= 0.0 || level >= MAX_LEVEL {
+        return BAND_END_NONE;
+    }
+    ((1u32 << (level + 1)) as f32 / per).min(BAND_END_NONE)
+}
+
+/// No band end; also the largest reach a box is clipped to.
+pub const BAND_END_NONE: f32 = 3.0e7;
+
+/// How far (grid cells) a ray with unit direction component `d` moves along its axis by
+/// `band_end`: the half-extent of the box around the eye that holds the ray until then.
+pub fn band_reach(band_end: f32, d: f32) -> i32 {
+    (band_end * d.abs()).floor() as i32
+}
+
 /// The shape hook: whether a ray entering an occupied cell hits it, given its class and the
 /// cell's shape plane entry. Cubes only today: every occupied cell is hit where it is entered.
 /// Analytic shape planes (step A5) go here, testing the ray against the shape from the plane
@@ -456,6 +476,29 @@ impl Scene {
                 let (blo, bhi) = box_of(shr(g, top + 5), top + 5);
                 skip!(blo, bhi)
             };
+            // Above or below everything the level holds: leave its box in one skip.
+            if p.columns
+                && let Some(lv) = &self.levels[l as usize]
+            {
+                let s = l + 5;
+                let llo = lv.info.origin.map(|o| o << s);
+                let lhi: [i32; 3] =
+                    std::array::from_fn(|k| (lv.info.origin[k] + lv.info.dims[k] as i32) << s);
+                // ... within the box around the eye that holds this ray until the cone LOD moves
+                // past the level, so coarser data beyond it is not skipped.
+                let be = band_end(l, p);
+                let r: [i32; 3] = std::array::from_fn(|k| band_reach(be, rm.d[k]));
+                let llo: [i32; 3] = std::array::from_fn(|k| llo[k].max(rm.c[k] - r[k]));
+                let lhi: [i32; 3] = std::array::from_fn(|k| lhi[k].min(rm.c[k] + r[k] + 1));
+                let inside = (0..3).all(|k| g[k] >= llo[k] && g[k] < lhi[k]);
+                let (olo, ohi) = self.rows(l).unwrap_or((i32::MAX, i32::MIN));
+                if inside && g[1] >= ohi {
+                    skip!([llo[0], ohi.max(llo[1]), llo[2]], lhi)
+                }
+                if inside && g[1] < olo {
+                    skip!(llo, [lhi[0], olo.min(lhi[1]), lhi[2]])
+                }
+            }
             let node_shift = l + 5;
             let (nlo, nhi) = box_of(n, node_shift);
             let ni = match slot {

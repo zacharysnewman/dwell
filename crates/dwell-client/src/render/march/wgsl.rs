@@ -41,6 +41,10 @@ pub const FLAG_HISTOGRAM: u32 = 4;
 pub const FLAG_DEBUG: u32 = 8;
 pub const FLAG_DATA: u32 = 16;
 
+/// The hit record's bits (`hit_record`): set on every hit, and for a cell on face B.
+pub const HIT_BIT: u32 = 1 << 31;
+pub const ON_B_BIT: u32 = 1 << 24;
+
 /// The face code of a hit that started inside an occupied cell (no face): `cell_id`'s low bits.
 pub const FACE_NONE: u32 = 6;
 
@@ -90,6 +94,8 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("FLAG_DEBUG", U32(FLAG_DEBUG)),
         ("FLAG_DATA", U32(FLAG_DATA)),
         ("FACE_NONE", U32(FACE_NONE)),
+        ("HIT_BIT", U32(HIT_BIT)),
+        ("ON_B_BIT", U32(ON_B_BIT)),
         ("BIG", F32(BIG)),
         ("MIDPLANE_GRID", I32(midplane_grid as i32)),
         ("ATLAS_SIZE", F32(dwell_mesh::ATLAS_SIZE as f32)),
@@ -151,9 +157,13 @@ fn constant_block() -> String {
 const UNIFORMS: &str = r"
 struct LevelInfo {
     origin: vec3<i32>,
+    occ_hi: i32,
     dims: vec3<u32>,
     slot_base: u32,
     cell_log2: u32,
+    occ_lo: i32,
+    band_end: f32,
+    _pad: u32,
 };
 struct MarchUniforms {
     levels: array<LevelInfo, 20>,
@@ -176,17 +186,31 @@ struct MarchUniforms {
     dbg: u32,
 };
 @group(1) @binding(0) var<uniform> u: MarchUniforms;
+@group(1) @binding(6) var<storage, read> looks: array<u32>;
+
+// The ray through pixel `at` (MarchFrame::ray), unit length.
+fn pixel_ray(at: vec2<u32>) -> vec3<f32> {
+    let size = vec2<f32>(u.size);
+    let ndc = vec2<f32>(
+        (f32(at.x) + 0.5) / size.x * 2.0 - 1.0,
+        1.0 - (f32(at.y) + 0.5) / size.y * 2.0,
+    );
+    return normalize(u.forward + ndc.x * u.tan_x * u.right + ndc.y * u.tan_y * u.up);
+}
+";
+
+/// The march's own bindings: the brick structure, the stats, and its outputs.
+const MARCH_BINDINGS: &str = r"
 @group(1) @binding(1) var<storage, read> slots: array<u32>;
 @group(1) @binding(2) var<storage, read> nodes: array<u32>;
 @group(1) @binding(3) var<storage, read> node_columns: array<u32>;
 @group(1) @binding(4) var<storage, read> columns: array<u32>;
 @group(1) @binding(5) var<storage, read> pool: array<u32>;
-@group(1) @binding(6) var<storage, read> looks: array<u32>;
 @group(1) @binding(7) var<storage, read_write> stats: array<atomic<u32>>;
 
-@group(2) @binding(0) var out_color: texture_storage_2d<rgba16float, write>;
-@group(2) @binding(1) var out_depth: texture_storage_2d<r32float, write>;
-@group(2) @binding(2) var out_id: texture_storage_2d<r32uint, write>;
+@group(2) @binding(0) var out_depth: texture_storage_2d<r32float, write>;
+@group(2) @binding(1) var out_id: texture_storage_2d<r32uint, write>;
+@group(2) @binding(2) var out_hit: texture_storage_2d<r32uint, write>;
 ";
 
 /// The traversal: `march.rs` line for line.
@@ -500,6 +524,24 @@ fn march() -> Result {
         let l = f.l;
         let n = f.n;
         let cell = f.cell;
+        // Above or below everything the level holds: leave its box in one skip, within the box
+        // around the eye that holds the ray until the cone LOD moves past the level.
+        if ((u.flags & FLAG_COLUMNS) != 0u) {
+            let info = u.levels[l];
+            let ls = vec3<u32>(l + 5u);
+            let reach = vec3<i32>(floor(info.band_end * abs(rd)));
+            let llo = max(info.origin << ls, rc - reach);
+            let lhi = min((info.origin + vec3<i32>(info.dims)) << ls, rc + reach + vec3<i32>(1));
+            let inside = all(g >= llo) && all(g < lhi);
+            if (inside && g.y >= info.occ_hi) {
+                skip(vec3<i32>(llo.x, max(info.occ_hi, llo.y), llo.z), lhi);
+                continue;
+            }
+            if (inside && g.y < info.occ_lo) {
+                skip(llo, vec3<i32>(lhi.x, min(info.occ_lo, lhi.y), lhi.z));
+                continue;
+            }
+        }
         let node_shift = vec3<u32>(l + 5u);
         let nlo = n << node_shift;
         let nhi = (n + vec3<i32>(1)) << node_shift;
@@ -651,73 +693,13 @@ fn cell_id(r: Result) -> u32 {
 }
 ";
 
-/// Shading the hit with the shared lighting (the mesher's colours: the chunk mesher's raw colour ×
-/// face tint × atlas texel at level 0, the LOD mesher's linear flat colour × face tint above).
-const SHADE: &str = r"
-fn tint_of(lf: u32) -> vec3<f32> {
-    switch lf {
-        case 2u: { return vec3<f32>(TINT_TOP_R, TINT_TOP_G, TINT_TOP_B); }
-        case 3u: { return vec3<f32>(TINT_BOTTOM_R, TINT_BOTTOM_G, TINT_BOTTOM_B); }
-        case 0u, 1u: { return vec3<f32>(TINT_X_R, TINT_X_G, TINT_X_B); }
-        default: { return vec3<f32>(TINT_Z_R, TINT_Z_G, TINT_Z_B); }
-    }
-}
-
-fn raw_rgb(c: u32) -> vec3<f32> {
-    return vec3<f32>(f32((c >> 16u) & 0xFFu), f32((c >> 8u) & 0xFFu), f32(c & 0xFFu)) / 255.0;
-}
-
-fn linear_rgb(c: u32) -> vec3<f32> {
-    let v = raw_rgb(c);
-    return select(pow((v + 0.055) / 1.055, vec3<f32>(2.4)), v / 12.92, v <= vec3<f32>(0.04045));
-}
-
-fn shade(r: Result) -> vec4<f32> {
-    let p = hit_point(r);
-    var n = -rd;
-    if (r.face < FACE_NONE) {
-        n = vec3<f32>(0.0);
-        n[r.face / 2u] = select(-1.0, 1.0, (r.face & 1u) == 0u);
-    }
-    // The face the player's up sees (march::face_up): world -Y is the top on face B.
+/// The march's entry point: one ray per pixel, its view depth, id and hit record.
+const MARCH_MAIN: &str = r"
+// The hit record the shade pass reads (0: none): HIT_BIT, whether the cell is on face B, the
+// level, the face and the state.
+fn hit_record(r: Result) -> u32 {
     let on_b = (r.cell.y << r.level) < MIDPLANE_GRID;
-    var lf = select(r.face, 2u, r.face == FACE_NONE);
-    if (on_b && (lf == 2u || lf == 3u)) {
-        lf = 5u - lf;
-    }
-    let group = select(1u, select(2u, 0u, lf == 2u), lf == 2u || lf == 3u);
-    let look = r.state * LOOK_WORDS;
-    var albedo: vec3<f32>;
-    if (r.level == 0u) {
-        let tile = (looks[look + 2u] >> (8u * group)) & 0xFFu;
-        // Position in the cell, 0..1 per axis; the mesher's uv in blocks (x/z on tops, z/y on x
-        // sides, x/y on z sides), mirrored up the sides on face B.
-        let q = vec3<f32>(rc - r.cell) + rf + p;
-        let a = select(r.face / 2u, 1u, r.face == FACE_NONE);
-        var st: vec2<f32>;
-        if (a == 1u) {
-            st = vec2<f32>(q.x, q.z);
-        } else if (a == 0u) {
-            st = vec2<f32>(q.z, q.y);
-        } else {
-            st = vec2<f32>(q.x, q.y);
-        }
-        if (on_b && a != 1u) {
-            st.y = 1.0 - st.y;
-        }
-        let cell_xy = vec2<f32>(f32(tile % ATLAS_CELLS), f32(tile / ATLAS_CELLS));
-        let origin = (cell_xy * ATLAS_CELL + ATLAS_GUTTER) / ATLAS_SIZE;
-        let uv = origin + fract(st) * (TILE_TEXELS / ATLAS_SIZE);
-        // The ray cone's footprint in texels, widened by the slant.
-        let slant = max(abs(dot(n, rd)), 0.1);
-        let texels = r.t * u.pixel_angle * TILE_TEXELS / slant;
-        let mip = max(log2(max(texels, 1e-6)), 0.0);
-        let texel = textureSampleLevel(atlas, atlas_sampler, uv, mip);
-        albedo = raw_rgb(looks[look + 1u]) * tint_of(lf) * texel.rgb;
-    } else {
-        albedo = linear_rgb(looks[look + 3u + group]) * tint_of(lf);
-    }
-    return vec4<f32>(lambert(albedo, n, frame.eye.x + p.y), 1.0);
+    return HIT_BIT | select(0u, ON_B_BIT, on_b) | (r.level << 19u) | (r.face << 16u) | r.state;
 }
 
 @compute @workgroup_size(8, 8)
@@ -725,28 +707,23 @@ fn march_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (gid.x >= u.size.x || gid.y >= u.size.y) {
         return;
     }
-    let size = vec2<f32>(u.size);
-    let ndc = vec2<f32>(
-        (f32(gid.x) + 0.5) / size.x * 2.0 - 1.0,
-        1.0 - (f32(gid.y) + 0.5) / size.y * 2.0,
-    );
-    let ray = u.forward + ndc.x * u.tan_x * u.right + ndc.y * u.tan_y * u.up;
-    rd = normalize(ray);
+    rd = pixel_ray(gid.xy);
     rc = u.eye_cell;
     rf = u.eye_frac;
-    rinv = select(vec3<f32>(1.0) / rd, vec3<f32>(0.0), rd == vec3<f32>(0.0));
+    rzero = rd == vec3<f32>(0.0);
+    rinv = select(vec3<f32>(1.0) / rd, vec3<f32>(0.0), rzero);
     rstep = select(vec3<i32>(1), vec3<i32>(-1), rd < vec3<f32>(0.0));
     let r = march();
     let at = vec2<i32>(gid.xy);
     if (r.kind == HIT) {
         let p = hit_point(r);
-        textureStore(out_color, at, shade(r));
         textureStore(out_depth, at, vec4<f32>(dot(p, u.forward), 0.0, 0.0, 0.0));
         textureStore(out_id, at, vec4<u32>(cell_id(r), 0u, 0u, 0u));
+        textureStore(out_hit, at, vec4<u32>(hit_record(r), 0u, 0u, 0u));
     } else {
-        textureStore(out_color, at, vec4<f32>(0.0));
         textureStore(out_depth, at, vec4<f32>(0.0));
         textureStore(out_id, at, vec4<u32>(0u));
+        textureStore(out_hit, at, vec4<u32>(0u));
     }
     if ((u.flags & FLAG_HISTOGRAM) != 0u) {
         let bin = select(min(r.steps, HIST_BINS - 1u), HIST_CAPPED, r.kind == CAP);
@@ -771,10 +748,114 @@ fn march_main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
-/// The whole compute module.
+/// Shading the hits, in a pass of its own so that the march keeps few registers. It uses the
+/// shared lighting and the meshers' colours: the chunk mesher's raw colour × face tint × atlas
+/// texel at level 0, and the LOD mesher's linear flat colour × face tint above. Reads the march's
+/// hit records and view depth; writes the lit linear colour (alpha 1 on a hit, 0 for the sky).
+const SHADE: &str = r"
+@group(2) @binding(0) var out_color: texture_storage_2d<rgba16float, write>;
+@group(2) @binding(1) var hit_in: texture_2d<u32>;
+@group(2) @binding(2) var depth_in: texture_2d<f32>;
+
+fn tint_of(lf: u32) -> vec3<f32> {
+    switch lf {
+        case 2u: { return vec3<f32>(TINT_TOP_R, TINT_TOP_G, TINT_TOP_B); }
+        case 3u: { return vec3<f32>(TINT_BOTTOM_R, TINT_BOTTOM_G, TINT_BOTTOM_B); }
+        case 0u, 1u: { return vec3<f32>(TINT_X_R, TINT_X_G, TINT_X_B); }
+        default: { return vec3<f32>(TINT_Z_R, TINT_Z_G, TINT_Z_B); }
+    }
+}
+
+fn raw_rgb(c: u32) -> vec3<f32> {
+    return vec3<f32>(f32((c >> 16u) & 0xFFu), f32((c >> 8u) & 0xFFu), f32(c & 0xFFu)) / 255.0;
+}
+
+fn linear_rgb(c: u32) -> vec3<f32> {
+    let v = raw_rgb(c);
+    return select(pow((v + 0.055) / 1.055, vec3<f32>(2.4)), v / 12.92, v <= vec3<f32>(0.04045));
+}
+
+// One hit's colour: `h` its record, `rd` its ray, `t` its distance.
+fn shade(h: u32, rd: vec3<f32>, t: f32) -> vec4<f32> {
+    let state = h & 0xFFFFu;
+    let face = (h >> 16u) & 7u;
+    let level = (h >> 19u) & 31u;
+    let on_b = (h & ON_B_BIT) != 0u;
+    let p = t * rd;
+    var n = -rd;
+    if (face < FACE_NONE) {
+        n = vec3<f32>(0.0);
+        n[face / 2u] = select(-1.0, 1.0, (face & 1u) == 0u);
+    }
+    // The face the player's up sees (march::face_up): world -Y is the top on face B.
+    var lf = select(face, 2u, face == FACE_NONE);
+    if (on_b && (lf == 2u || lf == 3u)) {
+        lf = 5u - lf;
+    }
+    let group = select(1u, select(2u, 0u, lf == 2u), lf == 2u || lf == 3u);
+    let look = state * LOOK_WORDS;
+    var albedo: vec3<f32>;
+    if (level == 0u) {
+        let tile = (looks[look + 2u] >> (8u * group)) & 0xFFu;
+        // Position in the cell, 0..1 per axis; the mesher's uv in blocks (x/z on tops, z/y on x
+        // sides, x/y on z sides), mirrored up the sides on face B.
+        let q = u.eye_frac + p;
+        let a = select(face / 2u, 1u, face == FACE_NONE);
+        var st: vec2<f32>;
+        if (a == 1u) {
+            st = vec2<f32>(q.x, q.z);
+        } else if (a == 0u) {
+            st = vec2<f32>(q.z, q.y);
+        } else {
+            st = vec2<f32>(q.x, q.y);
+        }
+        if (on_b && a != 1u) {
+            st.y = 1.0 - st.y;
+        }
+        let cell_xy = vec2<f32>(f32(tile % ATLAS_CELLS), f32(tile / ATLAS_CELLS));
+        let origin = (cell_xy * ATLAS_CELL + ATLAS_GUTTER) / ATLAS_SIZE;
+        let uv = origin + fract(st) * (TILE_TEXELS / ATLAS_SIZE);
+        // The ray cone's footprint in texels, widened by the slant.
+        let slant = max(abs(dot(n, rd)), 0.1);
+        let texels = t * u.pixel_angle * TILE_TEXELS / slant;
+        let mip = max(log2(max(texels, 1e-6)), 0.0);
+        let texel = textureSampleLevel(atlas, atlas_sampler, uv, mip);
+        albedo = raw_rgb(looks[look + 1u]) * tint_of(lf) * texel.rgb;
+    } else {
+        albedo = linear_rgb(looks[look + 3u + group]) * tint_of(lf);
+    }
+    return vec4<f32>(lambert(albedo, n, frame.eye.x + p.y), 1.0);
+}
+
+@compute @workgroup_size(8, 8)
+fn shade_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= u.size.x || gid.y >= u.size.y) {
+        return;
+    }
+    let at = vec2<i32>(gid.xy);
+    let h = textureLoad(hit_in, at, 0).r;
+    if (h == 0u) {
+        textureStore(out_color, at, vec4<f32>(0.0));
+        return;
+    }
+    let rd = pixel_ray(gid.xy);
+    let t = textureLoad(depth_in, at, 0).r / dot(rd, u.forward);
+    textureStore(out_color, at, shade(h, rd, t));
+}
+";
+
+/// The march's compute module (`march_main`).
 pub fn source() -> String {
     format!(
-        "{}\n{}\n{UNIFORMS}\n{MARCH}\n{SHADE}",
+        "{}\n{UNIFORMS}\n{MARCH_BINDINGS}\n{MARCH}\n{MARCH_MAIN}",
+        constant_block()
+    )
+}
+
+/// The shade pass's compute module (`shade_main`).
+pub fn shade_source() -> String {
+    format!(
+        "{}\n{}\n{UNIFORMS}\n{SHADE}",
         constant_block(),
         super::super::shaders::lighting_source()
     )
@@ -796,7 +877,11 @@ mod tests {
     use super::*;
 
     fn module() -> naga::Module {
-        let src = source();
+        parse(&source())
+    }
+
+    fn parse(src: &str) -> naga::Module {
+        let src = src.to_string();
         let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| {
             panic!("WGSL parses: {}", e.emit_to_string(&src));
         });
@@ -813,6 +898,8 @@ mod tests {
     fn the_marcher_module_parses_and_validates() {
         let m = module();
         assert!(m.entry_points.iter().any(|e| e.name == "march_main"));
+        let shade = parse(&shade_source());
+        assert!(shade.entry_points.iter().any(|e| e.name == "shade_main"));
     }
 
     #[test]

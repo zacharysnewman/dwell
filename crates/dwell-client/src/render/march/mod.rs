@@ -44,6 +44,8 @@ pub const MARCH_UNIFORM_WORDS: usize =
 pub const COLOR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 pub const ID: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
+/// The hit records the shade pass reads (`wgsl::hit_record`).
+pub const HIT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 
 /// What the march is asked for.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -106,14 +108,16 @@ impl MarchFrame {
     }
 }
 
-/// The march's outputs at one size: colour, view depth and id (storage textures, sampled by the
-/// composite), and the bind groups over them.
+/// The march's outputs at one size: colour, view depth, id and the hit records the shade pass
+/// reads (storage textures, sampled by the composite), and the bind groups over them.
 pub struct MarchTargets {
     pub size: (u32, u32),
     pub color: (wgpu::Texture, wgpu::TextureView),
     pub depth: (wgpu::Texture, wgpu::TextureView),
     pub id: (wgpu::Texture, wgpu::TextureView),
+    pub hit: (wgpu::Texture, wgpu::TextureView),
     out_group: wgpu::BindGroup,
+    shade_group: wgpu::BindGroup,
     /// `frame::scene_layout(_, 1)`: what the composite reads.
     pub scene: wgpu::BindGroup,
 }
@@ -123,6 +127,7 @@ impl Drop for MarchTargets {
         self.color.0.destroy();
         self.depth.0.destroy();
         self.id.0.destroy();
+        self.hit.0.destroy();
     }
 }
 
@@ -139,6 +144,7 @@ pub struct Marcher {
     pub gpu: GpuScene,
     pub settings: MarchSettings,
     pipeline: wgpu::ComputePipeline,
+    shade_pipeline: wgpu::ComputePipeline,
     /// Kept to rebuild the pipeline from another source (profiling variants, tests).
     #[cfg_attr(not(test), allow(dead_code))]
     pipeline_layout: wgpu::PipelineLayout,
@@ -146,6 +152,7 @@ pub struct Marcher {
     frame_layout: wgpu::BindGroupLayout,
     data_layout: wgpu::BindGroupLayout,
     out_layout: wgpu::BindGroupLayout,
+    shade_layout: wgpu::BindGroupLayout,
     scene_layout: wgpu::BindGroupLayout,
     frame_buffer: wgpu::Buffer,
     frame_group: wgpu::BindGroup,
@@ -271,9 +278,27 @@ impl Marcher {
         let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("march out"),
             entries: &[
+                storage_texture(0, DEPTH),
+                storage_texture(1, ID),
+                storage_texture(2, HIT),
+            ],
+        });
+        let sampled = |binding, sample_type| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Texture {
+                sample_type,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let shade_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("march shade"),
+            entries: &[
                 storage_texture(0, COLOR),
-                storage_texture(1, DEPTH),
-                storage_texture(2, ID),
+                sampled(1, wgpu::TextureSampleType::Uint),
+                sampled(2, wgpu::TextureSampleType::Float { filterable: false }),
             ],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -281,7 +306,19 @@ impl Marcher {
             bind_group_layouts: &[Some(&frame_layout), Some(&data_layout), Some(&out_layout)],
             immediate_size: 0,
         });
-        let pipeline = Self::march_pipeline(&device, &layout, &module);
+        let pipeline = Self::march_pipeline(&device, &layout, &module, "march_main");
+        let shade_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("march shade"),
+            source: wgpu::ShaderSource::Wgsl(wgsl::shade_source().into()),
+        });
+        let shade_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("march shade"),
+                bind_group_layouts: &[Some(&frame_layout), Some(&data_layout), Some(&shade_layout)],
+                immediate_size: 0,
+            });
+        let shade_pipeline =
+            Self::march_pipeline(&device, &shade_pipeline_layout, &shade_module, "shade_main");
         // The shared composite (shaders.rs, one sample per pixel) over the march's targets.
         let scene_layout = super::frame::scene_layout(&device, 1);
         let empty = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -366,11 +403,13 @@ impl Marcher {
             gpu,
             settings: MarchSettings::default(),
             pipeline,
+            shade_pipeline,
             pipeline_layout: layout,
             composite,
             frame_layout,
             data_layout,
             out_layout,
+            shade_layout,
             scene_layout,
             frame_buffer,
             frame_group,
@@ -392,12 +431,13 @@ impl Marcher {
         device: &wgpu::Device,
         layout: &wgpu::PipelineLayout,
         module: &wgpu::ShaderModule,
+        entry: &str,
     ) -> wgpu::ComputePipeline {
         device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("march"),
+            label: Some(entry),
             layout: Some(layout),
             module,
-            entry_point: Some("march_main"),
+            entry_point: Some(entry),
             compilation_options: Default::default(),
             cache: None,
         })
@@ -412,7 +452,8 @@ impl Marcher {
                 label: Some("march variant"),
                 source: wgpu::ShaderSource::Wgsl(source.into()),
             });
-        self.pipeline = Self::march_pipeline(&self.device, &self.pipeline_layout, &module);
+        self.pipeline =
+            Self::march_pipeline(&self.device, &self.pipeline_layout, &module, "march_main");
     }
 
     fn stats_buffer(device: &wgpu::Device, words: usize) -> wgpu::Buffer {
@@ -505,6 +546,7 @@ impl Marcher {
         let color = make(COLOR, "march colour");
         let depth = make(DEPTH, "march depth");
         let id = make(ID, "march id");
+        let hit = make(HIT, "march hit");
         fn view(b: u32, v: &wgpu::TextureView) -> wgpu::BindGroupEntry<'_> {
             wgpu::BindGroupEntry {
                 binding: b,
@@ -514,7 +556,12 @@ impl Marcher {
         let out_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("march out"),
             layout: &self.out_layout,
-            entries: &[view(0, &color.1), view(1, &depth.1), view(2, &id.1)],
+            entries: &[view(0, &depth.1), view(1, &id.1), view(2, &hit.1)],
+        });
+        let shade_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("march shade"),
+            layout: &self.shade_layout,
+            entries: &[view(0, &color.1), view(1, &hit.1), view(2, &depth.1)],
         });
         let scene = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("march scene"),
@@ -526,7 +573,9 @@ impl Marcher {
             color,
             depth,
             id,
+            hit,
             out_group,
+            shade_group,
             scene,
         }
     }
@@ -535,6 +584,12 @@ impl Marcher {
     pub fn uniform_words(&self, frame: &MarchFrame, size: (u32, u32), debug: bool) -> Vec<u32> {
         let s = &self.gpu.scene;
         let mut w = s.level_words();
+        // Each level's band end (dwell_march::band_end), in the level's spare word.
+        let params = self.reference_params(frame, size);
+        for l in 0..dwell_march::layout::LEVEL_COUNT {
+            w[l * dwell_march::layout::LEVEL_WORDS + 10] =
+                dwell_march::band_end(l as u32, &params).to_bits();
+        }
         let ray = dwell_march::Ray::from_world(frame.eye, frame.forward);
         let (top, data) = match s.levels_in_use() {
             Some((_, top)) => (top, true),
@@ -650,15 +705,45 @@ impl Marcher {
         if self.pending.is_some() || debug {
             encoder.clear_buffer(&self.stats, 0, Some(HIST_WORDS as u64 * 4));
         }
+        // The timestamps begin with the march and end with the shade pass.
+        let (begin, end) = match timestamps {
+            Some(w) => (
+                w.beginning_of_pass_write_index
+                    .map(|i| wgpu::ComputePassTimestampWrites {
+                        query_set: w.query_set,
+                        beginning_of_pass_write_index: Some(i),
+                        end_of_pass_write_index: None,
+                    }),
+                w.end_of_pass_write_index
+                    .map(|i| wgpu::ComputePassTimestampWrites {
+                        query_set: w.query_set,
+                        beginning_of_pass_write_index: None,
+                        end_of_pass_write_index: Some(i),
+                    }),
+            ),
+            None => (None, None),
+        };
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("march"),
-                timestamp_writes: timestamps,
+                timestamp_writes: begin,
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.frame_group, &[]);
             pass.set_bind_group(1, self.data_group.as_ref(), &[]);
             pass.set_bind_group(2, &targets.out_group, &[]);
+            let g = wgsl::WORKGROUP;
+            pass.dispatch_workgroups(targets.size.0.div_ceil(g), targets.size.1.div_ceil(g), 1);
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("march shade"),
+                timestamp_writes: end,
+            });
+            pass.set_pipeline(&self.shade_pipeline);
+            pass.set_bind_group(0, &self.frame_group, &[]);
+            pass.set_bind_group(1, self.data_group.as_ref(), &[]);
+            pass.set_bind_group(2, &targets.shade_group, &[]);
             let g = wgsl::WORKGROUP;
             pass.dispatch_workgroups(targets.size.0.div_ceil(g), targets.size.1.div_ceil(g), 1);
         }

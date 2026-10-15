@@ -217,6 +217,11 @@ fn march_perf() {
         ("high (540 m, −20°)", high, 90.0, -20.0),
         ("high side", high, 0.0, -20.0),
     ];
+    // Rounds of every variant in turn: a shared, busy GPU drifts, so compare within a round.
+    let rounds: usize = env("DWELL_PERF_ROUNDS")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let variants: Vec<_> = (0..rounds).flat_map(|_| variants.clone()).collect();
     for (variant, file, bits) in &variants {
         m.set_source(&match file {
             Some(f) => std::fs::read_to_string(f).expect("variant source"),
