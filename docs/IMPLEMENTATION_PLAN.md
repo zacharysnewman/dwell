@@ -1694,7 +1694,7 @@ Exit criteria
 **Goal:** The world extends upward into a **full hemispherical dome over the disc** (radius
 8,192 km, the disc's radius; decided by the owner, 2026-10-05), and the sky inside it is sparsely
 populated with separate floating islands, after the Aether mod's sky-island terrain (landforms
-only — no dungeons or creatures; the owner's spec of it is kept in
+only — no dungeons or creatures; the owner's spec of it was kept in
 `docs/reference/aether-floating-islands.md`, removed in Phase 15), using existing
 blocks only. Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
 
