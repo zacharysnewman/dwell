@@ -36,7 +36,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
-| 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
+| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — started 2026-10-14 (Phase 17 found not to block it; see the phase) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
 | 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) and for Phase 25's renderer decision (A7, 2026-10-14: cluster rendering is built once, for the chosen renderer) |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
@@ -2342,7 +2342,15 @@ Exit criteria
 ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)), simplified by the baseline (every solid block is
 natural) and with the rule table as data.
 
-**Status:** Not started. Replaces Phase 9e (its original plan stays under Phase 9 for the record).
+**Status:** In progress (started 2026-10-14). Replaces Phase 9e (its original plan stays under Phase 9 for the record). Built on the branch so far: nothing yet (this line is updated as each part lands).
+
+Dependencies (checked 2026-10-14): the rework's order puts Phase 18 after Phase 17 (terrain
+definitions, not started) and Phase 16 (not started). Neither blocks the adaptive blocks
+themselves: the shapes, the table, the flag, meshing, collision, targeting and the LOD rule
+read voxels, not the generator. What depends on Phase 17 is only *where* the terrain's point
+queries live: this phase makes spawn and water read the shaped surface in today's interim
+generator (Phase 15's one island), and Phase 17's evaluator must keep doing so (noted there); the
+generation-time comparison is made against today's generator, not Phase 17's.
 
 Note (Phase 15): the shaped-block tests (controller slope scenarios, shape-table rows, mesher and
 LOD slope cases) were removed with the placed families; this phase restores shaped coverage for the
@@ -2374,6 +2382,12 @@ Exit criteria
 - [ ] LOD seams against chunks checked; generation and meshing times against Phase 17's.
 - [ ] Manual: the owner walks the terrain and builds with natural blocks, comparing with the
   Adaptive Block Lab.
+
+Deviations:
+- **Readers in Rust only.** The plan says "C++ and TS readers"; since the Rust port (Phase 24,
+  ADR 0028) the server, the WASM client, the meshers and the controller are one Rust codebase, so
+  one Rust reader serves them all. The TypeScript shell reads block tables only for a debug dump
+  and never derives shapes, so it gets no reader (a TS reader would be dead code).
 
 ---
 
