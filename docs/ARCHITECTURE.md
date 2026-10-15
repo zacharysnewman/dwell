@@ -266,11 +266,12 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   /scripts           site.ts (plan, manifest and size of the Pages site), release.ts (what a release
                      run builds), localSite.ts (a local multi-version site for the e2e tests),
                      shots.ts (screenshots of the named views), views.ts (the views' format and
-                     checks), bench.ts and scenarios.ts (the dev bench, DEV_TOOLS.md); run with
-                     Node's type stripping.
+                     checks), bench.ts and scenarios.ts (the dev bench, DEV_TOOLS.md), compare.ts,
+                     configs.ts, compareReport.ts and compareHtml.ts (the bench's renderer comparison,
+                     `--compare`, and its HTML report); run with Node's type stripping.
   /views             views.json: named views (camera, window, settings) for shots.ts and e2e specs.
-  /bench             scenarios.json: scripted scenarios for the dev bench (bench.ts); out/ (ignored)
-                     gets its reports.
+  /bench             scenarios.json: scripted scenarios for the dev bench (bench.ts); configs.json:
+                     renderer configurations for `--compare`; out/ (ignored) gets its reports.
 /shared/protocol     constants.json (single source of protocol constants) + gen.mjs (→ Rust for
                      dwell-protocol, TS constants for the shell), make_vectors.py (independent
                      reference encoder) → vectors.txt (golden bytes the codec must match).

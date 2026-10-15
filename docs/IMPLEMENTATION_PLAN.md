@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built; outstanding for A1: the owner's approval of the image differences (edges, the sea's colour, the outline), the e2e suite on CI; next: A2; local builds only until the owner's decision (A7) |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built, and A2's bench `--compare`; outstanding for A1: the owner's approval of the image differences (edges, the sea's colour, the outline), the e2e suite on CI; next: the rest of A2; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner's approval of its image differences outstanding); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
@@ -2580,7 +2580,7 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) done; A1 (the shared frame and GPU timing) built, its exit
+**Status:** In progress — A0 (the ADR) and A2's bench `--compare` done; A1 (the shared frame and GPU timing) built, its exit
 check outstanding: the bench before/after is done (design doc §7, "A1 as built") and the picture
 differs slightly — antialiased edges, the sea's colour (water now blends in linear light), the
 outline no longer multisampled — which needs the owner's approval; the e2e suite runs on CI. Next:
@@ -2595,10 +2595,23 @@ Deliverables
   target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved
   to a composite pass; timestamp queries in the telemetry (`gpu.<pass>`); `bench.ts` passes
   `--enable-webgpu-developer-features`. 4× MSAA kept (owner).
+- [x] **A2 bench --compare** — `npm run bench -- --compare <scenario…>` (`scripts/compare.ts`,
+  `configs.ts`, `compareReport.ts`): each scenario once per configuration of
+  `client/bench/configs.json` (renderer, scale, upscaler; checked, a test adds one by data) in fresh
+  pages; `OUT/compare.json`, a printed table, per shot a side-by-side image and a ΔE heatmap
+  (% over the threshold, mean and max), and `OUT/compare.html` (metrics tables, the screenshots side
+  by side, a blink toggle per pair, the heatmaps); configurations the build lacks (from `__dwell.renderers()` /
+  `upscalers()`; today every `march` one) skipped with a note; metrics: frame interval percentiles,
+  dropped frames at 60 Hz, CPU phases, `gpu.*` when present, memory, uploads, streaming, a near/far
+  split. Scenarios' `renderer` (`?renderer=`) and `split` fields, a `repeat` step, and the scenarios
+  `look-horizon`, `look-down`, `edit-burst`, `fly-high`, `thermal-10min` (each run once on a Mac).
 - [ ] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene`, the
   `?renderer=raster|march|compare` switch (a build-time flag keeps it out of deployed builds) and the
-  active renderer in the settings menu and F3; compare mode's split, blink and difference views with
-  an empty "march" side; `npm run bench -- --compare` with the configurations table and report.
+  active renderer in the settings menu and F3; `__dwell.renderers()` / `upscalers()` for the bench;
+  compare mode's split, blink and difference views with an empty "march" side. Also moved here from
+  the bench item: edit-to-visible latency (needs an edit's sequence carried through the remesh to
+  the frame that draws it; `DEV_TOOLS.md` TODO) and image agreement by cell id, face and depth
+  (needs the renderers' id and depth buffers; the bench compares colour only).
 - [ ] **A3** — Marched terrain at every distance: the generated GPU state table; brick jobs in the
   workers for chunks and LOD sections (palette bricks with column max-heights); the pool, allocator
   and clipmap levels; the CPU reference marcher; the primary march at full resolution with the
