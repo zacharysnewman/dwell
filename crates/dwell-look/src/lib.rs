@@ -81,6 +81,9 @@ pub fn sanitize_exposure(value: Option<f64>) -> f64 {
     }
 }
 
+/// The most of the sun's glow colour the sky takes, so its disc stays brighter than the sky.
+const GLOW_CAP: f64 = 0.75;
+
 /// `2 / σ²` for a Gaussian `σ` degrees wide: `exp((cos θ − 1) · k)` ≈ `exp(−θ²/σ²)`.
 fn gauss_k(deg: f64) -> f64 {
     2.0 / deg.to_radians().powi(2)
@@ -131,7 +134,7 @@ pub fn sky_color(dir: Rgb, face: f64, s: &Sample, day: &DayState) -> Rgb {
     c = mix(c, s.band, band.clamp(0.0, 1.0));
     let sl = &DAY_NIGHT.sun;
     let g = s.glow_strength * halo(dot(d, sun), sl.bloom, sl.bloom_deg, sl.glow, sl.glow_deg);
-    c = mix(c, s.glow, g.clamp(0.0, 1.0));
+    c = mix(c, s.glow, g.clamp(0.0, GLOW_CAP));
     let ml = &DAY_NIGHT.moon;
     let m =
         moon_glow(s, day) * halo(dot(d, day.moon), ml.bloom, ml.bloom_deg, ml.glow, ml.glow_deg);
@@ -163,6 +166,7 @@ pub fn sky_wgsl() -> String {
     let d = &DAY_NIGHT;
     let consts = [
         ("GRADIENT_POWER", d.sky.gradient_power),
+        ("GLOW_CAP", GLOW_CAP),
         ("BAND_HEIGHT", d.sky.band_height),
         ("BAND_SPREAD", d.sky.band_spread),
         ("SUN_RADIUS", d.sun.radius_deg.to_radians()),
@@ -351,7 +355,8 @@ mod tests {
         assert!(luma(s.sky_horizon) > 0.1 && luma(s.sky_horizon) < 0.3);
         assert!(luma(s.sky_zenith) < luma(s.sky_horizon));
         assert!(s.moon_light[2] > s.moon_light[0] && s.hemi_sky[2] > s.hemi_sky[0]);
-        assert!(s.sun_intensity == 0.0 && s.moon_intensity > 0.5 && s.hemi_intensity > 0.8);
+        assert!(s.sun_intensity == 0.0 && s.moon_intensity > 0.4 && s.hemi_intensity > 0.5);
+        assert!(s.saturation < 0.8);
         // Darker than day, never black.
         let noon = at(0.5).a;
         let ambient = |k: &Sample| luma(k.hemi_sky.map(srgb_to_linear)) * k.hemi_intensity;

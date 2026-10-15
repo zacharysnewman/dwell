@@ -108,6 +108,8 @@ pub struct Keyframe {
     pub exposure: f64,
     pub stars: f64,
     pub moon_glow: f64,
+    /// The lit scene's colour saturation (1 as is; lower by night, as eyes see moonlight).
+    pub saturation: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -125,7 +127,7 @@ pub struct DayNight {
 pub type Sample = Keyframe;
 
 const COLORS: usize = 9;
-const SCALARS: usize = 9;
+const SCALARS: usize = 10;
 const CHANNELS: usize = COLORS * 3 + SCALARS;
 
 fn colors(k: &Keyframe) -> [Rgb; COLORS] {
@@ -152,6 +154,7 @@ fn scalars(k: &Keyframe) -> [f64; SCALARS] {
         k.exposure,
         k.stars,
         k.moon_glow,
+        k.saturation,
     ]
 }
 
@@ -189,6 +192,7 @@ fn from_channels(c: &[f64; CHANNELS], name: &'static str, sun: f64) -> Sample {
         exposure: s(6),
         stars: s(7).min(1.0),
         moon_glow: s(8),
+        saturation: s(9),
     }
 }
 
@@ -495,7 +499,7 @@ impl DayState {
         put(with(self.moon, self.moon_phase));
         put(with(self.axis, self.solar_deg.to_radians()));
         put(with(v.sky_zenith, 0.0));
-        put(with(v.sky_horizon, 0.0));
+        put(with(v.sky_horizon, v.saturation));
         put(with(v.glow, v.glow_strength));
         put(with(v.band, v.band_strength));
         put(with(v.sun_disc, v.moon_glow * self.moon_lit.max(0.25)));
@@ -524,7 +528,7 @@ struct DaySky {
     moon: vec4f,
     // xyz the sky's turning axis; w the stars' turn (rad)
     axis: vec4f,
-    // The viewer's sky (sRGB): the zenith and horizon colours, the sun's glow and the horizon band
+    // The viewer's sky (sRGB): the zenith and horizon colours (horizon.a: the scene's saturation), the sun's glow and the horizon band
     // toward it (rgb, a strength), the sun's disc (rgb; a the moon's glow strength).
     zenith: vec4f,
     horizon: vec4f,

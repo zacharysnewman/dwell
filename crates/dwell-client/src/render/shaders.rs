@@ -332,7 +332,7 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // The composite: the scene's colour tone-mapped and encoded, fogged by its depth toward the sky
 // of the pixel's view direction (already sRGB; no tone mapping), and over the sky behind — the
 // sky with the sun, moon and stars — by its coverage, so the haze terrain fades into is the colour
-// behind it. Dithered last.
+// behind it. The time of day sets the scene's saturation (lower by moonlight). Dithered last.
 @fragment
 fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     let p = vec2i(i.clip.xy);
@@ -343,7 +343,9 @@ fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     var out = back;
     if (c.a > 0.0) {
         let ray = view_ray(i.ndc);
-        let shown = mix(display(c.rgb / c.a), haze, fog_amount(ray * scene_depth_at(p).x));
+        let lit = display(c.rgb / c.a);
+        let toned = mix(vec3f(dot(lit, vec3f(0.2126, 0.7152, 0.0722))), lit, frame.day.horizon.a);
+        let shown = mix(toned, haze, fog_amount(ray * scene_depth_at(p).x));
         out = mix(back, shown, min(c.a, 1.0));
     }
     return vec4f(out + dither(p), 1.0);

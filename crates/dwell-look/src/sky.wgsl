@@ -36,7 +36,8 @@ fn dwell_sky(dir: vec3f, face: f32, day: DaySky) -> vec3f {
     let band = day.band.a * pow(max(toward, 1e-6), BAND_SPREAD) * (1.0 - smoothstep(0.0, BAND_HEIGHT, e));
     c = mix(c, day.band.rgb, clamp(band, 0.0, 1.0));
     let g = day.glow.a * dwell_halo(dot(d, sun), SUN_BLOOM, SUN_BLOOM_K, SUN_GLOW, SUN_GLOW_K);
-    c = mix(c, day.glow.rgb, clamp(g, 0.0, 1.0));
+    // Capped, so the sun's disc stays brighter than the sky around it.
+    c = mix(c, day.glow.rgb, clamp(g, 0.0, GLOW_CAP));
     let m = day.disc.a * dwell_halo(dot(d, day.moon.xyz), MOON_BLOOM, MOON_BLOOM_K, MOON_GLOW, MOON_GLOW_K);
     return mix(c, MOON_GLOW_COLOR, clamp(m, 0.0, 1.0));
 }
@@ -160,7 +161,7 @@ fn dwell_sun_disc(dir: vec3f, up: vec3f, day: DaySky, px: f32) -> vec4f {
     let mu = sqrt(max(1.0 - r * r, 0.0));
     let limb = 1.0 - SUN_LIMB * (1.0 - mu);
     let edge = 1.0 - smoothstep(1.0 - px / radius, 1.0 + px / radius, r);
-    let core = mix(day.disc.rgb, vec3f(1.0), 0.45 * mu * mu);
+    let core = mix(day.disc.rgb, vec3f(1.0), 0.45 + 0.5 * mu * mu);
     return vec4f(core * limb, edge);
 }
 
@@ -174,13 +175,16 @@ fn dwell_sky_bodies(dir: vec3f, face: f32, day: DaySky, base: vec3f) -> vec3f {
     if (shown <= 0.0) {
         return base;
     }
+    // The moon's lit part hides its own glow behind it; its dark part shows the sky (and hides
+    // the stars).
     let moon = dwell_moon(dir, day, px);
-    var c = base + moon.rgb;
+    var c = mix(base, max(base, base * 0.4 + moon.rgb), moon.w);
     let vis = day.stars.x * smoothstep(0.0, STAR_FADE, e) * (1.0 - smoothstep(0.08, 0.4, dwell_luma(base)));
     if (vis > 0.001) {
         c += dwell_stars(dir, day) * vis * (1.0 - moon.w);
     }
+    // Never darker than the sky behind it.
     let sun = dwell_sun_disc(dir, up, day, px);
-    c = mix(c, sun.rgb, sun.w);
+    c = mix(c, max(c, sun.rgb), sun.w);
     return mix(base, min(c, vec3f(1.0)), shown);
 }

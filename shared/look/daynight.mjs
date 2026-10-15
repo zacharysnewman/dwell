@@ -70,6 +70,7 @@ const KEYFRAME = {
   exposure: [0.25, 4],
   stars: [0, 1],
   moonGlow: [0, 2],
+  saturation: [0, 1.5],
 };
 
 const snake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
