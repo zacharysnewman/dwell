@@ -1,10 +1,12 @@
 //! How block states are drawn (`client/src/world/materials.ts`): each state's look, colour,
-//! opacity, textures, ladder face, shape and flooding, read from the generated registry
+//! opacity, textures, ladder face, shape, flooding and fluid, read from the generated registry
 //! (`dwell-blocks`), with the TS fallback for ids the registry does not know (a magenta cube).
 
 use std::sync::OnceLock;
 
-use dwell_blocks::{Facing, SHAPES, STATES, ShapeInfo, StateId, Textures};
+use dwell_blocks::{
+    FLUIDS, Facing, FluidInfo, SHAPES, STATES, ShapeInfo, StateId, StateInfo, Textures,
+};
 
 /// The look a state is drawn with (the registry's `look` name).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,7 +14,8 @@ pub(crate) enum Look {
     Cube,
     Shaped,
     Ladder,
-    Water,
+    /// A fluid's look (`"look": "fluid"`): its parameters are the state's `fluid`.
+    Fluid,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -27,6 +30,8 @@ pub(crate) struct MaterialStyle {
     /// Index into `SHAPES`.
     pub shape: usize,
     pub flooded: bool,
+    /// Fluids: how far below the cell's top its surface is drawn, in cells (0 otherwise).
+    pub surface_drop: f64,
 }
 
 /// The full cube's shape: what a full face is tested against.
@@ -41,12 +46,13 @@ fn cube_index() -> usize {
         .expect("the shape table has a full cube")
 }
 
-fn style_of_state(i: usize) -> MaterialStyle {
-    let s = &STATES[i];
+/// The style of a state row, with `fluids` the table its `fluid` indexes (the build's, or a test
+/// registry's).
+pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     let look = match s.look {
         "shaped" => Look::Shaped,
         "ladder" => Look::Ladder,
-        "water" => Look::Water,
+        "fluid" => Look::Fluid,
         // 'cube', and any look the meshers do not know: a full cube.
         _ => Look::Cube,
     };
@@ -70,6 +76,10 @@ fn style_of_state(i: usize) -> MaterialStyle {
         },
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
+        surface_drop: s
+            .fluid
+            .and_then(|f| fluids.get(usize::from(f)))
+            .map_or(0.0, |f| f.surface_drop),
     }
 }
 
@@ -78,7 +88,7 @@ const UNKNOWN_COLOR: u32 = 0xff00ff;
 /// The style of state `id`.
 pub(crate) fn material_style(id: StateId) -> MaterialStyle {
     static STYLES: OnceLock<Vec<MaterialStyle>> = OnceLock::new();
-    let styles = STYLES.get_or_init(|| (0..STATES.len()).map(style_of_state).collect());
+    let styles = STYLES.get_or_init(|| STATES.iter().map(|s| style_of(s, &FLUIDS)).collect());
     styles
         .get(usize::from(id))
         .copied()
@@ -90,6 +100,7 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             ladder_face: None,
             shape: cube_index(),
             flooded: false,
+            surface_drop: 0.0,
         })
 }
 
