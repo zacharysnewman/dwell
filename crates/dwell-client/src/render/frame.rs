@@ -10,7 +10,12 @@
 //!   between them and holds each pass's own projection. WebGPU can't resolve `r32float`, so it is
 //!   multisampled like the scene and stored; readers load its samples (the composite averages the
 //!   covered ones). The depth buffer itself stays attachment-only and discarded.
-//! - **Depth buffer**: `depth32float`, as before.
+//! - **Depth buffer**: `depth32float`, as before. Stored between a pass's opaque and water halves
+//!   when the water reads the scene.
+//! - **Under-water copy** (W3, Medium and High water only): `rgba16float`, single-sample, a copy of
+//!   the resolved colour taken after each scene pass's opaque draws, which that pass's water
+//!   samples (refraction, absorption) while it draws over the colour. With the view depth (read,
+//!   not attached, in the water half) it is the water's group 2 (`under_layout`).
 
 pub const HDR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 pub const VIEW_DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
@@ -39,10 +44,65 @@ pub fn scene_pass_ops(pass: usize, passes: usize, samples: u32) -> PassOps {
 }
 
 /// GPU memory per drawing-buffer pixel (`RenderStats::screen_bytes`): per sample the colour (8),
-/// view depth (4) and depth (4); the resolved colour (8) with MSAA; the canvas's two buffers (8).
-pub fn bytes_per_pixel(samples: u32) -> u64 {
+/// view depth (4) and depth (4); the resolved colour (8) with MSAA; the under-water copy (8) when
+/// the water reads the scene; the canvas's two buffers (8).
+pub fn bytes_per_pixel(samples: u32, under: bool) -> u64 {
     let samples = u64::from(samples);
-    samples * (8 + 4 + 4) + if samples > 1 { 8 } else { 0 } + 8
+    samples * (8 + 4 + 4) + if samples > 1 { 8 } else { 0 } + if under { 8 } else { 0 } + 8
+}
+
+/// How a scene pass is split when its water reads the scene (W3): the opaque half keeps its
+/// colour (and resolves it for the copy) and its depth for the water half, which loads both and
+/// ends as the whole pass would have.
+pub fn split_pass_ops(pass: usize, passes: usize, samples: u32) -> (PassOps, PassOps) {
+    let whole = scene_pass_ops(pass, passes, samples);
+    let opaque = PassOps {
+        clear: whole.clear,
+        resolve: samples > 1,
+        store_colour: true,
+    };
+    let water = PassOps {
+        clear: false,
+        ..whole
+    };
+    (opaque, water)
+}
+
+/// The water's view of the scene when it reads it (group 2 of the water pipeline that does; W3):
+/// the under-water copy (filtered), the view depth (as `scene_layout`'s) and a linear sampler.
+/// Same bindings as the composite's, so the shader module declares them once.
+pub fn under_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("under"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: samples > 1,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
 }
 
 /// The composite's and lines' view of the scene targets (group 2): the resolved colour and the
@@ -76,6 +136,8 @@ pub struct Targets {
     pub depth: Target,
     /// `colour` and `view_depth` for the composite and lines (`scene_layout`).
     pub scene: wgpu::BindGroup,
+    /// The under-water copy and its bind group (`under_layout`), when the water reads the scene.
+    pub under: Option<(Target, wgpu::BindGroup)>,
 }
 
 impl Targets {
@@ -84,6 +146,7 @@ impl Targets {
         (width, height): (u32, u32),
         samples: u32,
         layout: &wgpu::BindGroupLayout,
+        under: Option<(&wgpu::BindGroupLayout, &wgpu::Sampler)>,
     ) -> Self {
         let make = |format, label, samples, usage| {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -106,7 +169,16 @@ impl Targets {
         let attach = wgpu::TextureUsages::RENDER_ATTACHMENT;
         let read = attach | wgpu::TextureUsages::TEXTURE_BINDING;
         let colour_ms = (samples > 1).then(|| make(HDR, "colour (multisampled)", samples, attach));
-        let colour = make(HDR, "colour", 1, read);
+        let colour = make(
+            HDR,
+            "colour",
+            1,
+            if under.is_some() {
+                read | wgpu::TextureUsages::COPY_SRC
+            } else {
+                read
+            },
+        );
         let view_depth = make(VIEW_DEPTH, "view depth", samples, read);
         let depth = make(DEPTH, "depth", samples, attach);
         let scene = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -123,12 +195,40 @@ impl Targets {
                 },
             ],
         });
+        let under = under.map(|(layout, sampler)| {
+            let copy = make(
+                HDR,
+                "under-water copy",
+                1,
+                wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            );
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("under"),
+                layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&copy.1),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&view_depth.1),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                ],
+            });
+            (copy, group)
+        });
         Self {
             colour_ms,
             colour,
             view_depth,
             depth,
             scene,
+            under,
         }
     }
 
@@ -146,6 +246,9 @@ impl Drop for Targets {
         self.colour.0.destroy();
         self.view_depth.0.destroy();
         self.depth.0.destroy();
+        if let Some(((t, _), _)) = &self.under {
+            t.destroy();
+        }
     }
 }
 
@@ -188,7 +291,23 @@ mod tests {
 
     #[test]
     fn screen_memory_counts_every_target() {
-        assert_eq!(bytes_per_pixel(4), 4 * 16 + 8 + 8);
-        assert_eq!(bytes_per_pixel(1), 16 + 8);
+        assert_eq!(bytes_per_pixel(4, false), 4 * 16 + 8 + 8);
+        assert_eq!(bytes_per_pixel(1, false), 16 + 8);
+        assert_eq!(bytes_per_pixel(4, true), 4 * 16 + 8 + 8 + 8);
+    }
+
+    #[test]
+    fn a_split_pass_keeps_what_its_water_half_reads_and_ends_as_the_whole_pass() {
+        for samples in [1, 4] {
+            for pass in 0..2 {
+                let whole = scene_pass_ops(pass, 2, samples);
+                let (opaque, water) = split_pass_ops(pass, 2, samples);
+                assert_eq!(opaque.clear, whole.clear, "the opaque half starts the pass");
+                assert!(opaque.store_colour, "the water half loads it");
+                assert_eq!(opaque.resolve, samples > 1, "resolved for the copy");
+                assert!(!water.clear);
+                assert_eq!((water.resolve, water.store_colour), (whole.resolve, whole.store_colour));
+            }
+        }
     }
 }

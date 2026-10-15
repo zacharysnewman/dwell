@@ -11,7 +11,10 @@ export interface Fluid {
   waveScale: number;
   flowSpeed: number;
   foam: { depth: number; color: string };
-  caustics: number;
+  caustics: { strength: number; scale: number; depth: number };
+  scattering: number;
+  refraction: number;
+  sparkle: number;
 }
 export function checkFluid(name: string, f: unknown, namespace?: string): Fluid;
 export function readFluids(namespaces: readonly { namespace: string; fluids?: Record<string, unknown> }[]): Fluid[];

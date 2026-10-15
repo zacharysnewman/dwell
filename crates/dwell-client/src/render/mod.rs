@@ -393,6 +393,11 @@ pub struct Renderer {
     /// The scene targets as the composite and lines read them (`frame::scene_layout`).
     scene_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
+    /// The water that reads the scene (W3, Medium and High): its pipeline, drawn in each scene
+    /// pass's water half, and its view of the scene (`frame::under_layout`) with the sampler.
+    water_scene_pipeline: wgpu::RenderPipeline,
+    under_layout: wgpu::BindGroupLayout,
+    under_sampler: wgpu::Sampler,
     /// GPU pass timing, when the device has timestamp queries (`timing.rs`).
     timer: Option<GpuTimer>,
     frame_buffers: [wgpu::Buffer; 2],
@@ -536,6 +541,19 @@ impl Renderer {
             bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout), Some(&scene_layout)],
             immediate_size: 0,
         });
+        // The water that reads the scene behind it (W3): the under-water copy and the view depth.
+        let under_layout = frame::under_layout(&device, samples);
+        let water_scene_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("water (scene)"),
+            bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout), Some(&under_layout)],
+            immediate_size: 0,
+        });
+        let under_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("under"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         // One interleaved buffer per mesh (`interleave`): (stride, attributes at their offsets).
         let attrs = |locations: &[(u32, u32)]| -> (u64, Vec<wgpu::VertexAttribute>) {
             let mut offset = 0u64;
@@ -654,6 +672,53 @@ impl Renderer {
             });
             pipelines.insert((kind, water, no_depth), pipeline);
         }
+        // The water that reads the scene: drawn in a pass's water half, which attaches the colour
+        // and the depth buffer only (the view depth is read, not written). Its output is the whole
+        // view through the surface (alpha 1, except seen from below).
+        let fluid_buffers = [Some(wgpu::VertexBufferLayout {
+            array_stride: fluid_attrs.0,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &fluid_attrs.1,
+        })];
+        let water_scene_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("water_scene_fs"),
+            layout: Some(&water_scene_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("fluid_vs"),
+                compilation_options: Default::default(),
+                buffers: &fluid_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("water_scene_fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: HDR,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
+            multiview_mask: None,
+            cache: None,
+        });
         // The composite: a full-screen triangle into the canvas.
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("composite"),
@@ -741,6 +806,9 @@ impl Renderer {
             pipelines,
             scene_layout,
             composite_pipeline,
+            water_scene_pipeline,
+            under_layout,
+            under_sampler,
             timer,
             frame_buffers,
             frame_groups,
@@ -1041,7 +1109,8 @@ impl Renderer {
             .sum();
         RenderStats {
             mesh_bytes,
-            screen_bytes: pixels * frame::bytes_per_pixel(self.samples),
+            screen_bytes: pixels
+                * frame::bytes_per_pixel(self.samples, self.water_quality.reads_scene()),
             pixel_ratio: self.pixel_ratio,
             ..self.stats
         }
@@ -1105,6 +1174,9 @@ impl Renderer {
         let tan_y = (fov.to_radians() / 2.0).tan();
         put(&[(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0]);
         put(&water_uniform(self.eye_fluid, self.water_quality));
+        // The eye's x and z wrapped for the water's detail (the composite's caustics under it).
+        let [wx, wz] = water::wrapped_origin(self.eye);
+        put(&[wx, wz, 0.0, 0.0]);
         u
     }
 
@@ -1363,14 +1435,22 @@ impl Renderer {
     }
 
     fn ensure_targets(&mut self) {
-        if self.targets.is_some() {
+        let under = self.water_quality.reads_scene();
+        if self
+            .targets
+            .as_ref()
+            .is_some_and(|t| t.under.is_some() == under)
+        {
             return;
         }
+        // Dropped first: its textures are destroyed before the new ones are made.
+        self.targets = None;
         self.targets = Some(Targets::new(
             &self.device,
             self.size,
             self.samples,
             &self.scene_layout,
+            under.then_some((&self.under_layout, &self.under_sampler)),
         ));
     }
 
@@ -1435,56 +1515,16 @@ impl Renderer {
         let (mut calls, mut triangles) = (0u32, 0u64);
         let mut slot = 0u64;
         let scene_passes = passes.len();
+        let reads_scene = self.water_quality.reads_scene();
         // The scene passes (far, near) into the frame's targets, then the composite into `target`
-        // with the lines over it.
+        // with the lines over it. With water that reads the scene (W3), a pass with water is split:
+        // its opaque half (colour resolved), a copy of the colour, then its water half, which
+        // samples the copy and the view depth.
         for (i, pass_draws) in draws.iter().enumerate() {
-            let timestamp_writes = self.timer.as_ref().and_then(|t| t.writes(i));
-            let mut pass = if i < scene_passes {
-                let ops = frame::scene_pass_ops(i, scene_passes, self.samples);
-                let clear_or_load = if ops.clear {
-                    wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
-                } else {
-                    wgpu::LoadOp::Load
-                };
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some(if i == 0 { "far" } else { "near" }),
-                    color_attachments: &[
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: targets.scene_colour(),
-                            depth_slice: None,
-                            resolve_target: ops.resolve.then_some(&targets.colour.1),
-                            ops: wgpu::Operations {
-                                load: clear_or_load,
-                                store: if ops.store_colour {
-                                    wgpu::StoreOp::Store
-                                } else {
-                                    wgpu::StoreOp::Discard
-                                },
-                            },
-                        }),
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &targets.view_depth.1,
-                            depth_slice: None,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: clear_or_load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                    ],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &targets.depth.1,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Discard,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes,
-                    ..Default::default()
-                })
-            } else {
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let first_slot = slot;
+            slot += pass_draws.len() as u64;
+            if i == scene_passes {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("composite"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: target,
@@ -1495,50 +1535,77 @@ impl Renderer {
                             store: wgpu::StoreOp::Store,
                         },
                     })],
-                    timestamp_writes,
+                    timestamp_writes: self.timer.as_ref().and_then(|t| t.writes(i)),
                     ..Default::default()
-                })
-            };
-            // The composite and lines use the near pass's uniforms.
-            pass.set_bind_group(0, &self.frame_groups[i.min(scene_passes - 1)], &[]);
-            pass.set_bind_group(1, &self.draw_group, &[]);
-            let mut bound: Option<(Kind, bool, bool)> = None;
-            let mut bound_page: Option<(usize, usize)> = None;
-            if i == scene_passes {
+                });
+                // The composite and lines use the near pass's uniforms.
+                pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
                 pass.set_bind_group(2, &targets.scene, &[]);
                 pass.set_pipeline(&self.composite_pipeline);
                 pass.draw(0..3, 0..1);
                 calls += 1;
+                self.record(&mut pass, &arena, pass_draws, first_slot, false, &mut calls, &mut triangles);
+                continue;
             }
-            for d in pass_draws {
-                let instance = slot as u32;
-                slot += 1;
-                let (mesh, ranges) = self.mesh_of(&d.mesh);
-                // Each WebGPU call crosses from WASM to JS: set only what changes.
-                let key = (d.kind, d.water, d.no_depth);
-                if bound != Some(key) {
-                    pass.set_pipeline(&self.pipelines[&key]);
-                    bound = Some(key);
-                }
-                // A page holds many meshes: bound once for the draws from it in a row.
-                let page = (mesh.region.format, mesh.region.page);
-                if bound_page != Some(page) {
-                    let buffer = arena.buffer(page.0, page.1);
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    bound_page = Some(page);
-                }
-                for r in merge_ranges(ranges) {
-                    triangles += u64::from(r.len() as u32 / 3);
-                    let first = mesh.first_index;
-                    pass.draw_indexed(
-                        first + r.start..first + r.end,
-                        mesh.base_vertex,
-                        instance..instance + 1,
-                    );
-                    calls += 1;
-                }
+            let split = reads_scene
+                .then(|| pass_draws.iter().position(|d| d.water))
+                .flatten();
+            let ops = frame::scene_pass_ops(i, scene_passes, self.samples);
+            let Some(at) = split else {
+                let mut pass = Self::scene_pass(
+                    &mut encoder,
+                    targets,
+                    i,
+                    ops,
+                    false,
+                    self.timer.as_ref().and_then(|t| t.writes(i)),
+                );
+                pass.set_bind_group(0, &self.frame_groups[i], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                self.record(&mut pass, &arena, pass_draws, first_slot, false, &mut calls, &mut triangles);
+                continue;
+            };
+            let (opaque_ops, water_ops) = frame::split_pass_ops(i, scene_passes, self.samples);
+            let writes = self.timer.as_ref().and_then(|t| t.writes(i));
+            let (begin, end) = match writes {
+                Some(w) => (
+                    Some(wgpu::RenderPassTimestampWrites {
+                        end_of_pass_write_index: None,
+                        ..w.clone()
+                    }),
+                    Some(wgpu::RenderPassTimestampWrites {
+                        beginning_of_pass_write_index: None,
+                        ..w
+                    }),
+                ),
+                None => (None, None),
+            };
+            {
+                let mut pass = Self::scene_pass(&mut encoder, targets, i, opaque_ops, true, begin);
+                pass.set_bind_group(0, &self.frame_groups[i], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                self.record(&mut pass, &arena, &pass_draws[..at], first_slot, false, &mut calls, &mut triangles);
             }
+            let (copy, under) = targets.under.as_ref().expect("reads_scene targets");
+            encoder.copy_texture_to_texture(
+                targets.colour.0.as_image_copy(),
+                copy.0.as_image_copy(),
+                copy.0.size(),
+            );
+            let mut pass = Self::water_pass(&mut encoder, targets, water_ops, end);
+            pass.set_bind_group(0, &self.frame_groups[i], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
+            pass.set_bind_group(2, under, &[]);
+            self.record(
+                &mut pass,
+                &arena,
+                &pass_draws[at..],
+                first_slot + at as u64,
+                true,
+                &mut calls,
+                &mut triangles,
+            );
         }
         drop(arena);
         if let Some(timer) = &self.timer {
@@ -1550,6 +1617,148 @@ impl Renderer {
         }
         self.stats.calls = calls;
         self.stats.triangles = triangles;
+    }
+
+    /// A scene pass (or a split pass's opaque half, `keep_depth`) into the frame's targets.
+    fn scene_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        targets: &'a Targets,
+        i: usize,
+        ops: frame::PassOps,
+        keep_depth: bool,
+        timestamp_writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
+    ) -> wgpu::RenderPass<'a> {
+        let clear_or_load = if ops.clear {
+            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
+        } else {
+            wgpu::LoadOp::Load
+        };
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(if i == 0 { "far" } else { "near" }),
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: targets.scene_colour(),
+                    depth_slice: None,
+                    resolve_target: ops.resolve.then_some(&targets.colour.1),
+                    ops: wgpu::Operations {
+                        load: clear_or_load,
+                        store: if ops.store_colour {
+                            wgpu::StoreOp::Store
+                        } else {
+                            wgpu::StoreOp::Discard
+                        },
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &targets.view_depth.1,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: clear_or_load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+            ],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &targets.depth.1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: if keep_depth {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes,
+            ..Default::default()
+        })
+    }
+
+    /// A split scene pass's water half (W3): over its opaque half's colour and depth, reading the
+    /// view depth (so not attaching it).
+    fn water_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        targets: &'a Targets,
+        ops: frame::PassOps,
+        timestamp_writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
+    ) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("water"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: targets.scene_colour(),
+                depth_slice: None,
+                resolve_target: ops.resolve.then_some(&targets.colour.1),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: if ops.store_colour {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &targets.depth.1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes,
+            ..Default::default()
+        })
+    }
+
+    /// Records `draws` (instances from `first_slot`, their places in the draw buffer); fluids with
+    /// the water that reads the scene when `water_scene`.
+    #[allow(clippy::too_many_arguments)]
+    fn record(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        arena: &arena::Arena,
+        draws: &[DrawItem],
+        first_slot: u64,
+        water_scene: bool,
+        calls: &mut u32,
+        triangles: &mut u64,
+    ) {
+        let mut bound: Option<(Kind, bool, bool)> = None;
+        let mut bound_page: Option<(usize, usize)> = None;
+        for (k, d) in draws.iter().enumerate() {
+            let instance = (first_slot + k as u64) as u32;
+            let (mesh, ranges) = self.mesh_of(&d.mesh);
+            // Each WebGPU call crosses from WASM to JS: set only what changes.
+            let key = (d.kind, d.water, d.no_depth);
+            if bound != Some(key) {
+                pass.set_pipeline(if water_scene && d.water {
+                    &self.water_scene_pipeline
+                } else {
+                    &self.pipelines[&key]
+                });
+                bound = Some(key);
+            }
+            // A page holds many meshes: bound once for the draws from it in a row.
+            let page = (mesh.region.format, mesh.region.page);
+            if bound_page != Some(page) {
+                let buffer = arena.buffer(page.0, page.1);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                bound_page = Some(page);
+            }
+            for r in merge_ranges(ranges) {
+                *triangles += u64::from(r.len() as u32 / 3);
+                let first = mesh.first_index;
+                pass.draw_indexed(
+                    first + r.start..first + r.end,
+                    mesh.base_vertex,
+                    instance..instance + 1,
+                );
+                *calls += 1;
+            }
+        }
     }
 
     /// The chunk at a world position (tests and tools).
@@ -1604,7 +1813,7 @@ impl PassView {
 }
 
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 16 vec4s.
-const FRAME_FLOATS: usize = 16 + 16 * 4;
+const FRAME_FLOATS: usize = 16 + 17 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2119,7 +2328,7 @@ mod tests {
 
     #[test]
     fn the_frame_block_matches_the_shader_struct() {
-        // mat4x4f + 16 vec4f in `Frame`.
+        // mat4x4f + 17 vec4f in `Frame`.
         let fields = shaders::source(1)
             .split("struct Frame {")
             .nth(1)
