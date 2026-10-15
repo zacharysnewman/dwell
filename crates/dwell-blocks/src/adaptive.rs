@@ -7,7 +7,12 @@
 //! voxels, so server and client agree. A pure function of occupancy: neighbours are compared by
 //! whether their cells are filled, never by their derived shapes, so nothing iterates.
 
-use crate::{ADAPTIVE_DOWN, ADAPTIVE_UP, SHAPES, ShapeInfo, StateId, info, shape::shape_of};
+use crate::{ADAPTIVE_DOWN, ADAPTIVE_UP, SHAPES, STATES, ShapeInfo, StateId, StateInfo, shape::shape_of};
+
+/// A state's row, or none for an id outside this build's registry (read as open, never adaptive).
+fn row(state: StateId) -> Option<&'static StateInfo> {
+    STATES.get(usize::from(state))
+}
 
 /// Neighbour offsets `[dx, dz]` in table index order: NW, N, NE, W, E, SW, S, SE (north = −z).
 pub const OFFSETS: [[i32; 2]; 8] = [
@@ -28,8 +33,7 @@ pub const HIGHER: usize = 2;
 /// (whatever shape it takes) or any solid block whose own shape fills its cell; a partial shape
 /// (a slab, a placed slope) counts as open, so ground beside it is *lower*.
 pub fn fills(state: StateId) -> bool {
-    let s = info(state);
-    s.solid && (s.adaptive || is_cube(shape_of(state)))
+    row(state).is_some_and(|s| s.solid && (s.adaptive || is_cube(shape_of(state))))
 }
 
 fn is_cube(s: &ShapeInfo) -> bool {
@@ -46,7 +50,8 @@ pub fn index(codes: [usize; 8]) -> usize {
 /// the cell at that offset; `up` is +1 where up is +y (face A, or a face-B chunk meshed as its
 /// mirror image) and −1 for face B's cells read in the world, whose shapes then hang.
 pub fn derive(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> Option<u16> {
-    if !info(get(0, 0, 0)).adaptive || info(get(0, up, 0)).solid {
+    if !row(get(0, 0, 0)).is_some_and(|s| s.adaptive) || row(get(0, up, 0)).is_some_and(|s| s.solid)
+    {
         return None;
     }
     let mut codes = [SAME; 8];
@@ -75,8 +80,7 @@ pub fn shape_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> &'sta
 /// a liquid above it or beside it in its row (a shore's shaped bank), unless it derives a full
 /// cube.
 pub fn flooded_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> bool {
-    let own = info(get(0, 0, 0));
-    if own.flooded {
+    if row(get(0, 0, 0)).is_some_and(|s| s.flooded) {
         return true;
     }
     let Some(i) = derive(&mut get, up) else {
@@ -85,10 +89,11 @@ pub fn flooded_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> boo
     if is_cube(&SHAPES[usize::from(i)]) {
         return false;
     }
-    info(get(0, up, 0)).liquid
+    let liquid = |m: StateId| row(m).is_some_and(|s| s.liquid);
+    liquid(get(0, up, 0))
         || [[1, 0], [-1, 0], [0, 1], [0, -1]]
             .iter()
-            .any(|&[dx, dz]| info(get(dx, 0, dz)).liquid)
+            .any(|&[dx, dz]| liquid(get(dx, 0, dz)))
 }
 
 #[cfg(test)]

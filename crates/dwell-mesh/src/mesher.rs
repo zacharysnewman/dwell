@@ -193,14 +193,90 @@ pub fn face_covered(shape: &ShapeInfo, face: usize, neighbour: Option<&ShapeInfo
     theirs == [4; 3]
 }
 
-/// Is the full-cube face `face` of a cube or water voxel `m` hidden by neighbour `n`?
-fn hidden(kinds: &Kinds, m: StateId, n: StateId, face: usize) -> bool {
-    let km = kinds.of(m);
-    let kn = kinds.of(n);
+/// Is the full-cube face `face` of a cube or water voxel `m` (kind `km`) hidden by neighbour `n`
+/// (kind `kn`)?
+fn hidden(km: &Kind, kn: &Kind, m: StateId, n: StateId, face: usize) -> bool {
     if km.liquid && (n == m || kn.flooded) {
         return true;
     }
     face_covered(cube(), face, kn.def)
+}
+
+/// The cells' kinds where adaptive blocks change them (docs/ADAPTIVE_BLOCKS.md): an adaptive top
+/// block in the chunk takes its derived shape — a cube when the rules say full — and holds water
+/// beside or under a liquid. Apron cells' shapes need voxels beyond the apron, so an adaptive top
+/// block there is taken to cover none of its sides (its neighbour's faces toward it are drawn; any
+/// it does cover lie inside it). The padded block faces up (a face-B chunk is meshed mirrored).
+struct Cells<'a> {
+    kinds: &'a Kinds,
+    padded: &'a [u16],
+    over: Vec<Option<(u16, bool)>>,
+}
+
+/// The shape an apron's adaptive top block is drawn against: no side covered, the floor full.
+fn apron_shape() -> u16 {
+    // A lone block (every neighbour lower): the half pyramid, whose sides are all zero.
+    dwell_blocks::ADAPTIVE_UP[dwell_blocks::adaptive::index([dwell_blocks::adaptive::LOWER; 8])]
+}
+
+impl<'a> Cells<'a> {
+    fn new(kinds: &'a Kinds, padded: &'a [u16]) -> Self {
+        let mut over = vec![None; padded.len()];
+        let p = PAD as i32;
+        let inside = |v: i32| (-1..p - 1).contains(&v);
+        let at = |x: i32, y: i32, z: i32| {
+            if inside(x) && inside(y) && inside(z) {
+                padded[padded_index(x, y, z)]
+            } else {
+                0
+            }
+        };
+        for y in -1..N + 1 {
+            for z in -1..N + 1 {
+                for x in -1..N + 1 {
+                    let m = padded[padded_index(x, y, z)];
+                    if m == 0 || !STATES.get(usize::from(m)).is_some_and(|s| s.adaptive) {
+                        continue;
+                    }
+                    let interior = (0..N).contains(&x) && (0..N).contains(&y) && (0..N).contains(&z);
+                    let get = |dx: i32, dy: i32, dz: i32| at(x + dx, y + dy, z + dz);
+                    let derived = if interior {
+                        dwell_blocks::adaptive::derive(get, 1)
+                    } else if y < N && !STATES.get(usize::from(get(0, 1, 0))).is_some_and(|s| s.solid) {
+                        Some(apron_shape())
+                    } else {
+                        None
+                    };
+                    if let Some(i) = derived {
+                        over[padded_index(x, y, z)] =
+                            Some((i, dwell_blocks::adaptive::flooded_at(get, 1)));
+                    }
+                }
+            }
+        }
+        Self {
+            kinds,
+            padded,
+            over,
+        }
+    }
+
+    fn state(&self, x: i32, y: i32, z: i32) -> StateId {
+        self.padded[padded_index(x, y, z)]
+    }
+
+    fn kind(&self, x: i32, y: i32, z: i32) -> Kind {
+        let i = padded_index(x, y, z);
+        let mut k = self.kinds.of(self.padded[i]);
+        if let Some((shape, flooded)) = self.over[i] {
+            let def = &dwell_blocks::SHAPES[usize::from(shape)];
+            let full = !def.fan && def.corners == [2, 2, 2, 2];
+            k.shape = if full { Shape::Full } else { Shape::Shaped };
+            k.def = Some(def);
+            k.flooded = flooded && !full;
+        }
+        k
+    }
 }
 
 fn channel(color: u32, shift: u32) -> f64 {
@@ -429,8 +505,7 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
 }
 
 /// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
-#[allow(clippy::too_many_arguments)]
-fn shaped_voxel(b: &mut Builder, kinds: &Kinds, k: &Kind, padded: &[u16], x: i32, y: i32, z: i32) {
+fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32) {
     let Some(def) = k.def else {
         return;
     };
@@ -439,7 +514,7 @@ fn shaped_voxel(b: &mut Builder, kinds: &Kinds, k: &Kind, padded: &[u16], x: i32
         if tag < 6 {
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            if face_covered(def, tag, kinds.of(padded[padded_index(nx, ny, nz)]).def) {
+            if face_covered(def, tag, cells.kind(nx, ny, nz).def) {
                 continue;
             }
         }
@@ -470,11 +545,11 @@ fn shaped_voxel(b: &mut Builder, kinds: &Kinds, k: &Kind, padded: &[u16], x: i32
 }
 
 /// Water in the open part of a flooded shaped cell: its faces, inset so the solid shows through.
-fn flooded_water(b: &mut Builder, kinds: &Kinds, padded: &[u16], x: i32, y: i32, z: i32) {
-    let water = kinds.flood();
+fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
+    let water = cells.kinds.flood();
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-        let kn = kinds.of(padded[padded_index(nx, ny, nz)]);
+        let kn = cells.kind(nx, ny, nz);
         if kn.liquid || kn.flooded || face_covered(cube(), face, kn.def) {
             continue;
         }
@@ -561,6 +636,7 @@ pub(crate) fn mesh_chunk_with(
     }
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
+    let cells = Cells::new(kinds, padded);
     let n = N as usize;
     // Merge mask for one slice: material + 1 of a visible mergeable face, 0 for none.
     let mut mask = vec![0i32; n * n];
@@ -582,7 +658,7 @@ pub(crate) fn mesh_chunk_with(
                     if m == 0 {
                         continue;
                     }
-                    let k = kinds.of(m);
+                    let k = cells.kind(cx, cy, cz);
                     if let Some(lf) = k.ladder_face {
                         if lf == face {
                             ladder_face(&mut opaque, &k.style, face, cx, cy, cz);
@@ -593,7 +669,8 @@ pub(crate) fn mesh_chunk_with(
                         continue; // drawn whole, below
                     }
                     let [nx, ny, nz] = neighbour_of(cx, cy, cz, axis, sign);
-                    if hidden(kinds, m, padded[padded_index(nx, ny, nz)], face) {
+                    let kn = cells.kind(nx, ny, nz);
+                    if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
                         continue;
                     }
                     mask[i as usize + n * j as usize] = i32::from(m) + 1;
@@ -662,13 +739,13 @@ pub(crate) fn mesh_chunk_with(
                 if m == 0 {
                     continue;
                 }
-                let k = kinds.of(m);
+                let k = cells.kind(cx, cy, cz);
                 if k.shape != Shape::Shaped {
                     continue;
                 }
-                shaped_voxel(&mut opaque, kinds, &k, padded, cx, cy, cz);
+                shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
                 if k.flooded {
-                    flooded_water(&mut transparent, kinds, padded, cx, cy, cz);
+                    flooded_water(&mut transparent, &cells, cx, cy, cz);
                 }
             }
         }
