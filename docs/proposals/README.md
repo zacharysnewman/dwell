@@ -5,7 +5,13 @@ Plans for work that has been investigated but **not adopted**. Nothing here is a
 A proposal is adopted by answering its owner questions, writing an ADR and adding phases to the
 implementation plan; the proposal is then folded into the design doc or deleted.
 
-There are no open proposals. Adopted proposals, and where they went:
+Open proposals:
+
+| Proposal | What | Status |
+|---|---|---|
+| [TREE_GROWTH.md](TREE_GROWTH.md) | Growing a hand-built tree over time from its extracted skeleton, and variations of it | Investigated 2026-10-14; owner questions open |
+
+Adopted proposals, and where they went:
 
 | Proposal | Adopted | Now |
 |---|---|---|
