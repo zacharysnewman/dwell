@@ -224,6 +224,10 @@ Missing or unreachable versions show a clear message with the choice to open the
   must stay published; older patch releases of a line can be pruned (their worlds open in the
   line's newest build). The launcher tells the player when no build of a world's line is
   available (and offers export, Phase 23).
+  **Pruned (owner, 2026-10-14):** every release except `v0.1.0` (the first build; checked to
+  still start a local world under the current launcher) and `v0.10.0` and newer was deleted with
+  its tag — the 0.1.1 and 0.2–0.9 lines are gone, so worlds last saved on them get the launcher's
+  "no published build can open this world" message.
 
 ## 7. Multiplayer and the master server
 

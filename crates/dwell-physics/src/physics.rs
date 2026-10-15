@@ -256,16 +256,26 @@ impl Physics {
         self.set_velocity(h, (target - p) / dt);
     }
 
-    /// Push-out normals (toward `body`) of its contacts in the last step, at most `max`.
+    /// Push-out normals (toward `body`) of its contacts in the last step, at most `max`: the
+    /// manifolds the solver acts on with a point within the prediction distance. By the points, not
+    /// `solver_contacts`: when a pair has several manifolds (a player on a terrain collider and
+    /// against its wall) Rapier solves merged clusters and leaves the manifolds' solver contacts
+    /// empty, which hid every contact of the pair.
     pub fn contact_normals(&self, body: BodyHandle, max: usize, out: &mut Vec<DVec3>) {
         out.clear();
         let Some(b) = self.w.bodies.get(body.0) else {
             return;
         };
+        let reach = self.w.integration_parameters.prediction_distance();
         for &collider in b.colliders() {
             for pair in self.w.narrow_phase.contact_pairs_with(collider) {
                 for m in pair.manifolds() {
-                    if m.data.solver_contacts.is_empty() || out.len() >= max {
+                    let touching = m
+                        .data
+                        .solver_flags
+                        .contains(SolverFlags::COMPUTE_RIGID_IMPULSES)
+                        && m.points.iter().any(|p| p.dist < reach);
+                    if !touching || out.len() >= max {
                         continue;
                     }
                     // The normal points from collider 1 out toward collider 2.

@@ -116,34 +116,48 @@ export class MainMenu {
     private readonly deps: MainMenuDeps,
   ) {
     this.root.id = 'main-menu';
+    // The sky and the terraced hills behind the menu (CSS), under its content.
+    const backdrop = document.createElement('div');
+    backdrop.className = 'mm-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
     const panel = document.createElement('div');
     panel.className = 'menu-panel';
+    const hero = document.createElement('header');
+    hero.className = 'mm-hero';
     const title = document.createElement('h1');
+    title.className = 'wordmark';
     title.textContent = 'Dwell';
+    const tagline = document.createElement('p');
+    tagline.className = 'mm-tagline';
+    tagline.textContent = 'Build a world, alone or with friends.';
+    hero.append(title, tagline);
     this.message.id = 'menu-message';
     this.message.setAttribute('aria-live', 'polite');
     this.message.textContent = deps.message ?? '';
 
+    // Your worlds: the list, with New world opening the form above it.
+    const worlds = document.createElement('section');
+    worlds.className = 'mm-card mm-worlds';
+    const worldsHead = document.createElement('div');
+    worldsHead.className = 'mm-card-head';
     const worldsTitle = document.createElement('h2');
-    worldsTitle.textContent = 'Worlds';
-    const create = button('New world', 'menu-button-main', () => {
+    worldsTitle.textContent = 'Your worlds';
+    const create = button('New world', 'quiet-button', () => {
       this.form.hidden = !this.form.hidden;
+      create.setAttribute('aria-expanded', String(!this.form.hidden));
       if (!this.form.hidden) this.form.querySelector('input')?.focus();
     });
     create.id = 'new-world';
+    worldsHead.append(worldsTitle, create);
     this.list.id = 'world-list';
     this.buildForm();
-
-    panel.append(
-      title,
-      this.message,
-      worldsTitle,
-      create,
-      this.form,
-      this.list,
-      this.joinSection(),
-    );
     this.legacy.id = 'legacy-worlds';
+    worlds.append(worldsHead, this.form, this.list, this.legacy);
+
+    // Play with others: join by code, address or link; games nearby; recent servers; the lobby.
+    const online = document.createElement('section');
+    online.className = 'mm-card mm-online';
+    online.append(this.joinSection());
     const master = deps.master;
     if (master) {
       const browser = new ServerBrowser({
@@ -155,10 +169,13 @@ export class MainMenu {
         protocol: PROTOCOL_VERSION,
         version: recordedVersion(),
       });
-      panel.append(browser.root);
+      online.append(browser.root);
     }
-    panel.append(this.legacy, this.aboutSection());
-    this.root.append(panel);
+    const columns = document.createElement('div');
+    columns.className = 'mm-columns';
+    columns.append(worlds, online);
+    panel.append(hero, this.message, columns, this.aboutSection());
+    this.root.append(backdrop, panel);
     parent.append(this.root);
     this.render();
     void this.adoptSavedWorlds();
@@ -241,7 +258,7 @@ export class MainMenu {
     }
     const submit = document.createElement('button');
     submit.type = 'submit';
-    submit.className = 'menu-button-main';
+    submit.className = 'block-button';
     submit.textContent = 'Create and play';
     const hint = document.createElement('p');
     hint.className = 'menu-hint';
@@ -265,17 +282,18 @@ export class MainMenu {
     const section = document.createElement('section');
     section.className = 'menu-join';
     const title = document.createElement('h2');
-    title.textContent = 'Join';
+    title.textContent = 'Play with others';
     const form = document.createElement('form');
     form.className = 'menu-join-form';
     const input = document.createElement('input');
     input.id = 'join-input';
     input.placeholder = 'Join code, address or invite link';
+    input.setAttribute('aria-label', 'Join code, server address or invite link');
     input.autocapitalize = 'characters';
     input.autocomplete = 'off';
     const submit = document.createElement('button');
     submit.type = 'submit';
-    submit.className = 'menu-button-main';
+    submit.className = 'block-button';
     submit.textContent = 'Join';
     form.append(input, submit);
     form.addEventListener('submit', (e) => {
@@ -385,7 +403,7 @@ export class MainMenu {
     if (worlds.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'menu-empty';
-      empty.textContent = 'No worlds yet. Create one to start playing.';
+      empty.textContent = 'No worlds yet. Name one below, or just press Create and play.';
       this.list.append(empty);
       this.form.hidden = false;
       return;
@@ -406,7 +424,7 @@ export class MainMenu {
       const actions = document.createElement('div');
       actions.className = 'world-actions';
       actions.append(
-        button('Play', 'menu-button-main world-play', () => {
+        button('Play', 'block-button world-play', () => {
           this.deps.go({ play: world.id });
         }),
         confirmButton('Regenerate', 'Lose all changes?', () => void this.regenerate(world)),

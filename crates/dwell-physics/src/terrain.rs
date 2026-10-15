@@ -8,7 +8,7 @@
 //! Every solid state collides as its full cell: the baseline has only cubes (Phase 15); shaped
 //! blocks (Phase 18) will need their own colliders.
 
-use std::collections::HashMap;
+use dwell_world::hash::HashMap;
 
 use dwell_blocks::info;
 use dwell_world::{
@@ -72,7 +72,7 @@ impl TerrainCollision {
                 .insert_with_parent(collider, body, &mut physics.w.bodies);
         Self {
             collider,
-            chunks: HashMap::new(),
+            chunks: HashMap::default(),
         }
     }
 

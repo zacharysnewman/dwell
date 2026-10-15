@@ -9,15 +9,15 @@
 //! [`ChunkStreamer::on_generated`] (or [`ChunkStreamer::on_generate_failed`]) and
 //! [`ChunkStreamer::on_meshed`]. A result whose token is no longer current is ignored.
 
-use std::collections::{HashMap, HashSet};
+use dwell_world::hash::{HashMap, HashSet};
 
 use dwell_protocol::{CHUNK_SIZE, CHUNK_VOLUME, ChunkChanges, ChunkData, ChunkForm};
 use dwell_world::edit::apply_chunk_changes;
 use dwell_world::{
-    Chunk, ChunkCoord, Face, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, face_of_chunk_y,
+    Chunk, ChunkCoord, Face, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, face_of_chunk_y, local_index,
 };
 
-use crate::chunk_diff::{PAD, PADDED_VOLUME, padded_index};
+use crate::chunk_diff::{PADDED_VOLUME, padded_index};
 
 /// A chunk coordinate as on the wire.
 pub type Coord = [i32; 3];
@@ -49,19 +49,65 @@ impl ChunkStore for VoxelWorld {
         apply_chunk_changes(self, changes);
     }
     fn padded_chunk(&mut self, coord: Coord) -> Vec<u16> {
-        let mut out = vec![0; PADDED_VOLUME];
-        let origin = coord.map(|c| c * CHUNK_SIZE);
-        let p = PAD as i32;
-        for y in -1..p - 1 {
-            for z in -1..p - 1 {
-                for x in -1..p - 1 {
-                    out[padded_index(x, y, z)] =
-                        self.get_voxel(origin[0] + x, origin[1] + y, origin[2] + z);
-                }
+        padded_from_neighbours(self, coord)
+    }
+}
+
+/// The chunk at `coord` with its one-voxel apron from the 26 neighbours. Each of the 27 chunks is
+/// looked up once (`read` first, so a world with a generator makes them, then `find`), and rows
+/// are copied: a hash lookup per voxel (34³ of them) was most of the main thread's chunk meshing
+/// time (docs/DEV_TOOLS.md profile, 2026-10-14). Equal to `get_voxel` per voxel.
+pub fn padded_from_neighbours(world: &mut VoxelWorld, coord: Coord) -> Vec<u16> {
+    let n = CHUNK_SIZE;
+    let mut near: [Option<&[u16; CHUNK_VOLUME]>; 27] = [None; 27];
+    let key = |dx: i32, dy: i32, dz: i32| ((dx + 1) + 3 * (dy + 1) + 9 * (dz + 1)) as usize;
+    let coord_of =
+        |dx: i32, dy: i32, dz: i32| ChunkCoord::new(coord[0] + dx, coord[1] + dy, coord[2] + dz);
+    for dz in -1..=1 {
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                world.read(coord_of(dx, dy, dz));
             }
         }
-        out
     }
+    for dz in -1..=1 {
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                near[key(dx, dy, dz)] = world.find(coord_of(dx, dy, dz)).map(|c| c.voxels());
+            }
+        }
+    }
+    // Which chunk and local coordinate a padded coordinate (−1..=n) falls in.
+    let split = |v: i32| -> (i32, i32) {
+        if v < 0 {
+            (-1, v + n)
+        } else if v >= n {
+            (1, v - n)
+        } else {
+            (0, v)
+        }
+    };
+    let mut out = vec![0; PADDED_VOLUME];
+    for y in -1..=n {
+        let (dy, ly) = split(y);
+        for z in -1..=n {
+            let (dz, lz) = split(z);
+            let row = padded_index(0, y, z);
+            let local = |lx: i32| local_index(lx, ly, lz);
+            // The row's middle from the chunk at (0, dy, dz), its two ends from the x neighbours.
+            if let Some(c) = near[key(0, dy, dz)] {
+                let start = local(0);
+                out[row..row + n as usize].copy_from_slice(&c[start..start + n as usize]);
+            }
+            if let Some(c) = near[key(-1, dy, dz)] {
+                out[row - 1] = c[local(n - 1)];
+            }
+            if let Some(c) = near[key(1, dy, dz)] {
+                out[row + n as usize] = c[local(0)];
+            }
+        }
+    }
+    out
 }
 
 /// The worldgen workers: generate a Generated chunk's voxels.
@@ -232,14 +278,14 @@ where
             mesher,
             view,
             resync: Box::new(resync),
-            loaded: HashMap::new(),
-            air: HashSet::new(),
-            generating: HashMap::new(),
-            held_edits: HashMap::new(),
+            loaded: HashMap::default(),
+            air: HashSet::default(),
+            generating: HashMap::default(),
+            held_edits: HashMap::default(),
             dirty: DirtySet::default(),
-            meshed: HashSet::new(),
-            meshing: HashMap::new(),
-            resyncing: HashSet::new(),
+            meshed: HashSet::default(),
+            meshing: HashMap::default(),
+            resyncing: HashSet::default(),
             resyncs: 0,
             token: 0,
             error: None,
@@ -557,6 +603,53 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chunk_diff::PAD;
+
+    #[test]
+    fn padding_from_neighbours_equals_reading_each_voxel() {
+        // A generated world (flat terrain: ground at the chunk border) with edits scattered over
+        // the chunk and all its neighbours, and a streamed one with chunks missing (air).
+        let mut flat = VoxelWorld::flat();
+        let mut seed = 0x9e37_79b9_u32;
+        let mut rand = move |n: i32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            (seed % n as u32) as i32
+        };
+        for _ in 0..4000 {
+            let (x, y, z) = (rand(96) - 48, rand(96) - 48, rand(96) - 48);
+            flat.set_voxel(x, y, z, (1 + rand(5)) as u16);
+        }
+        let mut streamed = VoxelWorld::streamed();
+        let mut chunk = Chunk::default();
+        for i in 0..CHUNK_VOLUME {
+            chunk.set_at(i, (i % 7) as u16);
+        }
+        streamed.put(ChunkCoord::new(0, 0, 0), chunk.clone());
+        streamed.put(ChunkCoord::new(1, 0, 0), chunk.clone());
+        streamed.put(ChunkCoord::new(0, -1, 1), chunk);
+        check_padding(&mut flat, [0, 0, 0]);
+        check_padding(&mut flat, [-1, -1, 0]);
+        check_padding(&mut streamed, [0, 0, 0]);
+    }
+
+    fn check_padding(world: &mut VoxelWorld, coord: Coord) {
+        let fast = padded_from_neighbours(world, coord);
+        let origin = coord.map(|c| c * CHUNK_SIZE);
+        let p = PAD as i32;
+        for y in -1..p - 1 {
+            for z in -1..p - 1 {
+                for x in -1..p - 1 {
+                    assert_eq!(
+                        fast[padded_index(x, y, z)],
+                        world.get_voxel(origin[0] + x, origin[1] + y, origin[2] + z),
+                        "{coord:?} at {x},{y},{z}"
+                    );
+                }
+            }
+        }
+    }
     use dwell_protocol::VoxelChange;
     use std::cell::RefCell;
     use std::rc::Rc;

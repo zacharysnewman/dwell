@@ -188,6 +188,12 @@ WASM builds compute them identically (§8.3).
   edge of the step it is leaving, and that edge's sideways push-out would otherwise become momentum
   that carries the player down several steps (`stepping_down_a_stairs_corner_gains_no_momentum`).
   Pushes by moving bodies are still absorbed.
+  The contacts are the manifolds with a point within Rapier's prediction distance
+  (`Physics::contact_normals`), not those with solver contacts: when a pair has several manifolds
+  (a player on a terrain chunk's collider and against its wall) Rapier solves merged clusters and
+  leaves the manifolds' solver contacts empty, which hid every contact and brought the phantom
+  push back (`a_jump_always_clears_a_one_block_step`,
+  `crouching_against_a_wall_never_moves_the_player_backwards`).
 - **Edge lift is not absorbed.** The same holds vertically. Driving forward into a contact whose
   normal faces partly up (a block's top edge under the capsule's rounded bottom, while jumping
   over it) deflects the drive upwards by `into_h × normal.y` per contact, where `into_h` is last

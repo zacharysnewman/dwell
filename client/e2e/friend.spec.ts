@@ -104,7 +104,7 @@ test('friend world: host from the game menu, join by code, play together, stop h
   expect(code).toMatch(/^[A-HJKMNP-Z2-9]{3}-[A-HJKMNP-Z2-9]{3}$/);
   const link = await host.locator('#host-link').inputValue();
   expect(link).toContain(`code=${code.replace('-', '')}`);
-  await host.locator('#menu-button').click(); // close the menu
+  await host.locator('#settings-menu .gm-close').click(); // close the menu
 
   // The guest types the code on the main menu.
   await guest.goto(`./?${master}`);

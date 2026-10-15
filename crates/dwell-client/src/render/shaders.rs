@@ -34,7 +34,8 @@ struct Frame {
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
 
-// Per draw (group 1, dynamic offset): the mesh's origin relative to the eye (xyz) and its scale (w),
+// Per draw (group 1, a storage array indexed by the draw's instance: draw k is drawn as instance k,
+// so a draw needs no bind call of its own): the mesh's origin relative to the eye (xyz) and its scale (w),
 // an optional clip box (relative to the eye; clip_lo.w > 0 enables it), and a tint (rgb) and
 // opacity (a).
 struct Draw {
@@ -45,7 +46,7 @@ struct Draw {
     // x, y: cos and sin of a turn about +y (players' yaw); identity (1, 0) otherwise.
     rotation: vec4f,
 };
-@group(1) @binding(0) var<uniform> draw: Draw;
+@group(1) @binding(0) var<storage, read> draws: array<Draw>;
 ";
 
 const COMMON: &str = r"
@@ -116,7 +117,7 @@ fn fogged(color: vec3f, rel: vec3f) -> vec3f {
     return mix(color, sky(normalize(rel)), density * (1.0 - exp(-depth)));
 }
 
-fn clipped(rel: vec3f) -> bool {
+fn clipped(draw: Draw, rel: vec3f) -> bool {
     return draw.clip_lo.w > 0.0 && (any(rel < draw.clip_lo.xyz) || any(rel > draw.clip_hi.xyz));
 }
 
@@ -141,11 +142,14 @@ struct TerrainOut {
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
+    @location(5) @interpolate(flat) draw: u32,
 };
 
 @vertex
-fn terrain_vs(v: TerrainIn) -> TerrainOut {
+fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
+    let draw = draws[k];
     var o: TerrainOut;
+    o.draw = k;
     o.rel = draw.offset.xyz + v.position * draw.offset.w;
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
     o.normal = v.normal;
@@ -159,6 +163,7 @@ fn terrain_vs(v: TerrainIn) -> TerrainOut {
 // gradients of the unwrapped uv so mip selection is continuous across block edges.
 @fragment
 fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+    let draw = draws[i.draw];
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let n = select(-i.normal, i.normal, front);
@@ -175,21 +180,24 @@ struct FlatOut {
     @location(0) rel: vec3f,
     @location(1) normal: vec3f,
     @location(2) color: vec3f,
+    @location(3) @interpolate(flat) draw: u32,
 };
 
 // The draw's turn about +y (Three.js's rotation.y): x' = x cos + z sin, z' = −x sin + z cos.
-fn turn(p: vec3f) -> vec3f {
+fn turn(draw: Draw, p: vec3f) -> vec3f {
     let c = draw.rotation.x;
     let s = draw.rotation.y;
     return vec3f(p.x * c + p.z * s, p.y, -p.x * s + p.z * c);
 }
 
 @vertex
-fn flat_vs(v: FlatIn) -> FlatOut {
+fn flat_vs(v: FlatIn, @builtin(instance_index) k: u32) -> FlatOut {
+    let draw = draws[k];
     var o: FlatOut;
-    o.rel = draw.offset.xyz + turn(v.position * draw.offset.w);
+    o.draw = k;
+    o.rel = draw.offset.xyz + turn(draw, v.position * draw.offset.w);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    o.normal = turn(v.normal);
+    o.normal = turn(draw, v.normal);
     o.color = v.color;
     return o;
 }
@@ -197,7 +205,8 @@ fn flat_vs(v: FlatIn) -> FlatOut {
 // LOD sections and players: vertex colours (linear) × the draw's tint, no texture.
 @fragment
 fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
-    if (clipped(i.rel)) {
+    let draw = draws[i.draw];
+    if (clipped(draw, i.rel)) {
         discard;
     }
     let n = select(-i.normal, i.normal, front);
@@ -211,12 +220,15 @@ struct LineIn {
 struct LineOut {
     @builtin(position) clip: vec4f,
     @location(0) color: vec3f,
+    @location(1) @interpolate(flat) draw: u32,
 };
 
 // Lines (the block outline, debug lines): unlit sRGB colours.
 @vertex
-fn line_vs(v: LineIn) -> LineOut {
+fn line_vs(v: LineIn, @builtin(instance_index) k: u32) -> LineOut {
+    let draw = draws[k];
     var o: LineOut;
+    o.draw = k;
     o.clip = frame.view_proj * vec4f(draw.offset.xyz + v.position * draw.offset.w, 1.0);
     o.color = v.color;
     return o;
@@ -224,6 +236,7 @@ fn line_vs(v: LineIn) -> LineOut {
 
 @fragment
 fn line_fs(i: LineOut) -> @location(0) vec4f {
+    let draw = draws[i.draw];
     return vec4f(i.color * draw.tint.rgb, draw.tint.a);
 }
 

@@ -15,7 +15,8 @@
 //! [`LodSystem::on_lod_bounds`], [`LodSystem::on_generated`] or [`LodSystem::on_meshed`], and
 //! results whose token is no longer current are ignored.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use dwell_world::hash::{HashMap, HashSet};
+use std::collections::VecDeque;
 
 use dwell_mesh::{SURFACE_STRIDE, SectionMeshes, section_bytes};
 use dwell_protocol::{
@@ -409,34 +410,34 @@ pub struct LodSystem {
 impl LodSystem {
     pub fn new(options: LodOptions) -> Self {
         let mut s = Self {
-            nodes: HashMap::new(),
+            nodes: HashMap::default(),
             seq: 0,
-            bounds: HashMap::new(),
-            index: HashMap::new(),
-            indexed: HashSet::new(),
+            bounds: HashMap::default(),
+            index: HashMap::default(),
+            indexed: HashSet::default(),
             full_mode: false,
             frame: 0,
             token: 0,
             generating: 0,
             meshing: 0,
-            gen_jobs: HashMap::new(),
-            mesh_jobs: HashMap::new(),
+            gen_jobs: HashMap::default(),
+            mesh_jobs: HashMap::default(),
             cache_bytes: 0,
-            asking: HashSet::new(),
+            asking: HashSet::default(),
             request_credit: 0.0,
             last_request_ms: None,
             received: VecDeque::new(),
             selection: Selection::default(),
-            refined: HashSet::new(),
-            covered: HashSet::new(),
-            covered_ancestors: HashSet::new(),
-            drawable_since: HashMap::new(),
+            refined: HashSet::default(),
+            covered: HashSet::default(),
+            covered_ancestors: HashSet::default(),
+            drawable_since: HashMap::default(),
             detail_m: None,
             view_face: 1,
             near_rim: false,
             position: [0.0; 3],
             camera_chunk: ChunkCoord::default(),
-            chunk_asked: HashMap::new(),
+            chunk_asked: HashMap::default(),
             chunk_credit: 0.0,
             last_chunk_request_ms: None,
             wanted_chunks: Vec::new(),
@@ -734,15 +735,12 @@ impl LodSystem {
 
     /// A section wholly on the face the camera is not on, far from it: not loaded or drawn.
     fn culled(&self, id: LodId) -> bool {
-        let n = self.n(id);
-        if self.near_rim || n.coord.level > MAX_ALIGNED_LEVEL {
-            return false;
-        }
-        let on_b = is_face_b_section(n.coord);
-        if on_b == (self.view_face == -1) {
-            return false;
-        }
-        box_distance(self.position, n.lo, n.hi) > OTHER_FACE_NEAR_M
+        // Near the rim nothing is: no lookup (this runs for every node visited each frame).
+        !self.near_rim && self.culled_node(self.n(id))
+    }
+
+    fn culled_node(&self, n: &Node) -> bool {
+        face_culled(n, self.near_rim, self.view_face, self.position)
     }
 
     /// Level ≥ 7 sections are meshed for the viewer's face only: mesh them again on a change.
@@ -769,9 +767,9 @@ impl LodSystem {
         }
     }
 
-    fn kids(&mut self, id: LodId) -> Vec<LodId> {
+    fn kids(&mut self, id: LodId) -> Kids {
         if let Some(k) = &self.n(id).kids {
-            return k.clone();
+            return Kids::of(k);
         }
         let (coord, modified) = (self.n(id).coord, self.n(id).modified);
         let kids: Vec<LodId> = (0..8)
@@ -779,8 +777,9 @@ impl LodSystem {
             .filter(|&c| in_world(c))
             .map(|c| self.node(c, modified))
             .collect();
-        self.nodes.get_mut(&id).expect("node").kids = Some(kids.clone());
-        kids
+        let out = Kids::of(&kids);
+        self.nodes.get_mut(&id).expect("node").kids = Some(kids);
+        out
     }
 
     fn visit(
@@ -791,16 +790,17 @@ impl LodSystem {
         fallback: Option<LodId>,
         host: &mut dyn LodHost,
     ) {
-        let coord = self.n(id).coord;
-        if self.culled(id) {
+        // One lookup for the node's fields (this runs for every node in view, every frame).
+        let n = self.n(id);
+        let (coord, lo, hi, kind, meshed) = (n.coord, n.lo, n.hi, n.kind, n.meshed);
+        let ready = ready_node(n);
+        if self.culled_node(n) {
             selection.empty.push(coord);
             return;
         }
         // A node that is not ready is only reached on the way down to the covered chunks.
-        let ready = self.ready(id);
-        let kind = self.n(id).kind;
         // Where this branch leaves a hole, the nearest ready mesh above it is drawn clipped to it.
-        let next = if ready && kind == Some(LodKind::Content) && self.n(id).meshed {
+        let next = if ready && kind == Some(LodKind::Content) && meshed {
             Some(id)
         } else {
             fallback
@@ -841,16 +841,16 @@ impl LodSystem {
             }
             return;
         }
-        if !self.refine(id, frustum) {
+        if !self.refine_box(coord, lo, hi, frustum) {
             self.draw(id, selection);
             return;
         }
         let kids = self.kids(id);
-        let all_ready = self.touch_kids(&kids);
+        let all_ready = self.touch_kids(kids.as_slice());
         if !all_ready {
             // Coarse until the children are ready — unless that would hide the player's surroundings.
             if self.covered_ancestors.contains(&id) {
-                for kid in kids {
+                for &kid in kids.as_slice() {
                     self.visit(kid, frustum, selection, next, host);
                 }
             } else {
@@ -858,20 +858,33 @@ impl LodSystem {
             }
             return;
         }
-        for kid in kids {
+        for &kid in kids.as_slice() {
             self.visit(kid, frustum, selection, next, host);
         }
     }
 
     /// Touches the children not culled, wanting those not ready; true when all are ready.
     fn touch_kids(&mut self, kids: &[LodId]) -> bool {
+        // One lookup per child: culled, touched (as `touch`) and ready from the same node.
+        let (frame, near_rim, view_face, position) =
+            (self.frame, self.near_rim, self.view_face, self.position);
         let mut all_ready = true;
         for &kid in kids {
-            if self.culled(kid) {
+            let n = self.nodes.get_mut(&kid).expect("node");
+            if face_culled(n, near_rim, view_face, position) {
                 continue;
             }
-            self.touch(kid);
-            if !self.ready(kid) {
+            if n.last_used != frame {
+                self.in_use += n.bytes + n.cell_bytes();
+            }
+            n.last_used = frame;
+            if (n.needs_answer || n.stale) && n.asked.is_none() {
+                self.due.push(kid);
+            }
+            if n.remesh {
+                self.remeshed.push(kid);
+            }
+            if !ready_node(n) {
                 all_ready = false;
                 self.wanted.push(kid);
             }
@@ -918,9 +931,9 @@ impl LodSystem {
             return;
         }
         let kids = self.kids(id);
-        let all_ready = self.touch_kids(&kids);
+        let all_ready = self.touch_kids(kids.as_slice());
         if all_ready || self.covered_ancestors.contains(&id) {
-            for kid in kids {
+            for &kid in kids.as_slice() {
                 self.visit(kid, frustum, selection, None, host);
             }
         } else {
@@ -937,7 +950,7 @@ impl LodSystem {
         fallback: Option<LodId>,
         host: &mut dyn LodHost,
     ) {
-        for kid in self.kids(id) {
+        for &kid in self.kids(id).as_slice() {
             if self.culled(kid) {
                 continue;
             }
@@ -955,7 +968,7 @@ impl LodSystem {
     fn find_covered(&mut self, p: Vec3, now_ms: f64, host: &dyn LodHost) {
         self.covered.clear();
         self.covered_ancestors.clear();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let at = section_at(1, p);
         let r = 2; // the streamed sphere (VIEW_RADIUS_CHUNKS) spans ±2 level-1 sections
         for j in at.j - r..=at.j + r {
@@ -1000,14 +1013,18 @@ impl LodSystem {
     /// popping in. Where the camera looks only decides what loads first (schedule).
     fn refine(&self, id: LodId, frustum: &Frustum) -> bool {
         let n = self.n(id);
-        let d = self.distance(n.lo, n.hi, frustum).max(1.0);
+        self.refine_box(n.coord, n.lo, n.hi, frustum)
+    }
+
+    fn refine_box(&self, coord: LodCoord, lo: Vec3, hi: Vec3, frustum: &Frustum) -> bool {
+        let d = self.distance(lo, hi, frustum).max(1.0);
         // Down to the full-detail distance whatever the pixel error (so level 1 is reached there).
         if let Some(m) = self.detail_m
             && d < m
         {
             return true;
         }
-        cell_size(n.coord.level) as f64 / d * frustum.pixels_per_radian
+        cell_size(coord.level) as f64 / d * frustum.pixels_per_radian
             > self.options.pixel_error * self.error_scale
     }
 
@@ -1110,13 +1127,7 @@ impl LodSystem {
     }
 
     fn ready(&self, id: LodId) -> bool {
-        let n = self.n(id);
-        match n.kind {
-            _ if n.needs_answer => false,
-            None => false,
-            Some(LodKind::Content) => n.meshed,
-            Some(_) => true,
-        }
+        ready_node(self.n(id))
     }
 
     /// The node at `c`, created if new (`parent_modified`: its parent's content came modified).
@@ -1626,6 +1637,51 @@ impl LodSystem {
             error_scale: self.error_scale,
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
         }
+    }
+}
+
+/// A section wholly on the face the camera is not on (`view_face`), far from it: not loaded or
+/// drawn. Never near the rim.
+fn face_culled(n: &Node, near_rim: bool, view_face: i32, position: Vec3) -> bool {
+    if near_rim || n.coord.level > MAX_ALIGNED_LEVEL {
+        return false;
+    }
+    let on_b = is_face_b_section(n.coord);
+    if on_b == (view_face == -1) {
+        return false;
+    }
+    box_distance(position, n.lo, n.hi) > OTHER_FACE_NEAR_M
+}
+
+/// Ready to draw or to stand in: known, and meshed if it has content.
+fn ready_node(n: &Node) -> bool {
+    match n.kind {
+        _ if n.needs_answer => false,
+        None => false,
+        Some(LodKind::Content) => n.meshed,
+        Some(_) => true,
+    }
+}
+
+/// A node's children (at most 8) by value: the traversal copies them rather than cloning a `Vec`
+/// per node visited.
+#[derive(Clone, Copy)]
+struct Kids {
+    ids: [LodId; 8],
+    len: usize,
+}
+
+impl Kids {
+    fn of(ids: &[LodId]) -> Self {
+        let mut k = Kids {
+            ids: [0; 8],
+            len: ids.len(),
+        };
+        k.ids[..ids.len()].copy_from_slice(ids);
+        k
+    }
+    fn as_slice(&self) -> &[LodId] {
+        &self.ids[..self.len]
     }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@dwell/client",
-  "version": "0.10.0",
+  "version": "0.10.2",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -22,7 +22,8 @@
     "site:fixture": "node --experimental-strip-types scripts/localSite.ts",
     "e2e:site": "npm run site:fixture && playwright test -c playwright.site.config.ts",
     "build:probe": "cd .. && cargo build -p dwell-client --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir crates/dwell-client/www/pkg target/wasm32-unknown-unknown/release/dwell_client.wasm",
-    "e2e:webgpu": "playwright test -c playwright.webgpu.config.ts"
+    "e2e:webgpu": "playwright test -c playwright.webgpu.config.ts",
+    "bench": "node --experimental-strip-types scripts/bench.ts"
   },
   "dependencies": {
     "qrcode-generator": "2.0.4"

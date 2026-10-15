@@ -469,3 +469,80 @@ fn air_drag_decays_an_air_kick_unity_parity() {
     );
     let _ = DQuat::IDENTITY;
 }
+
+/// A 1-block wall from z = 3 across the floor; the player walks (or runs) at it from z = 0 and
+/// presses jump once at `jump_tick`, holding forward throughout. Returns the gap between the
+/// capsule's front and the wall when jump was pressed, and the feet height 1.5 s later.
+fn jump_at_a_block(run: bool, jump_tick: i32) -> (f32, f32) {
+    let mut w = PlayerTestWorld::new();
+    w.floor_at(0, 40);
+    w.fill(-3, 0, 3, 3, 0, 20, stone());
+    let e = w.spawn(v(0.5, 0.0, 0.0));
+    w.set_input(move |t, _| {
+        input(
+            0.0,
+            1.0,
+            run,
+            t >= jump_tick && t < jump_tick + 3,
+            false,
+            0.0,
+            0.0,
+        )
+    });
+    w.step(jump_tick);
+    let gap = 3.0 - (w.pos(e).z + PlayerControllerConfig::default().body.radius);
+    w.step(ticks(1.5));
+    (gap, w.feet(e))
+}
+
+#[test]
+fn a_jump_always_clears_a_one_block_step() {
+    // Owner (2026-10-14): "usually the player can't make a 1 block high jump". Walking up to a
+    // block and then jumping, pressed against it, fell back down every time: the wall stopping the
+    // drive was absorbed as an external push (Rapier's contact clustering hid the contacts), which
+    // cancels air control. From up to 2.4 m away, and from against the block, every press clears it.
+    for run in [false, true] {
+        let mut failed = Vec::new();
+        for jump_tick in 0..=70 {
+            let (gap, feet) = jump_at_a_block(run, jump_tick);
+            if gap <= 2.4 && feet < 0.95 {
+                failed.push(format!("tick {jump_tick} gap {gap:.2} → feet {feet:.2}"));
+            }
+        }
+        assert!(failed.is_empty(), "run {run}: {failed:?}");
+    }
+}
+
+#[test]
+fn crouching_against_a_wall_never_moves_the_player_backwards() {
+    // Owner (2026-10-14): crouch-jumping up against a wall moved the player backwards with forward
+    // held: the absorbed "push" from the wall outlasted the slower crouched drive.
+    for jump in [false, true] {
+        let mut w = PlayerTestWorld::new();
+        w.floor_at(0, 40);
+        w.fill(-3, 0, 3, 3, 2, 20, stone());
+        let e = w.spawn(v(0.5, 0.0, 0.0));
+        w.set_input(move |t, _| {
+            input(
+                0.0,
+                1.0,
+                false,
+                jump && (60..63).contains(&t),
+                t >= 60,
+                0.0,
+                0.0,
+            )
+        });
+        w.step(60);
+        let against = w.pos(e).z;
+        let mut lowest = against;
+        for _ in 0..ticks(1.5) {
+            w.step(1);
+            lowest = lowest.min(w.pos(e).z);
+        }
+        assert!(
+            lowest > against - 0.02,
+            "jump {jump}: from z {against:.3} back to {lowest:.3}"
+        );
+    }
+}

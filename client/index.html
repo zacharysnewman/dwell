@@ -19,6 +19,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https: ws: wss: http://localhost:* http://127.0.0.1:*; img-src 'self' data:; style-src 'self'; object-src 'none'; base-uri 'self'"
     />
+    <meta name="theme-color" content="#86b3ea" />
     <title>Dwell</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/src/style.css" />
@@ -28,7 +29,6 @@
     <div id="net-status" aria-live="polite"></div>
     <div id="build-info"></div>
     <div id="fatal" hidden></div>
-    <div id="rotate-hint">Rotate to landscape to play</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

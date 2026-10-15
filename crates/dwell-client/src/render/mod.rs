@@ -4,20 +4,21 @@
 //! to the camera (origins in f64, offsets in f32), so the world stays precise far from the origin.
 //! It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
 
+pub mod arena;
 pub mod camera;
 pub mod display;
 pub mod geometry;
 pub mod shaders;
 
-use std::collections::HashMap;
+use dwell_world::hash::HashMap;
 
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
 use dwell_look::{DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
-use wgpu::util::DeviceExt;
 
+use arena::{Arena, ArenaRef, Region};
 use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
 pub use display::RenderStats;
 
@@ -39,7 +40,8 @@ pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const WATER_OPACITY: f32 = 0.55;
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
-const DRAW_STRIDE: u64 = 256;
+/// Bytes per draw in the draws storage array (`Draw` in the shaders: five vec4f).
+const DRAW_STRIDE: u64 = 80;
 const MAX_STAND_INS: usize = 64;
 /// Debug tints of LOD levels (setLodLevelColors), sRGB.
 const LEVEL_TINTS: [u32; 20] = [
@@ -81,26 +83,25 @@ pub struct StandIn {
     pub hi: V3,
 }
 
+/// A mesh in the arena's pages (arena.rs): its vertices with their attributes interleaved (one
+/// format per `Kind`) and its indices, drawn from `first_index` with `base_vertex`.
 struct GpuMesh {
-    vertex: Vec<wgpu::Buffer>,
-    index: wgpu::Buffer,
+    region: Region,
+    base_vertex: i32,
+    first_index: u32,
     /// Index ranges: [0] the surface; for LOD sections, [1 + face] each side's skirt.
     parts: Vec<std::ops::Range<u32>>,
     bytes: u64,
+    arena: ArenaRef,
 }
 
-fn buffer(
-    device: &wgpu::Device,
-    label: &str,
-    data: &[u8],
-    usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: data,
-        usage,
-    })
-}
+/// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts).
+const STRIDES: [u64; 3] = [
+    4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
+    4 * (3 + 3 + 3),         // Flat: position, normal, colour
+    4 * (3 + 3),             // Line: position, colour
+];
+
 fn floats(v: &[f32]) -> &[u8] {
     bytemuck_cast(v)
 }
@@ -126,24 +127,77 @@ impl ToLeBytes for u32 {
     }
 }
 
+/// Index ranges with the empty ones dropped and touching ones joined: a section's surface and the
+/// skirts drawn with it are consecutive in its index buffer, so most draw as one call.
+fn merge_ranges(ranges: Vec<std::ops::Range<u32>>) -> Vec<std::ops::Range<u32>> {
+    let mut out: Vec<std::ops::Range<u32>> = Vec::with_capacity(ranges.len());
+    for r in ranges.into_iter().filter(|r| !r.is_empty()) {
+        match out.last_mut() {
+            Some(last) if last.end == r.start => last.end = r.end,
+            _ => out.push(r),
+        }
+    }
+    out
+}
+
+/// Streams of `n` floats per vertex, interleaved vertex by vertex (in the pipelines' attribute
+/// order, `vertex_layout`).
+fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
+    let count = streams.first().map_or(0, |(s, n)| s.len() / n);
+    let stride: usize = streams.iter().map(|(_, n)| n).sum();
+    let mut out = Vec::with_capacity(count * stride);
+    for v in 0..count {
+        for (s, n) in streams {
+            out.extend_from_slice(&s[v * n..(v + 1) * n]);
+        }
+    }
+    out
+}
+
 impl GpuMesh {
-    fn textured(device: &wgpu::Device, m: &MeshArrays) -> Option<Self> {
+    fn upload(
+        arena: &ArenaRef,
+        kind: Kind,
+        vertices: &[f32],
+        indices: &[u32],
+        parts: Vec<std::ops::Range<u32>>,
+        bytes: u64,
+    ) -> Self {
+        let mut a = arena.borrow_mut();
+        let region = a.upload(kind as usize, floats(vertices), u32s(indices));
+        Self {
+            base_vertex: a.base_vertex(&region),
+            first_index: (region.index_offset / 4) as u32,
+            region,
+            parts,
+            bytes,
+            arena: arena.clone(),
+        }
+    }
+
+    fn textured(arena: &ArenaRef, m: &MeshArrays) -> Option<Self> {
         if m.indices.is_empty() {
             return None;
         }
-        let v = wgpu::BufferUsages::VERTEX;
-        Some(Self {
-            vertex: [&m.positions, &m.normals, &m.colors, &m.uvs, &m.tiles]
-                .iter()
-                .map(|a| buffer(device, "chunk", floats(a), v))
-                .collect(),
-            index: buffer(device, "chunk", u32s(&m.indices), wgpu::BufferUsages::INDEX),
-            parts: std::iter::once(0..m.indices.len() as u32).collect(),
-            bytes: m.byte_len() as u64,
-        })
+        let vertices = interleave(&[
+            (&m.positions, 3),
+            (&m.normals, 3),
+            (&m.colors, 3),
+            (&m.uvs, 2),
+            (&m.tiles, 4),
+        ]);
+        Some(Self::upload(
+            arena,
+            Kind::Terrain,
+            &vertices,
+            &m.indices,
+            std::iter::once(0..m.indices.len() as u32).collect(),
+            m.byte_len() as u64,
+        ))
     }
+
     /// Flat meshes concatenated into one (an LOD section's surface and its six skirts).
-    fn flat(device: &wgpu::Device, meshes: &[&FlatMesh]) -> Option<Self> {
+    fn flat(arena: &ArenaRef, meshes: &[&FlatMesh]) -> Option<Self> {
         if meshes.iter().all(|m| m.indices.is_empty()) {
             return None;
         }
@@ -158,29 +212,40 @@ impl GpuMesh {
             idx.extend(m.indices.iter().map(|i| i + base));
             parts.push(start..idx.len() as u32);
         }
-        let v = wgpu::BufferUsages::VERTEX;
-        Some(Self {
-            vertex: vec![
-                buffer(device, "flat", floats(&p), v),
-                buffer(device, "flat", floats(&n), v),
-                buffer(device, "flat", floats(&c), v),
-            ],
-            index: buffer(device, "flat", u32s(&idx), wgpu::BufferUsages::INDEX),
-            bytes: 4 * (p.len() + n.len() + c.len() + idx.len()) as u64,
+        let bytes = 4 * (p.len() + n.len() + c.len() + idx.len()) as u64;
+        let vertices = interleave(&[(&p, 3), (&n, 3), (&c, 3)]);
+        Some(Self::upload(
+            arena,
+            Kind::Flat,
+            &vertices,
+            &idx,
             parts,
-        })
+            bytes,
+        ))
+    }
+
+    fn lines(arena: &ArenaRef, points: &[([f32; 3], [f32; 3])]) -> Self {
+        let p: Vec<f32> = points.iter().flat_map(|(p, _)| *p).collect();
+        let c: Vec<f32> = points.iter().flat_map(|(_, c)| *c).collect();
+        let idx: Vec<u32> = (0..points.len() as u32).collect();
+        let bytes = 4 * (p.len() + c.len() + idx.len()) as u64;
+        let vertices = interleave(&[(&p, 3), (&c, 3)]);
+        Self::upload(
+            arena,
+            Kind::Line,
+            &vertices,
+            &idx,
+            std::iter::once(0..idx.len() as u32).collect(),
+            bytes,
+        )
     }
 }
 
-/// WebGPU frees a buffer when it is destroyed, or whenever the page's garbage collector gets to it
-/// (wgpu's WebGPU backend does nothing on drop): a mesh destroys its buffers when it goes, or GPU
-/// memory grows with every replaced chunk and section.
+/// A mesh's regions go back to its page when it goes (the pages themselves are destroyed with the
+/// arena: wgpu's WebGPU backend frees nothing on drop).
 impl Drop for GpuMesh {
     fn drop(&mut self) {
-        for b in &self.vertex {
-            b.destroy();
-        }
-        self.index.destroy();
+        self.arena.borrow_mut().free(&self.region);
     }
 }
 
@@ -222,6 +287,7 @@ enum Kind {
 }
 
 /// One draw, collected before the passes record.
+#[derive(Clone)]
 struct DrawItem {
     kind: Kind,
     water: bool,
@@ -232,11 +298,40 @@ struct DrawItem {
     /// Turn about +y (cos, sin of the yaw): players face their heading.
     rotation: [f32; 2],
     mesh: DrawMesh,
+    /// The arena page the mesh is in (filled in by `collect`): draws from a page bind it once.
+    page: usize,
+    /// The depth passes it is drawn in (bit per pass).
+    passes: u8,
+    /// Its place in the draw order (`draw_order`, filled in by `collect`).
+    key: u128,
+}
+
+/// The draw order as one integer. Opaque first, then the see-through, then lines; the see-through
+/// far to near; the opaque by pipeline and page (each bound once, `render`), then near to far, so
+/// the GPU's depth test rejects what nearer meshes hide before shading it (their order does not
+/// change the picture: depth decides). Distances compare by their f32 bits (non-negative floats
+/// order as their bits do).
+fn draw_order(d: &DrawItem) -> u128 {
+    let rank = u128::from(u8::from(d.water) + 2 * u8::from(d.kind == Kind::Line));
+    let dist = (d.offset[0] * d.offset[0] + d.offset[1] * d.offset[1] + d.offset[2] * d.offset[2])
+        .to_bits();
+    let rest: u128 = if d.kind == Kind::Line {
+        0
+    } else if d.water {
+        u128::from(u32::MAX - dist)
+    } else {
+        (u128::from(d.kind as u8) << 72)
+            | (u128::from(u8::from(d.no_depth)) << 64)
+            | ((d.page as u128 & 0xffff_ffff) << 32)
+            | u128::from(dist)
+    };
+    rank << 96 | rest
 }
 
 /// No turn.
 const NO_ROTATION: [f32; 2] = [1.0, 0.0];
 
+#[derive(Clone)]
 enum DrawMesh {
     Chunk(ChunkCoord, bool),
     Section(i64, bool, u8),
@@ -271,6 +366,8 @@ pub struct Renderer {
     outline: Option<(V3, f64)>,
     outline_mesh: GpuMesh,
     debug: Option<GpuMesh>,
+    /// The GPU pages every mesh lives in (arena.rs).
+    arena: ArenaRef,
     eye: V3,
     yaw: f64,
     pitch: f64,
@@ -358,8 +455,8 @@ impl Renderer {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
                     min_binding_size: wgpu::BufferSize::new(80),
                 },
                 count: None,
@@ -370,8 +467,10 @@ impl Renderer {
             bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout)],
             immediate_size: 0,
         });
-        let attrs = |locations: &[(u32, u32)]| -> Vec<(u64, [wgpu::VertexAttribute; 1])> {
-            locations
+        // One interleaved buffer per mesh (`interleave`): (stride, attributes at their offsets).
+        let attrs = |locations: &[(u32, u32)]| -> (u64, Vec<wgpu::VertexAttribute>) {
+            let mut offset = 0u64;
+            let attributes = locations
                 .iter()
                 .map(|&(location, n)| {
                     let format = match n {
@@ -379,21 +478,21 @@ impl Renderer {
                         3 => wgpu::VertexFormat::Float32x3,
                         _ => wgpu::VertexFormat::Float32x4,
                     };
-                    (
-                        u64::from(n) * 4,
-                        [wgpu::VertexAttribute {
-                            format,
-                            offset: 0,
-                            shader_location: location,
-                        }],
-                    )
+                    let a = wgpu::VertexAttribute {
+                        format,
+                        offset,
+                        shader_location: location,
+                    };
+                    offset += u64::from(n) * 4;
+                    a
                 })
-                .collect()
+                .collect();
+            (offset, attributes)
         };
         let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
-        let mut pipelines = HashMap::new();
+        let mut pipelines = HashMap::default();
         for kind in [Kind::Terrain, Kind::Flat, Kind::Line] {
             for water in [false, true] {
                 for no_depth in [false, true] {
@@ -402,16 +501,11 @@ impl Renderer {
                         Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
                         Kind::Line => ("line_vs", "line_fs", &line_attrs),
                     };
-                    let buffers: Vec<Option<wgpu::VertexBufferLayout>> = a
-                        .iter()
-                        .map(|(stride, attr)| {
-                            Some(wgpu::VertexBufferLayout {
-                                array_stride: *stride,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: attr,
-                            })
-                        })
-                        .collect();
+                    let buffers = [Some(wgpu::VertexBufferLayout {
+                        array_stride: a.0,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &a.1,
+                    })];
                     let blend =
                         (water || kind == Kind::Line).then_some(wgpu::BlendState::ALPHA_BLENDING);
                     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -527,8 +621,9 @@ impl Renderer {
         });
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
         let edges = geometry::box_edges();
-        let outline_mesh = Self::lines_mesh(
-            &device,
+        let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
+        let outline_mesh = GpuMesh::lines(
+            &arena,
             &edges
                 .iter()
                 .map(|p| (*p, [1.0, 1.0, 1.0]))
@@ -550,16 +645,17 @@ impl Renderer {
             draw_buffer,
             draw_group,
             draw_capacity: 1024,
-            chunks: HashMap::new(),
-            sections: HashMap::new(),
+            chunks: HashMap::default(),
+            sections: HashMap::default(),
             shown: Vec::new(),
             stand_ins: Vec::new(),
             level_colors: false,
-            players: HashMap::new(),
-            capsules: HashMap::new(),
+            players: HashMap::default(),
+            capsules: HashMap::default(),
             outline: None,
             outline_mesh,
             debug: None,
+            arena,
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
             pitch: -20.0,
@@ -630,7 +726,7 @@ impl Renderer {
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("draws"),
             size: slots * DRAW_STRIDE,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -641,27 +737,11 @@ impl Renderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &buffer,
                     offset: 0,
-                    size: wgpu::BufferSize::new(80),
+                    size: None,
                 }),
             }],
         });
         (buffer, group)
-    }
-
-    fn lines_mesh(device: &wgpu::Device, points: &[([f32; 3], [f32; 3])]) -> GpuMesh {
-        let p: Vec<f32> = points.iter().flat_map(|(p, _)| *p).collect();
-        let c: Vec<f32> = points.iter().flat_map(|(_, c)| *c).collect();
-        let idx: Vec<u32> = (0..points.len() as u32).collect();
-        let v = wgpu::BufferUsages::VERTEX;
-        GpuMesh {
-            vertex: vec![
-                buffer(device, "lines", floats(&p), v),
-                buffer(device, "lines", floats(&c), v),
-            ],
-            index: buffer(device, "lines", u32s(&idx), wgpu::BufferUsages::INDEX),
-            parts: std::iter::once(0..idx.len() as u32).collect(),
-            bytes: 4 * (p.len() + c.len() + idx.len()) as u64,
-        }
     }
 
     /// Resizes the drawing buffer to CSS pixels × device pixel ratio.
@@ -687,9 +767,16 @@ impl Renderer {
     pub fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
         self.chunks.remove(&coord);
         let Some(m) = meshes else { return };
+        let t0 = crate::telemetry::now_ms();
         let (opaque, water) = (
-            GpuMesh::textured(&self.device, &m.opaque),
-            GpuMesh::textured(&self.device, &m.transparent),
+            GpuMesh::textured(&self.arena, &m.opaque),
+            GpuMesh::textured(&self.arena, &m.transparent),
+        );
+        crate::telemetry::add("upload.chunk", crate::telemetry::now_ms() - t0);
+        crate::telemetry::add("upload.chunks", 1.0);
+        crate::telemetry::add(
+            "upload.bytes",
+            (opaque.as_ref().map_or(0, |m| m.bytes) + water.as_ref().map_or(0, |m| m.bytes)) as f64,
         );
         if opaque.is_none() && water.is_none() {
             return;
@@ -718,8 +805,15 @@ impl Renderer {
         let Some(m) = meshes else { return };
         let mut parts: Vec<&FlatMesh> = vec![&m.opaque];
         parts.extend(m.skirts.iter());
-        let opaque = GpuMesh::flat(&self.device, &parts);
-        let water = GpuMesh::flat(&self.device, &[&m.water]);
+        let t0 = crate::telemetry::now_ms();
+        let opaque = GpuMesh::flat(&self.arena, &parts);
+        let water = GpuMesh::flat(&self.arena, &[&m.water]);
+        crate::telemetry::add("upload.section", crate::telemetry::now_ms() - t0);
+        crate::telemetry::add("upload.sections", 1.0);
+        crate::telemetry::add(
+            "upload.bytes",
+            (opaque.as_ref().map_or(0, |m| m.bytes) + water.as_ref().map_or(0, |m| m.bytes)) as f64,
+        );
         let level = cell_size.log2().round().max(0.0) as usize;
         self.sections.insert(
             id,
@@ -769,7 +863,7 @@ impl Renderer {
                         colors: g.colors,
                         indices: g.indices,
                     };
-                    GpuMesh::flat(&self.device, &[&m]).expect("a capsule has faces")
+                    GpuMesh::flat(&self.arena, &[&m]).expect("a capsule has faces")
                 });
                 self.players.insert(id, v);
             }
@@ -801,7 +895,7 @@ impl Renderer {
                     [(rel(l.from), c), (rel(l.to), c)]
                 })
                 .collect();
-            Self::lines_mesh(&self.device, &pts)
+            GpuMesh::lines(&self.arena, &pts)
         });
     }
     pub fn stats(&self) -> RenderStats {
@@ -881,21 +975,72 @@ impl Renderer {
     }
 
     /// The draws of one pass: everything whose distance range meets [near, far].
+    /// A draw's mesh and the index ranges it draws (a section's surface and its shown skirts).
+    fn mesh_of(&self, m: &DrawMesh) -> (&GpuMesh, Vec<std::ops::Range<u32>>) {
+        match m {
+            DrawMesh::Chunk(c, w) => {
+                let chunk = &self.chunks[c];
+                let m = if *w {
+                    chunk.water.as_ref()
+                } else {
+                    chunk.opaque.as_ref()
+                }
+                .expect("collected");
+                (m, vec![m.parts[0].clone()])
+            }
+            DrawMesh::Section(id, w, mask) => {
+                let s = &self.sections[id];
+                let m = if *w {
+                    s.water.as_ref()
+                } else {
+                    s.opaque.as_ref()
+                }
+                .expect("collected");
+                let mut r = vec![m.parts[0].clone()];
+                r.extend(
+                    (0..6)
+                        .filter(|f| mask & (1 << f) != 0)
+                        .filter_map(|f| m.parts.get(1 + f).cloned()),
+                );
+                (m, r)
+            }
+            DrawMesh::Player(key) => {
+                let m = &self.capsules[key];
+                (m, vec![m.parts[0].clone()])
+            }
+            DrawMesh::Outline => (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()]),
+            DrawMesh::Debug => {
+                let m = self.debug.as_ref().expect("collected");
+                (m, vec![m.parts[0].clone()])
+            }
+        }
+    }
+
+    /// The draws of both depth passes (`passes`: each pass's near and far view depth), in one sweep
+    /// over the chunks and sections (gathering each pass on its own walked everything twice).
     fn collect(
         &self,
-        near: f64,
-        far: f64,
+        passes: [(f64, f64); 2],
         chunk_visible: &dyn Fn(ChunkCoord) -> bool,
-    ) -> Vec<DrawItem> {
+    ) -> [Vec<DrawItem>; 2] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
         let water = [1.0, 1.0, 1.0, WATER_OPACITY];
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
         let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
         let view = PassView::new(self.eye, forward, aspect);
-        let reaches = |origin: V3, size: f64| view.holds(origin, size, near, far);
+        // Which passes (bit per pass) a box reaches into.
+        let reaches = |origin: V3, size: f64| -> u8 {
+            u8::from(view.holds(origin, size, passes[0].0, passes[0].1))
+                | u8::from(view.holds(origin, size, passes[1].0, passes[1].1)) << 1
+        };
         for (&coord, c) in &self.chunks {
-            if !chunk_visible(coord) || !reaches(c.origin, f64::from(CHUNK_SIZE)) {
+            let passes = if chunk_visible(coord) {
+                reaches(c.origin, f64::from(CHUNK_SIZE))
+            } else {
+                0
+            };
+            if passes == 0 {
                 continue;
             }
             let r = self.rel(c.origin);
@@ -909,6 +1054,9 @@ impl Renderer {
                     clip: None,
                     tint: plain,
                     rotation: NO_ROTATION,
+                    page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Chunk(coord, false),
                 });
             }
@@ -921,6 +1069,9 @@ impl Renderer {
                     clip: None,
                     tint: water,
                     rotation: NO_ROTATION,
+                    page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Chunk(coord, true),
                 });
             }
@@ -937,7 +1088,8 @@ impl Renderer {
             let Some(s) = self.sections.get(&id) else {
                 continue;
             };
-            if !reaches(s.origin, s.cell * 32.0) {
+            let passes = reaches(s.origin, s.cell * 32.0);
+            if passes == 0 {
                 continue;
             }
             let r = self.rel(s.origin);
@@ -951,6 +1103,9 @@ impl Renderer {
                     clip: None,
                     tint: level_tint(s, 1.0),
                     rotation: NO_ROTATION,
+                    page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Section(id, false, mask),
                 });
             }
@@ -963,12 +1118,16 @@ impl Renderer {
                     clip: None,
                     tint: level_tint(s, WATER_OPACITY),
                     rotation: NO_ROTATION,
+                    page: 0,
+                    passes,
+                    key: 0,
                     mesh: DrawMesh::Section(id, true, 0),
                 });
             }
         }
         // Stand-ins: the source section's surface, clipped to the hole's box (its own skirts off).
         for st in self.stand_ins.iter().take(MAX_STAND_INS) {
+            let passes = 3;
             let Some(s) = self.sections.get(&st.id).filter(|s| s.opaque.is_some()) else {
                 continue;
             };
@@ -982,11 +1141,15 @@ impl Renderer {
                 clip,
                 tint: level_tint(s, 1.0),
                 rotation: NO_ROTATION,
+                page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Section(st.id, false, 0),
             });
         }
         for v in self.players.values() {
-            if !reaches(v.feet, 4.0) {
+            let passes = reaches(v.feet, 4.0);
+            if passes == 0 {
                 continue;
             }
             // The mesh is posed and coloured in feet-local space; the draw turns it to the yaw.
@@ -1000,10 +1163,14 @@ impl Renderer {
                 clip: None,
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: [yaw.cos(), yaw.sin()],
+                page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Player(player_shape(v)),
             });
         }
-        if let Some((cell, _height)) = self.outline.filter(|(c, _)| reaches(*c, 2.0)) {
+        if let Some((cell, _height)) = self.outline.filter(|(c, _)| reaches(*c, 2.0) != 0) {
+            let passes = reaches(cell, 2.0);
             let r = self.rel([cell[0] - 0.002, cell[1] - 0.002, cell[2] - 0.002]);
             let c = hex(0x101418).map(|v| v as f32);
             out.push(DrawItem {
@@ -1014,10 +1181,16 @@ impl Renderer {
                 clip: None,
                 tint: [c[0], c[1], c[2], 0.8],
                 rotation: NO_ROTATION,
+                page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Outline,
             });
         }
-        if self.debug.is_some() && near < NEAR_PLANE * 2.0 {
+        // Debug lines: in the pass that draws from the near plane.
+        let passes = u8::from(passes[0].0 < NEAR_PLANE * 2.0)
+            | u8::from(passes[1].0 < NEAR_PLANE * 2.0) << 1;
+        if self.debug.is_some() && passes != 0 {
             out.push(DrawItem {
                 kind: Kind::Line,
                 water: false,
@@ -1026,22 +1199,31 @@ impl Renderer {
                 clip: None,
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: NO_ROTATION,
+                page: 0,
+                passes,
+                key: 0,
                 mesh: DrawMesh::Debug,
             });
         }
-        // Opaque first, then the see-through, then lines; within the see-through, far to near.
-        out.sort_by(|a, b| {
-            let rank = |d: &DrawItem| u8::from(d.water) + 2 * u8::from(d.kind == Kind::Line);
-            let dist = |d: &DrawItem| {
-                -(d.offset[0] * d.offset[0] + d.offset[1] * d.offset[1] + d.offset[2] * d.offset[2])
-            };
-            rank(a).cmp(&rank(b)).then(if a.water && b.water {
-                dist(a).total_cmp(&dist(b))
+        for d in &mut out {
+            d.page = self.mesh_of(&d.mesh).0.region.page;
+            d.key = draw_order(d);
+        }
+        // One stable sort by a precomputed key (draw_order), then each pass takes its draws in that
+        // order.
+        out.sort_by_key(|d| d.key);
+        let mut split: [Vec<DrawItem>; 2] = [Vec::with_capacity(out.len()), Vec::new()];
+        for d in out {
+            if d.passes == 3 {
+                split[1].push(d.clone());
+                split[0].push(d);
+            } else if d.passes & 1 != 0 {
+                split[0].push(d);
             } else {
-                std::cmp::Ordering::Equal
-            })
-        });
-        out
+                split[1].push(d);
+            }
+        }
+        split
     }
 
     fn ensure_targets(&mut self) {
@@ -1094,8 +1276,7 @@ impl Renderer {
         let altitude = local_y - f64::from(dwell_world::WORLD_MAX_Y);
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
-        let draws: [Vec<DrawItem>; 2] =
-            std::array::from_fn(|i| self.collect(passes[i].0, passes[i].1, chunk_visible));
+        let draws = self.collect(passes, chunk_visible);
         for (i, (near, far)) in passes.iter().enumerate() {
             let u = self.frame_uniforms(&basis, *near, *far);
             self.queue
@@ -1126,6 +1307,7 @@ impl Renderer {
         let targets = self.targets.as_ref().expect("targets");
         let (colour, depth) = (targets.colour.as_ref().map(|c| &c.1), &targets.depth.1);
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
         let mut slot = 0u64;
         for (i, pass_draws) in draws.iter().enumerate() {
@@ -1161,67 +1343,45 @@ impl Renderer {
                 ..Default::default()
             });
             pass.set_bind_group(0, &self.frame_groups[i], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
+            let mut bound: Option<(Kind, bool, bool)> = None;
+            let mut bound_page: Option<(usize, usize)> = None;
             if i == 0 {
                 pass.set_pipeline(&self.sky_pipeline);
-                pass.set_bind_group(1, &self.draw_group, &[0]);
                 pass.draw(0..3, 0..1);
                 calls += 1;
             }
             for d in pass_draws {
-                let offset = (slot * DRAW_STRIDE) as u32;
+                let instance = slot as u32;
                 slot += 1;
-                let (mesh, ranges): (&GpuMesh, Vec<std::ops::Range<u32>>) = match &d.mesh {
-                    DrawMesh::Chunk(c, w) => {
-                        let chunk = &self.chunks[c];
-                        let m = if *w {
-                            chunk.water.as_ref()
-                        } else {
-                            chunk.opaque.as_ref()
-                        }
-                        .expect("collected");
-                        (m, vec![m.parts[0].clone()])
-                    }
-                    DrawMesh::Section(id, w, mask) => {
-                        let s = &self.sections[id];
-                        let m = if *w {
-                            s.water.as_ref()
-                        } else {
-                            s.opaque.as_ref()
-                        }
-                        .expect("collected");
-                        let mut r = vec![m.parts[0].clone()];
-                        r.extend(
-                            (0..6)
-                                .filter(|f| mask & (1 << f) != 0)
-                                .filter_map(|f| m.parts.get(1 + f).cloned()),
-                        );
-                        (m, r)
-                    }
-                    DrawMesh::Player(key) => {
-                        let m = &self.capsules[key];
-                        (m, vec![m.parts[0].clone()])
-                    }
-                    DrawMesh::Outline => {
-                        (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()])
-                    }
-                    DrawMesh::Debug => {
-                        let m = self.debug.as_ref().expect("collected");
-                        (m, vec![m.parts[0].clone()])
-                    }
-                };
-                pass.set_pipeline(&self.pipelines[&(d.kind, d.water, d.no_depth)]);
-                pass.set_bind_group(1, &self.draw_group, &[offset]);
-                for (k, b) in mesh.vertex.iter().enumerate() {
-                    pass.set_vertex_buffer(k as u32, b.slice(..));
+                let (mesh, ranges) = self.mesh_of(&d.mesh);
+                // Each WebGPU call crosses from WASM to JS: set only what changes.
+                let key = (d.kind, d.water, d.no_depth);
+                if bound != Some(key) {
+                    pass.set_pipeline(&self.pipelines[&key]);
+                    bound = Some(key);
                 }
-                pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
-                for r in ranges.into_iter().filter(|r| !r.is_empty()) {
+                // A page holds many meshes: bound once for the draws from it in a row.
+                let page = (mesh.region.format, mesh.region.page);
+                if bound_page != Some(page) {
+                    let buffer = arena.buffer(page.0, page.1);
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    bound_page = Some(page);
+                }
+                for r in merge_ranges(ranges) {
                     triangles += u64::from(r.len() as u32 / 3);
-                    pass.draw_indexed(r, 0, 0..1);
+                    let first = mesh.first_index;
+                    pass.draw_indexed(
+                        first + r.start..first + r.end,
+                        mesh.base_vertex,
+                        instance..instance + 1,
+                    );
                     calls += 1;
                 }
             }
         }
+        drop(arena);
         self.queue.submit([encoder.finish()]);
         self.stats.calls = calls;
         self.stats.triangles = triangles;
@@ -1367,6 +1527,73 @@ mod tests {
     use super::*;
 
     #[test]
+    fn draw_order_opaque_near_to_far_by_pipeline_then_water_far_to_near_then_lines() {
+        let item = |kind: Kind, water: bool, dist: f32, page: usize| DrawItem {
+            kind,
+            water,
+            no_depth: false,
+            offset: [dist, 0.0, 0.0, 1.0],
+            clip: None,
+            tint: [1.0; 4],
+            rotation: NO_ROTATION,
+            mesh: DrawMesh::Outline,
+            page,
+            passes: 1,
+            key: 0,
+        };
+        let mut items = [
+            item(Kind::Line, false, 1.0, 0),
+            item(Kind::Flat, true, 5.0, 0),
+            item(Kind::Flat, false, 50.0, 1),
+            item(Kind::Terrain, false, 30.0, 0),
+            item(Kind::Flat, true, 50.0, 0),
+            item(Kind::Flat, false, 20.0, 1),
+            item(Kind::Terrain, false, 10.0, 0),
+            item(Kind::Flat, false, 90.0, 0),
+        ];
+        for d in &mut items {
+            d.key = draw_order(d);
+        }
+        items.sort_by_key(|d| d.key);
+        let got: Vec<(bool, f32, usize)> = items
+            .iter()
+            .map(|d| (d.water, d.offset[0], d.page))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (false, 10.0, 0), // terrain, near to far
+                (false, 30.0, 0),
+                (false, 90.0, 0), // flat, page 0 then page 1, each near to far
+                (false, 20.0, 1),
+                (false, 50.0, 1),
+                (true, 50.0, 0), // water far to near
+                (true, 5.0, 0),
+                (false, 1.0, 0), // lines last
+            ]
+        );
+    }
+
+    #[test]
+    fn touching_index_ranges_draw_as_one() {
+        assert_eq!(
+            merge_ranges(vec![0..6, 6..9, 9..9, 12..15, 15..18]),
+            vec![0..9, 12..18]
+        );
+        assert!(merge_ranges(vec![3..3, 5..5]).is_empty());
+    }
+
+    #[test]
+    fn streams_interleave_vertex_by_vertex() {
+        let p = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let uv = [7.0, 8.0, 9.0, 10.0];
+        assert_eq!(
+            interleave(&[(&p, 3), (&uv, 2)]),
+            vec![1.0, 2.0, 3.0, 7.0, 8.0, 4.0, 5.0, 6.0, 9.0, 10.0]
+        );
+    }
+
+    #[test]
     fn software_adapters_draw_without_multisampling() {
         assert_eq!(samples_for(wgpu::DeviceType::Cpu), 1);
         assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu), SAMPLES);
@@ -1461,9 +1688,9 @@ mod tests {
 
     /// Whether submitting a pass that binds `b` (a vertex or index buffer) fails because it was
     /// destroyed.
-    fn destroyed(r: &Renderer, b: &wgpu::Buffer) -> bool {
-        let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let target = r.device.create_texture(&wgpu::TextureDescriptor {
+    fn destroyed_on(device: &wgpu::Device, queue: &wgpu::Queue, b: &wgpu::Buffer) -> bool {
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let target = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
                 width: 4,
@@ -1478,7 +1705,7 @@ mod tests {
             view_formats: &[],
         });
         let view = target.create_view(&Default::default());
-        let mut encoder = r.device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1495,7 +1722,7 @@ mod tests {
                 pass.set_vertex_buffer(0, b.slice(..));
             }
         }
-        r.queue.submit([encoder.finish()]);
+        queue.submit([encoder.finish()]);
         let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
         match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
             std::task::Poll::Ready(e) => e.is_some_and(|e| e.to_string().contains("destroyed")),
@@ -1504,12 +1731,13 @@ mod tests {
     }
 
     #[test]
-    fn replaced_meshes_free_their_gpu_buffers() {
-        // On the web a dropped wgpu::Buffer stays allocated until the page's garbage collector
-        // finds it (wgpu's WebGPU backend does not destroy it): every replaced chunk, section and
-        // debug-lines mesh must be destroyed explicitly, or GPU memory grows and the frame rate
-        // falls over a session (playtest 2026-10-14). A second handle stands in for the page's.
+    fn replaced_meshes_free_their_gpu_memory() {
+        // Every replaced or removed chunk, section and debug-lines mesh must give its GPU memory
+        // back, or memory grows and the frame rate falls over a session (playtest 2026-10-14).
+        // Meshes live in arena pages (arena.rs): replacing them over and over reuses the same
+        // pages, and removing them all leaves nothing in use.
         let mut r = noop_renderer();
+        let outline = r.arena.borrow().used_bytes();
         let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
         for x in -1..=32 {
             for z in -1..=32 {
@@ -1517,26 +1745,6 @@ mod tests {
             }
         }
         let meshes = dwell_mesh::mesh_chunk(&padded, false).expect("meshed");
-        let coord = ChunkCoord { x: 0, y: 0, z: 0 };
-        r.set_terrain_chunk(coord, Some(&meshes));
-        let chunk = r.chunks[&coord]
-            .opaque
-            .as_ref()
-            .expect("opaque")
-            .index
-            .clone();
-        assert!(!destroyed(&r, &chunk));
-        r.set_terrain_chunk(coord, Some(&meshes));
-        assert!(destroyed(&r, &chunk), "a replaced chunk mesh");
-        let chunk = r.chunks[&coord]
-            .opaque
-            .as_ref()
-            .expect("opaque")
-            .index
-            .clone();
-        r.set_terrain_chunk(coord, None);
-        assert!(destroyed(&r, &chunk), "a removed chunk mesh");
-
         let quad = FlatMesh {
             positions: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
             normals: vec![0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
@@ -1548,25 +1756,54 @@ mod tests {
             water: quad,
             skirts: Default::default(),
         };
-        r.set_lod_section(7, [0.0; 3], 2.0, Some(&section));
-        let s = &r.sections[&7];
-        let (opaque, water) = (
-            s.opaque.as_ref().expect("opaque").vertex[0].clone(),
-            s.water.as_ref().expect("water").index.clone(),
-        );
-        r.set_lod_section(7, [0.0; 3], 2.0, None);
-        assert!(destroyed(&r, &opaque), "a removed section's surface");
-        assert!(destroyed(&r, &water), "a removed section's water");
-
         let line = Line {
             from: [0.0; 3],
             to: [1.0; 3],
             color: 0xffffff,
         };
-        r.set_debug_lines(Some(&[line]));
-        let lines = r.debug.as_ref().expect("lines").index.clone();
-        r.set_debug_lines(Some(&[line]));
-        assert!(destroyed(&r, &lines), "last frame's debug lines");
+        let replace = |r: &mut Renderer| {
+            for x in 0..4 {
+                r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, Some(&meshes));
+                r.set_lod_section(i64::from(x), [0.0; 3], 2.0, Some(&section));
+            }
+            r.set_debug_lines(Some(&[line]));
+        };
+        replace(&mut r);
+        let (pages, used) = (r.arena.borrow().page_bytes(), r.arena.borrow().used_bytes());
+        for _ in 0..500 {
+            replace(&mut r);
+        }
+        assert_eq!(
+            r.arena.borrow().page_bytes(),
+            pages,
+            "replacing reuses the pages"
+        );
+        assert_eq!(
+            r.arena.borrow().used_bytes(),
+            used,
+            "replaced meshes are freed"
+        );
+        for x in 0..4 {
+            r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, None);
+            r.set_lod_section(i64::from(x), [0.0; 3], 2.0, None);
+        }
+        r.set_debug_lines(None);
+        assert_eq!(
+            r.arena.borrow().used_bytes(),
+            outline,
+            "only the block outline is left"
+        );
+        // The pages themselves are destroyed with the renderer (wgpu's WebGPU backend does not
+        // destroy a buffer on drop).
+        let pages = r.arena.borrow().buffers();
+        let (device, queue) = (r.device.clone(), r.queue.clone());
+        drop(r);
+        for p in &pages {
+            assert!(
+                destroyed_on(&device, &queue, p),
+                "a page outlived the renderer"
+            );
+        }
     }
 
     #[test]

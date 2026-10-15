@@ -1,11 +1,13 @@
-// Settings menu: a button in the top-left corner opens a panel of sliders — the height fog
-// (render/fog.ts), the detail settings (lod/detail.ts) and the tone-mapping exposure
-// (render/look.ts), ARCHITECTURE.md §5, §6.6. The settings
-// are kept in this browser. In a game the panel is also the game menu (Phase 5a): Resume and Quit
-// to main menu above the sliders; it opens when the pointer is released (Esc).
+// The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
+// with pages — Settings (the height fog, render/fog.ts; the detail settings, lod/detail.ts; the
+// tone-mapping exposure and the sky, render/look.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
+// and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
+// (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
+// settings are kept in this browser.
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
+import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -223,14 +225,74 @@ function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
   ];
 }
 
+/** A debug tool as a button in the Debug page (`key` matches an entry of DEBUG_KEYS). */
+export interface DebugTool {
+  key: string;
+  run: () => void;
+  /** Whether it is on now (a toggle), for the button's pressed state. */
+  on?: () => boolean;
+}
+
+type Page = 'settings' | 'controls' | 'debug' | 'host';
+
+const PAGE_TITLES: Record<Page, string> = {
+  settings: 'Settings',
+  controls: 'Controls',
+  debug: 'Debug',
+  host: 'Host',
+};
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+/** Keys as keycaps: alternatives ("C / Ctrl") with "or" between, `+` joining keys used together. */
+function keycaps(keys: string): HTMLElement[] {
+  return keys.split(' / ').map((alt, i) => {
+    const group = el('span', 'keys');
+    if (i > 0) group.append(el('span', 'keys-or', 'or'));
+    // A phrase ("Drag on the left", "Left click") reads as words, not a key.
+    for (const k of alt.split('+'))
+      group.append(el('kbd', k.includes(' ') ? 'phrase' : undefined, k));
+    return group;
+  });
+}
+
+/** One control as a row: what it does, its keys, and when it applies. */
+function controlRow(c: Control): HTMLElement {
+  const row = el('div', 'control-row');
+  const what = el('span', 'control-action', c.action);
+  const keys = el('span', 'control-keys');
+  keys.append(...keycaps(keysLabel(c)));
+  row.append(what, keys);
+  if (c.when) row.append(el('span', 'control-when', c.when));
+  return row;
+}
+
 export class SettingsMenu {
+  /** The whole menu (full screen when open). */
   private readonly panel: HTMLDivElement;
   private readonly button: HTMLButtonElement;
+  private readonly subtitle = el('p', 'gm-sub');
+  private readonly tabs = el('nav', 'gm-tabs');
+  private readonly pagesBox = el('div', 'gm-pages');
+  private readonly footer = el('footer', 'gm-foot');
+  private readonly pages = new Map<Page, { tab: HTMLButtonElement; page: HTMLElement }>();
+  private readonly debugButtons: { tool: DebugTool; button: HTMLButtonElement }[] = [];
   private readonly rows: { spec: SliderSpec; input: HTMLInputElement; value: HTMLSpanElement }[] =
     [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
   private settings: Settings;
+  /** Told when the menu opens or closes (the touch controls step aside while it is open). */
+  onOpenChange: ((open: boolean) => void) | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -245,39 +307,39 @@ export class SettingsMenu {
     button.setAttribute('aria-label', 'Menu');
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', 'settings-menu');
-    button.textContent = '☰';
+    button.title = 'Menu and settings (Esc)';
+    button.append(el('span', 'menu-glyph'));
 
     this.panel = document.createElement('div');
     this.panel.id = 'settings-menu';
+    this.panel.className = 'game-menu';
     this.panel.hidden = true;
-    for (const section of sections(mobile)) {
-      const title = document.createElement('h2');
-      title.textContent = section.title;
-      this.panel.append(title);
-      for (const spec of section.sliders) this.panel.append(this.slider(spec));
-    }
-    const reset = document.createElement('button');
-    reset.type = 'button';
-    reset.className = 'settings-reset';
-    reset.textContent = 'Reset';
-    reset.addEventListener('click', () => {
-      this.set(defaultSettings(this.mobile));
+    this.panel.setAttribute('role', 'dialog');
+    this.panel.setAttribute('aria-modal', 'true');
+    this.panel.setAttribute('aria-label', 'Game menu');
+
+    const sheet = el('div', 'gm-sheet');
+    const head = el('header', 'gm-head');
+    const titles = el('div', 'gm-titles');
+    titles.append(el('h1', 'gm-title', 'Paused'), this.subtitle);
+    const close = el('button', 'gm-close');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Close menu');
+    close.title = 'Close (Esc)';
+    close.addEventListener('click', () => {
+      this.setOpen(false);
     });
-    const copy = document.createElement('button');
-    copy.type = 'button';
-    copy.className = 'settings-copy';
-    copy.textContent = 'Copy JSON';
-    copy.addEventListener('click', () => {
-      void this.copy(copy);
+    head.append(titles, close);
+    this.tabs.setAttribute('role', 'tablist');
+    sheet.append(head, this.tabs, this.pagesBox, this.footer);
+    this.panel.append(sheet);
+    // A click on the dimmed game around the sheet closes the menu.
+    this.panel.addEventListener('click', (e) => {
+      if (e.target === this.panel) this.setOpen(false);
     });
-    const actions = document.createElement('div');
-    actions.className = 'settings-actions';
-    actions.append(reset, copy);
-    this.fallback.className = 'settings-json';
-    this.fallback.readOnly = true;
-    this.fallback.rows = 10;
-    this.fallback.hidden = true;
-    this.panel.append(actions, this.fallback);
+
+    this.addPage('settings', this.settingsPage());
+    this.addPage('controls', this.controlsPage());
 
     button.addEventListener('click', () => {
       this.setOpen(!this.isOpen);
@@ -286,6 +348,7 @@ export class SettingsMenu {
     });
     parent.append(button, this.panel);
     this.set(this.settings);
+    this.show('settings');
   }
 
   get current(): Settings {
@@ -297,8 +360,17 @@ export class SettingsMenu {
   }
 
   setOpen(open: boolean): void {
+    if (open === this.isOpen) return;
     this.panel.hidden = !open;
     this.button.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('menu-open', open);
+    if (open) this.refreshDebug();
+    this.onOpenChange?.(open);
+  }
+
+  /** The world or server being played, under the menu's title. */
+  setSubtitle(text: string): void {
+    this.subtitle.textContent = text;
   }
 
   /**
@@ -306,58 +378,178 @@ export class SettingsMenu {
    * again) and Quit to main menu (`onQuit`, which saves and leaves).
    */
   addGameActions(onResume: () => void, onQuit: () => void): void {
-    const resume = document.createElement('button');
+    const resume = el('button', 'block-button', 'Resume');
     resume.type = 'button';
     resume.id = 'menu-resume';
-    resume.textContent = 'Resume';
     resume.addEventListener('click', () => {
       this.setOpen(false);
       onResume();
     });
-    const quit = document.createElement('button');
+    const quit = el('button', 'quiet-button', 'Quit to main menu');
     quit.type = 'button';
     quit.id = 'menu-quit';
-    quit.textContent = 'Quit to main menu';
     quit.addEventListener('click', () => {
       quit.disabled = true;
       quit.textContent = 'Saving…';
       onQuit();
     });
-    const actions = document.createElement('div');
-    actions.className = 'menu-actions';
-    actions.append(resume, quit);
-    this.panel.prepend(actions);
+    const actions = el('div', 'menu-actions');
+    actions.append(quit, resume);
+    this.footer.prepend(actions);
   }
 
-  /**
-   * Adds Host… to the game menu (local worlds, Phase 5c): it shows `panel` (ui/hostPanel.ts) below
-   * the actions. Call after addGameActions.
-   */
+  /** Adds the Host page (local worlds, Phase 5c): `panel` is ui/hostPanel.ts's. */
   addHostPanel(panel: HTMLElement): void {
-    const actions = this.panel.querySelector('.menu-actions');
-    if (!actions) return;
-    panel.hidden = true;
-    const host = document.createElement('button');
-    host.type = 'button';
-    host.id = 'menu-host';
-    host.textContent = 'Host…';
-    host.setAttribute('aria-expanded', 'false');
-    host.addEventListener('click', () => {
-      panel.hidden = !panel.hidden;
-      host.setAttribute('aria-expanded', String(!panel.hidden));
+    panel.hidden = false;
+    const page = el('section');
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        'Open this world to friends: they join with the code or link while you play.',
+      ),
+      panel,
+    );
+    this.addPage('host', page);
+    this.pages.get('host')?.tab.setAttribute('id', 'menu-host');
+  }
+
+  /** Adds the Debug page: each tool a button with its key (DEBUG_KEYS). */
+  addDebugTools(tools: DebugTool[]): void {
+    const page = el('section');
+    page.append(
+      el('p', 'gm-lead', 'Tools for looking under the hood. Each also has a key while you play.'),
+    );
+    const grid = el('div', 'debug-tools');
+    for (const tool of tools) {
+      const c = DEBUG_KEYS.find((d) => d.keys.includes(tool.key));
+      const b = el('button', 'debug-tool');
+      b.type = 'button';
+      b.append(el('span', 'debug-tool-name', c?.action ?? tool.key), ...keycaps(tool.key));
+      if (c?.when) b.append(el('span', 'debug-tool-when', c.when));
+      b.addEventListener('click', () => {
+        tool.run();
+        this.refreshDebug();
+      });
+      grid.append(b);
+      this.debugButtons.push({ tool, button: b });
+    }
+    const zoom = DEBUG_KEYS.find((d) => d.action === 'Map zoom');
+    page.append(grid);
+    if (zoom) {
+      const list = el('div', 'control-list');
+      list.append(controlRow(zoom));
+      page.append(list);
+    }
+    this.addPage('debug', page);
+  }
+
+  /** A line at the foot of the menu (the build). */
+  setFootnote(text: string): void {
+    let note = this.footer.querySelector<HTMLElement>('.gm-note');
+    if (!note) {
+      note = el('p', 'gm-note');
+      this.footer.append(note);
+    }
+    note.textContent = text;
+  }
+
+  private refreshDebug(): void {
+    for (const { tool, button } of this.debugButtons) {
+      if (tool.on) button.setAttribute('aria-pressed', String(tool.on()));
+    }
+  }
+
+  private addPage(name: Page, page: HTMLElement): void {
+    const order: Page[] = ['settings', 'controls', 'debug', 'host'];
+    const tab = el('button', 'gm-tab', PAGE_TITLES[name]);
+    tab.type = 'button';
+    tab.setAttribute('role', 'tab');
+    tab.dataset.page = name;
+    tab.addEventListener('click', () => {
+      this.show(name);
     });
-    actions.querySelector('#menu-quit')?.before(host);
-    actions.after(panel);
+    page.classList.add('gm-page');
+    page.setAttribute('role', 'tabpanel');
+    page.dataset.page = name;
+    // Pages keep their order whatever order they are added in.
+    const next = order.slice(order.indexOf(name) + 1).find((p) => this.pages.has(p));
+    const after = next ? this.pages.get(next) : undefined;
+    if (after) {
+      after.tab.before(tab);
+      after.page.before(page);
+    } else {
+      this.tabs.append(tab);
+      this.pagesBox.append(page);
+    }
+    this.pages.set(name, { tab, page });
+    const shown = [...this.pages.values()].some((p) => !p.page.hidden && p.page !== page);
+    page.hidden = shown;
+    tab.setAttribute('aria-selected', String(!shown));
+  }
+
+  private show(name: Page): void {
+    for (const [n, { tab, page }] of this.pages) {
+      page.hidden = n !== name;
+      tab.setAttribute('aria-selected', String(n === name));
+    }
+    this.pagesBox.scrollTop = 0;
+  }
+
+  private settingsPage(): HTMLElement {
+    const page = el('section');
+    for (const section of sections(this.mobile)) {
+      const group = el('div', 'gm-group');
+      group.append(el('h2', undefined, section.title));
+      const grid = el('div', 'gm-grid');
+      for (const spec of section.sliders) grid.append(this.slider(spec));
+      group.append(grid);
+      page.append(group);
+    }
+    const reset = el('button', 'quiet-button settings-reset', 'Reset');
+    reset.type = 'button';
+    reset.title = 'Back to the defaults';
+    reset.addEventListener('click', () => {
+      this.set(defaultSettings(this.mobile));
+    });
+    const copy = el('button', 'quiet-button settings-copy', 'Copy JSON');
+    copy.type = 'button';
+    copy.title = 'Copy these settings, to share them';
+    copy.addEventListener('click', () => {
+      void this.copy(copy);
+    });
+    const actions = el('div', 'settings-actions');
+    actions.append(reset, copy);
+    this.fallback.className = 'settings-json';
+    this.fallback.readOnly = true;
+    this.fallback.rows = 10;
+    this.fallback.hidden = true;
+    page.append(actions, this.fallback);
+    return page;
+  }
+
+  private controlsPage(): HTMLElement {
+    const page = el('section');
+    const groups: { title: string; controls: Control[] }[] = this.mobile
+      ? [{ title: 'Touch', controls: TOUCH }, ...KEYBOARD]
+      : [...KEYBOARD, { title: 'Touch screens', controls: TOUCH }];
+    groups.push({ title: 'Debug', controls: DEBUG_KEYS });
+    for (const g of groups) {
+      const group = el('div', 'gm-group');
+      group.append(el('h2', undefined, g.title));
+      const list = el('div', 'control-list');
+      for (const c of g.controls) list.append(controlRow(c));
+      group.append(list);
+      page.append(group);
+    }
+    return page;
   }
 
   private slider(spec: SliderSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row';
-    const name = document.createElement('span');
-    name.className = 'settings-name';
-    name.textContent = spec.label;
-    const value = document.createElement('span');
-    value.className = 'settings-value';
+    const name = el('span', 'settings-name', spec.label);
+    const value = el('span', 'settings-value');
     const input = document.createElement('input');
     input.type = 'range';
     input.min = '0';
@@ -368,14 +560,18 @@ export class SettingsMenu {
       const v = sliderToValue(Number(input.value), spec.min, spec.max, spec.log);
       this.settings = spec.with(this.settings, v);
       value.textContent = spec.format(v);
+      this.paint(input);
       this.apply();
     });
-    const hint = document.createElement('span');
-    hint.className = 'settings-hint';
-    hint.textContent = spec.hint;
+    const hint = el('span', 'settings-hint', spec.hint);
     row.append(name, value, input, hint);
     this.rows.push({ spec, input, value });
     return row;
+  }
+
+  /** The slider's filled part, as a CSS variable the track's gradient reads. */
+  private paint(input: HTMLInputElement): void {
+    input.style.setProperty('--fill', `${String((100 * Number(input.value)) / SLIDER_STEPS)}%`);
   }
 
   private set(settings: Settings): void {
@@ -384,6 +580,7 @@ export class SettingsMenu {
       const v = spec.get(settings);
       input.value = String(valueToSlider(v, spec.min, spec.max, spec.log));
       value.textContent = spec.format(v);
+      this.paint(input);
     }
     this.apply();
   }

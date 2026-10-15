@@ -43,6 +43,7 @@ import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
 import { startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
+import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
 
@@ -106,6 +107,51 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
+  telemetry(): Telemetry;
+  /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
+  telemetryFrames(): { names: string[]; frames: number[][] };
+  /** The kept player controller ticks, oldest first. */
+  ticks(): TickSample[];
+  /** Forgets the telemetry so far: measure from here. */
+  telemetryReset(): void;
+}
+
+/** A distribution's summary (telemetry.rs `Stats`). */
+export interface TelemetryStats {
+  n: number;
+  mean: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  max: number;
+  sum: number;
+}
+
+export interface Telemetry {
+  /** Per-frame series (ms, or counts per frame), `interval` the time between frames. */
+  frames: Record<string, TelemetryStats>;
+  /** Per-event series (e.g. `job.chunk_mesh.run`, ms). */
+  samples: Record<string, TelemetryStats>;
+  counters: Record<string, number>;
+  frameCount: number;
+}
+
+/** One controller tick (telemetry.rs `TickSample`). */
+export interface TickSample {
+  seq: number;
+  atMs: number;
+  feet: Vec3;
+  velocity: Vec3;
+  state: string;
+  grounded: boolean;
+  crouched: boolean;
+  touchingWall: boolean;
+  ceilingBlocked: boolean;
+  /** Movement input: x right, y forward, −1 to 1. */
+  move: [number, number];
+  jump: boolean;
+  crouch: boolean;
 }
 
 /** World-file tools for tests and debugging, on every page (the main menu included). */
@@ -332,19 +378,58 @@ async function start(): Promise<App | null> {
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
   app.touch = touch;
+  let touchWanted = mobile;
   touch.visible = mobile;
-  window.addEventListener('touchstart', () => (touch.visible = true), {
-    once: true,
-    passive: true,
-  });
+  window.addEventListener(
+    'touchstart',
+    () => {
+      touchWanted = true;
+      touch.visible = !(app.settings?.isOpen ?? false);
+    },
+    { once: true, passive: true },
+  );
   forwardInput(app);
-  // Settings (top left): fog, detail, exposure and the sky, applied as the sliders move.
-  app.settings = new SettingsMenu(document.body, mobile, (s) => {
+  // The game menu (top left, or Esc): settings applied as the sliders move.
+  const settings = new SettingsMenu(document.body, mobile, (s) => {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setSkyRotation(s.skyRotation);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
+  app.settings = settings;
+  // While the menu is open the touch controls step aside: they would take its taps.
+  settings.onOpenChange = (open) => {
+    touch.visible = touchWanted && !open;
+  };
+  settings.setFootnote(formatBuildInfo(buildInfo));
+  settings.addDebugTools([
+    {
+      key: 'F3',
+      run: () => {
+        toggleDebug(app);
+      },
+      on: () => app.hud.debugVisible,
+    },
+    {
+      key: 'F4',
+      run: () => {
+        app.map.toggle();
+      },
+      on: () => app.map.visible,
+    },
+    {
+      key: 'F6',
+      run: () => {
+        copyBlockDump(app);
+      },
+    },
+  ]);
+  app.hud.onToggleMap = () => {
+    app.map.toggle();
+  };
+  app.hud.onCloseDebug = () => {
+    toggleDebug(app);
+  };
   // No F3 on a phone: ?debug=1 opens the debug overlay.
   if (params.get('debug') === '1') toggleDebug(app);
   app.hud.onCopyBlocks = () => {
@@ -384,6 +469,12 @@ async function start(): Promise<App | null> {
     renderStats: () => client.renderStats() as RenderStats,
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
+    telemetry: () => client.telemetry() as Telemetry,
+    telemetryFrames: () => client.telemetryFrames() as { names: string[]; frames: number[][] },
+    ticks: () => client.telemetryTicks() as TickSample[],
+    telemetryReset: () => {
+      client.telemetryReset();
+    },
   };
 
   const frame = (now: number): void => {
@@ -428,6 +519,8 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   app.client.select(0);
   app.touch?.setFlight(joined.mayFly, app.client.flying());
   startDebugTools(app);
+  document.body.classList.add('in-game');
+  app.hud.showHint(prefersTouch() ? TOUCH_START_HINT : START_HINT);
 }
 
 /**
@@ -684,6 +777,7 @@ async function connect(app: App): Promise<void> {
       app.loopback = local.loopback;
     }
     enableGameMenu(app, local?.save ?? null);
+    app.settings?.setSubtitle(localWorld ? `${target} · this device` : target);
     // A local world can be opened to friends (Host…, Phase 5c).
     if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;

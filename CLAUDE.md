@@ -34,6 +34,10 @@ and friend worlds), with a small master server for discovery; there are no offic
   toward the midplane, crossing between the faces.
 - `docs/reference/` — external references kept for implementation (e.g. the Aether floating-island
   spec used by the cancelled Phase 12; removed in Phase 15).
+- `docs/DEV_TOOLS.md` — the dev telemetry and the bench: run the real game in Chrome on the GPU,
+  drive it with scripted scenarios (`client/bench/scenarios.json`, `npm run bench`) and read frame
+  timings, job latencies, controller ticks, traces and screenshots. Use and extend it to test and
+  benchmark in the browser.
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 

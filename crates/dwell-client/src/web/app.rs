@@ -26,6 +26,7 @@ use crate::net::sdp::WebRtcInvite;
 use crate::net::session::{Out, Session, SessionState};
 use crate::pool::Pool;
 use crate::render::Renderer;
+use crate::telemetry;
 
 type Events = Rc<RefCell<VecDeque<TransportEvent>>>;
 /// The device key's signature of the join transcript, once the shell's promise settles.
@@ -417,9 +418,11 @@ impl Client {
 
     /// One animation frame: network, the game's ticks, and drawing.
     pub fn frame(&self, now_ms: f64) {
+        let t0 = telemetry::now_ms();
+        telemetry::with(|t| t.begin_frame(now_ms));
         let mut s = self.inner.borrow_mut();
         let s = &mut *s;
-        s.pump_network(now_ms);
+        telemetry::span("net", || s.pump_network(now_ms));
         if s.game.is_none() {
             s.start_game();
         }
@@ -440,7 +443,7 @@ impl Client {
                 }
             }
         }
-        s.pump_network(now_ms);
+        telemetry::span("net", || s.pump_network(now_ms));
         let start = *s.started_ms.get_or_insert(now_ms);
         s.renderer.borrow_mut().set_sky_frame(sky_frame(sky_angle(
             s.sky_setting_deg,
@@ -448,6 +451,106 @@ impl Client {
             (now_ms - start) / 1000.0,
         )));
         s.draw();
+        telemetry::add("frame.cpu", telemetry::now_ms() - t0);
+    }
+
+    /// Dev telemetry (docs/DEV_TOOLS.md): `{ frames: {name: stats}, samples: {name: stats},
+    /// counters: {name: total}, frameCount }`, each stats `{ n, mean, p50, p95, p99, max, sum }`
+    /// over the last frames kept (per-frame series) or events kept (samples).
+    pub fn telemetry(&self) -> JsValue {
+        telemetry::with(|t| {
+            let stats = |list: Vec<(&'static str, telemetry::Stats)>| {
+                let o = Object::new();
+                for (name, st) in list {
+                    let r = Object::new();
+                    set(&r, "n", st.n as u32);
+                    set(&r, "mean", st.mean);
+                    set(&r, "p50", st.p50);
+                    set(&r, "p95", st.p95);
+                    set(&r, "p99", st.p99);
+                    set(&r, "max", st.max);
+                    set(&r, "sum", st.sum);
+                    set(&o, name, r);
+                }
+                o
+            };
+            let o = Object::new();
+            set(&o, "frames", stats(t.frame_stats()));
+            set(&o, "samples", stats(t.sample_stats()));
+            let c = Object::new();
+            for (name, v) in t.counters() {
+                set(&c, name, v);
+            }
+            set(&o, "counters", c);
+            set(&o, "frameCount", t.frames().count() as u32);
+            o.into()
+        })
+    }
+
+    /// The kept frames: `{ names, frames: [[atMs, ...values in names' order]] }`.
+    #[wasm_bindgen(js_name = telemetryFrames)]
+    pub fn telemetry_frames(&self) -> JsValue {
+        telemetry::with(|t| {
+            let o = Object::new();
+            set(
+                &o,
+                "names",
+                t.names()
+                    .iter()
+                    .map(|&n| JsValue::from(n))
+                    .collect::<Array>(),
+            );
+            let frames: Array = t
+                .frames()
+                .map(|f| {
+                    std::iter::once(f.at_ms)
+                        .chain(f.values.iter().copied())
+                        .map(JsValue::from)
+                        .collect::<Array>()
+                })
+                .collect();
+            set(&o, "frames", frames);
+            o.into()
+        })
+    }
+
+    /// The kept controller ticks, oldest first.
+    #[wasm_bindgen(js_name = telemetryTicks)]
+    pub fn telemetry_ticks(&self) -> Array {
+        telemetry::with(|t| {
+            t.ticks()
+                .map(|k| {
+                    let v3 = |v: [f64; 3]| v.iter().map(|&x| JsValue::from(x)).collect::<Array>();
+                    let o = Object::new();
+                    set(&o, "seq", k.seq);
+                    set(&o, "atMs", k.at_ms);
+                    set(&o, "feet", v3(k.feet));
+                    set(&o, "velocity", v3(k.velocity));
+                    set(&o, "state", k.state);
+                    set(&o, "grounded", k.grounded);
+                    set(&o, "crouched", k.crouched);
+                    set(&o, "touchingWall", k.touching_wall);
+                    set(&o, "ceilingBlocked", k.ceiling_blocked);
+                    set(
+                        &o,
+                        "move",
+                        k.move_input
+                            .iter()
+                            .map(|&x| JsValue::from(x))
+                            .collect::<Array>(),
+                    );
+                    set(&o, "jump", k.jump);
+                    set(&o, "crouch", k.crouch);
+                    JsValue::from(o)
+                })
+                .collect()
+        })
+    }
+
+    /// Forgets the telemetry recorded so far (measure from here).
+    #[wasm_bindgen(js_name = telemetryReset)]
+    pub fn telemetry_reset(&self) {
+        telemetry::with(telemetry::Telemetry::reset);
     }
 
     /// The drawing buffer's size: CSS pixels × the pixel ratio.
@@ -1215,7 +1318,10 @@ impl Inner {
     }
 
     fn draw(&mut self) {
-        let frame = match self.surface.get_current_texture() {
+        let acquire = telemetry::now_ms();
+        let current = self.surface.get_current_texture();
+        telemetry::add("draw.acquire", telemetry::now_ms() - acquire);
+        let frame = match current {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             _ => {
@@ -1227,10 +1333,12 @@ impl Inner {
         };
         let view = frame.texture.create_view(&Default::default());
         let game = &self.game;
-        self.renderer
-            .borrow_mut()
-            .render(&view, &|c| game.as_ref().is_none_or(|g| g.chunk_visible(c)));
+        telemetry::span("draw.render", || {
+            self.renderer
+                .borrow_mut()
+                .render(&view, &|c| game.as_ref().is_none_or(|g| g.chunk_visible(c)));
+        });
         let queue = self.renderer.borrow().queue().clone();
-        queue.present(frame);
+        telemetry::span("draw.present", || queue.present(frame));
     }
 }

@@ -2,7 +2,7 @@
 //! the same controller as the server against a small prediction world: the client's terrain, the
 //! local player as the only dynamic body, and remote players as kinematic capsules.
 
-use std::collections::HashMap;
+use dwell_world::hash::HashMap;
 
 use dwell_protocol::{
     GroundKind, InputFrame, PhysicsSnapshot, controller_flags, player_flags,
@@ -97,8 +97,8 @@ impl Predictor {
             latest_seq: 0,
             last_ack: 0,
             last_knockback_seq: 0,
-            knockbacks: HashMap::new(),
-            remotes: HashMap::new(),
+            knockbacks: HashMap::default(),
+            remotes: HashMap::default(),
             offset: Vec3::ZERO,
             stats: PredictorStats::default(),
         }
