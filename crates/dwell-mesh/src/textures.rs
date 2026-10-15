@@ -16,7 +16,7 @@ pub const ATLAS_CELLS: usize = 8;
 pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 8] = [
+pub const TILE_ORDER: [&str; 9] = [
     "plain",
     "grass",
     "grassSide",
@@ -25,6 +25,7 @@ pub const TILE_ORDER: [&str; 8] = [
     "sand",
     "water",
     "ladder",
+    "grid",
 ];
 
 /// A tile's rectangle in the atlas, in 0–1 texture coordinates (v = 0 is the atlas's row 0).
@@ -211,6 +212,19 @@ fn ladder(x: i64, y: i64) -> Rgb {
     scale(RAIL, 0.3 + 0.08 * tiled_fbm(x as f64, y as f64, 162))
 }
 
+/// How much darker a `grid` tile's edge texels are than its white face.
+pub const GRID_LINE: f64 = 0.8;
+
+/// White with a faint line along every edge: the outermost texel each side, so neighbouring blocks
+/// make a two-texel line centred on their shared edge. The lines are a few texels wide, so the
+/// mipmaps average them away with distance (no shimmer).
+fn grid(x: i64, y: i64) -> Rgb {
+    let last = TILE as i64 - 1;
+    let edge = x == 0 || y == 0 || x == last || y == last;
+    let v = if edge { 255.0 * GRID_LINE } else { 255.0 };
+    [v, v, v]
+}
+
 /// The painter of tile `name`; an unknown name paints plain white (the TS has no painter for it).
 fn painter(name: &str) -> fn(i64, i64) -> Rgb {
     match name {
@@ -221,6 +235,7 @@ fn painter(name: &str) -> fn(i64, i64) -> Rgb {
         "sand" => sand,
         "water" => water,
         "ladder" => ladder,
+        "grid" => grid,
         _ => |_, _| [255.0, 255.0, 255.0],
     }
 }
@@ -325,6 +340,23 @@ mod tests {
         assert_eq!(r.u0, (CELL + GUTTER) as f64 / ATLAS_SIZE as f64);
         assert_eq!(r.v0, GUTTER as f64 / ATLAS_SIZE as f64);
         assert_eq!(build_atlas().len(), ATLAS_SIZE * ATLAS_SIZE * 4);
+    }
+
+    #[test]
+    fn the_grid_tile_is_white_with_a_faint_line_at_its_edges() {
+        let last = TILE as i64 - 1;
+        let line = 255.0 * GRID_LINE;
+        for i in 0..TILE as i64 {
+            for p in [(0, i), (i, 0), (last, i), (i, last)] {
+                assert_eq!(grid(p.0, p.1), [line; 3], "{p:?}");
+            }
+        }
+        assert_eq!(grid(1, 1), [255.0; 3]);
+        assert_eq!(grid(16, 30), [255.0; 3]);
+        // From afar (the average, the LOD colour) it is still nearly white.
+        let avg = average_tile_color("grid");
+        assert!(avg >> 16 > 0xf0 && avg >> 16 < 0xff, "{avg:06x}");
+        assert!(tile_rect("grid").u1 <= 1.0 && tile_rect("grid").v1 <= 1.0);
     }
 }
 

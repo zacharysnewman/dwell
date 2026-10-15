@@ -103,6 +103,14 @@ for (const ns of namespaces) {
     if (!(def.shape in SHAPES)) fail(`${id}: shape ${def.shape}`);
     if (def.tint !== undefined) fail(`${id}: tint is no longer supported (biome tints were removed)`);
     if (def.launchSpeed !== undefined) fail(`${id}: launchSpeed is no longer supported`);
+    // `grid` (a look option): lines the terrain shader draws every `every` blocks in world space,
+    // darkening by `strength`. `every` divides the chunk size (32), so chunk-local uvs line up.
+    if (def.grid !== undefined) {
+      const { every, strength, ...rest } = def.grid ?? {};
+      if (Object.keys(rest).length) fail(`${id}: grid: unknown ${Object.keys(rest).join(', ')}`);
+      if (![1, 2, 4, 8, 16, 32].includes(every)) fail(`${id}: grid.every must divide 32 (1, 2, 4, 8, 16 or 32)`);
+      if (!(typeof strength === 'number' && strength > 0 && strength <= 1)) fail(`${id}: grid.strength must be in (0, 1]`);
+    }
     const look = def.look ?? 'cube';
     if (!LOOKS.includes(look)) fail(`${id}: look ${look}`);
     if (def.facingProperty) {
@@ -423,6 +431,7 @@ writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.join('\n'));
       `color: 0x${d.color.replace('#', '').toLowerCase()}`,
       `opacity: ${rf(d.opacity ?? 1)}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
+      `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

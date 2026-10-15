@@ -134,6 +134,7 @@ struct TerrainIn {
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
+    @location(5) grid: vec2f,
 };
 struct TerrainOut {
     @builtin(position) clip: vec4f,
@@ -143,6 +144,7 @@ struct TerrainOut {
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
     @location(5) @interpolate(flat) draw: u32,
+    @location(6) @interpolate(flat) grid: vec2f,
 };
 
 @vertex
@@ -156,7 +158,27 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
+    o.grid = v.grid;
     return o;
+}
+
+// World-space grid lines (the registry's `grid` look option): a line GRID_WIDTH blocks wide every
+// `grid.x` blocks, darkening by `grid.y`. The uvs are chunk-local blocks and `grid.x` divides the
+// chunk size, so the lines line up across chunks. Antialiased by the pixel's footprint, and where
+// the footprint outgrows the line the line's coverage spreads over it (it averages out, as a
+// mipmap would: no shimmer at a distance); beyond half a period the lines fade to that average.
+const GRID_WIDTH: f32 = 0.12;
+fn grid_shade(uv: vec2f, grid: vec2f) -> f32 {
+    // Derivatives first, in uniform control flow; a face without a grid shades 1.
+    let foot = max(fwidth(uv), vec2f(1e-4));
+    let every = max(grid.x, 1.0);
+    let d = abs(fract(uv / every + 0.5) - 0.5) * every;
+    let w = max(vec2f(GRID_WIDTH), foot);
+    let line = (1.0 - smoothstep(w * 0.5 - foot * 0.5, w * 0.5 + foot * 0.5, d)) * (GRID_WIDTH / w);
+    let average = GRID_WIDTH / every;
+    let far = smoothstep(vec2f(0.25 * every), vec2f(0.5 * every), foot);
+    let cover = mix(line, vec2f(average), far);
+    return select(1.0, 1.0 - grid.y * max(cover.x, cover.y), grid.x > 0.0);
 }
 
 // The texture repeats once per block across merged quads: tile.xy + fract(uv) × tile.zw, with the
@@ -167,7 +189,8 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> @location(0)
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let n = select(-i.normal, i.normal, front);
-    return vec4f(finish(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel), draw.tint.a * texel.a);
+    let shade = grid_shade(i.uv, i.grid);
+    return vec4f(finish(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel), draw.tint.a * texel.a);
 }
 
 struct FlatIn {

@@ -15,6 +15,13 @@ use dwell_protocol::CHUNK_SIZE;
 use crate::LengthError;
 use crate::style::{Look, MaterialStyle, cube, material_style, mirror_material};
 use crate::textures::{TileRect, tile_rect};
+
+/// How a face is painted: its atlas tile and its grid lines (every, strength).
+#[derive(Clone, Copy, Debug)]
+struct Paint {
+    tile: TileRect,
+    grid: [f32; 2],
+}
 use dwell_look::{face_tint, normal_tint};
 
 const N: i32 = CHUNK_SIZE;
@@ -42,6 +49,9 @@ pub struct MeshArrays {
     pub uvs: Vec<f32>,
     /// Atlas rectangle per vertex: u0, v0, width, height.
     pub tiles: Vec<f32>,
+    /// World-space grid lines per vertex (the registry's `grid` look option): a line every
+    /// `grids[0]` blocks darkening by `grids[1]`; 0, 0 for none. The shader draws them from `uvs`.
+    pub grids: Vec<f32>,
     /// Triangles, counter-clockwise seen from outside.
     pub indices: Vec<u32>,
 }
@@ -54,6 +64,7 @@ impl MeshArrays {
             + self.colors.len()
             + self.uvs.len()
             + self.tiles.len()
+            + self.grids.len()
             + self.indices.len())
     }
 }
@@ -189,13 +200,15 @@ impl Builder {
         (self.m.positions.len() / 3) as u32
     }
 
-    fn push_tile(&mut self, tile: &TileRect) {
+    fn push_paint(&mut self, paint: &Paint) {
+        let tile = &paint.tile;
         self.m.tiles.extend([
             tile.u0 as f32,
             tile.v0 as f32,
             (tile.u1 - tile.u0) as f32,
             (tile.v1 - tile.v0) as f32,
         ]);
+        self.m.grids.extend(paint.grid);
     }
 
     /// Quad on `axis = plane`, spanning [u0,u1] × [v0,v1] (u = axis+1, v = axis+2), facing `sign`.
@@ -208,7 +221,7 @@ impl Builder {
         (u0, u1): (f64, f64),
         (v0, v1): (f64, f64),
         color: u32,
-        tile: &TileRect,
+        tile: &Paint,
     ) {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
@@ -238,7 +251,7 @@ impl Builder {
                 _ => (px, py),
             };
             self.m.uvs.extend([su as f32, sv as f32]);
-            self.push_tile(tile);
+            self.push_paint(tile);
         }
         // e_u × e_v = e_axis: (0, 1, 2) is counter-clockwise seen from +axis.
         if sign > 0 {
@@ -263,7 +276,7 @@ impl Builder {
         normal: [f64; 3],
         tint: [f64; 3],
         color: u32,
-        tile: &TileRect,
+        tile: &Paint,
         side_top: Option<SideTop>,
     ) {
         let base = self.vertex_count();
@@ -292,7 +305,7 @@ impl Builder {
                 (px, tv)
             };
             self.m.uvs.extend([su as f32, sv as f32]);
-            self.push_tile(tile);
+            self.push_paint(tile);
         }
         for i in 1..pts.len().saturating_sub(1) as u32 {
             self.m.indices.extend([base, base + i, base + i + 1]);
@@ -300,9 +313,9 @@ impl Builder {
     }
 }
 
-/// Vertex colour and texture tile of a face: textured faces take their colour from the texture.
-fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, TileRect) {
-    match style.textures {
+/// Vertex colour and paint of a face: textured faces take their colour from the texture.
+fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, Paint) {
+    let (color, tile) = match style.textures {
         None => (style.color, tile_rect("plain")),
         Some(t) => {
             let name = if axis != 1 {
@@ -314,7 +327,14 @@ fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, TileRect) {
             };
             (0xffffff, tile_rect(name))
         }
-    }
+    };
+    (
+        color,
+        Paint {
+            tile,
+            grid: style.grid,
+        },
+    )
 }
 
 /// A ladder's plate: one quad against the back of its cell.

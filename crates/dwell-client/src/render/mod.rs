@@ -97,9 +97,9 @@ struct GpuMesh {
 
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts).
 const STRIDES: [u64; 3] = [
-    4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
-    4 * (3 + 3 + 3),         // Flat: position, normal, colour
-    4 * (3 + 3),             // Line: position, colour
+    4 * (3 + 3 + 3 + 2 + 4 + 2), // Terrain: position, normal, colour, uv, tile, grid
+    4 * (3 + 3 + 3),             // Flat: position, normal, colour
+    4 * (3 + 3),                 // Line: position, colour
 ];
 
 fn floats(v: &[f32]) -> &[u8] {
@@ -185,6 +185,7 @@ impl GpuMesh {
             (&m.colors, 3),
             (&m.uvs, 2),
             (&m.tiles, 4),
+            (&m.grids, 2),
         ]);
         Some(Self::upload(
             arena,
@@ -489,7 +490,7 @@ impl Renderer {
                 .collect();
             (offset, attributes)
         };
-        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
+        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 2)]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
         let mut pipelines = HashMap::default();

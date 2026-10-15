@@ -27,6 +27,8 @@ pub(crate) struct MaterialStyle {
     /// Index into `SHAPES`.
     pub shape: usize,
     pub flooded: bool,
+    /// World-space grid lines (the registry's `grid` look option): every, strength; 0, 0 for none.
+    pub grid: [f32; 2],
 }
 
 /// The full cube's shape: what a full face is tested against.
@@ -70,6 +72,9 @@ fn style_of_state(i: usize) -> MaterialStyle {
         },
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
+        grid: s
+            .grid
+            .map_or([0.0, 0.0], |g| [f32::from(g.every), g.strength]),
     }
 }
 
@@ -90,6 +95,7 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             ladder_face: None,
             shape: cube_index(),
             flooded: false,
+            grid: [0.0, 0.0],
         })
 }
 
