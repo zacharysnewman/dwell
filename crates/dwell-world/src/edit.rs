@@ -279,7 +279,7 @@ pub fn check_block_edit(
         return EditOutcome::fail(EditCheck::NoLineOfSight);
     }
     if request.action == BlockEditAction::Break {
-        if info(target).indestructible {
+        if unbreakable(target) {
             return EditOutcome::fail(EditCheck::Unbreakable);
         }
         // A flooded shape leaves the water that filled its open part.
@@ -306,11 +306,28 @@ pub fn check_block_edit(
         return EditOutcome::fail(EditCheck::Occupied);
     }
     // Placing into a liquid replaces it: not one the data marks indestructible.
-    if info(existing).indestructible {
+    if unbreakable(existing) {
         return EditOutcome::fail(EditCheck::Unbreakable);
     }
-    // Whether a state is flooded follows its cell: placed into water it holds water, else none.
-    let mut material = request.material;
+    let material = flooded_for(request.material, existing);
+    if overlaps_player(material, cell, players) {
+        return EditOutcome::fail(EditCheck::IntoPlayer);
+    }
+    EditOutcome {
+        check: EditCheck::Ok,
+        cell,
+        material,
+    }
+}
+
+/// A block no edit may change (the registry's `indestructible`): single breaks and region edits
+/// both ask this.
+pub fn unbreakable(m: StateId) -> bool {
+    info(m).indestructible
+}
+
+/// Whether a state is flooded follows its cell: put into water it holds water, else none.
+pub fn flooded_for(material: StateId, existing: StateId) -> StateId {
     if state_property(material, "flooded").is_some()
         && let Some(s) = with_property(
             material,
@@ -322,26 +339,25 @@ pub fn check_block_edit(
             },
         )
     {
-        material = s;
+        return s;
     }
-    if info(material).solid {
-        let shape = shape_of(material);
-        for p in players {
-            let x = (p.center[0] - f64::from(cell[0])) as f32;
-            let z = (p.center[2] - f64::from(cell[2])) as f32;
-            let y = p.center[1] - f64::from(cell[1]);
-            let bottom = (y - f64::from(p.half_cylinder)) as f32;
-            let top = (y + f64::from(p.half_cylinder)) as f32;
-            if vertical_segment_distance_sq(shape, x, z, bottom, top) < p.radius * p.radius {
-                return EditOutcome::fail(EditCheck::IntoPlayer);
-            }
-        }
+    material
+}
+
+/// `material` is solid and would overlap one of the players' capsules at `cell`.
+pub fn overlaps_player(material: StateId, cell: [i32; 3], players: &[EditCapsule]) -> bool {
+    if !info(material).solid {
+        return false;
     }
-    EditOutcome {
-        check: EditCheck::Ok,
-        cell,
-        material,
-    }
+    let shape = shape_of(material);
+    players.iter().any(|p| {
+        let x = (p.center[0] - f64::from(cell[0])) as f32;
+        let z = (p.center[2] - f64::from(cell[2])) as f32;
+        let y = p.center[1] - f64::from(cell[1]);
+        let bottom = (y - f64::from(p.half_cylinder)) as f32;
+        let top = (y + f64::from(p.half_cylinder)) as f32;
+        vertical_segment_distance_sq(shape, x, z, bottom, top) < p.radius * p.radius
+    })
 }
 
 /// Applies one chunk's changes from a `VoxelModification` (a client's world); the chunk takes the
