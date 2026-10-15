@@ -150,9 +150,10 @@ game; bulk edits stressing streaming and save size.
 6. What is "white": a new prototype block (`dwell:white`), or a sandbox-only look? *Owner,
    2026-10-14: a solid, unbreakable surface that can be built on; a block is fine if that's easier
    than hardcoding something.* So: a registry block (e.g. `dwell:sandbox_floor`: white, full,
-   not placeable) and a new registry flag, `"breakable": false`, that the server's edit validation
-   checks — data, not a sandbox special case, and usable later for other unbreakable ground. It is
-   appended to the registry, so existing ids are kept.
+   not placeable) marked with the registry's existing `"indestructible": true` (S2a reuses it rather
+   than adding a `breakable` flag; it was unused since bedrock went), which the server's edit
+   validation checks — data, not a sandbox special case, and usable later for other unbreakable
+   ground. It is appended to the registry, so existing ids are kept.
 7. Which editing tools are needed first (box select, fill, copy/paste, mirror, undo, brush)?
    *Owner, 2026-10-14: box select, fill, copy/paste with rotate and mirror, and undo; the brush
    later.*

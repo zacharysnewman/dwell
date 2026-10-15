@@ -1,7 +1,8 @@
-# Proposal: growing and varying hand-built trees
+# Growing and varying hand-built trees
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions open (§7). Builds on the adopted
-structure system ([`docs/STRUCTURES.md`](../STRUCTURES.md), ADR 0031, Phase 27).
+**Status:** Adopted (ADR 0033), 2026-10-14 ([ADR 0033](./adr/0033-tree-growth.md)). Built as Phase 30 of the
+[implementation plan](./IMPLEMENTATION_PLAN.md) (steps G-ADR, G0–G4). Owner answers in §7. Builds on the
+structure system ([`STRUCTURES.md`](./STRUCTURES.md), ADR 0031, Phase 27).
 
 The ask: take a custom-built tree model and extrapolate from it so it "grows" over time, and produce
 variation from it.
@@ -55,8 +56,6 @@ stop — the closest match; Vintage Story's trees are fully parametric JSON; Vel
 - Leaf thinning by a seeded hash; leaf colour by weighted `choices`.
 - Scale the skeleton (lengths × s, radii by the pipe model, one-voxel minimum) — naive voxel scaling
   turns twigs into slabs and breaks diagonal joins.
-- Later: graft a crown from model B onto a trunk from model A at marked attach points; space
-  colonization in a jittered envelope for "same species, different tree".
 
 ## 5. Growth in the multiplayer world
 
@@ -125,9 +124,9 @@ format and protocol changes — a new compatibility line, as is procedural place
     { "op": "rotate", "angles": [0, 90, 180, 270] },
     { "op": "branch_jitter", "angle_deg": 12, "length": 0.15, "droop": 0.1, "drop_chance": 0.1 },
     { "op": "leaf_thin", "density": [0.8, 1.0] } ],
-  "growth": { "engine": "skeleton_reveal", "stages": 8, "stage_ticks": [72000, 0.25],
+  "growth": { "engine": "skeleton_reveal", "trunk_days_per_m": 30, "branch_rate": 0.333, "jitter_days": 0.25,
     "thickness": { "op": "pipe_model", "tapering": 0.3, "min": 1 },
-    "leaves": { "op": "around_tips", "radius_by_stage": [1, 1, 2, 2, 3, 3, 3, 3] },
+    "leaves": { "op": "around_tips", "radius": 3 },
     "blocked": "prune_subtree" } }
 ```
 
@@ -140,23 +139,32 @@ prototype content. The 32³ cap and JSON fields must match what S1 actually buil
 | **G0** | A prototype page (`docs/prototypes/tree-growth.html`): load an exported structure, show the skeleton, scrub age, roll variant seeds. No protocol or release impact; shows whether inferred stages look right |
 | **G1** | Roles and `growth` in the format; skeleton extraction in `gen.mjs`; Rust `stage_voxels(structure, seed, age)`; tests: final stage equals the model, a fixture tree by data alone |
 | **G2** | Sandbox "preview growth" command (after S2a/S3) |
-| **G3** | Planting in the world: the `growers` table (new compatibility line), scheduled catch-up, the `Growth` reason, pruning on obstacles and cuts |
-| **G4** | Jitter variants; space colonization as a second engine if wanted |
+| **G3** | Growth in the world (§5a): the tree layer composed at chunk load, tombstones, the `growers` table, scheduled catch-up from world time, the `Growth` reason, pruning on obstacles and cuts, the per-world speed setting (a new compatibility line; the owner decides the bump) |
+| **G4** | Jitter variants (space colonization not needed for now, owner §7 #5; a second engine would need an ADR) |
 
 **Risks**: ambiguous skeletons on chunky hand-sculpted trunks (author marks fix it); adaptive blocks
 (Phase 18) reshaping wood or leaves; trees across chunk borders need all their chunks loaded to grow
 a stage; world format and protocol both change at G3.
 
-## 7. Questions for the owner
+## 7. Owner answers (2026-10-14)
 
-1. Growth visible over minutes or days? In stages or block by block?
-2. Must every stage be hand-approved (authored stages), or may in-between stages be inferred?
-3. Trees planted by players, placed already grown by worldgen, or both?
-4. Obstacles: stop the branch, or grow around?
-5. Does a cut trunk fell the tree (a Phase 20 body), and do leaves decay?
-6. Variation as "same tree, wiggled" (jitter) or "same species, different tree" (space colonization)?
-7. Grafting parts between models: wanted?
-8. Growth per build only, or a per-world growth-speed setting?
+| # | Question | Answer |
+|---|---|---|
+| 1 | How fast, in stages or block by block? | **The trunk grows 1 m every 30 in-game days**, in 1 m (one-voxel) steps; **branches lengthen at 1/3 of that speed** (1 m per 90 days), or the tree ends up wonky. In-game days aren't specced yet; assume a 30-minute day (20 min day, 10 min night), so a trunk step every **15 real hours** and a branch step every 45. Rates are in in-game days, so they follow whatever day length is chosen, and the branch ratio is a growth parameter in the structure data (default 1/3). A node appears at `t = trunk distance to its fork / trunk rate + distance along branches / branch rate`, so the final stage is still exactly the model. This needs the trunk told apart from branches: inferred as the thickest path from the root, overridable by a `trunk` palette role |
+| 2 | Hand-approved or computed stages? | **Computed** (the skeleton reveal) |
+| 3 | Obstacles: stop or grow around? | **Stop**: a blocked node prunes its subtree |
+| 4 | Cut trunk, leaf decay? | **Phase 20's plan**: the cut-off part becomes its own physics body, settles and re-bakes into the ground (ARCHITECTURE §7.1–7.3); leaf decay not asked for |
+| 5 | Kind of variation? | **Branches placed differently, longer or shorter** (and their leaves with them): skeleton jitter (§4). Space colonization isn't needed |
+| 6 | Grafting parts between models? | **No** |
+| 7 | Per-world growth speed? | **Yes**: a per-world growth-speed multiplier, stored with the world's settings and applied by the server |
+| — | Procedural or planted trees? | **Both**, from the owner's persistence model (§5a) |
+
+Notes:
+- The day/night cycle isn't designed yet; the world file already keeps a world time (`meta`), which
+  `stage(t)` reads. Growth catch-up uses world time, not wall-clock time, so a world that isn't
+  running doesn't grow.
+- With a step every 15 real hours, the sandbox needs a way to preview growth (G2: a "preview growth"
+  command or slider) — nobody will wait for it.
 
 ## Sources
 

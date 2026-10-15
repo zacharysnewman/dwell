@@ -44,7 +44,8 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A2's bench `--compare` done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) and S2a (floor block, sandbox world type) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -80,6 +81,9 @@ phases: **25 — the ray-marched renderer comparison** ([ADR 0029](./adr/0029-ra
 **27 — the structure sandbox** ([ADR 0031](./adr/0031-data-driven-structures.md)). Each needs Phase 24
 only; they can run alongside Phases 16–19. Phase 20 waits for Phase 25's decision (A7). Deliverables
 are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
+Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
+([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
+existing phases; it builds on Phase 27's structures, and its deliverables are G-ADR and G0–G4.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -1975,7 +1979,8 @@ the origin.
 - **LOD slopes** (the mesher's slope pieces, `slopePieces.ts`, `PIECE_NEAREST`) and the shape
   placement preview were cut with the slope stage and shape picking.
 - `indestructible` stays a block property with no block using it (the structural anchor of Phase 20
-  may); the `kUnbreakable` check is untested meanwhile.
+  may); the `kUnbreakable` check is untested meanwhile. *(Phase 27 S2a: the sandbox floor uses
+  it, and the check is tested.)*
 - The LOD surface's per-column data shrank from 6 floats to 4 (tints removed) and the F4 map column
   from 4 bytes to 3 (height and flags).
 
@@ -2691,23 +2696,26 @@ Exit criteria
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR) done; next: S1, the structure format and its generator.
+**Status:** In progress — S0 (the ADR) and S2a (the floor and the sandbox world type) done;
+outstanding for S2a: its e2e exit check; next: S1, the structure format and its generator.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
 
 Deliverables
 - [x] **S0** — ADR 0031 (the format with a `kind` and open vocabularies, the sandbox world type, the
-  `breakable` flag, the structures store, owner-only authoring, placement deferred); the owner's
+  unbreakable floor (S2a: the existing `indestructible` property), the structures store, owner-only authoring, placement deferred); the owner's
   answers recorded (`STRUCTURES.md` §7).
 - [ ] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
   anchor, palette by block name, layers, named variant operations; capped at 32³);
   `shared/structures/gen.mjs` validation, canonical output and hash, stale check in CI; a Rust loader
   replacing `Structure::parse`; the playground converted.
-- [ ] **S2a** — The floor and the world type: the registry's `breakable` flag (default true) checked
-  by the server's edit validation; an unbreakable white floor block (e.g. `dwell:sandbox_floor`,
-  full, not placeable) appended to the registry; a `sandbox` world type (flat floor, flight on) in
-  the main menu and the launcher's new-world route.
+- [x] **S2a** — The floor and the world type: the registry's existing `indestructible` property
+  (reused instead of a new `breakable` flag) checked by the server's edit validation on Break and,
+  newly, on Place into the cell; an indestructible white floor block (`dwell:sandbox_floor`, full,
+  untextured, not placeable, not adaptive) appended to the registry; a `sandbox` world type
+  (generator 100: the flat generator with a layers parameter, in the floor block; flight on, the
+  default policy) in the main menu and the launcher's new-world route (`?new=1&type=sandbox`).
 - [ ] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
   (unknown fields kept, unreadable files left alone); save a selection as a structure; export and
   import JSON (download, clipboard).
@@ -2722,12 +2730,74 @@ Exit criteria
 - [ ] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
   character, wrong layer size, unknown kind or variant operation, over 32³) fail naming the entry;
   the playground's tests pass on the converted file.
-- [ ] S2a: breaking a `breakable: false` state is rejected by the server (test); a sandbox world
-  opens on the white floor with flight on (e2e).
+- [x] S2a: breaking or replacing an indestructible state (the sandbox floor) is rejected by the
+  server (`dwell-world` test `the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on`).
+- [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
+  check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
+  (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor read light grey, close
+  to the sky's fog colour, so the horizon disappeared and only placed blocks gave depth; the owner
+  approved a grid, now built (a faint line at every block edge from the `grid` tile, a stronger one
+  every 8 blocks from the `grid` look option), checked near, far and from above: the lines stay
+  readable under tone mapping, fade without shimmer at a distance, and leave the block outline
+  clear.
 - [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
   over the cap or outside the build volume are rejected (test).
+
+## Phase 30 — Tree Growth
+
+**Goal:** Hand-built trees (structures whose model is the mature tree) that grow over time by a
+computed reveal of their skeleton, vary by skeleton jitter, and persist as a layer composed at chunk
+load, for both procedural and planted trees
+([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)).
+
+**Status:** In progress — G-ADR (the ADR) done; next: G0, the prototype page. Depends on Phase 27
+(the structure format, S1, for G1; the sandbox, S2a/S3, for G2), on Phase 20 (a cut tree's crown
+becoming a body that settles and re-bakes) for G3's cuts, and on the day/night cycle, which is not
+designed yet (rates are in in-game days; a 30-minute day is assumed until it is). G0–G2 change no
+world file, protocol or terrain. G3 is **a new compatibility line** (world-file tables, protocol);
+the owner decides the bump. Procedural trees also wait for ADR 0031's deferred worldgen placement
+(Phase 27's S4), which is its own new compatibility line.
+
+Deliverables
+- [x] **G-ADR** — ADR 0033 (the model is the mature tree; a computed skeleton reveal; the trunk 1 m per
+  30 in-game days, branches at `branch_rate` of it, default 1/3; a per-world speed multiplier; stop
+  and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
+  colonization; the owner's persistence model; procedural and planted trees; compatibility); the
+  owner's answers recorded (`TREE_GROWTH.md` §7).
+- [ ] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+  show its extracted skeleton, scrub the age, roll variant seeds; published, its link in
+  `docs/prototypes/`. No protocol or release impact; shows whether inferred stages look right.
+- [ ] **G1** — Roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and the `growth` block in the
+  structure format; skeleton extraction in `shared/structures/gen.mjs` (emitted with the canonical
+  output, stale-checked in CI; bad roles or growth parameters fail naming the entry); Rust
+  `stage_voxels(structure, variant seed, age)`; tests: the final stage equals the model, stages only
+  add connected voxels, and a fixture tree added by data alone grows.
+- [ ] **G2** — A growth preview in the sandbox (after Phase 27's S2a and S3): a "preview growth"
+  command or age slider over a placed tree.
+- [ ] **G3** — Growth in the world (**a new compatibility line**; the owner decides the bump): the
+  tree layer composed at chunk load on the server and the client from the same records (sent with
+  the chunk); per-chunk tombstones of chopped procedural trees and per-tree pruned node sets; the
+  `growers` table for planted trees; scheduled catch-up from world time (on load and on a slow
+  schedule while loaded); the `VoxelModification` `Growth` reason; pruning on obstacles and on cuts
+  (the cut-off part a Phase 20 body); the per-world growth-speed setting; planting a tree.
+- [ ] **G4** — Jitter variants: branch positions, lengths and droop (optionally dropped branches),
+  leaves following their nodes, `core` rigid; seeded per tree.
+
+Exit criteria
+- [ ] G1: the final stage of every tree structure equals its model; a fixture tree added by data
+  alone grows through its stages; a bad role or growth parameter fails naming the entry; the
+  generator's output is stale-checked in CI.
+- [ ] G2: in the sandbox, a tree previewed from planting to maturity reaches exactly its model.
+- [ ] G3: a planted tree grows by world time while its chunks are loaded and catches up the same
+  after they were unloaded (test); a world that isn't running doesn't grow; the server and client
+  compose the same chunk (test, natively and under WASM); growth never overwrites a player's block
+  (a blocked node prunes its subtree); chopping prunes or tombstones and survives a reload; the
+  speed multiplier scales growth; protocol golden tests for the tree records and the `Growth` reason.
+- [ ] G4: two variant seeds give different trees from one model, each reproducible from its seed,
+  and a variant's final stage equals its jittered model.
 
 ---
 

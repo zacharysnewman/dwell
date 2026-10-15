@@ -44,9 +44,10 @@ test('the launcher is the main menu, for the latest stable build', async ({ page
   await page.locator('#world-name').fill('Fresh');
   await page.locator('#create-world button[type=submit]').click();
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
-  const params = new URL(page.url()).searchParams;
-  expect(params.get('play')).toMatch(/^w[0-9a-z]{10}$/);
-  expect(params.get('debug')).toBe('1');
+  // The build makes the world once it has started, then replaces ?new=… with ?play=<id>.
+  const param = (name: string) => new URL(page.url()).searchParams.get(name);
+  await expect.poll(() => param('play'), { timeout: 15_000 }).toMatch(/^w[0-9a-z]{10}$/);
+  expect(param('debug')).toBe('1');
 });
 
 test('opens a world in the newest build of its own compatibility line', async ({ page }) => {
@@ -143,6 +144,8 @@ test('the menu links to the version page, and a chosen older build still returns
   // Playing the older build pins the menu to it for this visit: a new world is that build's...
   await row('0.1.0').locator('.version-open').click();
   await expect(page.locator('#app-version')).toContainText('Dwell 0.1.0');
+  // A world is listed, so the New world form starts closed.
+  await page.locator('#new-world').click();
   await page.locator('#world-name').fill('Pinned');
   await page.locator('#create-world button[type=submit]').click();
   await expect.poll(() => versionOf(page)).toBe('0.1.0');
