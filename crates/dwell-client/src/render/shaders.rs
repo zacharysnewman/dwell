@@ -3,6 +3,12 @@
 //! three's Lambert shading with a sun or moon and a hemisphere light per face (each fragment takes
 //! only its own face's lights), ACES filmic tone mapping with exposure, sRGB encoding, then the
 //! height fog mixed toward the sky's colour in output space, as three's fog was.
+//!
+//! The frame is shared (docs/RAY_MARCHED_RENDERER.md step A1, docs/WATER_RENDERING.md W2): the scene passes write lit, linear
+//! colour (premultiplied by coverage: alpha 0 where nothing is drawn) into an `rgba16float` target
+//! and each opaque fragment's view depth into an `r32float` one; the composite (`composite_fs`)
+//! tone-maps, encodes, fogs by the stored depth and puts the sky behind, into the canvas. Lines are
+//! drawn over the composite in output colour, depth-tested against the stored depth.
 
 use dwell_protocol::world;
 
@@ -93,16 +99,27 @@ fn srgb_encode(c: vec3f) -> vec3f {
     return select(hi, lo, c <= vec3f(0.0031308));
 }
 
+// Depth along the view axis of a point relative to the eye (what the scene's depth target holds).
+fn view_depth(rel: vec3f) -> f32 {
+    return dot(rel, frame.forward.xyz);
+}
+
+// The view ray through a point of the screen (ndc), scaled to view depth 1: `ray × depth` is the
+// point at that depth relative to the eye.
+fn view_ray(ndc: vec2f) -> vec3f {
+    return frame.forward.xyz + ndc.x * frame.tan.x * frame.right.xyz + ndc.y * frame.tan.y * frame.up.xyz;
+}
+
 fn sky(dir: vec3f) -> vec3f {
     return dwell_sky(dir, frame.eye.y, frame.day_pole.xyz, frame.sun.xyz, frame.moon.xyz);
 }
 
-// The height fog (dwell-look's haze_amount, per fragment), mixed toward the sky behind, in output
-// colour. `rel` is the fragment relative to the eye.
-fn fogged(color: vec3f, rel: vec3f) -> vec3f {
+// The height fog (dwell-look's haze_amount, per pixel): how much of the sky behind to mix in, in
+// output colour. `rel` is the point relative to the eye.
+fn fog_amount(rel: vec3f) -> f32 {
     let density = frame.eye.w;
     if (density <= 0.0) {
-        return color;
+        return 0.0;
     }
     let face = frame.eye.y;
     let dist = length(rel);
@@ -114,16 +131,30 @@ fn fogged(color: vec3f, rel: vec3f) -> vec3f {
     let base = exp(min(80.0, -low / h));
     let along = select((1.0 - exp(-k)) / k, 1.0 - k * 0.5, k < 1e-4);
     let depth = frame.fog.x * dist * base * along;
-    return mix(color, sky(normalize(rel)), density * (1.0 - exp(-depth)));
+    return density * (1.0 - exp(-depth));
 }
 
 fn clipped(draw: Draw, rel: vec3f) -> bool {
     return draw.clip_lo.w > 0.0 && (any(rel < draw.clip_lo.xyz) || any(rel > draw.clip_hi.xyz));
 }
 
-// Lit, tone-mapped, encoded and fogged: what three's materials output.
-fn finish(albedo: vec3f, n: vec3f, rel: vec3f) -> vec3f {
-    return fogged(srgb_encode(aces(lambert(albedo, n, frame.eye.x + rel.y))), rel);
+// Tone-mapped and encoded: the scene's linear colour as the canvas shows it.
+fn display(color: vec3f) -> vec3f {
+    return srgb_encode(aces(color));
+}
+
+// What the scene passes write: lit linear colour (premultiplied: alpha is coverage, 1 for opaque
+// draws) and the view depth (opaque draws only: the see-through's pipelines don't write it).
+struct SceneOut {
+    @location(0) color: vec4f,
+    @location(1) depth: f32,
+};
+
+fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32) -> SceneOut {
+    var o: SceneOut;
+    o.color = vec4f(lambert(albedo, n, frame.eye.x + rel.y), alpha);
+    o.depth = view_depth(rel);
+    return o;
 }
 ";
 
@@ -160,14 +191,16 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
 }
 
 // The texture repeats once per block across merged quads: tile.xy + fract(uv) × tile.zw, with the
-// gradients of the unwrapped uv so mip selection is continuous across block edges.
+// gradients of the unwrapped uv so mip selection is continuous across block edges. Opaque draws
+// (tint alpha 1) cover their pixels fully whatever the texel's alpha.
 @fragment
-fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let n = select(-i.normal, i.normal, front);
-    return vec4f(finish(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel), draw.tint.a * texel.a);
+    let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
+    return scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, alpha);
 }
 
 struct FlatIn {
@@ -204,13 +237,13 @@ fn flat_vs(v: FlatIn, @builtin(instance_index) k: u32) -> FlatOut {
 
 // LOD sections and players: vertex colours (linear) × the draw's tint, no texture.
 @fragment
-fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
     if (clipped(draw, i.rel)) {
         discard;
     }
     let n = select(-i.normal, i.normal, front);
-    return vec4f(finish(i.color * draw.tint.rgb, normalize(n), i.rel), draw.tint.a);
+    return scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a);
 }
 
 struct LineIn {
@@ -221,21 +254,41 @@ struct LineOut {
     @builtin(position) clip: vec4f,
     @location(0) color: vec3f,
     @location(1) @interpolate(flat) draw: u32,
+    @location(2) depth: f32,
 };
 
-// Lines (the block outline, debug lines): unlit sRGB colours.
+// Lines (the block outline, debug lines): unlit sRGB colours, drawn over the composite (so neither
+// tone-mapped nor fogged) with the near pass's projection.
 @vertex
 fn line_vs(v: LineIn, @builtin(instance_index) k: u32) -> LineOut {
     let draw = draws[k];
     var o: LineOut;
     o.draw = k;
-    o.clip = frame.view_proj * vec4f(draw.offset.xyz + v.position * draw.offset.w, 1.0);
+    let rel = draw.offset.xyz + v.position * draw.offset.w;
+    o.clip = frame.view_proj * vec4f(rel, 1.0);
     o.color = v.color;
+    o.depth = view_depth(rel);
     return o;
 }
 
+// Depth-tested against the scene's stored depth sample by sample: the share of the pixel's samples
+// the line is in front of (or that show the sky) is its coverage, as the depth buffer's per-sample
+// test gave it.
 @fragment
 fn line_fs(i: LineOut) -> @location(0) vec4f {
+    let draw = draws[i.draw];
+    let p = vec2i(i.clip.xy);
+    var shown = 0.0;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        let d = textureLoad(scene_depth, p, s).r;
+        shown += select(0.0, 1.0, d <= 0.0 || i.depth <= d * (1.0 + 1e-5));
+    }
+    return vec4f(i.color * draw.tint.rgb, draw.tint.a * shown / f32(SCENE_SAMPLES));
+}
+
+// Lines drawn over everything (the debug lines).
+@fragment
+fn line_top_fs(i: LineOut) -> @location(0) vec4f {
     let draw = draws[i.draw];
     return vec4f(i.color * draw.tint.rgb, draw.tint.a);
 }
@@ -245,8 +298,7 @@ struct SkyOut {
     @location(0) ndc: vec2f,
 };
 
-// The sky behind the world: a full-screen triangle, each pixel coloured by the sky of its view
-// direction (already sRGB; no tone mapping), so the haze terrain fades into is the colour behind it.
+// A full-screen triangle.
 @vertex
 fn sky_vs(@builtin(vertex_index) i: u32) -> SkyOut {
     let p = array(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
@@ -256,19 +308,62 @@ fn sky_vs(@builtin(vertex_index) i: u32) -> SkyOut {
     return o;
 }
 
+// The opaque scene's view depth at a pixel: the mean over the samples something covers (x; 0
+// where none is) and the share of samples covered (y).
+fn scene_depth_at(p: vec2i) -> vec2f {
+    var sum = 0.0;
+    var n = 0.0;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        let d = textureLoad(scene_depth, p, s).r;
+        if (d > 0.0) {
+            sum += d;
+            n += 1.0;
+        }
+    }
+    return vec2f(select(0.0, sum / n, n > 0.0), n / f32(SCENE_SAMPLES));
+}
+
+// The composite: the scene's colour tone-mapped and encoded, fogged by its depth toward the sky
+// of the pixel's view direction (already sRGB; no tone mapping), and over that sky by its coverage
+// — so the haze terrain fades into is the colour behind it.
 @fragment
-fn sky_fs(i: SkyOut) -> @location(0) vec4f {
-    let dir = normalize(frame.forward.xyz + i.ndc.x * frame.tan.x * frame.right.xyz + i.ndc.y * frame.tan.y * frame.up.xyz);
-    return vec4f(sky(dir), 1.0);
+fn composite_fs(i: SkyOut) -> @location(0) vec4f {
+    let p = vec2i(i.clip.xy);
+    let ray = view_ray(i.ndc);
+    let back = sky(normalize(ray));
+    let c = textureLoad(scene_color, p, 0);
+    if (c.a <= 0.0) {
+        return vec4f(back, 1.0);
+    }
+    let shown = mix(display(c.rgb / c.a), back, fog_amount(ray * scene_depth_at(p).x));
+    return vec4f(mix(back, shown, min(c.a, 1.0)), 1.0);
 }
 ";
 
-/// The whole shader module: constants, uniforms, the sky, the shading and every entry point.
-pub fn source() -> String {
+/// The scene targets the composite and the lines read (group 2), for `samples` per pixel: the
+/// resolved colour, and the view depth, multisampled when the scene is (r32float can't be
+/// resolved).
+fn scene_bindings(samples: u32) -> String {
+    let depth = if samples > 1 {
+        "texture_multisampled_2d<f32>"
+    } else {
+        "texture_2d<f32>"
+    };
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\n{FRAME}\n{}\n{COMMON}\n{TERRAIN}",
+        "const SCENE_SAMPLES: i32 = {samples};\n\
+         @group(2) @binding(0) var scene_color: texture_2d<f32>;\n\
+         @group(2) @binding(1) var scene_depth: {depth};\n"
+    )
+}
+
+/// The whole shader module for a scene of `samples` per pixel: constants, uniforms, the sky, the
+/// shading and every entry point.
+pub fn source(samples: u32) -> String {
+    format!(
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\n{FRAME}\n{}\n{}\n{COMMON}\n{TERRAIN}",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
+        scene_bindings(samples),
         dwell_look::sky_wgsl()
     )
 }
@@ -277,27 +372,52 @@ pub fn source() -> String {
 mod tests {
     #[test]
     fn the_shader_module_parses_and_validates() {
-        let module = naga::front::wgsl::parse_str(&super::source()).expect("WGSL parses");
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::empty(),
-        )
-        .validate(&module)
-        .expect("WGSL validates");
-        for entry in [
-            "terrain_vs",
-            "terrain_fs",
-            "flat_vs",
-            "flat_fs",
-            "line_vs",
-            "line_fs",
-            "sky_vs",
-            "sky_fs",
-        ] {
-            assert!(
-                module.entry_points.iter().any(|e| e.name == entry),
-                "{entry}"
-            );
+        // With and without multisampling (the scene depth's texture type differs).
+        for samples in [1, 4] {
+            let module =
+                naga::front::wgsl::parse_str(&super::source(samples)).expect("WGSL parses");
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .expect("WGSL validates");
+            for entry in [
+                "terrain_vs",
+                "terrain_fs",
+                "flat_vs",
+                "flat_fs",
+                "line_vs",
+                "line_fs",
+                "line_top_fs",
+                "sky_vs",
+                "composite_fs",
+            ] {
+                assert!(
+                    module.entry_points.iter().any(|e| e.name == entry),
+                    "{entry}"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn tone_mapping_and_fog_are_only_in_the_composite() {
+        // The scene passes write linear colour: their fragment shaders never tone-map, encode or
+        // fog; the composite does all three (RAY_MARCHED_RENDERER.md A1).
+        let src = super::source(4);
+        let body = |name: &str| -> String {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            let rest = &src[at..];
+            rest[..rest.find("\n}\n").expect("end")].to_string()
+        };
+        for entry in ["terrain_fs", "flat_fs", "scene_out"] {
+            let b = body(entry);
+            for f in ["aces(", "srgb_encode(", "display(", "fog_amount(", "sky("] {
+                assert!(!b.contains(f), "{entry} calls {f}");
+            }
+        }
+        let c = body("composite_fs");
+        assert!(c.contains("display(") && c.contains("fog_amount(") && c.contains("sky("));
     }
 }

@@ -42,9 +42,10 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A3a (the CPU core: `crates/dwell-march`) done; next: A1, the shared frame and GPU timing; the rest of A3 (GPU march, brick jobs) outstanding; local builds only until the owner's decision (A7) |
-| 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A3a (the CPU core: `crates/dwell-march`) built; outstanding for A1: the owner's approval of the image differences (edges, the sea's colour, the outline), the e2e suite on CI; in progress: A3b (the GPU march, uploads, brick jobs); next: A2; local builds only until the owner's decision (A7) |
+| 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner's approval of its image differences outstanding); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -80,6 +81,9 @@ phases: **25 — the ray-marched renderer comparison** ([ADR 0029](./adr/0029-ra
 **27 — the structure sandbox** ([ADR 0031](./adr/0031-data-driven-structures.md)). Each needs Phase 24
 only; they can run alongside Phases 16–19. Phase 20 waits for Phase 25's decision (A7). Deliverables
 are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
+Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
+([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
+existing phases; it builds on Phase 27's structures, and its deliverables are G-ADR and G0–G4.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -2577,15 +2581,19 @@ the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
 **Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
-builders, pool, reference marcher) done; next: A1, the shared frame and GPU timing. Outstanding in
-A3: the GPU march, worker brick jobs, uploads, overlays and telemetry (A3b). Needs Phase 24 only.
-The marcher and compare mode are in local builds only (dev server, local preview, bench) until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
+builders, pool, reference marcher) done; A1 (the shared frame and GPU timing) built, its exit
+check outstanding: the bench before/after is done (design doc §7, "A1 as built") and the picture
+differs slightly — antialiased edges, the sea's colour (water now blends in linear light), the
+outline no longer multisampled — which needs the owner's approval; the e2e suite runs on CI. In
+progress: A3b (the GPU march, uploads, worker brick jobs, telemetry). Next: A2. Needs Phase 24
+only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
 Deliverables
 - [x] **A0** — ADR 0029 (a second renderer behind a runtime switch, amending ADR 0028's renderer);
   the owner's answers recorded (`RAY_MARCHED_RENDERER.md` §9).
-- [ ] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
+- [x] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
   target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved
   to a composite pass; timestamp queries in the telemetry (`gpu.<pass>`); `bench.ts` passes
   `--enable-webgpu-developer-features`. 4× MSAA kept (owner).
@@ -2653,7 +2661,7 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** Not started. W1a needs Phase 24 only; W1b and W3–W5 need A1 (Phase 25), which is W2; W6
+**Status:** In progress — W2 built (Phase 25's A1). W1a needs Phase 24 only; W1b and W3–W5 build on the shared frame (A1); W6
 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
@@ -2667,7 +2675,7 @@ Deliverables
   below the surface; the face's up) into a frame uniform, with its regression test.
 - [ ] **W1b** — The water shader (after A1): a dedicated `water_fs` with scrolling normal maps,
   Schlick Fresnel, a GGX glint by the fluid's roughness and the sky reflection.
-- [ ] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
+- [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
 - [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
   shoreline foam.
@@ -2735,6 +2743,59 @@ Exit criteria
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
   over the cap or outside the build volume are rejected (test).
+
+## Phase 30 — Tree Growth
+
+**Goal:** Hand-built trees (structures whose model is the mature tree) that grow over time by a
+computed reveal of their skeleton, vary by skeleton jitter, and persist as a layer composed at chunk
+load, for both procedural and planted trees
+([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)).
+
+**Status:** In progress — G-ADR (the ADR) done; next: G0, the prototype page. Depends on Phase 27
+(the structure format, S1, for G1; the sandbox, S2a/S3, for G2), on Phase 20 (a cut tree's crown
+becoming a body that settles and re-bakes) for G3's cuts, and on the day/night cycle, which is not
+designed yet (rates are in in-game days; a 30-minute day is assumed until it is). G0–G2 change no
+world file, protocol or terrain. G3 is **a new compatibility line** (world-file tables, protocol);
+the owner decides the bump. Procedural trees also wait for ADR 0031's deferred worldgen placement
+(Phase 27's S4), which is its own new compatibility line.
+
+Deliverables
+- [x] **G-ADR** — ADR 0033 (the model is the mature tree; a computed skeleton reveal; the trunk 1 m per
+  30 in-game days, branches at `branch_rate` of it, default 1/3; a per-world speed multiplier; stop
+  and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
+  colonization; the owner's persistence model; procedural and planted trees; compatibility); the
+  owner's answers recorded (`TREE_GROWTH.md` §7).
+- [ ] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+  show its extracted skeleton, scrub the age, roll variant seeds; published, its link in
+  `docs/prototypes/`. No protocol or release impact; shows whether inferred stages look right.
+- [ ] **G1** — Roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and the `growth` block in the
+  structure format; skeleton extraction in `shared/structures/gen.mjs` (emitted with the canonical
+  output, stale-checked in CI; bad roles or growth parameters fail naming the entry); Rust
+  `stage_voxels(structure, variant seed, age)`; tests: the final stage equals the model, stages only
+  add connected voxels, and a fixture tree added by data alone grows.
+- [ ] **G2** — A growth preview in the sandbox (after Phase 27's S2a and S3): a "preview growth"
+  command or age slider over a placed tree.
+- [ ] **G3** — Growth in the world (**a new compatibility line**; the owner decides the bump): the
+  tree layer composed at chunk load on the server and the client from the same records (sent with
+  the chunk); per-chunk tombstones of chopped procedural trees and per-tree pruned node sets; the
+  `growers` table for planted trees; scheduled catch-up from world time (on load and on a slow
+  schedule while loaded); the `VoxelModification` `Growth` reason; pruning on obstacles and on cuts
+  (the cut-off part a Phase 20 body); the per-world growth-speed setting; planting a tree.
+- [ ] **G4** — Jitter variants: branch positions, lengths and droop (optionally dropped branches),
+  leaves following their nodes, `core` rigid; seeded per tree.
+
+Exit criteria
+- [ ] G1: the final stage of every tree structure equals its model; a fixture tree added by data
+  alone grows through its stages; a bad role or growth parameter fails naming the entry; the
+  generator's output is stale-checked in CI.
+- [ ] G2: in the sandbox, a tree previewed from planting to maturity reaches exactly its model.
+- [ ] G3: a planted tree grows by world time while its chunks are loaded and catches up the same
+  after they were unloaded (test); a world that isn't running doesn't grow; the server and client
+  compose the same chunk (test, natively and under WASM); growth never overwrites a player's block
+  (a blocked node prunes its subtree); chopping prunes or tombstones and survives a reload; the
+  speed multiplier scales growth; protocol golden tests for the tree records and the `Growth` reason.
+- [ ] G4: two variant seeds give different trees from one model, each reproducible from its seed,
+  and a variant's final stage equals its jittered model.
 
 ---
 

@@ -1,26 +1,32 @@
 //! Dwell's wgpu renderer (ARCHITECTURE.md §5, ADR 0028; WebGPU only): terrain chunks, LOD sections
 //! with their skirts and stand-ins, players, the block outline, debug lines, the sky, height fog
-//! and tone mapping, in two passes split at LOD_NEAR_SPLIT_M (§6.6). Everything is drawn relative
-//! to the camera (origins in f64, offsets in f32), so the world stays precise far from the origin.
-//! It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
+//! and tone mapping. The scene draws in two passes split at LOD_NEAR_SPLIT_M (§6.6) into an
+//! offscreen frame (`frame.rs`: linear colour and view depth); a composite pass tone-maps, fogs and
+//! puts the sky behind it into the canvas, and the lines draw over that. Everything is drawn
+//! relative to the camera (origins in f64, offsets in f32), so the world stays precise far from
+//! the origin. It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
 
 pub mod arena;
 pub mod camera;
 pub mod display;
+pub mod frame;
 pub mod geometry;
 pub mod shaders;
+pub mod timing;
 
 use dwell_world::hash::HashMap;
 
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
-use dwell_look::{DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, hex, sanitize_exposure, srgb_to_linear};
+use dwell_look::{DEFAULT_EXPOSURE, LIGHT, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
 
 use arena::{Arena, ArenaRef, Region};
 use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
 pub use display::RenderStats;
+use frame::{DEPTH, HDR, Targets, VIEW_DEPTH};
+use timing::GpuTimer;
 
 /// Beyond this the far pass draws (§6.6); the near pass's far plane.
 pub const NEAR_SPLIT: f64 = dwell_protocol::lod::NEAR_SPLIT_M as f64;
@@ -37,7 +43,6 @@ pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
         SAMPLES
     }
 }
-const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const WATER_OPACITY: f32 = 0.55;
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
 /// Bytes per draw in the draws storage array (`Draw` in the shaders: five vec4f).
@@ -249,22 +254,6 @@ impl Drop for GpuMesh {
     }
 }
 
-/// The multisampled colour target (none with one sample: drawn into the frame's target) and the
-/// depth buffer, destroyed when the drawing buffer is resized.
-struct Targets {
-    colour: Option<(wgpu::Texture, wgpu::TextureView)>,
-    depth: (wgpu::Texture, wgpu::TextureView),
-}
-
-impl Drop for Targets {
-    fn drop(&mut self) {
-        if let Some((t, _)) = &self.colour {
-            t.destroy();
-        }
-        self.depth.0.destroy();
-    }
-}
-
 struct Chunk {
     origin: V3,
     opaque: Option<GpuMesh>,
@@ -350,7 +339,11 @@ pub struct Renderer {
     samples: u32,
     draw_layout: wgpu::BindGroupLayout,
     pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
-    sky_pipeline: wgpu::RenderPipeline,
+    /// The scene targets as the composite and lines read them (`frame::scene_layout`).
+    scene_layout: wgpu::BindGroupLayout,
+    composite_pipeline: wgpu::RenderPipeline,
+    /// GPU pass timing, when the device has timestamp queries (`timing.rs`).
+    timer: Option<GpuTimer>,
     frame_buffers: [wgpu::Buffer; 2],
     frame_groups: [wgpu::BindGroup; 2],
     draw_buffer: wgpu::Buffer,
@@ -416,7 +409,7 @@ impl Renderer {
     ) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("dwell"),
-            source: wgpu::ShaderSource::Wgsl(shaders::source().into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::source(samples).into()),
         });
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -467,6 +460,14 @@ impl Renderer {
             bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout)],
             immediate_size: 0,
         });
+        // The composite and the lines also read the scene targets (they draw after the scene
+        // passes, into the canvas).
+        let scene_layout = frame::scene_layout(&device, samples);
+        let overlay_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("overlay"),
+            bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout), Some(&scene_layout)],
+            immediate_size: 0,
+        });
         // One interleaved buffer per mesh (`interleave`): (stride, attributes at their offsets).
         let attrs = |locations: &[(u32, u32)]| -> (u64, Vec<wgpu::VertexAttribute>) {
             let mut offset = 0u64;
@@ -496,9 +497,11 @@ impl Renderer {
         for kind in [Kind::Terrain, Kind::Flat, Kind::Line] {
             for water in [false, true] {
                 for no_depth in [false, true] {
+                    let line = kind == Kind::Line;
                     let (vs, fs, a) = match kind {
                         Kind::Terrain => ("terrain_vs", "terrain_fs", &terrain_attrs),
                         Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
+                        Kind::Line if no_depth => ("line_vs", "line_top_fs", &line_attrs),
                         Kind::Line => ("line_vs", "line_fs", &line_attrs),
                     };
                     let buffers = [Some(wgpu::VertexBufferLayout {
@@ -506,11 +509,33 @@ impl Renderer {
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &a.1,
                     })];
-                    let blend =
-                        (water || kind == Kind::Line).then_some(wgpu::BlendState::ALPHA_BLENDING);
+                    let blend = (water || line).then_some(wgpu::BlendState::ALPHA_BLENDING);
+                    // The scene's draws write colour and (opaque only) view depth into the frame;
+                    // lines draw into the canvas over the composite, depth-tested in the shader.
+                    let scene_targets = [
+                        Some(wgpu::ColorTargetState {
+                            format: HDR,
+                            blend,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
+                        Some(wgpu::ColorTargetState {
+                            format: VIEW_DEPTH,
+                            blend: None,
+                            write_mask: if water {
+                                wgpu::ColorWrites::empty()
+                            } else {
+                                wgpu::ColorWrites::ALL
+                            },
+                        }),
+                    ];
+                    let line_targets = [Some(wgpu::ColorTargetState {
+                        format,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })];
                     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some(vs),
-                        layout: Some(&layout),
+                        label: Some(fs),
+                        layout: Some(if line { &overlay_layout } else { &layout }),
                         vertex: wgpu::VertexState {
                             module: &module,
                             entry_point: Some(vs),
@@ -521,11 +546,7 @@ impl Renderer {
                             module: &module,
                             entry_point: Some(fs),
                             compilation_options: Default::default(),
-                            targets: &[Some(wgpu::ColorTargetState {
-                                format,
-                                blend,
-                                write_mask: wgpu::ColorWrites::ALL,
-                            })],
+                            targets: if line { &line_targets } else { &scene_targets },
                         }),
                         primitive: wgpu::PrimitiveState {
                             topology: if kind == Kind::Line {
@@ -538,9 +559,9 @@ impl Renderer {
                             cull_mode: (!water && kind != Kind::Line).then_some(wgpu::Face::Back),
                             ..Default::default()
                         },
-                        depth_stencil: Some(wgpu::DepthStencilState {
+                        depth_stencil: (!line).then(|| wgpu::DepthStencilState {
                             format: DEPTH,
-                            depth_write_enabled: Some(!water && kind != Kind::Line),
+                            depth_write_enabled: Some(!water),
                             depth_compare: Some(if no_depth {
                                 wgpu::CompareFunction::Always
                             } else {
@@ -550,7 +571,7 @@ impl Renderer {
                             bias: Default::default(),
                         }),
                         multisample: wgpu::MultisampleState {
-                            count: samples,
+                            count: if line { 1 } else { samples },
                             ..Default::default()
                         },
                         multiview_mask: None,
@@ -560,9 +581,10 @@ impl Renderer {
                 }
             }
         }
-        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sky"),
-            layout: Some(&layout),
+        // The composite: a full-screen triangle into the canvas.
+        let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("composite"),
+            layout: Some(&overlay_layout),
             vertex: wgpu::VertexState {
                 module: &module,
                 entry_point: Some("sky_vs"),
@@ -571,25 +593,17 @@ impl Renderer {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
-                entry_point: Some("sky_fs"),
+                entry_point: Some("composite_fs"),
                 compilation_options: Default::default(),
                 targets: &[Some(format.into())],
             }),
             primitive: Default::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: samples,
-                ..Default::default()
-            },
+            depth_stencil: None,
+            multisample: Default::default(),
             multiview_mask: None,
             cache: None,
         });
+        let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -639,7 +653,9 @@ impl Renderer {
             samples,
             draw_layout,
             pipelines,
-            sky_pipeline,
+            scene_layout,
+            composite_pipeline,
+            timer,
             frame_buffers,
             frame_groups,
             draw_buffer,
@@ -910,7 +926,7 @@ impl Renderer {
             .sum();
         RenderStats {
             mesh_bytes,
-            screen_bytes: pixels * (4 * 8 + 8),
+            screen_bytes: pixels * frame::bytes_per_pixel(self.samples),
             pixel_ratio: self.pixel_ratio,
             ..self.stats
         }
@@ -1022,7 +1038,7 @@ impl Renderer {
         &self,
         passes: [(f64, f64); 2],
         chunk_visible: &dyn Fn(ChunkCoord) -> bool,
-    ) -> [Vec<DrawItem>; 2] {
+    ) -> [Vec<DrawItem>; 3] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
         let water = [1.0, 1.0, 1.0, WATER_OPACITY];
@@ -1210,11 +1226,14 @@ impl Renderer {
             d.key = draw_order(d);
         }
         // One stable sort by a precomputed key (draw_order), then each pass takes its draws in that
-        // order.
+        // order. Lines draw once, over the composite (the third list), with the near pass's
+        // projection (the outline is in reach, debug lines are near-pass draws).
         out.sort_by_key(|d| d.key);
-        let mut split: [Vec<DrawItem>; 2] = [Vec::with_capacity(out.len()), Vec::new()];
+        let mut split: [Vec<DrawItem>; 3] = [Vec::with_capacity(out.len()), Vec::new(), Vec::new()];
         for d in out {
-            if d.passes == 3 {
+            if d.kind == Kind::Line {
+                split[2].push(d);
+            } else if d.passes == 3 {
                 split[1].push(d.clone());
                 split[0].push(d);
             } else if d.passes & 1 != 0 {
@@ -1230,30 +1249,12 @@ impl Renderer {
         if self.targets.is_some() {
             return;
         }
-        let size = wgpu::Extent3d {
-            width: self.size.0,
-            height: self.size.1,
-            depth_or_array_layers: 1,
-        };
-        let make = |format, label| {
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some(label),
-                size,
-                mip_level_count: 1,
-                sample_count: self.samples,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&Default::default());
-            (texture, view)
-        };
-        let colour = (self.samples > 1).then(|| make(self.format, "colour"));
-        self.targets = Some(Targets {
-            colour,
-            depth: make(DEPTH, "depth"),
-        });
+        self.targets = Some(Targets::new(
+            &self.device,
+            self.size,
+            self.samples,
+            &self.scene_layout,
+        ));
     }
 
     /// Draws one frame into `target` (a canvas texture or an offscreen one, `format`, the size
@@ -1265,6 +1266,13 @@ impl Renderer {
         chunk_visible: &dyn Fn(ChunkCoord) -> bool,
     ) {
         self.ensure_targets();
+        // GPU pass times of earlier frames the GPU has finished; then whether this one is timed.
+        if let Some(timer) = &mut self.timer {
+            for (name, ms) in timer.collect() {
+                crate::telemetry::sample(name, ms);
+            }
+            timer.begin();
+        }
         let basis = aim(self.yaw, self.pitch, self.face, self.flip);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
@@ -1282,8 +1290,8 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.frame_buffers[i], 0, floats(&u));
         }
-        // Per-draw uniforms, both passes in one buffer.
-        let total = (draws[0].len() + draws[1].len()) as u64;
+        // Per-draw uniforms, every pass's in one buffer.
+        let total = draws.iter().map(Vec::len).sum::<usize>() as u64;
         if total > self.draw_capacity {
             self.draw_capacity = total.next_power_of_two();
             self.draw_buffer.destroy();
@@ -1305,49 +1313,83 @@ impl Renderer {
             self.queue.write_buffer(&self.draw_buffer, 0, floats(&data));
         }
         let targets = self.targets.as_ref().expect("targets");
-        let (colour, depth) = (targets.colour.as_ref().map(|c| &c.1), &targets.depth.1);
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
         let mut slot = 0u64;
+        let scene_passes = passes.len();
+        // The scene passes (far, near) into the frame's targets, then the composite into `target`
+        // with the lines over it.
         for (i, pass_draws) in draws.iter().enumerate() {
-            let horizon = HORIZON_COLOR;
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(if i == 0 { "far" } else { "near" }),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: colour.unwrap_or(target),
-                    depth_slice: None,
-                    resolve_target: colour.and((i == 1).then_some(target)),
-                    ops: wgpu::Operations {
-                        load: if i == 0 {
-                            wgpu::LoadOp::Clear(wgpu::Color {
-                                r: horizon[0],
-                                g: horizon[1],
-                                b: horizon[2],
-                                a: 1.0,
-                            })
-                        } else {
-                            wgpu::LoadOp::Load
-                        },
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Discard,
+            let timestamp_writes = self.timer.as_ref().and_then(|t| t.writes(i));
+            let mut pass = if i < scene_passes {
+                let ops = frame::scene_pass_ops(i, scene_passes, self.samples);
+                let clear_or_load = if ops.clear {
+                    wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
+                } else {
+                    wgpu::LoadOp::Load
+                };
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(if i == 0 { "far" } else { "near" }),
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: targets.scene_colour(),
+                            depth_slice: None,
+                            resolve_target: ops.resolve.then_some(&targets.colour.1),
+                            ops: wgpu::Operations {
+                                load: clear_or_load,
+                                store: if ops.store_colour {
+                                    wgpu::StoreOp::Store
+                                } else {
+                                    wgpu::StoreOp::Discard
+                                },
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &targets.view_depth.1,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: clear_or_load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                    ],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &targets.depth.1,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Discard,
+                        }),
+                        stencil_ops: None,
                     }),
-                    stencil_ops: None,
-                }),
-                ..Default::default()
-            });
-            pass.set_bind_group(0, &self.frame_groups[i], &[]);
+                    timestamp_writes,
+                    ..Default::default()
+                })
+            } else {
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("composite"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: target,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    timestamp_writes,
+                    ..Default::default()
+                })
+            };
+            // The composite and lines use the near pass's uniforms.
+            pass.set_bind_group(0, &self.frame_groups[i.min(scene_passes - 1)], &[]);
             pass.set_bind_group(1, &self.draw_group, &[]);
             let mut bound: Option<(Kind, bool, bool)> = None;
             let mut bound_page: Option<(usize, usize)> = None;
-            if i == 0 {
-                pass.set_pipeline(&self.sky_pipeline);
+            if i == scene_passes {
+                pass.set_bind_group(2, &targets.scene, &[]);
+                pass.set_pipeline(&self.composite_pipeline);
                 pass.draw(0..3, 0..1);
                 calls += 1;
             }
@@ -1382,7 +1424,13 @@ impl Renderer {
             }
         }
         drop(arena);
+        if let Some(timer) = &self.timer {
+            timer.resolve(&mut encoder);
+        }
         self.queue.submit([encoder.finish()]);
+        if let Some(timer) = &mut self.timer {
+            timer.submitted();
+        }
         self.stats.calls = calls;
         self.stats.triangles = triangles;
     }
@@ -1682,8 +1730,15 @@ mod tests {
     }
 
     fn noop_renderer() -> Renderer {
-        let (device, queue) = wgpu::Device::noop(&Default::default());
-        Renderer::with_samples(device, queue, wgpu::TextureFormat::Rgba8Unorm, 1)
+        noop_renderer_with(1, wgpu::Features::empty())
+    }
+
+    fn noop_renderer_with(samples: u32, features: wgpu::Features) -> Renderer {
+        let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor {
+            required_features: features,
+            ..Default::default()
+        });
+        Renderer::with_samples(device, queue, wgpu::TextureFormat::Rgba8Unorm, samples)
     }
 
     /// Whether submitting a pass that binds `b` (a vertex or index buffer) fails because it was
@@ -1808,8 +1863,19 @@ mod tests {
 
     #[test]
     fn frames_draw_cleanly_across_resizes_and_replaced_meshes() {
-        // Destroying the old targets, draw uniforms and meshes between frames is valid WebGPU.
-        let mut r = noop_renderer();
+        // Destroying the old targets, draw uniforms and meshes between frames is valid WebGPU; so
+        // is the shared frame (offscreen colour and view depth, the composite, lines over it) with
+        // and without MSAA, timed or not.
+        for (samples, features) in [
+            (1, wgpu::Features::empty()),
+            (4, wgpu::Features::empty()),
+            (4, wgpu::Features::TIMESTAMP_QUERY),
+        ] {
+            draws_cleanly(noop_renderer_with(samples, features));
+        }
+    }
+
+    fn draws_cleanly(mut r: Renderer) {
         let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let target = r.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -1833,6 +1899,26 @@ mod tests {
             }
         }
         let meshes = dwell_mesh::mesh_chunk(&padded, false).expect("meshed");
+        // A water surface (the see-through pipelines), the outline and debug lines (the overlay).
+        let quad = FlatMesh {
+            positions: vec![0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0],
+            normals: vec![0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
+            colors: vec![1.0; 9],
+            indices: vec![0, 1, 2],
+        };
+        let section = SectionMeshes {
+            opaque: quad.clone(),
+            water: quad,
+            skirts: Default::default(),
+        };
+        r.set_lod_section(7, [0.0; 3], 1.0, Some(&section));
+        r.show_lod_sections(&[(7, 0)]);
+        r.set_block_outline(Some([16.0, 0.0, 16.0]), 1.0);
+        r.set_debug_lines(Some(&[Line {
+            from: [16.0, 1.0, 16.0],
+            to: [20.0, 1.0, 20.0],
+            color: 0xff0000,
+        }]));
         r.set_camera([16.0, 4.0, 16.0], 0.0, -30.0, 1.0, 0.0);
         for frame in 0..4 {
             r.resize(64, 64, 1.0 + f64::from(frame));
@@ -1840,6 +1926,9 @@ mod tests {
                 r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, Some(&meshes));
             }
             r.render(&view, &|_| true);
+            r.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("polled");
         }
         let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
         match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
@@ -1849,9 +1938,44 @@ mod tests {
     }
 
     #[test]
+    fn timed_frames_recycle_their_readback_buffers() {
+        // A frame's readback buffer is in use until a later frame reads it (with all of them in
+        // use a frame goes untimed rather than wait: `timing::Ring`'s test); frame after frame
+        // they are read and reused, so timing keeps going.
+        let mut r = noop_renderer_with(4, wgpu::Features::TIMESTAMP_QUERY);
+        let target = r.device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = target.create_view(&Default::default());
+        r.resize(8, 8, 1.0);
+        for frame in 0..4 * timing::RING {
+            r.render(&view, &|_| true);
+            r.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("polled");
+            assert!(
+                r.timer.as_ref().expect("timed").in_use() < timing::RING,
+                "frame {frame}"
+            );
+        }
+        assert!(noop_renderer().timer.is_none(), "no timestamps, no timer");
+    }
+
+    #[test]
     fn the_frame_block_matches_the_shader_struct() {
         // mat4x4f + 16 vec4f in `Frame`.
-        let fields = shaders::source()
+        let fields = shaders::source(1)
             .split("struct Frame {")
             .nth(1)
             .unwrap()
