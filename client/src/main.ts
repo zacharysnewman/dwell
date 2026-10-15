@@ -1,4 +1,4 @@
-import { buildInfo, formatBuildInfo, recordedVersion } from './buildInfo';
+import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildInfo';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
 import {
   Client,
@@ -21,18 +21,25 @@ import {
 } from './net/connect';
 import { enableHosting } from './hostWorld';
 import { formatCode } from './net/joinCode';
-import { configuredMasterUrl, MasterClient, serverInvite } from './net/master';
-import { IndexedDbKeyStore, loadOrCreateDeviceKey } from './identity/deviceKey';
+import { configuredMasterUrl, MasterClient } from './net/master';
 import { parseInvite } from './net/invite';
+import { LAUNCHER_PATH } from './launcherPath';
+import { PROTOCOL_VERSION } from './protocol/constants.gen';
+import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
-import { WorldIndex } from './local/worldIndex';
+import {
+  cleanName,
+  parseSeed,
+  WORLD_TYPES,
+  WorldIndex,
+  type CreatableType,
+} from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
-import { launchOf, launcherHref, pastedInvite } from './ui/launch';
-import { MainMenu, type MainMenuDeps } from './ui/mainMenu';
-import { loadRecent, rememberServer } from './ui/recentServers';
+import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './ui/launch';
+import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
@@ -46,9 +53,6 @@ import { FpsMeter } from './ui/fps';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
-
-/** Most time a lobby ping may take, connecting included (§8.3). */
-const PING_TIMEOUT_MS = 5000;
 
 type Vec3 = [number, number, number];
 
@@ -609,49 +613,60 @@ function go(route: Record<string, string>): void {
   location.assign(launcherHref(location.search, route));
 }
 
-/** The main menu (Phase 5a): shown when the address names no world or server. */
-/**
- * The master as the menu uses it: server addresses and games on this network (Phase 5d), and the
- * lobby list with its pings (Phase 5e).
- */
-function menuMaster(): MainMenuDeps['master'] {
-  const base = configuredMasterUrl();
-  if (!base) return undefined;
-  const client = loadOrCreateDeviceKey(new IndexedDbKeyStore()).then(
-    (key) => new MasterClient(base, key),
-  );
-  return {
-    resolveAddress: async (address) => {
-      const found = await (await client).resolve({ address });
-      if (found.kind !== 'server') throw new Error('That is not a server address.');
-      return serverInvite(found.server);
-    },
-    nearby: async () => (await client).nearby(),
-    lobby: async (query) => (await client).lobby(query),
-    ping: async (server) => {
-      const invite = parseInvite(`?${new URLSearchParams(serverInvite(server)).toString()}`);
-      if (!invite) throw new Error('unusable server address');
-      const w = invite.webrtc;
-      const rtc = w ? [w.ip, w.port, w.ufrag, w.pwd] : undefined;
-      await loadWasm();
-      return pingServer(invite.url, invite.certHash, rtc, PING_TIMEOUT_MS);
-    },
-  };
+/** Carries out the menu's New world or Regenerate: the world's id, or why not. */
+async function makeWorld(
+  index: WorldIndex,
+  launch: Extract<Launch, { kind: 'new' | 'regenerate' }>,
+): Promise<string | { message: string }> {
+  if (launch.kind === 'new') {
+    const type = (WORLD_TYPES as readonly string[]).includes(launch.type)
+      ? (launch.type as CreatableType)
+      : 'terrain';
+    const world = index.create(
+      { name: cleanName(launch.name, 'New world'), type, seed: parseSeed(launch.seed) },
+      Date.now(),
+    );
+    return world.id;
+  }
+  const world = index.get(launch.id);
+  if (!world) return { message: 'That world is not in this browser any more.' };
+  if (!(await regenerateWorld(index, world, deleteWorldFiles))) {
+    return { message: `"${world.name}" is open in another tab. Close it there first.` };
+  }
+  return world.id;
 }
 
-/** The main menu: DOM only, so it opens without WebGPU (and before the game client starts). */
+/** Whether this build is served at the launcher's own path: a local or preview build, no launcher. */
+function servesLauncherPath(): boolean {
+  return location.pathname === LAUNCHER_PATH;
+}
+
+/**
+ * The main menu is the launcher's (RELEASES.md §5): a build hands over to it, with `message` to say
+ * why. A build served at the launcher's path (a local or preview build, the e2e suite) has no
+ * launcher, and shows the same menu itself, loaded only then.
+ */
 function openMainMenu(app: App | null, message?: string): void {
   if (app?.touch) app.touch.visible = false;
-  const master = menuMaster();
-  new MainMenu(document.body, {
-    index: new WorldIndex(storage()),
-    recent: loadRecent(storage()),
-    listFiles: listWorldFiles,
-    deleteFiles: deleteWorldFiles,
-    go,
-    now: () => Date.now(),
-    ...(message ? { message } : {}),
-    ...(master ? { master } : {}),
+  if (!servesLauncherPath()) {
+    location.replace(launcherHref(location.search, message ? { say: message } : {}));
+    return;
+  }
+  void import('./ui/menuPage').then(({ showMenu }) => {
+    showMenu({
+      go,
+      ...(message ? { message } : {}),
+      version: recordedVersion(),
+      channel: channelOf(buildInfo.version),
+      protocol: PROTOCOL_VERSION,
+      detail: `Build ${buildInfo.sha.slice(0, 7)}, ${buildInfo.time.slice(0, 10)}.`,
+      versionsHref: `${LAUNCHER_PATH}?versions`,
+      noticesHref: `${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.txt`,
+      ping: async () => {
+        await loadWasm();
+        return pingServer;
+      },
+    });
   });
 }
 
@@ -695,14 +710,25 @@ function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
 async function connect(app: App): Promise<void> {
   const status = element('net-status', HTMLDivElement);
   const params = new URLSearchParams(location.search);
-  const launch = launchOf(location.search);
+  let launch = launchOf(location.search);
   if (launch.kind === 'menu') {
-    openMainMenu(app);
+    openMainMenu(app, params.get('say') ?? undefined);
     return;
   }
 
   // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1).
   const index = new WorldIndex(storage());
+  // The menu's new and regenerated worlds are this build's to make (RELEASES.md §5); then they are
+  // played as any world, the address saying so (a reload continues it rather than making another).
+  if (launch.kind === 'new' || launch.kind === 'regenerate') {
+    const id = await makeWorld(index, launch);
+    if (typeof id !== 'string') {
+      openMainMenu(app, id.message);
+      return;
+    }
+    history.replaceState(null, '', withRoute(location.search, { play: id }));
+    launch = { kind: 'play', id };
+  }
   let localWorld: LocalWorld | null = null;
   let worldName = 'Local world';
   if (launch.kind === 'play') {
@@ -819,7 +845,7 @@ async function connect(app: App): Promise<void> {
 // client, and shows the unsupported screen where it cannot.
 if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
-  openMainMenu(null);
+  openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();
 } else {
   void start().then((app) => {

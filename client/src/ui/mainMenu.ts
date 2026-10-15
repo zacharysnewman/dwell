@@ -1,21 +1,18 @@
-// The main menu (ARCHITECTURE.md §2.1, Phase 5a), shown when the page opens without a world or
-// server in its address: the local worlds (create with a seed, play, regenerate, delete) and Join
-// (a join code, a server address or an invite link; servers and friend worlds on this network;
-// recently joined servers), and the server browser (the lobby list, Phase 5e). Choosing one
-// navigates to it (ui/launch.ts).
-import { buildInfo, channelOf, recordedVersion } from '../buildInfo';
-import { GENERATORS } from '../local/world';
+// The main menu (ARCHITECTURE.md §2.1, Phase 5a): the local worlds (create with a seed, play,
+// regenerate, delete) and Join (a join code, a server address or an invite link; servers and friend
+// worlds on this network; recently joined servers), and the server browser (the lobby list, Phase
+// 5e). The launcher shows it (RELEASES.md §5), so it is the same whichever build plays: every
+// choice is a route the launcher sends to the build that carries it out (ui/launch.ts) — creating
+// and regenerating a world too, so the world is the build's own. A build served at the launcher's
+// path (a local or preview build) shows it itself (ui/menuPage.ts).
 import {
   cleanName,
-  parseSeed,
   typeLabel,
   WORLD_TYPES,
   type WorldIndex,
   type WorldMeta,
-  type CreatableType,
 } from '../local/worldIndex';
 import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
-import { PROTOCOL_VERSION } from '../protocol/constants.gen';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
@@ -31,6 +28,17 @@ export interface MainMenuDeps {
   now(): number;
   /** Shown on opening, e.g. why the menu came up instead of a world. */
   message?: string;
+  /** The version the menu plays by default (the launcher's latest), its channel and protocol. */
+  version: string;
+  channel: 'stable' | 'dev';
+  protocol: number;
+  /** The build or launcher behind the menu, for About ("Build 1a2b3c4, 2026-10-14."). */
+  detail: string;
+  /** The version page and the licence notices. */
+  versionsHref: string;
+  noticesHref: string;
+  /** Whether a world can be regenerated (the build that opens it carries out `?regenerate=`). */
+  canRegenerate?(world: WorldMeta): boolean;
   /** The master server (Phase 5d), when this build has one: addresses and nearby games. */
   master?: {
     /** Invite parameters for a server address, or a rejection with a message for the player. */
@@ -166,8 +174,8 @@ export class MainMenu {
         go: (route) => {
           deps.go(route);
         },
-        protocol: PROTOCOL_VERSION,
-        version: recordedVersion(),
+        protocol: deps.protocol,
+        version: deps.version,
       });
       online.append(browser.root);
     }
@@ -187,19 +195,15 @@ export class MainMenu {
     section.id = 'about';
     const line = document.createElement('p');
     line.className = 'menu-hint';
-    const version = recordedVersion();
-    // The version page is the launcher's (RELEASES.md §5), always the current one; the launcher
-    // is the site's root, `/dwell/` in production.
+    const { version, channel } = this.deps;
+    // The version page is the launcher's (RELEASES.md §5).
     const versions = document.createElement('a');
     versions.id = 'versions-link';
     versions.className = 'menu-link';
-    versions.href = new URL(
-      '../../?versions',
-      new URL(import.meta.env.BASE_URL, location.href),
-    ).href;
+    versions.href = this.deps.versionsHref;
     versions.textContent = 'Versions';
     line.append(
-      `Dwell ${version} (${channelOf(buildInfo.version)}) · `,
+      `Dwell ${version} (${channel}) · `,
       button('About', 'menu-link', () => {
         details.hidden = !details.hidden;
       }),
@@ -212,9 +216,9 @@ export class MainMenu {
     details.hidden = true;
     const text = document.createElement('p');
     text.className = 'menu-hint';
-    text.textContent = `Build ${buildInfo.sha.slice(0, 7)}, ${buildInfo.time.slice(0, 10)}. Dwell is not open source: all rights reserved, and the source is public for reference only. `;
+    text.textContent = `${this.deps.detail} Dwell is not open source: all rights reserved, and the source is public for reference only. `;
     const notices = document.createElement('a');
-    notices.href = `${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.txt`;
+    notices.href = this.deps.noticesHref;
     notices.target = '_blank';
     notices.rel = 'noopener';
     notices.textContent = 'Third-party notices';
@@ -266,15 +270,13 @@ export class MainMenu {
     f.append(field('Name', name), field('Seed', seed), field('Type', type), hint, submit);
     f.addEventListener('submit', (e) => {
       e.preventDefault();
-      const world = this.deps.index.create(
-        {
-          name: cleanName(name.value, 'New world'),
-          type: type.value as CreatableType,
-          seed: parseSeed(seed.value),
-        },
-        this.deps.now(),
-      );
-      this.deps.go({ play: world.id });
+      // The build that opens it creates it (its generator, its version).
+      this.deps.go({
+        new: '1',
+        name: cleanName(name.value, 'New world'),
+        seed: seed.value.trim(),
+        type: type.value,
+      });
     });
   }
 
@@ -427,7 +429,13 @@ export class MainMenu {
         button('Play', 'block-button world-play', () => {
           this.deps.go({ play: world.id });
         }),
-        confirmButton('Regenerate', 'Lose all changes?', () => void this.regenerate(world)),
+        ...((this.deps.canRegenerate?.(world) ?? true)
+          ? [
+              confirmButton('Regenerate', 'Lose all changes?', () => {
+                this.deps.go({ regenerate: world.id });
+              }),
+            ]
+          : []),
         confirmButton('Delete', 'Delete forever?', () => void this.remove(world)),
       );
       item.append(info, actions);
@@ -461,24 +469,6 @@ export class MainMenu {
       list.append(item);
     }
     this.legacy.append(title, hint, list);
-  }
-
-  /** Recreates a world from its seed with its type's current generator, discarding changes. */
-  private async regenerate(world: WorldMeta): Promise<void> {
-    if (!(await this.deps.deleteFiles(world.id))) {
-      this.say(`"${world.name}" is open in another tab. Close it there first.`);
-      return;
-    }
-    // A new file: this build's world, whichever version the old one was.
-    // The retired playground (Phase 15) starts again as a flat world.
-    const type = world.type === 'playground' ? 'flat' : world.type;
-    this.deps.index.put({
-      ...world,
-      type,
-      generatorVersion: GENERATORS[type],
-      appVersion: recordedVersion(),
-    });
-    this.deps.go({ play: world.id });
   }
 
   private async remove(world: WorldMeta): Promise<void> {
