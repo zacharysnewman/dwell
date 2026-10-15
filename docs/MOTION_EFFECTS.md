@@ -1,6 +1,6 @@
 # Motion effects: speed FOV and wind (Phase 29)
 
-**Status:** in progress (see `IMPLEMENTATION_PLAN.md` Phase 29). Owner's brief (2026-10-14): "add
+**Status:** built; the owner's look in a browser outstanding (`IMPLEMENTATION_PLAN.md` Phase 29). Owner's brief (2026-10-14): "add
 sprint wind effects and dynamic FOV adjustment (for a 'fast moving' effect). Should be using shaders
 for VFX."
 
@@ -52,21 +52,26 @@ at the end.
 
 ## Wind (shader)
 
-A screen-space, full-screen, premultiplied-alpha pass after the terrain and players
-(`render/shaders.rs` `motion_source()`, its own WGSL module, uniform block and pipeline, so it
-moves into Phase 25's composite pass with minimal change):
+Part of the shared frame's composite pass (Phase 25 A1; `render/shaders.rs` `MOTION`, uniforms
+`frame.wind_*`), applied over the composited picture only while the wind is above zero:
 
 - Thin soft streaks radiating from the **vanishing point of the velocity** (its direction projected
-  into the view, so strafing or falling moves it; moving away flips the flow inward), in angular
-  cells around it with hashed jitter, width, speed and on/off per cycle (procedural, no textures).
-- Concentrated toward the screen edges (faded in between `innerRadius` and `outerRadius` of the
+  into the frame's view, so strafing or falling moves it; moving away flips the flow inward), one per
+  angular cell around it with hashed jitter, width, speed and on/off per cycle — procedural, no
+  textures.
+- Concentrated toward the screen edges (faded in between `innerRadius` and `outerRadius` from the
   screen centre), so the crosshair area stays clear; faded out near the vanishing point.
 - Intensity from speed above a threshold (`wind.start` of the way from walk to run speed),
   `sprintIntensity` at run speed, 1 at `fullMps` (log scale), smoothed by its own spring; a second,
   denser, faster and thinner layer fades in above sprint intensity (fast flight).
 - A subtle edge vignette scaled by the intensity.
-- No radial blur: the frame cannot sample scene colour until the shared frame (A1) exists.
-- The pass is skipped when the wind is zero.
+- A **radial blur** of the composited scene toward the vanishing point at the edges (`wind.blur` ×
+  intensity², so it is a flight effect): four taps jittered per pixel (smooth rather than ghosted
+  copies), sharing the pixel's view ray and sky colour (the sky is the composite's costly part).
+
+**Cost** (this Mac's GPU, `fly-low-fast --unthrottled`, effects off against on in one build): the
+composite pass's GPU time p50 1.13 → 1.37 ms (mean 1.39 → 1.60 ms); frame interval unchanged
+within noise (p50 7.8 vs 7.2 ms).
 
 ## Settings
 
@@ -89,5 +94,5 @@ state needs a gain), tested by `node --test shared/look/gen.test.mjs`, stale out
    walk speed for the FOV, half-way to run speed for the wind)?
 4. Wind colour and density: white-blue streaks at the edges; any wish for tinting by environment
    (dust, water, altitude)?
-5. Radial blur toward the edges once the shared frame (Phase 25 A1) lands?
+5. The edge radial blur (in flight only): keep, stronger, or off?
 6. Should a remote player's or a vehicle's speed matter later (only the camera's now)?
