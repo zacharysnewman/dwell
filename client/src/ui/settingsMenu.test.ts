@@ -51,6 +51,7 @@ describe('settings JSON', () => {
       detail: { distanceM: 200.4, pixelError: 2.46, memoryMb: 511.7 },
       exposure: 1.2345,
       skyRotation: 123.4,
+      water: { quality: 'medium' },
       motion: { speedEffects: false, fovBoost: 0.456 },
       fovDeg: 82.4,
     });
@@ -60,6 +61,7 @@ describe('settings JSON', () => {
       detail: { distanceM: 200, pixelError: 2.5, memoryMb: 512 },
       exposure: 1.23,
       skyRotation: 123,
+      water: { quality: 'medium' },
       motion: { speedEffects: false, fovBoost: 0.46 },
       fovDeg: 82,
     });

@@ -20,8 +20,12 @@ export type Step =
   /** Creative flight on or off; its speed level. */
   | { do: 'fly'; on: boolean }
   | { do: 'flySpeed'; level: number }
-  /** Places the camera (the player stays), or returns it to the player. */
-  | { do: 'camera'; position: Vec3; yaw: number; pitch: number }
+  /**
+   * Places the camera (the player stays), or returns it to the player. With `aroundPlayer`, the
+   * position's x and z are offsets from the player's feet (y stays absolute): a view near wherever
+   * a flight ended, where the chunks are streamed (e.g. the eye just under the sea's surface).
+   */
+  | { do: 'camera'; position: Vec3; yaw: number; pitch: number; aroundPlayer?: boolean }
   | { do: 'releaseCamera' }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
@@ -113,7 +117,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   look: ['yaw', 'pitch'],
   fly: ['on'],
   flySpeed: ['level'],
-  camera: ['position', 'yaw', 'pitch'],
+  camera: ['position', 'yaw', 'pitch', 'aroundPlayer'],
   releaseCamera: [],
   edit: ['action'],
   select: ['slot'],
@@ -162,6 +166,9 @@ export function parseStep(where: string, v: unknown): Step {
         position: vec3(at('position'), o.position),
         yaw: num(at('yaw'), o.yaw, -360, 360),
         pitch: num(at('pitch'), o.pitch, -90, 90),
+        ...(o.aroundPlayer === undefined
+          ? {}
+          : { aroundPlayer: bool(at('aroundPlayer'), o.aroundPlayer) }),
       };
     case 'edit':
       if (o.action !== 'break' && o.action !== 'place') {
@@ -223,7 +230,7 @@ function parseScenario(where: string, v: unknown): Scenario {
   const settings = (
     o.settings === undefined
       ? {}
-      : obj(`${where}.settings`, o.settings, ['fog', 'detail', 'exposure', 'motion'])
+      : obj(`${where}.settings`, o.settings, ['fog', 'detail', 'exposure', 'motion', 'water'])
   ) as View['settings'];
   if (!Array.isArray(o.steps) || o.steps.length === 0) {
     throw new ViewError(`${where}.steps: expected a non-empty list`);

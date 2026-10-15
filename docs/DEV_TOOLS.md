@@ -67,7 +67,7 @@ fields, ranges and names fail with the entry named):
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
 | `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
-| `camera {position, yaw, pitch}`, `releaseCamera` | places the camera (the player stays), or returns it |
+| `camera {position, yaw, pitch, aroundPlayer?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute): a view wherever a flight ended, where the chunks are streamed |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |

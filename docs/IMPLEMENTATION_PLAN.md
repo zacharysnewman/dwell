@@ -43,7 +43,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14) and W1a (fluid data, the eye-under-fluid uniform) done; next: W1b, the water shader; W1b–W5 build on the shared frame; W6 only if marching is kept at A7; `package.json` raised to 0.11.6, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S2b; S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.5, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
@@ -2686,10 +2686,11 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** In progress — W2 built (Phase 25's A1) and W1a done (fluid looks in the registry, the
-surface drop and opacity read from them, the eye-under-fluid test in the frame uniform). Next: W1b;
-W1b and W3–W5 build on the shared frame (A1); W6
-needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+**Status:** In progress — W1a done (fluid looks in the registry, the surface drop and opacity read
+from them, the eye-under-fluid test in the frame uniform); W2 built (Phase 25's A1); W1b built (the
+water shader, `water_fs`, with the fluid id per vertex, the fluid buffer, the underwater fog stub and
+the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look. Next: W3; W3–W5
+build on the shared frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
 Deliverables
@@ -2700,7 +2701,7 @@ Deliverables
   (`WATER_SURFACE`, `CHUNK_WATER_DROP_M` gone); `WATER_OPACITY` from the data; the eye-submerged test
   with the 0.875 rule (the cell at `floor(eye)` liquid and, under a non-fluid cell, `frac(eye.y)`
   below the surface; the face's up) into a frame uniform, with its regression test.
-- [ ] **W1b** — The water shader (after A1): the mesher writing the fluid id per vertex (moved from
+- [x] **W1b** — The water shader (after A1): the mesher writing the fluid id per vertex (moved from
   W1a), a dedicated `water_fs` with scrolling normal maps, Schlick Fresnel, a GGX glint by the
   fluid's roughness and the sky reflection.
 - [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
@@ -2719,7 +2720,25 @@ Exit criteria
   own parameters; a bad fluid entry fails `gen.mjs` naming it; the regression test for the
   cell-against-surface mismatch (the eye 0.9 into a water cell under air is not underwater), seen
   failing first.
-- [ ] W1b: the fixture fluid drawn with its own parameters; the owner's look.
+- [x] W1b: the fixture fluid drawn with its own parameters: `test:oil`'s vertices carry its own id
+  (`dwell-mesh` `a_fluid_added_by_data_alone_…`) and its row of the fluid buffer holds its own
+  parameters (`render::water` `packs_each_fluid_at_its_id_…`); the shader validates (naga) and draws
+  in Chrome on the GPU (`npm run bench -- water-views`).
+- [ ] W1b: the owner's look (`water-views` screenshots in the PR).
+
+Deviations (W1b):
+- Beyond the plan, from the brief: the underwater fog stub (the composite reads the `water` uniform:
+  the fluid's absorption and in-scatter replace the height fog while submerged; W4 builds the rest)
+  and the water quality setting (Low, Medium, High; only Low differs in W1b — one ripple layer —
+  W5 adds the tiers' real differences).
+- The normal "maps" are procedural (gradient noise with derivatives), not textures: no assets, and
+  each layer fades by its own wavelength against the pixel's footprint, which mipmaps would do less
+  well for a scrolling, wrapped pattern.
+- `dwell:water`'s data tuned from the screenshots (prototype content): scatter `#2b9cc0` (was
+  `#1d6f8a`), opacity 0.65 (was 0.55). Then, at the owner's request for bluer water: block colour
+  `#2f86e0` (was `#3fb2d6`), scatter `#1c7ed8`, absorption [0.7, 0.28, 0.06] (was [0.45, 0.09,
+  0.06]), opacity 0.72. Then tropical (owner): scatter `#1a8ee0`, absorption [0.45, 0.12, 0.04]
+  (clear water: red goes first, so shallows over sand read turquoise once W3 grades by depth).
 
 Deviations (W1a):
 - The per-vertex fluid id moved to W1b: it changes the terrain vertex format, which Phase 25's A1

@@ -41,6 +41,7 @@ describe('scenarios', () => {
             { do: 'fly', on: true },
             { do: 'hold', code: 'KeyW', s: 2 },
             { do: 'camera', position: [0, 100, 0], yaw: 0, pitch: -30 },
+            { do: 'camera', position: [4, -0.5, 0], yaw: 90, pitch: 0, aroundPlayer: true },
             { do: 'traceStart' },
             { do: 'traceStop', name: 'x' },
             { do: 'record', name: 'end' },
@@ -51,6 +52,7 @@ describe('scenarios', () => {
     expect(s.steps.map((x) => x.do)).toEqual([
       'fly',
       'hold',
+      'camera',
       'camera',
       'traceStart',
       'traceStop',
@@ -102,5 +104,15 @@ describe('scenarios', () => {
     expect(() =>
       parseScenarios(file([{ name: 'a', steps: [{ do: 'traceStop', name: 't' }] }])),
     ).toThrow(/not tracing/);
+    expect(() =>
+      parseScenarios(
+        file([
+          {
+            name: 'a',
+            steps: [{ do: 'camera', position: [0, 0, 0], yaw: 0, pitch: 0, aroundPlayer: 1 }],
+          },
+        ]),
+      ),
+    ).toThrow(/aroundPlayer: expected true or false/);
   });
 });

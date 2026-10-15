@@ -899,6 +899,15 @@ impl Client {
             .borrow_mut()
             .set_exposure(exposure);
     }
+    /// The water quality (0 Low, 1 Medium, 2 High; WATER_RENDERING.md §4).
+    #[wasm_bindgen(js_name = setWaterQuality)]
+    pub fn set_water_quality(&self, level: u32) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_water_quality(crate::render::water::WaterQuality::from_level(level));
+    }
     /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
     #[wasm_bindgen(js_name = setMotion)]
     pub fn set_motion(&self, enabled: bool, fov_strength: f64) {

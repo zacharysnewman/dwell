@@ -29,6 +29,8 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     '1.00×',
     '0°',
     '100%',
+    // Water quality: a row of buttons, the pressed one its value.
+    '',
   ]);
 
   // Density to zero (no fog), as a drag would.

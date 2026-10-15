@@ -39,6 +39,7 @@ import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import { waterQualityLevel } from './ui/waterSettings';
 import {
   CompareOverlay,
   RENDERER_CHOICES,
@@ -427,6 +428,7 @@ async function start(): Promise<App | null> {
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
+    client.setWaterQuality(waterQualityLevel(s.water.quality));
     client.setSkyRotation(s.skyRotation);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setFov(s.fovDeg);

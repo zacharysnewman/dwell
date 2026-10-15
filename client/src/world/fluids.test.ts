@@ -20,7 +20,7 @@ describe('fluid looks', () => {
     expect(readFluids([dwell]).map((f) => f.name)).toEqual(['dwell:water']);
     const both = readFluids([dwell, fixture]);
     expect(both.map((f) => [f.name, f.surfaceDrop, f.opacity])).toEqual([
-      ['dwell:water', 0.125, 0.55],
+      ['dwell:water', 0.125, 0.72],
       ['test:oil', 0.25, 0.8],
     ]);
     expect(blockFluid('test:oil', { look: 'fluid', fluid: 'test:oil' }, both)).toBe(1);

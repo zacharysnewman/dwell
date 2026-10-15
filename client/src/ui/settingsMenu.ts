@@ -1,6 +1,7 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
 // with pages — Settings (the height fog, render/fog.ts; the detail settings, lod/detail.ts; the
-// tone-mapping exposure and the sky, render/look.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
+// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts;
+// ARCHITECTURE.md §5, §6.6), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
@@ -9,6 +10,15 @@ import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSe
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { DEFAULT_FOV, FOV_LIMITS, VIEW_KEY, sanitizeFovSetting, viewRecord } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
+import {
+  defaultWater,
+  sanitizeWater,
+  WATER_QUALITIES,
+  WATER_QUALITY_LABELS,
+  waterRecord,
+  type WaterQuality,
+  type WaterSettings,
+} from './waterSettings';
 import {
   MOTION_KEY,
   defaultMotion,
@@ -49,6 +59,8 @@ export interface Settings {
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
+  /** The water quality (ui/waterSettings.ts). */
+  water: WaterSettings;
   /** Speed effects: the FOV boost and the wind (docs/MOTION_EFFECTS.md). */
   motion: MotionSettings;
   /** The vertical field of view in degrees (60–100; narrower on wide screens, dwell-lod's base_fov). */
@@ -61,6 +73,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
+    water: defaultWater(mobile),
     motion: defaultMotion(reducedMotion),
     fovDeg: DEFAULT_FOV,
   };
@@ -81,6 +94,7 @@ export function settingsJson(s: Settings): string {
     },
     exposure: Math.round(s.exposure * 100) / 100,
     skyRotation: Math.round(s.skyRotation),
+    water: { quality: s.water.quality },
     motion: {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
@@ -94,6 +108,8 @@ const FOG_KEY = 'dwell.fog';
 const DETAIL_KEY = 'dwell.detail';
 const EXPOSURE_KEY = 'dwell.exposure';
 const SKY_ROTATION_KEY = 'dwell.skyRotation';
+/** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
+const WATER_KEY = 'dwell.water';
 
 /** A sky rotation in degrees from storage: 0–360, anything else 0. */
 export function sanitizeSkyRotation(value: unknown): number {
@@ -120,17 +136,19 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
+    water: sanitizeWater(load(WATER_KEY), defaults.water),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
   };
 }
 
-function save(s: Settings): void {
+export function saveSettings(s: Settings): void {
   try {
     localStorage.setItem(FOG_KEY, JSON.stringify(s.fog));
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
+    localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
     // Append-only: fields a newer build stored are kept.
     localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
     localStorage.setItem(VIEW_KEY, JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg)));
@@ -291,6 +309,25 @@ function sections(
   ];
 }
 
+/** A setting picked from a few named choices (a row of buttons). */
+interface ChoiceSpec<T extends string> {
+  label: string;
+  hint: string;
+  choices: readonly T[];
+  labels: Record<T, string>;
+  get: (s: Settings) => T;
+  with: (s: Settings, v: T) => Settings;
+}
+
+const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
+  label: 'Quality',
+  hint: 'Ripples, reflections and glints on water; lower is faster on phones',
+  choices: WATER_QUALITIES,
+  labels: WATER_QUALITY_LABELS,
+  get: (s) => s.water.quality,
+  with: (s, v) => ({ ...s, water: { ...s.water, quality: v } }),
+};
+
 /** A debug tool as a button in the Debug page (`key` matches an entry of DEBUG_KEYS). */
 export interface DebugTool {
   key: string;
@@ -354,6 +391,11 @@ export class SettingsMenu {
   private readonly debugButtons: { tool: DebugTool; button: HTMLButtonElement }[] = [];
   private readonly rows: { spec: SliderSpec; input: HTMLInputElement; value: HTMLSpanElement }[] =
     [];
+  /** The choice rows: each setting's buttons, the pressed one its value. */
+  private readonly choiceRows: {
+    get: (s: Settings) => string;
+    buttons: Map<string, HTMLButtonElement>;
+  }[] = [];
   private readonly toggles: { spec: ToggleSpec; input: HTMLInputElement }[] = [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
@@ -607,6 +649,12 @@ export class SettingsMenu {
       group.append(grid);
       page.append(group);
     }
+    const water = el('div', 'gm-group');
+    water.append(el('h2', undefined, 'Water'));
+    const waterGrid = el('div', 'gm-grid');
+    waterGrid.append(this.choice(WATER_CHOICE));
+    water.append(waterGrid);
+    page.append(water);
     const reset = el('button', 'quiet-button settings-reset', 'Reset');
     reset.type = 'button';
     reset.title = 'Back to the defaults';
@@ -670,6 +718,39 @@ export class SettingsMenu {
     return row;
   }
 
+  private choice<T extends string>(spec: ChoiceSpec<T>): HTMLDivElement {
+    const row = el('div', 'settings-row');
+    const name = el('span', 'settings-name', spec.label);
+    const value = el('span', 'settings-value');
+    const box = el('div', 'settings-choices');
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', spec.label);
+    const buttons = new Map<string, HTMLButtonElement>();
+    for (const c of spec.choices) {
+      const b = el('button', 'settings-choice', spec.labels[c]);
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        this.settings = spec.with(this.settings, c);
+        this.showChoices();
+        this.apply();
+        b.blur();
+      });
+      buttons.set(c, b);
+      box.append(b);
+    }
+    const hint = el('span', 'settings-hint', spec.hint);
+    row.append(name, value, box, hint);
+    this.choiceRows.push({ get: spec.get, buttons });
+    return row;
+  }
+
+  private showChoices(): void {
+    for (const { get, buttons } of this.choiceRows) {
+      const v = get(this.settings);
+      for (const [c, b] of buttons) b.setAttribute('aria-pressed', String(c === v));
+    }
+  }
+
   private toggle(spec: ToggleSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row settings-toggle';
@@ -702,6 +783,7 @@ export class SettingsMenu {
       value.textContent = spec.format(v);
       this.paint(input);
     }
+    this.showChoices();
     for (const { spec, input } of this.toggles) input.checked = spec.get(settings);
     this.apply();
   }
@@ -727,6 +809,6 @@ export class SettingsMenu {
   private apply(): void {
     if (!this.fallback.hidden) this.fallback.value = settingsJson(this.settings);
     this.onChange(this.settings);
-    save(this.settings);
+    saveSettings(this.settings);
   }
 }
