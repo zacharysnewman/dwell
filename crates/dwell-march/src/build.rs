@@ -398,13 +398,13 @@ mod tests {
         let mut r = rng(5);
         let mut v = vec![0u16; CHUNK_VOLUME];
         for x in v.iter_mut() {
-            if r() % 5 == 0 {
+            if r().is_multiple_of(5) {
                 *x = (r() % 4 + 1) as u16;
             }
         }
         let mut sec = vec![0u16; lod::VOLUME];
         for x in sec.iter_mut() {
-            if r() % 3 == 0 {
+            if r().is_multiple_of(3) {
                 *x = (r() % 3 + 1) as u16;
             }
         }

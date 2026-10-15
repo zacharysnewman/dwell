@@ -84,7 +84,9 @@ pub struct GpuScene {
 impl GpuScene {
     pub fn new(device: &wgpu::Device, table: StateTable, looks: Vec<u32>) -> Self {
         let limits = device.limits();
-        let limit = u64::from(limits.max_storage_buffer_binding_size).min(limits.max_buffer_size);
+        let limit = limits
+            .max_storage_buffer_binding_size
+            .min(limits.max_buffer_size);
         let bufs = BUFS
             .iter()
             .map(|b| GpuBuf {

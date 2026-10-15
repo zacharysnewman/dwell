@@ -129,7 +129,7 @@ mod tests {
                 Outcome::Cap
             } else {
                 words[steps as usize] += 1;
-                if steps % 3 == 0 {
+                if steps.is_multiple_of(3) {
                     words[HIST_HITS] += 1;
                     Outcome::Hit(dwell_march::Hit {
                         level: 0,

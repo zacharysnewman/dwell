@@ -573,7 +573,7 @@ impl Marcher {
         // The histogram, every so often, when a readback buffer is free.
         self.pending = None;
         let every = u64::from(self.settings.histogram_every);
-        if every > 0 && self.frames % every == 0 {
+        if every > 0 && self.frames.is_multiple_of(every) {
             self.pending =
                 (0..RING).find(|&i| self.readback_state[i].load(Ordering::Acquire) == IDLE);
         }

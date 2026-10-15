@@ -446,7 +446,8 @@ mod tests {
         v[9000] = 2;
         let b = build_chunk(&v, &t);
         let mut mirror = GpuBuffers::default();
-        let steps: Vec<Box<dyn Fn(&mut Scene)>> = vec![
+        type Step<'a> = Box<dyn Fn(&mut Scene) + 'a>;
+        let steps: Vec<Step> = vec![
             Box::new(|s| s.put(0, [10, 10, 10], &b)),
             Box::new(|s| s.put(0, [10, 10, 11], &b)),
             Box::new(|s| s.put(0, [10, 10, 10], &NodeBuild::Solid(1))),

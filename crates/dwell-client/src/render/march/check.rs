@@ -318,9 +318,8 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
                     let i = (y * SIZE + x) as usize;
                     let g = DebugRay::from_words(&debug[i * DEBUG_WORDS..(i + 1) * DEBUG_WORDS]);
                     let want_dir = frame.ray(x, y, (SIZE, SIZE));
-                    for k in 0..3 {
-                        report.max_dir_error =
-                            report.max_dir_error.max((g.dir[k] - want_dir[k]).abs());
+                    for (a, b) in g.dir.iter().zip(want_dir) {
+                        report.max_dir_error = report.max_dir_error.max((a - b).abs());
                     }
                     // The reference, with the GPU's own direction (not normalised again).
                     let ray = Ray {
