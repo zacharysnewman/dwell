@@ -16,7 +16,12 @@ const real = JSON.parse(readFileSync(join(brushesDir, 'brushes.json'), 'utf8')) 
 let root = '';
 
 /** Runs the generator over `data`: its exit status, output, and the Rust and TypeScript tables. */
-function generate(data: object): { status: number | null; output: string; rust: string; ts: string } {
+function generate(data: object): {
+  status: number | null;
+  output: string;
+  rust: string;
+  ts: string;
+} {
   root = mkdtempSync(join(tmpdir(), 'dwell-brushes-'));
   const here = join(root, 'shared/brushes');
   mkdirSync(here, { recursive: true });
@@ -81,7 +86,7 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
     expect(out.rust).toContain('fill_iterations: 0');
     expect(out.rust).toContain('key: Some("Semicolon")');
     expect(out.ts).toContain("name: 'tall_ellipsoid'");
-  });
+  }, 20_000);
 
   it('fails a bad entry with a message naming it', () => {
     const cases: [object, RegExp][] = [
@@ -90,17 +95,29 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
       [base([{ ...ball, size: 17 }]), /size must be an integer 1–16/],
       [base([ball, { ...ball, label: 'Again' }]), /duplicate name/],
       [base([{ ...ball, key: 'KeyW' }]), /KeyW is not a free key/],
-      [base([{ ...ball, key: 'KeyU' }, { ...ball, name: 'b2', key: 'KeyU' }]), /taken by another/],
+      [
+        base([
+          { ...ball, key: 'KeyU' },
+          { ...ball, name: 'b2', key: 'KeyU' },
+        ]),
+        /taken by another/,
+      ],
       [base([{ ...ball, params: { height: 3 } }]), /height is for cylinder/],
       [base([{ ...ball, brush: 'splatter', params: { density: 2 } }]), /density must be/],
       [base([{ ...ball, colour: 'red' }]), /unknown field colour/],
-      [{ ...base([ball]), worldTypes: { moon: { brushes: true, reach: 128 } } }, /moon: not a world type/],
-      [{ ...base([ball]), worldTypes: { sandbox: { brushes: true, reach: 999 } } }, /reach must be/],
+      [
+        { ...base([ball]), worldTypes: { moon: { brushes: true, reach: 128 } } },
+        /moon: not a world type/,
+      ],
+      [
+        { ...base([ball]), worldTypes: { sandbox: { brushes: true, reach: 999 } } },
+        /reach must be/,
+      ],
     ];
     for (const [data, message] of cases) {
       const out = generate(data);
       expect(out.status, JSON.stringify(data)).not.toBe(0);
       expect(out.output).toMatch(message);
     }
-  });
+  }, 60_000); // one generator run per case
 });

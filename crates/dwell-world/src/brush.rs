@@ -21,6 +21,9 @@ use crate::edit::{flooded_for, placeable, unbreakable};
 mod table;
 pub use table::{FORMAT_VERSION, MAX_SIZE, MIN_SIZE, PRESETS, WORLD_POLICIES};
 
+/// A cell and the state a stroke puts there.
+pub type Change = ([i32; 3], StateId);
+
 /// The `KEEP` cell of a paste: the server leaves it as it is (`welcome_flags::BRUSHES`).
 pub const KEEP: StateId = region_edit::KEEP as StateId;
 
@@ -662,7 +665,7 @@ pub fn paste_edits(cells: &[([i32; 3], StateId)]) -> Vec<RegionEdit> {
         return Vec::new();
     };
     // Tile → its cells.
-    let mut tiles: Vec<([i32; 3], Vec<([i32; 3], StateId)>)> = Vec::new();
+    let mut tiles: Vec<([i32; 3], Vec<Change>)> = Vec::new();
     for &(c, m) in cells {
         let t: [i32; 3] = std::array::from_fn(|i| (c[i] - min[i]).div_euclid(side));
         match tiles.iter_mut().find(|(k, _)| *k == t) {
