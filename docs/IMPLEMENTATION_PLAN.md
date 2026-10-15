@@ -45,6 +45,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built; the owner approved A1's image differences (2026-10-14); outstanding for A1: the e2e suite on CI; next: A2; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner's approval of its image differences outstanding); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2721,6 +2722,47 @@ Exit criteria
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
   over the cap or outside the build volume are rejected (test).
+
+## Phase 29 — Motion Effects (Speed FOV and Wind)
+
+**Goal:** A "fast moving" feel (owner, 2026-10-14: "sprint wind effects and dynamic FOV
+adjustment … using shaders for VFX"): the field of view widens with the camera's speed and wind
+streaks blow past the screen's edges, from data-driven tunables
+([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)).
+
+**Status:** In progress — built and tested; outstanding: the owner's look in a browser and approval
+(and the open questions in `MOTION_EFFECTS.md`), CI. Built on Phase 25's shared frame (A1): the
+wind is part of its composite pass.
+
+**Deviation:** the owner was not asked the "ask before designing" questions first; the defaults
+chosen are recorded in `MOTION_EFFECTS.md` with the open questions.
+
+**Deliverables:**
+
+- [x] Tunables as data: `shared/look/motion.json`, validated and generated into dwell-look's
+  `motion.gen.rs` by `shared/look/gen.mjs` (`node --test shared/look/gen.test.mjs`; CI fails on
+  stale output).
+- [x] dwell-look's `motion.rs`: speed → FOV boost and wind targets (eased walk→run, log-scaled to
+  flight), per-state gains, a critically damped spring, the FOV caps, the vanishing point, resets
+  on teleport, respawn, a tool camera and the face-B turn-over, held while the menu is open.
+- [x] The frame's FOV computed once by the game from the predicted velocity and state and used by
+  the renderer (projection, sky rays, pass culling) and the LOD selection.
+- [x] The wind in the composite: procedural streaks from the vanishing point, a flight layer, an
+  edge vignette and an edge radial blur of the scene (WGSL, naga-validated).
+- [x] Settings: Speed effects (off under `prefers-reduced-motion`) and FOV boost 0–100 %, stored
+  append-only under `dwell.motion`.
+- [x] Bench scenarios `sprint-straight` and `fly-fast-turn`; the cost measured on `fly-low-fast`.
+
+**Exit criteria:**
+
+- [x] Unit tests: speed → target FOV, the spring, the caps, resets, the menu hold, a tunable changed
+  by data changing the effect; the settings store's append-only test.
+- [x] A local world natively: sprinting widens the view for the renderer and the LOD alike, and
+  standing settles it back (`tests/game_local.rs`).
+- [x] Cost: `fly-low-fast --unthrottled` on this Mac's GPU, effects on against off: the composite
+  +0.2 ms GPU (p50 1.13 → 1.37 ms), no change in frame interval.
+- [ ] The owner looks at it in a browser and approves (subtle at sprint, stronger in fast flight,
+  the crosshair area clear).
 
 ## Phase 30 — Tree Growth
 

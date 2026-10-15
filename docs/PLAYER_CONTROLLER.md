@@ -592,7 +592,14 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
   than 100° horizontal — wider screens (16:9 desktop, landscape phones) get a narrower vertical
   field of view. An uncapped wide view made forward and backward walking look faster than strafing
   at the same speed (playtest); the sim itself moves at the same speed in every direction
-  (`every_direction_moves_at_the_same_speed`).
+  (`every_direction_moves_at_the_same_speed`). **Motion effects** (Phase 29,
+  [`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)): the vertical FOV widens with the camera's speed
+  (the predicted velocity, so falls and knockback count; scaled by the controller state's gain) —
+  eased from 0 at `walk_speed` to the sprint boost at `run_speed`, then log-scaled up to the flight
+  boost — smoothed by a critically damped spring and capped at 118° horizontal while boosted; wind
+  streaks blow past the screen's edges. They read the controller's state and never write it, so
+  prediction stays deterministic; they reset on a teleport, respawn and the turn-over across the
+  midplane, and hold while the menu is open.
   The eye height is computed once per tick from the feet (never the capsule centre, whose height
   changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
   camera must not show, and each is folded into an offset that decays:

@@ -51,7 +51,9 @@ Output per scenario, in `OUT/<scenario>/`:
   "steps": [ { "do": "settle", "maxS": 120 }, { "do": "fly", "on": true }, … ] }
 ```
 
-`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views),
+`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
+`fog`, `detail`, `exposure`, `motion` — `{ "speedEffects": false }` turns the motion effects off, for
+a before/after of their cost in one build),
 `debug` (`?debug=1`) and `scale` are optional. Steps (`scripts/scenarios.ts`, checked: unknown
 fields, ranges and names fail with the entry named):
 
@@ -68,6 +70,11 @@ fields, ranges and names fail with the entry named):
 | `record {name}` | saves everything above under `name` |
 | `shot {name}` | screenshot |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
+
+Kept scenarios include `idle-spawn`, `fly-low-fast`, `fly-low-faster`, `jump-onto-block`,
+`jump-in-place`, and the motion effects' `sprint-straight` (shots standing, mid-sprint and after) and
+`fly-fast-turn` (shots in fast flight, turning and diving: the wind's vanishing point following the
+travel).
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 
