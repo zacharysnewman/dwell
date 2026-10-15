@@ -9,8 +9,8 @@ use std::rc::Rc;
 
 use dwell_game::input::{EditAction, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
-use dwell_look::fog::FogSettings;
 use dwell_look::clouds::CloudQuality;
+use dwell_look::fog::FogSettings;
 use dwell_look::sky_frame::{SkySwitches, sky_angle, sky_frame, sky_switches};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_protocol::{Channel, TransportKind};

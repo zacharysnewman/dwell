@@ -224,7 +224,10 @@ fn warped(t: &CloudTunables, p: [f64; 2], warp_off: [f64; 2]) -> [f64; 2] {
     let w = [p[0] + warp_off[0], p[1] + warp_off[1]];
     let qx = fbm(t, w, 2) - 0.5;
     let qy = fbm(t, [w[0] + 5.2, w[1] + 1.3], 2) - 0.5;
-    [p[0] + 2.0 * t.shape.warp * qx, p[1] + 2.0 * t.shape.warp * qy]
+    [
+        p[0] + 2.0 * t.shape.warp * qx,
+        p[1] + 2.0 * t.shape.warp * qy,
+    ]
 }
 
 fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
@@ -243,7 +246,13 @@ fn shape(t: &CloudTunables, n: f64, coverage: f64) -> f64 {
 
 /// The cloud's density (0–1) at the noise point `p` (cells; `cloud_uniforms`' offsets plus the
 /// hit's horizontal offset over `scale_m`).
-pub fn density(t: &CloudTunables, p: [f64; 2], warp_off: [f64; 2], octaves: u32, coverage: f64) -> f64 {
+pub fn density(
+    t: &CloudTunables,
+    p: [f64; 2],
+    warp_off: [f64; 2],
+    octaves: u32,
+    coverage: f64,
+) -> f64 {
     if octaves == 0 {
         return 0.0;
     }
@@ -298,7 +307,10 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_SUN_GLOW: vec3f = {};", vec3(SUN_GLOW.color)),
         format!("const CLOUD_MOON_GLOW: vec3f = {};", vec3(MOON_GLOW.color)),
         format!("const CLOUD_ABSORPTION: f32 = {};", f(l.absorption)),
-        format!("const CLOUD_SHADOW_STEP: f32 = {};", f(l.shadow_step_m / s.scale_m)),
+        format!(
+            "const CLOUD_SHADOW_STEP: f32 = {};",
+            f(l.shadow_step_m / s.scale_m)
+        ),
         format!("const CLOUD_SILVER: f32 = {};", f(l.silver_lining)),
         format!("const CLOUD_SILVER_POWER: f32 = {};", f(l.silver_power)),
         format!("const CLOUD_SUN_WARMTH: f32 = {};", f(l.sun_warmth)),
@@ -569,7 +581,7 @@ mod tests {
         assert_eq!(u(CloudQuality::Low)[2], 0.0);
         assert_eq!(u(CloudQuality::High)[2], 1.0);
         assert_eq!(u(CloudQuality::High)[0], 0.4);
-        assert!(CLOUDS.shape.low_octaves < CLOUDS.shape.octaves);
+        const { assert!(CLOUDS.shape.low_octaves < CLOUDS.shape.octaves) };
         for (name, q) in [
             ("off", CloudQuality::Off),
             ("low", CloudQuality::Low),
@@ -589,16 +601,44 @@ mod tests {
             assert!(u.iter().all(|&c| (0.0..=n).contains(&c)), "{u:?}");
         }
         // Moving the eye by a metre moves the noise point under it by a metre (in cells).
-        let a = cloud_uniforms(&CLOUDS, [100.0, 0.0, 100.0], 1.0, 0.0, CloudQuality::High, 0.5)[0];
-        let b = cloud_uniforms(&CLOUDS, [101.0, 0.0, 100.0], 1.0, 0.0, CloudQuality::High, 0.5)[0];
+        let a = cloud_uniforms(
+            &CLOUDS,
+            [100.0, 0.0, 100.0],
+            1.0,
+            0.0,
+            CloudQuality::High,
+            0.5,
+        )[0];
+        let b = cloud_uniforms(
+            &CLOUDS,
+            [101.0, 0.0, 100.0],
+            1.0,
+            0.0,
+            CloudQuality::High,
+            0.5,
+        )[0];
         assert!(((b[0] - a[0]) * CLOUDS.shape.scale_m as f32 - 1.0).abs() < 1e-3);
         // After a second the pattern has moved speed_mps downwind: the point under the eye is that
         // far upwind.
-        let c = cloud_uniforms(&CLOUDS, [100.0, 0.0, 100.0], 1.0, 1.0, CloudQuality::High, 0.5)[0];
+        let c = cloud_uniforms(
+            &CLOUDS,
+            [100.0, 0.0, 100.0],
+            1.0,
+            1.0,
+            CloudQuality::High,
+            0.5,
+        )[0];
         let moved = ((a[0] - c[0]).hypot(a[1] - c[1])) * CLOUDS.shape.scale_m as f32;
         assert!((f64::from(moved) - CLOUDS.wind.speed_mps).abs() < 1e-2);
         // Face B looks at another part of the noise.
-        let d = cloud_uniforms(&CLOUDS, [100.0, -5000.0, 100.0], -1.0, 0.0, CloudQuality::High, 0.5)[0];
+        let d = cloud_uniforms(
+            &CLOUDS,
+            [100.0, -5000.0, 100.0],
+            -1.0,
+            0.0,
+            CloudQuality::High,
+            0.5,
+        )[0];
         assert!((d[0] - a[0]).abs() > 1.0);
     }
 }

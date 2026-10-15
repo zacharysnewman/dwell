@@ -148,7 +148,10 @@ const CHOICES: ChoiceSpec<CloudQuality>[] = [
   {
     label: 'Clouds',
     hint: 'Clouds in the sky; Low is lighter on the GPU',
-    options: CLOUD_QUALITIES.map((q) => ({ value: q, label: q.charAt(0).toUpperCase() + q.slice(1) })),
+    options: CLOUD_QUALITIES.map((q) => ({
+      value: q,
+      label: q.charAt(0).toUpperCase() + q.slice(1),
+    })),
     get: (s) => s.clouds,
     with: (s, v) => ({ ...s, clouds: v }),
   },
@@ -317,8 +320,7 @@ export class SettingsMenu {
   private readonly debugButtons: { tool: DebugTool; button: HTMLButtonElement }[] = [];
   private readonly rows: { spec: SliderSpec; input: HTMLInputElement; value: HTMLSpanElement }[] =
     [];
-  private readonly choices: { spec: ChoiceSpec<CloudQuality>; buttons: HTMLButtonElement[] }[] =
-    [];
+  private readonly choices: { spec: ChoiceSpec<CloudQuality>; buttons: HTMLButtonElement[] }[] = [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
   private settings: Settings;

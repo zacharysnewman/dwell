@@ -35,7 +35,7 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.shape.octaves = 9), /shape\.octaves must be a number in \[1, 8\]/],
     [(d) => (d.shape.lowOctaves = 6), /lowOctaves must not exceed/],
     [(d) => (d.shape.wrapM = 100000), /whole multiple of shape\.scaleM/],
-    [(d) => (d.shape.wrapM = 4096), /at least 4 × shape\.scaleM/],
+    [(d) => (d.shape.wrapM = 2 * d.shape.scaleM), /at least 4 × shape\.scaleM/],
     [(d) => (d.deck.fadeEndM = 10), /fadeEndM must be greater/],
   ];
   for (const [edit, message] of cases) {

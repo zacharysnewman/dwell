@@ -458,6 +458,9 @@ mod tests {
         assert!(body.contains("mix(back, shown, c.a)"));
         // The deck's footprint is taken before any branch (derivatives need uniform control flow).
         let deck = body.find("dwell_cloud_deck(").expect("deck");
-        assert!(deck < body.find("if (").expect("branch") && body.find("fwidth(").expect("fw") < body.find("if (").unwrap());
+        assert!(
+            deck < body.find("if (").expect("branch")
+                && body.find("fwidth(").expect("fw") < body.find("if (").unwrap()
+        );
     }
 }
