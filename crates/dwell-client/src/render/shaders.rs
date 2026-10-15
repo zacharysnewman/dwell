@@ -492,6 +492,17 @@ fn hash_grad(c: vec2i, period: i32) -> vec2f {
     return vec2f(cos(a), sin(a));
 }
 
+// Two values in [0, 1) per lattice point, wrapping every `period` points (no trig: the caustics'
+// Worley points).
+fn hash_unit2(c: vec2i, period: i32) -> vec2f {
+    let w = vec2u(((c % period) + period) % period);
+    var h = (w.x * 0x8da6b343u) ^ (w.y * 0xd8163841u) ^ 0x9e3779b9u;
+    h = (h ^ (h >> 16u)) * 0x7feb352du;
+    h = (h ^ (h >> 15u)) * 0x846ca68bu;
+    h = h ^ (h >> 16u);
+    return vec2f(f32(h & 0xffffu), f32(h >> 16u)) * (1.0 / 65536.0);
+}
+
 // Gradient noise and its derivatives (value, d/dx, d/dy), quintic, wrapping every `period` cells.
 fn noise_d(p: vec2f, period: i32) -> vec3f {
     let cell = floor(p);
@@ -798,9 +809,13 @@ fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, boost: f32,
     let sin_t = h / f.wave.x;
     let tan_t = sin_t / sqrt(max(1.0 - sin_t * sin_t, 1e-3));
     let back = select(vec2f(0.0), l.xz / max(h, 1e-4) * (under * tan_t), h > 1e-4);
-    let c = caustic_pattern(xz + back, f);
     let fade = exp(-under / max(f.optics.z, 1e-3)) * smoothstep(0.0, 0.35, under);
     let strength = f.extra.y * k * fade * sharp * boost;
+    // Too deep (or too far) to see: skip the pattern.
+    if (strength < 0.02) {
+        return 1.0;
+    }
+    let c = caustic_pattern(xz + back, f, footprint);
     return max(1.0 + strength * (c * CAUSTIC_GAIN - CAUSTIC_MEAN), 0.0);
 }
 
@@ -814,14 +829,20 @@ const CAUSTIC_MEAN: f32 = 0.2;
 // Two layers of moving cell edges (Worley F2 − F1), warped so the lines wander, wrapping with the
 // position (cells divide WRAP_M, render/water.rs `caustic_period`): bright thin lines, near 0
 // between them.
-fn caustic_pattern(xz: vec2f, f: Fluid) -> f32 {
+fn caustic_pattern(xz: vec2f, f: Fluid, footprint: f32) -> f32 {
     let n = max(1.0, round(WRAP_M / max(f.optics.y, 1e-3)));
     let p = xz / (WRAP_M / n);
     let t = frame.fog.z * (0.5 + 12.0 * f.wave.w);
     let warp = 0.11 * vec2f(sin(6.2831853 * p.y + t), sin(6.2831853 * p.x + 1.37 * t));
     let a = cell_edge(p + warp, i32(n), t);
-    let b = cell_edge(p * 2.0 + vec2f(0.37, 0.71) - 2.0 * warp, i32(2.0 * n), 1.31 * t + 2.0);
-    return exp(-a * 11.0) + 0.6 * exp(-b * 9.0);
+    var c = exp(-a * 11.0);
+    // The finer layer only near, where a pixel is small against its cells.
+    let fine = 1.0 - smoothstep(0.04, 0.12, footprint / max(f.optics.y, 1e-3));
+    if (fine > 0.0) {
+        let b = cell_edge(p * 2.0 + vec2f(0.37, 0.71) - 2.0 * warp, i32(2.0 * n), 1.31 * t + 2.0);
+        c += 0.6 * fine * exp(-b * 9.0);
+    }
+    return c;
 }
 
 // The distance from the nearest cell edge of moving Worley points (F2 − F1), wrapping every
@@ -835,7 +856,7 @@ fn cell_edge(p: vec2f, period: i32, t: f32) -> f32 {
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
             let o = vec2i(x, y);
-            let g = hash_grad(ci + o, period);
+            let g = hash_unit2(ci + o, period);
             let pt = vec2f(o) + 0.5 + 0.38 * vec2f(sin(t + 6.2831853 * g.x), cos(0.83 * t + 6.2831853 * g.y));
             let d = length(pt - fp);
             if (d < d1) {
