@@ -9,7 +9,7 @@ implementation plan; the proposal is then folded into the design doc or deleted.
 |---|---|---|
 | [RAY_MARCHING.md](RAY_MARCHING.md) | A ray-marched renderer as an alternative to raster, switchable at runtime and compared side by side (compare mode, `bench --compare`) | Investigated 2026-10-14; owner chose two complete renderers (ray-marched and meshed terrain, all distances each) compared side by side, locally; owner questions answered, ready for an ADR |
 | [WATER.md](WATER.md) | A water shader with reflections, refraction and underwater rendering, on the raster renderer and under ray marching | Investigated 2026-10-14; owner questions mostly answered (waves moving geometry open) |
-| [STRUCTURES.md](STRUCTURES.md) | A flat white sandbox for building structures (trees, rocks), saved locally, exported to a data-driven structure system | Investigated 2026-10-14; owner questions open |
+| [STRUCTURES.md](STRUCTURES.md) | A flat white sandbox for building structures (trees, rocks), saved locally, exported to a data-driven structure system | Investigated 2026-10-14; owner questions answered except what gets added later; worldgen placement deferred |
 
 The three share one prerequisite, the frame restructure (`RAY_MARCHING.md` step A1): an offscreen
 HDR target, a stored and sampleable depth buffer, a composite pass, and GPU pass timing in the
