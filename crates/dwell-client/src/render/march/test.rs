@@ -12,7 +12,7 @@ use super::check;
 use super::{MarchFrame, Marcher};
 
 /// Runs a future to completion, polling the device while it waits (map callbacks fire there).
-fn block_on<F: Future>(device: &wgpu::Device, f: F) -> F::Output {
+pub(super) fn block_on<F: Future>(device: &wgpu::Device, f: F) -> F::Output {
     let mut f = pin!(f);
     let mut cx = Context::from_waker(Waker::noop());
     loop {
@@ -23,7 +23,7 @@ fn block_on<F: Future>(device: &wgpu::Device, f: F) -> F::Output {
     }
 }
 
-fn real_device() -> Option<(wgpu::Device, wgpu::Queue, String)> {
+pub(super) fn real_device() -> Option<(wgpu::Device, wgpu::Queue, String)> {
     let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
     desc.backends = wgpu::Backends::PRIMARY;
     let instance = wgpu::Instance::new(desc);

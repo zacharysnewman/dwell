@@ -19,6 +19,8 @@ pub mod stats;
 pub mod wgsl;
 
 #[cfg(test)]
+mod perf;
+#[cfg(test)]
 mod test;
 
 use std::sync::Arc;
@@ -57,6 +59,9 @@ pub struct MarchSettings {
     pub distances: bool,
     /// Every this many frames the steps-per-ray histogram is filled and read back (0: never).
     pub histogram_every: u32,
+    /// Profiling switches (`wgsl::DBG_*`, `?marchdbg=`): parts of the per-step work turned off.
+    /// 0 in normal use; anything else draws a wrong image.
+    pub debug: u32,
 }
 
 impl Default for MarchSettings {
@@ -68,6 +73,7 @@ impl Default for MarchSettings {
             columns: true,
             distances: true,
             histogram_every: 30,
+            debug: 0,
         }
     }
 }
@@ -133,6 +139,9 @@ pub struct Marcher {
     pub gpu: GpuScene,
     pub settings: MarchSettings,
     pipeline: wgpu::ComputePipeline,
+    /// Kept to rebuild the pipeline from another source (profiling variants, tests).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pipeline_layout: wgpu::PipelineLayout,
     composite: wgpu::RenderPipeline,
     frame_layout: wgpu::BindGroupLayout,
     data_layout: wgpu::BindGroupLayout,
@@ -272,14 +281,7 @@ impl Marcher {
             bind_group_layouts: &[Some(&frame_layout), Some(&data_layout), Some(&out_layout)],
             immediate_size: 0,
         });
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("march"),
-            layout: Some(&layout),
-            module: &module,
-            entry_point: Some("march_main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = Self::march_pipeline(&device, &layout, &module);
         // The shared composite (shaders.rs, one sample per pixel) over the march's targets.
         let scene_layout = super::frame::scene_layout(&device, 1);
         let empty = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -364,6 +366,7 @@ impl Marcher {
             gpu,
             settings: MarchSettings::default(),
             pipeline,
+            pipeline_layout: layout,
             composite,
             frame_layout,
             data_layout,
@@ -383,6 +386,33 @@ impl Marcher {
             last_steps: None,
             _atlas: atlas,
         }
+    }
+
+    fn march_pipeline(
+        device: &wgpu::Device,
+        layout: &wgpu::PipelineLayout,
+        module: &wgpu::ShaderModule,
+    ) -> wgpu::ComputePipeline {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("march"),
+            layout: Some(layout),
+            module,
+            entry_point: Some("march_main"),
+            compilation_options: Default::default(),
+            cache: None,
+        })
+    }
+
+    /// Replaces the march's shader (profiling variants: `perf.rs`).
+    #[cfg(test)]
+    pub(crate) fn set_source(&mut self, source: &str) {
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("march variant"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
+        self.pipeline = Self::march_pipeline(&self.device, &self.pipeline_layout, &module);
     }
 
     fn stats_buffer(device: &wgpu::Device, words: usize) -> wgpu::Buffer {
@@ -545,7 +575,7 @@ impl Marcher {
         w.push(f(st.lod_pixels));
         w.extend(frame.up.map(f));
         w.push(f(frame.tan[0]));
-        w.extend([size.0, size.1, f(frame.tan[1]), 0]);
+        w.extend([size.0, size.1, f(frame.tan[1]), st.debug]);
         debug_assert_eq!(w.len(), MARCH_UNIFORM_WORDS);
         w
     }

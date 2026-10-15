@@ -317,7 +317,53 @@ fn box_of(cell: [i32; 3], shift: u32) -> ([i32; 3], [i32; 3]) {
     (cell.map(|c| c << shift), cell.map(|c| (c + 1) << shift))
 }
 
+/// A level, the cell there, its node and the node's slot.
+type Found = (u32, [i32; 3], [i32; 3], Slot);
+
 impl Scene {
+    /// The first level from `from` up with data at grid cell `g`.
+    fn find(&self, g: [i32; 3], from: u32, top: u32) -> Option<Found> {
+        for l in from..=top {
+            let Some(lv) = &self.levels[l as usize] else {
+                continue;
+            };
+            let cell = shr(g, l);
+            let n = shr(cell, 5);
+            if let Some(i) = lv.info.slot_of(n) {
+                let s = Slot::from_word(lv.slots[i]);
+                if s != Slot::None {
+                    return Some((l, cell, n, s));
+                }
+            }
+        }
+        None
+    }
+
+    /// Whether a ray entering this cell would hit it.
+    fn occupied(&self, (_, cell, n, slot): Found) -> bool {
+        match slot {
+            Slot::None | Slot::AllAir => false,
+            Slot::AllSolid(_) => true,
+            Slot::Node(i) => {
+                let local: [i32; 3] = std::array::from_fn(|k| cell[k] - (n[k] << 5));
+                let bc = local.map(|v| v >> 3);
+                match self.nodes[i as usize].get(brick_index(bc[0], bc[1], bc[2])) {
+                    BrickRef::Empty(_) => false,
+                    BrickRef::Uniform(s) => shape_hit(self.table.class(s), 0),
+                    BrickRef::Mixed(off) => {
+                        let brick = self.pool.from(off);
+                        let v = voxel_index(local[0] & 7, local[1] & 7, local[2] & 7);
+                        brick_occupied(brick, v)
+                            && shape_hit(
+                                self.table.class(brick_state(brick, v)),
+                                brick_shape(brick, v),
+                            )
+                    }
+                }
+            }
+        }
+    }
+
     /// Marches one ray (see the module docs).
     pub fn march(&self, ray: &Ray, p: &MarchParams) -> March {
         let rm = RayMath::new(ray);
@@ -361,6 +407,8 @@ impl Scene {
             (lo, hi) = (wlo, whi);
         }
         let t_end = p.max_t.min(rm.exit(wlo, whi).0);
+        // The level the ray marched at in the last iteration.
+        let mut cur: Option<u32> = None;
         let hit = |level: u32, cell: [i32; 3], entry: Option<(usize, i32)>, t: f32, state| {
             Outcome::Hit(Hit {
                 level,
@@ -380,21 +428,18 @@ impl Scene {
             }
             let g = rm.cell_at(t, entry, lo, hi);
             let want = level_for(t, p).min(top);
-            let mut found = None;
-            for l in want..=top {
-                let Some(lv) = &self.levels[l as usize] else {
-                    continue;
-                };
-                let cell = shr(g, l);
-                let n = shr(cell, 5);
-                if let Some(i) = lv.info.slot_of(n) {
-                    let s = Slot::from_word(lv.slots[i]);
-                    if s != Slot::None {
-                        found = Some((l, cell, n, s));
-                        break;
-                    }
-                }
+            let mut found = self.find(g, want, top);
+            // A LOD switch waits while the coarser cell here is occupied and the level the ray
+            // marched at has data (see the module docs).
+            if let (Some(f), Some(c)) = (found, cur)
+                && f.0 > c
+                && self.occupied(f)
+                && let Some(fine) = self.find(g, c, top)
+                && fine.0 < f.0
+            {
+                found = Some(fine);
             }
+            cur = found.map(|f| f.0);
             // Leaves box [blo, bhi) and continues from its exit.
             macro_rules! skip {
                 ($blo:expr, $bhi:expr) => {{

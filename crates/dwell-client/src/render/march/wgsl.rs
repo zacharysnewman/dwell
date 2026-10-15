@@ -173,7 +173,7 @@ struct MarchUniforms {
     tan_x: f32,
     size: vec2<u32>,
     tan_y: f32,
-    _pad: u32,
+    dbg: u32,
 };
 @group(1) @binding(0) var<uniform> u: MarchUniforms;
 @group(1) @binding(1) var<storage, read> slots: array<u32>;
@@ -191,12 +191,14 @@ struct MarchUniforms {
 
 /// The traversal: `march.rs` line for line.
 const MARCH: &str = r"
-// The ray (RayMath): cell, fraction, unit direction, its reciprocal and step signs.
+// The ray (RayMath): cell, fraction, unit direction, its reciprocal (0 on a zero component), step
+// signs, and which components are zero.
 var<private> rc: vec3<i32>;
 var<private> rf: vec3<f32>;
 var<private> rd: vec3<f32>;
 var<private> rinv: vec3<f32>;
 var<private> rstep: vec3<i32>;
+var<private> rzero: vec3<bool>;
 // The traversal's state: distance, the entry plane (axis, or -1 at the start, and its grid
 // coordinate) and the box the ray is in.
 var<private> t: f32;
@@ -209,6 +211,8 @@ const MISS: u32 = 0u;
 const HIT: u32 = 1u;
 const CAP: u32 = 2u;
 
+const AXES: vec3<i32> = vec3<i32>(0, 1, 2);
+
 struct Result {
     kind: u32,
     steps: u32,
@@ -219,85 +223,68 @@ struct Result {
     state: u32,
 };
 
-// Distance to the plane `grid = b` on axis k.
-fn tp(k: u32, b: i32) -> f32 {
-    if (rd[k] == 0.0) {
-        return BIG;
+// Distances to the planes `grid = b` on each axis (BIG on an axis the ray doesn't move along).
+// The same operations per component as `RayMath::tp`.
+fn tpv(b: vec3<i32>) -> vec3<f32> {
+    return select((vec3<f32>(b - rc) - rf) * rinv, vec3<f32>(BIG), rzero);
+}
+
+// The axis of the nearest plane, ties to the lowest axis (RayMath::exit's rule).
+fn nearest_axis(v: vec3<f32>) -> i32 {
+    if (v.x <= v.y && v.x <= v.z) {
+        return 0;
     }
-    return (f32(b - rc[k]) - rf[k]) * rinv[k];
+    return select(2, 1, v.y <= v.z);
 }
 
 struct Exit {
     t: f32,
-    a: u32,
+    a: i32,
+    plane: i32,
 };
 
-// Where the ray leaves box [lo, hi) (ties: the lowest axis).
+// Where the ray leaves box [lo, hi) (ties: the lowest axis), and the plane it leaves by.
 fn exit_box(lo: vec3<i32>, hi: vec3<i32>) -> Exit {
-    var best = Exit(BIG, 0u);
-    for (var k = 0u; k < 3u; k++) {
-        let x = tp(k, select(lo[k], hi[k], rstep[k] > 0));
-        if (x < best.t) {
-            best = Exit(x, k);
-        }
-    }
-    return best;
+    let planes = select(lo, hi, rstep > vec3<i32>(0));
+    let v = tpv(planes);
+    let a = nearest_axis(v);
+    let m = AXES == vec3<i32>(a);
+    let pl = select(select(planes.z, planes.y, m.y), planes.x, m.x);
+    return Exit(min(v.x, min(v.y, v.z)), a, pl);
 }
 
 // Leaves box [lo, hi) and continues beyond its exit plane (the skip! macro).
 fn skip(lo: vec3<i32>, hi: vec3<i32>) {
     let e = exit_box(lo, hi);
-    let a = e.a;
-    var nlo = lo;
-    var nhi = hi;
-    var plane: i32;
-    if (rstep[a] > 0) {
-        plane = hi[a];
-        nlo[a] = plane;
-        nhi[a] = plane + 1;
-    } else {
-        plane = lo[a];
-        nlo[a] = plane - 1;
-        nhi[a] = plane;
-    }
+    let m = AXES == vec3<i32>(e.a);
+    let up = rstep > vec3<i32>(0);
+    // One cell thick on the exit axis, the old box's extent on the others.
+    blo = select(lo, select(vec3<i32>(e.plane - 1), vec3<i32>(e.plane), up), m);
+    bhi = select(hi, select(vec3<i32>(e.plane), vec3<i32>(e.plane + 1), up), m);
     t = e.t;
-    ea = i32(a);
-    ep = plane;
-    blo = nlo;
-    bhi = nhi;
-}
-
-fn crossed(x: f32, strict: bool) -> bool {
-    return x < t || (x == t && !strict);
+    ea = e.a;
+    ep = e.plane;
 }
 
 // The grid cell the ray is in at t inside [blo, bhi) (RayMath::cell_at).
 fn cell_at() -> vec3<i32> {
-    var g: vec3<i32>;
-    for (var k = 0u; k < 3u; k++) {
-        var v: i32;
-        if (ea == i32(k)) {
-            v = select(ep - 1, ep, rstep[k] > 0);
-        } else if (rd[k] == 0.0) {
-            v = rc[k];
-        } else {
-            let strict = ea < 0 || i32(k) > ea;
-            v = rc[k] + i32(floor(rf[k] + t * rd[k]));
-            let next = select(0, 1, rstep[k] > 0);
-            let enter = select(1, 0, rstep[k] > 0);
-            if (crossed(tp(k, v + next), strict)) {
-                v += rstep[k];
-            } else if (!crossed(tp(k, v + enter), strict) && tp(k, v + enter) > 0.0) {
-                v -= rstep[k];
-            }
-        }
-        g[k] = clamp(v, blo[k], bhi[k] - 1);
-    }
-    return g;
+    let up = rstep > vec3<i32>(0);
+    let strict = AXES > vec3<i32>(ea);
+    var v = rc + vec3<i32>(floor(rf + t * rd));
+    let next = select(vec3<i32>(0), vec3<i32>(1), up);
+    let tn = tpv(v + next);
+    let te = tpv(v + vec3<i32>(1) - next);
+    let crossed_n = (tn < vec3<f32>(t)) | ((tn == vec3<f32>(t)) & !strict);
+    let crossed_e = (te < vec3<f32>(t)) | ((te == vec3<f32>(t)) & !strict);
+    v = select(select(v, v - rstep, !crossed_e & (te > vec3<f32>(0.0))), v + rstep, crossed_n);
+    v = select(v, rc, rzero);
+    let entry = select(vec3<i32>(ep - 1), vec3<i32>(ep), up);
+    v = select(v, entry, AXES == vec3<i32>(ea));
+    return clamp(v, blo, bhi - vec3<i32>(1));
 }
 
-fn rel(k: u32, base: i32, at: f32) -> f32 {
-    return f32(rc[k] - base) + rf[k] + at * rd[k];
+fn rel_y(base: i32, at: f32) -> f32 {
+    return f32(rc.y - base) + rf.y + at * rd.y;
 }
 
 // Cone LOD (level_for): floor(log2(footprint)) from the exponent bits.
@@ -320,14 +307,6 @@ fn class_of(s: u32) -> u32 {
 // The shape hook (march::shape_hit): cubes only today.
 fn shape_hit(s: u32) -> bool {
     return class_of(s) >= 2u;
-}
-
-fn mask_bit(base: u32, b: u32) -> bool {
-    return ((nodes[base + (b >> 5u)] >> (b & 31u)) & 1u) != 0u;
-}
-
-fn brick_occupied(off: u32, v: u32) -> bool {
-    return ((pool[off + 1u + (v >> 5u)] >> (v & 31u)) & 1u) != 0u;
 }
 
 fn brick_state(off: u32, v: u32) -> u32 {
@@ -361,6 +340,91 @@ fn hit(level: u32, cell: vec3<i32>, steps: u32, s: u32) -> Result {
     return Result(HIT, steps, level, cell, face, t, s);
 }
 
+// A level with data at grid cell g (Scene::find): the level, the cell there, its node and slot.
+struct Found {
+    ok: bool,
+    l: u32,
+    cell: vec3<i32>,
+    n: vec3<i32>,
+    slot: u32,
+};
+
+fn find(g: vec3<i32>, first: u32, top: u32) -> Found {
+    for (var lv = first; lv <= top; lv++) {
+        let info = u.levels[lv];
+        let c = g >> vec3<u32>(lv);
+        let nn = c >> vec3<u32>(5u);
+        let d = nn - info.origin;
+        if (any(d < vec3<i32>(0)) || any(vec3<u32>(d) >= info.dims)) {
+            continue;
+        }
+        let i = info.slot_base + u32(d.x) + info.dims.x * (u32(d.y) + info.dims.y * u32(d.z));
+        let s = slots[i];
+        if (s != SLOT_NONE) {
+            return Found(true, lv, c, nn, s);
+        }
+    }
+    return Found(false, 0u, vec3<i32>(0), vec3<i32>(0), SLOT_NONE);
+}
+
+fn brick_of(cell: vec3<i32>, n: vec3<i32>) -> u32 {
+    let bc = (cell - (n << vec3<u32>(5u))) >> vec3<u32>(3u);
+    return u32(bc.x + 4 * (bc.y + 4 * bc.z));
+}
+
+fn mask_bit(base: u32, b: u32) -> bool {
+    return ((nodes[base + (b >> 5u)] >> (b & 31u)) & 1u) != 0u;
+}
+
+// Whether a ray entering the found cell would hit it (Scene::occupied).
+fn occupied(f: Found) -> bool {
+    let tag = f.slot >> TAG_SHIFT;
+    if (tag == TAG_AIR) {
+        return false;
+    }
+    if (tag == TAG_SOLID) {
+        return true;
+    }
+    let base = (f.slot & NODE_MASK) * NODE_WORDS;
+    let b = brick_of(f.cell, f.n);
+    let word = nodes[base + 4u + b];
+    if (mask_bit(base, b)) {
+        let lc = f.cell & vec3<i32>(7);
+        let v = u32(lc.x + BRICK_CELLS * (lc.y + BRICK_CELLS * lc.z));
+        return ((pool[word + 1u + (v >> 5u)] >> (v & 31u)) & 1u) != 0u && shape_hit(brick_state(word, v));
+    }
+    return mask_bit(base + 2u, b) && shape_hit(word);
+}
+
+// The column region test at mip m (Scene::march's column search): the region's exit `t` if the
+// ray clears its occupied rows across it, else -1. Clearing is monotone in m (a finer region's
+// span and exit lie inside a coarser one's), so the coarsest clearing mip is found by walking
+// from a guess.
+struct Region {
+    lo: vec3<i32>,
+    hi: vec3<i32>,
+    te: f32,
+};
+
+fn region(cols: u32, m: u32, local: vec3<i32>, nlo: vec3<i32>, nhi: vec3<i32>, l: u32, scale: f32) -> Region {
+    let rx = u32(local.x) >> m;
+    let rz = u32(local.z) >> m;
+    let span = column_span(cols, m, rx, rz);
+    let w = (1i << m) << l;
+    let lo = vec3<i32>(nlo.x + i32(rx) * w, nlo.y, nlo.z + i32(rz) * w);
+    let hi = vec3<i32>(lo.x + w, nhi.y, lo.z + w);
+    let te = exit_box(lo, hi).t;
+    var clear = true;
+    if (span.x < span.y) {
+        let y0 = rel_y(nlo.y, t) * scale;
+        let y1 = rel_y(nlo.y, te) * scale;
+        let ymin = min(y0, y1);
+        let ymax = max(y0, y1);
+        clear = ymin >= f32(span.y) + COLUMN_EPS || ymax <= f32(span.x) - COLUMN_EPS;
+    }
+    return Region(lo, hi, select(-1.0, te, clear));
+}
+
 fn march() -> Result {
     if ((u.flags & FLAG_DATA) == 0u) {
         return done(MISS, 0u);
@@ -376,36 +440,36 @@ fn march() -> Result {
     bhi = rc + vec3<i32>(1);
     // Into the data's box.
     if (any(rc < wlo) || any(rc >= whi)) {
-        var t_in = -BIG;
-        var t_in_k = 0u;
-        var t_out = BIG;
-        for (var k = 0u; k < 3u; k++) {
-            if (rd[k] == 0.0) {
-                if (rc[k] < wlo[k] || rc[k] >= whi[k]) {
-                    return done(MISS, 0u);
-                }
-                continue;
-            }
-            let near = select(whi[k], wlo[k], rstep[k] > 0);
-            let far = select(wlo[k], whi[k], rstep[k] > 0);
-            let tn = tp(k, near);
-            if (tn > t_in) {
-                t_in = tn;
-                t_in_k = k;
-            }
-            t_out = min(t_out, tp(k, far));
+        if (any(rzero & ((rc < wlo) | (rc >= whi)))) {
+            return done(MISS, 0u);
         }
+        let up = rstep > vec3<i32>(0);
+        let tn = tpv(select(whi, wlo, up));
+        let tf = tpv(select(wlo, whi, up));
+        // The latest entry (ties: the lowest axis), over the moving axes.
+        let tin = select(tn, vec3<f32>(-BIG), rzero);
+        var a = 0;
+        if (tin.y > tin.x) {
+            a = 1;
+        }
+        if (tin.z > tin[a]) {
+            a = 2;
+        }
+        let t_in = tin[a];
+        let t_out = min(tf.x, min(tf.y, tf.z));
         if (t_in >= t_out || t_out <= 0.0) {
             return done(MISS, 0u);
         }
-        let a = t_in_k;
         t = max(t_in, 0.0);
-        ea = i32(a);
+        ea = a;
         ep = select(whi[a], wlo[a], rstep[a] > 0);
         blo = wlo;
         bhi = whi;
     }
     let t_end = min(u.max_t, exit_box(wlo, whi).t);
+    // The level marched at in the last iteration (none yet), and the column mip guess.
+    var cur = -1;
+    var mip_guess = 0u;
     loop {
         if (t > t_end) {
             return done(MISS, steps);
@@ -416,118 +480,130 @@ fn march() -> Result {
         }
         let g = cell_at();
         let want = min(level_for(t), top);
-        var found = false;
-        var l = 0u;
-        var cell = vec3<i32>(0);
-        var n = vec3<i32>(0);
-        var slot = SLOT_NONE;
-        for (var lv = want; lv <= top; lv++) {
-            let info = u.levels[lv];
-            let c = g >> vec3<u32>(lv);
-            let nn = c >> vec3<u32>(5u);
-            let d = nn - info.origin;
-            if (any(d < vec3<i32>(0)) || any(vec3<u32>(d) >= info.dims)) {
-                continue;
-            }
-            let i = info.slot_base + u32(d.x) + info.dims.x * (u32(d.y) + info.dims.y * u32(d.z));
-            let s = slots[i];
-            if (s != SLOT_NONE) {
-                found = true;
-                l = lv;
-                cell = c;
-                n = nn;
-                slot = s;
-                break;
+        var f = find(g, want, top);
+        // A LOD switch waits while the coarser cell here is occupied and the level the ray
+        // marched at has data.
+        if (f.ok && cur >= 0 && f.l > u32(cur) && occupied(f)) {
+            let fine = find(g, u32(cur), top);
+            if (fine.ok && fine.l < f.l) {
+                f = fine;
             }
         }
-        if (!found) {
+        if (!f.ok) {
+            cur = -1;
             let sh = vec3<u32>(top + 5u);
             let b = g >> sh;
             skip(b << sh, (b + vec3<i32>(1)) << sh);
             continue;
         }
+        cur = i32(f.l);
+        let l = f.l;
+        let n = f.n;
+        let cell = f.cell;
         let node_shift = vec3<u32>(l + 5u);
         let nlo = n << node_shift;
         let nhi = (n + vec3<i32>(1)) << node_shift;
-        let tag = slot >> TAG_SHIFT;
+        let tag = f.slot >> TAG_SHIFT;
         if (tag == TAG_AIR) {
             skip(nlo, nhi);
             continue;
         }
         if (tag == TAG_SOLID) {
-            return hit(l, cell, steps, slot & 0xFFFFu);
+            return hit(l, cell, steps, f.slot & 0xFFFFu);
         }
-        let ni = slot & NODE_MASK;
+        let ni = f.slot & NODE_MASK;
         let base = ni * NODE_WORDS;
         let local = cell - (n << vec3<u32>(5u));
-        let cols = node_columns[ni];
-        // The largest column region the ray clears, and where it leaves it.
-        var column = false;
-        var col_lo = vec3<i32>(0);
-        var col_hi = vec3<i32>(0);
-        var col_te = 0.0;
-        if ((u.flags & FLAG_COLUMNS) != 0u && cols != COLUMNS_NONE) {
-            let scale = bitcast<f32>((127u - l) << 23u);
-            for (var mm = 0u; mm < COLUMN_MIPS; mm++) {
-                let m = COLUMN_MIPS - 1u - mm;
-                let rx = u32(local.x) >> m;
-                let rz = u32(local.z) >> m;
-                let span = column_span(cols, m, rx, rz);
-                let w = (1i << m) << l;
-                let lo = vec3<i32>(nlo.x + i32(rx) * w, nlo.y, nlo.z + i32(rz) * w);
-                let hi = vec3<i32>(lo.x + w, nhi.y, lo.z + w);
-                let te = exit_box(lo, hi).t;
-                if (span.x < span.y) {
-                    let y0 = rel(1u, nlo.y, t) * scale;
-                    let y1 = rel(1u, nlo.y, te) * scale;
-                    let ymin = min(y0, y1);
-                    let ymax = max(y0, y1);
-                    let clear = ymin >= f32(span.y) + COLUMN_EPS || ymax <= f32(span.x) - COLUMN_EPS;
-                    if (!clear) {
-                        continue;
-                    }
-                }
-                column = true;
-                col_lo = lo;
-                col_hi = hi;
-                col_te = te;
-                break;
-            }
-        }
         let bc = local >> vec3<u32>(3u);
         let b = u32(bc.x + 4 * (bc.y + 4 * bc.z));
         let brick_shift = vec3<u32>(l + 3u);
         let word = nodes[base + 4u + b];
-        if (mask_bit(base, b)) {
-            // Mixed.
+        let mixed = mask_bit(base, b);
+        if (!mixed && mask_bit(base + 2u, b)) {
+            // Uniform.
+            if (shape_hit(word)) {
+                return hit(l, cell, steps, word);
+            }
+            let bb = cell >> vec3<u32>(3u);
+            skip(bb << brick_shift, (bb + vec3<i32>(1)) << brick_shift);
+            continue;
+        }
+        // The largest column region the ray clears, and where it leaves it.
+        let cols = node_columns[ni];
+        var column = false;
+        var col: Region;
+        if ((u.flags & FLAG_COLUMNS) != 0u && cols != COLUMNS_NONE) {
+            let scale = bitcast<f32>((127u - l) << 23u);
+            var m = min(mip_guess, COLUMN_MIPS - 1u);
+            let r = region(cols, m, local, nlo, nhi, l, scale);
+            if (r.te >= 0.0) {
+                column = true;
+                col = r;
+                loop {
+                    if (m + 1u >= COLUMN_MIPS) {
+                        break;
+                    }
+                    let up = region(cols, m + 1u, local, nlo, nhi, l, scale);
+                    if (up.te < 0.0) {
+                        break;
+                    }
+                    m += 1u;
+                    col = up;
+                }
+            } else {
+                loop {
+                    if (m == 0u) {
+                        break;
+                    }
+                    m -= 1u;
+                    let down = region(cols, m, local, nlo, nhi, l, scale);
+                    if (down.te >= 0.0) {
+                        column = true;
+                        col = down;
+                        break;
+                    }
+                }
+            }
+            mip_guess = m;
+        }
+        if (mixed) {
             if (column) {
-                skip(col_lo, col_hi);
+                skip(col.lo, col.hi);
                 continue;
             }
             let off = word;
             let b0 = (n << vec3<u32>(5u)) + (bc << vec3<u32>(3u));
+            let b1 = b0 + vec3<i32>(BRICK_CELLS);
+            let up = rstep > vec3<i32>(0);
             var c = cell;
+            var occ_i = 0xFFFFFFFFu;
+            var occ = 0u;
             loop {
                 let lc = c - b0;
                 let v = u32(lc.x + BRICK_CELLS * (lc.y + BRICK_CELLS * lc.z));
-                if (brick_occupied(off, v)) {
+                let wi = v >> 5u;
+                if (wi != occ_i) {
+                    occ_i = wi;
+                    occ = pool[off + 1u + wi];
+                }
+                if (((occ >> (v & 31u)) & 1u) != 0u) {
                     let s = brick_state(off, v);
                     if (shape_hit(s)) {
                         return hit(l, c, steps, s);
                     }
                 }
-                let clo = c << vec3<u32>(l);
-                let chi = (c + vec3<i32>(1)) << vec3<u32>(l);
-                let e = exit_box(clo, chi);
-                let a = e.a;
-                t = e.t;
-                ea = i32(a);
-                ep = select(clo[a], chi[a], rstep[a] > 0);
-                c[a] += rstep[a];
+                let planes = select(c, c + vec3<i32>(1), up) << vec3<u32>(l);
+                let tv = tpv(planes);
+                let a = nearest_axis(tv);
+                let m = AXES == vec3<i32>(a);
+                t = min(tv.x, min(tv.y, tv.z));
+                ea = a;
+                ep = select(select(planes.z, planes.y, m.y), planes.x, m.x);
+                c += select(vec3<i32>(0), rstep, m);
                 if (t > t_end) {
                     return done(MISS, steps);
                 }
-                if (c[a] < b0[a] || c[a] >= b0[a] + BRICK_CELLS) {
+                if (any(c < b0) || any(c >= b1)) {
                     blo = c << vec3<u32>(l);
                     bhi = (c + vec3<i32>(1)) << vec3<u32>(l);
                     break;
@@ -539,22 +615,13 @@ fn march() -> Result {
             }
             continue;
         }
-        if (mask_bit(base + 2u, b)) {
-            // Uniform.
-            if (shape_hit(word)) {
-                return hit(l, cell, steps, word);
-            }
-            let bb = cell >> vec3<u32>(3u);
-            skip(bb << brick_shift, (bb + vec3<i32>(1)) << brick_shift);
-            continue;
-        }
         // Empty: its distance's cube of bricks, or the column region if that reaches further.
         let r = select(0, i32(max(word, 1u)) - 1, (u.flags & FLAG_DISTANCES) != 0u);
         let n4 = n << vec3<u32>(2u);
         let lo = (n4 + max(bc - vec3<i32>(r), vec3<i32>(0))) << brick_shift;
         let hi = (n4 + min(bc + vec3<i32>(r + 1), vec3<i32>(4))) << brick_shift;
-        if (column && col_te > exit_box(lo, hi).t) {
-            skip(col_lo, col_hi);
+        if (column && col.te > exit_box(lo, hi).t) {
+            skip(col.lo, col.hi);
         } else {
             skip(lo, hi);
         }
