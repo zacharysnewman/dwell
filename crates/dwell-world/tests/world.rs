@@ -1,12 +1,11 @@
-//! The voxel grid, structure files and block edits (ported from the C++ core, structure and
-//! block-edit tests).
+//! The voxel grid and block edits (ported from the C++ core and block-edit tests); structures are
+//! in `structures.rs`.
 
 use std::sync::Arc;
 
 use dwell_blocks::{StateId, require};
 use dwell_protocol::{BlockEditAction, BlockEditRequest};
 use dwell_world::edit::*;
-use dwell_world::structure::*;
 use dwell_world::*;
 
 /// ~8,000 km out (tests/test_origin.h): everything must work there as at the origin.
@@ -380,71 +379,6 @@ fn a_block_placed_into_a_chunk_read_as_sky_is_seen() {
     assert_eq!(world.get_voxel(5, 40, 5), s("dwell:air"));
     world.set_voxel(5, 40, 5, s("dwell:stone"));
     assert_eq!(world.get_voxel(5, 40, 5), s("dwell:stone"));
-}
-
-#[test]
-fn structures_name_blocks_by_string_and_later_fills_win() {
-    let st = Structure::parse(
-        "# a pillar with a ladder\n\
-         fill 0 0 0  0 3 0  dwell:stone\n\
-         fill 1 3 1  1 0 1  dwell:ladder[facing=east]   # corners in any order\n\
-         \n\
-         fill 0 3 0  0 3 0  dwell:sand\n",
-    )
-    .expect("parses");
-    assert_eq!(st.fills.len(), 3);
-    assert_eq!(st.at([0, 0, 0]), Some(s("dwell:stone")));
-    assert_eq!(st.at([0, 3, 0]), Some(s("dwell:sand")));
-    assert_eq!(st.at([1, 2, 1]), Some(s("dwell:ladder[facing=east]")));
-    assert_eq!(st.at([2, 0, 0]), None);
-}
-
-#[test]
-fn a_bad_structure_line_fails_with_its_number_and_reason() {
-    let e = Structure::parse("fill 0 0 0 1 1 1 dwell:stone\nfill 0 0 0 1 1 dwell:stone\n")
-        .expect_err("bad");
-    assert!(e.contains("line 2"), "{e}");
-    assert!(
-        Structure::parse("fill 0 0 0 1 1 1 dwell:bedrock\n")
-            .expect_err("bad")
-            .contains("dwell:bedrock")
-    );
-    assert!(
-        Structure::parse("box 0 0 0 1 1 1 dwell:stone\n")
-            .expect_err("bad")
-            .contains("unknown command")
-    );
-    assert!(
-        Structure::parse("fill 0 0 x 1 1 1 dwell:stone\n")
-            .expect_err("bad")
-            .contains("bad coordinate")
-    );
-}
-
-#[test]
-fn structures_stamp_over_a_base_generator_only_inside_their_boxes() {
-    let st = Arc::new(Structure::parse("fill -1 0 -1  1 1 1  dwell:stone\n").expect("parses"));
-    let mut world = VoxelWorld::new(with_structure(flat_generator(), st.clone()), None);
-    assert_eq!(world.get_voxel(0, 1, 0), s("dwell:stone"));
-    assert_eq!(world.get_voxel(-1, 0, 1), s("dwell:stone"));
-    assert_eq!(world.get_voxel(2, 0, 0), s("dwell:air"));
-    assert_eq!(world.get_voxel(5, -1, 5), s("dwell:grass"));
-    let air = with_structure_air(Arc::new(flat_is_air), st);
-    assert!(!air(ChunkCoord::new(0, 0, 0)));
-    assert!(!air(ChunkCoord::new(-1, 0, -1)));
-    assert!(air(ChunkCoord::new(3, 0, 3)));
-}
-
-#[test]
-fn the_movement_playground_loads() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../shared/structures/playground.structure"
-    );
-    let p = Structure::load(std::path::Path::new(path)).expect("loads");
-    assert_eq!(p.at([9, 0, 9]), Some(s("dwell:ladder[facing=north]")));
-    assert_eq!(p.at([0, 0, 12]), Some(s("dwell:air")));
-    assert_eq!(p.at([13, -1, 7]), Some(s("dwell:water")));
 }
 
 #[test]
