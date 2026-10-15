@@ -96,6 +96,9 @@ function envelope(g: AudioParam, env: EnvDef, t0: number, peak: number, time: nu
   const attack = Math.max(0.0003, env.attack * time);
   const hold = (env.hold ?? 0) * time;
   const end = t0 + attack + hold + env.decay * time;
+  // Silent before the start too: a param's intrinsic value (1) would pass a source's first
+  // sample when it starts between two frames.
+  g.value = 0;
   g.setValueAtTime(0, t0);
   g.linearRampToValueAtTime(peak, t0 + attack);
   if (hold > 0) g.setValueAtTime(peak, t0 + attack + hold);

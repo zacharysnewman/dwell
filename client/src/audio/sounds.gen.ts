@@ -266,7 +266,7 @@ export const SOUND_DATA: SoundData = {
   },
   "sounds": {
     "dwell:stone_step": {
-      "gain": 0.9,
+      "gain": 1.01,
       "reverb": 0.18,
       "variation": {
         "pitch": 1.5,
@@ -299,7 +299,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.9,
+          "gain": 1,
           "filters": [
             {
               "type": "bandpass",
@@ -346,7 +346,7 @@ export const SOUND_DATA: SoundData = {
           "wave": "sine",
           "freq": 105,
           "to": 62,
-          "gain": 0.35,
+          "gain": 0.18,
           "env": {
             "attack": 0.002,
             "decay": 0.07
@@ -384,7 +384,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_land": {
-      "gain": 0.95,
+      "gain": 1.269,
       "reverb": 0.22,
       "variation": {
         "pitch": 1.5,
@@ -412,7 +412,7 @@ export const SOUND_DATA: SoundData = {
           "wave": "sine",
           "freq": 82,
           "to": 42,
-          "gain": 0.75,
+          "gain": 0.5,
           "env": {
             "attack": 0.003,
             "decay": 0.22
@@ -482,7 +482,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_break": {
-      "gain": 0.85,
+      "gain": 0.791,
       "reverb": 0.25,
       "variation": {
         "pitch": 2,
@@ -515,7 +515,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "modal",
           "freq": 1250,
-          "gain": 0.22,
+          "gain": 0.3,
           "partials": [
             [
               1,
@@ -553,7 +553,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.7,
+          "gain": 0.9,
           "filters": [
             {
               "type": "bandpass",
@@ -572,7 +572,7 @@ export const SOUND_DATA: SoundData = {
           "wave": "sine",
           "freq": 95,
           "to": 48,
-          "gain": 0.5,
+          "gain": 0.3,
           "env": {
             "attack": 0.002,
             "decay": 0.16
@@ -610,7 +610,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_place": {
-      "gain": 0.85,
+      "gain": 0.75,
       "reverb": 0.2,
       "variation": {
         "pitch": 1.5,
@@ -686,7 +686,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_hit": {
-      "gain": 0.6,
+      "gain": 0.764,
       "reverb": 0.15,
       "variation": {
         "pitch": 1.5,
@@ -731,7 +731,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_step": {
-      "gain": 0.9,
+      "gain": 1.546,
       "reverb": 0.12,
       "variation": {
         "pitch": 2,
@@ -743,7 +743,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "brown",
-          "gain": 0.9,
+          "gain": 0.7,
           "filters": [
             {
               "type": "lowpass",
@@ -759,7 +759,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.55,
+          "gain": 0.7,
           "filters": [
             {
               "type": "bandpass",
@@ -791,7 +791,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_land": {
-      "gain": 0.95,
+      "gain": 1.036,
       "reverb": 0.15,
       "variation": {
         "pitch": 2,
@@ -876,7 +876,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_break": {
-      "gain": 0.9,
+      "gain": 1.452,
       "reverb": 0.15,
       "variation": {
         "pitch": 2,
@@ -888,7 +888,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "brown",
-          "gain": 0.9,
+          "gain": 0.7,
           "filters": [
             {
               "type": "lowpass",
@@ -904,7 +904,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.6,
+          "gain": 0.75,
           "filters": [
             {
               "type": "bandpass",
@@ -947,7 +947,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_place": {
-      "gain": 0.9,
+      "gain": 1.274,
       "reverb": 0.12,
       "variation": {
         "pitch": 1.5,
@@ -1014,7 +1014,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_hit": {
-      "gain": 0.6,
+      "gain": 1.56,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -1057,7 +1057,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_step": {
-      "gain": 0.9,
+      "gain": 1.88,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -1113,18 +1113,17 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "white",
-          "gain": 0.22,
+          "gain": 0.176,
           "at": 0.01,
           "filters": [
             {
-              "type": "highpass",
-              "freq": 3800
+              "type": "bandpass",
+              "freq": 5200,
+              "q": 0.9
             },
             {
-              "type": "peaking",
-              "freq": 6500,
-              "q": 1,
-              "gain": 4
+              "type": "lowpass",
+              "freq": 9000
             }
           ],
           "env": {
@@ -1147,7 +1146,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_land": {
-      "gain": 0.95,
+      "gain": 1.195,
       "reverb": 0.12,
       "variation": {
         "pitch": 2,
@@ -1200,18 +1199,17 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "white",
-          "gain": 0.25,
+          "gain": 0.2,
           "at": 0.01,
           "filters": [
             {
-              "type": "highpass",
-              "freq": 3500
+              "type": "bandpass",
+              "freq": 5200,
+              "q": 0.9
             },
             {
-              "type": "peaking",
-              "freq": 6000,
-              "q": 1,
-              "gain": 4
+              "type": "lowpass",
+              "freq": 9000
             }
           ],
           "env": {
@@ -1234,7 +1232,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_break": {
-      "gain": 0.9,
+      "gain": 2.461,
       "reverb": 0.12,
       "variation": {
         "pitch": 2,
@@ -1290,18 +1288,17 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "white",
-          "gain": 0.3,
+          "gain": 0.24,
           "at": 0.02,
           "filters": [
             {
-              "type": "highpass",
-              "freq": 3200
+              "type": "bandpass",
+              "freq": 5200,
+              "q": 0.9
             },
             {
-              "type": "peaking",
-              "freq": 5500,
-              "q": 1,
-              "gain": 4
+              "type": "lowpass",
+              "freq": 9000
             }
           ],
           "env": {
@@ -1324,7 +1321,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_place": {
-      "gain": 0.9,
+      "gain": 1.475,
       "reverb": 0.12,
       "variation": {
         "pitch": 1.5,
@@ -1363,12 +1360,17 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "white",
-          "gain": 0.22,
+          "gain": 0.176,
           "at": 0.005,
           "filters": [
             {
-              "type": "highpass",
-              "freq": 3600
+              "type": "bandpass",
+              "freq": 5200,
+              "q": 0.9
+            },
+            {
+              "type": "lowpass",
+              "freq": 9000
             }
           ],
           "env": {
@@ -1391,7 +1393,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_step": {
-      "gain": 0.9,
+      "gain": 1.546,
       "reverb": 0.08,
       "variation": {
         "pitch": 2,
@@ -1451,7 +1453,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_land": {
-      "gain": 0.95,
+      "gain": 2.023,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -1539,7 +1541,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_break": {
-      "gain": 0.9,
+      "gain": 1.511,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -1616,7 +1618,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_place": {
-      "gain": 0.9,
+      "gain": 2.323,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -1688,7 +1690,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_hit": {
-      "gain": 0.6,
+      "gain": 2.296,
       "reverb": 0.08,
       "variation": {
         "pitch": 2,
@@ -1716,7 +1718,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_step": {
-      "gain": 0.85,
+      "gain": 0.88,
       "reverb": 0.2,
       "variation": {
         "pitch": 1.5,
@@ -1766,7 +1768,7 @@ export const SOUND_DATA: SoundData = {
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.45,
+          "gain": 0.6,
           "filters": [
             {
               "type": "bandpass",
@@ -1797,7 +1799,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_land": {
-      "gain": 0.9,
+      "gain": 1.178,
       "reverb": 0.22,
       "variation": {
         "pitch": 1.5,
@@ -1881,7 +1883,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_break": {
-      "gain": 0.85,
+      "gain": 1.494,
       "reverb": 0.22,
       "variation": {
         "pitch": 2,
@@ -1989,7 +1991,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_place": {
-      "gain": 0.85,
+      "gain": 0.816,
       "reverb": 0.2,
       "variation": {
         "pitch": 1.5,
@@ -2055,7 +2057,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:wood_hit": {
-      "gain": 0.6,
+      "gain": 0.705,
       "reverb": 0.15,
       "variation": {
         "pitch": 1.5,
@@ -2100,7 +2102,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_step": {
-      "gain": 0.85,
+      "gain": 2.094,
       "reverb": 0.15,
       "variation": {
         "pitch": 2,
@@ -2153,7 +2155,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_swim": {
-      "gain": 0.85,
+      "gain": 1.173,
       "reverb": 0.18,
       "variation": {
         "pitch": 2,
@@ -2222,7 +2224,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_enter": {
-      "gain": 0.9,
+      "gain": 1.046,
       "reverb": 0.25,
       "variation": {
         "pitch": 2,
@@ -2321,7 +2323,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_exit": {
-      "gain": 0.8,
+      "gain": 1.49,
       "reverb": 0.2,
       "variation": {
         "pitch": 2,
@@ -2388,7 +2390,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:water_place": {
-      "gain": 0.8,
+      "gain": 2.793,
       "reverb": 0.2,
       "variation": {
         "pitch": 2,
@@ -2440,7 +2442,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:jump": {
-      "gain": 0.7,
+      "gain": 1.135,
       "reverb": 0.05,
       "variation": {
         "pitch": 2,
@@ -2469,7 +2471,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:crouch_on": {
-      "gain": 0.6,
+      "gain": 0.962,
       "reverb": 0.04,
       "variation": {
         "pitch": 1.5,
@@ -2525,7 +2527,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:crouch_off": {
-      "gain": 0.6,
+      "gain": 1.007,
       "reverb": 0.04,
       "variation": {
         "pitch": 1.5,
@@ -2581,7 +2583,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sprint": {
-      "gain": 0.6,
+      "gain": 0.782,
       "reverb": 0.04,
       "variation": {
         "pitch": 2,
@@ -2626,7 +2628,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:slide": {
-      "gain": 0.6,
+      "gain": 0.867,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -2684,7 +2686,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:rise": {
-      "gain": 0.55,
+      "gain": 0.892,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -2728,7 +2730,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dive": {
-      "gain": 0.55,
+      "gain": 0.768,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -2772,7 +2774,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:deny": {
-      "gain": 0.5,
+      "gain": 0.879,
       "reverb": 0.05,
       "variation": "none",
       "layers": [
@@ -2811,7 +2813,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:hotbar": {
-      "gain": 0.5,
+      "gain": 0.698,
       "variation": "none",
       "layers": [
         {
@@ -2849,7 +2851,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:fly_on": {
-      "gain": 0.55,
+      "gain": 0.463,
       "reverb": 0.2,
       "variation": "none",
       "layers": [
@@ -2897,7 +2899,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:fly_off": {
-      "gain": 0.55,
+      "gain": 0.447,
       "reverb": 0.2,
       "variation": "none",
       "layers": [
@@ -2933,7 +2935,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:fly_speed": {
-      "gain": 0.45,
+      "gain": 0.493,
       "variation": "none",
       "layers": [
         {
@@ -2965,7 +2967,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:menu_open": {
-      "gain": 0.5,
+      "gain": 0.542,
       "reverb": 0.1,
       "variation": "none",
       "layers": [
@@ -3030,7 +3032,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:menu_close": {
-      "gain": 0.5,
+      "gain": 0.601,
       "reverb": 0.1,
       "variation": "none",
       "layers": [
@@ -3095,7 +3097,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:overlay_on": {
-      "gain": 0.45,
+      "gain": 0.984,
       "variation": "none",
       "layers": [
         {
@@ -3134,7 +3136,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:overlay_off": {
-      "gain": 0.45,
+      "gain": 1.067,
       "variation": "none",
       "layers": [
         {
@@ -3173,7 +3175,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:map_open": {
-      "gain": 0.5,
+      "gain": 0.975,
       "reverb": 0.08,
       "variation": "none",
       "layers": [
@@ -3224,7 +3226,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:map_close": {
-      "gain": 0.5,
+      "gain": 1.172,
       "reverb": 0.08,
       "variation": "none",
       "layers": [
@@ -3267,7 +3269,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:map_zoom": {
-      "gain": 0.45,
+      "gain": 2.602,
       "variation": "none",
       "layers": [
         {
@@ -3289,7 +3291,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_hover": {
-      "gain": 0.4,
+      "gain": 0.656,
       "variation": "none",
       "layers": [
         {
@@ -3321,7 +3323,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_click": {
-      "gain": 0.55,
+      "gain": 0.759,
       "variation": "none",
       "layers": [
         {
@@ -3375,7 +3377,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_back": {
-      "gain": 0.55,
+      "gain": 0.639,
       "variation": "none",
       "layers": [
         {
@@ -3416,7 +3418,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_tab": {
-      "gain": 0.5,
+      "gain": 0.644,
       "variation": "none",
       "layers": [
         {
@@ -3457,7 +3459,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_toggle_on": {
-      "gain": 0.5,
+      "gain": 0.512,
       "variation": "none",
       "layers": [
         {
@@ -3498,7 +3500,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_toggle_off": {
-      "gain": 0.5,
+      "gain": 0.601,
       "variation": "none",
       "layers": [
         {
@@ -3539,7 +3541,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_slider": {
-      "gain": 0.35,
+      "gain": 1.256,
       "variation": "none",
       "layers": [
         {
@@ -3570,7 +3572,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_error": {
-      "gain": 0.5,
+      "gain": 0.446,
       "reverb": 0.05,
       "variation": "none",
       "layers": [
@@ -3629,7 +3631,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:ui_success": {
-      "gain": 0.5,
+      "gain": 0.561,
       "reverb": 0.15,
       "variation": "none",
       "layers": [

@@ -1,7 +1,8 @@
 // The mixer (docs/AUDIO.md §3): the effects and UI buses into the master gain, a small room
-// reverb on the effects, and a soft limiter (a waveshaper: linear to 0.7, then a tanh knee that
-// never passes full scale; a DynamicsCompressorNode adds its own make-up gain) before the output. Built the same on an AudioContext
-// (the game, the menus) and an OfflineAudioContext (renders and their checks).
+// reverb on the effects, and a soft limiter before the output: a waveshaper, linear to 0.7, then
+// a tanh knee that never passes full scale (a DynamicsCompressorNode adds its own make-up gain).
+// Built the same on an AudioContext (the game, the menus) and an OfflineAudioContext (renders and
+// their checks).
 import { mulberry32 } from './variation';
 
 export interface Volumes {
@@ -66,11 +67,15 @@ export function softClip(x: number): number {
   return Math.sign(x) * (KNEE + (1 - KNEE) * Math.tanh((a - KNEE) / (1 - KNEE)));
 }
 
-/** The soft limiter's transfer curve over [−1.5, 1.5] (inputs past it hold at the ends). */
+/** Input range the limiter shapes: a WaveShaperNode's curve spans [−1, 1], so its input is
+ * scaled by 1 / LIMIT_RANGE first and the curve undoes it. */
+const LIMIT_RANGE = 2;
+
+/** The soft limiter's transfer curve (inputs past ±LIMIT_RANGE hold at the ends). */
 function softClipCurve(): Float32Array<ArrayBuffer> {
   const n = 4097;
   const curve = new Float32Array(n);
-  for (let i = 0; i < n; i++) curve[i] = softClip((i / (n - 1)) * 3 - 1.5) * 0.98;
+  for (let i = 0; i < n; i++) curve[i] = softClip(((i / (n - 1)) * 2 - 1) * LIMIT_RANGE) * 0.98;
   return curve;
 }
 
@@ -79,10 +84,14 @@ export const DEFAULT_VOLUMES: Volumes = { master: 0.8, effects: 1, ui: 0.6 };
 /** Builds the mixer into `ctx.destination`. */
 export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOLUMES): Mixer {
   const master = ctx.createGain();
+  const into = ctx.createGain();
+  into.gain.value = 1 / LIMIT_RANGE;
   const limiter = ctx.createWaveShaper();
   limiter.curve = softClipCurve();
-  limiter.oversample = '2x';
-  master.connect(limiter);
+  // No oversampling: its filters could overshoot full scale; the knee is rarely reached.
+  limiter.oversample = 'none';
+  master.connect(into);
+  into.connect(limiter);
   limiter.connect(ctx.destination);
   const effects = ctx.createGain();
   const ui = ctx.createGain();

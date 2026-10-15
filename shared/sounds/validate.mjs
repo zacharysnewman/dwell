@@ -172,7 +172,7 @@ function validateLayer(where, layer) {
 /** Checks one sound definition; `where` names it in messages. */
 export function validateSound(where, s) {
   keysIn(where, s, SOUND_KEYS);
-  number(`${where}.gain`, s.gain, 0, 2);
+  number(`${where}.gain`, s.gain, 0, 4);
   number(`${where}.reverb`, s.reverb, 0, 1, { optional: true });
   if (s.variation !== 'none') {
     const v = s.variation;
