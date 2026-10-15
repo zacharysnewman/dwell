@@ -1,0 +1,19 @@
+[package]
+name = "dwell-march"
+description = "Dwell's ray-marched terrain, CPU core: the GPU brick layout, its builders, the pool and the reference marcher (docs/RAY_MARCHED_RENDERER.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
+dwell-world = { path = "../dwell-world" }
+
+[dev-dependencies]
+# The steps-per-ray example marches generated terrain.
+dwell-worldgen = { path = "../dwell-worldgen" }
+
+[lints]
+workspace = true
