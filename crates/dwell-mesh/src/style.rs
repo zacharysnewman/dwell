@@ -4,7 +4,7 @@
 
 use std::sync::OnceLock;
 
-use dwell_blocks::{Facing, RenderMode, SHAPES, STATES, ShapeInfo, StateId, Textures};
+use dwell_blocks::{Cross, Facing, Fade, RenderMode, SHAPES, STATES, ShapeInfo, StateId, Textures, Wind};
 
 /// The look a state is drawn with (the registry's `look` name).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,6 +13,8 @@ pub(crate) enum Look {
     Shaped,
     Ladder,
     Water,
+    /// Crossed vertical quads through the cell (plants).
+    Cross,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -28,6 +30,10 @@ pub(crate) struct MaterialStyle {
     /// Index into `SHAPES`.
     pub shape: usize,
     pub flooded: bool,
+    /// The cross look's geometry, wind and distance fade.
+    pub cross: Option<Cross>,
+    pub wind: Option<Wind>,
+    pub fade: Option<Fade>,
 }
 
 /// The full cube's shape: what a full face is tested against.
@@ -48,6 +54,7 @@ fn style_of_state(i: usize) -> MaterialStyle {
         "shaped" => Look::Shaped,
         "ladder" => Look::Ladder,
         "water" => Look::Water,
+        "cross" => Look::Cross,
         // 'cube', and any look the meshers do not know: a full cube.
         _ => Look::Cube,
     };
@@ -71,6 +78,9 @@ fn style_of_state(i: usize) -> MaterialStyle {
         },
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
+        cross: s.cross,
+        wind: s.wind,
+        fade: s.fade,
     }
 }
 
@@ -91,6 +101,9 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             ladder_face: None,
             shape: cube_index(),
             flooded: false,
+            cross: None,
+            wind: None,
+            fade: None,
         })
 }
 

@@ -53,6 +53,9 @@ const PLAYER_COLORS: [u32; 7] = [
 ];
 
 /// What the game draws through (the wgpu renderer, or a recorder in tests).
+/// The whole cell, as an outline box.
+pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
+
 pub trait Scene {
     fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>);
     fn set_lod_section(
@@ -66,7 +69,9 @@ pub trait Scene {
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandIn]);
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
-    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
+    /// corner; `dwell_world::edit::target_box`), or none.
+    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, bounds: ([f32; 3], [f32; 3]));
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
 }
@@ -884,7 +889,7 @@ impl<S: Scene> Game<S> {
             self.scene
                 .borrow_mut()
                 .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
-            self.scene.borrow_mut().set_block_outline(None, 1.0);
+            self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
         }
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
 
@@ -978,23 +983,18 @@ impl<S: Scene> Game<S> {
             face,
         );
         let Some(t) = t else {
-            self.scene.borrow_mut().set_block_outline(None, 1.0);
+            self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
             return;
         };
-        // The outline hugs the shape's top: slabs and low slopes are not a full cell tall.
-        let shape = dwell_blocks::shape::shape_of(
+        // The outline is the box the block is aimed at: a plant's selection box, a slab's height.
+        let bounds = dwell_world::edit::target_box(
             self.streamer
                 .store_mut()
                 .get_voxel(t.cell[0], t.cell[1], t.cell[2]),
         );
-        let height = if shape.inverted {
-            1.0
-        } else {
-            f64::from(shape.max_y)
-        };
         self.scene
             .borrow_mut()
-            .set_block_outline(Some(t.cell.map(f64::from)), height);
+            .set_block_outline(Some(t.cell.map(f64::from)), bounds);
     }
 
     fn player_view(

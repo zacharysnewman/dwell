@@ -64,7 +64,7 @@ impl Scene for Recorder {
     fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
         self.camera = Some(eye);
     }
-    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _height: f64) {
+    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _bounds: ([f32; 3], [f32; 3])) {
         self.outline = cell;
     }
     fn set_debug_lines(&mut self, _lines: Option<&[Line]>) {}

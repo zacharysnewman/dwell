@@ -27,8 +27,13 @@ pub enum Job {
         n: i32,
         face: u8,
     },
-    /// Greedy-meshes a chunk from its padded voxels.
-    MeshChunk { padded: Vec<u16>, mirror: bool },
+    /// Greedy-meshes a chunk from its padded voxels; `origin` is its minimum corner's world cell
+    /// (plants are jittered by their world position).
+    MeshChunk {
+        padded: Vec<u16>,
+        mirror: bool,
+        origin: [i32; 3],
+    },
     /// Meshes an LOD section.
     MeshSection {
         cells: Vec<u16>,
@@ -151,7 +156,11 @@ impl Runner {
                 }
                 Output::Map(Some(out))
             }
-            Job::MeshChunk { padded, mirror } => match dwell_mesh::mesh_chunk(&padded, mirror) {
+            Job::MeshChunk {
+                padded,
+                mirror,
+                origin,
+            } => match dwell_mesh::mesh_chunk_at(&padded, mirror, origin) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),
             },

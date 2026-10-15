@@ -22,7 +22,9 @@ use dwell_protocol::{
     players as pc, welcome_flags, world as wc,
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
-use dwell_world::edit::{DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit};
+use dwell_world::edit::{
+    DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit, unsupported_after,
+};
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::{
     AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y,
@@ -1448,33 +1450,40 @@ impl Server {
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
-                let cell = outcome.cell;
-                let coord = chunk_of(cell[0], cell[1], cell[2]);
-                let local = local_index(
-                    cell[0] - coord.x * CHUNK_SIZE,
-                    cell[1] - coord.y * CHUNK_SIZE,
-                    cell[2] - coord.z * CHUNK_SIZE,
-                );
-                self.world
-                    .get_or_create(coord)
-                    .set_at(local, outcome.material);
-                self.dirty.insert(coord);
-                self.lod.mark_chunk(coord);
-                let at = *index.entry(coord).or_insert_with(|| {
-                    changed.push(ChunkChanges {
-                        coord: coord.to_array(),
-                        revision: 0,
-                        changes: Vec::new(),
+                // The edit, and what it leaves unsupported (block data `needsSupport`: grass on a
+                // broken block goes with it), in the same modification.
+                let mut cells = vec![(outcome.cell, outcome.material)];
+                cells.extend(unsupported_after(
+                    &mut self.world,
+                    outcome.cell,
+                    outcome.material,
+                ));
+                for (cell, material) in cells {
+                    let coord = chunk_of(cell[0], cell[1], cell[2]);
+                    let local = local_index(
+                        cell[0] - coord.x * CHUNK_SIZE,
+                        cell[1] - coord.y * CHUNK_SIZE,
+                        cell[2] - coord.z * CHUNK_SIZE,
+                    );
+                    self.world.get_or_create(coord).set_at(local, material);
+                    self.dirty.insert(coord);
+                    self.lod.mark_chunk(coord);
+                    let at = *index.entry(coord).or_insert_with(|| {
+                        changed.push(ChunkChanges {
+                            coord: coord.to_array(),
+                            revision: 0,
+                            changes: Vec::new(),
+                        });
+                        changed.len() - 1
                     });
-                    changed.len() - 1
-                });
-                let changes = &mut changed[at].changes;
-                match changes.iter_mut().find(|v| usize::from(v.index) == local) {
-                    Some(v) => v.material = outcome.material,
-                    None => changes.push(VoxelChange {
-                        index: local as u16,
-                        material: outcome.material,
-                    }),
+                    let changes = &mut changed[at].changes;
+                    match changes.iter_mut().find(|v| usize::from(v.index) == local) {
+                        Some(v) => v.material = material,
+                        None => changes.push(VoxelChange {
+                            index: local as u16,
+                            material,
+                        }),
+                    }
                 }
             }
         }

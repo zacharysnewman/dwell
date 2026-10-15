@@ -203,9 +203,14 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             [*x0, *z0, *step, *n].into_iter().for_each(|v| w.i32(v));
             w.u8(*face);
         }
-        Job::MeshChunk { padded, mirror } => {
+        Job::MeshChunk {
+            padded,
+            mirror,
+            origin,
+        } => {
             w.u8(4);
             w.u8(u8::from(*mirror));
+            origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
         }
         Job::MeshSection {
@@ -252,8 +257,10 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         },
         4 => {
             let mirror = r.u8()? != 0;
+            let origin = [r.i32()?, r.i32()?, r.i32()?];
             Job::MeshChunk {
                 mirror,
+                origin,
                 padded: r.u16s()?,
             }
         }
@@ -411,6 +418,7 @@ mod tests {
             Job::MeshChunk {
                 padded: vec![1; dwell_mesh::PADDED_VOLUME],
                 mirror: true,
+                origin: [-32, 64, 96],
             },
             Job::MeshSection {
                 cells: vec![1; dwell_world::lod::VOLUME],
@@ -443,6 +451,7 @@ mod tests {
             &Job::MeshChunk {
                 padded: vec![0; 100],
                 mirror: false,
+                origin: [0; 3],
             },
         );
         for n in 0..bytes.len() {

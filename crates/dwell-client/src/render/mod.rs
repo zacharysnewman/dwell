@@ -381,7 +381,9 @@ pub struct Renderer {
     level_colors: bool,
     players: HashMap<u32, PlayerView>,
     capsules: HashMap<PlayerShape, GpuMesh>,
-    outline: Option<(V3, f64)>,
+    outline: Option<V3>,
+    /// The outline's box in its cell, and its lines.
+    outline_box: ([f32; 3], [f32; 3]),
     outline_mesh: GpuMesh,
     debug: Option<GpuMesh>,
     /// The GPU pages every mesh lives in (arena.rs).
@@ -692,15 +694,9 @@ impl Renderer {
             })
         });
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
-        let edges = geometry::box_edges();
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
-        let outline_mesh = GpuMesh::lines(
-            &arena,
-            &edges
-                .iter()
-                .map(|p| (*p, [1.0, 1.0, 1.0]))
-                .collect::<Vec<_>>(),
-        );
+        let outline_box = ([0.0; 3], [1.0; 3]);
+        let outline_mesh = Self::outline_lines(&arena, outline_box);
         Self {
             device,
             queue,
@@ -727,6 +723,7 @@ impl Renderer {
             players: HashMap::default(),
             capsules: HashMap::default(),
             outline: None,
+            outline_box,
             outline_mesh,
             debug: None,
             arena,
@@ -931,9 +928,26 @@ impl Renderer {
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
     }
-    /// Outlines the targeted block: its min corner and box height, or none.
-    pub fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
-        self.outline = cell.map(|c| (c, height));
+    /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max),
+    /// or none.
+    pub fn set_block_outline(&mut self, cell: Option<V3>, bounds: ([f32; 3], [f32; 3])) {
+        self.outline = cell;
+        if cell.is_some() && bounds != self.outline_box {
+            self.outline_box = bounds;
+            self.outline_mesh = Self::outline_lines(&self.arena, bounds);
+        }
+    }
+
+    /// The outline's twelve edges about a box in the cell, slightly enlarged (2 mm each side).
+    fn outline_lines(arena: &ArenaRef, (lo, hi): ([f32; 3], [f32; 3])) -> GpuMesh {
+        let edges = geometry::box_edges_about(lo.map(|v| v - 0.002), hi.map(|v| v + 0.002));
+        GpuMesh::lines(
+            arena,
+            &edges
+                .iter()
+                .map(|p| (*p, [1.0, 1.0, 1.0]))
+                .collect::<Vec<_>>(),
+        )
     }
     pub fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
@@ -1277,9 +1291,9 @@ impl Renderer {
                 mesh: DrawMesh::Player(player_shape(v)),
             });
         }
-        if let Some((cell, _height)) = self.outline.filter(|(c, _)| reaches(*c, 2.0) != 0) {
+        if let Some(cell) = self.outline.filter(|c| reaches(*c, 2.0) != 0) {
             let passes = reaches(cell, 2.0);
-            let r = self.rel([cell[0] - 0.002, cell[1] - 0.002, cell[2] - 0.002]);
+            let r = self.rel(cell);
             let c = hex(0x101418).map(|v| v as f32);
             out.push(DrawItem {
                 kind: Kind::Line,
@@ -1723,8 +1737,8 @@ impl crate::game::Scene for Renderer {
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
     }
-    fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
-        Renderer::set_block_outline(self, cell, height);
+    fn set_block_outline(&mut self, cell: Option<V3>, bounds: ([f32; 3], [f32; 3])) {
+        Renderer::set_block_outline(self, cell, bounds);
     }
     fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
         Renderer::set_debug_lines(self, lines);
@@ -2114,7 +2128,7 @@ mod tests {
         };
         r.set_lod_section(7, [0.0; 3], 1.0, Some(&section));
         r.show_lod_sections(&[(7, 0)]);
-        r.set_block_outline(Some([16.0, 0.0, 16.0]), 1.0);
+        r.set_block_outline(Some([16.0, 0.0, 16.0]), crate::game::FULL_CELL);
         r.set_debug_lines(Some(&[Line {
             from: [16.0, 1.0, 16.0],
             to: [20.0, 1.0, 20.0],
