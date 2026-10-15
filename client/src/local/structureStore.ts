@@ -58,7 +58,12 @@ export class StructureStore {
       }
       return { file, status: 'ok', json, structure };
     } catch (e) {
-      return { file, status: 'unreadable', reason: e instanceof Error ? e.message : String(e), text };
+      return {
+        file,
+        status: 'unreadable',
+        reason: e instanceof Error ? e.message : String(e),
+        text,
+      };
     }
   }
 

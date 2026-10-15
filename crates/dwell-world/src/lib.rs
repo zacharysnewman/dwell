@@ -5,6 +5,7 @@
 pub mod edit;
 pub mod hash;
 pub mod lod;
+pub mod region;
 pub mod structure;
 mod voxel;
 

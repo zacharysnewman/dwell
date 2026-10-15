@@ -9,7 +9,9 @@ import {
   bottomCentre,
   builtBounds,
   checkStructure,
+  clipboardOf,
   parseStructure,
+  scanBuilt,
   REGISTRY,
   structureFile,
   structureFromVoxels,
@@ -34,11 +36,19 @@ function sample(): { size: Vec3; cells: number[] } {
   const size: Vec3 = [3, 2, 2];
   const cells = [
     // y = 0
-    stone, ladder, floor,
-    sand, air, air,
+    stone,
+    ladder,
+    floor,
+    sand,
+    air,
+    air,
     // y = 1
-    stone, air, air,
-    air, air, air,
+    stone,
+    air,
+    air,
+    air,
+    air,
+    air,
   ];
   return { size, cells };
 }
@@ -105,7 +115,9 @@ describe('structures in the client', () => {
     const json = structureFromVoxels({ name: 'dwell:wide', size, cells: Array(96).fill(stone) });
     const text = structureText(json);
     const row = `"${'s'.repeat(32)}"`;
-    expect(text).toContain(`  "layers": [\n    [\n      ${row},\n      ${row},\n      ${row}\n    ]\n  ]`);
+    expect(text).toContain(
+      `  "layers": [\n    [\n      ${row},\n      ${row},\n      ${row}\n    ]\n  ]`,
+    );
     expect(generatorAccepts({ 'wide.json': text })).toHaveLength(1);
   });
 
@@ -113,19 +125,31 @@ describe('structures in the client', () => {
     const { size, cells } = sample();
     const good = structureFromVoxels({ name: 'dwell:post', size, cells });
     const bad: [string, Record<string, unknown>][] = [
-      ['palette."s": unknown block "dwell:nope"', { ...good, palette: { '.': null, s: 'dwell:nope', l: 'dwell:ladder', S: 'dwell:sand' } }],
+      [
+        'palette."s": unknown block "dwell:nope"',
+        { ...good, palette: { '.': null, s: 'dwell:nope', l: 'dwell:ladder', S: 'dwell:sand' } },
+      ],
       ['size: must be [x, y, z], each 1..32', { ...good, size: [33, 2, 2] }],
       ['anchor: must be [x, y, z] inside the size', { ...good, anchor: [3, 0, 0] }],
-      ['layers[0][1][0]: "?" is not in the palette', { ...good, layers: [['sl.', '?..'], ['s..', '...']] }],
+      [
+        'layers[0][1][0]: "?" is not in the palette',
+        {
+          ...good,
+          layers: [
+            ['sl.', '?..'],
+            ['s..', '...'],
+          ],
+        },
+      ],
       ['kind: unknown kind', { ...good, kind: 'curves' }],
     ];
     for (const [why, json] of bad) {
       expect(() => checkStructure(json, 'post.json')).toThrow(why);
       expect(() => validate(json, 'post.json', vectorRegistry)).toThrow(why);
     }
-    expect(() => structureFromVoxels({ name: 'dwell:big', size: [33, 1, 1], cells: Array(33).fill(stone) })).toThrow(
-      'at most 32',
-    );
+    expect(() =>
+      structureFromVoxels({ name: 'dwell:big', size: [33, 1, 1], cells: Array(33).fill(stone) }),
+    ).toThrow('at most 32');
   });
 
   it('ignores fields a newer build added, which the generator rejects', () => {
@@ -141,6 +165,40 @@ describe('structures in the client', () => {
     expect(structureName('  ')).toHaveProperty('error');
     expect(structureName('test:x')).toHaveProperty('error');
     expect(structureFile('mine:big_rock')).toBe('big_rock.json');
+  });
+
+  it('scans a region tile by tile for what was built, passing over tiles not loaded', () => {
+    // A world: the floor below y = 0, stone at (-3, 0, 2) and (40, 5, 2), sand at (70, 0, 0) in a
+    // chunk that isn't loaded.
+    const at = (x: number, y: number, z: number) => {
+      if (x === -3 && y === 0 && z === 2) return stone;
+      if (x === 40 && y === 5 && z === 2) return stone;
+      if (x === 70 && y === 0 && z === 0) return sand;
+      return y < 0 ? floor : air;
+    };
+    const reads: Vec3[] = [];
+    const read = (min: Vec3, size: Vec3) => {
+      reads.push(size);
+      if (min[0] >= 64) return [];
+      const out: number[] = [];
+      for (let y = 0; y < size[1]; y++)
+        for (let z = 0; z < size[2]; z++)
+          for (let x = 0; x < size[0]; x++) out.push(at(min[0] + x, min[1] + y, min[2] + z));
+      return out;
+    };
+    expect(scanBuilt(read, [-10, -4, -4], [90, 20, 20])).toEqual({
+      min: [-3, 0, 2],
+      size: [44, 6, 1],
+    });
+    expect(reads.every((s) => s.every((n) => n >= 1 && n <= 32))).toBe(true);
+    expect(scanBuilt(read, [-10, -4, -4], [5, 3, 3])).toBeNull();
+  });
+
+  it('turns a structure into clipboard cells and a keep mask', () => {
+    const s = checkStructure(structureFromVoxels({ name: 'dwell:post', ...sample() }), 'post.json');
+    const { cells, keep } = clipboardOf(s);
+    expect([...cells]).toEqual([stone, ladder, 0, sand, 0, 0, stone, 0, 0, 0, 0, 0]);
+    expect([...keep]).toEqual([0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1]);
   });
 
   it('finds the box of what was built, and boxes between corners', () => {

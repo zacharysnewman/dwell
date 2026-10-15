@@ -16,6 +16,7 @@ use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
+use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
@@ -33,7 +34,7 @@ use dwell_world::{ChunkCoord, VoxelWorld};
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
-use crate::render::{Line, PlayerView, StandIn};
+use crate::render::{Line, PlayerView, RegionBox, StandIn};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
@@ -44,6 +45,9 @@ const MESH_BUDGET_MS: f64 = 4.0;
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
 const RATE_NUDGE: f64 = 0.02;
+/// The region tools' outlines: the selection, and where a paste would go.
+const REGION_SELECTION_COLOR: u32 = 0xffffff;
+const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 const PLAYER_COLORS: [u32; 7] = [
     0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
 ];
@@ -63,6 +67,7 @@ pub trait Scene {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    fn set_region_boxes(&mut self, boxes: &[RegionBox]);
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
 }
@@ -330,9 +335,11 @@ pub struct Game<S: Scene> {
     flip: FaceFlip,
     last_draw_ms: Option<f64>,
     eye: EyeCamera,
-    /// The eye the last frame targeted from (None while not playing): edits by cell aim from it.
-    last_eye: Option<[f64; 3]>,
     pub interaction: BlockInteraction,
+    /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
+    pub region: RegionTools,
+    /// The eye the crosshair targets from (None while not playing).
+    target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -404,8 +411,9 @@ impl<S: Scene> Game<S> {
             flip,
             last_draw_ms: None,
             eye,
-            last_eye: None,
             interaction: BlockInteraction::new(),
+            region: RegionTools::new(),
+            target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -521,6 +529,12 @@ impl<S: Scene> Game<S> {
     }
     pub fn voxel(&mut self, x: i32, y: i32, z: i32) -> u16 {
         self.streamer.store_mut().get_voxel(x, y, z)
+    }
+    /// The client's states in a box, in layer order; empty where a chunk of it isn't loaded
+    /// (`region::read_box`): saving a structure.
+    pub fn voxels(&mut self, min: [i32; 3], size: [u32; 3]) -> Vec<u16> {
+        dwell_world::region::read_box(self.streamer.store_mut(), min, size.map(|n| n as i32))
+            .unwrap_or_default()
     }
     pub fn state(&self) -> &ClientState {
         &self.current
@@ -721,6 +735,14 @@ impl<S: Scene> Game<S> {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        // In paste mode the buttons paste (right) or leave paste mode (left).
+        if self.region.pasting() {
+            let tool = match action {
+                EditAction::Place => ToolAction::Paste,
+                EditAction::Break => ToolAction::PasteMode,
+            };
+            return self.tool(tool, now_ms);
+        }
         match self.interaction.act(action, now_ms) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
@@ -730,39 +752,55 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Breaks `cell` or places `material` against its `face`, not at the crosshair (the
-    /// structure stamp, STRUCTURES.md §4): only while alive and playing, at the edit rate limit.
-    pub fn edit_at(
-        &mut self,
-        action: EditAction,
-        cell: [i32; 3],
-        face: u8,
-        material: u16,
-        now_ms: f64,
-    ) -> bool {
+    /// Runs a region tool (§6.5) on the crosshair's target and the hotbar's block: only while alive
+    /// and playing. True if it sent a region edit.
+    pub fn tool(&mut self, action: ToolAction, now_ms: f64) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
         }
-        match self
+        let target = self.interaction.target().map(|t| t.cell);
+        let world = self.streamer.store_mut();
+        let target_state = target.map_or(0, |c| world.get_voxel(c[0], c[1], c[2]));
+        let material = self
             .interaction
-            .act_at(action, cell, face, material, now_ms)
-        {
+            .palette()
+            .get(self.interaction.selected())
+            .map_or(0, |s| s.material);
+        let ctx = ToolContext {
+            target,
+            target_state,
+            placement: self.interaction.placement().map(|(c, _)| c),
+            material,
+            eye: self.target_eye,
+            now_ms,
+        };
+        let sent = match self.region.act(action, &ctx, world) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
                 true
             }
             None => false,
-        }
+        };
+        self.show_region_boxes();
+        sent
     }
 
-    /// The eye the last frame aimed from; None while not playing.
-    pub fn eye(&self) -> Option<[f64; 3]> {
-        self.last_eye
-    }
-
-    /// The client's states in a box (`VoxelWorld::read_box`): saving a structure.
-    pub fn voxels(&mut self, min: [i32; 3], size: [u32; 3]) -> Vec<u16> {
-        self.streamer.store_mut().read_box(min, size)
+    /// The region tools' boxes to the renderer.
+    fn show_region_boxes(&self) {
+        let boxes: Vec<RegionBox> = self
+            .region
+            .boxes()
+            .iter()
+            .map(|b| RegionBox {
+                min: b.min.map(f64::from),
+                size: b.size.map(f64::from),
+                color: match b.kind {
+                    ToolBoxKind::Selection => REGION_SELECTION_COLOR,
+                    ToolBoxKind::Ghost => REGION_GHOST_COLOR,
+                },
+            })
+            .collect();
+        self.scene.borrow_mut().set_region_boxes(&boxes);
     }
 
     /// Prediction waits until the terrain around the player has arrived (collision needs it).
@@ -1003,7 +1041,6 @@ impl<S: Scene> Game<S> {
 
     /// Targets the block under the crosshair from `eye` and outlines it (none while not playing).
     fn target(&mut self, eye: Option<[f64; 3]>, input: &KeyboardMouseInput) {
-        self.last_eye = eye;
         let face = self.current.face;
         let t = self.interaction.update(
             self.streamer.store_mut(),
@@ -1012,6 +1049,10 @@ impl<S: Scene> Game<S> {
             input.look.pitch,
             face,
         );
+        self.target_eye = eye;
+        self.region
+            .aim(self.interaction.placement().map(|(c, _)| c));
+        self.show_region_boxes();
         let Some(t) = t else {
             self.scene.borrow_mut().set_block_outline(None, 1.0);
             return;

@@ -11,7 +11,7 @@ import {
   type Registry,
   type ValidStructure,
 } from '../../../shared/structures/format.mjs';
-import { BLOCK_DEFS, STATE_DEFS } from '../world/blocks';
+import { BLOCK_DEFS, STATE_DEFS, stateId } from '../world/blocks';
 
 export { MAX_EDGE, type ValidStructure };
 
@@ -57,7 +57,7 @@ export function parseStructure(
   try {
     json = JSON.parse(text);
   } catch (e) {
-    throw new Error(`${file}: (file): ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(`${file}: (file): ${e instanceof Error ? e.message : String(e)}`, { cause: e });
   }
   const structure = checkStructure(json, file);
   return { json: json as StructureJson, structure };
@@ -136,6 +136,78 @@ export function builtBounds(
   return boxOf(lo, hi);
 }
 
+/** Reads a box's states in layer order; empty where a chunk of it isn't loaded (`Client.voxels`). */
+export type ReadBox = (min: Vec3, size: Vec3) => ArrayLike<number>;
+
+/** The edge of the tiles `scanBuilt` reads: a chunk, so a tile is loaded or not as a whole. */
+const TILE = 32;
+
+/**
+ * The box (world coordinates) of every built cell — a state not in `kept` — in the region from
+ * `min` of `size`, read tile by tile along the chunk grid; tiles not loaded are passed over.
+ * Null if nothing is built there.
+ */
+export function scanBuilt(
+  read: ReadBox,
+  min: Vec3,
+  size: Vec3,
+  kept: readonly string[] = KEPT_ON_SAVE,
+): { min: Vec3; size: Vec3 } | null {
+  const keptIds = new Set(kept.map((k) => stateId(k)));
+  const built = (s: number) => !keptIds.has(s);
+  let lo: Vec3 | null = null;
+  let hi: Vec3 | null = null;
+  const start = min.map((v) => Math.floor(v / TILE) * TILE) as Vec3;
+  for (let ty = start[1]; ty < min[1] + size[1]; ty += TILE) {
+    for (let tz = start[2]; tz < min[2] + size[2]; tz += TILE) {
+      for (let tx = start[0]; tx < min[0] + size[0]; tx += TILE) {
+        // The tile clipped to the region.
+        const a: Vec3 = [Math.max(tx, min[0]), Math.max(ty, min[1]), Math.max(tz, min[2])];
+        const b: Vec3 = [
+          Math.min(tx + TILE, min[0] + size[0]),
+          Math.min(ty + TILE, min[1] + size[1]),
+          Math.min(tz + TILE, min[2] + size[2]),
+        ];
+        const tileSize: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        const cells = read(a, tileSize);
+        if (cells.length === 0) continue;
+        const box = builtBounds(cells, tileSize, built);
+        if (!box) continue;
+        const bmin: Vec3 = [a[0] + box.min[0], a[1] + box.min[1], a[2] + box.min[2]];
+        const bmax: Vec3 = [
+          bmin[0] + box.size[0] - 1,
+          bmin[1] + box.size[1] - 1,
+          bmin[2] + box.size[2] - 1,
+        ];
+        lo = lo
+          ? [Math.min(lo[0], bmin[0]), Math.min(lo[1], bmin[1]), Math.min(lo[2], bmin[2])]
+          : bmin;
+        hi = hi
+          ? [Math.max(hi[0], bmax[0]), Math.max(hi[1], bmax[1]), Math.max(hi[2], bmax[2])]
+          : bmax;
+      }
+    }
+  }
+  return lo && hi ? boxOf(lo, hi) : null;
+}
+
+/**
+ * A structure as the region tools' clipboard takes it (`Client.loadStructure`): runtime state
+ * ids in layer order, and a mask of the cells it keeps (`null` in its palette).
+ */
+export function clipboardOf(s: ValidStructure): { cells: Uint16Array; keep: Uint8Array } {
+  const ids = new Map<string, number | null>();
+  for (const [c, state] of s.palette) ids.set(c, state === null ? null : stateId(state));
+  const cells = new Uint16Array(s.cells.length);
+  const keep = new Uint8Array(s.cells.length);
+  for (let i = 0; i < s.cells.length; i++) {
+    const id = ids.get(s.cells[i] ?? '');
+    if (id === null || id === undefined) keep[i] = 1;
+    else cells[i] = id;
+  }
+  return { cells, keep };
+}
+
 /** The default anchor: the bottom centre (the cell `place` puts on the first air above ground). */
 export function bottomCentre(size: Vec3): Vec3 {
   return [Math.floor(size[0] / 2), 0, Math.floor(size[2] / 2)];
@@ -143,7 +215,7 @@ export function bottomCentre(size: Vec3): Vec3 {
 
 /** Palette characters in the order they are tried after a state's own initial. */
 const PALETTE_POOL =
-  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&*+-=@^~!?<>/|:;,()[]{}`\'_';
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&*+-=@^~!?<>/|:;,()[]{}`'_";
 /** The palette character of kept cells (`null`), as in the committed files. */
 const KEEP = '.';
 
@@ -163,7 +235,9 @@ export function structureFromVoxels(options: {
   const { name, size, cells } = options;
   const [sx, sy, sz] = size;
   if (size.some((n) => !Number.isInteger(n) || n < 1 || n > MAX_EDGE)) {
-    throw new Error(`A structure is at most ${String(MAX_EDGE)} blocks on each side, not ${sizeLabel(size)}.`);
+    throw new Error(
+      `A structure is at most ${String(MAX_EDGE)} blocks on each side, not ${sizeLabel(size)}.`,
+    );
   }
   if (cells.length !== sx * sy * sz) throw new Error('The cells do not fill the box.');
   const kept = new Set(options.kept ?? KEPT_ON_SAVE);
@@ -174,7 +248,7 @@ export function structureFromVoxels(options: {
   const pick = (state: string): string => {
     const local = state.slice(state.indexOf(':') + 1);
     const initial = local[0] ?? 'a';
-    for (const c of [initial, initial.toUpperCase(), ...PALETTE_POOL]) {
+    for (const c of [initial, initial.toUpperCase(), ...PALETTE_POOL.split('')]) {
       if (!used.has(c)) return c;
     }
     throw new Error('Too many different blocks for one structure.');
@@ -232,7 +306,8 @@ function flat(v: unknown): string {
     if (entries.length === 0) return '{}';
     return `{ ${entries.map(([k, x]) => `${JSON.stringify(k)}: ${flat(x)}`).join(', ')} }`;
   }
-  return JSON.stringify(v) ?? 'null';
+  // Parsed JSON holds no undefined, functions or symbols, for which this would be undefined.
+  return JSON.stringify(v);
 }
 
 function pretty(v: unknown, indent: string, room: number, top = false): string {

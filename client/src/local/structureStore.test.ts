@@ -58,7 +58,10 @@ describe('structures store', () => {
     const future = { ...post('dwell:tree'), tags: ['tree'], grows: { stages: 3 } };
     const broken = '{"format": 1, "name": "dwell:broken", ';
     const newer = JSON.stringify({ ...post('dwell:next'), format: 2, curve: [0, 1] });
-    const invalid = JSON.stringify({ ...post('dwell:odd'), palette: { s: 'dwell:not_in_this_build' } });
+    const invalid = JSON.stringify({
+      ...post('dwell:odd'),
+      palette: { s: 'dwell:not_in_this_build' },
+    });
     const dir = memoryDir({
       'tree.json': JSON.stringify(future),
       'broken.json': broken,

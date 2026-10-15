@@ -44,7 +44,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted) and S2a (floor block, sandbox world type) done, S2a's e2e check outstanding; S2a's registry change needs a new compatibility line (the owner decides the bump); next: S2b, the structures store; S4 (worldgen placement) deferred |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type) and S3a (region edits, the region tools) done; S2a's e2e check outstanding; S2a's registry change needs a new compatibility line (the owner decides the bump); next: S2b, the structures store; S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2682,8 +2682,10 @@ Exit criteria
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR), S1 (the structure format and its generator) and S2a (the floor
-and the sandbox world type) done; outstanding for S2a: its e2e exit check; next: S2b, the structures store.
+**Status:** In progress — S0 (the ADR), S1 (the structure format and its generator), S2a (the floor
+and the sandbox world type) and S3a (region edits and the region tools) done; outstanding for S2a:
+its e2e exit check; outstanding for S3: S3b (anchor, touch) and the sandbox e2e; next: S2b, the
+structures store.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
@@ -2705,9 +2707,14 @@ Deliverables
 - [ ] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
   (unknown fields kept, unreadable files left alone); save a selection as a structure; export and
   import JSON (download, clipboard).
-- [ ] **S3** — Editing tools: box select with an outline and its size, set anchor, fill, copy and
-  paste with a ghost preview, rotate and mirror, undo/redo; the region edit message (about 32³ per
-  request) with server validation and golden tests; the DOM UI.
+- [x] **S3a** — Editing tools: box select with an outline and its size, fill (also hollow, replace,
+  remove), copy and paste with a ghost preview, rotate and mirror, undo/redo (`dwell-game`
+  `region_tools.rs`); the `RegionEdit` message (≤ 32³ per request, negotiated within the 0.10 line
+  by a `regionEdits` Welcome flag, ARCHITECTURE.md §10.5) with server validation
+  (`dwell-world` `region.rs`) and golden tests; the DOM UI (a status line above the hotbar, the
+  controls table).
+- [ ] **S3b** — Set anchor (moved here from S3: it belongs with saving a selection as a structure,
+  S2b); touch controls for the region tools.
 - [ ] **S4** — *Deferred (owner: decided once structures exist).* Placement in worldgen, after Phase
   17: placement rules in the terrain definition, hashed jittered-grid placement, conditions, LOD
   handling, goldens; a new ADR revisiting B10, and a new compatibility line.
@@ -2730,8 +2737,17 @@ Exit criteria
   faint texture on the floor may be wanted (owner's call).
 - [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test.
-- [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
-  over the cap or outside the build volume are rejected (test).
+- [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e; needs S2a's
+  world type — covered natively meanwhile by `dwell-client` `game_local` and `dwell-game`
+  `region_tools` tests).
+- [x] S3: region edits over the cap or outside the build volume are rejected (`dwell-sim`
+  `tests/region_edits.rs`, `dwell-world` `region.rs` tests).
+
+Deviations (S3a): region edits leave **indestructible** cells as they are — the registry's existing
+`indestructible` flag and the same check single breaks make, not a new `breakable` flag
+(coordinator, 2026-10-14). `RegionEdit` ships without a `protocolVersion` bump: an older server
+rejects unknown messages, so it is gated by the `regionEdits` Welcome flag instead (ARCHITECTURE.md
+§10.5); a new compatibility line was not needed.
 
 Deviations (S1):
 - Choices are **per voxel** (each cell draws independently, hashed from the seed and the unturned

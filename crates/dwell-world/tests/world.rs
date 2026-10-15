@@ -382,18 +382,32 @@ fn a_block_placed_into_a_chunk_read_as_sky_is_seen() {
 }
 
 #[test]
-fn a_box_reads_in_layer_order_across_chunk_borders() {
-    // A streamed (client's) world: chunks it doesn't hold read as air, nothing is generated.
+fn a_box_reads_in_a_structures_layer_order_across_chunk_borders() {
+    // Saving a structure reads the client's world through `region::read_box` (STRUCTURES.md §4):
+    // its order is a structure file's layers (y-slices, z-rows, x fastest).
     let mut world = VoxelWorld::streamed();
     // The box straddles chunk borders on every axis (chunks are 32 cells), at negative coordinates.
     let min = [-2, 30, -1];
-    let size = [4u32, 3, 2];
+    let size = [4, 3, 2];
+    for (x, y, z) in [
+        (-2, 30, -1),
+        (1, 33, 1),
+        (-2, 30, 1),
+        (1, 30, -1),
+        (-2, 33, -1),
+        (1, 33, -1),
+        (-2, 33, 1),
+        (1, 30, 1),
+    ] {
+        // Every chunk the box covers is held (a missing one reads as None, not air).
+        world.set_voxel(x, y, z, s("dwell:air"));
+    }
     world.set_voxel(-2, 30, -1, s("dwell:stone")); // (0, 0, 0)
     world.set_voxel(1, 30, -1, s("dwell:dirt")); // (3, 0, 0): x is fastest
     world.set_voxel(-2, 30, 0, s("dwell:sand")); // (0, 0, 1): then z
     world.set_voxel(-1, 32, 0, s("dwell:grass")); // (1, 2, 1): y slowest
     world.set_voxel(2, 30, -1, s("dwell:stone")); // just outside the box
-    let cells = world.read_box(min, size);
+    let cells = dwell_world::region::read_box(&mut world, min, size).expect("loaded");
     assert_eq!(cells.len(), 4 * 3 * 2);
     let at = |x: usize, y: usize, z: usize| cells[(y * 2 + z) * 4 + x];
     assert_eq!(at(0, 0, 0), s("dwell:stone"));
@@ -402,7 +416,11 @@ fn a_box_reads_in_layer_order_across_chunk_borders() {
     assert_eq!(at(1, 2, 1), s("dwell:grass"));
     let filled = cells.iter().filter(|&&c| c != s("dwell:air")).count();
     assert_eq!(filled, 4, "the cell outside the box is not read");
-    assert!(world.read_box(min, [0, 3, 2]).is_empty());
+    // A box reaching into a chunk the client doesn't hold is not read as air.
+    assert_eq!(
+        dwell_world::region::read_box(&mut world, min, [4, 3, 40]),
+        None
+    );
 }
 
 #[test]

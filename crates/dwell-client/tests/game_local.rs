@@ -12,8 +12,9 @@ use dwell_client::local::{LOCAL_SESSION, LocalCore};
 use dwell_client::net::session::{Out, Session, SessionState};
 use dwell_client::pool::{InlineJobs, Pool};
 use dwell_client::render::display::RenderStats;
-use dwell_client::render::{Line, PlayerView, StandIn};
+use dwell_client::render::{Line, PlayerView, RegionBox, StandIn};
 use dwell_game::input::{EditAction, KeyboardMouseInput};
+use dwell_game::region_tools::ToolAction;
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_protocol::{Channel, TransportKind};
@@ -32,6 +33,7 @@ struct Recorder {
     shown: Vec<i64>,
     camera: Option<[f64; 3]>,
     outline: Option<[f64; 3]>,
+    region_boxes: Vec<RegionBox>,
 }
 
 impl Scene for Recorder {
@@ -66,6 +68,9 @@ impl Scene for Recorder {
     }
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _height: f64) {
         self.outline = cell;
+    }
+    fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
+        self.region_boxes = boxes.to_vec();
     }
     fn set_debug_lines(&mut self, _lines: Option<&[Line]>) {}
     fn stats(&self) -> RenderStats {
@@ -250,6 +255,56 @@ fn joins_streams_walks_and_breaks_a_block() {
     assert!(
         rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == 0),
         "the server's modification arrives and the block is gone"
+    );
+}
+
+#[test]
+fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined { region_edits, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    assert!(region_edits, "the local server announces region edits");
+    rig.game.as_mut().unwrap().region.enabled = region_edits;
+    rig.input.look.pitch = -60.0;
+    assert!(rig.run_until(30, |r| {
+        r.game.as_ref().unwrap().debug_state().target.is_some()
+    }));
+    let [x, y, z] = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell;
+    let game = rig.game.as_mut().unwrap();
+    let before = game.voxel(x, y, z);
+    let stone = dwell_blocks::require("dwell:stone");
+    assert_ne!(before, stone);
+    game.interaction.select(0); // stone
+    assert!(!game.tool(ToolAction::CornerA, rig.now));
+    assert_eq!(
+        rig.scene.borrow().region_boxes.len(),
+        1,
+        "the selection is outlined"
+    );
+    assert_eq!(rig.scene.borrow().region_boxes[0].size, [1.0; 3]);
+    assert!(game.tool(ToolAction::Fill, rig.now), "the fill is sent");
+    assert!(
+        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == stone),
+        "the server's modification arrives"
+    );
+    let now = rig.now;
+    assert!(rig.game.as_mut().unwrap().tool(ToolAction::Undo, now));
+    assert!(
+        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == before),
+        "undo puts the block back"
     );
 }
 

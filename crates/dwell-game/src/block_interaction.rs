@@ -239,34 +239,6 @@ impl BlockInteraction {
             material,
         }))
     }
-
-    /// An edit of a given cell and face, not the crosshair's (the structure stamp, ui/structures;
-    /// STRUCTURES.md §4): Break `cell`, or Place `material` against its `face`. The same rate
-    /// limit as `act` (it shares the last edit's time); the server validates it like any other.
-    /// TODO(S3): the region edit message replaces stamping a structure one block at a time.
-    pub fn act_at(
-        &mut self,
-        action: EditAction,
-        cell: [i32; 3],
-        face: u8,
-        material: StateId,
-        now_ms: f64,
-    ) -> Option<Message> {
-        if face > 5 || now_ms - self.last_edit_ms < players::BLOCK_EDIT_INTERVAL_MS as f64 {
-            return None;
-        }
-        self.last_edit_ms = now_ms;
-        let (action, material) = match action {
-            EditAction::Break => (BlockEditAction::Break, 0),
-            EditAction::Place => (BlockEditAction::Place, material),
-        };
-        Some(Message::BlockEditRequest(BlockEditRequest {
-            action,
-            cell,
-            face,
-            material,
-        }))
-    }
 }
 
 #[cfg(test)]
@@ -388,47 +360,6 @@ mod tests {
                     material: require("dwell:dirt"),
                 }),
             ]
-        );
-    }
-
-    #[test]
-    fn edits_a_given_cell_within_the_same_rate_limit() {
-        let mut world = FakeTarget::default();
-        let mut interaction = BlockInteraction::new();
-        let interval = players::BLOCK_EDIT_INTERVAL_MS as f64;
-        let stone = require("dwell:stone");
-        // No target needed: the cell and face are given.
-        let m = interaction
-            .act_at(EditAction::Place, [7, 8, 9], 2, stone, 0.0)
-            .unwrap();
-        assert_eq!(
-            request(&m),
-            &BlockEditRequest {
-                action: BlockEditAction::Place,
-                cell: [7, 8, 9],
-                face: 2,
-                material: stone,
-            }
-        );
-        // One clock for both: a crosshair edit right after waits too, and the other way round.
-        interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 0.0, 0.0, 1);
-        assert!(interaction.act(EditAction::Break, interval - 1.0).is_none());
-        assert!(interaction.act(EditAction::Break, interval).is_some());
-        assert!(
-            interaction
-                .act_at(EditAction::Break, [1, 2, 3], 0, stone, 2.0 * interval - 1.0)
-                .is_none()
-        );
-        let m = interaction
-            .act_at(EditAction::Break, [1, 2, 3], 0, stone, 2.0 * interval)
-            .unwrap();
-        assert_eq!(request(&m).action, BlockEditAction::Break);
-        assert_eq!(request(&m).material, 0);
-        assert!(
-            interaction
-                .act_at(EditAction::Place, [0; 3], 6, stone, 10.0 * interval)
-                .is_none(),
-            "no such face"
         );
     }
 

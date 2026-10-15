@@ -39,6 +39,9 @@ import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import { StructuresPanel } from './ui/structuresPanel';
+import { opfsStructureDir, StructureStore } from './local/structureStore';
+import { clipboardOf, type Vec3 as Cell } from './local/structures';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -82,6 +85,8 @@ interface DwellDebug {
   view(): { yaw: number; pitch: number };
   /** Breaks or places at the crosshair, as a click does (§6.5). */
   edit(action: 'break' | 'place'): boolean;
+  /** Runs a region tool by name (`fill`, `copy`, `undo`, … — `Client.tool`), as its key does. */
+  tool(name: string): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
@@ -239,6 +244,10 @@ function toggleDebug(app: App): void {
 function forwardInput(app: App): void {
   const { canvas, client } = app;
   window.addEventListener('keydown', (e) => {
+    // Typing in a field of the menu (a structure's name, pasted JSON) is not playing.
+    const t = e.target;
+    if (t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.type !== 'range'))
+      return;
     if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
@@ -310,12 +319,14 @@ function showHud(app: App, now: number): void {
     health?: number;
     debug?: string | null;
     damaged?: boolean;
+    region?: string;
   };
   if (h.message === undefined) return;
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
+  app.hotbar?.setRegion(h.region ?? '');
   if (h.debug) app.hud.setDebug(h.debug);
 }
 
@@ -422,6 +433,30 @@ async function start(): Promise<App | null> {
       },
     },
   ]);
+  // The Structures page (STRUCTURES.md §4): the browser's structures store, saved from and
+  // loaded into this world through the region tools.
+  const structures = new StructuresPanel({
+    store: new StructureStore(opfsStructureDir()),
+    selection: () => {
+      const s = client.selection();
+      return s.length === 6
+        ? { min: [s[0], s[1], s[2]] as Cell, size: [s[3], s[4], s[5]] as Cell }
+        : null;
+    },
+    read: (min, size) => client.voxels(...min, ...size),
+    feet: () => (client.debugState() as GameDebugState | null)?.feet ?? null,
+    target: () => (client.debugState() as GameDebugState | null)?.target?.cell ?? null,
+    load: (s) => {
+      const { cells, keep } = clipboardOf(s);
+      return client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+    },
+    close: () => {
+      settings.setOpen(false);
+    },
+  });
+  settings.addStructuresPanel(structures.element, () => {
+    void structures.refresh();
+  });
   app.hud.onToggleMap = () => {
     app.map.toggle();
   };
@@ -448,6 +483,7 @@ async function start(): Promise<App | null> {
       return { yaw, pitch };
     },
     edit: (action) => client.edit(action, performance.now()),
+    tool: (name) => client.tool(name, performance.now()),
     select: (slot) => {
       client.select(slot);
     },

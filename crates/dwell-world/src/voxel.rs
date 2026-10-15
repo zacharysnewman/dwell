@@ -510,23 +510,6 @@ impl VoxelWorld {
         )
     }
 
-    /// The states of the box of `size` cells from its lowest corner `min`, in a structure's layer
-    /// order (STRUCTURES.md §3): y-slices bottom up, each z-rows north to south, each x west to
-    /// east, so cell (x, y, z) is at `(y * size[2] + z) * size[0] + x`. A world with a generator
-    /// generates the chunks it covers; a client's world reads chunks it doesn't hold as air.
-    pub fn read_box(&mut self, min: [i32; 3], size: [u32; 3]) -> Vec<StateId> {
-        let [sx, sy, sz] = size.map(|n| n as i32);
-        let mut out = Vec::with_capacity(size.iter().map(|&n| n as usize).product());
-        for y in 0..sy {
-            for z in 0..sz {
-                for x in 0..sx {
-                    out.push(self.get_voxel(min[0] + x, min[1] + y, min[2] + z));
-                }
-            }
-        }
-        out
-    }
-
     pub fn set_voxel(&mut self, x: i32, y: i32, z: i32, m: StateId) {
         let c = chunk_of(x, y, z);
         self.get_or_create(c).set(

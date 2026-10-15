@@ -590,7 +590,7 @@ impl Client {
         let mut s = self.inner.borrow_mut();
         let k = s.input.key_down(code, repeat, ctrl, meta, time_stamp_ms);
         for e in k.events {
-            s.on_input_event(e);
+            s.on_input_event(e, time_stamp_ms);
         }
         k.prevent_default
     }
@@ -749,6 +749,34 @@ impl Client {
         };
         self.inner.borrow_mut().edit(action, now_ms)
     }
+    /// Runs a region tool by name (`cornerA`, `cornerB`, `deselect`, `fill`, `hollow`, `replace`,
+    /// `clear`, `copy`, `pasteMode`, `rotate`, `mirror`, `paste`, `undo`, `redo`) as its key would;
+    /// true if it sent a region edit. For tools and tests (keys need the pointer locked).
+    pub fn tool(&self, name: &str, now_ms: f64) -> bool {
+        use dwell_game::region_tools::ToolAction as T;
+        let tool = match name {
+            "cornerA" => T::CornerA,
+            "cornerB" => T::CornerB,
+            "deselect" => T::Deselect,
+            "fill" => T::Fill,
+            "hollow" => T::Hollow,
+            "replace" => T::Replace,
+            "clear" => T::Clear,
+            "copy" => T::Copy,
+            "pasteMode" => T::PasteMode,
+            "rotate" => T::Rotate,
+            "mirror" => T::Mirror,
+            "paste" => T::Paste,
+            "undo" => T::Undo,
+            "redo" => T::Redo,
+            _ => return false,
+        };
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .is_some_and(|g| g.tool(tool, now_ms))
+    }
     pub fn select(&self, slot: i32) {
         let mut s = self.inner.borrow_mut();
         if let Some(g) = &mut s.game {
@@ -786,11 +814,12 @@ impl Client {
             .map_or(0, |g| g.voxel(x, y, z))
     }
     /// The client's states in the box of `sx × sy × sz` cells from its lowest corner, in a
-    /// structure's layer order (y-slices, z-rows, x fastest; `VoxelWorld::read_box`): saving a
-    /// structure (STRUCTURES.md §4). Empty before playing, or for a box over `MAX_VOXEL_READ`.
+    /// structure's layer order (y-slices, z-rows, x fastest; `region::read_box`): saving a
+    /// structure (STRUCTURES.md §4). Empty before playing, where a chunk of the box isn't loaded,
+    /// or for a box over `MAX_VOXEL_READ`.
     pub fn voxels(&self, x: i32, y: i32, z: i32, sx: u32, sy: u32, sz: u32) -> Vec<u16> {
         let cells = u64::from(sx) * u64::from(sy) * u64::from(sz);
-        if cells > MAX_VOXEL_READ {
+        if cells == 0 || cells > MAX_VOXEL_READ {
             return Vec::new();
         }
         self.inner
@@ -799,40 +828,39 @@ impl Client {
             .as_mut()
             .map_or_else(Vec::new, |g| g.voxels([x, y, z], [sx, sy, sz]))
     }
-    /// Breaks (`"break"`) cell (x, y, z) or places `material` against its `face`: the structure
-    /// stamp's edits, at the same rate limit as the crosshair's. False when too soon or not
-    /// playing. TODO(S3): the region edit replaces stamping one block at a time.
-    #[wasm_bindgen(js_name = editAt)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn edit_at(
-        &self,
-        action: &str,
-        x: i32,
-        y: i32,
-        z: i32,
-        face: u8,
-        material: u16,
-        now_ms: f64,
-    ) -> bool {
-        let action = if action == "place" {
-            EditAction::Place
-        } else {
-            EditAction::Break
-        };
-        self.inner
-            .borrow_mut()
-            .game
-            .as_mut()
-            .is_some_and(|g| g.edit_at(action, [x, y, z], face, material, now_ms))
-    }
-    /// The eye the last frame aimed from, `[x, y, z]`; empty while not playing.
-    pub fn eye(&self) -> Vec<f64> {
+    /// The box selected with the region tools (B, N): `[x, y, z, sx, sy, sz]` (its lowest corner
+    /// and size); empty with none. Saving a structure saves it when there is one.
+    pub fn selection(&self) -> Vec<i32> {
         self.inner
             .borrow()
             .game
             .as_ref()
-            .and_then(|g| g.eye())
-            .map_or_else(Vec::new, |e| e.to_vec())
+            .and_then(|g| g.region.selection())
+            .map_or_else(Vec::new, |(min, size)| [min, size].concat())
+    }
+    /// Loads a structure into the region tools' clipboard and turns paste mode on: the ghost box
+    /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
+    /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
+    /// error message, or empty when loaded.
+    #[wasm_bindgen(js_name = loadStructure)]
+    pub fn load_structure(
+        &self,
+        sx: i32,
+        sy: i32,
+        sz: i32,
+        cells: Vec<u16>,
+        keep: Vec<u8>,
+        label: &str,
+    ) -> String {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = s.game.as_mut() else {
+            return "Not playing".into();
+        };
+        let keep: Vec<bool> = keep.iter().map(|&k| k != 0).collect();
+        match g.region.load_clipboard([sx, sy, sz], cells, keep, label) {
+            Ok(()) => String::new(),
+            Err(e) => e,
+        }
     }
     pub fn fly(&self, on: bool) {
         let mut s = self.inner.borrow_mut();
@@ -988,6 +1016,7 @@ impl Client {
                 g.hud.debug.as_deref().map_or(JsValue::NULL, JsValue::from),
             );
             set(&o, "damaged", std::mem::take(&mut g.hud.damaged));
+            set(&o, "region", g.region.status().as_str());
         }
         o.into()
     }
@@ -1182,7 +1211,7 @@ impl Inner {
         self.game.as_mut().is_some_and(|g| g.edit(action, now_ms))
     }
 
-    fn on_input_event(&mut self, e: InputEvent) {
+    fn on_input_event(&mut self, e: InputEvent, now_ms: f64) {
         match e {
             InputEvent::Toggle(key) => self.shell_events.push(shell_event("toggle", key)),
             InputEvent::Digit(code) => {
@@ -1198,6 +1227,11 @@ impl Inner {
                 }
             }
             InputEvent::FlightChanged(on) => self.shell_events.push(shell_event("flight", on)),
+            InputEvent::Tool(tool) => {
+                if let Some(g) = &mut self.game {
+                    g.tool(tool, now_ms);
+                }
+            }
         }
     }
 
@@ -1327,6 +1361,7 @@ impl Inner {
             generator_version,
             verification_chunk,
             may_fly,
+            region_edits,
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;
@@ -1358,6 +1393,7 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
+        game.region.enabled = region_edits;
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }
