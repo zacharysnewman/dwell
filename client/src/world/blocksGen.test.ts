@@ -14,10 +14,12 @@ let root = '';
 function generate(blocks: object[]): { status: number | null; output: string; rust: string } {
   root = mkdtempSync(join(tmpdir(), 'dwell-blocks-'));
   const here = join(root, 'shared/blocks');
-  mkdirSync(here, { recursive: true });
+  // The fixture run (`gen.mjs --fixture`) reads fixtures/; none here.
+  mkdirSync(join(here, 'fixtures'), { recursive: true });
   mkdirSync(join(root, 'client/src/world'), { recursive: true });
   mkdirSync(join(root, 'crates/dwell-blocks/src'), { recursive: true });
-  for (const f of ['gen.mjs', 'shapes.mjs']) copyFileSync(join(blocksDir, f), join(here, f));
+  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs'])
+    copyFileSync(join(blocksDir, f), join(here, f));
   const air = { name: 'air', density: 0, shape: 'empty', color: '#000000', opacity: 0 };
   writeFileSync(
     join(here, 'dwell.json'),
