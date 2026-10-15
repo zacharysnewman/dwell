@@ -1,9 +1,16 @@
 // The launcher (RELEASES.md §5): `https://dropkickarcade.com/dwell/`, the one page that is not
-// versioned. It reads `versions.json`, picks the build the address needs (a world's, a host's or
-// the latest) and replaces itself with it, keeping the query. Everything else is an error page
-// that offers the latest version.
-import { isBuildOf, parseManifest, type Manifest } from './manifest';
+// versioned. A plain visit shows the main menu (src/ui/menuPage.ts), so the menu is the same
+// whichever build plays; an address with a route (a world, a game, a build) is sent to the build
+// it needs, keeping the query. Everything else is an error page that offers the latest version.
+import '../../src/style.css';
+import './style.css';
+import { buildInfo } from '../../src/buildInfo';
+import { WorldIndex } from '../../src/local/worldIndex';
+import { withRoute } from '../../src/ui/launch';
+import { showMenu, type PingServer } from '../../src/ui/menuPage';
+import { isBuildOf, parseManifest, type BuildEntry, type Manifest } from './manifest';
 import {
+  canRegenerate,
   choose,
   forwardedSearch,
   isPlainVisit,
@@ -174,7 +181,10 @@ function showVersions(manifest: Manifest): void {
 /** Opens a build from the version page, checking first that it is there. */
 async function openBuild(manifest: Manifest, version: string): Promise<void> {
   if (await published(version)) {
-    location.assign(buildUrl(version));
+    // The launcher's menu, pinned to that build for this visit.
+    location.assign(
+      `${new URL('./', location.href).pathname}?version=${encodeURIComponent(version)}`,
+    );
     return;
   }
   show(`Dwell ${version} couldn't be loaded. It may have been removed.`, [
@@ -188,27 +198,39 @@ async function openBuild(manifest: Manifest, version: string): Promise<void> {
 }
 
 /**
- * The screen a plain visit lands on (Phase 6b): the launcher is unversioned, so this is where the
- * version choice lives whatever build was played last. Nothing happens until a button is pressed;
- * Play opens the latest build (the stable one unless the player opted into dev builds).
+ * The main menu, the launcher's (a plain visit): every choice comes back here as a route. `pinned`:
+ * a build chosen on the version page (`?version=`, this visit only), which the choices keep.
  */
-function landing(version: string): Promise<'play' | 'pick'> {
-  return new Promise((resolve) => {
-    show('Welcome to Dwell.', [
-      {
-        label: `Play Dwell ${version}`,
-        run: () => {
-          resolve('play');
-        },
-      },
-      {
-        label: 'Choose version',
-        run: () => {
-          resolve('pick');
-        },
-      },
-    ]);
-    actions?.querySelector('button')?.focus();
+function menu(manifest: Manifest, pinned?: BuildEntry): void {
+  const latest = pinned ?? latestBuild(manifest, channel());
+  document.getElementById('launcher')?.remove();
+  const base = new URL('./', location.href);
+  const index = new WorldIndex(storage());
+  showMenu({
+    go: (route) => {
+      location.assign(`${base.pathname}${withRoute(location.search, route)}`);
+    },
+    ...(new URLSearchParams(location.search).get('say')
+      ? { message: new URLSearchParams(location.search).get('say') ?? '' }
+      : {}),
+    version: latest?.version ?? '?',
+    channel: latest?.channel ?? 'stable',
+    protocol: latest?.protocolVersion ?? 0,
+    detail: `Launcher ${buildInfo.sha.slice(0, 7)}, ${buildInfo.time.slice(0, 10)}.`,
+    versionsHref: `${base.pathname}?versions`,
+    noticesHref: latest ? new URL('THIRD_PARTY_NOTICES.txt', buildUrl(latest.version)).href : '#',
+    // The latest build's networking pings servers (its tools.js); none before it had one.
+    ...(latest
+      ? {
+          ping: async () =>
+            (
+              (await import(
+                /* @vite-ignore */ new URL('tools.js', buildUrl(latest.version)).href
+              )) as { ping: PingServer }
+            ).ping,
+        }
+      : {}),
+    canRegenerate: (world) => canRegenerate(manifest, index.get(world.id)?.appVersion ?? null),
   });
 }
 
@@ -229,6 +251,17 @@ async function run(): Promise<void> {
     showVersions(manifest);
     return;
   }
+  // A build chosen on the version page, and nothing else asked: its menu.
+  const params = new URLSearchParams(location.search);
+  const pinned = params.get('version');
+  if (pinned) {
+    params.delete('version');
+    const entry = manifest.versions.find((e) => e.version === pinned);
+    if (entry && isPlainVisit(`?${params.toString()}`)) {
+      menu(manifest, entry);
+      return;
+    }
+  }
   const choice = choose(manifest, { search: location.search, worldVersion, channel: channel() });
   const latest = latestBuild(manifest, channel());
   const offerLatest = latest
@@ -246,10 +279,8 @@ async function run(): Promise<void> {
     return;
   }
   if (choice.why === 'latest' && isPlainVisit(location.search)) {
-    if ((await landing(choice.version)) === 'pick') {
-      showVersions(manifest);
-      return;
-    }
+    menu(manifest);
+    return;
   }
   if (!(await published(choice.version))) {
     show(`Dwell ${choice.version} couldn't be loaded. It may have been removed.`, [

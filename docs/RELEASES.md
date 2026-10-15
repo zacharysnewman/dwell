@@ -158,121 +158,15 @@ key). Same-origin version directories satisfy all of that with no exceptions.
 
 ## 5. The launcher
 
-`https://dropkickarcade.com/dwell/` is the launcher — tiny, stable, and the only page that is not
-versioned:
-
-1. Fetch `versions.json` (same origin; GitHub's tags API is not needed at runtime and its rate
-   limits are avoided).
-2. Pick the version:
-   - `?play=<world id>` → the newest published build that may open the world (§6);
-   - a friend-world code or invite → the newest published build on the host's compatibility line
-     (the master reports the host's version, §7);
-   - a dedicated server address → the latest stable; if the server is on another compatibility
-     line, its `Reject` names its version and the client offers to reopen in a build of that line;
-   - otherwise → the latest stable (or dev, if chosen in settings), which shows the main menu.
-   - an invite or code link carries `v=<host version>` (`dwell_server` prints it, hosts' share
-     links add it; the game also redirects to `?code=…&v=…` after the master reports a host on
-     another line), which the launcher routes the same way as the master's version;
-   - `?version=<version>` pins a build (developers); the player's channel choice (`dwell.channel`,
-     the version page's tick) picks dev instead of stable for the latest.
-3. Navigate to `/dwell/v/<version>/` with the same query (minus `version`), by `location.replace`
-   (no extra history entry), after checking that the version's `build.json` loads and names it.
-
-**Version page [built, Phase 6b]:** a plain visit to `/dwell/` first shows a launcher screen (**Play Dwell
-<latest stable>** and **Choose version**; it waits for a click, no auto-continue), so the choice does not
-depend on the build last played; links naming a world, game or build skip it. `/dwell/?versions` lists every published build so players can
-choose one themselves; the main menu's **Versions** link opens it, and it holds the "Show dev builds" tick (`dwell.channel`). It lives in the launcher because published
-builds are immutable. A choice opens that build for the visit only, so Back to the menu still
-returns to the latest. Worlds stay locked to their line (§6), and the page shows which of the
-player's worlds each build can open.
-
-**Back to the menu always goes to `/dwell/`**, so a player is never stuck in an old version's
-menu. Links shared by players use `/dwell/?…`, never a version path, so they keep working.
-Missing or unreachable versions show a clear message with the choice to open the latest.
-
-## 6. Worlds locked to their compatibility line
-
-- **Recorded:** a world's file stores `app_version_created` and `app_version_last` (the version that
-  last saved it) in its metadata (ADR 0006: the world file holds all data), and the browser's world
-  index (`dwell.worlds`) record stores `appVersion` (= the last).
-- **Compatibility line** (owner, 2026-10-05, following SemVer §3): versions that share MAJOR — and,
-  before `1.0.0`, MINOR (`0.1.x`) — are compatible: same world format, same generated terrain, same
-  protocols. A **pre-release** (dev build) promises no compatibility: its worlds are locked to that
-  exact build.
-- **Saves from before the launcher are not carried over** (owner, 2026-10-05). The first versioned
-  release — the **baseline** — starts clean: world files and index records without an app version
-  are ignored (the menu offers to delete them, so they do not hold storage quota), and no earlier
-  format is migrated. From the baseline on, locking means **no world ever needs migrating**: a
-  world only ever opens in builds of its own compatibility line, so later phases may change the
-  world file format, the block registry and the generator freely (upgrading worlds is the
-  [`FUTURE.md`](./FUTURE.md) item).
-- **Opening:** a build opens a world only if it is on the world's compatibility line **and** its
-  version is at least `app_version_last` — never older, because a compatible release may add data
-  an older build would not understand (forward compatibility is not promised). The launcher routes
-  `?play=` to the newest published build that qualifies, so a world moves onto fixes and compatible
-  features automatically. The menu (in the latest version) lists **all** worlds with a version
-  badge; playing one from another line navigates to it through the launcher.
-- **Dedicated servers:** `dwell_server` refuses a world from another compatibility line, or last
-  saved by a newer version, naming the version to run (an override flag is left for the later
-  upgrade work).
-- **Shared storage is a cross-version contract.** Every version reads and writes the same
-  localStorage index, settings and IndexedDB keys, so their formats become **append-only**: new
-  fields optional, and **unknown fields preserved** on rewrite (older builds must not drop a field
-  a newer build added). The baseline release must already follow this, or it will strip
-  `appVersion` from records it rewrites; a test pins it.
-- **Retention:** the newest stable build of every compatibility line that saved worlds may use
-  must stay published; older patch releases of a line can be pruned (their worlds open in the
-  line's newest build). The launcher tells the player when no build of a world's line is
-  available (and offers export, Phase 23).
-  **Pruned (owner, 2026-10-14):** every release except `v0.1.0` (the first build; checked to
-  still start a local world under the current launcher) and `v0.10.0` and newer was deleted with
-  its tag — the 0.1.1 and 0.2–0.9 lines are gone, so worlds last saved on them get the launcher's
-  "no published build can open this world" message.
-
-## 7. Multiplayer and the master server
-
-- Friend-world rooms and dedicated-server listings carry the host's **app version** (as well as
-  `protocolVersion`). The protocol is part of the public API (§3), so any build on the host's
-  compatibility line can join: the server browser marks other lines incompatible, and join-by-code
-  opens the newest build of the host's line directly (this replaces the Phase 23 item "the server browser offers the build matching an
-  incompatible server").
-- The handshake's version check stays; its rejection names the server's app version.
-- The master server's own deploy is unchanged (it runs from this repository's CI with its
-  secrets).
-
-## 8. Manual setup (owner)
-
-1. ~~Choose the license (§2).~~ Done: all rights reserved (2026-10-05).
-2. Nothing to change in the repository settings for the workflows: they declare the permissions they
-   need (`contents: write` to create and prune releases, `pages: write` and `id-token: write` to
-   deploy). If the repository's default workflow permissions are restricted, that is fine; if
-   *organization* policy blocks `contents: write` for workflows, allow it.
-3. ~~The first stable release, `0.1.0` (the baseline).~~ Done: published on 2026-10-06 by the push
-   that merged #47 (`package.json` said `0.1.0` and nothing was released). Still worth a look: that
-   `https://dropkickarcade.com/dwell/` loads it through the launcher, the main menu works, and new
-   worlds record the version.
-4. Nothing to bump afterwards (**Releasing**, step 3).
-
-## 9. How the phase is checked
-
-Automated in CI unless noted: `shared/version/vectors.txt` through both implementations (TypeScript
-and C++, native and WASM); `dwell_version_lock` (the real `dwell_server` on world files saved by other
-versions); the world index contract tests; `client/scripts/*.test.ts` (which releases the site holds,
-the manifest, what a release run builds); the launcher's unit tests; and `npm run e2e:site` (below).
-Not automated: the workflows themselves; their first real runs were the merges of #46 and #47 (§8).
-
-- A release produces a tag and a GitHub Release holding the build and `build.json`; the site lists it
-  in `versions.json` and serves it at `/dwell/v/<version>/`.
-- e2e (against a locally assembled site with two versions): the launcher opens the latest stable;
-  `?play=` opens a world in the newest build of its line; an invite opens a build of the host's
-  line; Back returns to `/dwell/`; a world from another line is listed with its badge and opens in
-  its line.
-- Compatibility (with `0.1.0`, `0.1.1`, `0.2.0` and `0.2.0-dev.1` builds): a world saved by `0.1.0`
-  opens in `0.1.1`; one saved by `0.1.1` does not open in `0.1.0`; neither opens in `0.2.0`; a
-  dev build's world opens only in that dev build — in the browser and in `dwell_server`, with a
-  message naming the version to use.
-- Cross-version storage: an older build rewriting the world index preserves fields it does not
-  know (a test with a record carrying an extra field).
-- Worlds saved before the baseline are ignored without errors and can be deleted from the menu.
-- `LICENSE` present and referenced from the package manifests and README; every build carries
-  `THIRD_PARTY_NOTICES`, reachable from the menu.
+**The launcher owns the main menu (owner, 2026-10-14; builds from 0.10.3).** A plain visit to
+`/dwell/` shows the main menu itself (`src/ui/menuPage.ts`, the same module a build served at
+`/dwell/` in development shows), so the menu is the same whichever build plays and changes with
+the launcher, not with releases. Every choice is a route the launcher sends to the build it needs:
+playing (`?play=`), joining (`?join=`, `?code=`), and — carried out by the build that will own the
+world — creating (`?new=1&name=…&seed=…&type=…`, the latest build) and regenerating
+(`?regenerate=<id>`, offered only where that build is 0.10.3 or newer). A build opened with no
+route hands over to the launcher (`?say=` carries why). The version page's Play pins the menu to
+that build for the visit (`/dwell/?version=…`). The server browser pings with the latest build's
+networking, loaded from its fixed-name `tools.js`. Older builds (0.1.0, 0.10.0–0.10.2) already
+start from these routes and return to `/dwell/` on Quit; their own menus are never shown. No new
+infrastructure: everything is served from Pages, same origin.

@@ -60,6 +60,9 @@ jobs:
           done
       - name: Build the launcher and the manifest
         working-directory: client
+        env:
+          # The launcher shows the main menu, which talks to the master (addresses, lobby).
+          VITE_MASTER_URL: ${{ vars.VITE_MASTER_URL }}
         run: |
           npm run build:launcher
           cp -r dist-launcher/. ../site/

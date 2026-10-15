@@ -1,52 +1,72 @@
-html,
-body {
-  margin: 0;
-  height: 100%;
-  background: #0b0d12;
-  color: #e6e8ee;
-  font-family: system-ui, sans-serif;
-}
-
+/* The launcher's own screens (the version page, errors): the menu's sky and panel
+   (src/style.css, imported first, holds the tokens). */
 #launcher {
+  box-sizing: border-box;
+  max-width: 640px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 32px) var(--safe-right) var(--safe-bottom) var(--safe-left);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100%;
-  padding: 24px;
-  box-sizing: border-box;
+  align-items: stretch;
+  gap: 14px;
+  overflow-y: auto;
+  color: var(--ink);
   text-align: center;
 }
 
+body:has(#launcher) {
+  overflow: auto;
+  background: linear-gradient(180deg, var(--sky-deep), var(--sky) 45%, var(--haze));
+}
+
 #launcher h1 {
-  margin: 0 0 12px;
-  font-size: 32px;
+  margin: 0;
+  color: #fff;
+  font: 900 64px/1 var(--font-display);
+  text-shadow:
+    0 2px 0 var(--grass-light),
+    0 4px 0 var(--grass-dark),
+    0 6px 0 var(--earth),
+    0 12px 18px rgb(31 43 56 / 25%);
 }
 
 #launcher-status {
-  max-width: 460px;
-  margin: 0 0 16px;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--paper);
+  font-size: 15px;
   line-height: 1.4;
 }
 
-#launcher-actions button {
-  padding: 8px 14px;
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 6px;
-  background: rgb(120 170 255 / 30%);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
+#launcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
 }
 
-#launcher #dev-toggle {
-  margin: 16px 0 8px;
+#launcher-actions button,
+.version-open {
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--grass-light), var(--grass) 55%);
+  box-shadow: 0 4px 0 var(--earth);
+  color: #fff;
+  font: 800 15px var(--font-display);
+}
+
+.version-open:disabled {
+  opacity: 0.45;
+}
+
+#dev-toggle {
   font-size: 14px;
 }
 
 #version-list {
-  width: 100%;
-  max-width: 520px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -54,42 +74,32 @@ body {
 }
 
 .version-row {
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border: 1px solid rgb(255 255 255 / 20%);
-  border-radius: 6px;
+  margin-bottom: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 6px 16px rgb(31 43 56 / 12%);
 }
 
 .version-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: 8px 12px;
+}
+
+.version-head strong {
+  font: 800 17px var(--font-display);
 }
 
 .version-meta {
   flex: 1;
+  color: var(--ink-soft);
   font-size: 13px;
-  opacity: 0.7;
-}
-
-.version-open {
-  padding: 8px 14px;
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 6px;
-  background: rgb(120 170 255 / 30%);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.version-open:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 .version-worlds {
   margin: 6px 0 0;
+  color: var(--ink-soft);
   font-size: 13px;
-  opacity: 0.8;
 }
