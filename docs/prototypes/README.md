@@ -8,7 +8,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 |---|---|---|---|
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
-| Tree Growth | [`tree-growth.html`](./tree-growth.html) | | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
+| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
 [ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
