@@ -516,8 +516,12 @@ Owned by the `Predictor` (the same `Physics` settings as the server):
   a `PlayerInput` datagram carrying the newest 4 inputs (`MAX_INPUTS_PER_DATAGRAM`).
 - **Server** (`dwell-sim`): inputs queue per session ordered by `inputSeq` (§11 validation; see
   ARCHITECTURE §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it
-  runs dry the last input repeats and the buffer re-primes; beyond 6 queued inputs the oldest are
-  skipped. The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
+  runs dry the last input repeats and the buffer re-primes; when the queue stays above 6 inputs for
+  a whole 30-tick window (its low-water mark), the excess is skipped to bound input latency (a
+  slow client's frame of inputs arrives at once and is not skipped; at most 32 are queued). The
+  client catches up at most 15 ticks a frame (250 ms; `MAX_TICKS_PER_FRAME`), so a device drawing
+  4 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the
+  server simulates, the repeated inputs walking it further than the prediction. The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
   ±2 % to keep it between 1 and 4 (clock drift between client and server otherwise starves or
   floods it).
 - **Snapshot (20 Hz):** compared with the stored entry for `ack_input_seq`: position within 1 cm,
@@ -641,7 +645,7 @@ water pools), Tier 1 boxes (static, kinematic or dynamic) as platforms and ramps
 and explosions, and per-player event counters. Expectations use Dwell's default config
 (recommended feel, voxel capsule). The **movement playground** — a block step, a doorway, a
 crawlspace, a ladder to a ledge and a pool near the spawn — is a structure file
-(`shared/structures/playground.structure`) stamped over the flat world by the netcode suite
+(`shared/structures/playground.json`) stamped over the flat world by the netcode suite
 (Phase 15; it was generator version 1 with slab stairs, slope features and a launch pad). The
 launch-pad knockback test is a server-issued knockback.
 

@@ -60,7 +60,10 @@ and linked from the menu's About screen) and beside the native server (copied ne
   - **The public API** — what compatibility means, as SemVer requires it to be declared: the saved
     world format, the terrain a seed generates, the network protocol (client ↔ server, and the
     master server's API), and the cross-version browser storage contract (§6). Changes that keep
-    all four compatible are compatible changes; anything else is a breaking change.
+    all four compatible are compatible changes; anything else is a breaking change. A new
+    client → server message is compatible only behind a `Welcome` flag (servers reject unknown
+    messages; clients ignore unknown flags), so builds of a line still play together
+    (ARCHITECTURE.md §10.5; the first is `RegionEdit`).
   - **From `1.0.0`** (launch): MAJOR for breaking changes, MINOR for compatible new features, PATCH
     for compatible fixes.
   - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention
@@ -164,7 +167,9 @@ key). Same-origin version directories satisfy all of that with no exceptions.
 the launcher, not with releases. Every choice is a route the launcher sends to the build it needs:
 playing (`?play=`), joining (`?join=`, `?code=`), and — carried out by the build that will own the
 world — creating (`?new=1&name=…&seed=…&type=…`, the latest build) and regenerating
-(`?regenerate=<id>`, offered only where that build is 0.10.3 or newer). A build opened with no
+(`?regenerate=<id>`, offered only where that build is 0.10.3 or newer). The build makes the
+world before its game client starts and replaces the route with `?play=<id>` at once, so a
+reload while the game loads continues the world rather than making another. A build opened with no
 route hands over to the launcher (`?say=` carries why). The version page's Play pins the menu to
 that build for the visit (`/dwell/?version=…`). The server browser pings with the latest build's
 networking, loaded from its fixed-name `tools.js`. Older builds (0.1.0, 0.10.0–0.10.2) already

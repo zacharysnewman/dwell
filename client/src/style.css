@@ -1483,6 +1483,22 @@ body:has(#main-menu) #build-info {
   text-transform: capitalize;
 }
 
+/* The region tools' line: selection size, paste mode, the last tool's message. */
+#hotbar-region {
+  max-width: min(90vw, 640px);
+  padding: 3px 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: var(--glass);
+  font: 700 12px var(--font-body);
+  text-align: center;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 60%);
+}
+
+#hotbar-region[hidden] {
+  display: none;
+}
+
 .hotbar-slots {
   display: flex;
   gap: 4px;
