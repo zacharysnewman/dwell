@@ -79,6 +79,39 @@ stop — the closest match; Vintage Story's trees are fully parametric JSON; Vel
   generates (public API), hashed into the terrain definition — and placement itself is deferred
   (ADR 0031).
 
+## 5a. The owner's persistence model (2026-10-14), mapped onto Dwell
+
+The owner proposed a five-part model for persistent chopping and planting across tens of thousands
+of trees. It fits Dwell, and parts of it already exist:
+
+| Owner's part | In Dwell today | What trees add |
+|---|---|---|
+| **1. Spatial grid**: chunks as the unit of loading, saving, simulating | Built: 32³ chunks, generate-on-access, eviction of unmodified chunks far from players | Tree records keyed by the chunk holding the root; a tree spanning chunks applies a stage only when all its chunks are loaded |
+| **2. Seed determinism**: unmodified trees regenerated from the seed, 0 bytes stored | Built for terrain: a revision-0 chunk is a pure function of the seed; the client generates chunks and the LOD from the seed too | Procedural trees: placement by `hash(seed, chunk, index)`, so a tree's id is `(chunk, procedural index)`. Placement is deferred (ADR 0031) and changes seed terrain (new compatibility line) |
+| **3. Tombstones**: a sparse set of destroyed procedural tree ids per chunk | Partly: any edit stores the **whole chunk's voxels** (palette + RLE), not a tombstone | A per-chunk sparse set of chopped tree ids, plus per-tree pruned node sets for partial cuts |
+| **4. Entity pools**: explicit records for player-planted trees | Not built; the world file (redb) has no entity tables | A `growers` table: structure, variant seed, root, planted tick, pruned nodes |
+| **5. Analytical catch-up**: evaluate state from `now − planted` on load | Not built | `stage(t)` as in §5, evaluated on load and on a slow schedule while loaded |
+
+**The one change it forces: keep trees out of the chunk voxels.** Dwell saves any edited chunk whole.
+If trees were plain voxels in it, the first edit nearby would freeze its trees at that moment, and a
+growing tree would make a revision-0 chunk a function of the seed *and the time*, which the client's
+own chunk and LOD generation would then need too. So trees become a layer composed at load, in
+order:
+
+1. generated terrain (the seed, as today) and its saved edits (as today);
+2. procedural trees not in the chunk's tombstone set, at `stage(now)`;
+3. player-planted trees from `growers`, at `stage(now)`;
+4. growth never overwrites anything but air or its own leaves (blocked nodes prune).
+
+Chopping a tree voxel adds the node's subtree to that tree's pruned set (or the tree to the tombstone
+set when the trunk goes) rather than editing terrain voxels. The client composes the same layers from
+the same records (sent with the chunk), so the server and client agree without streaming tree voxels.
+Phase 20 sees the composed voxels; a felled crown becomes a body and leaves the tree record pruned.
+
+Costs: an untouched world stores nothing for its trees; a chopped procedural tree costs one id in a
+set; a planted tree one small record. The world-file tables and the chunk message's tree records are
+format and protocol changes — a new compatibility line, as is procedural placement.
+
 ## 6. Data sketch and plan
 
 ```json
