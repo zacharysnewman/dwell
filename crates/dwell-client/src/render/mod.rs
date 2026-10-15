@@ -2353,6 +2353,58 @@ mod tests {
     }
 
     #[test]
+    fn difference_frames_never_reuse_a_readback_buffer_still_mapping() {
+        // The browser's map callback can land frames later: frames rendered back to back with
+        // their maps unfinished must neither map a buffer twice nor copy into one still mapping
+        // ("buffer used in submit while mapped"); they skip the read back instead. The noop device
+        // fires map callbacks within the submit, so the late callback itself is
+        // `difference::Slots`'s test; this checks the ring stays valid WebGPU and still reads.
+        use crate::game::Scene;
+        let mut r = noop_renderer();
+        r.select(Selection::parse("compare", Some("raster")).unwrap());
+        r.set_compare(Compare {
+            view: compare::CompareView::Difference,
+            divider: 0.5,
+            blink_right: false,
+        });
+        let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let target = r.device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = target.create_view(&Default::default());
+        r.resize(8, 8, 1.0);
+        for _ in 0..8 {
+            r.render(&view, &|_| true);
+        }
+        r.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("polled");
+        for _ in 0..4 {
+            r.render(&view, &|_| true);
+            r.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("polled");
+        }
+        assert!(r.difference.last.is_some(), "counts still read back");
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(e) => assert!(e.is_none(), "{e:?}"),
+            std::task::Poll::Pending => panic!("error scope pending"),
+        }
+    }
+
+    #[test]
     fn the_frame_block_matches_the_shader_struct() {
         // mat4x4f + 16 vec4f in `Frame`.
         let fields = shaders::source(1)
