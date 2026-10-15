@@ -115,8 +115,10 @@ line (the next minor, 0.11), with goldens regenerated; the owner raises `package
 including structure hashes in the terrain definition's hash (ADR 0026 §4), and keep sandbox-only
 structures out of every definition until promoted. S4 belongs after Phase 17: bolting it onto the
 hardcoded `terrain.rs` would be work the baseline rework replaces. S3's `RegionEdit` is an additive
-protocol change (a patch can carry it if old clients ignore it — to be checked against the protocol
-rules).
+protocol change. *Checked (S3):* a server rejects an unknown message type as `Malformed` and closes
+the session, and a `protocolVersion` bump would split the 0.10 line, but every decoder ignores
+unknown `Welcome` flag bits — so it ships within the line behind a `regionEdits` Welcome flag that
+newer servers set and clients wait for (ARCHITECTURE.md §10.5).
 
 **Risks**: structures across chunk borders and LOD agreement; generation cost (each chunk scans
 nearby cells); rotating facing states; adaptive blocks (Phase 18) reshaping authored blocks;

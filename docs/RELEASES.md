@@ -60,7 +60,10 @@ and linked from the menu's About screen) and beside the native server (copied ne
   - **The public API** — what compatibility means, as SemVer requires it to be declared: the saved
     world format, the terrain a seed generates, the network protocol (client ↔ server, and the
     master server's API), and the cross-version browser storage contract (§6). Changes that keep
-    all four compatible are compatible changes; anything else is a breaking change.
+    all four compatible are compatible changes; anything else is a breaking change. A new
+    client → server message is compatible only behind a `Welcome` flag (servers reject unknown
+    messages; clients ignore unknown flags), so builds of a line still play together
+    (ARCHITECTURE.md §10.5; the first is `RegionEdit`).
   - **From `1.0.0`** (launch): MAJOR for breaking changes, MINOR for compatible new features, PATCH
     for compatible fixes.
   - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention

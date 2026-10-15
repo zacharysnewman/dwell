@@ -88,6 +88,8 @@ interface DwellDebug {
   view(): { yaw: number; pitch: number };
   /** Breaks or places at the crosshair, as a click does (§6.5). */
   edit(action: 'break' | 'place'): boolean;
+  /** Runs a region tool by name (`fill`, `copy`, `undo`, … — `Client.tool`), as its key does. */
+  tool(name: string): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
@@ -316,12 +318,14 @@ function showHud(app: App, now: number): void {
     health?: number;
     debug?: string | null;
     damaged?: boolean;
+    region?: string;
   };
   if (h.message === undefined) return;
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
+  app.hotbar?.setRegion(h.region ?? '');
   if (h.debug) app.hud.setDebug(h.debug);
 }
 
@@ -454,6 +458,7 @@ async function start(): Promise<App | null> {
       return { yaw, pitch };
     },
     edit: (action) => client.edit(action, performance.now()),
+    tool: (name) => client.tool(name, performance.now()),
     select: (slot) => {
       client.select(slot);
     },
