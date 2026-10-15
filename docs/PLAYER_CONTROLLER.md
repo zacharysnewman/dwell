@@ -636,7 +636,7 @@ water pools), Tier 1 boxes (static, kinematic or dynamic) as platforms and ramps
 and explosions, and per-player event counters. Expectations use Dwell's default config
 (recommended feel, voxel capsule). The **movement playground** — a block step, a doorway, a
 crawlspace, a ladder to a ledge and a pool near the spawn — is a structure file
-(`shared/structures/playground.structure`) stamped over the flat world by the netcode suite
+(`shared/structures/playground.json`) stamped over the flat world by the netcode suite
 (Phase 15; it was generator version 1 with slab stairs, slope features and a launch pad). The
 launch-pad knockback test is a server-issued knockback.
 

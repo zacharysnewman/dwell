@@ -7,7 +7,7 @@ type, and S2b, the structures store; S4, worldgen placement, deferred). Owner an
 The ask: a tool with a simple flat white terrain sandbox where you build things (trees, rocks,
 etc.), saved locally, that can easily be added to a custom shapes/structures system.
 
-## 1. What exists
+## 1. What existed (2026-10-14, before S1)
 
 - **Structure files, as test fixtures only.** `crates/dwell-world/src/structure.rs` parses a text
   format with one command, `fill x0 y0 z0 x1 y1 z1 <block state>`, blocks by state name, errors with
@@ -41,22 +41,49 @@ in this week.
 
 ## 3. Structure format
 
-JSON in `shared/structures/<name>.json`, named like blocks:
+**Built (S1, 2026-10-14).** JSON in `shared/structures/<name>.json` (test fixtures in
+`shared/structures/test/`), named like blocks:
 
 ```json
-{ "name": "dwell:boulder_a", "size": [5, 4, 5], "anchor": [2, 0, 2],
+{ "format": 1, "name": "dwell:boulder_a", "kind": "voxels", "size": [5, 4, 5], "anchor": [2, 0, 2],
   "palette": { ".": null, "s": "dwell:stone", "d": "dwell:dirt", "_": "dwell:air" },
   "layers": [["sssss", "sssss", "..."], ["..."]],
   "variants": { "rotate": [0, 90, 180, 270], "mirror": ["x"],
                 "choices": { "s": [["dwell:stone", 3], ["dwell:sand", 1]] } } }
 ```
 
-- **Palette by block name**; `null` keeps what's there (the mask), explicit `dwell:air` carves.
-- **Layers**: y-slices of z-rows of palette characters (diffable in git); RLE for large builds.
-- **Anchor**: the voxel that sits on the ground.
-- **Variants**, a small fixed vocabulary: 90° rotations, mirroring, weighted block choices. Rotated
-  states with a facing property use the registry's `facingProperty`. No scaling (it destroys voxel
-  detail; author separate sizes).
+The schema, as `shared/structures/gen.mjs` validates it (every error names the file and the entry,
+e.g. `shared/structures/x.json: palette."s": unknown block "dwell:nope"`):
+
+| Field | Rule |
+|---|---|
+| `$comment` | Optional, ignored. Any other unknown field is an error. |
+| `format` | `1`. A later format is a new number the generator reads. |
+| `name` | `namespace:name`, `[a-z0-9_]`; the name part matches the file name; unique. `test:` is for `test/` only. |
+| `kind` | An open list; only `"voxels"` (hand-built cells) exists. The fields below are the `voxels` body. |
+| `size` | `[x, y, z]`, each 1–32 (owner: hand-built up to about 32³; larger features are generator nodes). |
+| `anchor` | `[x, y, z]` inside `size`: the cell `place` puts at the given position — for ground features, the lowest cell, which sits on the first air above the ground. |
+| `palette` | Single printable ASCII characters (not space) → a block state name in any form `parse_state` takes, or `null` (keep what is there; the mask). Explicit `dwell:air` carves. Names are stored canonicalised. |
+| `layers` | `size[1]` y-slices, bottom up; each `size[2]` z-rows (north to south); each a string of `size[0]` characters (west to east), all in the palette. |
+| `variants` | Optional; named operations, an open list, applied in this order: |
+| `variants.rotate` | Distinct values of 0, 90, 180, 270: quarter turns clockwise seen from above (north → east) about the anchor; one is picked. |
+| `variants.mirror` | Distinct axes of `x`, `z`: one of "none" and these is picked; mirroring is applied before rotating. |
+| `variants.choices` | Palette character (not a `null` one) → non-empty `[[state, weight], …]`, positive integer weights: each voxel with that character draws its block independently (per voxel, not per structure; a structure-wide pick would be a new operation). |
+
+- **Canonical form and hash.** The generator writes each structure as a canonical text (palette
+  sorted by character, canonical state strings, variant values sorted) and its FNV-1a 64 hash into
+  Rust tables (`crates/dwell-world/src/structures.gen.rs`, fixtures in
+  `crates/dwell-world/tests/fixtures/structures.gen.rs`); the Rust loader rebuilds the text and
+  refuses a table whose hash disagrees. Key order and whitespace in the file don't change the hash.
+- **Placement and variants** (`dwell-world` `structure.rs`): `load(name)`, then `place(at, seed)`.
+  The orientation and the choices come from the seed by integer hashing (splitmix64; choices hash
+  the unturned cell, so a cell draws the same block in every orientation). States with a facing
+  property (the registry's `facingProperty`, read through its `facing` column) turn and mirror with
+  the geometry. No scaling (it destroys voxel detail; author separate sizes).
+- **Not yet:** run-length encoding (not needed at 32³; it would be a new layer encoding), shaped
+  states (slope corners) under rotation — no shaped block exists since Phase 15 — and placement.
+- **The playground** is `shared/structures/playground.json` (22 × 6 × 14, within the cap), placed
+  with its anchor at the origin; a test pins it against the old `fill` boxes cell for cell.
 - **Placement rules live in the terrain definition, not the structure**, so one structure serves
   several definitions:
 
@@ -68,12 +95,13 @@ JSON in `shared/structures/<name>.json`, named like blocks:
   Jittered-grid spacing (`cell`, `jitter`; minimum spacing for free), `chance`, surface block,
   slope, height band, a named mask — conditions ADR 0026 already lists for surface layers.
 
-- **One generator** (`shared/structures/gen.mjs`, or folded into `shared/worldgen/gen.mjs`):
-  validates names against the registry, palette characters, layer dimensions against `size`, the
-  anchor, variant values and weights; emits a canonical form and a hash; CI fails on stale output.
-  The Rust loader replaces `Structure::parse` (the playground file is converted).
-- **Tests**: a fixture structure plus a fixture definition stamps by data alone; bad entries fail
-  naming the entry; chunks generated in random order hash the same.
+- **One generator** (`shared/structures/gen.mjs`, built in S1): validates names against the
+  registry, palette characters, layer dimensions against `size`, the anchor, the cap, variant names,
+  values and weights; emits a canonical form and a hash; CI fails on stale output and runs
+  `gen.test.mjs`. The Rust loader replaced `Structure::parse` (the playground file is converted).
+- **Tests**: a fixture structure stamps by data alone, bad entries fail naming the entry, variants
+  are deterministic and turn a ladder with the geometry (S1); with placement (S4), a fixture
+  definition, and chunks generated in random order hash the same.
 - **Determinism**: position, variant and choices from a hash of seed, feature index and cell
   (integer maths, ADR 0010). Each chunk visits the cells within the feature's maximum extent, so a
   tree across a chunk border agrees in any order; ground height from the height field, never from
