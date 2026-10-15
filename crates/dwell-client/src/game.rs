@@ -16,6 +16,7 @@ use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
+use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
@@ -33,7 +34,7 @@ use dwell_world::{ChunkCoord, VoxelWorld};
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
-use crate::render::{Line, PlayerView, StandIn};
+use crate::render::{Line, PlayerView, RegionBox, StandIn};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
@@ -48,6 +49,9 @@ const MESH_BUDGET_MS: f64 = 4.0;
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
 const RATE_NUDGE: f64 = 0.02;
+/// The region tools' outlines: the selection, and where a paste would go.
+const REGION_SELECTION_COLOR: u32 = 0xffffff;
+const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 const PLAYER_COLORS: [u32; 7] = [
     0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
 ];
@@ -69,6 +73,7 @@ pub trait Scene {
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    fn set_region_boxes(&mut self, boxes: &[RegionBox]);
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
 }
@@ -337,6 +342,10 @@ pub struct Game<S: Scene> {
     last_draw_ms: Option<f64>,
     eye: EyeCamera,
     pub interaction: BlockInteraction,
+    /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
+    pub region: RegionTools,
+    /// The eye the crosshair targets from (None while not playing).
+    target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -409,6 +418,8 @@ impl<S: Scene> Game<S> {
             last_draw_ms: None,
             eye,
             interaction: BlockInteraction::new(),
+            region: RegionTools::new(),
+            target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -724,6 +735,14 @@ impl<S: Scene> Game<S> {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        // In paste mode the buttons paste (right) or leave paste mode (left).
+        if self.region.pasting() {
+            let tool = match action {
+                EditAction::Place => ToolAction::Paste,
+                EditAction::Break => ToolAction::PasteMode,
+            };
+            return self.tool(tool, now_ms);
+        }
         match self.interaction.act(action, now_ms) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
@@ -731,6 +750,58 @@ impl<S: Scene> Game<S> {
             }
             None => false,
         }
+    }
+
+    /// Runs a region tool (§6.5) on the crosshair's target and the hotbar's block: only while alive
+    /// and playing. True if it sent a region edit.
+    pub fn tool(&mut self, action: ToolAction, now_ms: f64) -> bool {
+        if self.dead || !self.terrain_ready() {
+            return false;
+        }
+        let target = self.interaction.target().map(|t| t.cell);
+        let target_state =
+            target.map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2]));
+        let material = self
+            .interaction
+            .palette()
+            .get(self.interaction.selected())
+            .map_or(0, |s| s.material);
+        let ctx = ToolContext {
+            target,
+            target_state,
+            placement: self.interaction.placement().map(|(c, _)| c),
+            material,
+            eye: self.target_eye,
+            now_ms,
+        };
+        // Through the streamer: it knows the Air chunks the client never stores.
+        let sent = match self.region.act(action, &ctx, &mut self.streamer) {
+            Some(m) => {
+                self.outbox.borrow_mut().push(Send::Control(m));
+                true
+            }
+            None => false,
+        };
+        self.show_region_boxes();
+        sent
+    }
+
+    /// The region tools' boxes to the renderer.
+    fn show_region_boxes(&self) {
+        let boxes: Vec<RegionBox> = self
+            .region
+            .boxes()
+            .iter()
+            .map(|b| RegionBox {
+                min: b.min.map(f64::from),
+                size: b.size.map(f64::from),
+                color: match b.kind {
+                    ToolBoxKind::Selection => REGION_SELECTION_COLOR,
+                    ToolBoxKind::Ghost => REGION_GHOST_COLOR,
+                },
+            })
+            .collect();
+        self.scene.borrow_mut().set_region_boxes(&boxes);
     }
 
     /// Prediction waits until the terrain around the player has arrived (collision needs it).
@@ -984,6 +1055,10 @@ impl<S: Scene> Game<S> {
             input.look.pitch,
             face,
         );
+        self.target_eye = eye;
+        self.region
+            .aim(self.interaction.placement().map(|(c, _)| c));
+        self.show_region_boxes();
         let Some(t) = t else {
             self.scene.borrow_mut().set_block_outline(None, 1.0);
             return;

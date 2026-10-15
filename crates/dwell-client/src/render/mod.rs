@@ -94,6 +94,15 @@ pub struct Line {
     pub color: u32,
 }
 
+/// A box of cells outlined over everything (the region tools' selection and paste ghost, §6.5):
+/// its min corner and size in metres, and an sRGB colour.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RegionBox {
+    pub min: V3,
+    pub size: V3,
+    pub color: u32,
+}
+
 /// An ancestor section drawn clipped to a box (world metres) where the traversal has nothing ready.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StandIn {
@@ -341,6 +350,7 @@ enum DrawMesh {
     Player(PlayerShape),
     Outline,
     Debug,
+    Region(usize),
 }
 
 pub struct Renderer {
@@ -373,6 +383,8 @@ pub struct Renderer {
     outline: Option<(V3, f64)>,
     outline_mesh: GpuMesh,
     debug: Option<GpuMesh>,
+    /// The region tools' boxes, each with its edges (rebuilt only when the boxes change).
+    region_boxes: Vec<(RegionBox, GpuMesh)>,
     /// The GPU pages every mesh lives in (arena.rs).
     arena: ArenaRef,
     eye: V3,
@@ -710,6 +722,7 @@ impl Renderer {
             outline: None,
             outline_mesh,
             debug: None,
+            region_boxes: Vec::new(),
             arena,
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
@@ -910,6 +923,30 @@ impl Renderer {
     pub fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
         self.outline = cell.map(|c| (c, height));
     }
+    /// The region tools' boxes (§6.5), outlined over the terrain.
+    pub fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
+        if self.region_boxes.len() == boxes.len()
+            && self
+                .region_boxes
+                .iter()
+                .zip(boxes)
+                .all(|((a, _), b)| a == b)
+        {
+            return;
+        }
+        self.region_boxes = boxes
+            .iter()
+            .map(|b| {
+                let c = hex(b.color).map(|v| v as f32);
+                let size = b.size.map(|s| s as f32);
+                let pts: Vec<([f32; 3], [f32; 3])> = geometry::box_edges()
+                    .into_iter()
+                    .map(|p| (std::array::from_fn(|k| p[k] / 1.004 * size[k]), c))
+                    .collect();
+                (*b, GpuMesh::lines(&self.arena, &pts))
+            })
+            .collect();
+    }
     pub fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
             Some(v) => {
@@ -1071,6 +1108,10 @@ impl Renderer {
                 (m, vec![m.parts[0].clone()])
             }
             DrawMesh::Outline => (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()]),
+            DrawMesh::Region(i) => {
+                let m = &self.region_boxes[*i].1;
+                (m, vec![m.parts[0].clone()])
+            }
             DrawMesh::Debug => {
                 let m = self.debug.as_ref().expect("collected");
                 (m, vec![m.parts[0].clone()])
@@ -1247,6 +1288,28 @@ impl Renderer {
                 passes,
                 key: 0,
                 mesh: DrawMesh::Outline,
+            });
+        }
+        // The region tools' boxes: over everything, so a box around buried cells still shows.
+        for (i, (b, _)) in self.region_boxes.iter().enumerate() {
+            let side = b.size.iter().copied().fold(0.0, f64::max);
+            let passes = reaches(b.min, side);
+            if passes == 0 {
+                continue;
+            }
+            let r = self.rel(b.min);
+            out.push(DrawItem {
+                kind: Kind::Line,
+                water: false,
+                no_depth: true,
+                offset: [r[0], r[1], r[2], 1.0],
+                clip: None,
+                tint: [1.0, 1.0, 1.0, 0.9],
+                rotation: NO_ROTATION,
+                page: 0,
+                passes,
+                key: 0,
+                mesh: DrawMesh::Region(i),
             });
         }
         // Debug lines: in the pass that draws from the near plane.
@@ -1610,6 +1673,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
         Renderer::set_block_outline(self, cell, height);
+    }
+    fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
+        Renderer::set_region_boxes(self, boxes);
     }
     fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
         Renderer::set_debug_lines(self, lines);

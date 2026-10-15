@@ -62,6 +62,13 @@
     "maxResyncChunks": 64,
     "maxLodIndexEntries": 16384
   },
+  "regionEdit": {
+    "maxSide": 32,
+    "cellsPerSecond": 65536,
+    "burstCells": 131072,
+    "reach": 64,
+    "maxQueued": 4
+  },
   "channels": {
     "control": 0,
     "world": 1,
@@ -93,7 +100,8 @@
     "LodData": 21,
     "LodRequest": 76,
     "ChunkRequest": 77,
-    "HostStatus": 78
+    "HostStatus": 78,
+    "RegionEdit": 79
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -153,7 +161,8 @@
     "faceB": 128
   },
   "welcomeFlags": {
-    "flight": 1
+    "flight": 1,
+    "regionEdits": 2
   },
   "groundKinds": {
     "None": 0,
@@ -185,6 +194,12 @@
   "blockEditActions": {
     "Break": 1,
     "Place": 2
+  },
+  "regionEditOps": {
+    "Fill": 1,
+    "Replace": 2,
+    "Hollow": 3,
+    "Paste": 4
   },
   "voxelModificationReasons": {
     "Edit": 1,
