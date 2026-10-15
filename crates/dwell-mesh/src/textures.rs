@@ -213,14 +213,13 @@ fn ladder(x: i64, y: i64) -> Rgb {
 }
 
 /// How much darker a `grid` tile's edge texels are than its white face.
-pub const GRID_LINE: f64 = 0.8;
+pub const GRID_LINE: f64 = 0.88;
 
-/// White with a faint line along every edge: the outermost texel each side, so neighbouring blocks
-/// make a two-texel line centred on their shared edge. The lines are a few texels wide, so the
-/// mipmaps average them away with distance (no shimmer).
+/// White with a faint line along every block edge: the first texel row and column, so each edge
+/// gets one texel (1/32 block) of line, from the block on its positive side. Mipmapping averages
+/// the line into the face with distance, so it fades out without shimmering.
 fn grid(x: i64, y: i64) -> Rgb {
-    let last = TILE as i64 - 1;
-    let edge = x == 0 || y == 0 || x == last || y == last;
+    let edge = x == 0 || y == 0;
     let v = if edge { 255.0 * GRID_LINE } else { 255.0 };
     [v, v, v]
 }
@@ -347,10 +346,12 @@ mod tests {
         let last = TILE as i64 - 1;
         let line = 255.0 * GRID_LINE;
         for i in 0..TILE as i64 {
-            for p in [(0, i), (i, 0), (last, i), (i, last)] {
+            for p in [(0, i), (i, 0)] {
                 assert_eq!(grid(p.0, p.1), [line; 3], "{p:?}");
             }
         }
+        // One texel per edge: the far side is face, as is the interior.
+        assert_eq!(grid(last, 5), [255.0; 3]);
         assert_eq!(grid(1, 1), [255.0; 3]);
         assert_eq!(grid(16, 30), [255.0; 3]);
         // From afar (the average, the LOD colour) it is still nearly white.

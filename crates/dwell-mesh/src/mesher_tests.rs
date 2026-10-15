@@ -247,7 +247,9 @@ fn faces_carry_their_blocks_grid_look_option_and_the_grid_tile() {
     // The registry's `grid` option per vertex (every, strength): the sandbox floor's from its data,
     // none for other blocks; its faces take the `grid` texture tile.
     let floor = require("dwell:sandbox_floor");
-    let g = dwell_blocks::info(floor).grid.expect("the floor's data has a grid");
+    let g = dwell_blocks::info(floor)
+        .grid
+        .expect("the floor's data has a grid");
     let m = mesh(&[(1, 1, 1, floor), (5, 1, 1, stone())], false).opaque;
     let n = m.positions.len() / 3;
     assert_eq!(m.grids.len(), 2 * n);

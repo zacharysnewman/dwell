@@ -2721,9 +2721,12 @@ Exit criteria
 - [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
   check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
   (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
-  it lands; flight turns on. Finding: lit and tone-mapped, the white floor reads light grey, close
-  to the sky's fog colour, so the horizon disappears and only placed blocks give depth — a grid or
-  faint texture on the floor may be wanted (owner's call).
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor read light grey, close
+  to the sky's fog colour, so the horizon disappeared and only placed blocks gave depth; the owner
+  approved a grid, now built (a faint line at every block edge from the `grid` tile, a stronger one
+  every 8 blocks from the `grid` look option), checked near, far and from above: the lines stay
+  readable under tone mapping, fade without shimmer at a distance, and leave the block outline
+  clear.
 - [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits

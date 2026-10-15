@@ -58,6 +58,12 @@ generated Rust table (`StateInfo::indestructible`). Its first user since bedrock
 `dwell:sandbox_floor` (prototype content), the structure sandbox's ground, appended to the list so
 earlier ids are kept; it is not adaptive (Phase 18), so it stays flat cubes.
 
+**Grid look option** (**built, Phase 27 S2a**): `"grid": { "every": N, "strength": s }` on a block
+asks the terrain shader for world-aligned lines every `N` blocks (a divisor of the chunk size, 32),
+darkening by `s` (0 < s ≤ 1); `gen.mjs` rejects other values and unknown keys, and emits it as
+`StateInfo::grid`. It is a look option like `textures`, so it does not enter the registry hash. The
+sandbox floor pairs it (every 8) with the `grid` texture tile (a faint line at every block edge).
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,
