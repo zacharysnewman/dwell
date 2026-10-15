@@ -2,8 +2,10 @@
 //! itself from its neighbours, and the player walks the result — the Shape Playground's 28
 //! situations (every shape the rules make: slopes, ridges, saddles, half-and-half corners, 45°
 //! ramps) built as terrain, a terrace's 1-block step, a ridge, a field across chunk seams — with no
-//! launches, hops or sliding at rest. Runs in the local frame like every suite (far from the origin
-//! and on face B too).
+//! launches or hops. Gentle ground is rested on; ground steeper than the slide angle (the 45°
+//! pieces, saddles, dimples) slides (owner 2026-10-15; the slide itself, and single-block stairs,
+//! are in `slide.rs`). Runs in the local frame like every suite (far from the origin and on face B
+//! too).
 
 mod common;
 
@@ -12,6 +14,7 @@ use dwell_blocks::adaptive;
 use dwell_blocks::shape::solid_span_at;
 use dwell_blocks::{StateId, require};
 use dwell_physics::Vec3;
+use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::controller::events;
 
 fn grass() -> StateId {
@@ -163,9 +166,58 @@ fn the_game_world_shapes_the_playground_like_the_owner_did() {
     assert_eq!(n, 151);
 }
 
+/// The gentlest and the steepest surface faces (degrees) of the top shape of column (x, z) that
+/// contain the point (x + fx, z + fz) seen from above (local frame): more than one where the point
+/// is on an edge between faces.
+fn slope_under(height: &dyn Fn(i32, i32) -> i32, x: i32, z: i32, fx: f32, fz: f32) -> (f32, f32) {
+    let h = height(x, z);
+    let (g, cube) = (grass(), cube_block());
+    let at = |dx: i32, dy: i32, dz: i32| {
+        let y = h - 1 + dy;
+        if y < 0 {
+            cube
+        } else if y < height(x + dx, z + dz) {
+            g
+        } else {
+            0
+        }
+    };
+    let s = adaptive::shape_at(at, 1);
+    let (mut gentlest, mut steepest) = (90.0f32, 0.0f32);
+    for f in dwell_blocks::shape::faces_of(s) {
+        if f.tag != dwell_blocks::shape::SURFACE_TAG {
+            continue;
+        }
+        let v: Vec<Vec3> = f.v[..usize::from(f.count)]
+            .iter()
+            .map(|&p| Vec3::from(p))
+            .collect();
+        // Inside the convex polygon's projection (either winding), with a little tolerance.
+        let sides: Vec<f32> = (0..v.len())
+            .map(|i| {
+                let (a, b) = (v[i], v[(i + 1) % v.len()]);
+                (b.x - a.x) * (fz - a.z) - (b.z - a.z) * (fx - a.x)
+            })
+            .collect();
+        let inside = sides.iter().all(|&s| s >= -1e-4) || sides.iter().all(|&s| s <= 1e-4);
+        if !inside {
+            continue;
+        }
+        let n = (v[1] - v[0]).cross(v[2] - v[0]).normalize();
+        let angle = n.y.abs().clamp(-1.0, 1.0).acos().to_degrees();
+        gentlest = gentlest.min(angle);
+        steepest = steepest.max(angle);
+    }
+    (gentlest, steepest)
+}
+
 #[test]
-fn standing_still_on_every_playground_block_never_slides() {
+fn standing_on_every_playground_block_rests_unless_its_ground_slides() {
+    // Ground steeper than the slide angle (44°) slides (PLAYER_CONTROLLER.md §6.8, owner
+    // 2026-10-15: "Ramps steeper than 44° will slide"): the 45° ramps, ridges' and pyramids'
+    // flanks, saddles and dimples. A player on any other block stands still.
     let height = playground();
+    let min_angle = PlayerControllerConfig::default().slide.min_angle;
     let mut w = PlayerTestWorld::new();
     terrain(&mut w, (0, 0, 31, 31), &height);
     // One player on the centre of every block's top (they stand 1 m apart: no touching).
@@ -177,24 +229,66 @@ fn standing_still_on_every_playground_block_never_slides() {
             }
             let (fx, fz) = (x as f32 + 0.5, z as f32 + 0.5);
             let feet = surface(&height, fx, fz) + 0.02;
-            players.push((x, z, w.spawn(Vec3::new(fx, feet, fz))));
+            // Steep, gentle, or (on an edge between a steep and a gentle face: a crest, an apex)
+            // either.
+            let (gentlest, steepest) = slope_under(&height, x, z, 0.5, 0.5);
+            let steep = if gentlest > min_angle {
+                Some(true)
+            } else if steepest <= min_angle {
+                Some(false)
+            } else {
+                None
+            };
+            players.push((x, z, steep, w.spawn(Vec3::new(fx, feet, fz))));
         }
     }
     assert!(players.len() > 240, "{}", players.len());
+    let steep_blocks = players.iter().filter(|p| p.2 == Some(true)).count();
+    assert!(steep_blocks > 20, "{steep_blocks}");
+    let spawned: Vec<Vec3> = players.iter().map(|&(_, _, _, e)| w.pos(e)).collect();
     w.step(ticks(1.0));
-    let start: Vec<Vec3> = players.iter().map(|&(_, _, e)| w.pos(e)).collect();
+    let start: Vec<Vec3> = players.iter().map(|&(_, _, _, e)| w.pos(e)).collect();
     w.step(ticks(2.0));
     let mut moved = Vec::new();
-    for (&(x, z, e), s) in players.iter().zip(&start) {
+    let mut stayed = Vec::new();
+    let mut resting_on_steep = Vec::new();
+    for ((&(x, z, steep, e), s), s0) in players.iter().zip(&start).zip(&spawned) {
+        let c = w.c(e);
+        // (A slider can come to rest against the player on the next block.)
+        let p = w.pos(e);
+        let against_a_player = players.iter().any(|&(.., o)| {
+            let d = w.pos(o) - p;
+            o != e && d.x.hypot(d.z) < 2.0 * 0.3 + 0.05 && d.y.abs() < 1.8
+        });
+        if c.ground.grounded
+            && c.ground.under_angle > min_angle
+            && w.vel(e).length() < 0.2
+            && !against_a_player
+        {
+            resting_on_steep.push(format!("({x},{z}) at {}", w.pos(e)));
+        }
+        match steep {
+            Some(true) => {
+                if (w.pos(e) - *s0).length() < 0.05 {
+                    stayed.push(format!("({x},{z})"));
+                }
+                continue;
+            }
+            None => continue,
+            Some(false) => {}
+        }
         let d = w.pos(e) - *s;
-        if !w.c(e).ground.grounded || d.length() > 0.01 {
-            moved.push(format!(
-                "({x},{z}) moved {d} grounded {}",
-                w.c(e).ground.grounded
-            ));
+        if !c.ground.grounded || d.length() > 0.01 {
+            moved.push(format!("({x},{z}) moved {d} grounded {}", c.ground.grounded));
         }
     }
     assert!(moved.is_empty(), "{} slid: {moved:?}", moved.len());
+    assert!(stayed.is_empty(), "{} stayed on steep ground: {stayed:?}", stayed.len());
+    assert!(
+        resting_on_steep.is_empty(),
+        "{} at rest on steep ground: {resting_on_steep:?}",
+        resting_on_steep.len()
+    );
 }
 
 /// Walkers along every row (`along_x`, +x) or every column (+z) of the playground, from just
@@ -297,54 +391,37 @@ fn a_one_block_terrace_step_is_walked_up_and_down_without_jumping() {
 }
 
 #[test]
-fn a_one_wide_ridge_is_walked_over_without_a_launch() {
-    // A row of blocks one higher than the field: a half-height ridge between two 27° slopes.
+fn a_one_wide_ridge_stops_a_walker_and_is_jumped_over_without_a_launch() {
+    // A row of blocks one higher than the field: a half-height ridge between two 27° slopes. Its
+    // flanks are 45°, which slide (PLAYER_CONTROLLER.md §6.8, owner 2026-10-15): walking stops at
+    // the foot of the flank; a jump clears it.
     let height = |_: i32, z: i32| if z == 4 { 2 } else { 1 };
     let mut w = PlayerTestWorld::new();
     terrain(&mut w, (-8, -8, 8, 16), &height);
-    let e = w.spawn(Vec3::new(0.5, 0.52, 0.5));
+    let walker = w.spawn(Vec3::new(-2.5, 0.52, 0.5));
+    let jumper = w.spawn(Vec3::new(3.5, 0.52, 0.5));
     w.step(ticks(0.5));
-    w.set_input(|_, _| input(0.0, 1.0, true, false, false, 0.0, 0.0));
+    let jump_at = w.tick + ticks(0.55);
+    w.set_input(move |t, h| input(0.0, 1.0, false, h == jumper && t == jump_at, false, 0.0, 0.0));
     let mut walk = Walk::default();
-    for _ in 0..ticks(2.0) {
+    let mut max_up = 0.0f32;
+    for _ in 0..ticks(2.5) {
         w.step(1);
-        watch(&w, e, &height, &mut walk);
+        watch(&w, walker, &height, &mut walk);
+        max_up = max_up.max(w.vel(jumper).y);
     }
-    assert!(w.pos(e).z > 8.0, "{}", w.pos(e));
-    // (The capsule's round bottom on a 45° flank or the crest sits up to its radius, 0.3 m, above
-    // the surface under its centre: more is a hop.)
+    let p = w.pos(walker);
+    assert!(p.z > 3.0 && p.z < 4.3, "the walker stops at the flank: {p}");
+    // (The capsule's round bottom on a 45° flank sits up to its radius, 0.3 m, above the surface
+    // under its centre: more is a hop.)
     assert!(walk.max_gap < 0.4, "never far above the ground: {walk:?}");
     assert!(walk.rising_airborne <= 3, "{walk:?}");
-    assert!(approx(w.feet(e), 0.5, 0.01), "{}", w.feet(e));
-}
-
-#[test]
-fn single_block_stairs_are_a_run_of_45_degree_ramps_walked_without_jumping() {
-    // Situation P: one-wide stairs 1, 2, 3, 4, 5 high along +x; each is a wedge up to the next.
-    let height = |x: i32, z: i32| {
-        if z == 0 && (0..5).contains(&x) {
-            x + 1
-        } else {
-            0
-        }
-    };
-    let mut w = PlayerTestWorld::new();
-    terrain(&mut w, (-4, -4, 8, 4), &height);
-    let e = w.spawn_yaw(Vec3::new(-2.5, 0.02, 0.5), 90.0);
-    w.set_input(|_, _| input(0.0, 1.0, false, false, false, 90.0, 0.0));
-    let mut walk = Walk::default();
-    for _ in 0..ticks(1.6) {
-        w.step(1);
-        watch(&w, e, &height, &mut walk);
-    }
-    assert_eq!(w.count(e, events::JUMPED), 0);
-    assert!(
-        w.feet(e) > 4.0,
-        "climbed the ramps: {} at {}",
-        w.feet(e),
-        w.pos(e)
-    );
-    assert!(walk.rising_airborne <= 3, "{walk:?}");
+    assert_eq!(w.count(walker, events::JUMPED), 0);
+    assert_eq!(w.count(jumper, events::JUMPED), 1);
+    assert!(w.pos(jumper).z > 8.0, "{}", w.pos(jumper));
+    assert!(approx(w.feet(jumper), 0.5, 0.01), "{}", w.feet(jumper));
+    let jump = w.config.jump_velocity();
+    assert!(max_up < jump + 0.5, "no launch beyond the jump: {max_up}");
 }
 
 #[test]
