@@ -267,8 +267,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      run builds), localSite.ts (a local multi-version site for the e2e tests),
                      shots.ts (screenshots of the named views), views.ts (the views' format and
                      checks), bench.ts and scenarios.ts (the dev bench, DEV_TOOLS.md), compare.ts,
-                     configs.ts and compareReport.ts (the bench's renderer comparison, `--compare`);
-                     run with Node's type stripping.
+                     configs.ts, compareReport.ts and compareHtml.ts (the bench's renderer comparison,
+                     `--compare`, and its HTML report); run with Node's type stripping.
   /views             views.json: named views (camera, window, settings) for shots.ts and e2e specs.
   /bench             scenarios.json: scripted scenarios for the dev bench (bench.ts); configs.json:
                      renderer configurations for `--compare`; out/ (ignored) gets its reports.

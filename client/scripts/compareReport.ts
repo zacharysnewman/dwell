@@ -288,3 +288,66 @@ export function metricRows(per: readonly (Metrics | null)[]): string[][] {
     row('streamed', (m) => (m.streaming.complete ? 'complete' : 'loading')),
   ];
 }
+
+// --- A comparison's results ---------------------------------------------------------------------
+
+/** One shot of one configuration against the baseline (paths relative to the output directory). */
+export interface ShotDiff {
+  shot: string;
+  config: string;
+  stats: DiffStats | null;
+  error?: string;
+  side?: string;
+  diff?: string;
+}
+
+export interface ScenarioResult {
+  name: string;
+  notes: string;
+  split: 'near' | 'far' | null;
+  /** The scenario's `shot` names, in order. */
+  shotNames: string[];
+  settles: Record<string, number[]>;
+  errors: Record<string, string[]>;
+  records: Record<string, Record<string, Metrics>>;
+  shots: ShotDiff[];
+}
+
+const pct = (v: number): string => `${v.toFixed(2)} %`;
+
+/** A scenario's comparison table: the configurations (`ran`, baseline first) as columns. */
+export function scenarioTable(
+  r: ScenarioResult,
+  ran: readonly { name: string }[],
+  deltaE: number,
+): { header: string[]; rows: string[][] } {
+  const header = [`${r.name}${r.split ? ` (${r.split})` : ''}`, ...ran.map((c) => c.name)];
+  const rows: string[][] = [
+    [
+      'settle s',
+      ...ran.map((c) => (r.settles[c.name] ?? []).map((s) => s.toFixed(1)).join(', ') || '—'),
+    ],
+  ];
+  for (const [name, per] of Object.entries(r.records)) {
+    rows.push([`[${name}]`, ...ran.map(() => '')]);
+    rows.push(...metricRows(ran.map((c) => (c.name in per ? per[c.name] : null))));
+  }
+  for (const shot of r.shotNames) {
+    const cell = (i: number, f: (s: DiffStats) => string): string => {
+      if (i === 0) return 'baseline';
+      const d = r.shots.find((s) => s.shot === shot && s.config === ran[i].name);
+      return d?.stats ? f(d.stats) : (d?.error ?? '—');
+    };
+    rows.push([
+      `shot ${shot}: ΔE>${String(deltaE)}`,
+      ...ran.map((_, i) => cell(i, (s) => pct(s.overPct))),
+    ]);
+    rows.push([
+      '  mean / max ΔE',
+      ...ran.map((_, i) =>
+        cell(i, (s) => `${s.meanDeltaE.toFixed(2)} / ${s.maxDeltaE.toFixed(1)}`),
+      ),
+    ]);
+  }
+  return { header, rows };
+}

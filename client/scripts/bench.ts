@@ -430,6 +430,7 @@ async function main(): Promise<void> {
       await compare({
         browser,
         out: o.out,
+        mode: `${o.swiftshader ? 'SwiftShader' : 'GPU'}, ${o.unthrottled ? 'unthrottled' : 'vsync'}`,
         scenarios: chosen,
         configsFile: o.configsFile,
         configNames: o.configs,

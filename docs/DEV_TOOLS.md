@@ -120,7 +120,17 @@ Output, in `OUT/`:
   `record` step and configuration the metrics below, the shot diffs, each `settle`'s seconds, page
   errors, and `splits`: per `near`/`far` split and configuration, the worst interval p95/p99 and the
   dropped frames over its scenarios' records.
+- **`compare.html`**: the report to look at (its path is printed at the end of the run). One
+  self-contained page (inline style and script, images referenced relative to it, so open it from
+  `OUT/` or copy the directory): each scenario's metrics table at the top; then per scenario and
+  shot, every configuration's screenshot at full size side by side, and per configuration against
+  the baseline a **blink** view (click it, or focus it and press Space, Enter or B, to swap the two
+  in place), the ΔE heatmap, and its % over the threshold, mean, p99 and max
+  (`scripts/compareHtml.ts`).
 - A printed table per scenario, configurations side by side.
+
+Every checked-in scenario that records also takes at least one `shot` (a test checks it), so a
+comparison always has images.
 
 Metrics per record (`scripts/compareReport.ts`): frame interval p50/p95/p99/max from the kept frames'
 timestamps and **dropped frames at 60 Hz** (an interval of n refresh periods drops n − 1; run

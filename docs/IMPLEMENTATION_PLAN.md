@@ -2592,8 +2592,9 @@ Deliverables
 - [x] **A2 bench --compare** — `npm run bench -- --compare <scenario…>` (`scripts/compare.ts`,
   `configs.ts`, `compareReport.ts`): each scenario once per configuration of
   `client/bench/configs.json` (renderer, scale, upscaler; checked, a test adds one by data) in fresh
-  pages; `OUT/compare.json`, a printed table, and per shot a side-by-side image and a ΔE heatmap
-  (% over the threshold, mean and max); configurations the build lacks (from `__dwell.renderers()` /
+  pages; `OUT/compare.json`, a printed table, per shot a side-by-side image and a ΔE heatmap
+  (% over the threshold, mean and max), and `OUT/compare.html` (metrics tables, the screenshots side
+  by side, a blink toggle per pair, the heatmaps); configurations the build lacks (from `__dwell.renderers()` /
   `upscalers()`; today every `march` one) skipped with a note; metrics: frame interval percentiles,
   dropped frames at 60 Hz, CPU phases, `gpu.*` when present, memory, uploads, streaming, a near/far
   split. Scenarios' `renderer` (`?renderer=`) and `split` fields, a `repeat` step, and the scenarios

@@ -14,6 +14,17 @@ describe('scenarios', () => {
     expect(parseScenarios(json).length).toBeGreaterThan(0);
   });
 
+  it('every checked-in scenario that records also takes a shot (for --compare)', () => {
+    const json = JSON.parse(
+      readFileSync(new URL('../bench/scenarios.json', import.meta.url), 'utf8'),
+    ) as unknown;
+    const without = parseScenarios(json)
+      .filter((s) => s.steps.some((x) => x.do === 'record'))
+      .filter((s) => !s.steps.some((x) => x.do === 'shot'))
+      .map((s) => s.name);
+    expect(without).toEqual([]);
+  });
+
   it('fills defaults and makes a local-world address', () => {
     const [s] = parseScenarios(file([minimal]));
     expect(s.seed).toBe(7);

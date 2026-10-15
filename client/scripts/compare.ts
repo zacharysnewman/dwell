@@ -9,16 +9,18 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Browser, Page } from '@playwright/test';
+import { compareHtml } from './compareHtml.ts';
 import {
   diffImages,
   formatTable,
-  metricRows,
   metricsOf,
+  scenarioTable,
   sideBySide,
-  type DiffStats,
   type Metrics,
   type RecordData,
   type Rgba,
+  type ScenarioResult,
+  type ShotDiff,
 } from './compareReport.ts';
 import {
   configParams,
@@ -28,7 +30,7 @@ import {
   type Config,
   type Support,
 } from './configs.ts';
-import type { Scenario, Split, Step } from './scenarios.ts';
+import type { Scenario, Step } from './scenarios.ts';
 
 /** What bench.ts's run of one scenario saves (its `report.json`). */
 export interface ScenarioReport {
@@ -46,31 +48,14 @@ export interface ScenarioReport {
 export interface CompareOptions {
   browser: Browser;
   out: string;
+  /** How the run is made (GPU or SwiftShader, vsync or unthrottled), for the HTML report. */
+  mode: string;
   scenarios: Scenario[];
   configsFile: string;
   /** `--configs`: these (and the baseline) only; empty: all. */
   configNames: string[];
   /** Runs a scenario into `dir` with the configuration's page parameters. */
   run: (sc: Scenario, dir: string, params: Record<string, string>) => Promise<ScenarioReport>;
-}
-
-interface ShotDiff {
-  shot: string;
-  config: string;
-  stats: DiffStats | null;
-  error?: string;
-  side?: string;
-  diff?: string;
-}
-
-interface ScenarioResult {
-  name: string;
-  notes: string;
-  split: Split | null;
-  settles: Record<string, number[]>;
-  errors: Record<string, string[]>;
-  records: Record<string, Record<string, Metrics>>;
-  shots: ShotDiff[];
 }
 
 /** The `shot` names of `steps`, in order. */
@@ -123,8 +108,6 @@ async function encode(page: Page, im: Rgba, path: string): Promise<void> {
   writeFileSync(path, Buffer.from(b64, 'base64'));
 }
 
-const pct = (v: number): string => `${v.toFixed(2)} %`;
-
 export async function compare(o: CompareOptions): Promise<void> {
   const file = parseConfigs(JSON.parse(readFileSync(o.configsFile, 'utf8')) as unknown);
   const configs = selectConfigs(file, o.configNames);
@@ -162,6 +145,7 @@ export async function compare(o: CompareOptions): Promise<void> {
         name: sc.name,
         notes: sc.notes,
         split: sc.split,
+        shotNames: shots(sc.steps),
         settles: {},
         errors: {},
         records: {},
@@ -219,7 +203,20 @@ export async function compare(o: CompareOptions): Promise<void> {
   ) {
     console.log('no gpu.* telemetry in this build (GPU timestamp queries): GPU rows omitted');
   }
+  writeFileSync(
+    join(o.out, 'compare.html'),
+    compareHtml({
+      baseline: baseline.name,
+      deltaE: file.deltaE,
+      configs: ran,
+      skipped,
+      scenarios: results,
+      mode: o.mode,
+      when: new Date().toISOString(),
+    }),
+  );
   console.log(`\n${join(o.out, 'compare.json')}`);
+  console.log(`report: ${join(o.out, 'compare.html')}`);
 }
 
 /** Per near/far split and configuration: the worst frame intervals and the dropped frames. */
@@ -253,32 +250,10 @@ function splits(
 }
 
 function table(results: readonly ScenarioResult[], ran: readonly Config[], deltaE: number): string {
-  const blocks: string[] = [];
-  for (const r of results) {
-    const header = [`${r.name}${r.split ? ` (${r.split})` : ''}`, ...ran.map((c) => c.name)];
-    const rows: string[][] = [
-      ['settle s', ...ran.map((c) => r.settles[c.name].map((s) => s.toFixed(1)).join(', ') || '—')],
-    ];
-    for (const [name, per] of Object.entries(r.records)) {
-      rows.push([`[${name}]`, ...ran.map(() => '')]);
-      rows.push(...metricRows(ran.map((c) => per[c.name] ?? null)));
-    }
-    for (const shot of [...new Set(r.shots.map((s) => s.shot))]) {
-      const cell = (c: Config, f: (s: DiffStats) => string): string => {
-        if (c === ran[0]) return 'baseline';
-        const d = r.shots.find((s) => s.shot === shot && s.config === c.name);
-        return d?.stats ? f(d.stats) : (d?.error ?? '—');
-      };
-      rows.push([
-        `shot ${shot}: ΔE>${String(deltaE)}`,
-        ...ran.map((c) => cell(c, (s) => pct(s.overPct))),
-      ]);
-      rows.push([
-        '  mean / max ΔE',
-        ...ran.map((c) => cell(c, (s) => `${s.meanDeltaE.toFixed(2)} / ${s.maxDeltaE.toFixed(1)}`)),
-      ]);
-    }
-    blocks.push(formatTable(header, rows));
-  }
-  return blocks.join('\n\n');
+  return results
+    .map((r) => {
+      const { header, rows } = scenarioTable(r, ran, deltaE);
+      return formatTable(header, rows);
+    })
+    .join('\n\n');
 }
