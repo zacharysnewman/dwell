@@ -155,7 +155,7 @@ pub fn glint_alpha(roughness: f32, lost_variance: f32) -> f32 {
 }
 
 /// The narrowest glint (a sun's disc, roughly; and no division blow-up).
-pub const MIN_ALPHA: f32 = 0.02;
+pub const MIN_ALPHA: f32 = 0.05;
 
 fn linear_rgb(c: u32) -> [f32; 3] {
     hex(c).map(|v| srgb_to_linear(v) as f32)
@@ -299,7 +299,7 @@ mod tests {
         let water = at("dwell:water");
         // absorption, opacity
         assert_eq!(&oil[0..4], &[2.0, 2.5, 3.0, 0.8]);
-        assert_eq!(&water[0..4], &[0.45, 0.09, 0.06, 0.55]);
+        assert_eq!(&water[0..4], &[0.45, 0.09, 0.06, 0.65]);
         // scatter (linear), roughness
         let s = linear_rgb(0x2a2410);
         assert_eq!(&oil[4..8], &[s[0], s[1], s[2], 0.02]);

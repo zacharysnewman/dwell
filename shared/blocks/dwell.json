@@ -4,8 +4,8 @@
   "shapeFamilies": [],
   "fluids": {
     "dwell:water": {
-      "opacity": 0.55, "surfaceDrop": 0.125,
-      "absorption": [0.45, 0.09, 0.06], "scatter": "#1d6f8a", "roughness": 0.08, "ior": 1.333,
+      "opacity": 0.65, "surfaceDrop": 0.125,
+      "absorption": [0.45, 0.09, 0.06], "scatter": "#2b9cc0", "roughness": 0.08, "ior": 1.333,
       "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
       "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0
     }

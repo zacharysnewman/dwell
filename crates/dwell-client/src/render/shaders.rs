@@ -525,7 +525,7 @@ fn ggx_glint(n: vec3f, v: vec3f, l: vec3f, a: f32, f0: f32) -> f32 {
     return min(dist * vis * schlick(dot(v, h), f0) * nl, GLINT_MAX);
 }
 
-const GLINT_MAX: f32 = 64.0;
+const GLINT_MAX: f32 = 16.0;
 
 // The glint's width (render/water.rs `glint_alpha`): the fluid's roughness, widened by the slope
 // variance the faded layers no longer draw.
@@ -572,7 +572,10 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let ndv = clamp(dot(n, v), 1e-3, 1.0);
     let f0 = f.extra.x;
     let t = 1.0 - f.absorption.a;
-    let body = lambert(f.scatter.rgb * draw.tint.rgb, seen, frag_y);
+    // The body's in-scattered light: the water is lit from above (the face's up), whichever side
+    // it is seen from.
+    let face_up = vec3f(0.0, select(-1.0, 1.0, on_a), 0.0);
+    let body = lambert(f.scatter.rgb * draw.tint.rgb, face_up, frag_y);
     if (front) {
         let fres = schlick(ndv, f0);
         var r = reflect(-v, n);

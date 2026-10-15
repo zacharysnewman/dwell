@@ -100,7 +100,13 @@
         { "do": "wait", "s": 5 },
         { "do": "record", "name": "sea" },
         { "do": "shot", "name": "sea-low" },
-        { "do": "camera", "position": [0, 6, 0], "yaw": 292.5, "pitch": -50, "aroundPlayer": true },
+        {
+          "do": "camera",
+          "position": [-55, 5, 0],
+          "yaw": 292.5,
+          "pitch": -35,
+          "aroundPlayer": true
+        },
         { "do": "wait", "s": 2 },
         { "do": "shot", "name": "shallow-down" },
         {
@@ -115,8 +121,8 @@
         {
           "do": "camera",
           "position": [0, 1000, 0],
-          "yaw": 292.5,
-          "pitch": -35,
+          "yaw": 112.5,
+          "pitch": -25,
           "aroundPlayer": true
         },
         { "do": "settle", "maxS": 120 },
