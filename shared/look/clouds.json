@@ -11,14 +11,14 @@
   },
   "shape": {
     "$comment": "scaleM: the size of the largest noise cell (m). wrapM: the noise repeats every this many metres (a multiple of scaleM; keeps the shader's f32 coordinates small far from the origin). octaves/lowOctaves: noise octaves on High and Low. gain: each octave's weight relative to the last. warp: how far the domain warp moves a point (in cells). coverage: the share of the sky covered, 0 (clear) to 1 (overcast); the renderer can override it at run time (weather). edgeSoftness: the width of a cloud's soft edge, in noise value. opacity: the densest cloud's opacity.",
-    "scaleM": 2048,
+    "scaleM": 1024,
     "wrapM": 131072,
     "octaves": 5,
     "lowOctaves": 3,
-    "gain": 0.5,
-    "warp": 0.75,
-    "coverage": 0.45,
-    "edgeSoftness": 0.22,
+    "gain": 0.47,
+    "warp": 0.3,
+    "coverage": 0.42,
+    "edgeSoftness": 0.16,
     "opacity": 0.95
   },
   "wind": {
@@ -31,13 +31,13 @@
   "light": {
     "$comment": "sRGB tints of the frame's lights (the renderer's sun, moon and sky ambient colours, so the clouds follow whatever sets the lights): sunlit (the sun's) and shade (the day sky's ambient) by day, nightLit (the moon's) and nightShade (the night sky's ambient) by moonlight, sunset the warm tint of a low sun. absorption: how fast light dims through cloud. shadowStepM: how far toward the light the self-shadow samples (High only). silverLining/silverPower: the bright rim of thin cloud near the sun or moon, and how tight it is around it. sunWarmth: how much a low sun tints the clouds.",
     "sunlit": "#fffaf0",
-    "shade": "#d6d6d6",
+    "shade": "#eceae6",
     "sunset": "#ffbc8a",
     "nightLit": "#7a8296",
     "nightShade": "#3a3e4c",
-    "absorption": 2.2,
+    "absorption": 1.1,
     "shadowStepM": 320,
-    "silverLining": 0.6,
+    "silverLining": 0.9,
     "silverPower": 8,
     "sunWarmth": 0.4
   }

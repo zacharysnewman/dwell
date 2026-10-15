@@ -418,18 +418,21 @@ fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offse
 		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
 	}
 	let lit = exp(-CLOUD_ABSORPTION * occl);
-	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole));
-	var day = mix(CLOUD_SHADE * cloud_hue(lights.day_ambient), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
+	// Day or night as the sky behind is: the sphere's gradient runs by the direction's dot with the
+	// day zenith, so a turned sky can be night on one side and day on the other.
+	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole))
+		* smoothstep(-0.3, 0.1, dot(dir, day_pole));
+	var day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
 	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
 	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);
-	let night = mix(CLOUD_NIGHT_SHADE * cloud_hue(lights.night_ambient), CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color), lit);
+	let night = mix(CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5), CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color), lit);
 	var col = mix(night, day, dayness);
 	// The silver lining: thin cloud near the light glows.
 	let toward_light = max(dot(dir, light), 0.0);
 	let rim = CLOUD_SILVER * pow(toward_light, CLOUD_SILVER_POWER) * (1.0 - d) * (1.0 - d);
 	col += rim * mix(CLOUD_MOON_GLOW * 0.5, CLOUD_SUN_GLOW, dayness);
 	// Far cloud takes the sky's haze behind it.
-	col = mix(col, clear, 0.7 * smoothstep(0.0, CLOUD_FADE_END, deck.z));
+	col = mix(col, clear, 0.85 * smoothstep(0.0, CLOUD_FADE_END, deck.z));
 	return mix(clear, col, d * CLOUD_OPACITY * deck.w);
 }
 ";

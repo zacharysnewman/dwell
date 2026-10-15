@@ -148,7 +148,7 @@ const CHOICES: ChoiceSpec<CloudQuality>[] = [
   {
     label: 'Clouds',
     hint: 'Clouds in the sky; Low is lighter on the GPU',
-    options: CLOUD_QUALITIES.map((q) => ({ value: q, label: q[0].toUpperCase() + q.slice(1) })),
+    options: CLOUD_QUALITIES.map((q) => ({ value: q, label: q.charAt(0).toUpperCase() + q.slice(1) })),
     get: (s) => s.clouds,
     with: (s, v) => ({ ...s, clouds: v }),
   },
