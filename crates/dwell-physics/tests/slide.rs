@@ -252,7 +252,11 @@ fn braking_slows_the_slide_but_never_stops_it_or_climbs() {
     assert!(climbed < 0.01, "braking never climbs: {climbed}");
     assert_eq!(stopped, 0, "braking never stops the slide");
     assert!(slower, "the braker slides slower");
-    assert!(w.pos(braker).z < 5.3, "but still reaches the bottom: {}", w.pos(braker));
+    assert!(
+        w.pos(braker).z < 5.3,
+        "but still reaches the bottom: {}",
+        w.pos(braker)
+    );
 }
 
 #[test]
@@ -310,14 +314,21 @@ fn reaching_the_floor_keeps_the_momentum_without_a_hop_then_friction_stops_it() 
         }
     }
     let bottom_speed = bottom_speed.expect("reached the floor");
-    assert!(bottom_speed > 3.0, "keeps the slide's speed: {bottom_speed}");
+    assert!(
+        bottom_speed > 3.0,
+        "keeps the slide's speed: {bottom_speed}"
+    );
     assert_eq!(rise.rising_airborne, 0, "no launch or hop: {rise:?}");
     assert!(rise.max_up < 0.5, "{rise:?}");
     assert_eq!(airborne_on_flat, 0);
     assert!(approx(w.feet(e), 0.0, 0.02), "{}", w.feet(e));
     // Ground friction stops it, over more than a few ticks.
     let stop_tick = stop_tick.expect("stops");
-    assert!(w.pos(e).z < 4.5, "coasted on past the foot (z 5.29): {}", w.pos(e));
+    assert!(
+        w.pos(e).z < 4.5,
+        "coasted on past the foot (z 5.29): {}",
+        w.pos(e)
+    );
     let coast = stop_tick - bottom_tick.expect("reached the floor");
     assert!(coast > ticks(0.3), "coasted for {coast} ticks");
     // Holding forward at the bottom adds no boost on top of the slide's speed.
@@ -364,7 +375,10 @@ fn running_over_a_crest_onto_a_45_degree_ramp_slides_down_without_a_launch() {
     assert!(w.pos(e).z > 6.0, "down the ramp: {}", w.pos(e));
     assert_eq!(rise.rising_airborne, 0, "{rise:?}");
     assert!(rise.max_up < 0.5, "{rise:?}");
-    assert!(longest_airborne <= 3, "follows the ramp: {longest_airborne}");
+    assert!(
+        longest_airborne <= 3,
+        "follows the ramp: {longest_airborne}"
+    );
     let run = w.config.movement.run_speed;
     assert!(peak > run + 0.5, "the slide gained speed: {peak}");
     assert_eq!(w.count(e, events::JUMPED), 0);

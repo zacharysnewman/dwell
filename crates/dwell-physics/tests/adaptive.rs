@@ -279,11 +279,18 @@ fn standing_on_every_playground_block_rests_unless_its_ground_slides() {
         }
         let d = w.pos(e) - *s;
         if !c.ground.grounded || d.length() > 0.01 {
-            moved.push(format!("({x},{z}) moved {d} grounded {}", c.ground.grounded));
+            moved.push(format!(
+                "({x},{z}) moved {d} grounded {}",
+                c.ground.grounded
+            ));
         }
     }
     assert!(moved.is_empty(), "{} slid: {moved:?}", moved.len());
-    assert!(stayed.is_empty(), "{} stayed on steep ground: {stayed:?}", stayed.len());
+    assert!(
+        stayed.is_empty(),
+        "{} stayed on steep ground: {stayed:?}",
+        stayed.len()
+    );
     assert!(
         resting_on_steep.is_empty(),
         "{} at rest on steep ground: {resting_on_steep:?}",
@@ -402,7 +409,17 @@ fn a_one_wide_ridge_stops_a_walker_and_is_jumped_over_without_a_launch() {
     let jumper = w.spawn(Vec3::new(3.5, 0.52, 0.5));
     w.step(ticks(0.5));
     let jump_at = w.tick + ticks(0.55);
-    w.set_input(move |t, h| input(0.0, 1.0, false, h == jumper && t == jump_at, false, 0.0, 0.0));
+    w.set_input(move |t, h| {
+        input(
+            0.0,
+            1.0,
+            false,
+            h == jumper && t == jump_at,
+            false,
+            0.0,
+            0.0,
+        )
+    });
     let mut walk = Walk::default();
     let mut max_up = 0.0f32;
     for _ in 0..ticks(2.5) {

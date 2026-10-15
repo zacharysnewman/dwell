@@ -774,7 +774,9 @@ impl Players {
         radius: f32,
         closest: bool,
     ) -> Option<ProbeHit> {
-        Self::ring_cast_centre(ring, q, me, center, dir, distance, radius, closest, &mut None)
+        Self::ring_cast_centre(
+            ring, q, me, center, dir, distance, radius, closest, &mut None,
+        )
     }
 
     /// `ring_cast`, also giving the centre ray's own hit in `centre`.
