@@ -22,9 +22,12 @@ jobs:
         run: |
           node shared/protocol/gen.mjs
           node shared/blocks/gen.mjs
+          node shared/structures/gen.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
           git diff --exit-code
+      - name: Structure generator tests
+        run: node --test shared/structures/gen.test.mjs
 
   master:
     name: Master server (lint, typecheck, test in the Workers runtime)

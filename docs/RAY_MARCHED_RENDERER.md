@@ -186,6 +186,22 @@ p99, and the share hitting the cap) that the marcher writes to telemetry and the
 the whole way, so masks alone help little; column heights (3) and brick distances (4) are what keep
 them bounded. `look-horizon` in the bench is the scenario that measures it.
 
+**Measured on the CPU reference marcher** (`crates/dwell-march`, `cargo run --release -p
+dwell-march --example march_steps`, seed 1, 2026-10-14): chunks within 12 of the spawn and LOD
+levels 1–12 (13 × 13 sections each), 1080p at 70°, 4 px, cap 1,024. Steps per ray, median / p95 /
+p99:
+
+| Rays | Masks only | + skipping, column grids on sections only | + column grids on chunks too |
+|---|---|---|---|
+| Horizon (pitch −6°..+1°) | 41 / 927 / 1,025 (3.4 % capped) | 41 / 330 / 455 | 8 / 68 / 83 |
+| Down (pitch −90°..−30°) | 4 / 6 / 7 | 4 / 6 / 7 | 3 / 5 / 5 |
+| 3 km up (pitch −30°..0°) | 79 / 131 / 157 | 44 / 60 / 71 | 44 / 60 / 71 |
+
+Column grids help near grazing rays as much as far ones, so **chunks carry them too** (a deviation
+from item 3, which named LOD sections): 2.7 KiB on a chunk node's ~25 KiB, and every horizon ray
+then fits a 128-step cap. Memory measured: 28 KiB per non-trivial chunk node, 6 KiB per LOD
+section node (with its column grid); 35 MiB for that whole view.
+
 Rules that keep it correct and bounded: hit positions from integer cell + face + t (never
 `floor(origin + t·dir)` — the source of acne and seam cracks); secondary rays start from the hit
 face; a step cap (128 on phones) with the fog distance as max range and the sky colour on the cap;
@@ -315,6 +331,34 @@ Each step updates `docs/ARCHITECTURE.md`; the steps are Phase 25's deliverables 
 `docs/IMPLEMENTATION_PLAN.md`. The shared frame (A1) also serves Phase 19 (looks and textures) and
 Phase 26 (water).
 Nothing here changes public API (world files, seeds' terrain, protocols), so no new compatibility line.
+
+### A1 as built (2026-10-14)
+
+- **Depth across the split and MSAA:** an `r32float` *view depth* colour target (metres along the
+  view axis), written by every opaque fragment in both passes — the far pass clears it, the near
+  pass draws over it — so it has one meaning across the split. WebGPU resolves neither depth formats
+  nor `r32float`, so it is multisampled like the scene and stored; readers `textureLoad` its
+  samples (the composite averages the covered ones; the lines test each). Rejected: storing both
+  passes' depth buffers (two textures, two projections, twice the bytes) and `r16float`/`rg16float`
+  (resolvable, but too little range and precision out to 5e7 m). The marcher's §4.2 step 5 can write
+  the same target (distance ÷ |ray|) and needs no second depth path. A W3 refraction pass that wants
+  a single-sample depth adds a small resolve (min or covered-mean) of this target.
+- **Colour:** `rgba16float`, linear, premultiplied by coverage (alpha 0 where nothing is drawn), so
+  the composite puts the sky behind by coverage and no sky pass is drawn into the scene.
+- **Lines** (outline, debug) are drawn over the composite in output colour, single-sampled, with a
+  per-sample depth test in the shader.
+- **Image vs. before** (bench screenshots on an M-series Mac, 4× MSAA; HUD masked; identical runs of
+  the old build differ by 0): spawn horizon max 33/255, mean 0.11, 1.3 % of pixels > 2; 1 km up max
+  44, mean 0.41, 5.4 % > 2 — antialiased edges only (tone mapping now follows the resolve); 9 km up
+  over the sea max 35, mean 2.8, 36 % > 2 — the sea is greyer, water now blending in linear light
+  over the floor; looking down at a block max 128 on the outline only (no longer multisampled:
+  crisper and darker), mean 0.08. Needs the owner's approval (A1's exit check).
+- **Cost:** frame time unchanged within noise (the frame is CPU-bound: idle p50 7.3 → 7.6 ms,
+  flying 8.2 → 8.4 ms unthrottled on a loaded machine; `draw.render` +0.1 ms). GPU, idle at the
+  spawn (1280×720): far ≈ 1.3–1.6 ms, near ≈ 0.9–1.3, composite ≈ 0.7–1.3, whole frame ≈ 2.1–2.8 ms
+  p50; on Apple's tile GPU the passes overlap, so they add up to more than the frame.
+- **Timestamps:** Chrome rounds them to 65.536 µs unless started with
+  `--enable-webgpu-developer-features` (`--enable-features=WebGPUDeveloperFeatures` does not lift it).
 
 ## 8. Risks
 

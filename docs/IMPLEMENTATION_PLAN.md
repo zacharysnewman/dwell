@@ -42,9 +42,9 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
-| 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) and S3a (region edits, the region tools) done; next: S1, the structure format and its generator; S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built, A2's bench `--compare` and A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: the rest of A2 (the renderer seam and compare mode); the rest of A3 (GPU march, brick jobs) outstanding; local builds only until the owner's decision (A7); `package.json` raised to 0.11.3, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S2b; S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.4, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -1979,7 +1979,8 @@ the origin.
 - **LOD slopes** (the mesher's slope pieces, `slopePieces.ts`, `PIECE_NEAREST`) and the shape
   placement preview were cut with the slope stage and shape picking.
 - `indestructible` stays a block property with no block using it (the structural anchor of Phase 20
-  may); the `kUnbreakable` check is untested meanwhile.
+  may); the `kUnbreakable` check is untested meanwhile. *(Phase 27 S2a: the sandbox floor uses
+  it, and the check is tested.)*
 - The LOD surface's per-column data shrank from 6 floats to 4 (tints removed) and the F4 map column
   from 4 bytes to 3 (height and flags).
 
@@ -2580,25 +2581,50 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) done; next: A1, the shared frame and GPU timing. Needs Phase
-24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+**Status:** In progress — A0 (the ADR), A2's bench `--compare` and A3a (the CPU core in `crates/dwell-march`: layout,
+builders, pool, reference marcher) done; A1 (the shared frame and GPU timing) built, its exit
+check outstanding: the bench before/after is done (design doc §7, "A1 as built") and the picture
+differs slightly — antialiased edges, the sea's colour (water now blends in linear light), the
+outline no longer multisampled — which the owner approved (2026-10-14); the e2e suite passes on CI. Next:
+the rest of A2. Outstanding in A3: the GPU march, worker brick jobs, uploads, overlays and
+telemetry (A3b). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
 Deliverables
 - [x] **A0** — ADR 0029 (a second renderer behind a runtime switch, amending ADR 0028's renderer);
   the owner's answers recorded (`RAY_MARCHED_RENDERER.md` §9).
-- [ ] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
+- [x] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
   target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved
   to a composite pass; timestamp queries in the telemetry (`gpu.<pass>`); `bench.ts` passes
   `--enable-webgpu-developer-features`. 4× MSAA kept (owner).
+- [x] **A2 bench --compare** — `npm run bench -- --compare <scenario…>` (`scripts/compare.ts`,
+  `configs.ts`, `compareReport.ts`): each scenario once per configuration of
+  `client/bench/configs.json` (renderer, scale, upscaler; checked, a test adds one by data) in fresh
+  pages; `OUT/compare.json`, a printed table, per shot a side-by-side image and a ΔE heatmap
+  (% over the threshold, mean and max), and `OUT/compare.html` (metrics tables, the screenshots side
+  by side, a blink toggle per pair, the heatmaps); configurations the build lacks (from `__dwell.renderers()` /
+  `upscalers()`; today every `march` one) skipped with a note; metrics: frame interval percentiles,
+  dropped frames at 60 Hz, CPU phases, `gpu.*` when present, memory, uploads, streaming, a near/far
+  split. Scenarios' `renderer` (`?renderer=`) and `split` fields, a `repeat` step, and the scenarios
+  `look-horizon`, `look-down`, `edit-burst`, `fly-high`, `thermal-10min` (each run once on a Mac).
 - [ ] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene`, the
   `?renderer=raster|march|compare` switch (a build-time flag keeps it out of deployed builds) and the
-  active renderer in the settings menu and F3; compare mode's split, blink and difference views with
-  an empty "march" side; `npm run bench -- --compare` with the configurations table and report.
-- [ ] **A3** — Marched terrain at every distance: the generated GPU state table; brick jobs in the
-  workers for chunks and LOD sections (palette bricks with column max-heights); the pool, allocator
-  and clipmap levels; the CPU reference marcher; the primary march at full resolution with the
+  active renderer in the settings menu and F3; `__dwell.renderers()` / `upscalers()` for the bench;
+  compare mode's split, blink and difference views with an empty "march" side. Also moved here from
+  the bench item: edit-to-visible latency (needs an edit's sequence carried through the remesh to
+  the frame that draws it; `DEV_TOOLS.md` TODO) and image agreement by cell id, face and depth
+  (needs the renderers' id and depth buffers; the bench compares colour only).
+- [x] **A3a** — The CPU core (`crates/dwell-march`, pure Rust, native and `wasm32`): the GPU data
+  layout as `u32` words (clipmap levels and slots, 64-tree nodes, raw and 1/2/4-bit palette bricks,
+  column min-max grids, the state table from the registry's data); the builders (chunk → raw
+  bricks, LOD section → palette bricks, both with column grids and per-empty-brick distances); the
+  pool's size-class allocator and the clipmap levels (CPU side); the CPU reference marcher (integer
+  + fraction ray state, cone LOD, masks, column and brick-distance skips, step cap) with a
+  brute-force oracle; steps-per-ray statistics (`examples/march_steps.rs`).
+- [ ] **A3b** — Marched terrain at every distance on the GPU: the state table, pool and clipmap
+  uploaded (growth by `copy_buffer_to_buffer`); brick jobs in the workers for chunks and LOD
+  sections; the primary march at full resolution (a WGSL port of the reference marcher) with the
   hierarchy's masks and cone LOD; overlays through the `frag_depth` pass; steps-per-ray telemetry.
   `march` mode draws all terrain with no meshes.
 - [ ] **A4** — Empty-space skipping (design doc §4.3): column min-max heights, per-brick empty
@@ -2612,12 +2638,15 @@ Deliverables
   Phase 20 unblocked).
 
 Exit criteria
-- [ ] A1: bench before/after; raster screenshots match today's, or the owner approves the
-  difference.
+- [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
+  difference. (The owner approved the differences — edges, the sea's colour, the outline — 2026-10-14.)
 - [ ] A2: compare mode runs with raster on both sides and reports zero difference.
-- [ ] A3: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces);
-  the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near and
-  distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
+- [x] A3a: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces)
+  pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
+  without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
+  origin (bit-identical), face B as face A mirrored, a state added by data alone.
+- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near
+  and distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
   report on a desktop.
 - [ ] A4: steps-per-ray p99 down on `look-horizon` and `fly-high`; a comparison report on a desktop
   and a phone.
@@ -2627,6 +2656,16 @@ Exit criteria
 - [ ] A6: a comparison with lighting on and off; the owner's look.
 - [ ] A7: the owner's decision recorded in ADR 0029.
 
+
+Deviations
+- A3 is split into A3a (the CPU core) and A3b (the GPU side), so the finished part can be ticked.
+- Column min-max grids are built for chunks too, not only LOD sections (design doc §4.3 item 3):
+  on generated terrain they cut horizon rays' p99 from 455 to 83 steps for 2.7 KiB a node (the
+  measurements are in the design doc). The CPU reference also has A4's column and brick-distance
+  skips; A4 still needs them, and the rest of its list, on the GPU.
+- Water is its own `Transparent` march class: never occupied for primary rays (it stays a raster
+  pass, W6 later), its ids kept in mixed bricks. Level-0 bricks with shaped cells carry the optional
+  shape plane as a second fixed size class; the shape hook hits the cell's cube until A5.
 ---
 
 ## Phase 26 — Water and Fluid Looks
@@ -2636,7 +2675,7 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** Not started. W1a needs Phase 24 only; W1b and W3–W5 need A1 (Phase 25), which is W2; W6
+**Status:** In progress — W2 built (Phase 25's A1). W1a needs Phase 24 only; W1b and W3–W5 build on the shared frame (A1); W6
 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
@@ -2650,7 +2689,7 @@ Deliverables
   below the surface; the face's up) into a frame uniform, with its regression test.
 - [ ] **W1b** — The water shader (after A1): a dedicated `water_fs` with scrolling normal maps,
   Schlick Fresnel, a GGX glint by the fluid's roughness and the sky reflection.
-- [ ] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
+- [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
 - [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
   shoreline foam.
@@ -2681,25 +2720,27 @@ Exit criteria
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR) and S3a (region edits and the region tools) done; next: S1,
-the structure format and its generator. Outstanding for S3: S3b (anchor, touch) and the sandbox e2e
-(after S2a).
+**Status:** In progress — S0 (the ADR), S1 (the structure format and its generator), S2a (the
+floor and the sandbox world type) and S3a (region edits and the region tools) done; outstanding for
+S2a: its e2e exit check; outstanding for S3: S3b (anchor, touch) and the sandbox e2e; next: S2b.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
 
 Deliverables
 - [x] **S0** — ADR 0031 (the format with a `kind` and open vocabularies, the sandbox world type, the
-  `breakable` flag, the structures store, owner-only authoring, placement deferred); the owner's
+  unbreakable floor (S2a: the existing `indestructible` property), the structures store, owner-only authoring, placement deferred); the owner's
   answers recorded (`STRUCTURES.md` §7).
-- [ ] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
+- [x] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
   anchor, palette by block name, layers, named variant operations; capped at 32³);
   `shared/structures/gen.mjs` validation, canonical output and hash, stale check in CI; a Rust loader
   replacing `Structure::parse`; the playground converted.
-- [ ] **S2a** — The floor and the world type: the registry's `breakable` flag (default true) checked
-  by the server's edit validation; an unbreakable white floor block (e.g. `dwell:sandbox_floor`,
-  full, not placeable) appended to the registry; a `sandbox` world type (flat floor, flight on) in
-  the main menu and the launcher's new-world route.
+- [x] **S2a** — The floor and the world type: the registry's existing `indestructible` property
+  (reused instead of a new `breakable` flag) checked by the server's edit validation on Break and,
+  newly, on Place into the cell; an indestructible white floor block (`dwell:sandbox_floor`, full,
+  untextured, not placeable, not adaptive) appended to the registry; a `sandbox` world type
+  (generator 100: the flat generator with a layers parameter, in the floor block; flight on, the
+  default policy) in the main menu and the launcher's new-world route (`?new=1&type=sandbox`).
 - [ ] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
   (unknown fields kept, unreadable files left alone); save a selection as a structure; export and
   import JSON (download, clipboard).
@@ -2716,11 +2757,24 @@ Deliverables
   handling, goldens; a new ADR revisiting B10, and a new compatibility line.
 
 Exit criteria
-- [ ] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
+- [x] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
   character, wrong layer size, unknown kind or variant operation, over 32³) fail naming the entry;
-  the playground's tests pass on the converted file.
-- [ ] S2a: breaking a `breakable: false` state is rejected by the server (test); a sandbox world
-  opens on the white floor with flight on (e2e).
+  the playground's tests pass on the converted file. *(Verified: `dwell-world` `tests/structures.rs`
+  — `shared/structures/test/ladder_post.json` stamps by data alone, variants are deterministic, a
+  ladder turns and mirrors with its wall, the converted playground equals the old boxes cell for
+  cell (red on a one-cell change); `shared/structures/gen.test.mjs` covers every bad entry listed and
+  the 32³ cap; the netcode suite passes on `playground.json`.)*
+- [x] S2a: breaking or replacing an indestructible state (the sandbox floor) is rejected by the
+  server (`dwell-world` test `the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on`).
+- [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
+  check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
+  (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor read light grey, close
+  to the sky's fog colour, so the horizon disappeared and only placed blocks gave depth; the owner
+  approved a grid, now built (a faint line at every block edge from the `grid` tile, a stronger one
+  every 8 blocks from the `grid` look option), checked near, far and from above: the lines stay
+  readable under tone mapping, fade without shimmer at a distance, and leave the block outline
+  clear.
 - [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e; needs S2a's
@@ -2734,6 +2788,15 @@ Deviations (S3a): region edits leave **indestructible** cells as they are — th
 (coordinator, 2026-10-14). `RegionEdit` ships without a `protocolVersion` bump: an older server
 rejects unknown messages, so it is gated by the `regionEdits` Welcome flag instead (ARCHITECTURE.md
 §10.5); a new compatibility line was not needed.
+
+Deviations (S1):
+- Choices are **per voxel** (each cell draws independently, hashed from the seed and the unturned
+  cell); a structure-wide pick would be a new variant operation. Mirroring (`x` or `z`) is applied
+  before rotation, and one of "none" and the listed axes is picked.
+- The playground fits the 32³ cap (22 × 6 × 14), so no box or RLE encoding was needed; its box was
+  extended north to z = 0 (kept cells) so its anchor is the world origin. RLE is not built.
+- Test fixtures are generated into a separate table (`tests/fixtures/structures.gen.rs`), so they
+  are not in the build.
 
 ## Phase 30 — Tree Growth
 
