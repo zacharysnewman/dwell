@@ -843,7 +843,15 @@ async function connect(app: App): Promise<void> {
 
 // The main menu needs no game client (nor WebGPU): it opens at once. Anything else starts the
 // client, and shows the unsupported screen where it cannot.
-if (launchOf(location.search).kind === 'menu') {
+if (__LOCAL_BUILD__ && new URLSearchParams(location.search).get('marchtest') === '1') {
+  // The ray marcher's dev page (local builds only): a generated world, the marcher alone.
+  void loadWasm()
+    .then(() => import('./debug/marchTest'))
+    .then((m) => m.startMarchTest(element('view', HTMLCanvasElement), location.search))
+    .catch((e: unknown) => {
+      showFatal(`March test: ${e instanceof Error ? e.message : String(e)}`);
+    });
+} else if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();

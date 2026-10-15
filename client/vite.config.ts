@@ -86,6 +86,9 @@ export default defineConfig({
     __BUILD_SHA__: JSON.stringify(sha),
     __BUILD_TIME__: JSON.stringify(buildTime),
     __APP_VERSION__: JSON.stringify(version),
+    // A local build (dev server, local preview, the bench): not a release or a dev build of the
+    // site. The ray marcher's dev page is in local builds only (RAY_MARCHED_RENDERER.md).
+    __LOCAL_BUILD__: JSON.stringify(!process.env.DWELL_VERSION),
   },
   plugins: [releaseFiles()],
   // Module workers: the job and local-mode workers load the Rust client's WASM module.

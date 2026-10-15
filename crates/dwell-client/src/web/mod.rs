@@ -3,6 +3,7 @@
 pub mod app;
 pub mod jobs;
 pub mod local_worker;
+pub mod march_test;
 pub mod transport;
 
 use wasm_bindgen::prelude::*;
