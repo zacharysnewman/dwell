@@ -8,12 +8,14 @@
   LOD level) against the current mesher (chunk meshes and LOD meshes). Marching has to reach the
   horizon, so the work is making it skip empty space well (§4.3).
 
-Remaining owner questions in §9.
+The owner's answers to the plan's questions are in §9.
 
 The game gets a second, complete terrain renderer: GPU ray marching over a sparse voxel structure
 (compute shaders, per-pixel marching, low-resolution marching with upscaling). The two can be
 switched at runtime, shown side by side on one screen, and benchmarked against each other on the
-same scenarios. Raster stays the default and always ships; the comparison decides what happens next.
+same scenarios. The comparison runs **locally only**: the ray-marched renderer and compare mode are
+built into local builds (the dev server, a locally previewed build, the bench) and not into deployed
+builds, which keep the mesher until the decision (A7).
 
 This plan comes from five read-only investigations: the current pipeline, the voxel data structure,
 traversal and upscaling, moving bodies and compositing, and WebGPU feasibility and budget.
@@ -86,8 +88,9 @@ Plan:
 - The worker job kind follows the active renderer: mesh jobs for raster, brick jobs for the marcher,
   both in compare mode. CPU chunk and LOD cell data are already kept, so **switching renderer at
   runtime rebuilds the GPU data from them without a reload**.
-- `?renderer=raster|march|compare` and a Settings → Graphics choice (the baseline's D4 already asks
-  for the active renderer to be shown in the settings menu). The F3 overlay shows which is drawing.
+- `?renderer=raster|march|compare` in local builds only (a build-time switch, like the dev
+  telemetry, keeps the marcher out of deployed builds until A7). The settings menu shows the active
+  renderer (the baseline's D4 asks for that); the F3 overlay shows which is drawing.
 - Shared frame code: the offscreen HDR target, depth, composite (fog, tone mapping), overlays, GPU
   timing. Each renderer only fills colour/G-buffer and depth.
 
@@ -256,14 +259,16 @@ ones for this comparison — `look-horizon` (grazing rays, the marcher's worst c
 ### Devices
 
 Every bench comparison runs on: a Mac (M-series), a Windows laptop (integrated GPU), a Windows
-desktop (discrete GPU), an iPhone, an Android phone, and SwiftShader (correctness only, never
-speed). Phones need the bench to drive a device; until then, compare mode's live overlay on the
+desktop (discrete GPU), an iPhone from the last three years, a recent Android flagship (the two phones
+that must hold 60 fps; owner, 2026-10-14), and SwiftShader (correctness only, never speed). Phones need the bench to drive a device; until then, compare mode's live overlay on the
 phone is the check.
 
 ### Decision criteria
 
-Whole renderer against whole renderer, agreed before the numbers come in (to be confirmed by the
-owner, §9):
+No single metric decides it (owner, 2026-10-14: "measure all"). The report puts every metric in §5
+side by side — speed (CPU, GPU, frame intervals), looks (image agreement, the owner's look), view
+distance, memory, edit latency, streaming — split into near and far views, and the owner decides at
+A7. The outcomes below are a guide to what each result would lead to, not a rule:
 
 | Outcome | Then |
 |---|---|
@@ -272,16 +277,18 @@ owner, §9):
 | It loses on speed everywhere but its lighting (A6) is wanted | Keep the mesher; ship marched lighting on top (the hybrid) |
 | It loses and its lighting isn't wanted | Keep the mesher; the marcher stays behind the flag or is removed |
 
-The report splits each result into near and far views, so a mixed outcome (e.g. marching wins far
-and loses near) is visible; what to do with one is the owner's call at A7.
+A mixed outcome (e.g. marching wins far and loses near) is visible in the split report; what to do
+with one is also the owner's call at A7.
 
 ## 6. Moving bodies and other content
 
-- **Moving voxel bodies aren't built yet** (Phases 20–22 are planned). Build them as raster meshes
-  first, as planned, under both renderers (composited by depth), and generalise the per-draw yaw to
-  a quaternion (needed either way). Later, give each body a small brick volume in the pool and a
-  top-level grid over up to 512 body bounds, so marched rays see them; Teardown's box-rasterized
-  marching is the middle option. Sequence this so cluster rendering isn't built twice.
+- **Moving voxel bodies aren't built yet** (Phases 20–22 are planned), and **they wait for the
+  renderer decision** (owner, 2026-10-14), so cluster rendering is built once, for the chosen
+  renderer. If the mesher stays: greedy meshes with a quaternion per draw (today's draw data is
+  yaw only), composited by depth. If marching is chosen: a small brick volume per body in the pool
+  and a top-level grid over up to 512 body bounds, so marched rays (and shadow rays) see them;
+  Teardown's box-rasterized marching is the middle option. A0's ADR records the dependency, and
+  the implementation plan's Phase 20 then waits for A7.
 - **Water** stays a raster pass over both renderers at first; under the marcher it later becomes a
   hit type with reflection and refraction rays (`WATER.md` W6).
 - **Raster under both**: players, held items, particles, debris, outline, debug lines. The UI is DOM.
@@ -321,15 +328,18 @@ Nothing here changes public API (world files, seeds' terrain, protocols), so no 
 - The 4× MSAA edge between marched terrain and raster overlays.
 - No subgroups on iOS, no 64-bit atomics anywhere on WebGPU.
 
-## 9. Questions for the owner
+## 9. Owner answers (2026-10-14)
 
-1. **Decision criteria**: are the outcomes in §5 the right ones? What matters most — speed, looks,
-   view distance, or edit latency?
-2. **Minimum devices**: which phones must hold 60 fps under the chosen renderer?
-3. Should the shared frame (A1) go first, since water needs it too?
-4. Is 4× MSAA kept, or can it give way to TAA if the composite needs it?
-5. Should compare mode ship in release builds (players could look), or only dev builds and the bench?
-6. Do moving bodies (Phase 20) wait for the decision, or ship as meshes first (recommended)?
+| # | Question | Answer |
+|---|---|---|
+| 1 | What decides it: speed, looks, view distance, edit latency? | Not sure yet: **measure all**; no single metric decides (§5) |
+| 2 | Which phones must hold 60 fps? | An iPhone from the last three years and a recent Android flagship |
+| 3 | Does the shared frame (A1) go first, since water needs it too? | Yes |
+| 4 | Keep 4× MSAA, or give way to TAA? | Keep it for now; decide once measured |
+| 5 | Does compare mode ship to players? | No: **run locally to compare**. The marcher and compare mode are in local builds only until A7 |
+| 6 | Do moving bodies (Phase 20) wait for the decision? | Yes, they wait |
+
+No questions are open for this proposal; A0 turns these answers into the ADR.
 
 ## Sources
 
