@@ -117,7 +117,7 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         .expect("hit");
         assert_eq!((hit.cell, hit.face), ([ox + 2, -1, 0], 2));
         // The cell containing the eye is not a target.
-        world.set_voxel(ox + 5, 0, 0, s("dwell:dirt"));
+        world.set_voxel(ox + 5, 0, 0, s("dwell:sandbox_floor")); // inside a solid cube
         assert!(
             raycast_block(
                 &mut world,

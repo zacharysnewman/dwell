@@ -38,13 +38,11 @@ pub fn turned_over(shape: &'static ShapeInfo) -> &'static ShapeInfo {
             })
             .collect()
     });
-    // Its index in SHAPES, if it is one of the table's rows.
-    let at = (shape as *const ShapeInfo as usize).wrapping_sub(SHAPES.as_ptr() as usize);
-    let i = at / std::mem::size_of::<ShapeInfo>();
-    if at % std::mem::size_of::<ShapeInfo>() != 0 || i >= SHAPES.len() {
-        return shape;
+    // Its row in SHAPES (a shape from elsewhere is returned as it is).
+    match SHAPES.iter().position(|s| std::ptr::eq(s, shape)) {
+        Some(i) => &SHAPES[usize::from(table[i])],
+        None => shape,
     }
-    &SHAPES[usize::from(table[i])]
 }
 
 /// The solid's extent in y at a horizontal point within the cell.

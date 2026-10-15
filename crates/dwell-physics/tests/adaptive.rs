@@ -65,7 +65,6 @@ struct Walk {
     rising_airborne: i32,
     /// Fastest upward speed (m/s).
     max_up: f32,
-    jumps: i32,
     /// Highest feet height above the surface under the body's centre.
     max_gap: f32,
 }
