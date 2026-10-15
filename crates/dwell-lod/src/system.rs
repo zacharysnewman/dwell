@@ -242,8 +242,11 @@ const ROOM: f64 = 0.6;
 pub const COARSER_AFTER_MS: f64 = 1000.0;
 pub const FINER_AFTER_MS: f64 = 10_000.0;
 pub const RETRY_FINER_AFTER_M: f64 = 512.0;
-/// The chunks draw water's surface 1/8 m below a full block (the chunk mesher's water surface).
-const CHUNK_WATER_DROP_M: f64 = 0.125;
+/// How far below a full block the chunks draw water's surface, in metres: the registry's
+/// `surfaceDrop` of `dwell:water` (LOD water is drawn at the same height).
+fn chunk_water_drop_m() -> f64 {
+    dwell_blocks::require_fluid("dwell:water").surface_drop
+}
 /// LodRequest sections per second by default (under the server's limit).
 const DEFAULT_REQUESTS_PER_SECOND: f64 = (lod::REQUESTS_PER_SECOND - 4) as f64;
 /// ChunkRequest chunks per second by default (under the server's limit).
@@ -1422,7 +1425,7 @@ impl LodSystem {
             } else {
                 self.surface_in_cells(id)
             },
-            water_drop: CHUNK_WATER_DROP_M / cell_size(coord.level) as f64,
+            water_drop: chunk_water_drop_m() / cell_size(coord.level) as f64,
             // Face B's terrain faces down: meshed as its mirror image, turned back.
             mirror: is_face_b_section(coord),
         };

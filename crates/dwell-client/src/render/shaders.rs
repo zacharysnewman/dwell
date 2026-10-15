@@ -35,6 +35,8 @@ struct Frame {
     up: vec4f,
     forward: vec4f,
     tan: vec4f,
+    // The eye under a fluid's drawn surface: x 1 (else 0), y fluid id, z the surface's world y.
+    water: vec4f,
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
