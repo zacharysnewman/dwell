@@ -138,3 +138,14 @@ so a failure says which changed.
 - Determinism goldens pass (regenerated once if runtime ids change); protocol golden vectors for
   `Welcome`'s registry hash; e2e "break and place every palette block" still passes.
 - If paletted containers are adopted: chunk memory and meshing time measured before and after.
+
+## 7. Sound sets **[in progress, Phase 28]**
+
+A block may name its **sound set** by id: `"sound": "dwell:stone"` (ladders: `"dwell:wood"`). Sets
+live in `shared/sounds/*.json` ([`AUDIO.md`](./AUDIO.md), [ADR 0032](./adr/0032-audio.md)): the
+sound each event plays on that material (step, land, break, place, hit; enter, exit and swim for
+liquids). `shared/blocks/gen.mjs` checks every reference against the sound data
+(`shared/sounds/validate.mjs`) and fails naming the block; the set id is emitted on the block in the
+TS `BLOCK_DEFS`, where the shell's audio maps a state's block to its set. A block without `sound`
+uses the sound data's `fallback` set. Sounds are per build and change no state, id or hash: adding
+or changing one is not a compatibility change.

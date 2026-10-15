@@ -67,7 +67,10 @@ describe('sound data', () => {
     [
       'a filter out of range',
       (f) => {
-        f.sounds.tick = { ...tick, layers: [{ ...layer, filters: [{ type: 'lowpass', freq: 40000 }] }] };
+        f.sounds.tick = {
+          ...tick,
+          layers: [{ ...layer, filters: [{ type: 'lowpass', freq: 40000 }] }],
+        };
       },
       /filters\[0\]\.freq: 40000 is outside/,
     ],
@@ -81,7 +84,10 @@ describe('sound data', () => {
     [
       'bad modal partials',
       (f) => {
-        f.sounds.tick = { ...tick, layers: [{ source: 'modal', freq: 300, gain: 1, partials: [[1, 2]] }] };
+        f.sounds.tick = {
+          ...tick,
+          layers: [{ source: 'modal', freq: 300, gain: 1, partials: [[1, 2]] }],
+        };
       },
       /partials\[0\]: must be \[ratio, gain, decay\]/,
     ],
@@ -152,7 +158,10 @@ describe('sound data', () => {
 
   it('rejects a block naming an unknown set', () => {
     expect(() => {
-      checkBlockSounds([{ id: 'dwell:iron', sound: 'dwell:metal' }], resolveSounds(readSoundFiles()));
+      checkBlockSounds(
+        [{ id: 'dwell:iron', sound: 'dwell:metal' }],
+        resolveSounds(readSoundFiles()),
+      );
     }).toThrow(/dwell:iron: unknown sound set "dwell:metal"/);
   });
 
@@ -162,7 +171,17 @@ describe('sound data', () => {
     f.sounds.metal_clang = {
       gain: 0.8,
       variation: { pitch: 1, gain: 1 },
-      layers: [{ source: 'modal', freq: 800, gain: 0.3, partials: [[1, 1, 0.3], [2.76, 0.5, 0.2]] }],
+      layers: [
+        {
+          source: 'modal',
+          freq: 800,
+          gain: 0.3,
+          partials: [
+            [1, 1, 0.3],
+            [2.76, 0.5, 0.2],
+          ],
+        },
+      ],
     };
     (f.sets as Record<string, unknown>).metal = {
       step: 'metal_clang',
@@ -183,13 +202,45 @@ describe('sound data', () => {
         { id: 'dwell:iron', first: 1, count: 1, properties: [], sound: 'dwell:metal' },
       ],
       states: [
-        { id: 0, state: 'dwell:air', block: 0, values: {}, look: 'cube', color: 0, opacity: 0, shape: 0, flooded: false, placeable: false },
-        { id: 1, state: 'dwell:iron', block: 1, values: {}, look: 'cube', color: 0, opacity: 1, shape: 1, flooded: false, placeable: true },
+        {
+          id: 0,
+          state: 'dwell:air',
+          block: 0,
+          values: {},
+          look: 'cube',
+          color: 0,
+          opacity: 0,
+          shape: 0,
+          flooded: false,
+          placeable: false,
+        },
+        {
+          id: 1,
+          state: 'dwell:iron',
+          block: 1,
+          values: {},
+          look: 'cube',
+          color: 0,
+          opacity: 1,
+          shape: 1,
+          flooded: false,
+          placeable: true,
+        },
       ],
     };
     const kind = (name: string): number => data.events.findIndex((e) => e.name === name);
-    const event = (name: string) => ({ kind: kind(name), block: 1, intensity: 1, at: null, gait: null });
-    expect(soundsFor(event('break'), data, registry)).toEqual([{ sound: 'dwell:metal_clang', gain: 1 }]);
-    expect(soundsFor(event('step'), data, registry)).toEqual([{ sound: 'dwell:metal_clang', gain: 1 }]);
+    const event = (name: string) => ({
+      kind: kind(name),
+      block: 1,
+      intensity: 1,
+      at: null,
+      gait: null,
+    });
+    expect(soundsFor(event('break'), data, registry)).toEqual([
+      { sound: 'dwell:metal_clang', gain: 1 },
+    ]);
+    expect(soundsFor(event('step'), data, registry)).toEqual([
+      { sound: 'dwell:metal_clang', gain: 1 },
+    ]);
   });
 });

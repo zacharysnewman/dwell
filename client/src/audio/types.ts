@@ -89,15 +89,7 @@ export interface SoundDef {
 export type SetEvent = 'step' | 'land' | 'break' | 'place' | 'hit' | 'enter' | 'exit' | 'swim';
 export type Gait = 'walk' | 'run' | 'crouch' | 'climb' | 'swim';
 export type UiKind =
-  | 'hover'
-  | 'click'
-  | 'back'
-  | 'tab'
-  | 'toggle_on'
-  | 'toggle_off'
-  | 'slider'
-  | 'error'
-  | 'success';
+  'hover' | 'click' | 'back' | 'tab' | 'toggle_on' | 'toggle_off' | 'slider' | 'error' | 'success';
 
 export interface EventDef {
   name: string;

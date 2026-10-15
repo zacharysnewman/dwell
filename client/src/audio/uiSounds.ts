@@ -73,7 +73,8 @@ export function clickSound(target: UiElement | null): UiKind | null {
   if (o !== null) return KINDS.includes(o) ? (o as UiKind) : null;
   const tag = el.tagName.toLowerCase();
   if (tag === 'input') {
-    if (el.type === 'checkbox' || el.type === 'radio') return el.checked ? 'toggle_on' : 'toggle_off';
+    if (el.type === 'checkbox' || el.type === 'radio')
+      return el.checked ? 'toggle_on' : 'toggle_off';
     if (el.type === 'button' || el.type === 'submit' || el.type === 'reset') return 'click';
     return null; // text fields, sliders (their ticks are `input` events)
   }
@@ -97,8 +98,16 @@ export function hoverSound(target: UiElement | null): boolean {
 }
 
 export interface UiSoundRoot {
-  addEventListener(type: string, listener: (e: Event) => void, options?: AddEventListenerOptions): void;
-  removeEventListener(type: string, listener: (e: Event) => void, options?: AddEventListenerOptions): void;
+  addEventListener(
+    type: string,
+    listener: (e: Event) => void,
+    options?: AddEventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: string,
+    listener: (e: Event) => void,
+    options?: AddEventListenerOptions,
+  ): void;
 }
 
 /**
@@ -173,6 +182,7 @@ export function installUiSounds(
   for (const [type, l] of listeners)
     root.addEventListener(type, l, { capture: capture(type), passive: true });
   return () => {
-    for (const [type, l] of listeners) root.removeEventListener(type, l, { capture: capture(type) });
+    for (const [type, l] of listeners)
+      root.removeEventListener(type, l, { capture: capture(type) });
   };
 }

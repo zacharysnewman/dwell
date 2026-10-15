@@ -33,7 +33,9 @@ describe('volume settings', () => {
 
   it('are an append-only store: a rewrite keeps fields another version wrote', () => {
     // A later version's field (e.g. a music volume) survives this version saving its own.
-    const store = memory({ [AUDIO_KEY]: JSON.stringify({ master: 0.3, music: 0.7, future: { a: 1 } }) });
+    const store = memory({
+      [AUDIO_KEY]: JSON.stringify({ master: 0.3, music: 0.7, future: { a: 1 } }),
+    });
     saveVolumes({ master: 0.9, effects: 1, ui: 0.5 }, store);
     expect(JSON.parse(store.data[AUDIO_KEY] ?? '{}')).toEqual({
       master: 0.9,

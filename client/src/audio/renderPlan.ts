@@ -41,13 +41,19 @@ export function renderPlan(data: SoundData, walkSpeed = 5, runSpeed = 8): Render
     });
   };
   for (const [set, events] of Object.entries(data.sets)) {
-    for (const [event, sound] of Object.entries(events)) single(`set_${local(set)}_${event}`, sound, 'effects');
+    for (const [event, sound] of Object.entries(events))
+      single(`set_${local(set)}_${event}`, sound, 'effects');
   }
   for (const e of data.events) if (e.sound) single(`event_${e.name}`, e.sound, 'effects');
   for (const [name, sound] of Object.entries(data.actions)) single(`action_${name}`, sound, 'ui');
   for (const [kind, sound] of Object.entries(data.ui)) single(`ui_${kind}`, sound, 'ui');
 
-  const sequence = (name: string, sound: string, times: number[], extra: (i: number) => Partial<RenderPlay>): void => {
+  const sequence = (
+    name: string,
+    sound: string,
+    times: number[],
+    extra: (i: number) => Partial<RenderPlay>,
+  ): void => {
     const last = times[times.length - 1] ?? 0;
     jobs.push({
       name,

@@ -51,17 +51,25 @@ async function main(): Promise<void> {
       outDir: site,
       emptyOutDir: true,
       target: 'es2022',
-      lib: { entry: join(client, 'src/audio/render.ts'), formats: ['es'], fileName: () => 'render.js' },
+      lib: {
+        entry: join(client, 'src/audio/render.ts'),
+        formats: ['es'],
+        fileName: () => 'render.js',
+      },
     },
   });
   writeFileSync(
     join(site, 'index.html'),
     '<!doctype html><meta charset="utf-8"><title>Dwell sound renders</title><script type="module" src="./render.js"></script>\n',
   );
-  const preview = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', '--outDir', site], {
-    cwd: client,
-    stdio: 'ignore',
-  });
+  const preview = spawn(
+    'npx',
+    ['vite', 'preview', '--port', String(PORT), '--strictPort', '--outDir', site],
+    {
+      cwd: client,
+      stdio: 'ignore',
+    },
+  );
   const url = `http://localhost:${String(PORT)}/dwell/`;
   const problems: string[] = [];
   const rows: string[] = [];

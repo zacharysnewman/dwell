@@ -79,7 +79,8 @@ export class AudioEngine {
         silent.start();
       }
       // 'interrupted' (iOS, after a call or another app's audio) resumes the same way.
-      if (this.ctx.state !== 'running' && !this.hidden) void this.ctx.resume().catch(() => undefined);
+      if (this.ctx.state !== 'running' && !this.hidden)
+        void this.ctx.resume().catch(() => undefined);
     } catch {
       // No audio on this page: everything else still works.
     }

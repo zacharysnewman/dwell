@@ -5,11 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { DEBUG_KEYS, KEYBOARD, TOUCH } from '../ui/controls';
 import { SOUND_DATA } from './sounds.gen';
 
-const actions = [
-  ...KEYBOARD.flatMap((g) => g.controls),
-  ...DEBUG_KEYS,
-  ...TOUCH,
-].map((c) => c.action);
+const actions = [...KEYBOARD.flatMap((g) => g.controls), ...DEBUG_KEYS, ...TOUCH].map(
+  (c) => c.action,
+);
 
 describe('sound coverage', () => {
   it('gives every action of the controls table a sound, or a reason to be silent', () => {

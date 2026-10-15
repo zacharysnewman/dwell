@@ -119,8 +119,10 @@ function filters(
     b.type = f.type;
     const from = clampFreq(ctx, f.freq * factor);
     b.frequency.setValueAtTime(from, t0);
-    if (f.to !== undefined) b.frequency.exponentialRampToValueAtTime(clampFreq(ctx, f.to * factor), end);
-    b.Q.value = f.q ?? (f.type === 'bandpass' || f.type === 'peaking' || f.type === 'notch' ? 1 : 0.707);
+    if (f.to !== undefined)
+      b.frequency.exponentialRampToValueAtTime(clampFreq(ctx, f.to * factor), end);
+    b.Q.value =
+      f.q ?? (f.type === 'bandpass' || f.type === 'peaking' || f.type === 'notch' ? 1 : 0.707);
     if (f.gain !== undefined) b.gain.value = f.gain;
     return b;
   });

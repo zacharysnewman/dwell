@@ -55,7 +55,11 @@ export interface ResolvedPlay {
 }
 
 /** The sounds one event plays. */
-export function soundsFor(e: SoundEvent, data: SoundData, registry: Registry = REGISTRY): ResolvedPlay[] {
+export function soundsFor(
+  e: SoundEvent,
+  data: SoundData,
+  registry: Registry = REGISTRY,
+): ResolvedPlay[] {
   const def = data.events[e.kind];
   if (!def) return [];
   const gaitName = e.gait !== null ? data.gaitOrder[e.gait] : undefined;

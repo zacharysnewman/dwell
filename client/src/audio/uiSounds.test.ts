@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { clickSound, hoverSound, installUiSounds, SLIDER_INTERVAL_MS, type UiElement } from './uiSounds';
+import {
+  clickSound,
+  hoverSound,
+  installUiSounds,
+  SLIDER_INTERVAL_MS,
+  type UiElement,
+} from './uiSounds';
 import type { UiKind } from './types';
 
 /** A minimal element (the suite runs without a DOM). */
@@ -42,8 +48,12 @@ describe('UI sounds', () => {
     expect(clickSound(el('button', { 'aria-pressed': 'false' }))).toBe('toggle_off');
     expect(clickSound(el('button', { 'aria-label': 'Close menu' }))).toBe('back');
     expect(clickSound(el('button', { text: 'Cancel' }))).toBe('back');
-    expect(clickSound(el('input', {}, null, { type: 'checkbox', checked: true }))).toBe('toggle_on');
-    expect(clickSound(el('input', {}, null, { type: 'checkbox', checked: false }))).toBe('toggle_off');
+    expect(clickSound(el('input', {}, null, { type: 'checkbox', checked: true }))).toBe(
+      'toggle_on',
+    );
+    expect(clickSound(el('input', {}, null, { type: 'checkbox', checked: false }))).toBe(
+      'toggle_off',
+    );
     expect(clickSound(el('input', {}, null, { type: 'text' }))).toBeNull();
     expect(clickSound(el('input', {}, null, { type: 'range' }))).toBeNull();
     expect(clickSound(el('button', { 'data-sound': 'none' }))).toBeNull();
@@ -58,7 +68,11 @@ describe('UI sounds', () => {
     const root = new EventTarget();
     const played: UiKind[] = [];
     let t = 0;
-    const remove = installUiSounds(root, (k) => played.push(k), () => t);
+    const remove = installUiSounds(
+      root,
+      (k) => played.push(k),
+      () => t,
+    );
     // Buttons created later (a new menu page, a world's row): delegation hears them.
     const later = el('button', { text: 'Play' });
     root.dispatchEvent(event('click', later));
