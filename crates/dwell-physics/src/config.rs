@@ -42,7 +42,7 @@ pub struct Movement {
 pub struct Probes {
     pub ground_probe_margin: f32,
     pub ceiling_probe_margin: f32,
-    /// Degrees: above the 45° pitch of a standard slope.
+    /// Degrees: above the steepest face the adaptive shapes make (a saddle's 54.74°, Phase 18).
     pub max_slope_angle: f32,
 }
 
@@ -180,7 +180,7 @@ impl Default for PlayerControllerConfig {
             probes: Probes {
                 ground_probe_margin: 0.15,
                 ceiling_probe_margin: 0.10,
-                max_slope_angle: 50.0,
+                max_slope_angle: 56.0,
             },
             jump: Jump {
                 height: 1.25,
