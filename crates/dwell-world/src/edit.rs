@@ -40,12 +40,14 @@ fn face_of_normal(n: [f32; 3]) -> u8 {
     if n[2] > 0.0 { 4 } else { 5 }
 }
 
-/// The shape a block is aimed at and seen by: its solid, or the whole cell (a ladder).
-fn target_shape(m: StateId) -> &'static ShapeInfo {
+/// The shape a block is aimed at and seen by: its solid — an adaptive block's derived shape — or
+/// the whole cell (a ladder).
+fn target_shape(world: &mut VoxelWorld, cell: [i32; 3]) -> &'static ShapeInfo {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
     if info(m).shape == VoxelShape::Empty {
         shape_of(M.stone)
     } else {
-        shape_of(m)
+        world.shape_at(cell[0], cell[1], cell[2])
     }
 }
 
@@ -90,11 +92,12 @@ pub fn raycast_block(
     }
     let mut t_cell = 0.0f32;
     while t_cell <= max_distance {
-        let m = world.get_voxel(base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]);
+        let at: [i32; 3] = std::array::from_fn(|i| base[i] + cell[i]);
+        let m = world.get_voxel(at[0], at[1], at[2]);
         if targetable(m) {
             let corner = cell.map(|c| c as f32);
-            if let Some(hit) =
-                ray_enter_shape(target_shape(m), corner, o, dir, max_distance, None, 0.0)
+            let shape = target_shape(world, at);
+            if let Some(hit) = ray_enter_shape(shape, corner, o, dir, max_distance, None, 0.0)
                 && hit.t <= max_distance
             {
                 return Some(BlockHit {
@@ -203,7 +206,7 @@ pub fn check_block_edit(
     // the requested face, and a ray from it reaches the target first at the polygon's centre or
     // near one of its corners.
     let mut visible = false;
-    for polygon in faces_of(target_shape(target)) {
+    for polygon in faces_of(target_shape(world, c)) {
         if visible {
             break;
         }

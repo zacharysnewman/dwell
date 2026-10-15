@@ -3,7 +3,7 @@
 //! for every player before the physics step. Transcendental functions come from `libm`, so native
 //! and WASM builds agree bit for bit.
 
-use dwell_blocks::{Facing, VoxelShape, info, shape::surface_height_at};
+use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
 use dwell_world::{
     MIDPLANE_Y, SEA_LEVEL, VoxelWorld, WORLD_MAX_Y, chunk_distance, chunk_of, mirror_y,
 };
@@ -979,12 +979,18 @@ impl Players {
         let probe = center + (safe_normalized(f) * (cfg.body.radius + 0.2)).as_dvec3();
         let (x, z) = (probe.x.floor() as i32, probe.z.floor() as i32);
         let y = (feet + cfg.movement.max_step_height + 0.05).floor() as i32;
+        let shape = q.shape(x, y, z);
         let top = y as f32
-            + surface_height_at(
-                q.material(x, y, z),
-                (probe.x - f64::from(x)) as f32,
-                (probe.z - f64::from(z)) as f32,
-            );
+            + if shape.face_count == 0 {
+                0.0
+            } else {
+                solid_span_at(
+                    shape,
+                    (probe.x - f64::from(x)) as f32,
+                    (probe.z - f64::from(z)) as f32,
+                )
+                .hi
+            };
         if top <= feet + cfg.movement.max_step_height || top > feet + 1.05 {
             return false;
         }

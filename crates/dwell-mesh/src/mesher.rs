@@ -156,13 +156,13 @@ pub fn face_covered(shape: &ShapeInfo, face: usize, neighbour: Option<&ShapeInfo
     let side = |f: usize| if f < 2 { f } else { f - 2 };
     let mine = shape.sides[side(face)];
     let theirs = neighbour.sides[side(face ^ 1)];
-    if mine[0] == 0 && mine[1] == 0 {
+    if mine == [0; 3] {
         return true;
     }
     if shape.inverted == neighbour.inverted {
-        return theirs[0] >= mine[0] && theirs[1] >= mine[1];
+        return (0..3).all(|i| theirs[i] >= mine[i]);
     }
-    theirs[0] == 2 && theirs[1] == 2
+    theirs == [4; 3]
 }
 
 /// Is the full-cube face `face` of a cube or water voxel `m` hidden by neighbour `n`?
@@ -362,18 +362,23 @@ fn polygon_normal(pts: &[[f64; 3]]) -> [f64; 3] {
 const SIDE_OF_TAG: [i32; 6] = [0, 1, -1, -1, 2, 3];
 
 /// The height of an upright piece's top edge along one of its side faces: the side profile runs
-/// linearly between its heights (halves) at the low and high running coordinate (z on ±X faces, x
-/// on ±Z).
+/// linearly between its heights (quarters of a cell) at the low end, the middle and the high end
+/// of the running coordinate (z on ±X faces, x on ±Z).
 #[derive(Clone, Copy, Debug)]
 struct SideTop {
-    h0: f64,
-    h1: f64,
+    h: [f64; 3],
     run: usize,
 }
 
 impl SideTop {
     fn at(self, pt: &[f64; 3]) -> f64 {
-        (self.h0 + (self.h1 - self.h0) * pt[self.run]) / 2.0
+        let s = pt[self.run];
+        let q = if s <= 0.5 {
+            self.h[0] + (self.h[1] - self.h[0]) * s * 2.0
+        } else {
+            self.h[1] + (self.h[2] - self.h[1]) * (s - 0.5) * 2.0
+        };
+        q / 4.0
     }
 }
 
@@ -383,10 +388,8 @@ fn side_top_of(def: &ShapeInfo, tag: usize) -> Option<SideTop> {
     if side < 0 || def.inverted {
         return None;
     }
-    let [h0, h1] = def.sides[side as usize];
     Some(SideTop {
-        h0: f64::from(h0),
-        h1: f64::from(h1),
+        h: def.sides[side as usize].map(f64::from),
         run: if side < 2 { 2 } else { 0 },
     })
 }
