@@ -1,6 +1,6 @@
 # Proposal: water rendering — surface, reflections, refraction, underwater
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions 1–4 answered; 5 open (§7).
+**Status:** investigated 2026-10-14, not adopted. Owner questions answered (§7); ready for an ADR.
 
 ## 1. Water today
 
@@ -129,7 +129,8 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
    viscosity) — which would change what's data and what's code? *Owner, 2026-10-14: yes, other
    fluids, looks only.* So the fluid entry (§2) is the whole system: a new fluid is a new entry, and
    the fixture test adds one by data alone. Behaviour (flow, viscosity, damage) stays out of scope.
-5. Should waves ever move geometry (open ocean), or stay normal-only?
+5. Should waves ever move geometry (open ocean), or stay normal-only? *Owner, 2026-10-14: water
+   doesn't move for now* — the surface geometry stays still; ripples are only in the shading.
 
 ## Sources
 

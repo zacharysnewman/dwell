@@ -1,7 +1,6 @@
 # Proposal: a structure sandbox and a data-driven structure system
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions answered except 1 (§7) — CLAUDE.md's "ask
-before designing" applies, so nothing here is designed until they're answered.
+**Status:** investigated 2026-10-14, not adopted. Owner questions answered (§7); ready for an ADR (S0).
 
 The ask: a tool with a simple flat white terrain sandbox where you build things (trees, rocks,
 etc.), saved locally, that can easily be added to a custom shapes/structures system.
@@ -125,7 +124,14 @@ game; bulk edits stressing streaming and save size.
 ## 7. Questions for the owner
 
 1. What gets added later: more structures only, new variant kinds, new placement conditions, or
-   structures with logic (e.g. trunks that grow to the ground)?
+   structures with logic (e.g. trunks that grow to the ground)? *Owner, 2026-10-14: all of those
+   might be — tree variations, bushes, and later mountains and volcanoes that may need specific
+   curve configurations; the big ones are certainly future.* So the format is versioned and its
+   vocabularies are open lists: each file has a `"kind"` (`"voxels"`, hand-built, is the only one
+   at first; a parametric kind driven by curves can be added for mountains and volcanoes, most
+   likely as a terrain-definition node, ADR 0026), and variant and placement entries are named
+   operations validated by `gen.mjs`, so a new one is a new name plus its engine code, with no
+   change to existing files.
 2. Who adds them and with what: only you, in the sandbox, then a commit — or players too (custom
    structures per world, shared on servers)? *Owner, 2026-10-14: only the owner — built in the
    sandbox, exported, committed to `shared/structures/`.*
