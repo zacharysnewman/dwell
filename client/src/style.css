@@ -848,6 +848,18 @@ body.menu-open #menu-button {
   line-height: 1.35;
 }
 
+/* On/off settings: a grass-coloured checkbox beside the name. */
+.settings-toggle {
+  cursor: pointer;
+}
+.settings-toggle input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--grass-dark);
+  cursor: pointer;
+}
+
 /* Sliders: a track filled with grass up to the value, and a block for a thumb. */
 .settings-row input[type='range'],
 #flight-speed input[type='range'] {

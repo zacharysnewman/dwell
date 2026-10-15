@@ -26,6 +26,8 @@ export interface View {
     fog?: { distanceM: number; density: number; heightM: number };
     detail?: { distanceM: number; pixelError: number; memoryMb: number };
     exposure?: number;
+    /** Speed effects (ui/motionSettings.ts): on or off and the FOV boost's strength 0–1. */
+    motion?: { speedEffects: boolean; fovBoost: number };
   };
   /** The F3 overlay (`?debug=1`) and per-level LOD tints (`?lodcolors=1`) in the shot. */
   debug: boolean;
@@ -138,7 +140,7 @@ function parseView(index: string, raw: unknown): View {
   const s =
     o.settings === undefined
       ? {}
-      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure']);
+      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure', 'motion']);
   const settings: View['settings'] = {};
   if (s.fog !== undefined) {
     settings.fog = numbers(`${at}.settings.fog`, s.fog, ['distanceM', 'density', 'heightM']);
@@ -152,6 +154,16 @@ function parseView(index: string, raw: unknown): View {
   }
   if (s.exposure !== undefined)
     settings.exposure = num(`${at}.settings.exposure`, s.exposure, 0, 10);
+  if (s.motion !== undefined) {
+    const m = fields(`${at}.settings.motion`, s.motion, ['speedEffects', 'fovBoost']);
+    settings.motion = {
+      speedEffects:
+        m.speedEffects === undefined
+          ? true
+          : bool(`${at}.settings.motion.speedEffects`, m.speedEffects),
+      fovBoost: num(`${at}.settings.motion.fovBoost`, m.fovBoost, 0, 1, 1),
+    };
+  }
 
   return {
     name: o.name,
@@ -208,5 +220,6 @@ export function viewStorage(view: View): Record<string, string> {
   if (view.settings.exposure !== undefined) {
     out['dwell.exposure'] = JSON.stringify(view.settings.exposure);
   }
+  if (view.settings.motion) out['dwell.motion'] = JSON.stringify(view.settings.motion);
   return out;
 }

@@ -8,6 +8,14 @@ import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
+import {
+  MOTION_KEY,
+  defaultMotion,
+  motionRecord,
+  prefersReducedMotion,
+  sanitizeMotion,
+  type MotionSettings,
+} from './motionSettings';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -40,14 +48,17 @@ export interface Settings {
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
+  /** Speed effects: the FOV boost and the wind (docs/MOTION_EFFECTS.md). */
+  motion: MotionSettings;
 }
 
-export function defaultSettings(mobile: boolean): Settings {
+export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
   return {
     fog: { ...DEFAULT_FOG },
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
+    motion: defaultMotion(reducedMotion),
   };
 }
 
@@ -66,6 +77,10 @@ export function settingsJson(s: Settings): string {
     },
     exposure: Math.round(s.exposure * 100) / 100,
     skyRotation: Math.round(s.skyRotation),
+    motion: {
+      speedEffects: s.motion.speedEffects,
+      fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
+    },
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -100,6 +115,7 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
+    motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
   };
 }
 
@@ -109,6 +125,8 @@ function save(s: Settings): void {
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
+    // Append-only: fields a newer build stored are kept.
+    localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -125,13 +143,22 @@ interface SliderSpec {
   with: (s: Settings, v: number) => Settings;
 }
 
+interface ToggleSpec {
+  label: string;
+  hint: string;
+  get: (s: Settings) => boolean;
+  with: (s: Settings, v: boolean) => Settings;
+}
+
 const withFog = (key: keyof FogSettings) => (s: Settings, v: number) => ({
   ...s,
   fog: { ...s.fog, [key]: v },
 });
 
 /** The menu's sliders; the detail ranges depend on the device (lod/detail.ts). */
-function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
+function sections(
+  mobile: boolean,
+): { title: string; sliders: SliderSpec[]; toggles?: ToggleSpec[] }[] {
   const DETAIL_LIMITS = detailLimits(mobile);
   return [
     {
@@ -222,6 +249,29 @@ function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
         },
       ],
     },
+    {
+      title: 'Motion',
+      toggles: [
+        {
+          label: 'Speed effects',
+          hint: 'The view widens and wind streaks past when moving fast',
+          get: (s) => s.motion.speedEffects,
+          with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
+        },
+      ],
+      sliders: [
+        {
+          label: 'FOV boost',
+          hint: 'How much the view widens at speed (0: not at all)',
+          min: 0,
+          max: 1,
+          log: false,
+          format: (v) => `${String(Math.round(v * 100))}%`,
+          get: (s) => s.motion.fovBoost,
+          with: (s, v) => ({ ...s, motion: { ...s.motion, fovBoost: v } }),
+        },
+      ],
+    },
   ];
 }
 
@@ -288,6 +338,7 @@ export class SettingsMenu {
   private readonly debugButtons: { tool: DebugTool; button: HTMLButtonElement }[] = [];
   private readonly rows: { spec: SliderSpec; input: HTMLInputElement; value: HTMLSpanElement }[] =
     [];
+  private readonly toggles: { spec: ToggleSpec; input: HTMLInputElement }[] = [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
   private settings: Settings;
@@ -502,6 +553,7 @@ export class SettingsMenu {
       const group = el('div', 'gm-group');
       group.append(el('h2', undefined, section.title));
       const grid = el('div', 'gm-grid');
+      for (const spec of section.toggles ?? []) grid.append(this.toggle(spec));
       for (const spec of section.sliders) grid.append(this.slider(spec));
       group.append(grid);
       page.append(group);
@@ -510,7 +562,7 @@ export class SettingsMenu {
     reset.type = 'button';
     reset.title = 'Back to the defaults';
     reset.addEventListener('click', () => {
-      this.set(defaultSettings(this.mobile));
+      this.set(defaultSettings(this.mobile, prefersReducedMotion()));
     });
     const copy = el('button', 'quiet-button settings-copy', 'Copy JSON');
     copy.type = 'button';
@@ -569,6 +621,25 @@ export class SettingsMenu {
     return row;
   }
 
+  private toggle(spec: ToggleSpec): HTMLLabelElement {
+    const row = document.createElement('label');
+    row.className = 'settings-row settings-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.title = spec.hint;
+    input.addEventListener('change', () => {
+      this.settings = spec.with(this.settings, input.checked);
+      this.apply();
+    });
+    row.append(
+      el('span', 'settings-name', spec.label),
+      input,
+      el('span', 'settings-hint', spec.hint),
+    );
+    this.toggles.push({ spec, input });
+    return row;
+  }
+
   /** The slider's filled part, as a CSS variable the track's gradient reads. */
   private paint(input: HTMLInputElement): void {
     input.style.setProperty('--fill', `${String((100 * Number(input.value)) / SLIDER_STEPS)}%`);
@@ -582,6 +653,7 @@ export class SettingsMenu {
       value.textContent = spec.format(v);
       this.paint(input);
     }
+    for (const { spec, input } of this.toggles) input.checked = spec.get(settings);
     this.apply();
   }
 
