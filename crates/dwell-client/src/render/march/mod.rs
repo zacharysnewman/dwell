@@ -4,16 +4,17 @@
 //! colour, the view depth and a cell id + face, shaded with the raster renderer's lighting; the
 //! shared frame's composite (fog, tone mapping, the sky) draws it to the screen.
 //!
-//! It is self-contained, shaped for the renderer seam (step A2): terrain arrives as
+//! Behind the renderer seam (step A2, `seam.rs`) it is [`MarchRenderer`]: terrain arrives as
 //! [`ChunkBricks`] and [`SectionBricks`] (`set_chunk`, `set_section`, `None` removes), built in the
-//! job workers (`Job::BrickChunk`, `Job::BrickSection`), and [`Marcher::draw`] records the march
+//! job workers with the meshing jobs (their `Payloads` mask), and [`Marcher::draw`] records the march
 //! into [`MarchTargets`] for a [`MarchFrame`] (the camera and the frame uniforms the raster
-//! renderer fills, `Renderer::march_frame`). The game loop doesn't use it yet; the
+//! renderer fills, `Renderer::march_frame`), copied into the shared frame's targets. The
 //! `?marchtest=1` page (`web/march_test.rs`) draws a generated world with it alone.
 
 pub mod check;
 pub mod gpu_scene;
 pub mod looks;
+pub mod renderer;
 pub mod stats;
 pub mod wgsl;
 
@@ -30,10 +31,9 @@ use dwell_world::lod::LodCoord;
 use gpu_scene::GpuScene;
 use stats::{DEBUG_WORDS, HIST_WORDS};
 
-/// A chunk's bricks (the seam's payload for the marcher): a level-0 node build.
-pub type ChunkBricks = NodeBuild;
-/// A LOD section's bricks: a node build at the section's level.
-pub type SectionBricks = NodeBuild;
+pub use renderer::{
+    BUILT, ChunkBricks, MarchRenderer, SectionBricks, build_chunk_bricks, build_section_bricks,
+};
 
 /// Words of `MarchUniforms` (wgsl.rs; a test checks the struct's size).
 pub const MARCH_UNIFORM_WORDS: usize =
@@ -128,6 +128,7 @@ const FAILED: u8 = 3;
 
 pub struct Marcher {
     device: wgpu::Device,
+    output: wgpu::TextureFormat,
     queue: wgpu::Queue,
     pub gpu: GpuScene,
     pub settings: MarchSettings,
@@ -358,6 +359,7 @@ impl Marcher {
         let gpu = GpuScene::new(&device, table, looks);
         Self {
             device,
+            output,
             queue,
             gpu,
             settings: MarchSettings::default(),
@@ -395,12 +397,23 @@ impl Marcher {
     }
 
     /// The frame layout the march and its composite share (group 0).
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+    /// The composite's output format.
+    pub fn output(&self) -> wgpu::TextureFormat {
+        self.output
+    }
+
     pub fn frame_layout(&self) -> &wgpu::BindGroupLayout {
         &self.frame_layout
     }
 
     /// A chunk's bricks (`None`: gone).
-    pub fn set_chunk(&mut self, c: ChunkCoord, bricks: Option<&ChunkBricks>) {
+    pub fn set_chunk(&mut self, c: ChunkCoord, bricks: Option<&NodeBuild>) {
         let n = chunk_node(c);
         match bricks {
             Some(b) => {
@@ -411,7 +424,7 @@ impl Marcher {
     }
 
     /// A LOD section's bricks at its level (`None`: gone).
-    pub fn set_section(&mut self, c: LodCoord, bricks: Option<&SectionBricks>) {
+    pub fn set_section(&mut self, c: LodCoord, bricks: Option<&NodeBuild>) {
         let n = [c.i, c.j, c.k];
         match bricks {
             Some(b) => {

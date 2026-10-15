@@ -6,6 +6,8 @@ use dwell_world::ChunkCoord;
 use dwell_world::lod::{LodBounds, LodCoord};
 
 use super::{Job, Output};
+use crate::render::march::{ChunkBricks, SectionBricks};
+use crate::render::seam::{ChunkTerrain, Payloads, SectionTerrain};
 
 #[derive(Default)]
 struct W(Vec<u8>);
@@ -64,6 +66,13 @@ impl W {
         self.f32s(&m.uvs);
         self.f32s(&m.tiles);
         self.u32s(&m.indices);
+    }
+    /// The marcher's bricks: a node build as words (`dwell_march::NodeBuild::to_words`).
+    fn chunk_bricks(&mut self, b: &ChunkBricks) {
+        self.u32s(&b.0.to_words());
+    }
+    fn section_bricks(&mut self, b: &SectionBricks) {
+        self.u32s(&b.0.to_words());
     }
     fn flat(&mut self, m: &FlatMesh) {
         self.f32s(&m.positions);
@@ -160,6 +169,16 @@ impl R<'_> {
             indices: self.u32s()?,
         })
     }
+    fn chunk_bricks(&mut self) -> Res<ChunkBricks> {
+        Ok(ChunkBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
+    }
+    fn section_bricks(&mut self) -> Res<SectionBricks> {
+        Ok(SectionBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
+    }
     fn flat(&mut self) -> Res<FlatMesh> {
         Ok(FlatMesh {
             positions: self.f32s()?,
@@ -201,9 +220,14 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             [*x0, *z0, *step, *n].into_iter().for_each(|v| w.i32(v));
             w.u8(*face);
         }
-        Job::MeshChunk { padded, mirror } => {
+        Job::MeshChunk {
+            padded,
+            mirror,
+            payloads,
+        } => {
             w.u8(4);
             w.u8(u8::from(*mirror));
+            w.u8(payloads.0);
             w.u16s(padded);
         }
         Job::MeshSection {
@@ -211,20 +235,14 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             surface,
             water_drop,
             mirror,
+            payloads,
         } => {
             w.u8(5);
             w.u8(u8::from(*mirror));
+            w.u8(payloads.0);
             w.f64(*water_drop);
             w.u16s(cells);
             w.opt_f32s(surface);
-        }
-        Job::BrickChunk { voxels } => {
-            w.u8(6);
-            w.u16s(voxels);
-        }
-        Job::BrickSection { cells } => {
-            w.u8(7);
-            w.u16s(cells);
         }
     }
     w.0
@@ -258,23 +276,25 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         },
         4 => {
             let mirror = r.u8()? != 0;
+            let payloads = Payloads(r.u8()?);
             Job::MeshChunk {
                 mirror,
+                payloads,
                 padded: r.u16s()?,
             }
         }
         5 => {
             let mirror = r.u8()? != 0;
+            let payloads = Payloads(r.u8()?);
             let water_drop = r.f64()?;
             Job::MeshSection {
                 mirror,
+                payloads,
                 water_drop,
                 cells: r.u16s()?,
                 surface: r.opt_f32s()?,
             }
         }
-        6 => Job::BrickChunk { voxels: r.u16s()? },
-        7 => Job::BrickSection { cells: r.u16s()? },
         _ => return Err(DecodeError),
     };
     Ok((id, job))
@@ -316,24 +336,32 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                 None => w.u8(0),
             }
         }
-        Output::ChunkMesh(m) => {
+        Output::ChunkMesh(t) => {
             w.u8(4);
-            w.arrays(&m.opaque);
-            w.arrays(&m.transparent);
+            w.u8(u8::from(t.raster.is_some()) | (u8::from(t.march.is_some()) << 1));
+            if let Some(m) = &t.raster {
+                w.arrays(&m.opaque);
+                w.arrays(&m.transparent);
+            }
+            if let Some(b) = &t.march {
+                w.chunk_bricks(b);
+            }
         }
-        Output::SectionMesh(m) => {
+        Output::SectionMesh(t) => {
             w.u8(5);
-            w.flat(&m.opaque);
-            w.flat(&m.water);
-            m.skirts.iter().for_each(|s| w.flat(s));
+            w.u8(u8::from(t.raster.is_some()) | (u8::from(t.march.is_some()) << 1));
+            if let Some(m) = &t.raster {
+                w.flat(&m.opaque);
+                w.flat(&m.water);
+                m.skirts.iter().for_each(|s| w.flat(s));
+            }
+            if let Some(b) = &t.march {
+                w.section_bricks(b);
+            }
         }
         Output::Failed(e) => {
             w.u8(6);
             w.str(e);
-        }
-        Output::Bricks(b) => {
-            w.u8(7);
-            w.u32s(&b.to_words());
         }
     }
     w.0
@@ -368,26 +396,47 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
             surface_b: r.opt_f32s()?,
         },
         3 => Output::Map(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
-        4 => Output::ChunkMesh(Box::new(ChunkMeshes {
-            opaque: r.arrays()?,
-            transparent: r.arrays()?,
-        })),
+        4 => {
+            let parts = Payloads(r.u8()?);
+            let raster = if parts.mesh() {
+                Some(ChunkMeshes {
+                    opaque: r.arrays()?,
+                    transparent: r.arrays()?,
+                })
+            } else {
+                None
+            };
+            let march = if parts.bricks() {
+                Some(r.chunk_bricks()?)
+            } else {
+                None
+            };
+            Output::ChunkMesh(Box::new(ChunkTerrain { raster, march }))
+        }
         5 => {
-            let (opaque, water) = (r.flat()?, r.flat()?);
-            let mut skirts: [FlatMesh; 6] = Default::default();
-            for s in &mut skirts {
-                *s = r.flat()?;
-            }
-            Output::SectionMesh(Box::new(SectionMeshes {
-                opaque,
-                water,
-                skirts,
-            }))
+            let parts = Payloads(r.u8()?);
+            let raster = if parts.mesh() {
+                let (opaque, water) = (r.flat()?, r.flat()?);
+                let mut skirts: [FlatMesh; 6] = Default::default();
+                for s in &mut skirts {
+                    *s = r.flat()?;
+                }
+                Some(SectionMeshes {
+                    opaque,
+                    water,
+                    skirts,
+                })
+            } else {
+                None
+            };
+            let march = if parts.bricks() {
+                Some(r.section_bricks()?)
+            } else {
+                None
+            };
+            Output::SectionMesh(Box::new(SectionTerrain { raster, march }))
         }
         6 => Output::Failed(String::from_utf8_lossy(&r.bytes()?).into_owned()),
-        7 => Output::Bricks(Box::new(
-            dwell_march::NodeBuild::from_words(&r.u32s()?).ok_or(DecodeError)?,
-        )),
         _ => return Err(DecodeError),
     };
     Ok((id, out))
@@ -421,27 +470,22 @@ mod tests {
                 n: 4,
                 face: 1,
             },
-            Job::MeshChunk {
+        ];
+        let mut jobs = jobs.to_vec();
+        for payloads in [Payloads::MESH, Payloads::BRICKS, Payloads::BOTH] {
+            jobs.push(Job::MeshChunk {
                 padded: vec![1; dwell_mesh::PADDED_VOLUME],
                 mirror: true,
-            },
-            Job::MeshSection {
+                payloads,
+            });
+            jobs.push(Job::MeshSection {
                 cells: vec![1; dwell_world::lod::VOLUME],
                 surface: None,
                 water_drop: 0.125,
                 mirror: false,
-            },
-            Job::BrickChunk {
-                voxels: (0..dwell_world::CHUNK_VOLUME)
-                    .map(|i| u16::from(i % 7 == 0))
-                    .collect(),
-            },
-            Job::BrickSection {
-                cells: (0..dwell_world::lod::VOLUME)
-                    .map(|i| u16::from(i % 5 < 2) * 2)
-                    .collect(),
-            },
-        ];
+                payloads,
+            });
+        }
         for (n, job) in jobs.into_iter().enumerate() {
             let id = 1000 + n as u32;
             assert_eq!(
@@ -466,6 +510,7 @@ mod tests {
             &Job::MeshChunk {
                 padded: vec![0; 100],
                 mirror: false,
+                payloads: Payloads::BOTH,
             },
         );
         for n in 0..bytes.len() {

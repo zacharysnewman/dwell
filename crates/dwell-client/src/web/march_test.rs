@@ -1,8 +1,8 @@
 //! The marcher's dev page (`?marchtest=1`, local builds only; Phase 25 A3b): a generated world
-//! drawn by the ray marcher alone, before the renderer seam (A2) wires it into the game. The job
-//! workers generate the chunks around the spawn and the LOD sections of every level out to a few
-//! hundred kilometres, then build their bricks (`Job::BrickChunk`, `Job::BrickSection`); the main
-//! thread places them in the marcher's GPU pool as they arrive. The camera is set from JS
+//! drawn by the ray marcher alone, without the game (the game draws it with `?renderer=march` or
+//! `compare`). The job workers generate the chunks around the spawn and the LOD sections of every
+//! level out to a few hundred kilometres, then build their bricks (the meshing jobs with the
+//! `BRICKS` payload only); the main thread places them in the marcher's GPU pool as they arrive. The camera is set from JS
 //! (`window.__march`, client/src/debug/marchTest.ts).
 
 use std::collections::{HashMap, VecDeque};
@@ -19,10 +19,9 @@ use crate::jobs::{Job, Output};
 use crate::pool::Jobs;
 use crate::render::Renderer;
 use crate::render::march::Marcher;
-use crate::render::timing::GpuTimer;
+use crate::render::seam::Payloads;
+use crate::render::timing::{self, GpuTimer};
 use crate::telemetry;
-
-const PASSES: [&str; 2] = ["gpu.march", "gpu.composite"];
 
 /// What a job's result is for.
 #[derive(Clone, Copy, Debug)]
@@ -107,7 +106,7 @@ impl MarchTest {
         let mut renderer = Renderer::with_samples(device.clone(), queue.clone(), format, 1);
         renderer.resize(width, height, 1.0);
         let marcher = Marcher::new(device.clone(), queue.clone(), format);
-        let timer = GpuTimer::with_passes(&device, &queue, &PASSES, "gpu.march_frame");
+        let timer = GpuTimer::new(&device, &queue);
         let jobs = WebJobs::new(
             &make_worker,
             workers.max(1),
@@ -189,10 +188,26 @@ impl MarchTest {
                 if voxels.iter().all(|&v| v == 0) {
                     self.marcher.set_chunk(c, Some(&NodeBuild::Air));
                 } else {
-                    self.queue(Job::BrickChunk { voxels }, For::ChunkBricks(c));
+                    // The bricks take the interior: the apron stays air.
+                    let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+                    for z in 0..32 {
+                        for y in 0..32 {
+                            for x in 0..32 {
+                                padded[dwell_mesh::padded_index(x, y, z)] =
+                                    voxels[dwell_world::local_index(x, y, z)];
+                            }
+                        }
+                    }
+                    let job = Job::MeshChunk {
+                        padded,
+                        mirror: false,
+                        payloads: Payloads::BRICKS,
+                    };
+                    self.queue(job, For::ChunkBricks(c));
                 }
             }
-            (For::ChunkBricks(c), Output::Bricks(b)) => {
+            (For::ChunkBricks(c), Output::ChunkMesh(t)) => {
+                let b = t.march.map_or(NodeBuild::Air, |b| b.0);
                 self.marcher.set_chunk(c, Some(&b));
                 self.chunks += 1;
             }
@@ -212,9 +227,17 @@ impl MarchTest {
                 }
             }
             (For::Section(c), Output::Lod { cells, .. }) => {
-                self.queue(Job::BrickSection { cells }, For::SectionBricks(c));
+                let job = Job::MeshSection {
+                    cells,
+                    surface: None,
+                    water_drop: 0.0,
+                    mirror: false,
+                    payloads: Payloads::BRICKS,
+                };
+                self.queue(job, For::SectionBricks(c));
             }
-            (For::SectionBricks(c), Output::Bricks(b)) => {
+            (For::SectionBricks(c), Output::SectionMesh(t)) => {
+                let b = t.march.map_or(NodeBuild::Air, |b| b.0);
                 self.marcher.set_section(c, Some(&b));
                 self.sections += 1;
             }
@@ -294,6 +317,8 @@ impl MarchTest {
         if let Some(timer) = &mut self.timer {
             timer.begin();
         }
+        let q_march = self.timer.as_mut().and_then(|t| t.pass(timing::MARCH));
+        let q_composite = self.timer.as_mut().and_then(|t| t.pass(timing::COMPOSITE));
         let size = (self.config.width, self.config.height);
         if self.targets.as_ref().is_none_or(|t| t.size != size) {
             self.targets = Some(self.marcher.targets(size));
@@ -307,14 +332,21 @@ impl MarchTest {
             &mut encoder,
             &frame,
             targets,
-            self.timer.as_ref().and_then(|t| t.compute_writes(0)),
+            self.timer
+                .as_ref()
+                .and_then(|t| t.writes(q_march))
+                .map(|w| wgpu::ComputePassTimestampWrites {
+                    query_set: w.query_set,
+                    beginning_of_pass_write_index: w.beginning_of_pass_write_index,
+                    end_of_pass_write_index: w.end_of_pass_write_index,
+                }),
         );
         let view = frame_tex.texture.create_view(&Default::default());
         self.marcher.composite(
             &mut encoder,
             targets,
             &view,
-            self.timer.as_ref().and_then(|t| t.writes(1)),
+            self.timer.as_ref().and_then(|t| t.writes(q_composite)),
         );
         if let Some(timer) = &self.timer {
             timer.resolve(&mut encoder);

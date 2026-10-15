@@ -22,8 +22,10 @@ npm run bench -- fly-low-fast           # one or more scenarios by name; none: a
 Options: `--swiftshader` (software WebGPU, for machines without a GPU such as CI or a Linux
 sandbox; under Xvfb there), `--unthrottled` (no vsync or frame-rate cap, so frame intervals show
 the frame's real cost rather than 16.7 ms), `--base URL` (a served build; by default it reuses
-`vite preview` on :4173 or starts one), `--out DIR` (default `bench/out/<timestamp>`, ignored by
-git), `--file FILE` (another scenarios file, e.g. a throwaway one in a scratch directory).
+`vite preview` on :4173 or starts one; the server's root or the build's `…/dwell/`), `--out DIR`
+(default `bench/out/<timestamp>`, ignored by git), `--file FILE` (another scenarios file, e.g. a
+throwaway one in a scratch directory), `--compare` with `--configs A,B` and `--configs-file FILE`
+(each scenario once per renderer configuration, side by side: below).
 
 By default it drives the **installed Google Chrome, headed, on the machine's GPU** (Metal on a Mac),
 which is what players run. Each scenario runs in a fresh browser context and local world
@@ -52,7 +54,9 @@ Output per scenario, in `OUT/<scenario>/`:
 ```
 
 `seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views),
-`debug` (`?debug=1`) and `scale` are optional. Steps (`scripts/scenarios.ts`, checked: unknown
+`debug` (`?debug=1`), `scale`, `renderer` (`?renderer=`: a renderer by name; a build without the
+renderer switch ignores it) and `split` (`near` or `far`: which part of the view it measures, for
+`--compare`'s split) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
 fields, ranges and names fail with the entry named):
 
 | Step | Does |
@@ -68,6 +72,115 @@ fields, ranges and names fail with the entry named):
 | `record {name}` | saves everything above under `name` |
 | `shot {name}` | screenshot |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
+| `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot` or trace steps inside |
+
+Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
+§5), besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and `jump-onto-block`: `look-horizon`
+(grazing view along the ground; far), `look-down` (near), `edit-burst` (300 place/break edits;
+near), `fly-high` (about 540 m up, flying; far) and `thermal-10min` (phone-oriented: ten minutes of
+flight round a square, its first and last minute recorded, for thermal throttling).
+
+## Comparing renderers (`--compare`)
+
+```sh
+npm run bench -- --compare idle-spawn look-horizon [--configs raster-half] [--configs-file F]
+```
+
+Runs each scenario once per **configuration** (`client/bench/configs.json`, checked by
+`scripts/configs.ts`: unknown fields, ranges, upscaler names and duplicate names fail with the entry
+named), each in a fresh page on the same seed and inputs. A configuration is a renderer, a scale
+and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last only for `fsr1` and
+`taa-u`; `bilinear` is the browser stretching a scaled canvas, today's `?scale=`):
+
+| Config | Renderer | Scale | Upscaler |
+| --- | --- | --- | --- |
+| `raster` (baseline) | raster | 1 | none |
+| `raster-half` | raster | 0.5 | bilinear |
+| `march` | march | 1 | none |
+| `march-half-fsr` | march | 0.5 | fsr1 |
+| `march-half-taa` | march | 0.5 | taa-u |
+| `march-075-taa` | march | 0.75 | taa-u |
+
+**Support:** the first run (the baseline's) asks the page what it offers — `__dwell.renderers()` and
+`__dwell.upscalers()`, each a list of names; a build without them offers `raster` and the browser's
+stretch only. Configurations the build can't run are **skipped with the reason** in the printed
+report and `compare.json` (today: every `march` entry — `renderers()` lists `march` only once
+`render/march.rs`'s `BUILT` is true, not while the placeholder fills its side magenta), not
+failed. A new configuration is one entry in the file; `baseline` names the one the others are
+compared with and `deltaE` the colour threshold (CIE76, default 2.3, about just noticeable).
+
+Output, in `OUT/`:
+
+- `<scenario>/<config>/`: each run's `report.json` (with its page address and the build's support),
+  screenshots and traces, as a normal run's.
+- `<scenario>/<shot>.<config>.side.png`: the baseline left, the configuration right;
+  `<shot>.<config>.diff.png`: a heatmap of per-pixel ΔE (dim grey: equal; blue: under the
+  threshold; red to yellow to white: over it, white at four times it). Stats per shot: identical %,
+  % over the threshold, mean, p99 and max ΔE.
+- `compare.json`: the configurations run and skipped, the build's support, per scenario and
+  `record` step and configuration the metrics below, the shot diffs, each `settle`'s seconds, page
+  errors, and `splits`: per `near`/`far` split and configuration, the worst interval p95/p99 and the
+  dropped frames over its scenarios' records.
+- **`compare.html`**: the report to look at (its path is printed at the end of the run). One
+  self-contained page (inline style and script, images referenced relative to it, so open it from
+  `OUT/` or copy the directory): each scenario's metrics table at the top; then per scenario and
+  shot, every configuration's screenshot at full size side by side, and per configuration against
+  the baseline a **blink** view (click it, or focus it and press Space, Enter or B, to swap the two
+  in place), the ΔE heatmap, and its % over the threshold, mean, p99 and max
+  (`scripts/compareHtml.ts`).
+- A printed table per scenario, configurations side by side.
+
+Every checked-in scenario that records also takes at least one `shot` (a test checks it), so a
+comparison always has images.
+
+Metrics per record (`scripts/compareReport.ts`): frame interval p50/p95/p99/max from the kept frames'
+timestamps and **dropped frames at 60 Hz** (an interval of n refresh periods drops n − 1; run
+`--unthrottled` to see cost rather than vsync); CPU per phase (every telemetry series except counts
+and `gpu.*`: mean, p95, p99); **GPU per pass**: every `gpu.<pass>` series or sample when the build
+records them (GPU timestamp queries), else none and a note; memory (`memory()` and its total);
+upload bytes (total and per frame), chunks and sections; streaming: whether the LOD and the chunks
+had anything left to generate, mesh or ask for at the record (and what), and each `settle`'s time
+(the first: time to a complete view after spawn).
+
+**TODO — edit-to-visible latency** (RAY_MARCHED_RENDERER.md §5): the telemetry can't tie a frame's uploads to
+the edit that caused them (an edit is a request to the server, the reply re-meshes the chunk in a
+worker, and the upload is counted per frame), so it isn't measured yet. It needs an edit sequence
+number carried through the remesh and a telemetry sample (`edit.visible`, ms from the request to the
+first frame drawn with its mesh), which the renderers record the same way.
+
+Not image agreement by cell id, face or depth in the bench yet: the bench compares screenshots'
+colour only. In-game compare mode's difference view (below) compares coverage, view depth and
+colour on the GPU; cell id and face wait for the marcher to write ids (A3).
+
+## Renderer switch and compare mode (local builds)
+
+The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, §5; ARCHITECTURE.md
+§5 `render/`). **Local builds only** (dev server, `vite preview`, the bench): `__RENDERER_SWITCH__`
+(vite.config.ts) is off in the release workflow's builds (`DWELL_VERSION` set; force it with
+`DWELL_RENDERER_SWITCH=0|1`), where `?renderer=` is ignored and the mesher draws.
+
+- `?renderer=raster|march|compare` picks the terrain renderer; compare mode puts raster on the left
+  and, by default, the marcher on the right — `?compare=raster` puts raster on **both** sides (the
+  check that compare mode itself adds no difference). The marcher is a placeholder until A3: its
+  side is magenta and its labels say "not built".
+- The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
+  the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
+  render stats.
+- Keys (controls.ts): **F7** cycles split → blink → difference; **F8** blinks (swaps the side
+  shown); in split view drag the divider. A label per side shows its renderer, CPU time, GPU time
+  (`gpu.far`+`gpu.near`, `gpu.right.far`+`.near` for a raster right side, `gpu.march`), GPU memory,
+  scale and upscaler. Compare mode's timings carry both renderers' cost: use the bench for decisions.
+- Difference view: red where one side covers the pixel and the other doesn't, orange where view
+  depth differs by more than 1e-3 relative, yellow where the composited colours differ by ΔE > 2.3,
+  grey (the left side, dimmed) where they agree. The counts are read back:
+  `__dwell.compare().difference` is `{ pixels, coverage, depth, colour }` (a frame or two late).
+- Hooks: `__dwell.renderers()` and `upscalers()` (what the build offers, for `bench --compare`),
+  `renderer()`, `setRenderer(name, compare?)`, `compare()` (view, divider, overlay lines, the
+  difference counts; null outside compare mode), `setCompare(view?, divider?)`.
+
+Zero-difference check (Phase 25's A2 exit): open `?renderer=compare&compare=raster`, then
+`__dwell.setCompare('difference')`; after a frame or two `__dwell.compare().difference` reads 0 in
+every class.
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 
@@ -119,6 +232,7 @@ browser tools (e.g. the Chrome DevTools MCP: `evaluate_script`, `performance_sta
 - A metric: `telemetry::span("name", || …)` / `add` / `sample` / `count` where it happens; add it
   to the table above.
 - A scenario: an entry in `bench/scenarios.json`.
+- A comparison configuration: an entry in `bench/configs.json`.
 - A step kind: its type and parser case in `scripts/scenarios.ts` (with a test), its action in
   `scripts/bench.ts`, a row in the steps table.
 - A hook the steps need: a method on `__dwell` (`client/src/main.ts`) over a `Client` export

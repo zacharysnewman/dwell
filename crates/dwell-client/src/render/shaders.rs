@@ -315,33 +315,92 @@ fn sky_vs(@builtin(vertex_index) i: u32) -> SkyOut {
 
 // The opaque scene's view depth at a pixel: the mean over the samples something covers (x; 0
 // where none is) and the share of samples covered (y).
-fn scene_depth_at(p: vec2i) -> vec2f {
+fn depth_of(d: array<f32, SAMPLE_SLOTS>) -> vec2f {
     var sum = 0.0;
     var n = 0.0;
     for (var s = 0; s < SCENE_SAMPLES; s++) {
-        let d = textureLoad(scene_depth, p, s).r;
-        if (d > 0.0) {
-            sum += d;
+        if (d[s] > 0.0) {
+            sum += d[s];
             n += 1.0;
         }
     }
     return vec2f(select(0.0, sum / n, n > 0.0), n / f32(SCENE_SAMPLES));
 }
 
-// The composite: the scene's colour tone-mapped and encoded, fogged by its depth toward the sky
-// of the pixel's view direction (already sRGB; no tone mapping), and over that sky by its coverage
-// — so the haze terrain fades into is the colour behind it.
+fn scene_depth_at(p: vec2i) -> vec2f {
+    var d: array<f32, SAMPLE_SLOTS>;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        d[s] = textureLoad(scene_depth, p, s).r;
+    }
+    return depth_of(d);
+}
+
+// The composite of one pixel: the scene's colour `c` tone-mapped and encoded, fogged by its view
+// depth toward the sky of the pixel's view direction (already sRGB; no tone mapping), and over that
+// sky by its coverage — so the haze terrain fades into is the colour behind it.
+fn composited(c: vec4f, depth: f32, ndc: vec2f) -> vec3f {
+    let ray = view_ray(ndc);
+    let back = sky(normalize(ray));
+    if (c.a <= 0.0) {
+        return back;
+    }
+    let shown = mix(display(c.rgb / c.a), back, fog_amount(ray * depth));
+    return mix(back, shown, min(c.a, 1.0));
+}
+
 @fragment
 fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     let p = vec2i(i.clip.xy);
-    let ray = view_ray(i.ndc);
-    let back = sky(normalize(ray));
-    let c = textureLoad(scene_color, p, 0);
-    if (c.a <= 0.0) {
-        return vec4f(back, 1.0);
+    return vec4f(composited(textureLoad(scene_color, p, 0), scene_depth_at(p).x, i.ndc), 1.0);
+}
+
+// Compare mode's second side (group 3): its scene targets and the difference counts.
+fn scene_b_depth_at(p: vec2i) -> vec2f {
+    var d: array<f32, SAMPLE_SLOTS>;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        d[s] = textureLoad(scene_b_depth, p, s).r;
     }
-    let shown = mix(display(c.rgb / c.a), back, fog_amount(ray * scene_depth_at(p).x));
-    return vec4f(mix(back, shown, min(c.a, 1.0)), 1.0);
+    return depth_of(d);
+}
+
+// sRGB-encoded colour to CIE L*a*b* (D65).
+fn srgb_to_lab(c: vec3f) -> vec3f {
+    let lin = select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92, c <= vec3f(0.04045));
+    let xyz = mat3x3f(
+        vec3f(0.4124, 0.2126, 0.0193),
+        vec3f(0.3576, 0.7152, 0.1192),
+        vec3f(0.1805, 0.0722, 0.9505),
+    ) * lin / vec3f(0.95047, 1.0, 1.08883);
+    let f = select(xyz * 7.787 + 16.0 / 116.0, pow(xyz, vec3f(1.0 / 3.0)), xyz > vec3f(0.008856));
+    return vec3f(116.0 * f.y - 16.0, 500.0 * (f.x - f.y), 200.0 * (f.y - f.z));
+}
+
+// Compare mode's difference view (render/compare.rs): each pixel in its worst class — coverage
+// differs (red), view depth differs (orange), the composited colour's ΔE (yellow) — counted into
+// diff_counts (pixels, coverage, depth, colour); elsewhere the left side, dimmed to grey.
+@fragment
+fn difference_fs(i: SkyOut) -> @location(0) vec4f {
+    let p = vec2i(i.clip.xy);
+    let da = scene_depth_at(p);
+    let db = scene_b_depth_at(p);
+    let a = composited(textureLoad(scene_color, p, 0), da.x, i.ndc);
+    let b = composited(textureLoad(scene_b_color, p, 0), db.x, i.ndc);
+    atomicAdd(&diff_counts[0], 1u);
+    let hit_a = da.y > 0.5;
+    let hit_b = db.y > 0.5;
+    if (hit_a != hit_b) {
+        atomicAdd(&diff_counts[1], 1u);
+        return vec4f(1.0, 0.15, 0.1, 1.0);
+    }
+    if (hit_a && abs(da.x - db.x) > DIFF_DEPTH * max(da.x, db.x)) {
+        atomicAdd(&diff_counts[2], 1u);
+        return vec4f(1.0, 0.55, 0.0, 1.0);
+    }
+    if (length(srgb_to_lab(a) - srgb_to_lab(b)) > DIFF_DELTA_E) {
+        atomicAdd(&diff_counts[3], 1u);
+        return vec4f(1.0, 0.95, 0.1, 1.0);
+    }
+    return vec4f(vec3f(dot(a, vec3f(0.2126, 0.7152, 0.0722)) * 0.35), 1.0);
 }
 ";
 
@@ -356,8 +415,16 @@ fn scene_bindings(samples: u32) -> String {
     };
     format!(
         "const SCENE_SAMPLES: i32 = {samples};\n\
+         const SAMPLE_SLOTS: u32 = {samples}u;\n\
+         const DIFF_DEPTH: f32 = {:e};\n\
+         const DIFF_DELTA_E: f32 = {:?};\n\
          @group(2) @binding(0) var scene_color: texture_2d<f32>;\n\
-         @group(2) @binding(1) var scene_depth: {depth};\n"
+         @group(2) @binding(1) var scene_depth: {depth};\n\
+         @group(3) @binding(0) var scene_b_color: texture_2d<f32>;\n\
+         @group(3) @binding(1) var scene_b_depth: {depth};\n\
+         @group(3) @binding(2) var<storage, read_write> diff_counts: array<atomic<u32>, 4>;\n",
+        super::compare::DEPTH_TOLERANCE,
+        super::compare::DELTA_E,
     )
 }
 
@@ -408,6 +475,7 @@ mod tests {
                 "line_top_fs",
                 "sky_vs",
                 "composite_fs",
+                "difference_fs",
             ] {
                 assert!(
                     module.entry_points.iter().any(|e| e.name == entry),
@@ -433,7 +501,11 @@ mod tests {
                 assert!(!b.contains(f), "{entry} calls {f}");
             }
         }
-        let c = body("composite_fs");
+        let c = body("composited");
         assert!(c.contains("display(") && c.contains("fog_amount(") && c.contains("sky("));
+        // Both compare-mode sides are composited as the frame is, before they are compared.
+        let d = body("difference_fs");
+        assert_eq!(d.matches("composited(").count(), 2);
+        assert!(body("composite_fs").contains("composited("));
     }
 }

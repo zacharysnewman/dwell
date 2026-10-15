@@ -11,6 +11,7 @@ use dwell_game::chunk_stream::{ChunkSource, Coord, MeshJob, Mesher};
 use dwell_world::lod::LodCoord;
 
 use crate::jobs::{Job, Output, Runner};
+use crate::render::seam::Payloads;
 
 /// Where jobs run: Web Workers in the browser, inline natively.
 pub trait Jobs {
@@ -111,6 +112,9 @@ pub struct Pool {
     /// Waiting for room: generation, meshing.
     queued: [VecDeque<(u32, Job)>; 2],
     in_flight: [usize; 2],
+    /// What meshing jobs make: the payloads the drawing renderers take (the renderer seam; the
+    /// game sets it from the scene's selection).
+    pub payloads: Payloads,
 }
 
 pub type PoolRef = Rc<RefCell<Pool>>;
@@ -124,6 +128,7 @@ impl Pool {
             times: HashMap::default(),
             queued: Default::default(),
             in_flight: [0; 2],
+            payloads: Payloads::MESH,
         }))
     }
 
@@ -227,17 +232,20 @@ impl ChunkSource for ChunkJobs {
 pub struct MeshJobs(pub PoolRef);
 
 impl Mesher for MeshJobs {
-    type Meshes = dwell_mesh::ChunkMeshes;
+    type Meshes = crate::render::seam::ChunkTerrain;
     fn capacity(&self) -> usize {
         // Enough in flight to keep every worker busy while results travel back.
         2 * self.0.borrow().capacity(true)
     }
     fn mesh(&mut self, job: MeshJob) {
-        self.0.borrow_mut().submit(
+        let mut pool = self.0.borrow_mut();
+        let payloads = pool.payloads;
+        pool.submit(
             Purpose::ChunkMesh(job.coord, job.token),
             Job::MeshChunk {
                 padded: job.padded,
                 mirror: job.mirror,
+                payloads,
             },
         );
     }
@@ -258,13 +266,16 @@ impl dwell_lod::SectionSource for ChunkJobs {
 
 impl dwell_lod::SectionMesher for MeshJobs {
     fn mesh_section(&mut self, job: dwell_lod::LodMeshJob, token: u64) {
-        self.0.borrow_mut().submit(
+        let mut pool = self.0.borrow_mut();
+        let payloads = pool.payloads;
+        pool.submit(
             Purpose::SectionMesh(token),
             Job::MeshSection {
                 cells: job.cells,
                 surface: job.surface,
                 water_drop: job.water_drop,
                 mirror: job.mirror,
+                payloads,
             },
         );
     }
