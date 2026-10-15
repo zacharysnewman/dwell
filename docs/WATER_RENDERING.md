@@ -188,7 +188,7 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
   east-south-east, down into the sea, and shoots four views: across the sea, the shallows toward the
   shore, 1 km up, and with the eye just under the surface. The `camera` step gained `aroundPlayer`
   (x and z offsets from the player's feet), and views and scenarios gained `settings.water`.
-- **Cost** (Apple M1, 1280×720, 4× MSAA): COST_PLACEHOLDER
+- **Cost** (Apple M1, 1280×720, 4× MSAA): measured while other agents' builds loaded the machine, so treat it as noisy. Over the sea (`water-views` `sea`, `--unthrottled`), GPU frame p50 was 2.06 → 2.76 ms (+0.7). The near pass, where the water draws, was 1.02 → 1.94 ms. Frame interval p50 was 9.7 → 10.2 ms (CPU-bound). On `fly-low-fast` (inland, no water) there was no change within noise: GPU frame p50 2.31 → 2.10 ms, interval 8.8 → 8.3 ms.
 - **Known, not W1b's:** vertical water faces at sea-floor steps show as faint dashed bands from
   above (they were there before). The near shore is pale over bright sand until W3's depth
   absorption.
