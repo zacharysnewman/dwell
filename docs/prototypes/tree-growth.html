@@ -582,21 +582,20 @@ function extract(model) {
     n.core = path.filter(v => v !== p.medial || n.parent < 0);
     for (const v of n.core) addCore(v, n.id);
   }
-  // Radial distance: geodesic within the node from its own core, so thresholding stays connected.
-  const rho = new Float32Array(N).fill(Infinity), rhoPred = new Int32Array(N).fill(-1);
+  // Radial distance: geodesic within the node's voxels from the nearest core line (its own, or a
+  // child's core passing through it, e.g. where limbs leave a fork), so thresholding stays connected.
+  // Each voxel thickens with the node whose core it is nearest (its radial owner).
+  const rho = new Float32Array(N).fill(Infinity), rhoPred = new Int32Array(N).fill(-1), radOwner = new Int32Array(N).fill(-1);
   for (const n of nodes) {
     const mine = new Set(n.voxels), heap = new Heap();
-    for (const v of n.core) if (mine.has(v)) { rho[v] = 0; heap.push(0, v); }
-    if (!heap.size) { rho[n.medial] = 0; heap.push(0, n.medial); }
+    for (const v of n.voxels) { const cn = coreNodes.get(v); if (cn) { rho[v] = 0; radOwner[v] = Math.min(...cn); heap.push(0, v); } }
     while (heap.size) {
       const v = heap.pop();
-      neighbours(v, (j, w) => { if (mine.has(j) && rho[v] + w < rho[j] - 1e-6) { rho[j] = rho[v] + w; rhoPred[j] = v; heap.push(rho[j], j); } });
+      neighbours(v, (j, w) => { if (mine.has(j) && rho[v] + w < rho[j] - 1e-6) { rho[j] = rho[v] + w; rhoPred[j] = v; radOwner[j] = radOwner[v]; heap.push(rho[j], j); } });
     }
-    n.R = 0;
-    for (const v of n.voxels) n.R = Math.max(n.R, rho[v]);
   }
-  // Core voxels that sit in a parent's component keep rho 0 for their own node.
-  for (const v of coreNodes.keys()) if (rho[v] === Infinity) rho[v] = 0;
+  for (const n of nodes) n.R = 0;
+  for (let i = 0; i < N; i++) if (radOwner[i] >= 0) nodes[radOwner[i]].R = Math.max(nodes[radOwner[i]].R, rho[i]);
   // Trunk: marked (trunk role, with its ancestors), else the heaviest path from the root.
   const subVol = nodes.map(n => n.voxels.length);
   for (let k = nodes.length - 1; k > 0; k--) subVol[nodes[k].parent] += subVol[k];
@@ -648,11 +647,22 @@ function extract(model) {
   if (floating) notes.push(`${floating} leaf voxels don't touch the tree through other leaves; each follows the nearest wood voxel.`);
   let deltaMax = 1;
   for (const i of leafList) deltaMax = Math.max(deltaMax, delta[i]);
+  // Leaf reach per subtree: how far its leaves stand from the wood, which sizes the tip tufts.
+  for (const n of nodes) n.leafReach = 0;
+  for (const i of leafList) { const o = nodes[nodeOf[leafAnchor[i]]]; o.leafReach = Math.max(o.leafReach, delta[i]); }
+  for (let k = nodes.length - 1; k > 0; k--) { const p = nodes[nodes[k].parent]; p.subReach = Math.max(p.subReach || p.leafReach, nodes[k].subReach || nodes[k].leafReach); }
+  for (const n of nodes) n.subReach = Math.max(n.subReach || 0, n.leafReach);
+  // Near reach: the leaves within 4 nodes beyond a node, so a tip tuft matches the leaves about to come.
+  for (const n of nodes) {
+    let r = n.leafReach, front = [n.id];
+    for (let d = 0; d < 4 && front.length; d++) { front = front.flatMap(k => nodes[k].children); for (const k of front) r = Math.max(r, nodes[k].leafReach); }
+    n.nearReach = r;
+  }
   woodList.sort((a, b) => rho[a] - rho[b] || a - b);
   leafList.sort((a, b) => delta[a] - delta[b] || a - b);
   const leafChars = model.cells.filter(ch => ch !== null && palette[ch].role === 'leaf');
   const tipChar = leafChars.length ? leafChars[0] : null;
-  return { model, N, X, Y, Z, idx, nodes, nodeOf, level, rho, rhoPred, coreNodes, woodList, leafList, delta, leafPred, leafAnchor, deltaMax, notes, trunkMarked, rootV, tipChar };
+  return { model, N, X, Y, Z, idx, nodes, nodeOf, level, rho, rhoPred, radOwner, coreNodes, woodList, leafList, delta, leafPred, leafAnchor, deltaMax, notes, trunkMarked, rootV, tipChar };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -660,13 +670,23 @@ function extract(model) {
 function timing(sk, p) {
   const Tt = p.trunkDays / p.worldSpeed, Tb = Tt / p.ratio;
   const appear = new Float64Array(sk.nodes.length), fork = new Int32Array(sk.nodes.length);
-  let Tfull = 0;
+  const rootish = new Uint8Array(sk.nodes.length);
+  let Tshoot = 0, rootLevels = 1;
   for (const n of sk.nodes) {
+    rootish[n.id] = !n.isTrunk && (n.isRoot || (n.parent >= 0 && rootish[n.parent])) ? 1 : 0;
     fork[n.id] = n.isTrunk ? n.level : fork[n.parent];
     appear[n.id] = n.isTrunk ? n.level * Tt : fork[n.id] * Tt + (n.level - fork[n.id]) * Tb;
-    Tfull = Math.max(Tfull, appear[n.id]);
+    if (rootish[n.id]) rootLevels = Math.max(rootLevels, n.level);
+    else Tshoot = Math.max(Tshoot, appear[n.id]);
   }
-  return { appear, Tfull: Math.max(Tfull, 1), Tt, Tb };
+  // Roots flare out as the tree matures (a deviation from the branch rate: at the branch rate a
+  // 1-voxel sapling stood on full-size root flares). They finish with the crown.
+  const t0 = Tshoot * 0.4;
+  for (const n of sk.nodes) if (rootish[n.id]) {
+    const pa = n.parent >= 0 ? appear[n.parent] : 0;
+    appear[n.id] = Math.max(pa, t0 + (Tshoot - t0) * (n.level / rootLevels));
+  }
+  return { appear, Tfull: Math.max(Tshoot, 1), Tt, Tb, rootish };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -781,11 +801,11 @@ function stage(sk, T, V, t, p) {
     Pt[k] = st > 0 ? st ** (1 / e) : 1;
   }
   const radius = new Float64Array(n);
-  for (let k = 0; k < n; k++) radius[k] = nodes[k].R * Math.min(1, Pt[k] / Pfull[k]);
+  for (let k = 0; k < n; k++) radius[k] = nodes[k].R * Math.min(1, Pt[k] / Pfull[k]) + (Pt[k] < Pfull[k] ? 0.5 : 0);
   const out = new Map(), tips = new Set();
   const shown = new Uint8Array(sk.N);
   for (const v of sk.woodList) {
-    const nd = sk.nodeOf[v];
+    const nd = sk.radOwner[v];
     const cn = sk.coreNodes.get(v);
     const core = cn && cn.some(c => grown[c]);
     if (!core && !(grown[nd] && sk.rho[v] <= radius[nd] + 1e-6 && !V.blocked[v])) continue;
@@ -803,19 +823,23 @@ function stage(sk, T, V, t, p) {
     shown[v] = 1;
     for (const kk of V.cellsOf.get(v)) if (!out.has(kk) && !V.obstacles.has(kk)) out.set(kk, model.cells[v]);
   }
-  // Tip leaves: a tuft around each growing tip (a grown node with a child still to come).
+  // Tip leaves: a tuft at the growing end of each axis (a grown node with a child still to come;
+  // on the trunk, only its leader, so buds waiting for a side branch get none).
   if (p.tipRadius > 0 && sk.tipChar && m < 1) {
-    const r = p.tipRadius * Math.min(1, 0.55 + m * 1.2);
+    const grow = Math.min(1, 0.45 + m * 0.8);
     for (let k = 0; k < n; k++) {
-      if (!grown[k] || !nodes[k].children.some(c => !grown[c] && !V.pruned[c])) continue;
-      if (nodes[k].isRoot) continue;
+      if (!grown[k] || !nodes[k].children.some(c => !grown[c] && !V.pruned[c] && !T.rootish[c] && (!nodes[k].isTrunk || nodes[c].isTrunk))) continue;
+      if (T.rootish[k]) continue;
+      // A tuft no wider than the leaves the model has on that part of the tree.
+      const r = Math.min(p.tipRadius, Math.max(1, nodes[k].nearReach)) * grow;
+      if (r < 0.5) continue;
       const c = V.medialPos[k];
-      const lift = [c[0], c[1] + 0.6, c[2]];
+      const lift = [c[0], c[1] + 0.3, c[2]];
       for (let x = Math.floor(lift[0] - r); x <= Math.ceil(lift[0] + r); x++)
         for (let y = Math.floor(lift[1] - r); y <= Math.ceil(lift[1] + r); y++)
           for (let z = Math.floor(lift[2] - r); z <= Math.ceil(lift[2] + r); z++) {
             if (y < model.anchor[1]) continue;
-            const d = Math.hypot(x - lift[0], (y - lift[1]) * 1.25, z - lift[2]);
+            const d = Math.hypot(x - lift[0], (y - lift[1]) * 1.1, z - lift[2]);
             if (d > r + 0.45 * (rand01(77, x, y, z) - 0.5)) continue;
             const kk = key(x, y, z);
             if (out.has(kk) || V.obstacles.has(kk)) continue;
@@ -887,7 +911,7 @@ function buildMesh(entries) {
 const DEFAULTS = {
   sample: 'oak', custom: null, age: null, speed: 40, trunkDays: 30, ratio: 1 / 3, worldSpeed: 1, tipRadius: 2,
   seed: 1, jitter: { angle: 14, length: 0.15, droop: 1.5, drop: 0.08 }, showVariant: false, view: 'grow',
-  skeleton: false, leaves: true, markTips: true, obstacles: {},
+  skeleton: false, leaves: true, markTips: false, obstacles: {},
 };
 let state = structuredClone(DEFAULTS);
 function save() {
@@ -1119,9 +1143,12 @@ function frame(force) {
     controls.target.set(0, h * 0.45, 0);
     camera.position.set(dist * 0.62, h * 0.55 + dist * 0.25, dist * 0.78);
   } else {
+    // Fit the row's width (and the tree's height) to the view.
     const total = (Math.max(model.sx, model.sz) + 5) * 6;
+    const vf = camera.fov * Math.PI / 360, hf = Math.atan(Math.tan(vf) * camera.aspect);
+    const dist = Math.max((total / 2) / Math.tan(hf), (h * 0.75) / Math.tan(vf)) + Math.max(model.sx, model.sz) * 0.5;
     controls.target.set(0, h * 0.4, 0);
-    camera.position.set(0, h * 0.7 + total * 0.12, total * 0.95);
+    camera.position.set(0, h * 0.4 + dist * 0.28, dist * 0.96);
   }
   const R = mode === 'grow' ? Math.max(h, w) * 0.9 + 4 : (Math.max(model.sx, model.sz) + 5) * 3.4;
   ground.scale.setScalar(mode === 'grow' ? Math.max(w * 2.2, 40) : R * 1.3);
