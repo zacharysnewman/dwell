@@ -155,9 +155,12 @@ pub type ChunkGenerator = Arc<dyn Fn(ChunkCoord, &mut Chunk) + Send + Sync>;
 /// True for chunks a generator leaves all air, known without generating them.
 pub type AirChunkTest = Arc<dyn Fn(ChunkCoord) -> bool + Send + Sync>;
 
-/// Generator versions announced in Welcome (§6.3): 0 the flat test world, 8 procedural terrain.
+/// Generator versions announced in Welcome (§6.3): 0 the flat test world, 8 procedural terrain,
+/// 100 the structure sandbox (the flat world in its floor block; numbered away from the terrain's
+/// versions, which grow). 1–7 are retired and load as the flat world, as any unknown version does.
 pub const GENERATOR_FLAT: u32 = 0;
 pub const GENERATOR_TERRAIN: u32 = 8;
+pub const GENERATOR_SANDBOX: u32 = 100;
 
 /// FNV-1a 64 over a chunk's ids (u16 little-endian, index order): goldens and `WorldgenCheck`.
 pub fn chunk_hash(chunk: &Chunk) -> u64 {
@@ -296,28 +299,66 @@ pub fn chunk_distance(a: ChunkCoord, b: ChunkCoord) -> i32 {
         .max((a.z - b.z).abs())
 }
 
-fn flat_material(y: i32) -> StateId {
-    if y < MIDPLANE_Y {
-        M.air
-    } else if y < -4 {
-        M.stone
-    } else if y < -1 {
-        M.dirt
-    } else if y == -1 {
-        M.grass
-    } else {
-        M.air
+/// What a flat world is made of, by depth below its surface at y = 0: the top layer (y = −1), the
+/// three below it, and the rest down to the midplane. The flat test world is grass over dirt over
+/// stone; the structure sandbox is its floor block throughout ([`FlatLayers::of`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlatLayers {
+    pub top: StateId,
+    pub under: StateId,
+    pub base: StateId,
+}
+
+impl FlatLayers {
+    /// The flat test world's layers.
+    pub fn standard() -> Self {
+        Self {
+            top: M.grass,
+            under: M.dirt,
+            base: M.stone,
+        }
+    }
+
+    /// One block throughout.
+    pub fn of(m: StateId) -> Self {
+        Self {
+            top: m,
+            under: m,
+            base: m,
+        }
+    }
+
+    /// The block `depth` cells below the surface (0: the top layer, at y = −1).
+    pub fn at_depth(&self, depth: i64) -> StateId {
+        match depth {
+            0 => self.top,
+            1..=3 => self.under,
+            _ => self.base,
+        }
+    }
+
+    fn at(&self, y: i32) -> StateId {
+        if !(MIDPLANE_Y..0).contains(&y) {
+            M.air
+        } else {
+            self.at_depth(i64::from(-1 - y))
+        }
     }
 }
 
 /// The flat test world: stone from the midplane up, three layers of dirt, grass topped at y = 0.
 pub fn generate_flat_chunk(coord: ChunkCoord, chunk: &mut Chunk) {
+    generate_flat_chunk_of(&FlatLayers::standard(), coord, chunk);
+}
+
+/// A flat world of `layers`, topped at y = 0 from the midplane up (the shape of the flat world).
+pub fn generate_flat_chunk_of(layers: &FlatLayers, coord: ChunkCoord, chunk: &mut Chunk) {
     let disc = chunk_disc_overlap(coord.x, coord.z);
     if disc == DiscOverlap::Outside {
         return;
     }
     for ly in 0..CHUNK_SIZE {
-        let m = flat_material(coord.y * CHUNK_SIZE + ly);
+        let m = layers.at(coord.y * CHUNK_SIZE + ly);
         if m == M.air {
             continue;
         }
@@ -344,6 +385,11 @@ pub fn flat_is_air(c: ChunkCoord) -> bool {
 
 pub fn flat_generator() -> ChunkGenerator {
     Arc::new(generate_flat_chunk)
+}
+
+/// The flat world's generator made of `layers` (its all-air test is [`flat_is_air`]).
+pub fn flat_generator_of(layers: FlatLayers) -> ChunkGenerator {
+    Arc::new(move |coord, chunk| generate_flat_chunk_of(&layers, coord, chunk))
 }
 
 /// All air (tests build their geometry voxel by voxel).

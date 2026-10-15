@@ -107,14 +107,15 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
    dedicated servers generate the **procedural terrain** world (generator version 12, §6.3) by
-   default; `?world=flat` and `?seed=N` (local mode) or `--generator N` and `--seed N`
-   (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
+   default; `?world=flat`, `?world=sandbox` and `?seed=N` (local mode) or `--generator N` and
+   `--seed N` (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
    test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
    **[built, Phase 3e]** Local worlds are saved in the browser: one world file per generator and
    seed in OPFS (`dwell/worlds/local-g<generator>-s<seed>.dwellworld`, §6.4), at every autosave
    (`AUTOSAVE_SECONDS`) and when the page is hidden or closed; a reload continues the same world. **[built, Phase 5a]** Worlds
    are named and managed from the menu: create (name, seed — a number, or text hashed with
-   FNV-1a, blank for random — and type), play, regenerate (the files deleted and recreated from the
+   FNV-1a, blank for random — and type: Terrain, Flat or **[built, Phase 27 S2a]** Sandbox, also
+   `?new=1&type=sandbox`; an unknown type makes terrain), play, regenerate (the files deleted and recreated from the
    seed with the type's current generator) and delete. Menu-created worlds use id-based files
    (`dwell/worlds/w<10 base-36 chars>.dwellworld`); links keep opening the per-generator-and-seed
    files. An index in local storage (`dwell.worlds`, `local/worldIndex.ts`) holds each world's name,
@@ -432,9 +433,11 @@ returns. Without WebGPU (no `navigator.gpu`, no adapter or device) the page show
 | `game.rs` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with `dwell-physics`'s `Predictor` (the same controller and Rapier setup as the server, against the client's streamed `VoxelWorld`), sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the predictor, nudges its tick rate from the server's input buffer, streams terrain around the player (`dwell-game`'s chunk streamer, mesh jobs within a 4 ms frame budget), drives the first-person camera (per-tick eye height with crouch and step-up/down smoothing, and the turn-over across the midplane), block targeting and its outline, the whole-world view (`dwell-lod`), the HUD text and the F3 overlay. A tool can place the camera (`set_view`, a `ViewOverride`): the renderer and the LOD view from it while the player stays put (named views, §6.3). Platform-free behind a `Scene` trait (the renderer) and a job pool, so `tests/game_local.rs` plays a local world natively through the real session and handshake. |
 | `dwell-game` **[built]** | `remotes.rs`: snapshot buffer and interpolation `INTERP_DELAY_MS` in the past. `input.rs`: keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4 and its zoom `-`/`=`; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block) and input quantization. `flight.rs`, `flight_speed.rs`: the creative-flight toggle (Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1) and the speed level. `touch.rs`: touch controls for phones and tablets (floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button toggling the F3 overlay, one captured pointer per control, merged into the same sampled input; the DOM elements are the shell's `ui/touchControls.ts`). `eye.rs`, `face_flip.rs`: the eye and the camera's turn-over between the faces. `block_interaction.rs` (§6.5): the target under the crosshair (`raycast_block` from the eye, `REACH_DISTANCE`), the palette (every placeable state, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. `chunk_stream.rs`: applies `ChunkData` (Generated through the generation workers, Explicit decoded) and `ChunkUnload` to the streamed world, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first (each job's padded voxels copied row by row from the chunk and its 26 neighbours, each looked up once), and tells the game when the terrain around the player is loaded (`gate.rs`, §6.3). `chunk_diff.rs`: the F3 overlay's chunk regenerated and diffed. `hud_text.rs`: the HUD's lines (background work such as terrain loading is a small status in the bottom-left corner, never over the view). |
 | `jobs/`, `pool.rs`, `web/jobs.rs` **[built]** | Background jobs (§5.1): chunk generation (and the verification hash), LOD bounds and sections, the F4 map's height samples, chunk and section meshing. `jobs/codec.rs` encodes jobs and results as bytes (one transferred buffer each way); `pool.rs` keeps at most the workers' capacity in flight per kind (generation, meshing), cancels queued chunk jobs on unload and routes results to the streamer, the LOD system and the debug tools; `web/jobs.rs` posts to the least busy worker. Natively the same jobs run inline (tests). |
-| `dwell-mesh` **[built, Phase 3d; LOD 4c]** | Greedy chunk mesher: a chunk's voxels with a one-voxel apron (34³) in; positions, normals, face-tinted colours, texture coordinates in blocks and per-vertex atlas tile rectangles out, an opaque and a transparent (water) mesh. Faces are culled like collision (hidden by full cubes; water by water; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, ladders stay one quad per face. Render meshes only: collision stays in `dwell-physics` (§6.1), so prediction collides with exactly the server's geometry. LOD sections (`lod_mesher.rs`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. **Block textures** (`textures.rs`): generated from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, a side with a grass fringe), dirt, stone, sand, rippled water and ladders (rails and rungs), named by the registry's texture names; packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters, mipmapped down to the level where the gutter is one texel wide (five levels, two texels per tile at the last): filtering a smaller level at a tile's edge would reach past the gutter into the neighbouring tiles and the atlas's empty space, which a grazing view of distant ground samples; the hotbar's swatches are cut from it (`hotbarSwatch`). Each tile's average colour in linear light is the flat colour of LOD faces. |
+| `dwell-mesh` **[built, Phase 3d; LOD 4c]** | Greedy chunk mesher: a chunk's voxels with a one-voxel apron (34³) in; positions, normals, face-tinted colours, texture coordinates in blocks and per-vertex atlas tile rectangles out, an opaque and a transparent (water) mesh. Faces are culled like collision (hidden by full cubes; water by water; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, ladders stay one quad per face. Render meshes only: collision stays in `dwell-physics` (§6.1), so prediction collides with exactly the server's geometry. LOD sections (`lod_mesher.rs`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. **Block textures** (`textures.rs`): generated from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, a side with a grass fringe), dirt, stone, sand, rippled water, ladders (rails and rungs) and **[built, Phase 27 S2a]** `grid` (white with a one-texel line along two edges, so every block edge gets a faint line; the sandbox floor's), named by the registry's texture names; packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters, mipmapped down to the level where the gutter is one texel wide (five levels, two texels per tile at the last): filtering a smaller level at a tile's edge would reach past the gutter into the neighbouring tiles and the atlas's empty space, which a grazing view of distant ground samples; the hotbar's swatches are cut from it (`hotbarSwatch`). Each tile's average colour in linear light is the flat colour of LOD faces. |
 | `dwell-look` **[built, Phase 7]** | The look as plain data shared by both meshers, the lights, the sky and the fog (WORLD_GENERATION.md §1): one per-face RGB tint table — warm on top, cooler on the sides, blue underneath — in the chunk and LOD meshers alike (`normal_tint` for shaped faces); a warm sun and a green-bounce hemisphere light per face; the exposure (`DEFAULT_EXPOSURE`); the **sky** (`sky_color` and its generated WGSL twin, `sky_wgsl`), the sky frame (`sky_frame.rs`) and the height fog's model (`fog.rs`, unit-tested). Block colours and tiles are tuned to the measured palette; water is turquoise. |
-| `render/` **[built]** | The wgpu renderer (WebGPU only, WGSL; [ADR 0028](./adr/0028-rust-port.md)): terrain chunks (a texture repeated once per block across merged quads — `tile.xy + fract(uv) × tile.zw` sampled with explicit gradients so mip selection has no seams — from a mipmapped sRGB atlas, averaged in linear light, crisp up close), LOD sections (§6.6: a section's surface and its six skirts in one vertex and index buffer, each skirt a range drawn when its side shows; stand-ins clipped to their box in the fragment shader), players as capsules with a visor, turned to their heading (lying down and grey when dead; `geometry.rs`), the targeted block's outline, debug line segments, and the sky as a full-screen triangle drawn first in the far pass. Lighting replicates the Three.js build's look: Lambert shading with a sun or moon and a hemisphere light, each weighted to the fragment's own face; then ACES filmic tone mapping with the exposure, a manual sRGB encode (the canvas is a non-sRGB format), then the height fog mixed toward the sky's colour in output space. Water (opacity 0.55, visible from both sides, no depth writes) draws after the opaque meshes, far to near. Everything is drawn **camera-relative**: the eye is f64, each mesh's origin offset from it is computed in f64 and passed as f32, so precision holds ~8,000 km out. Two depth passes split at `LOD_NEAR_SPLIT_M` (§6.6), 4× MSAA (none on a CPU adapter such as SwiftShader, `samples_for`), a 32-bit float depth buffer. `camera.rs`: 75° vertical field of view, capped at 100° horizontal on wide screens, and the view turned over across the midplane; `display.rs`: `?scale=` (0.25–2) renders at a fraction of the resolution. `stats()` reports the frame's draw calls, triangles and GPU memory (F3). Each chunk and section is its own draw. Meshes live in **arena pages** (`arena.rs`): a few 32 MiB GPU buffers per vertex format (terrain, flat, lines), each holding many meshes' interleaved vertices and u32 indices, allocated first-fit from a coalescing free list and written with `Queue::write_buffer` (ordered after the frames already submitted, so a reused region never changes an earlier frame); a run of draws from one page binds its vertex and index buffers once and each draw is one `drawIndexed` (its first index and base vertex). Each draw's uniforms (offset, clip box, tint, turn) are an element of one storage array the shaders index by the draw's instance (draw k is drawn as instance k: no bind per draw, 80 bytes uploaded per draw). The opaque draws are ordered by pipeline and page and then near to far (each pipeline and page bound once; nearer meshes reject what they hide before it is shaded), and a section's surface and the skirts drawn with it, consecutive in its index buffer, draw as one call — each WebGPU call crosses from WASM to JS, which was most of the frame's encoding time (DEV_TOOLS.md). A replaced or removed mesh returns its regions to its page; pages, targets and the draw uniforms are **destroyed** explicitly when they go: WebGPU frees them on `destroy()` or whenever the page's garbage collector gets to them, and wgpu's WebGPU backend does nothing on drop. Native tests run the renderer on wgpu's noop device. |
+| `render/` **[built]** | The wgpu renderer (WebGPU only, WGSL; [ADR 0028](./adr/0028-rust-port.md)): terrain chunks (a texture repeated once per block across merged quads — `tile.xy + fract(uv) × tile.zw` sampled with explicit gradients so mip selection has no seams — from a mipmapped sRGB atlas, averaged in linear light, crisp up close), LOD sections (§6.6: a section's surface and its six skirts in one vertex and index buffer, each skirt a range drawn when its side shows; stand-ins clipped to their box in the fragment shader), players as capsules with a visor, turned to their heading (lying down and grey when dead; `geometry.rs`), the targeted block's outline, debug line segments, and the sky as a full-screen triangle drawn first in the far pass. Lighting replicates the Three.js build's look: Lambert shading with a sun or moon and a hemisphere light, each weighted to the fragment's own face; then ACES filmic tone mapping with the exposure, a manual sRGB encode (the canvas is a non-sRGB format), then the height fog mixed toward the sky's colour in output space. **[built, Phase 27 S2a]** Terrain faces of a block with the registry's `grid` look option (below) are darkened along world-aligned lines every `every` blocks (`grid_shade`: 0.12 blocks wide, antialiased by the pixel's footprint, its coverage spread over the footprint once that outgrows the line and faded to its average beyond half a period, so distant grids neither shimmer nor alias), before lighting. The vertex carries nothing for it: the shader finds a face's grid from its tile rectangle (the atlas cell it starts in) in a 64-entry uniform table (`tile_grids`, frame group binding 3, written once from `dwell_mesh::tile_grids`), so the terrain vertex stays at 15 floats. Water (opacity 0.55, visible from both sides, no depth writes) draws after the opaque meshes, far to near. Everything is drawn **camera-relative**: the eye is f64, each mesh's origin offset from it is computed in f64 and passed as f32, so precision holds ~8,000 km out. Two depth passes split at `LOD_NEAR_SPLIT_M` (§6.6), 4× MSAA (none on a CPU adapter such as SwiftShader, `samples_for`), a 32-bit float depth buffer. `camera.rs`: 75° vertical field of view, capped at 100° horizontal on wide screens, and the view turned over across the midplane; `display.rs`: `?scale=` (0.25–2) renders at a fraction of the resolution. `stats()` reports the frame's draw calls, triangles and GPU memory (F3). Each chunk and section is its own draw. Meshes live in **arena pages** (`arena.rs`): a few 32 MiB GPU buffers per vertex format (terrain, flat, lines), each holding many meshes' interleaved vertices and u32 indices, allocated first-fit from a coalescing free list and written with `Queue::write_buffer` (ordered after the frames already submitted, so a reused region never changes an earlier frame); a run of draws from one page binds its vertex and index buffers once and each draw is one `drawIndexed` (its first index and base vertex). Each draw's uniforms (offset, clip box, tint, turn) are an element of one storage array the shaders index by the draw's instance (draw k is drawn as instance k: no bind per draw, 80 bytes uploaded per draw). The opaque draws are ordered by pipeline and page and then near to far (each pipeline and page bound once; nearer meshes reject what they hide before it is shaded), and a section's surface and the skirts drawn with it, consecutive in its index buffer, draw as one call — each WebGPU call crosses from WASM to JS, which was most of the frame's encoding time (DEV_TOOLS.md). A replaced or removed mesh returns its regions to its page; pages, targets and the draw uniforms are **destroyed** explicitly when they go: WebGPU frees them on `destroy()` or whenever the page's garbage collector gets to them, and wgpu's WebGPU backend does nothing on drop. Native tests run the renderer on wgpu's noop device. |
+| `render/` frame, compare **[planned, Phase 25]** | **The shared frame** ([ADR 0029](./adr/0029-ray-marched-renderer.md) step A1, also water's W2): terrain renders into an offscreen `rgba16float` target with stored, sampleable depth (across the far/near split and MSAA, which stays 4×), and fog and tone mapping move into a composite pass; GPU pass times (timestamp queries) join the telemetry. **A second, ray-marched terrain renderer** beside the mesher, at every distance ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)): `Scene`'s terrain calls become payload-generic (meshes for raster, bricks for the marcher; the workers run the matching job kind), bricks are a fixed-depth brickmap (one 64-tree node of 8³ bricks per chunk, clipmap levels for LOD sections) built in the workers, and compute passes march it with empty-space skipping (cone LOD, masks, column heights, brick distances, a beam prepass), writing a G-buffer the shared composite shades; overlays raster on top through a `frag_depth` pass. `?renderer=raster|march|compare` and compare mode (split, blink, difference) and `bench --compare` exist in **local builds only**; deployed builds draw with the mesher until the owner's decision (A7). |
+| `render/` water **[planned, Phase 26]** | A dedicated water shader over the shared frame ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md), [`WATER_RENDERING.md`](./WATER_RENDERING.md)): normal maps, Fresnel and a glint per fluid look (§6.1), refraction and Beer–Lambert absorption from the scene depth behind the surface, shoreline foam, underwater fog, the water line, Snell's window and caustics, screen-space reflections into the sky; quality tiers (Low to Ultra) in the settings menu, Low on phones. The surface geometry stays still; an eye-submerged test that matches the drawn surface (0.875 of a cell for water) drives the underwater view. |
 | `local.rs`, `web/local_worker.rs` **[built]** | Local mode (§2.1): `LocalCore`, the `dwell-sim` server with its world file, stepped by elapsed time; `LocalWorld`, its wasm-bindgen face for the local-mode worker, with the world file on an OPFS sync access handle (§6.4); `worldFileVersion` / `setWorldFileVersion` read and rewrite a world file's version (debug tools and the version-lock e2e test). |
 | `physics/` | **[planned, Phase 21]** The client's debris world (a local Rapier world); the prediction world is the predictor's (§9.3). |
 | `interp/` | **[planned, Phase 20]** Tier 1 transform interpolation (and bounded extrapolation); player interpolation is in `dwell-game`'s `remotes.rs`. |
@@ -487,16 +490,22 @@ each worker keeps two jobs (one running, one waiting). Pool sizes are capped, lo
 > later, through the generator version and the block data files, without architectural change.
 
 Built (Phases 1–3a; registry Phase 8; cut to the baseline in Phase 15, ADR 0025): the prototype
-blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists them) — where
+blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists the placeable ones), and since Phase 27 S2a the sandbox floor — where
 each state has a collision **shape** (`Empty`, `Full`, or `Shaped`, below), `climbable` + facing,
-`liquid`, `flooded` and `indestructible` (PLAYER_CONTROLLER.md §6; no block is indestructible
-since bedrock went: the property stays for the structural anchor of Phase 20). Phase 15 removed
+`liquid`, `flooded` and `indestructible` (block data `"indestructible": true`; PLAYER_CONTROLLER.md §6).
+**[built, Phase 27 S2a]** One block is indestructible: `dwell:sandbox_floor` (prototype content:
+full, white with grid lines, not in the palette, not adaptive), the structure sandbox's ground — the
+property bedrock had, reused rather than a new flag; it stays what the structural anchor of
+Phase 20 may use. Phase 15 removed
 bedrock, the debug launch pad (and its `launch_speed` property, decision D6), the stone slab and
 every slope and slab family, sandstone, gravel, snow, ice, log, leaves and the three ores, with
 their texture tiles. 32³ chunks with revisions (generated chunks start at revision 0);
 `VoxelWorld` (`dwell-world`), generate-on-access with eviction of unmodified chunks on the server, and *streamed*
 (no generator; missing chunks read as air) in the client; a flat test world (grass top face at
-y = 0, stone down to the midplane, its core — no bedrock). The movement playground is a structure
+y = 0, stone down to the midplane, its core — no bedrock), whose layers are a parameter
+(`FlatLayers`: top, the three under it, the rest; the voxel and LOD generators take them), so
+**[built, Phase 27 S2a]** the **structure sandbox** (generator **100**, `GENERATOR_SANDBOX`) is the
+same world made of `dwell:sandbox_floor` alone (`dwell-worldgen` resolves it by name). The movement playground is a structure
 file the tests stamp over the flat world (§6.3). **Terrain collision** (`dwell-physics`
 `terrain.rs`; Rust port, Phase 24): one static Rapier **voxel collider** (Parry's `Voxels` shape)
 holding the solid cells of the chunks around players. Parry classifies each voxel by its
@@ -529,6 +538,30 @@ and checked by the client. Runtime ids stay on the wire and in memory (a `u16` p
 bit-packed chunk-local palette would be 7× smaller but 2.7× slower to scan with the current access
 pattern, ADR 0015 — deferred); on disk, chunk palettes hold **world state ids** mapped to strings
 (§6.4).
+
+**Fluid looks [planned, Phase 26]** ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)). A
+`fluids` table in the block data names each fluid's look (absorption, scatter, roughness, IOR, waves,
+foam, caustics, surface drop); a liquid block references one by name (`"look": "fluid", "fluid":
+"dwell:water"`), `gen.mjs` validates it and emits a fluid table the renderer uploads, and the mesher
+takes the fluid id and surface drop from it (no hardcoded water opacity or drop). Fluids are per
+build and looks only: no flow or other behaviour.
+
+**Unbreakable blocks [built, Phase 27 S2a]** ([ADR 0031](./adr/0031-data-driven-structures.md)). The
+block data's existing `indestructible` property (bedrock's, kept for Phase 20's structural anchor)
+is the flag: no new `breakable` flag was added. The server's edit validation rejects breaking an
+indestructible state, and placing into its cell (which would replace a liquid). The structure
+sandbox's white floor block (`dwell:sandbox_floor`) is the one block that uses it.
+
+**Grid lines [built, Phase 27 S2a]**. Two data-driven parts draw the sandbox floor's grid, both
+usable by any block: the `grid` texture tile (a faint line at every block edge, from the tile; the
+mipmaps fade it), and the **`grid` look option** in the block data, `{ "every": N, "strength": s }`
+(`N` divides the chunk size, 32, so chunk-local uvs line up across chunks; `s` in (0, 1]; `gen.mjs`
+rejects anything else), which the terrain shader draws from world position (§5 `render/`). A
+face's grid is found through its texture tile (a per-tile table built from the registry), so every
+block drawn with a tile must want the same grid, or none — `gen.mjs` rejects a tile whose blocks
+disagree, an untextured block counting as the `plain` tile. The
+floor uses the tile and `{ "every": 8, "strength": 0.3 }`. LOD sections draw the tile's average
+colour and no lines. The registry hash covers state strings only, so look options do not change it.
 
 **Adaptive natural blocks [planned, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
 [ADR 0024](./adr/0024-adaptive-natural-blocks.md)). Natural blocks (block data `"adaptive": true`)
@@ -622,7 +655,12 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
-default for dedicated servers and local mode; version **0** (flat) remains for tests. The **movement
+default for dedicated servers and local mode; version **0** (flat) remains for tests, and
+**[built, Phase 27 S2a]** version **100** is the structure sandbox (the flat world in its white,
+indestructible floor block, `docs/STRUCTURES.md`; numbered away from the terrain's
+versions, which grow; 1–7 are retired and load as the flat world, as any unknown version does).
+Creative flight is the server's flight policy (everyone by default, so on in every local world,
+the sandbox included). The **movement
 playground** (generator 1 until Phase 15) is now a **structure file**
 (`shared/structures/playground.structure`, below) that the controller and netcode tests stamp over
 the flat world; no world uses it. Players spawn on the first dry, level 9 × 9 patch (top voxels at
@@ -747,6 +785,30 @@ with a matching air test, `with_structure_air`). The movement playground the con
 doorway, a crawlspace, a ladder to a ledge and a pool — is one
 (`shared/structures/playground.structure`, decision D7). Placed slabs and slopes went with the
 shaped families, so the tests' half-height steps are static boxes.
+
+**Data-driven structures [planned, Phase 27]** ([ADR 0031](./adr/0031-data-driven-structures.md),
+[`STRUCTURES.md`](./STRUCTURES.md)). Structures become JSON in `shared/structures/` (a format version, a
+`kind` — `"voxels"` first — size, anchor, a palette by block name, y-layers, named variant operations;
+up to 32³), validated and hashed by `shared/structures/gen.mjs` (CI fails on stale output) and read by
+one Rust loader that replaces the text format. They are per build and added only by the owner, built
+in a **`sandbox` world type** (flat unbreakable white floor, flight on) with region tools (box select,
+fill, copy/paste with rotate and mirror, undo) over a server-validated region edit, saved to a
+separate OPFS store (`dwell/structures/`, append-only) and exported as JSON. Worldgen does not place
+them (baseline B10); placement is deferred, and would ship on a new compatibility line.
+
+**Tree growth [planned, Phase 30]** ([ADR 0033](./adr/0033-tree-growth.md),
+[`TREE_GROWTH.md`](./TREE_GROWTH.md)). A tree is a structure whose model is the mature tree: its
+palette marks roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and a `growth` block gives the
+engine (`skeleton_reveal`) and rates. `gen.mjs` extracts a skeleton graph from the wood, and one Rust
+`stage_voxels(structure, variant seed, age)` reveals it: the trunk 1 m per 30 in-game days, branches
+at `branch_rate` of that (default 1/3), scaled by the world's growth speed; the final stage is the
+model. Variants jitter the skeleton (branch positions, lengths, droop). Trees are **a layer composed
+at chunk load**, not voxels in the saved chunk: generated terrain and its saved edits, then
+procedural trees not tombstoned, then planted trees from `growers`, each at its stage for the world
+time; growth writes only into air or its own leaves, and a blocked node prunes its subtree. The
+server and the client compose the same layers from the same records. Breaking a tree's wood prunes
+that subtree (or tombstones the tree); the cut-off part is a Phase 20 body (§7.1). Procedural trees
+wait for structure placement in worldgen (Open Decision #24).
 
 
 #### Generator pipeline **[built, Phase 15: generator version 12]**
@@ -883,15 +945,17 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | Table | Contents |
 |---|---|
 | `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time, timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
-| `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy |
+| `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy; **[planned, Phase 30]** the growth-speed multiplier (default 1), applied by the server to tree growth |
 | `block_states` | **[built, Phase 8]** world state id → canonical string (§6.1), ids assigned densely in order of first use and stable for the life of the file |
 | `chunks` | Modified chunks only: `(cx, cy, cz)` → revision, generator version, LZ4 palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |
 | `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)` → `lodRevision`, dirty flag, generator version, LZ4 palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks` (its cells are runtime ids: dropped when `meta`'s registry hash changes), rebuilt on a generator or registry change |
 | `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; later inventory), first/last seen |
 | `permissions` | `(public key, kind)` with kind `op` / `ban` / `allow` → reason, granted by, when |
 | `bodies` | **[planned, Phase 20]** In-flight Tier 1 clusters (voxel layout, transform, velocities) |
+| `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
+| `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
 
-**Built (format 1, `dwell-storage` `db.rs`):** the tables above but `bodies`. Format 1 is the first
+**Built (format 1, `dwell-storage` `db.rs`):** the tables above but `bodies`, `tree_tombstones` and `growers`. Format 1 is the first
 Rust format: the port started a new compatibility line (ADR 0028), so files of the C++ build's
 SQLite formats are not read (they are version-locked, ADR 0014, and open in their own builds).
 The server restores the LOD cache at startup (dirty rows are recomputed), drops and rebuilds it
@@ -983,9 +1047,9 @@ Players break and place blocks. Server-authoritative like every voxel change
   view of the eye (checked first, so a far request reads nothing); a targetable cell; the eye in
   front of the targeted face and a ray to its centre or one of four points near its corners
   reaching the target first (line of sight; on a shape, the sample points lie on the polygons whose
-  normal points through the requested face); Break — not indestructible, leaving water
-  where a flooded state stood; Place — a placeable state, into an air or liquid cell inside the
-  world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
+  normal points through the requested face); Break — not indestructible (block data; else
+  `Unbreakable`), leaving water where a flooded state stood; Place — a placeable state, into an air
+  or liquid cell (not an indestructible one: placing would replace it) inside the world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
   player's capsule, tested against the shape's true volume. Accepted edits of a step are batched into one
   `VoxelModification` (one entry per chunk, its revision + 1) sent to each client streaming a
   changed chunk; clients streaming it later get the chunk Explicit. The client does not predict
@@ -1665,6 +1729,11 @@ Explicit only (§6.1): u16 paletteCount (1..32768), u16 × paletteCount material
      palette index (u8, or u16 when paletteCount > 256)
 ```
 
+**[planned, Phase 30]** `ChunkData` gains the chunk's **tree records** (its tombstones and pruned
+node sets, and the planted trees rooted in it), from which the client composes the tree layer as
+the server does (§6.3); a tree's stage change while loaded is a `VoxelModification` with reason
+`Growth`. Both arrive on a new compatibility line ([ADR 0033](./adr/0033-tree-growth.md)).
+
 **Server → Client: `ChunkUnload` (reliable, `world`) [built]**
 ```
 u8   type = 0x12
@@ -1705,7 +1774,7 @@ S→C LodData 0x15        (lod) u8 form (Generated 0 | Explicit 1 | Unchanged 2)
 **Server → Client: `VoxelModification` (reliable, `world`) [built, Phase 3d: reason Edit]**
 ```
 u8   type = 0x10
-u8   reason                     // Edit 1 | Explosion 2 | Collapse 3 | Rebake 4
+u8   reason                     // Edit 1 | Explosion 2 | Collapse 3 | Rebake 4 | [planned, Phase 30] Growth 5
 u32  serverTick
 u16  chunkCount                 // ≥ 1: the changed chunks this client streams
 repeat: i32×3 chunkCoord, u32 newRevision (the chunk's previous revision + 1), u16 changeCount (≥ 1),
@@ -2098,7 +2167,7 @@ drivers) get the "unsupported" message (§5).
   unknown button bits fail decoding. The per-session queue is capped at 16. Rejections are counted
   per session (`SessionStats`).
 - **[built, Phase 3d]** Block edits are checked for reach, line of sight, rate (token bucket),
-  and permissions (`ServerConfig::edits`); indestructible states cannot be broken, only palette materials can be
+  and permissions (`ServerConfig::edits`); indestructible states cannot be broken or replaced, only palette materials can be
   placed, and placements into blocks, outside the world, or overlapping any player capsule are
   rejected (§6.5). At most 8 requests per session queue per tick; `ChunkResync` answers only chunks
   the client is streamed, at most `MAX_RESYNC_CHUNKS` per request.
@@ -2166,3 +2235,5 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 20 | ~~Release pipeline: versions loaded from tags, worlds locked to their compatibility line~~ | **Resolved:** one public repository (a private-source split rejected to keep free CI), builds as tagged GitHub Releases served same-origin behind a launcher at `/dwell/`, SemVer 2.0.0 from `0.1.0`, worlds opening only in builds of their version's compatibility line at or after the version that last saved them, all rights reserved — [ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md) |
 | 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness, reaching the rim | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust; the rim ocean kept; face B reuses face A's generator, biomes and islands. Recorded by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9. Amended by the baseline (2026-10-12): the midplane at y = 0, a 10-layer stone core per face instead of a ~4 km crust, face B's terrain by terrain definition with its own seed — [ADR 0025](./adr/0025-baseline-world.md) **[planned, Phases 16–17]** |
 | 22 | ~~The baseline (owner, 2026-10-12): the build limit's shape and radius, flight at it, the stone layers, face B's terrain, launch pads, the movement playground, terrain scale, the midplane, how far terrain is data, the WebGL fallback~~ | **Resolved (Phase 14):** decisions D1–D10 of [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md) §7 — a 50 km disc around a midplane at 0, a 10-layer core, a 50 km build sphere that bounds building but not movement, the same terrain definition on both faces with their own seeds, launch pads removed, the playground a structure file, one island of ~20–30 km — [ADR 0025](./adr/0025-baseline-world.md); terrain as data over a fixed vocabulary of node kinds — [ADR 0026](./adr/0026-terrain-definitions.md); WebGPU with an automatic WebGL2 fallback — [ADR 0027](./adr/0027-webgpu-renderer.md) (D4 superseded by [ADR 0028](./adr/0028-rust-port.md): WebGPU only, no fallback) |
+| 23 | Terrain renderer: the mesher or a ray-marched renderer (per device class), and moving bodies' rendering | Measure all, the owner decides (2026-10-14): both built complete and compared side by side in local builds — [ADR 0029](./adr/0029-ray-marched-renderer.md), [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md); decided at Phase 25's A7, before Phase 20 **[planned, Phase 25]** |
+| 24 | Structures in worldgen: whether and how terrain definitions place structures (partly revisiting B10) | Deferred until structures exist (owner, 2026-10-14); placement rules in the terrain definition, a new compatibility line — [ADR 0031](./adr/0031-data-driven-structures.md) **[planned, Phase 27's S4]**; procedural trees (Phase 30, [ADR 0033](./adr/0033-tree-growth.md)) wait for it |

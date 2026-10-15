@@ -261,6 +261,51 @@ fn chunks_the_air_test_calls_air_generate_as_air() {
 }
 
 #[test]
+fn the_sandbox_is_the_flat_world_in_its_indestructible_floor_block() {
+    let floor = require(SANDBOX_FLOOR);
+    assert!(info(floor).indestructible && info(floor).solid && !info(floor).placeable);
+    let sandbox = generator_for(GENERATOR_SANDBOX, 7);
+    let flat = generator_for(GENERATOR_FLAT, 7);
+    let air = air_test_for(GENERATOR_SANDBOX, 7);
+    for c in [(0, -1, 0), (0, 0, 0), (3, -5, -2), (0, MIDPLANE_Y / S, 0)] {
+        let c = ChunkCoord::new(c.0, c.1, c.2);
+        let (mut a, mut b) = (Chunk::default(), Chunk::default());
+        sandbox(c, &mut a);
+        flat(c, &mut b);
+        // The same shape as the flat world, every solid cell of it the floor.
+        for (&s, &f) in a.voxels().iter().zip(b.voxels().iter()) {
+            assert_eq!(s, if f == M.air { M.air } else { floor }, "{c:?}");
+        }
+        if air(c) {
+            assert!(a.voxels().iter().all(|&v| v == M.air));
+        }
+    }
+    let mut world = VoxelWorld::new(sandbox, None);
+    assert_eq!(world.get_voxel(3, -1, 3), floor);
+    assert_eq!(world.get_voxel(3, 0, 3), M.air);
+    assert_eq!(
+        spawn_point_for(GENERATOR_SANDBOX, 7),
+        spawn_point_for(GENERATOR_FLAT, 7)
+    );
+}
+
+#[test]
+fn the_flat_world_and_retired_versions_are_unchanged_by_the_sandbox() {
+    // The flat world's ground chunk, what every version but terrain and sandbox generates.
+    let mut chunk = Chunk::default();
+    generate_flat_chunk(ChunkCoord::new(0, -1, 0), &mut chunk);
+    let flat_hash = chunk_hash(&chunk);
+    for version in [GENERATOR_FLAT, 1, 2, 7, 9, 99] {
+        let mut c = Chunk::default();
+        generator_for(version, 3)(ChunkCoord::new(0, -1, 0), &mut c);
+        assert_eq!(chunk_hash(&c), flat_hash, "version {version}");
+    }
+    assert_eq!(chunk.get(0, 31, 0), M.grass);
+    assert_eq!(chunk.get(0, 30, 0), M.dirt);
+    assert_eq!(chunk.get(0, 27, 0), M.stone);
+}
+
+#[test]
 fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
     let g = TerrainGenerator::new(0);
     let (cx, cz) = coast_on_axis(&g);

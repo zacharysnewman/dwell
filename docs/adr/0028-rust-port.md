@@ -1,6 +1,7 @@
 # 0028. One Rust codebase: server, sim core and client, with Rapier physics and a wgpu renderer (WebGPU only)
 
-- Status: Accepted
+- Status: Accepted (the renderer amended by [0029](0029-ray-marched-renderer.md): a second, ray-marched
+  terrain renderer compared side by side in local builds until its decision)
 - Date: 2026-10-13
 - Supersedes: [0027](0027-webgpu-renderer.md) (Three's `WebGPURenderer`, TSL, the WebGL2 fallback and
   the settings menu's renderer readout, decision D4 of [`BASELINE_EVALUATION.md`](../BASELINE_EVALUATION.md)

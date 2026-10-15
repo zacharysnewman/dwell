@@ -68,7 +68,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x04c8d81b0549dcb0n;
+export const REGISTRY_HASH = 0x7dd6a72a56b1f3ben;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -78,6 +78,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:ladder', first: 4, count: 8, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }] },
   { id: 'dwell:water', first: 12, count: 1, properties: [] },
   { id: 'dwell:sand', first: 13, count: 1, properties: [] },
+  { id: 'dwell:sandbox_floor', first: 14, count: 1, properties: [] },
 ];
 
 export const SHAPES: readonly ShapeDef[] = [
@@ -100,6 +101,7 @@ const STATES_0: readonly StateDef[] = [
   { id: 11, state: 'dwell:ladder[facing=west,flooded=true]', block: 4, values: { facing: 'west', flooded: 'true' }, look: 'ladder', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 1, shape: 0, flooded: true, placeable: false },
   { id: 12, state: 'dwell:water', block: 5, values: {  }, look: 'water', color: 0x3fb2d6, opacity: 0.55, textures: { top: 'water', side: 'water', bottom: 'water' }, shape: 0, flooded: false, placeable: false },
   { id: 13, state: 'dwell:sand', block: 6, values: {  }, look: 'cube', color: 0xeed9a4, opacity: 1, textures: { top: 'sand', side: 'sand', bottom: 'sand' }, shape: 1, flooded: false, placeable: true },
+  { id: 14, state: 'dwell:sandbox_floor', block: 7, values: {  }, look: 'cube', color: 0xffffff, opacity: 1, textures: { top: 'grid', side: 'grid', bottom: 'grid' }, shape: 1, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

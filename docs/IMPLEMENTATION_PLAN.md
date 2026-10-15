@@ -38,10 +38,14 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
-| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
+| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) and for Phase 25's renderer decision (A7, 2026-10-14: cluster rendering is built once, for the chosen renderer) |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
+| 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) and S2a (floor block, sandbox world type) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -71,6 +75,15 @@ new numbers, ADRs keep the numbers of their day.
 On 2026-10-13 the owner decided to port Dwell to Rust ([ADR 0028](./adr/0028-rust-port.md)) and
 added it as **Phase 24**, numbered last so no other phase is renumbered but **run after Phase 15
 and before Phase 16**; Phases 16–23 are then built in Rust.
+On 2026-10-14 the owner adopted three proposals as **Phases 25–27**, numbered after the existing
+phases: **25 — the ray-marched renderer comparison** ([ADR 0029](./adr/0029-ray-marched-renderer.md)),
+**26 — water and fluid looks** ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)) and
+**27 — the structure sandbox** ([ADR 0031](./adr/0031-data-driven-structures.md)). Each needs Phase 24
+only; they can run alongside Phases 16–19. Phase 20 waits for Phase 25's decision (A7). Deliverables
+are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
+Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
+([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
+existing phases; it builds on Phase 27's structures, and its deliverables are G-ADR and G0–G4.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -1966,7 +1979,8 @@ the origin.
 - **LOD slopes** (the mesher's slope pieces, `slopePieces.ts`, `PIECE_NEAREST`) and the shape
   placement preview were cut with the slope stage and shape picking.
 - `indestructible` stays a block property with no block using it (the structural anchor of Phase 20
-  may); the `kUnbreakable` check is untested meanwhile.
+  may); the `kUnbreakable` check is untested meanwhile. *(Phase 27 S2a: the sandbox floor uses
+  it, and the check is tested.)*
 - The LOD surface's per-column data shrank from 6 floats to 4 (tints removed) and the F4 map column
   from 4 bytes to 3 (height and flags).
 
@@ -2412,7 +2426,10 @@ Exit criteria
 **Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
 
 **Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
-until Phase 5 (multiplayer ready) was complete (2026-09-30).
+until Phase 5 (multiplayer ready) was complete (2026-09-30). **Waits for Phase 25's renderer decision
+(A7; ADR 0029, owner 2026-10-14)**, so cluster rendering is built once, for the chosen renderer: greedy
+meshes with a rotation per draw if the mesher stays, brick volumes per body if marching is chosen
+(`RAY_MARCHED_RENDERER.md` §6).
 
 Deliverables
 - [ ] Bifacial world (Phase 13): the core anchor zone around the midplane (positional, diggable;
@@ -2554,6 +2571,219 @@ Exit criteria
   strict NAT via TURN.
 - [ ] An outdated app (Electron, Capacitor) is rejected with a clear message and offered the matching
   versioned build.
+
+---
+
+## Phase 25 — Ray-Marched Renderer Comparison
+
+**Goal:** Build a second, complete terrain renderer — GPU ray marching over a brickmap, full-detail
+chunks and every LOD level — beside the mesher, compare the two side by side in local builds, and let
+the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
+[`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
+
+**Status:** In progress — A0 (the ADR) done; next: A1, the shared frame and GPU timing. Needs Phase
+24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
+waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
+
+Deliverables
+- [x] **A0** — ADR 0029 (a second renderer behind a runtime switch, amending ADR 0028's renderer);
+  the owner's answers recorded (`RAY_MARCHED_RENDERER.md` §9).
+- [ ] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
+  target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved
+  to a composite pass; timestamp queries in the telemetry (`gpu.<pass>`); `bench.ts` passes
+  `--enable-webgpu-developer-features`. 4× MSAA kept (owner).
+- [ ] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene`, the
+  `?renderer=raster|march|compare` switch (a build-time flag keeps it out of deployed builds) and the
+  active renderer in the settings menu and F3; compare mode's split, blink and difference views with
+  an empty "march" side; `npm run bench -- --compare` with the configurations table and report.
+- [ ] **A3** — Marched terrain at every distance: the generated GPU state table; brick jobs in the
+  workers for chunks and LOD sections (palette bricks with column max-heights); the pool, allocator
+  and clipmap levels; the CPU reference marcher; the primary march at full resolution with the
+  hierarchy's masks and cone LOD; overlays through the `frag_depth` pass; steps-per-ray telemetry.
+  `march` mode draws all terrain with no meshes.
+- [ ] **A4** — Empty-space skipping (design doc §4.3): column min-max heights, per-brick empty
+  distances, the beam prepass, the temporal start distance, fog and step-cap exits.
+- [ ] **A5** — Resolution and shapes: render scales 0.5 and 0.75 with FSR 1 and TAA-U; shaped cells
+  as analytic planes.
+- [ ] **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
+  raster's depth (the hybrid), bilateral upsample, temporal accumulation; a quality setting.
+- [ ] **A7** — The decision: the owner decides from the full comparison ("measure all"; design doc
+  §5); ADR 0029's status, `ARCHITECTURE.md` §5 and this plan updated for the chosen path (and
+  Phase 20 unblocked).
+
+Exit criteria
+- [ ] A1: bench before/after; raster screenshots match today's, or the owner approves the
+  difference.
+- [ ] A2: compare mode runs with raster on both sides and reports zero difference.
+- [ ] A3: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces);
+  the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near and
+  distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
+  report on a desktop.
+- [ ] A4: steps-per-ray p99 down on `look-horizon` and `fly-high`; a comparison report on a desktop
+  and a phone.
+- [ ] A5: the full comparison report on every device in the design doc (Mac, Windows integrated and
+  discrete, an iPhone from the last three years, a recent Android flagship; SwiftShader for
+  correctness only).
+- [ ] A6: a comparison with lighting on and off; the owner's look.
+- [ ] A7: the owner's decision recorded in ADR 0029.
+
+---
+
+## Phase 26 — Water and Fluid Looks
+
+**Goal:** Fluid looks as registry data, and a water shader with refraction, absorption, foam,
+underwater rendering and reflections in quality tiers
+([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
+[`WATER_RENDERING.md`](./WATER_RENDERING.md)).
+
+**Status:** Not started. W1a needs Phase 24 only; W1b and W3–W5 need A1 (Phase 25), which is W2; W6
+needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+data file; the water surface stays still. No public API change.
+
+Deliverables
+- [ ] **W1a** — Fluid data: a `fluids` table in `shared/blocks/` (absorption, scatter, roughness,
+  IOR, normal and wave scales, flow speed, foam, caustics, surface drop), blocks referencing a fluid
+  by name (`"look": "fluid", "fluid": "dwell:water"`), validated by `gen.mjs` and emitted as a fluid
+  table; the mesher writing the fluid id per vertex and taking the surface drop from the data
+  (`WATER_SURFACE`, `CHUNK_WATER_DROP_M` gone); `WATER_OPACITY` from the data; the eye-submerged test
+  with the 0.875 rule (the cell at `floor(eye)` liquid and, under a non-fluid cell, `frac(eye.y)`
+  below the surface; the face's up) into a frame uniform, with its regression test.
+- [ ] **W1b** — The water shader (after A1): a dedicated `water_fs` with scrolling normal maps,
+  Schlick Fresnel, a GGX glint by the fluid's roughness and the sky reflection.
+- [ ] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
+  with it.
+- [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
+  shoreline foam.
+- [ ] **W4** — Underwater: absorption fog, the water line, Snell's window and total internal
+  reflection, caustics, distortion (god rays with W5's High tier).
+- [ ] **W5** — Screen-space reflections and the quality tiers (Low, Medium, High, Ultra) in the
+  settings menu; Low the phone default, tentatively (owner).
+- [ ] **W6** — Under ray marching (after A3, and only if marching is kept at A7): reflection and
+  refraction rays replace SSR and the copy on the high tiers.
+
+Exit criteria
+- [ ] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
+  own parameters; a bad fluid entry fails `gen.mjs` naming it; the regression test for the
+  cell-against-surface mismatch (the eye 0.9 into a water cell under air is not underwater), seen
+  failing first.
+- [ ] W1b: the fixture fluid drawn with its own parameters; the owner's look.
+- [ ] W3: screenshots of shore views; bench.
+- [ ] W4: named views underwater and half in; the owner's look.
+- [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
+  it on the two target phones.
+- [ ] W6: parity against W5's views.
+
+---
+
+## Phase 27 — Structure Sandbox
+
+**Goal:** A data-driven structure format and an in-game sandbox world to build structures in, saved
+locally and exported into `shared/structures/`
+([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
+
+**Status:** In progress — S0 (the ADR) and S2a (the floor and the sandbox world type) done;
+outstanding for S2a: its e2e exit check; next: S1, the structure format and its generator.
+Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
+placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
+in part and ship on a new compatibility line. S1–S3 change no terrain.
+
+Deliverables
+- [x] **S0** — ADR 0031 (the format with a `kind` and open vocabularies, the sandbox world type, the
+  unbreakable floor (S2a: the existing `indestructible` property), the structures store, owner-only authoring, placement deferred); the owner's
+  answers recorded (`STRUCTURES.md` §7).
+- [ ] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
+  anchor, palette by block name, layers, named variant operations; capped at 32³);
+  `shared/structures/gen.mjs` validation, canonical output and hash, stale check in CI; a Rust loader
+  replacing `Structure::parse`; the playground converted.
+- [x] **S2a** — The floor and the world type: the registry's existing `indestructible` property
+  (reused instead of a new `breakable` flag) checked by the server's edit validation on Break and,
+  newly, on Place into the cell; an indestructible white floor block (`dwell:sandbox_floor`, full,
+  untextured, not placeable, not adaptive) appended to the registry; a `sandbox` world type
+  (generator 100: the flat generator with a layers parameter, in the floor block; flight on, the
+  default policy) in the main menu and the launcher's new-world route (`?new=1&type=sandbox`).
+- [ ] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
+  (unknown fields kept, unreadable files left alone); save a selection as a structure; export and
+  import JSON (download, clipboard).
+- [ ] **S3** — Editing tools: box select with an outline and its size, set anchor, fill, copy and
+  paste with a ghost preview, rotate and mirror, undo/redo; the region edit message (about 32³ per
+  request) with server validation and golden tests; the DOM UI.
+- [ ] **S4** — *Deferred (owner: decided once structures exist).* Placement in worldgen, after Phase
+  17: placement rules in the terrain definition, hashed jittered-grid placement, conditions, LOD
+  handling, goldens; a new ADR revisiting B10, and a new compatibility line.
+
+Exit criteria
+- [ ] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
+  character, wrong layer size, unknown kind or variant operation, over 32³) fail naming the entry;
+  the playground's tests pass on the converted file.
+- [x] S2a: breaking or replacing an indestructible state (the sandbox floor) is rejected by the
+  server (`dwell-world` test `the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on`).
+- [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
+  check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
+  (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor read light grey, close
+  to the sky's fog colour, so the horizon disappeared and only placed blocks gave depth; the owner
+  approved a grid, now built (a faint line at every block edge from the `grid` tile, a stronger one
+  every 8 blocks from the `grid` look option), checked near, far and from above: the lines stay
+  readable under tone mapping, fade without shimmer at a distance, and leave the block outline
+  clear.
+- [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
+  accepts; the store's append-only test.
+- [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
+  over the cap or outside the build volume are rejected (test).
+
+## Phase 30 — Tree Growth
+
+**Goal:** Hand-built trees (structures whose model is the mature tree) that grow over time by a
+computed reveal of their skeleton, vary by skeleton jitter, and persist as a layer composed at chunk
+load, for both procedural and planted trees
+([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)).
+
+**Status:** In progress — G-ADR (the ADR) done; next: G0, the prototype page. Depends on Phase 27
+(the structure format, S1, for G1; the sandbox, S2a/S3, for G2), on Phase 20 (a cut tree's crown
+becoming a body that settles and re-bakes) for G3's cuts, and on the day/night cycle, which is not
+designed yet (rates are in in-game days; a 30-minute day is assumed until it is). G0–G2 change no
+world file, protocol or terrain. G3 is **a new compatibility line** (world-file tables, protocol);
+the owner decides the bump. Procedural trees also wait for ADR 0031's deferred worldgen placement
+(Phase 27's S4), which is its own new compatibility line.
+
+Deliverables
+- [x] **G-ADR** — ADR 0033 (the model is the mature tree; a computed skeleton reveal; the trunk 1 m per
+  30 in-game days, branches at `branch_rate` of it, default 1/3; a per-world speed multiplier; stop
+  and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
+  colonization; the owner's persistence model; procedural and planted trees; compatibility); the
+  owner's answers recorded (`TREE_GROWTH.md` §7).
+- [ ] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+  show its extracted skeleton, scrub the age, roll variant seeds; published, its link in
+  `docs/prototypes/`. No protocol or release impact; shows whether inferred stages look right.
+- [ ] **G1** — Roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and the `growth` block in the
+  structure format; skeleton extraction in `shared/structures/gen.mjs` (emitted with the canonical
+  output, stale-checked in CI; bad roles or growth parameters fail naming the entry); Rust
+  `stage_voxels(structure, variant seed, age)`; tests: the final stage equals the model, stages only
+  add connected voxels, and a fixture tree added by data alone grows.
+- [ ] **G2** — A growth preview in the sandbox (after Phase 27's S2a and S3): a "preview growth"
+  command or age slider over a placed tree.
+- [ ] **G3** — Growth in the world (**a new compatibility line**; the owner decides the bump): the
+  tree layer composed at chunk load on the server and the client from the same records (sent with
+  the chunk); per-chunk tombstones of chopped procedural trees and per-tree pruned node sets; the
+  `growers` table for planted trees; scheduled catch-up from world time (on load and on a slow
+  schedule while loaded); the `VoxelModification` `Growth` reason; pruning on obstacles and on cuts
+  (the cut-off part a Phase 20 body); the per-world growth-speed setting; planting a tree.
+- [ ] **G4** — Jitter variants: branch positions, lengths and droop (optionally dropped branches),
+  leaves following their nodes, `core` rigid; seeded per tree.
+
+Exit criteria
+- [ ] G1: the final stage of every tree structure equals its model; a fixture tree added by data
+  alone grows through its stages; a bad role or growth parameter fails naming the entry; the
+  generator's output is stale-checked in CI.
+- [ ] G2: in the sandbox, a tree previewed from planting to maturity reaches exactly its model.
+- [ ] G3: a planted tree grows by world time while its chunks are loaded and catches up the same
+  after they were unloaded (test); a world that isn't running doesn't grow; the server and client
+  compose the same chunk (test, natively and under WASM); growth never overwrites a player's block
+  (a blocked node prunes its subtree); chopping prunes or tombstones and survives a reload; the
+  speed multiplier scales growth; protocol golden tests for the tree records and the `Growth` reason.
+- [ ] G4: two variant seeds give different trees from one model, each reproducible from its seed,
+  and a variant's final stage equals its jittered model.
 
 ---
 

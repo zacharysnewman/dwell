@@ -38,6 +38,17 @@ and friend worlds), with a small master server for discovery; there are no offic
   drive it with scripted scenarios (`client/bench/scenarios.json`, `npm run bench`) and read frame
   timings, job latencies, controller ticks, traces and screenshots. Use and extend it to test and
   benchmark in the browser.
+- `docs/RAY_MARCHED_RENDERER.md` — design for Phase 25 (ADR 0029): a ray-marched terrain renderer built
+  complete beside the mesher, the shared frame, compare mode and `bench --compare`; local builds only
+  until the owner's decision (A7).
+- `docs/WATER_RENDERING.md` — design for Phase 26 (ADR 0030): fluid looks as registry data, the water
+  shader, refraction, underwater and reflections in quality tiers.
+- `docs/STRUCTURES.md` — design for Phase 27 (ADR 0031): the structure format, the in-game sandbox world,
+  the structures store; worldgen placement deferred.
+- `docs/TREE_GROWTH.md` — design for Phase 30 (ADR 0033): hand-built trees grown by a computed skeleton
+  reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
+- `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
+  not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 
