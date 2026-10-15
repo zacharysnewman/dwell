@@ -1545,7 +1545,15 @@ impl Renderer {
                 pass.set_pipeline(&self.composite_pipeline);
                 pass.draw(0..3, 0..1);
                 calls += 1;
-                self.record(&mut pass, &arena, pass_draws, first_slot, false, &mut calls, &mut triangles);
+                self.record(
+                    &mut pass,
+                    &arena,
+                    pass_draws,
+                    first_slot,
+                    false,
+                    &mut calls,
+                    &mut triangles,
+                );
                 continue;
             }
             let split = reads_scene
@@ -1563,7 +1571,15 @@ impl Renderer {
                 );
                 pass.set_bind_group(0, &self.frame_groups[i], &[]);
                 pass.set_bind_group(1, &self.draw_group, &[]);
-                self.record(&mut pass, &arena, pass_draws, first_slot, false, &mut calls, &mut triangles);
+                self.record(
+                    &mut pass,
+                    &arena,
+                    pass_draws,
+                    first_slot,
+                    false,
+                    &mut calls,
+                    &mut triangles,
+                );
                 continue;
             };
             let (opaque_ops, water_ops) = frame::split_pass_ops(i, scene_passes, self.samples);
@@ -1585,7 +1601,15 @@ impl Renderer {
                 let mut pass = Self::scene_pass(&mut encoder, targets, i, opaque_ops, true, begin);
                 pass.set_bind_group(0, &self.frame_groups[i], &[]);
                 pass.set_bind_group(1, &self.draw_group, &[]);
-                self.record(&mut pass, &arena, &pass_draws[..at], first_slot, false, &mut calls, &mut triangles);
+                self.record(
+                    &mut pass,
+                    &arena,
+                    &pass_draws[..at],
+                    first_slot,
+                    false,
+                    &mut calls,
+                    &mut triangles,
+                );
             }
             let (copy, under) = targets.under.as_ref().expect("reads_scene targets");
             encoder.copy_texture_to_texture(

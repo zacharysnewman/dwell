@@ -68,23 +68,31 @@ answers §7: per build, edited in the data file, other fluids by data, looks onl
 ```json
 "fluids": { "dwell:water": {
   "opacity": 0.72, "surfaceDrop": 0.125,
-  "absorption": [0.45, 0.12, 0.04], "scatter": "#1a8ee0", "roughness": 0.08, "ior": 1.333,
+  "absorption": [1.0, 0.16, 0.045], "scatter": "#1496e0", "roughness": 0.08, "ior": 1.333,
   "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
-  "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0 } }
+  "foam": { "depth": 0.5, "color": "#eef6f8" },
+  "caustics": { "strength": 1.3, "scale": 1.4, "depth": 4.0 },
+  "scattering": 0.3, "refraction": 0.4, "sparkle": 1.5 } }
 ```
 
 | Field | Range | Meaning |
 |---|---|---|
-| `opacity` | (0, 1] | The fixed alpha its blocks are drawn with (until absorption replaces it) |
+| `opacity` | (0, 1] | The fixed alpha its blocks are drawn with on the Low water tier (no scene copies; Medium and High absorb by depth instead) |
 | `surfaceDrop` | [0, 1) | Cells the drawn top sits below the cell's top when the cell above is not the same fluid (face B: above the cell's bottom) |
 | `absorption` | 3 × [0, 100] | Beer–Lambert σ per metre, linear red, green, blue |
 | `scatter`, `foam.color` | `#rrggbb` | Scatter and foam colours |
 | `roughness` | [0, 1] | GGX roughness of the surface |
 | `ior` | [1, 3] | Index of refraction |
-| `normalScale`, `caustics` | [0, 10] | Strength of the normal maps and of the caustics |
+| `normalScale` | [0, 10] | Strength of the normal maps |
+| `caustics.strength` | [0, 10] | Brightness of the caustics (0: none) |
+| `caustics.scale` | (0, 100] | Metres per caustic cell |
+| `caustics.depth` | (0, 1000] | Metres under the surface over which the caustics fade to 1/e |
+| `scattering` | [0, 100] | σ per metre of the light scattered toward the eye: the lit body replaces what is behind at absorption + scattering |
+| `refraction` | [0, 4] | Metres the scene behind shifts per unit of ripple slope |
+| `sparkle` | [0, 100] | The sun's glitter off fine ripple facets |
 | `waveScale` | (0, 1000] | Metres per normal-map repeat |
 | `flowSpeed` | [0, 10] | Metres per second the normal maps scroll |
-| `foam.depth` | [0, 16] | Metres of water under which the shore foams |
+| `foam.depth` | [0, 16] | Metres of water over what is behind under which the shore foams |
 
 A fluid is named `namespace:name` in its own namespace; ids are table order (namespaces sorted,
 entries in order) and are build-local, like state ids, and not in the registry hash. A block

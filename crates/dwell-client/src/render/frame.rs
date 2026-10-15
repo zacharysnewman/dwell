@@ -306,7 +306,10 @@ mod tests {
                 assert!(opaque.store_colour, "the water half loads it");
                 assert_eq!(opaque.resolve, samples > 1, "resolved for the copy");
                 assert!(!water.clear);
-                assert_eq!((water.resolve, water.store_colour), (whole.resolve, whole.store_colour));
+                assert_eq!(
+                    (water.resolve, water.store_colour),
+                    (whole.resolve, whole.store_colour)
+                );
             }
         }
     }

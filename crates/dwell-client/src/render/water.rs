@@ -178,7 +178,12 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
         out.extend_from_slice(&[s[0], s[1], s[2], f.roughness]);
         out.extend_from_slice(&[f.ior, f.normal_scale, f.wave_scale, f.flow_speed]);
         out.extend_from_slice(&[foam[0], foam[1], foam[2], f.foam_depth]);
-        out.extend_from_slice(&[f0_from_ior(f.ior), f.caustics, f.surface_drop as f32, f.scattering]);
+        out.extend_from_slice(&[
+            f0_from_ior(f.ior),
+            f.caustics,
+            f.surface_drop as f32,
+            f.scattering,
+        ]);
         out.extend_from_slice(&[f.refraction, f.caustic_scale, f.caustic_depth, f.sparkle]);
     }
     if out.is_empty() {
@@ -369,7 +374,10 @@ mod tests {
         assert_eq!(&water[8..12], &[1.333, 1.0, 2.0, 0.03]);
         // foam colour (linear), depth
         assert_eq!(oil[15], 0.0);
-        assert_eq!(water[15], dwell_blocks::require_fluid("dwell:water").foam_depth);
+        assert_eq!(
+            water[15],
+            dwell_blocks::require_fluid("dwell:water").foam_depth
+        );
         // F0 from the IOR, caustics, surface drop
         assert!(close(oil[16], f0_from_ior(1.47), 1e-7));
         assert_eq!(&oil[17..20], &[0.2, 0.25, 1.0]);
@@ -400,7 +408,10 @@ mod tests {
     fn refraction_falls_back_where_the_offset_sample_is_in_front_of_the_water() {
         assert!(refracted_sample(15.0, 10.0), "the floor behind");
         assert!(refracted_sample(0.0, 10.0), "nothing drawn there");
-        assert!(!refracted_sample(4.0, 10.0), "a bank in front: no foreground bleed");
+        assert!(
+            !refracted_sample(4.0, 10.0),
+            "a bank in front: no foreground bleed"
+        );
     }
 
     #[test]
@@ -436,7 +447,10 @@ mod tests {
         let body = linear_rgb(w.scatter).map(|c| c * 0.8);
         let at = |d: f32| through_fluid(sand, body, w.absorption, w.scattering, d, d);
         let hand = at(0.1);
-        assert!((0..3).all(|k| close(hand[k], sand[k], 0.25 * sand[k])), "{hand:?}");
+        assert!(
+            (0..3).all(|k| close(hand[k], sand[k], 0.25 * sand[k])),
+            "{hand:?}"
+        );
         for d in [1.0_f32, 2.0, 4.0, 8.0, 16.0, 40.0] {
             let c = at(d);
             assert!(c[1] <= c[2] * 1.1, "green at {d} m: {c:?}");
@@ -445,7 +459,10 @@ mod tests {
         let two = at(2.0);
         assert!(two[1] > 0.6 * two[2], "turquoise to cyan at 2 m: {two:?}");
         let deep = at(40.0);
-        assert!(deep[2] > 2.0 * deep[1] && deep[0] < 0.05 * deep[2], "blue when deep: {deep:?}");
+        assert!(
+            deep[2] > 2.0 * deep[1] && deep[0] < 0.05 * deep[2],
+            "blue when deep: {deep:?}"
+        );
     }
 
     #[test]
