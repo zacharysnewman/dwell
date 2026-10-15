@@ -49,6 +49,7 @@ import {
   CompareOverlay,
   RENDERER_CHOICES,
   choiceOf,
+  displayScale,
   rendererParams,
   type CompareState,
 } from './ui/renderer';
@@ -235,11 +236,6 @@ interface App {
   compare: CompareOverlay | null;
 }
 
-/** The ?scale= drawing-buffer scale (comparing performance on a device). */
-function displayScale(search: string): number {
-  const scale = Number(new URLSearchParams(search).get('scale') ?? 1);
-  return Number.isFinite(scale) ? Math.min(2, Math.max(0.25, scale)) : 1;
-}
 
 /** Workers per pool: generation and meshing each get this many (fewer on phones). */
 function defaultWorkerCount(mobile: boolean): number {
@@ -353,7 +349,8 @@ async function start(): Promise<App | null> {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   const canvas = element('view', HTMLCanvasElement);
   const params = new URLSearchParams(location.search);
-  const scale = displayScale(location.search);
+  // The ?scale= drawing-buffer scale; 1 when the marcher's upscaler takes the scale.
+  const scale = displayScale(location.search, __RENDERER_SWITCH__);
   const mobile = prefersTouch();
   let client: Client;
   try {

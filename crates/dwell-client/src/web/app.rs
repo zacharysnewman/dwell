@@ -188,6 +188,9 @@ struct Options {
     /// The renderer switch (`?renderer=`, compare mode): local builds only (the shell's build-time
     /// flag, RAY_MARCHED_RENDERER.md §3); deployed builds keep the mesher.
     renderer_switch: bool,
+    /// The marcher's render scale and upscaler (`marchScale`, `upscaler`: local builds).
+    march_scale: f32,
+    upscaler: crate::render::march::upscale::Upscaler,
 }
 
 struct Inner {
@@ -256,6 +259,11 @@ impl Client {
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
             sky: sky_switches(&get("search").as_string().unwrap_or_default()),
             renderer_switch: get("rendererSwitch").as_bool().unwrap_or(false),
+            march_scale: get("marchScale").as_f64().unwrap_or(1.0) as f32,
+            upscaler: get("upscaler")
+                .as_string()
+                .and_then(|u| crate::render::march::upscale::Upscaler::parse(&u))
+                .unwrap_or_default(),
         };
         let selection = options
             .renderer_switch
@@ -312,6 +320,9 @@ impl Client {
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
         renderer.select(selection);
+        if options.renderer_switch {
+            renderer.set_march_resolution(options.march_scale, options.upscaler);
+        }
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,
@@ -890,12 +901,15 @@ impl Client {
         }
         names.into_iter().map(JsValue::from).collect()
     }
-    /// The upscalers it offers: none yet beyond the browser's own stretch (A5).
+    /// The upscalers it offers: the browser's own stretch, and with the marcher its upscalers
+    /// (`?upscaler=fsr1|bilateral` with `?scale=`; RAY_MARCHED_RENDERER.md §4.2).
     pub fn upscalers(&self) -> Array {
-        ["none", "bilinear"]
-            .into_iter()
-            .map(JsValue::from)
-            .collect()
+        let s = self.inner.borrow();
+        let mut names = vec!["none", "bilinear"];
+        if s.options.renderer_switch && crate::render::march::BUILT {
+            names.extend(crate::render::march::upscale::Upscaler::ALL.map(|u| u.name()));
+        }
+        names.into_iter().map(JsValue::from).collect()
     }
     /// What draws the terrain: `raster`, `march` or `compare raster | march`.
     pub fn renderer(&self) -> String {

@@ -16,6 +16,7 @@ pub mod gpu_scene;
 pub mod looks;
 pub mod renderer;
 pub mod stats;
+pub mod upscale;
 pub mod wgsl;
 
 #[cfg(test)]

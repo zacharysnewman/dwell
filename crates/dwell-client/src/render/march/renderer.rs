@@ -10,6 +10,7 @@ use dwell_march::{BuildOptions, NodeBuild, StateTable, build_node, build_section
 use dwell_world::ChunkCoord;
 use dwell_world::hash::HashMap;
 
+use super::upscale::{Upscale, Upscaler, render_size};
 use super::{MarchFrame, MarchTargets, Marcher};
 use crate::render::StandIn;
 use crate::render::frame::{HDR, Targets, VIEW_DEPTH};
@@ -93,13 +94,16 @@ fn copy_vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
     return vec4f(p[i], 0.0, 1.0);
 }
 
-// Every sample of the pixel takes the marched pixel (the march is one ray per pixel).
+// Every sample of the pixel takes the marched pixel (the march is one ray per pixel). Below the
+// output resolution the colour is the upscaled one and the depth the nearest marched pixel's.
 @fragment
 fn copy_fs(@builtin(position) at: vec4f) -> CopyOut {
     let p = vec2i(at.xy);
+    let ratio = vec2f(textureDimensions(march_depth)) / vec2f(textureDimensions(march_color));
+    let low = min(vec2i(at.xy * ratio), vec2i(textureDimensions(march_depth)) - vec2i(1));
     var o: CopyOut;
     o.color = textureLoad(march_color, p, 0);
-    o.depth = textureLoad(march_depth, p, 0).r;
+    o.depth = textureLoad(march_depth, low, 0).r;
     return o;
 }
 ";
@@ -116,6 +120,13 @@ pub struct MarchRenderer {
     targets: Option<MarchTargets>,
     copy: Option<Copy>,
     copy_group: Option<wgpu::BindGroup>,
+    /// What the copy group was made for: the march's size, the output size, the upscaler.
+    copy_key: ((u32, u32), (u32, u32), Upscaler),
+    /// The march's resolution against the output's (`?scale=` with an upscaler; A4/A5) and the
+    /// upscaler that fills the output from it.
+    pub scale: f32,
+    pub upscaler: Upscaler,
+    upscale: Option<Upscale>,
     sections: HashMap<i64, (u32, [i32; 3])>,
     chunks: std::collections::HashSet<ChunkCoord>,
     shown: Vec<(i64, u8)>,
@@ -128,6 +139,10 @@ impl MarchRenderer {
             targets: None,
             copy: None,
             copy_group: None,
+            copy_key: ((0, 0), (0, 0), Upscaler::None),
+            scale: 1.0,
+            upscaler: Upscaler::None,
+            upscale: None,
             sections: HashMap::default(),
             chunks: Default::default(),
             shown: Vec::new(),
@@ -211,10 +226,16 @@ impl MarchRenderer {
     ) {
         self.marcher.collect();
         let size = targets.colour.0.size();
-        let size = (size.width, size.height);
+        let full = (size.width, size.height);
+        let low = render_size(full, self.scale, self.upscaler);
+        let upscaler = if low == full {
+            Upscaler::None
+        } else {
+            self.upscaler
+        };
         let samples = targets.view_depth.0.sample_count();
-        if self.targets.as_ref().is_none_or(|t| t.size != size) {
-            self.targets = Some(self.marcher.targets(size));
+        if self.targets.as_ref().is_none_or(|t| t.size != low) {
+            self.targets = Some(self.marcher.targets(low));
             self.copy_group = None;
         }
         let device = self.marcher.device().clone();
@@ -222,24 +243,6 @@ impl MarchRenderer {
             self.copy = Some(Self::copy_pipeline(&device, samples));
             self.copy_group = None;
         }
-        let mt = self.targets.as_ref().expect("targets");
-        let copy = self.copy.as_ref().expect("copy");
-        let group = self.copy_group.get_or_insert_with(|| {
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("march copy"),
-                layout: &copy.layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&mt.color.1),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&mt.depth.1),
-                    },
-                ],
-            })
-        });
         let (begin, end) = match timestamp_writes {
             Some(w) => (
                 Some(wgpu::ComputePassTimestampWrites {
@@ -255,7 +258,38 @@ impl MarchRenderer {
             ),
             None => (None, None),
         };
+        let mt = self.targets.as_ref().expect("targets");
         self.marcher.draw(encoder, frame, mt, begin);
+        // Below the output resolution: the upscale fills the output-size colour.
+        let colour = if upscaler == Upscaler::None {
+            &mt.color.1
+        } else {
+            self.upscale
+                .get_or_insert_with(|| Upscale::new(&device))
+                .run(&device, encoder, mt, full, upscaler)
+        };
+        let key = (low, full, upscaler);
+        if self.copy_key != key {
+            self.copy_group = None;
+            self.copy_key = key;
+        }
+        let copy = self.copy.as_ref().expect("copy");
+        let group = self.copy_group.get_or_insert_with(|| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("march copy"),
+                layout: &copy.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(colour),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&mt.depth.1),
+                    },
+                ],
+            })
+        });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("march copy"),
             color_attachments: &[

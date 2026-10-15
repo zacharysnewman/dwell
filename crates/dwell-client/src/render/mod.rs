@@ -1052,6 +1052,13 @@ impl Renderer {
         }
     }
 
+    /// The marcher's resolution against the output's and its upscaler (`?scale=` with
+    /// `?upscaler=fsr1|bilateral`; docs/RAY_MARCHED_RENDERER.md §4.2 step 3).
+    pub fn set_march_resolution(&mut self, scale: f32, upscaler: march::upscale::Upscaler) {
+        self.terrain.march.scale = scale;
+        self.terrain.march.upscaler = upscaler;
+    }
+
     /// The camera and frame uniforms as the marcher reads them (`march::Marcher::draw`): the same
     /// lights, fog, sky and view as this renderer's frame.
     pub fn march_frame(&self) -> march::MarchFrame {
