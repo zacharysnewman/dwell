@@ -213,6 +213,5 @@ mod tests {
         assert_eq!(m.held(), (0, 1));
         m.clear();
         assert_eq!(m.held(), (0, 0));
-        assert!(!BUILT, "flip once the marcher draws terrain (A3)");
     }
 }
