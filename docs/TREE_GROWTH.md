@@ -166,6 +166,58 @@ Notes:
 - With a step every 15 real hours, the sandbox needs a way to preview growth (G2: a "preview growth"
   command or slider) — nobody will wait for it.
 
+## 8. Findings from the G0 prototype (2026-10-15)
+
+The prototype page ([`prototypes/tree-growth.html`](./prototypes/tree-growth.html)) builds the
+skeleton reveal on three hand-built samples (oak-like 23 × 22 × 23, conifer-like 15 × 25 × 15,
+spreading 25 × 14 × 25). On all three the mature stage equals the model voxel for voxel, and the
+intermediate stages read as a sapling, a young tree and a mature one. What it took, for G1:
+
+- **Skeleton inference held up on the samples.** BFS levels through 26-connected wood, grouped into
+  connected components per level, gave 49–84 nodes; the trunk as the heaviest path (by subtree wood
+  volume) found the right stem on the oak and the conifer without marks. Where it struggles:
+  - **Forks merge.** Where limbs leave a thick trunk, they share one level set for a few levels, so
+    that node's centroid sits between them and its radius covers all of them. Thickening by "distance
+    from the node's own centre" bulked young limbs out at the fork. Fixed by measuring each voxel's
+    radial distance from the **nearest core line** (its node's, or a child's passing through), and
+    letting it thicken with that line's node.
+  - **Loops** (two branches touching) give a node two parents; it keeps the one it touches most.
+  - **An even split** (a spreading tree whose trunk becomes five equal limbs) has no heaviest path
+    worth the name; the sample marks its trunk with the `trunk` role, which the page honours.
+- **Connectivity by construction.** Each node has a core path (shortest wood path from its medial
+  voxel to its parent's), revealed as soon as the node grows, so every stage is one connected piece.
+  Radial voxels are revealed by geodesic distance from the core, so a threshold never strands one.
+- **Thickness.** The pipe model ratio `P_now / P_full` (exponent 2, tips 1) scales each node's
+  authored radius, plus ½ voxel of rounding while still growing; without the rounding a trunk of
+  authored radius 1 stayed one voxel wide until the very last day.
+- **Roots** at the branch rate (a deviation): a one-voxel sapling stood on full-size root flares. The
+  page grows roots from 40 % of maturity to 100 %, with their depth. G1 should decide this as a
+  growth parameter.
+- **Leaves.** Authored leaves are owned by the nearest wood voxel (geodesic through leaves) and
+  appear once that voxel shows, within a reach that widens with the tree's age, so every leaf is in
+  place at maturity. Without extra leaves, a sapling is a bare stick: the **tip tuft**
+  (`around_tips`) adds leaves only at the growing end of each axis (on the trunk, only its leader,
+  not buds waiting for a side branch), sized by the leaves the model has within four nodes beyond
+  (minimum 1.2). Tufts disappear at maturity, so the last stage is still exact.
+- **Timing consequence** of the owner's rates: with branches at a third of the trunk's speed, the
+  conifer's lower whorls are the fullest part mid-growth while its leader is still a bare pole; the
+  oak reaches its fork height (10 m, day 300) with one-voxel limbs. Both look like young trees; if
+  the owner wants fuller young crowns, the tip-leaf radius is the knob, not the rates.
+- **Variants.** Branch jitter as similarity transforms per node (rotation about the parent's axis
+  and a half-size tilt at each branch start, a length scale, droop as a small bend at every branch
+  node), composed down the tree; voxels forward-mapped with 2 × 2 × 2 supersampling (no holes) and
+  core lines redrawn between mapped medial voxels (connected). Trunk, roots and any branch holding a
+  `core` voxel stay rigid. A variant at any age is the authored stage mapped through the same
+  transforms, so variants grow too. Droop reads better in degrees per metre (`droop_deg_per_m`,
+  default 1.5) than the sketch's unitless 0.1.
+- **Obstacles.** A node is pruned when its mapped core cells hit an obstacle (or its parent is
+  pruned); a radial or leaf voxel is skipped when it, or the voxel it grew out from, is blocked.
+  Pruning depends only on the obstacle set, so it is deterministic.
+- **Format.** §6's sketch writes `variants` as a list; S1 built it as an object of named operations,
+  so the page exports `variants.branch_jitter` beside S1's `rotate` / `mirror` / `choices`, and the
+  `growth` block as sketched (with `thickness.exponent` instead of `tapering`). The per-world growth
+  speed is exported beside them as `$world_settings`, not structure data.
+
 ## Sources
 
 - Runions, Lane & Prusinkiewicz 2007, space colonization: https://algorithmicbotany.org/papers/colonization.egwnp2007.html

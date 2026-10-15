@@ -45,7 +45,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
-| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
+| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -2726,7 +2726,9 @@ computed reveal of their skeleton, vary by skeleton jitter, and persist as a lay
 load, for both procedural and planted trees
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)).
 
-**Status:** In progress — G-ADR (the ADR) done; next: G0, the prototype page. Depends on Phase 27
+**Status:** In progress — G-ADR (the ADR) done; G0's page built and verified in Playwright's
+Chromium (the three samples' mature stages equal their models; findings in `TREE_GROWTH.md` §8);
+outstanding: publishing it and the owner's review of its stages and variants; next: G1. Depends on Phase 27
 (the structure format, S1, for G1; the sandbox, S2a/S3, for G2), on Phase 20 (a cut tree's crown
 becoming a body that settles and re-bakes) for G3's cuts, and on the day/night cycle, which is not
 designed yet (rates are in in-game days; a 30-minute day is assumed until it is). G0–G2 change no
@@ -2740,9 +2742,14 @@ Deliverables
   and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
   colonization; the owner's persistence model; procedural and planted trees; compatibility); the
   owner's answers recorded (`TREE_GROWTH.md` §7).
-- [ ] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
-  show its extracted skeleton, scrub the age, roll variant seeds; published, its link in
-  `docs/prototypes/`. No protocol or release impact; shows whether inferred stages look right.
+- [x] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+  show its extracted skeleton, scrub the age, roll variant seeds, place obstacles, export the
+  `growth` and `variants` sections; three sample trees whose mature stages equal their models
+  (checked in the page); verified in Playwright's Chromium (samples, ages, variants, an obstacle,
+  JSON load and errors, a phone viewport; no console errors). No protocol or release impact.
+- [ ] **G0 review** — The page published (its link in `docs/prototypes/README.md`) and the owner's
+  review of whether the inferred stages and variants look right; the owner's choices exported for
+  G1.
 - [ ] **G1** — Roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and the `growth` block in the
   structure format; skeleton extraction in `shared/structures/gen.mjs` (emitted with the canonical
   output, stale-checked in CI; bad roles or growth parameters fail naming the entry); Rust
