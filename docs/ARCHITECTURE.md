@@ -771,6 +771,20 @@ fill, copy/paste with rotate and mirror, undo) over a server-validated region ed
 separate OPFS store (`dwell/structures/`, append-only) and exported as JSON. Worldgen does not place
 them (baseline B10); placement is deferred, and would ship on a new compatibility line.
 
+**Tree growth [planned, Phase 30]** ([ADR 0033](./adr/0033-tree-growth.md),
+[`TREE_GROWTH.md`](./TREE_GROWTH.md)). A tree is a structure whose model is the mature tree: its
+palette marks roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and a `growth` block gives the
+engine (`skeleton_reveal`) and rates. `gen.mjs` extracts a skeleton graph from the wood, and one Rust
+`stage_voxels(structure, variant seed, age)` reveals it: the trunk 1 m per 30 in-game days, branches
+at `branch_rate` of that (default 1/3), scaled by the world's growth speed; the final stage is the
+model. Variants jitter the skeleton (branch positions, lengths, droop). Trees are **a layer composed
+at chunk load**, not voxels in the saved chunk: generated terrain and its saved edits, then
+procedural trees not tombstoned, then planted trees from `growers`, each at its stage for the world
+time; growth writes only into air or its own leaves, and a blocked node prunes its subtree. The
+server and the client compose the same layers from the same records. Breaking a tree's wood prunes
+that subtree (or tombstones the tree); the cut-off part is a Phase 20 body (§7.1). Procedural trees
+wait for structure placement in worldgen (Open Decision #24).
+
 
 #### Generator pipeline **[built, Phase 15: generator version 12]**
 Executed per chunk. Every stage reads only noise of world coordinates, never another chunk's data,
@@ -906,15 +920,17 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | Table | Contents |
 |---|---|
 | `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time, timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
-| `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy |
+| `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy; **[planned, Phase 30]** the growth-speed multiplier (default 1), applied by the server to tree growth |
 | `block_states` | **[built, Phase 8]** world state id → canonical string (§6.1), ids assigned densely in order of first use and stable for the life of the file |
 | `chunks` | Modified chunks only: `(cx, cy, cz)` → revision, generator version, LZ4 palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |
 | `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)` → `lodRevision`, dirty flag, generator version, LZ4 palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks` (its cells are runtime ids: dropped when `meta`'s registry hash changes), rebuilt on a generator or registry change |
 | `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; later inventory), first/last seen |
 | `permissions` | `(public key, kind)` with kind `op` / `ban` / `allow` → reason, granted by, when |
 | `bodies` | **[planned, Phase 20]** In-flight Tier 1 clusters (voxel layout, transform, velocities) |
+| `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
+| `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
 
-**Built (format 1, `dwell-storage` `db.rs`):** the tables above but `bodies`. Format 1 is the first
+**Built (format 1, `dwell-storage` `db.rs`):** the tables above but `bodies`, `tree_tombstones` and `growers`. Format 1 is the first
 Rust format: the port started a new compatibility line (ADR 0028), so files of the C++ build's
 SQLite formats are not read (they are version-locked, ADR 0014, and open in their own builds).
 The server restores the LOD cache at startup (dirty rows are recomputed), drops and rebuilds it
@@ -1688,6 +1704,11 @@ Explicit only (§6.1): u16 paletteCount (1..32768), u16 × paletteCount material
      palette index (u8, or u16 when paletteCount > 256)
 ```
 
+**[planned, Phase 30]** `ChunkData` gains the chunk's **tree records** (its tombstones and pruned
+node sets, and the planted trees rooted in it), from which the client composes the tree layer as
+the server does (§6.3); a tree's stage change while loaded is a `VoxelModification` with reason
+`Growth`. Both arrive on a new compatibility line ([ADR 0033](./adr/0033-tree-growth.md)).
+
 **Server → Client: `ChunkUnload` (reliable, `world`) [built]**
 ```
 u8   type = 0x12
@@ -1728,7 +1749,7 @@ S→C LodData 0x15        (lod) u8 form (Generated 0 | Explicit 1 | Unchanged 2)
 **Server → Client: `VoxelModification` (reliable, `world`) [built, Phase 3d: reason Edit]**
 ```
 u8   type = 0x10
-u8   reason                     // Edit 1 | Explosion 2 | Collapse 3 | Rebake 4
+u8   reason                     // Edit 1 | Explosion 2 | Collapse 3 | Rebake 4 | [planned, Phase 30] Growth 5
 u32  serverTick
 u16  chunkCount                 // ≥ 1: the changed chunks this client streams
 repeat: i32×3 chunkCoord, u32 newRevision (the chunk's previous revision + 1), u16 changeCount (≥ 1),
@@ -2187,4 +2208,4 @@ deliberately out of scope for the current implementation live in [`FUTURE.md`](.
 | 21 | The bifacial world: crossing between faces, light on face B, face B's character, crust thickness, reaching the rim | Decided 2026-10-05: no crossing routes (dig through the diggable core, which is anchored by position — no bedrock — or go around the rim); a static sun for face A and a counter-angled static moon for face B; spawn on face A; a ~4 km crust; the rim ocean kept; face B reuses face A's generator, biomes and islands. Recorded by ADR in Phase 13 — [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §9. Amended by the baseline (2026-10-12): the midplane at y = 0, a 10-layer stone core per face instead of a ~4 km crust, face B's terrain by terrain definition with its own seed — [ADR 0025](./adr/0025-baseline-world.md) **[planned, Phases 16–17]** |
 | 22 | ~~The baseline (owner, 2026-10-12): the build limit's shape and radius, flight at it, the stone layers, face B's terrain, launch pads, the movement playground, terrain scale, the midplane, how far terrain is data, the WebGL fallback~~ | **Resolved (Phase 14):** decisions D1–D10 of [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md) §7 — a 50 km disc around a midplane at 0, a 10-layer core, a 50 km build sphere that bounds building but not movement, the same terrain definition on both faces with their own seeds, launch pads removed, the playground a structure file, one island of ~20–30 km — [ADR 0025](./adr/0025-baseline-world.md); terrain as data over a fixed vocabulary of node kinds — [ADR 0026](./adr/0026-terrain-definitions.md); WebGPU with an automatic WebGL2 fallback — [ADR 0027](./adr/0027-webgpu-renderer.md) (D4 superseded by [ADR 0028](./adr/0028-rust-port.md): WebGPU only, no fallback) |
 | 23 | Terrain renderer: the mesher or a ray-marched renderer (per device class), and moving bodies' rendering | Measure all, the owner decides (2026-10-14): both built complete and compared side by side in local builds — [ADR 0029](./adr/0029-ray-marched-renderer.md), [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md); decided at Phase 25's A7, before Phase 20 **[planned, Phase 25]** |
-| 24 | Structures in worldgen: whether and how terrain definitions place structures (partly revisiting B10) | Deferred until structures exist (owner, 2026-10-14); placement rules in the terrain definition, a new compatibility line — [ADR 0031](./adr/0031-data-driven-structures.md) **[planned, Phase 27's S4]** |
+| 24 | Structures in worldgen: whether and how terrain definitions place structures (partly revisiting B10) | Deferred until structures exist (owner, 2026-10-14); placement rules in the terrain definition, a new compatibility line — [ADR 0031](./adr/0031-data-driven-structures.md) **[planned, Phase 27's S4]**; procedural trees (Phase 30, [ADR 0033](./adr/0033-tree-growth.md)) wait for it |

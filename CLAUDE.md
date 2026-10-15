@@ -45,6 +45,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   shader, refraction, underwater and reflections in quality tiers.
 - `docs/STRUCTURES.md` — design for Phase 27 (ADR 0031): the structure format, the in-game sandbox world,
   the structures store; worldgen placement deferred.
+- `docs/TREE_GROWTH.md` — design for Phase 30 (ADR 0033): hand-built trees grown by a computed skeleton
+  reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
 - `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
   not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).
 - `docs/adr/` — architecture decision records.
