@@ -1,0 +1,1379 @@
+<title>Tree Growth</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a full-height workbench — controls in a left rail (a bottom sheet on phones), the 3D stage filling the rest. */
+:root {
+  --bg: #e9edf1;
+  --panel: #f8fafb;
+  --fg: #1b2330;
+  --muted: #5a6677;
+  --line: #d3dae2;
+  --accent: #2f7d4f;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcefe2;
+  --chip: #eef2f5;
+  --ok: #2f7d4f;
+  --bad: #b23b2e;
+  --sky-top: #a9cfe8;
+  --sky-bottom: #eef1ea;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+    --accent: #5cc58a; --accent-ink: #0b2416; --accent-soft: #183826; --chip: #1e2630;
+    --ok: #5cc58a; --bad: #ef7a6c;
+    --sky-top: #1d3247; --sky-bottom: #3a4250; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+  --accent: #5cc58a; --accent-ink: #0b2416; --accent-soft: #183826; --chip: #1e2630;
+  --ok: #5cc58a; --bad: #ef7a6c;
+  --sky-top: #1d3247; --sky-bottom: #3a4250; color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+#app { height: 100%; display: grid; grid-template-columns: 340px 1fr; }
+#panel { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 20px 18px 24px; display: flex; flex-direction: column; gap: 18px; min-width: 0; box-sizing: border-box; }
+#stage { position: relative; min-width: 0; min-height: 0; background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); overflow: hidden; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#stage.tool canvas { cursor: crosshair; }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 4px 0 8px; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); }
+h2 { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+section { display: flex; flex-direction: column; gap: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); font-weight: 600; }
+.btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font-size: 13px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.toggle { display: flex; align-items: flex-start; gap: 10px; padding: 3px 0; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.switch { flex: none; width: 32px; height: 18px; border-radius: 999px; background: var(--line); position: relative; margin-top: 1px; transition: background 0.15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); transition: transform 0.15s; box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
+.toggle input:checked + .switch { background: var(--accent); }
+.toggle input:checked + .switch::after { transform: translateX(14px); }
+.toggle small { display: block; color: var(--muted); font-size: 12px; }
+.hint-text { margin: 0; font-size: 12px; color: var(--muted); }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; }
+.field input[type="number"] { font: inherit; font-size: 13px; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; width: 100%; box-sizing: border-box; font-variant-numeric: tabular-nums; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 12px; color: var(--muted); align-items: center; }
+.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.slider output { font-family: var(--font-mono); font-size: 12px; color: var(--fg); }
+#age { width: 100%; accent-color: var(--accent); margin: 0; }
+.age-read { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.age-read b { font-family: var(--font-display); font-size: 24px; font-variant-numeric: tabular-nums; }
+.age-read span { font-size: 12px; color: var(--muted); text-align: right; }
+textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 11px; line-height: 1.35; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
+details summary { cursor: pointer; font-size: 13px; }
+.status { font-size: 12px; color: var(--muted); margin: 0; }
+.status.err { color: var(--bad); }
+.notes { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.stat b { display: block; font-family: var(--font-display); font-size: 19px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--muted); }
+.keys { font-size: 12px; color: var(--muted); margin: 0; }
+.keys kbd { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.badge { position: absolute; background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; pointer-events: none; }
+#badge { top: 12px; left: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 48px); }
+#badge b { font-weight: 600; font-variant-numeric: tabular-nums; }
+#check { top: 12px; right: 12px; font-weight: 600; }
+#check.ok { color: var(--ok); }
+#check.bad { color: var(--bad); }
+#legend { bottom: 12px; left: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; vertical-align: -1px; margin-right: 4px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2); }
+.vlabel { position: absolute; transform: translate(-50%, 0); font-family: var(--font-mono); font-size: 11px; background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; pointer-events: none; white-space: nowrap; }
+.error { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--fg); }
+@media (max-width: 760px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: 56% 44%; }
+  #stage { grid-row: 1; }
+  #panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); padding: 14px 16px 20px; }
+  h1 { font-size: 22px; }
+  #legend { display: none; }
+  #badge { font-size: 11px; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+</style>
+
+<div id="app">
+  <aside id="panel">
+    <header>
+      <div class="eyebrow">Dwell · tree growth prototype</div>
+      <h1>Tree Growth</h1>
+      <p class="lede">A hand-built tree is the mature target. Its wood is read as a skeleton, and growth reveals that skeleton from the root: the trunk 1 m every 30 in-game days, branches at a third of that, thickening by the pipe model. The last stage is the model, voxel for voxel.</p>
+    </header>
+
+    <section>
+      <h2>Tree</h2>
+      <div class="chips" id="samples"></div>
+      <details id="load-box">
+        <summary>Load a structure JSON</summary>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+          <textarea id="load-json" rows="5" spellcheck="false" aria-label="Structure JSON" placeholder='{ "format": 1, "name": "dwell:my_tree", "kind": "voxels", "size": [...], ... }'></textarea>
+          <div class="row">
+            <button type="button" class="btn primary" id="load-btn">Load</button>
+            <label class="btn" style="cursor:pointer">Import file<input type="file" id="load-file" accept=".json,application/json" hidden></label>
+            <button type="button" class="btn" id="load-current">Show current</button>
+          </div>
+          <p class="hint-text">S1's format (<code>docs/STRUCTURES.md</code> §3). Palette roles: a value may be <code>{"block": "...", "role": "wood"}</code> with <code>wood</code>, <code>leaf</code>, <code>root</code>, <code>trunk</code> or <code>core</code>. Without a role, names with log or wood are wood and names with leaves are leaves.</p>
+        </div>
+      </details>
+      <p class="status" id="load-status"></p>
+      <ul class="notes" id="notes"></ul>
+    </section>
+
+    <section>
+      <h2>Age</h2>
+      <div class="age-read"><b id="age-days">Day 0</b><span id="age-sub"></span></div>
+      <input type="range" id="age" min="0" max="1000" step="1" value="0" aria-label="Age in in-game days">
+      <div class="row">
+        <button type="button" class="btn primary" id="play" style="min-width:76px">Play</button>
+        <div class="seg" id="speed" style="flex:1">
+          <button type="button" data-v="10">10 d/s</button>
+          <button type="button" data-v="40">40 d/s</button>
+          <button type="button" data-v="150">150 d/s</button>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn" id="age-0">Seed</button>
+        <button type="button" class="btn" id="age-sapling">Sapling</button>
+        <button type="button" class="btn" id="age-young">Young</button>
+        <button type="button" class="btn" id="age-full">Mature</button>
+      </div>
+      <p class="hint-text" id="realtime"></p>
+    </section>
+
+    <section>
+      <h2>Growth</h2>
+      <div class="fields">
+        <label class="field">Trunk days per metre<input type="number" id="p-trunk" min="1" max="1000" step="1"></label>
+        <label class="field">Branch ratio<input type="number" id="p-ratio" min="0.05" max="1" step="0.01"></label>
+        <label class="field">World speed ×<input type="number" id="p-speed" min="0.05" max="100" step="0.05"></label>
+        <label class="field">Tip leaf radius<input type="number" id="p-tip" min="0" max="5" step="0.5"></label>
+      </div>
+      <p class="hint-text">A trunk node appears at its height × days per metre; a branch node at its fork's time plus its distance from the fork ÷ (trunk rate × ratio). The world speed divides every time (a per-world setting, not structure data).</p>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <div class="seg" id="view-mode">
+        <button type="button" data-v="grow">Grow one tree</button>
+        <button type="button" data-v="variants">Variant row</button>
+      </div>
+      <label class="toggle"><input type="checkbox" id="opt-skel"><span class="switch"></span><span>Skeleton<small>Nodes and links: amber trunk, teal branches, red pruned, grey not grown yet.</small></span></label>
+      <label class="toggle"><input type="checkbox" id="opt-leaves"><span class="switch"></span><span>Leaves</span></label>
+      <label class="toggle"><input type="checkbox" id="opt-tips"><span class="switch"></span><span>Mark tip leaves<small>Leaves the growth adds around growing tips, which the model doesn't have, in a lighter green.</small></span></label>
+      <label class="toggle"><input type="checkbox" id="opt-variant"><span class="switch"></span><span>Grow the variant<small>Grow the jittered tree for the seed below instead of the authored one.</small></span></label>
+    </section>
+
+    <section>
+      <h2>Obstacles</h2>
+      <div class="row">
+        <button type="button" class="btn" id="tool-obstacle" aria-pressed="false">Place obstacles</button>
+        <button type="button" class="btn" id="obstacle-clear">Clear</button>
+      </div>
+      <p class="hint-text" id="obstacle-status">Turn on, then click a voxel face or the ground to place a stone; click a stone to remove it. A node whose core runs into a stone is pruned with everything beyond it.</p>
+    </section>
+
+    <section>
+      <h2>Variation</h2>
+      <div class="row">
+        <label class="field" style="flex:1">Seed<input type="number" id="seed" min="0" max="999999" step="1"></label>
+        <button type="button" class="btn primary" id="roll" style="align-self:flex-end">Roll</button>
+      </div>
+      <div class="slider"><span>Branch angle</span><output id="o-angle"></output><input type="range" id="j-angle" min="0" max="40" step="1"></div>
+      <div class="slider"><span>Length</span><output id="o-length"></output><input type="range" id="j-length" min="0" max="0.4" step="0.01"></div>
+      <div class="slider"><span>Droop</span><output id="o-droop"></output><input type="range" id="j-droop" min="0" max="6" step="0.1"></div>
+      <div class="slider"><span>Branch drop chance</span><output id="o-drop"></output><input type="range" id="j-drop" min="0" max="0.5" step="0.01"></div>
+      <p class="hint-text">Each branch rotates about its fork (around the parent's axis, and tilts by half as much), scales its length, bends down by the droop per metre, or is dropped. Leaves move with their nodes; the trunk, roots and anything holding a <code>core</code> voxel stay rigid.</p>
+    </section>
+
+    <section>
+      <h2>Export</h2>
+      <div class="row">
+        <button type="button" class="btn primary" id="export-growth">Copy growth + variants</button>
+        <button type="button" class="btn" id="export-structure">Download structure</button>
+      </div>
+      <textarea id="export-json" rows="8" readonly spellcheck="false" aria-label="Exported growth JSON" hidden></textarea>
+      <p class="status" id="export-status">The <code>growth</code> and <code>variants</code> sections of TREE_GROWTH.md §6, from the settings above, for G1. Download gives the whole structure with them and the palette roles.</p>
+    </section>
+
+    <div class="stats">
+      <div class="stat"><b id="s-nodes">0</b><span>nodes</span></div>
+      <div class="stat"><b id="s-tips">0</b><span>tips</span></div>
+      <div class="stat"><b id="s-trunk">0</b><span>trunk nodes</span></div>
+      <div class="stat"><b id="s-wood">0</b><span>wood voxels</span></div>
+      <div class="stat"><b id="s-leaf">0</b><span>leaf voxels</span></div>
+      <div class="stat"><b id="s-pruned">0</b><span>pruned nodes</span></div>
+    </div>
+    <p class="keys">Drag to orbit, scroll or pinch to zoom. <kbd>Space</kbd> play, <kbd>R</kbd> roll, <kbd>K</kbd> skeleton, <kbd>L</kbd> leaves, <kbd>O</kbd> obstacles, <kbd>V</kbd> variant row.</p>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view" aria-label="3D view of the growing tree"></canvas>
+    <div class="badge" id="badge"></div>
+    <div class="badge" id="check"></div>
+    <div class="badge" id="legend">
+      <span><i class="dot" style="background:#8a5a36"></i>wood</span>
+      <span><i class="dot" style="background:#6a4a30"></i>root</span>
+      <span><i class="dot" style="background:#b0663e"></i>core</span>
+      <span><i class="dot" style="background:#5c9a40"></i>leaves</span>
+      <span><i class="dot" style="background:#a6cf5a"></i>tip leaves</span>
+      <span><i class="dot" style="background:#9aa1a8"></i>obstacle</span>
+    </div>
+    <div id="labels"></div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const $ = id => document.getElementById(id);
+const SAVE_KEY = 'dwell.treeGrowth.v1';
+const ROLES = ['wood', 'leaf', 'root', 'trunk', 'core'];
+const WOODISH = new Set(['wood', 'root', 'trunk', 'core']);
+
+// ---------------------------------------------------------------------------------------------
+// Hashing: integer only, so a variant is a pure function of (structure, seed).
+function mix32(h) {
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+function hashN(...xs) { let h = 0x9e3779b9; for (const x of xs) h = mix32((h ^ (x | 0)) + 0x632be5ab); return h; }
+const rand01 = (...xs) => hashN(...xs) / 4294967296;
+
+// ---------------------------------------------------------------------------------------------
+// Built-in sample trees (prototype content, not Dwell's tree design). Drawn on a voxel grid from
+// hand-placed segments and leaf clusters, then written out in S1's structure format.
+function grid(sx, sy, sz) { return { sx, sy, sz, c: new Array(sx * sy * sz).fill('.') }; }
+function gi(g, x, y, z) { return x + g.sx * (y + g.sy * z); }
+function inG(g, x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < g.sx && y < g.sy && z < g.sz; }
+function put(g, x, y, z, ch, onlyEmpty) {
+  if (!inG(g, x, y, z)) return;
+  const i = gi(g, x, y, z);
+  if (onlyEmpty && g.c[i] !== '.') return;
+  g.c[i] = ch;
+}
+function segDist(p, a, b) {
+  const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const l2 = ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2;
+  let t = l2 ? ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - a[0] - ab[0] * t, p[1] - a[1] - ab[1] * t, p[2] - a[2] - ab[2] * t);
+}
+function lineCells(a, b) {
+  const n = Math.max(1, Math.ceil(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2])) * 2));
+  const out = [];
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    out.push([Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t), Math.round(a[2] + (b[2] - a[2]) * t)]);
+  }
+  return out;
+}
+function seg(g, o, a, b, r, ch, onlyEmpty) {
+  const A = [a[0] + o[0], a[1] + o[1], a[2] + o[2]], B = [b[0] + o[0], b[1] + o[1], b[2] + o[2]];
+  for (const [x, y, z] of lineCells(A, B)) put(g, x, y, z, ch, onlyEmpty);
+  const lo = [0, 1, 2].map(k => Math.floor(Math.min(A[k], B[k]) - r)), hi = [0, 1, 2].map(k => Math.ceil(Math.max(A[k], B[k]) + r));
+  for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++)
+    if (segDist([x, y, z], A, B) <= r) put(g, x, y, z, ch, onlyEmpty);
+}
+function blob(g, o, c, rad, ch, seed, rough = 0.35) {
+  const C = [c[0] + o[0], c[1] + o[1], c[2] + o[2]];
+  for (let x = Math.floor(C[0] - rad[0]); x <= Math.ceil(C[0] + rad[0]); x++)
+    for (let y = Math.floor(C[1] - rad[1]); y <= Math.ceil(C[1] + rad[1]); y++)
+      for (let z = Math.floor(C[2] - rad[2]); z <= Math.ceil(C[2] + rad[2]); z++) {
+        const d = ((x - C[0]) / rad[0]) ** 2 + ((y - C[1]) / rad[1]) ** 2 + ((z - C[2]) / rad[2]) ** 2;
+        if (d <= 1 + rough * (rand01(seed, x, y, z) - 0.5)) put(g, x, y, z, ch, true);
+      }
+}
+function toStructure(g, name, anchor, palette, comment) {
+  const layers = [];
+  for (let y = 0; y < g.sy; y++) {
+    const rows = [];
+    for (let z = 0; z < g.sz; z++) { let s = ''; for (let x = 0; x < g.sx; x++) s += g.c[gi(g, x, y, z)]; rows.push(s); }
+    layers.push(rows);
+  }
+  return { $comment: comment, format: 1, name, kind: 'voxels', size: [g.sx, g.sy, g.sz], anchor, palette, layers, variants: { rotate: [0, 90, 180, 270] } };
+}
+
+function sampleOak() {
+  const g = grid(23, 22, 23), o = [11, 0, 11];
+  seg(g, o, [0, 0, 0], [0, 10, 0], 1.3, 'w');
+  seg(g, o, [0, 0, 0], [0, 1, 0], 1.6, 'w');
+  for (const e of [[3, 0, -1], [-3, 0, 1], [1, 0, -3], [-1, 0, 3]]) seg(g, o, [0, 0, 0], e, 0.5, 'r', true);
+  const limbs = [[[0, 10, 0], [-5, 14, -2], 0.9], [[0, 10, 0], [5, 15, 2], 0.9], [[0, 10, 0], [0, 17, 1], 0.9],
+    [[0, 8, 0], [3, 12, -5], 0.6], [[0, 7, 0], [-4, 10, 3], 0.55]];
+  for (const [a, b, r] of limbs) seg(g, o, a, b, r, 'w');
+  const twigs = [[[-3, 12, -1], [-7, 13, 2]], [[-5, 14, -2], [-7, 16, -4]], [[-5, 14, -2], [-4, 16, -6]],
+    [[3, 13, 1], [7, 14, -1]], [[5, 15, 2], [7, 17, 4]], [[5, 15, 2], [4, 17, 5]],
+    [[0, 14, 0], [-2, 17, 3]], [[0, 17, 1], [2, 18, -2]], [[3, 12, -5], [5, 13, -7]], [[3, 12, -5], [1, 14, -7]],
+    [[-4, 10, 3], [-6, 11, 5]]];
+  for (const [a, b] of twigs) seg(g, o, a, b, 0.5, 'w');
+  let s = 1;
+  for (const [, b] of twigs) blob(g, o, [b[0], b[1] + 0.8, b[2]], [3, 2.3, 3], 'l', s++);
+  blob(g, o, [0, 18.5, 1], [3.2, 2.5, 3.2], 'l', s++);
+  for (const c of [[-5, 14.5, -2], [5, 15.5, 2], [3, 12.5, -5]]) blob(g, o, c, [2.5, 2, 2.5], 'l', s++);
+  return toStructure(g, 'dwell:sample_oak', [11, 0, 11], {
+    '.': null,
+    w: { block: 'dwell:proto_wood', role: 'wood' },
+    r: { block: 'dwell:proto_wood', role: 'root' },
+    l: { block: 'dwell:proto_leaves', role: 'leaf' },
+  }, 'Prototype sample (tree-growth.html): an oak-like tree with root flares, marked roles.');
+}
+
+function sampleConifer() {
+  const g = grid(15, 25, 15), o = [7, 0, 7];
+  seg(g, o, [0, 0, 0], [0, 22, 0], 0.5, '|');
+  seg(g, o, [0, 0, 0], [0, 3, 0], 1.1, '|');
+  const whorls = [[4, 6, 5], [7, 5.2, 5], [10, 4.4, 4], [13, 3.5, 4], [16, 2.6, 3], [19, 1.6, 3]];
+  const ends = [];
+  whorls.forEach(([y, L, n], w) => {
+    for (let k = 0; k < n; k++) {
+      const a = w * 0.7 + (k / n) * Math.PI * 2;
+      const e = [Math.round(L * Math.cos(a)), Math.round(y - L * 0.22), Math.round(L * Math.sin(a))];
+      seg(g, o, [0, y, 0], e, 0.5, '|');
+      ends.push([[0, y, 0], e]);
+    }
+  });
+  // Needles: a sleeve along each branch, lifted a little, and a cone at the top.
+  for (const [a, b] of ends) {
+    const A = [a[0] + o[0], a[1] + o[1] + 0.6, a[2] + o[2]], B = [b[0] + o[0], b[1] + o[1] + 0.6, b[2] + o[2]];
+    for (let x = 0; x < g.sx; x++) for (let y = Math.floor(B[1] - 2); y <= A[1] + 2; y++) for (let z = 0; z < g.sz; z++)
+      if (inG(g, x, y, z) && segDist([x, y, z], A, B) <= 1.35 + 0.4 * (rand01(7, x, y, z) - 0.5)) put(g, x, y, z, '*', true);
+  }
+  for (let y = 18; y <= 24; y++) {
+    const r = 2.4 * (24.5 - y) / 6.5;
+    for (let x = 0; x < g.sx; x++) for (let z = 0; z < g.sz; z++)
+      if (Math.hypot(x - 7, z - 7) <= r + 0.3 * (rand01(9, x, y, z) - 0.5)) put(g, x, y, z, '*', true);
+  }
+  return toStructure(g, 'dwell:sample_conifer', [7, 0, 7], {
+    '.': null, '|': 'dwell:proto_log', '*': 'dwell:proto_needle_leaves',
+  }, 'Prototype sample (tree-growth.html): a tall conifer-like tree in whorls; no roles, so they are inferred from the block names.');
+}
+
+function sampleSpreading() {
+  const g = grid(25, 14, 25), o = [12, 0, 12];
+  seg(g, o, [0, 0, 0], [0, 4, 0], 1.5, 't');
+  seg(g, o, [0, 0, 0], [0, 1, 0], 2.1, 't');
+  seg(g, o, [0, 4, 0], [1, 9, 0], 0.8, 't');
+  put(g, 14, 2, 12, 'k'); put(g, 14, 2, 13, 'k'); put(g, 14, 3, 12, 'k');
+  const limbs = [[-8, 8, -2], [8, 8, 1], [2, 9, -8], [-3, 8, 8], [6, 9, 6]];
+  let s = 30;
+  for (const e of limbs) {
+    const m = [e[0] * 0.5, 6.6, e[2] * 0.5];
+    seg(g, o, [0, 4, 0], m, 0.9, 'w', true);
+    seg(g, o, m, e, 0.55, 'w', true);
+    const len = Math.hypot(e[0], e[2]), px = -e[2] / len, pz = e[0] / len;
+    for (const sgn of [-1, 1]) seg(g, o, e, [Math.round(e[0] + px * 2 * sgn + e[0] / len), e[1] + 1, Math.round(e[2] + pz * 2 * sgn + e[2] / len)], 0.5, 'w', true);
+    blob(g, o, [e[0], e[1] + 1.6, e[2]], [3.6, 1.4, 3.6], 'l', s++, 0.5);
+    blob(g, o, [m[0], m[1] + 2.0, m[2]], [2.4, 1.1, 2.4], 'l', s++, 0.5);
+  }
+  blob(g, o, [1, 10.6, 0], [3.4, 1.4, 3.4], 'l', s++, 0.5);
+  return toStructure(g, 'dwell:sample_spreading', [12, 0, 12], {
+    '.': null,
+    t: { block: 'dwell:proto_wood', role: 'trunk' },
+    w: { block: 'dwell:proto_wood', role: 'wood' },
+    k: { block: 'dwell:proto_wood_knot', role: 'core' },
+    l: { block: 'dwell:proto_leaves', role: 'leaf' },
+  }, 'Prototype sample (tree-growth.html): a wide spreading tree; the trunk is marked (trunk role) and a knot is core.');
+}
+
+const SAMPLES = {
+  oak: { label: 'Oak-like', make: sampleOak },
+  conifer: { label: 'Conifer-like', make: sampleConifer },
+  spreading: { label: 'Spreading', make: sampleSpreading },
+};
+
+// ---------------------------------------------------------------------------------------------
+// Reading a structure (S1's format, plus palette roles).
+function inferRole(block) {
+  const b = block.toLowerCase();
+  if (/leaves|leaf|needle|foliage/.test(b)) return 'leaf';
+  if (/log|wood|trunk|bark|branch|stem/.test(b)) return 'wood';
+  return 'other';
+}
+function parseStructure(obj) {
+  const fail = m => { throw new Error(m); };
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) fail('not a JSON object');
+  if (obj.format !== 1) fail(`format: expected 1, got ${JSON.stringify(obj.format)}`);
+  if (obj.kind !== undefined && obj.kind !== 'voxels') fail(`kind: "${obj.kind}" is not "voxels"`);
+  const size = obj.size;
+  if (!Array.isArray(size) || size.length !== 3 || size.some(v => !Number.isInteger(v) || v < 1 || v > 32)) fail('size: expected [x, y, z], each 1–32');
+  const [sx, sy, sz] = size;
+  const anchor = obj.anchor;
+  if (!Array.isArray(anchor) || anchor.length !== 3 || anchor.some((v, k) => !Number.isInteger(v) || v < 0 || v >= size[k])) fail('anchor: expected [x, y, z] inside size');
+  if (!obj.palette || typeof obj.palette !== 'object') fail('palette: expected an object');
+  const palette = {};
+  let marked = false;
+  for (const [ch, v] of Object.entries(obj.palette)) {
+    if (ch.length !== 1 || ch === ' ') fail(`palette."${ch}": keys are single printable characters`);
+    if (v === null) { palette[ch] = null; continue; }
+    let block, role;
+    if (typeof v === 'string') block = v;
+    else if (v && typeof v === 'object' && typeof v.block === 'string') {
+      block = v.block;
+      if (v.role !== undefined) {
+        if (!ROLES.includes(v.role)) fail(`palette."${ch}": unknown role "${v.role}" (expected ${ROLES.join(', ')})`);
+        role = v.role; marked = true;
+      }
+    } else fail(`palette."${ch}": expected a block name, {"block", "role"} or null`);
+    if (/^(dwell:)?air$/.test(block.split('[')[0])) { palette[ch] = { block, role: 'air' }; continue; }
+    palette[ch] = { block, role: role || inferRole(block), inferred: !role };
+  }
+  if (!Array.isArray(obj.layers) || obj.layers.length !== sy) fail(`layers: expected ${sy} y-slices`);
+  const cells = new Array(sx * sy * sz).fill(null);
+  obj.layers.forEach((layer, y) => {
+    if (!Array.isArray(layer) || layer.length !== sz) fail(`layers[${y}]: expected ${sz} z-rows`);
+    layer.forEach((row, z) => {
+      if (typeof row !== 'string' || row.length !== sx) fail(`layers[${y}][${z}]: expected a string of ${sx} characters`);
+      for (let x = 0; x < sx; x++) {
+        const ch = row[x];
+        if (!(ch in palette)) fail(`layers[${y}][${z}][${x}]: "${ch}" is not in the palette`);
+        const p = palette[ch];
+        if (p && p.role !== 'air') cells[x + sx * (y + sy * z)] = ch;
+      }
+    });
+  });
+  return { raw: obj, name: obj.name || 'unnamed', sx, sy, sz, anchor, palette, cells, marked };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Skeleton extraction (TREE_GROWTH.md §2): BFS geodesic distance from the anchor through
+// 26-connected wood, equal-distance groups as nodes, linked to their predecessors.
+const NB = [];
+for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++)
+  if (dx || dy || dz) NB.push([dx, dy, dz, Math.hypot(dx, dy, dz)]);
+
+class Heap {
+  constructor() { this.k = []; this.v = []; }
+  get size() { return this.k.length; }
+  push(key, val) {
+    const k = this.k, v = this.v; let i = k.length; k.push(key); v.push(val);
+    while (i > 0) { const p = (i - 1) >> 1; if (k[p] < key || (k[p] === key && v[p] <= val)) break; k[i] = k[p]; v[i] = v[p]; i = p; }
+    k[i] = key; v[i] = val;
+  }
+  pop() {
+    const k = this.k, v = this.v, top = v[0], key = k.pop(), val = v.pop();
+    if (k.length) {
+      let i = 0; const n = k.length;
+      for (;;) {
+        let c = 2 * i + 1; if (c >= n) break;
+        if (c + 1 < n && (k[c + 1] < k[c] || (k[c + 1] === k[c] && v[c + 1] < v[c]))) c++;
+        if (key < k[c] || (key === k[c] && val <= v[c])) break;
+        k[i] = k[c]; v[i] = v[c]; i = c;
+      }
+      k[i] = key; v[i] = val;
+    }
+    return top;
+  }
+}
+
+function extract(model) {
+  const { sx, sy, sz, cells, palette } = model;
+  const N = sx * sy * sz;
+  const idx = (x, y, z) => x + sx * (y + sy * z);
+  const X = i => i % sx, Y = i => Math.floor(i / sx) % sy, Z = i => Math.floor(i / (sx * sy));
+  const roleAt = i => cells[i] === null ? null : palette[cells[i]].role;
+  const isWood = new Uint8Array(N), isAttach = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const r = roleAt(i); if (r === null) continue; if (WOODISH.has(r)) isWood[i] = 1; else isAttach[i] = 1; }
+  const neighbours = (i, f) => {
+    const x = X(i), y = Y(i), z = Z(i);
+    for (const [dx, dy, dz, w] of NB) {
+      const a = x + dx, b = y + dy, c = z + dz;
+      if (a < 0 || b < 0 || c < 0 || a >= sx || b >= sy || c >= sz) continue;
+      f(idx(a, b, c), w);
+    }
+  };
+  const notes = [];
+  // The root voxel: the anchor if it is wood, else the nearest wood voxel to it.
+  let rootV = idx(...model.anchor);
+  if (!isWood[rootV]) {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < N; i++) if (isWood[i]) {
+      const d = (X(i) - model.anchor[0]) ** 2 + (Y(i) - model.anchor[1]) ** 2 + (Z(i) - model.anchor[2]) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best < 0) throw new Error('no wood voxels: mark wood with a role, or use block names with log or wood');
+    notes.push(`The anchor isn't wood; the skeleton starts at the nearest wood voxel (${X(best)}, ${Y(best)}, ${Z(best)}).`);
+    rootV = best;
+  }
+  // BFS levels.
+  const level = new Int32Array(N).fill(-1);
+  const order = [rootV]; level[rootV] = 0;
+  for (let h = 0; h < order.length; h++) {
+    const i = order[h];
+    neighbours(i, j => { if (isWood[j] && level[j] < 0) { level[j] = level[i] + 1; order.push(j); } });
+  }
+  let stray = 0;
+  for (let i = 0; i < N; i++) if (isWood[i] && level[i] < 0) { isWood[i] = 0; isAttach[i] = 1; stray++; }
+  if (stray) notes.push(`${stray} wood voxels don't connect to the root; they grow like leaves with the nearest node.`);
+  // Nodes: connected components of each level set, in level then index order.
+  const byLevel = [];
+  for (const i of order) (byLevel[level[i]] ||= []).push(i);
+  for (const l of byLevel) l.sort((a, b) => a - b);
+  const nodeOf = new Int32Array(N).fill(-1), nodes = [];
+  for (let d = 0; d < byLevel.length; d++) for (const s of byLevel[d]) {
+    if (nodeOf[s] >= 0) continue;
+    const id = nodes.length, vox = [s]; nodeOf[s] = id;
+    for (let h = 0; h < vox.length; h++) neighbours(vox[h], j => { if (isWood[j] && level[j] === d && nodeOf[j] < 0) { nodeOf[j] = id; vox.push(j); } });
+    vox.sort((a, b) => a - b);
+    nodes.push({ id, level: d, voxels: vox, parent: -1, children: [] });
+  }
+  // Parents: the previous-level node with the most contacts; loops in the wood are cut here.
+  let loops = 0;
+  for (const n of nodes) {
+    if (n.level === 0) continue;
+    const count = new Map();
+    for (const v of n.voxels) neighbours(v, j => { if (isWood[j] && level[j] === n.level - 1) count.set(nodeOf[j], (count.get(nodeOf[j]) || 0) + 1); });
+    let best = -1, bc = -1;
+    for (const [m, c] of count) if (c > bc || (c === bc && m < best)) { best = m; bc = c; }
+    if (count.size > 1) loops++;
+    n.parent = best; nodes[best].children.push(n.id);
+  }
+  if (loops) notes.push(`${loops} node${loops > 1 ? 's' : ''} touch more than one node below (a loop in the wood); each keeps the one it touches most.`);
+  // Centroids and medial voxels.
+  for (const n of nodes) {
+    const c = [0, 0, 0];
+    for (const v of n.voxels) { c[0] += X(v); c[1] += Y(v); c[2] += Z(v); }
+    n.c = c.map(t => t / n.voxels.length);
+    let best = n.voxels[0], bd = Infinity;
+    for (const v of n.voxels) { const d = (X(v) - n.c[0]) ** 2 + (Y(v) - n.c[1]) ** 2 + (Z(v) - n.c[2]) ** 2; if (d < bd - 1e-9) { bd = d; best = v; } }
+    n.medial = best;
+    let roots = 0, cores = 0;
+    for (const v of n.voxels) { const r = roleAt(v); if (r === 'root') roots++; if (r === 'core') cores++; }
+    n.isRoot = roots * 2 > n.voxels.length;
+    n.hasCoreRole = cores > 0;
+  }
+  // Core path: the shortest wood path from a node's medial voxel to its parent's, inside the two
+  // nodes. Core voxels show as soon as their node has grown, so the grown wood is always connected.
+  const coreNodes = new Map();
+  const addCore = (v, id) => { const l = coreNodes.get(v); if (l) { if (!l.includes(id)) l.push(id); } else coreNodes.set(v, [id]); };
+  for (const n of nodes) {
+    n.core = [n.medial];
+    if (n.parent < 0) { addCore(n.medial, n.id); continue; }
+    const p = nodes[n.parent], allowed = new Set([...n.voxels, ...p.voxels]);
+    const prev = new Map([[n.medial, -1]]), q = [n.medial];
+    for (let h = 0; h < q.length && !prev.has(p.medial); h++) neighbours(q[h], j => { if (allowed.has(j) && !prev.has(j)) { prev.set(j, q[h]); q.push(j); } });
+    const path = [];
+    for (let v = p.medial; v !== -1; v = prev.get(v)) path.push(v);
+    n.core = path.filter(v => v !== p.medial || n.parent < 0);
+    for (const v of n.core) addCore(v, n.id);
+  }
+  // Radial distance: geodesic within the node from its own core, so thresholding stays connected.
+  const rho = new Float32Array(N).fill(Infinity), rhoPred = new Int32Array(N).fill(-1);
+  for (const n of nodes) {
+    const mine = new Set(n.voxels), heap = new Heap();
+    for (const v of n.core) if (mine.has(v)) { rho[v] = 0; heap.push(0, v); }
+    if (!heap.size) { rho[n.medial] = 0; heap.push(0, n.medial); }
+    while (heap.size) {
+      const v = heap.pop();
+      neighbours(v, (j, w) => { if (mine.has(j) && rho[v] + w < rho[j] - 1e-6) { rho[j] = rho[v] + w; rhoPred[j] = v; heap.push(rho[j], j); } });
+    }
+    n.R = 0;
+    for (const v of n.voxels) n.R = Math.max(n.R, rho[v]);
+  }
+  // Core voxels that sit in a parent's component keep rho 0 for their own node.
+  for (const v of coreNodes.keys()) if (rho[v] === Infinity) rho[v] = 0;
+  // Trunk: marked (trunk role, with its ancestors), else the heaviest path from the root.
+  const subVol = nodes.map(n => n.voxels.length);
+  for (let k = nodes.length - 1; k > 0; k--) subVol[nodes[k].parent] += subVol[k];
+  for (const n of nodes) n.subVol = subVol[n.id];
+  const trunkMarked = model.cells.some(ch => ch !== null && palette[ch].role === 'trunk');
+  const isTrunk = new Uint8Array(nodes.length);
+  if (trunkMarked) {
+    for (const n of nodes) if (n.voxels.some(v => roleAt(v) === 'trunk')) for (let m = n.id; m >= 0 && !isTrunk[m]; m = nodes[m].parent) isTrunk[m] = 1;
+    isTrunk[0] = 1;
+  } else {
+    for (let m = 0; m >= 0;) {
+      isTrunk[m] = 1;
+      let best = -1;
+      for (const c of nodes[m].children) if (!nodes[c].isRoot && (best < 0 || nodes[c].subVol > nodes[best].subVol)) best = c;
+      m = best;
+    }
+  }
+  nodes.forEach(n => { n.isTrunk = !!isTrunk[n.id]; });
+  // Subtree centroid (for branch directions) and whether a subtree holds a core voxel.
+  const subSum = nodes.map(n => [n.c[0] * n.voxels.length, n.c[1] * n.voxels.length, n.c[2] * n.voxels.length]);
+  const subCore = nodes.map(n => n.hasCoreRole);
+  for (let k = nodes.length - 1; k > 0; k--) {
+    const p = nodes[k].parent;
+    for (let a = 0; a < 3; a++) subSum[p][a] += subSum[k][a];
+    subCore[p] = subCore[p] || subCore[k];
+  }
+  for (const n of nodes) { n.subC = subSum[n.id].map(t => t / n.subVol); n.subCore = subCore[n.id]; }
+  // Pipe model at full growth.
+  // Leaves: owned by the node of the nearest wood voxel, by geodesic distance through leaves.
+  const delta = new Float32Array(N).fill(Infinity), leafPred = new Int32Array(N).fill(-1), leafAnchor = new Int32Array(N).fill(-1);
+  const heap = new Heap();
+  for (let i = 0; i < N; i++) if (isWood[i]) { delta[i] = 0; leafAnchor[i] = i; heap.push(0, i); }
+  while (heap.size) {
+    const v = heap.pop();
+    neighbours(v, (j, w) => { if (isAttach[j] && delta[v] + w < delta[j] - 1e-6) { delta[j] = delta[v] + w; leafPred[j] = isWood[v] ? -1 : v; leafAnchor[j] = leafAnchor[v]; heap.push(delta[j], j); } });
+  }
+  const woodList = [];
+  for (let i = 0; i < N; i++) if (isWood[i]) woodList.push(i);
+  let floating = 0;
+  const leafList = [];
+  for (let i = 0; i < N; i++) if (isAttach[i]) {
+    if (delta[i] === Infinity) {
+      let best = -1, bd = Infinity;
+      for (const w of woodList) { const d = (X(i) - X(w)) ** 2 + (Y(i) - Y(w)) ** 2 + (Z(i) - Z(w)) ** 2; if (d < bd) { bd = d; best = w; } }
+      delta[i] = Math.sqrt(bd); leafAnchor[i] = best; floating++;
+    }
+    leafList.push(i);
+  }
+  if (floating) notes.push(`${floating} leaf voxels don't touch the tree through other leaves; each follows the nearest wood voxel.`);
+  let deltaMax = 1;
+  for (const i of leafList) deltaMax = Math.max(deltaMax, delta[i]);
+  woodList.sort((a, b) => rho[a] - rho[b] || a - b);
+  leafList.sort((a, b) => delta[a] - delta[b] || a - b);
+  const leafChars = model.cells.filter(ch => ch !== null && palette[ch].role === 'leaf');
+  const tipChar = leafChars.length ? leafChars[0] : null;
+  return { model, N, X, Y, Z, idx, nodes, nodeOf, level, rho, rhoPred, coreNodes, woodList, leafList, delta, leafPred, leafAnchor, deltaMax, notes, trunkMarked, rootV, tipChar };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Timing: trunk nodes at height / trunk rate; branch nodes at fork time + distance / branch rate.
+function timing(sk, p) {
+  const Tt = p.trunkDays / p.worldSpeed, Tb = Tt / p.ratio;
+  const appear = new Float64Array(sk.nodes.length), fork = new Int32Array(sk.nodes.length);
+  let Tfull = 0;
+  for (const n of sk.nodes) {
+    fork[n.id] = n.isTrunk ? n.level : fork[n.parent];
+    appear[n.id] = n.isTrunk ? n.level * Tt : fork[n.id] * Tt + (n.level - fork[n.id]) * Tb;
+    Tfull = Math.max(Tfull, appear[n.id]);
+  }
+  return { appear, Tfull: Math.max(Tfull, 1), Tt, Tb };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Variants: a similarity transform per node from branch jitter, composed down the tree, then the
+// voxels forward-mapped (supersampled) and joined by core lines. Identity when jitter is off.
+const KEY_OFF = 256, KEY_SPAN = 512;
+const key = (x, y, z) => ((x + KEY_OFF) * KEY_SPAN + (y + KEY_OFF)) * KEY_SPAN + (z + KEY_OFF);
+const unkey = k => { const z = k % KEY_SPAN, y = Math.floor(k / KEY_SPAN) % KEY_SPAN, x = Math.floor(k / (KEY_SPAN * KEY_SPAN)); return [x - KEY_OFF, y - KEY_OFF, z - KEY_OFF]; };
+
+const m3mul = (a, b) => { const r = new Array(9); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j]; return r; };
+const m3v = (a, v) => [a[0] * v[0] + a[1] * v[1] + a[2] * v[2], a[3] * v[0] + a[4] * v[1] + a[5] * v[2], a[6] * v[0] + a[7] * v[1] + a[8] * v[2]];
+const I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+function rotAxis(ax, ang) {
+  const [x, y, z] = ax, c = Math.cos(ang), s = Math.sin(ang), t = 1 - c;
+  return [t * x * x + c, t * x * y - s * z, t * x * z + s * y, t * x * y + s * z, t * y * y + c, t * y * z - s * x, t * x * z - s * y, t * y * z + s * x, t * z * z + c];
+}
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(...a); return l > 1e-9 ? a.map(t => t / l) : null; };
+
+function jitterActive(j) { return j.angle > 0 || j.length > 0 || j.droop > 0 || j.drop > 0; }
+
+function buildVariant(sk, seed, j, enabled, obstacles) {
+  const { nodes, model } = sk;
+  const identity = !enabled || !jitterActive(j);
+  const A = [], b = [], S = [], dropped = new Uint8Array(nodes.length);
+  for (const n of nodes) {
+    if (n.parent < 0 || identity) { A[n.id] = I3; b[n.id] = [0, 0, 0]; S[n.id] = 1; continue; }
+    const p = nodes[n.parent];
+    dropped[n.id] = dropped[p.id];
+    let J = I3, s = 1;
+    const rigid = n.isTrunk || n.isRoot || n.subCore;
+    if (!rigid) {
+      const f = p.c;
+      const startsBranch = p.isTrunk || p.children.length > 1;
+      const up = [0, 1, 0];
+      const dir = norm(sub(n.subC, f)) || up;
+      if (startsBranch) {
+        if (rand01(seed, n.id, 4) < j.drop) dropped[n.id] = 1;
+        let back = p; for (let k = 0; k < 3 && back.parent >= 0; k++) back = nodes[back.parent];
+        const pAxis = norm(sub(p.c, back.c)) || up;
+        const yaw = rotAxis(pAxis, (rand01(seed, n.id, 1) * 2 - 1) * j.angle * Math.PI / 180);
+        const tiltAxis = norm(cross(dir, pAxis));
+        const tilt = tiltAxis ? rotAxis(tiltAxis, (rand01(seed, n.id, 2) * 2 - 1) * j.angle * 0.5 * Math.PI / 180) : I3;
+        J = m3mul(yaw, tilt);
+        s = 1 + j.length * (rand01(seed, n.id, 3) * 2 - 1);
+      }
+      if (j.droop > 0) {
+        const ax = norm(cross(dir, up));
+        if (ax) {
+          let D = rotAxis(ax, j.droop * Math.PI / 180);
+          if (m3v(D, dir)[1] > dir[1]) D = rotAxis(ax, -j.droop * Math.PI / 180);
+          J = m3mul(J, D);
+        }
+      }
+    }
+    // J_n: q -> f + s * J (q - f), composed after the parent's transform.
+    const f = p.c, Aj = J.map(t => t * s), bj = sub(f, m3v(Aj, f));
+    A[n.id] = m3mul(A[p.id], Aj); b[n.id] = add(m3v(A[p.id], bj), b[p.id]); S[n.id] = S[p.id] * s;
+  }
+  const R = A.map((a, i) => a.map(t => t / S[i]));
+  const mc = nodes.map(n => add(m3v(A[n.id], n.c), b[n.id]));
+  const pos = v => [sk.X(v), sk.Y(v), sk.Z(v)];
+  const coreRole = v => model.cells[v] !== null && model.palette[model.cells[v]].role === 'core';
+  const SUB = [-0.25, 0.25];
+  const mapVoxel = (v, n) => {
+    const p = pos(v);
+    if (identity || coreRole(v)) return [key(...p)];
+    const out = new Set();
+    for (const ox of SUB) for (const oy of SUB) for (const oz of SUB) {
+      const q = add(mc[n], m3v(R[n], sub(add(p, [ox, oy, oz]), nodes[n].c)));
+      out.add(key(Math.round(q[0]), Math.round(q[1]), Math.round(q[2])));
+    }
+    return [...out];
+  };
+  const cellsOf = new Map();
+  for (const v of sk.woodList) cellsOf.set(v, mapVoxel(v, sk.nodeOf[v]));
+  for (const v of sk.leafList) cellsOf.set(v, mapVoxel(v, sk.nodeOf[sk.leafAnchor[v]]));
+  // Core lines between mapped medial voxels keep a jittered tree connected.
+  const medialPos = nodes.map(n => (identity ? pos(n.medial) : add(mc[n.id], m3v(R[n.id], sub(pos(n.medial), n.c)))));
+  const connectors = nodes.map(n => (identity || n.parent < 0 ? [] : lineCells(medialPos[n.parent], medialPos[n.id]).map(c => key(...c))));
+  // Pruning: dropped branches, and nodes whose core runs into an obstacle (with their subtrees).
+  const pruned = new Uint8Array(nodes.length), blockedAt = new Int32Array(nodes.length).fill(-1);
+  const hit = ks => ks.some(k => obstacles.has(k));
+  for (const n of nodes) {
+    if (dropped[n.id] || (n.parent >= 0 && pruned[n.parent])) { pruned[n.id] = 1; continue; }
+    const own = n.core.flatMap(v => cellsOf.get(v) || []);
+    if (hit(own) || hit(connectors[n.id])) { pruned[n.id] = 1; blockedAt[n.id] = 1; }
+  }
+  // Non-core voxels stop at obstacles, and so does everything grown outward through them.
+  const blocked = new Uint8Array(sk.N);
+  if (obstacles.size) {
+    for (const v of sk.woodList) if (hit(cellsOf.get(v)) || (sk.rhoPred[v] >= 0 && blocked[sk.rhoPred[v]])) blocked[v] = 1;
+    for (const v of sk.leafList) if (hit(cellsOf.get(v)) || (sk.leafPred[v] >= 0 && blocked[sk.leafPred[v]])) blocked[v] = 1;
+  }
+  return { identity, mc, medialPos, cellsOf, connectors, pruned, blockedAt, blocked, obstacles };
+}
+
+// ---------------------------------------------------------------------------------------------
+// A stage: the voxels of the tree at age t. Pure function of (skeleton, timing, variant, t).
+function stage(sk, T, V, t, p) {
+  const { nodes, model } = sk;
+  const n = nodes.length, grown = new Uint8Array(n);
+  for (let k = 0; k < n; k++) grown[k] = !V.pruned[k] && t >= T.appear[k] - 1e-9 ? 1 : 0;
+  const e = 2;
+  const Pfull = new Float64Array(n), Pt = new Float64Array(n);
+  for (let k = n - 1; k >= 0; k--) {
+    let sf = 0, st = 0;
+    for (const c of nodes[k].children) { sf += Pfull[c] ** e; if (grown[c]) st += Pt[c] ** e; }
+    Pfull[k] = sf > 0 ? sf ** (1 / e) : 1;
+    Pt[k] = st > 0 ? st ** (1 / e) : 1;
+  }
+  const radius = new Float64Array(n);
+  for (let k = 0; k < n; k++) radius[k] = nodes[k].R * Math.min(1, Pt[k] / Pfull[k]);
+  const out = new Map(), tips = new Set();
+  const shown = new Uint8Array(sk.N);
+  for (const v of sk.woodList) {
+    const nd = sk.nodeOf[v];
+    const cn = sk.coreNodes.get(v);
+    const core = cn && cn.some(c => grown[c]);
+    if (!core && !(grown[nd] && sk.rho[v] <= radius[nd] + 1e-6 && !V.blocked[v])) continue;
+    shown[v] = 1;
+    for (const kk of V.cellsOf.get(v)) if (!V.obstacles.has(kk)) out.set(kk, model.cells[v]);
+  }
+  for (let k = 0; k < n; k++) if (grown[k]) for (const kk of V.connectors[k]) if (!out.has(kk) && !V.obstacles.has(kk)) out.set(kk, model.cells[nodes[k].medial]);
+  // Authored leaves: owner grown, its wood shown, within a reach that widens with the tree's age.
+  const m = Math.min(1, t / T.Tfull);
+  const reach = m >= 1 ? Infinity : 1 + (sk.deltaMax - 1) * Math.pow(m, 0.75);
+  for (const v of sk.leafList) {
+    const a = sk.leafAnchor[v];
+    if (!shown[a] || sk.delta[v] > reach + 1e-6 || V.blocked[v]) continue;
+    if (sk.leafPred[v] >= 0 && !shown[sk.leafPred[v]]) continue;
+    shown[v] = 1;
+    for (const kk of V.cellsOf.get(v)) if (!out.has(kk) && !V.obstacles.has(kk)) out.set(kk, model.cells[v]);
+  }
+  // Tip leaves: a tuft around each growing tip (a grown node with a child still to come).
+  if (p.tipRadius > 0 && sk.tipChar && m < 1) {
+    const r = p.tipRadius * Math.min(1, 0.55 + m * 1.2);
+    for (let k = 0; k < n; k++) {
+      if (!grown[k] || !nodes[k].children.some(c => !grown[c] && !V.pruned[c])) continue;
+      if (nodes[k].isRoot) continue;
+      const c = V.medialPos[k];
+      const lift = [c[0], c[1] + 0.6, c[2]];
+      for (let x = Math.floor(lift[0] - r); x <= Math.ceil(lift[0] + r); x++)
+        for (let y = Math.floor(lift[1] - r); y <= Math.ceil(lift[1] + r); y++)
+          for (let z = Math.floor(lift[2] - r); z <= Math.ceil(lift[2] + r); z++) {
+            if (y < model.anchor[1]) continue;
+            const d = Math.hypot(x - lift[0], (y - lift[1]) * 1.25, z - lift[2]);
+            if (d > r + 0.45 * (rand01(77, x, y, z) - 0.5)) continue;
+            const kk = key(x, y, z);
+            if (out.has(kk) || V.obstacles.has(kk)) continue;
+            out.set(kk, sk.tipChar); tips.add(kk);
+          }
+    }
+  }
+  return { cells: out, tips, grown, radius };
+}
+
+function modelCells(model) {
+  const out = new Map();
+  for (let i = 0; i < model.cells.length; i++) if (model.cells[i] !== null) {
+    const x = i % model.sx, y = Math.floor(i / model.sx) % model.sy, z = Math.floor(i / (model.sx * model.sy));
+    out.set(key(x, y, z), model.cells[i]);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Meshing: culled faces with per-vertex ambient occlusion and per-voxel colour variation.
+const ROLE_RGB = { wood: [0.54, 0.35, 0.21], trunk: [0.54, 0.35, 0.21], root: [0.42, 0.29, 0.19], core: [0.69, 0.40, 0.24], leaf: [0.36, 0.60, 0.25], other: [0.62, 0.62, 0.58] };
+const NEEDLE_RGB = [0.22, 0.45, 0.27], TIP_RGB = [0.65, 0.81, 0.35], STONE_RGB = [0.60, 0.63, 0.66];
+function colourFor(model, ch) {
+  const p = model.palette[ch];
+  if (p.role === 'leaf' && /needle/.test(p.block)) return NEEDLE_RGB;
+  return ROLE_RGB[p.role] || ROLE_RGB.other;
+}
+const AO = [0.5, 0.68, 0.84, 1];
+function buildMesh(entries) {
+  // entries: Map key -> [r, g, b]
+  const solid = k => entries.has(k);
+  const pos = [], col = [], ind = [];
+  for (const [k, rgb] of entries) {
+    const c = unkey(k);
+    const jit = 0.92 + 0.16 * rand01(c[0], c[1], c[2], 5);
+    for (let a = 0; a < 3; a++) for (const s of [1, -1]) {
+      const nb = c.slice(); nb[a] += s;
+      if (solid(key(...nb))) continue;
+      const u = (a + 1) % 3, v = (a + 2) % 3;
+      const corners = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      if (s < 0) corners.reverse();
+      const base = pos.length / 3, aos = [];
+      for (const [cu, cv] of corners) {
+        const p = c.slice(); p[a] += s > 0 ? 1 : 0; p[u] += cu; p[v] += cv;
+        pos.push(p[0], p[1], p[2]);
+        const du = cu ? 1 : -1, dv = cv ? 1 : -1;
+        const q1 = nb.slice(); q1[u] += du; const q2 = nb.slice(); q2[v] += dv; const q3 = nb.slice(); q3[u] += du; q3[v] += dv;
+        const s1 = solid(key(...q1)) ? 1 : 0, s2 = solid(key(...q2)) ? 1 : 0, s3 = solid(key(...q3)) ? 1 : 0;
+        const ao = s1 && s2 ? 0 : 3 - (s1 + s2 + s3);
+        aos.push(ao);
+        const f = AO[ao] * jit;
+        col.push(rgb[0] * f, rgb[1] * f, rgb[2] * f);
+      }
+      if (aos[0] + aos[2] < aos[1] + aos[3]) ind.push(base + 1, base + 2, base + 3, base + 1, base + 3, base);
+      else ind.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(ind);
+  g.computeVertexNormals();
+  return g;
+}
+
+// ---------------------------------------------------------------------------------------------
+// State, saved in this browser.
+const DEFAULTS = {
+  sample: 'oak', custom: null, age: null, speed: 40, trunkDays: 30, ratio: 1 / 3, worldSpeed: 1, tipRadius: 2,
+  seed: 1, jitter: { angle: 14, length: 0.15, droop: 1.5, drop: 0.08 }, showVariant: false, view: 'grow',
+  skeleton: false, leaves: true, markTips: true, obstacles: {},
+};
+let state = structuredClone(DEFAULTS);
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {}
+}
+function loadSaved() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (d && typeof d === 'object') state = { ...structuredClone(DEFAULTS), ...d, jitter: { ...DEFAULTS.jitter, ...(d.jitter || {}) }, obstacles: d.obstacles && typeof d.obstacles === 'object' ? d.obstacles : {} };
+  } catch {}
+}
+
+let model = null, sk = null, T = null, Vmain = null, current = null, checkResult = null;
+const obstacleKey = () => model ? model.name : '';
+const obstacleList = () => state.obstacles[obstacleKey()] || [];
+const obstacleSet = () => new Set(obstacleList().map(c => key(...c)));
+const params = () => ({ trunkDays: state.trunkDays, ratio: state.ratio, worldSpeed: state.worldSpeed, tipRadius: state.tipRadius });
+
+function setModel(obj, sourceLabel) {
+  const m = parseStructure(obj);
+  const s = extract(m);
+  model = m; sk = s;
+  // Growth parameters carried in the file (G1's growth block) are read back.
+  const g = obj.growth;
+  if (g && typeof g === 'object') {
+    if (Number.isFinite(g.trunk_days_per_m)) state.trunkDays = g.trunk_days_per_m;
+    if (Number.isFinite(g.branch_rate)) state.ratio = g.branch_rate;
+    if (g.leaves && Number.isFinite(g.leaves.radius)) state.tipRadius = g.leaves.radius;
+  }
+  const bj = obj.variants && !Array.isArray(obj.variants) ? obj.variants.branch_jitter : null;
+  if (bj && typeof bj === 'object') {
+    if (Number.isFinite(bj.angle_deg)) state.jitter.angle = bj.angle_deg;
+    if (Number.isFinite(bj.length)) state.jitter.length = bj.length;
+    if (Number.isFinite(bj.droop_deg_per_m)) state.jitter.droop = bj.droop_deg_per_m;
+    if (Number.isFinite(bj.drop_chance)) state.jitter.drop = bj.drop_chance;
+  }
+  const roles = {};
+  for (const ch of m.cells) if (ch !== null) roles[m.palette[ch].role] = (roles[m.palette[ch].role] || 0) + 1;
+  const inferred = Object.values(m.palette).some(p => p && p.inferred && p.role !== 'air');
+  $('load-status').className = 'status';
+  $('load-status').textContent = `${sourceLabel}: ${m.name}, ${m.sx} × ${m.sy} × ${m.sz}. ${Object.entries(roles).map(([r, c]) => `${c} ${r}`).join(', ')}${inferred ? ' (roles inferred from block names)' : ''}.`;
+  const notes = [...s.notes];
+  notes.unshift(s.trunkMarked ? 'Trunk: marked by the trunk role.' : 'Trunk: inferred as the heaviest path from the root.');
+  $('notes').innerHTML = notes.map(t => `<li>${escapeHtml(t)}</li>`).join('');
+  recompute(true);
+}
+function escapeHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
+
+function recompute(resetAge) {
+  T = timing(sk, params());
+  if (resetAge || state.age === null) state.age = T.Tfull;
+  state.age = Math.max(0, Math.min(T.Tfull, state.age));
+  Vmain = buildVariant(sk, state.seed, state.jitter, state.showVariant, obstacleSet());
+  // The check: the authored tree at full age, no jitter, no obstacles, against the model.
+  const V0 = buildVariant(sk, 0, state.jitter, false, new Set());
+  const full = stage(sk, T, V0, T.Tfull, params()).cells, want = modelCells(model);
+  let diff = 0;
+  for (const [k, ch] of want) if (full.get(k) !== ch) diff++;
+  for (const k of full.keys()) if (!want.has(k)) diff++;
+  checkResult = { diff, total: want.size };
+  variantsDirty = true;
+  updateStats();
+  syncControls();
+  render();
+  save();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Scene.
+const canvas = $('view'), stageEl = $('stage');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+} catch (e) {
+  stageEl.insertAdjacentHTML('beforeend', '<div class="error">This prototype needs WebGL, which this browser has turned off.</div>');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 800);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.minDistance = 4;
+controls.maxDistance = 300;
+scene.add(new THREE.HemisphereLight(0xdde8f4, 0x5d5140, 1.25));
+const sun = new THREE.DirectionalLight(0xfff0d8, 2.5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.04;
+sun.shadow.radius = 4;
+scene.add(sun, sun.target);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 72), new THREE.MeshStandardMaterial({ color: 0x8fa070, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+const footprint = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x3c4a2c, transparent: true, opacity: 0.35 }));
+scene.add(footprint);
+const material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 });
+const treeGroup = new THREE.Group();
+scene.add(treeGroup);
+const treeMesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+treeMesh.castShadow = treeMesh.receiveShadow = true;
+treeGroup.add(treeMesh);
+const skelGroup = new THREE.Group();
+treeGroup.add(skelGroup);
+const variantGroup = new THREE.Group();
+scene.add(variantGroup);
+const ghost = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)), new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 }));
+ghost.renderOrder = 10; ghost.visible = false;
+treeGroup.add(ghost);
+
+let variantsDirty = true, framedFor = null, variantTiles = [];
+
+function cellRgb(k, ch, tips) {
+  if (tips && tips.has(k) && state.markTips) return TIP_RGB;
+  return colourFor(model, ch);
+}
+
+function renderGrow() {
+  const res = stage(sk, T, Vmain, state.age, params());
+  current = res;
+  const entries = new Map();
+  for (const [k, ch] of res.cells) {
+    if (!state.leaves && model.palette[ch].role === 'leaf') continue;
+    entries.set(k, cellRgb(k, ch, res.tips));
+  }
+  for (const c of obstacleList()) entries.set(key(...c), STONE_RGB);
+  treeMesh.geometry.dispose();
+  treeMesh.geometry = buildMesh(entries);
+  treeGroup.position.set(-model.anchor[0] - 0.5, -model.anchor[1], -model.anchor[2] - 0.5);
+  buildSkeleton(res);
+  updateBadge(res);
+}
+
+function buildSkeleton(res) {
+  for (const c of [...skelGroup.children]) { skelGroup.remove(c); c.geometry?.dispose(); }
+  if (!state.skeleton) return;
+  const { nodes } = sk, mc = Vmain.mc;
+  const colOf = n => Vmain.pruned[n.id] ? [0.85, 0.25, 0.2] : !res.grown[n.id] ? [0.62, 0.64, 0.68] : n.isTrunk ? [0.96, 0.66, 0.15] : n.isRoot ? [0.6, 0.42, 0.3] : [0.15, 0.72, 0.75];
+  const lp = [], lc = [];
+  for (const n of nodes) if (n.parent >= 0) {
+    const a = mc[n.parent], b = mc[n.id], c = colOf(n);
+    lp.push(a[0] + 0.5, a[1] + 0.5, a[2] + 0.5, b[0] + 0.5, b[1] + 0.5, b[2] + 0.5); lc.push(...c, ...c);
+  }
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  lg.setAttribute('color', new THREE.Float32BufferAttribute(lc, 3));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.95 }));
+  lines.renderOrder = 5;
+  skelGroup.add(lines);
+  const sph = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.9 }), nodes.length);
+  sph.renderOrder = 6;
+  const mtx = new THREE.Matrix4(), col = new THREE.Color();
+  for (const n of nodes) {
+    const r = 0.16 + 0.1 * Math.min(4, n.R);
+    mtx.makeScale(r, r, r).setPosition(mc[n.id][0] + 0.5, mc[n.id][1] + 0.5, mc[n.id][2] + 0.5);
+    sph.setMatrixAt(n.id, mtx);
+    sph.setColorAt(n.id, col.setRGB(...colOf(n)));
+  }
+  skelGroup.add(sph);
+}
+
+function renderVariants() {
+  for (const c of [...variantGroup.children]) { variantGroup.remove(c); c.geometry?.dispose(); }
+  const span = Math.max(model.sx, model.sz) + 5;
+  const seeds = [null, state.seed, state.seed + 1, state.seed + 2, state.seed + 3, state.seed + 4];
+  variantTiles = [];
+  seeds.forEach((sd, i) => {
+    const V = buildVariant(sk, sd ?? 0, state.jitter, sd !== null, new Set());
+    const res = stage(sk, T, V, T.Tfull, params());
+    const entries = new Map();
+    for (const [k, ch] of res.cells) { if (!state.leaves && model.palette[ch].role === 'leaf') continue; entries.set(k, colourFor(model, ch)); }
+    const mesh = new THREE.Mesh(buildMesh(entries), material);
+    mesh.castShadow = mesh.receiveShadow = true;
+    const ox = (i - (seeds.length - 1) / 2) * span;
+    mesh.position.set(ox - model.anchor[0] - 0.5, -model.anchor[1], -model.anchor[2] - 0.5);
+    variantGroup.add(mesh);
+    variantTiles.push({ x: ox, label: sd === null ? 'authored' : `seed ${sd}`, voxels: res.cells.size });
+  });
+  variantsDirty = false;
+}
+
+function updateBadge(res) {
+  let wood = 0, leaf = 0;
+  for (const ch of res.cells.values()) { if (model.palette[ch].role === 'leaf') leaf++; else wood++; }
+  const grownN = res.grown.reduce((a, b) => a + b, 0);
+  let topY = 0;
+  for (const n of sk.nodes) if (n.isTrunk && res.grown[n.id]) topY = Math.max(topY, n.level);
+  const pct = Math.round(100 * state.age / T.Tfull);
+  $('badge').innerHTML = `<span><b>${pct}%</b> grown</span><span><b>${grownN}</b>/${sk.nodes.length} nodes</span><span><b>${wood}</b> wood</span><span><b>${leaf}</b> leaves</span><span>trunk <b>${topY + 1} m</b></span>`;
+}
+
+function updateCheck() {
+  const el = $('check');
+  if (!checkResult) return;
+  if (checkResult.diff === 0) { el.className = 'badge ok'; el.textContent = `✓ Mature stage = model (${checkResult.total.toLocaleString()} voxels)`; }
+  else { el.className = 'badge bad'; el.textContent = `✗ Mature stage differs from the model in ${checkResult.diff} voxels`; }
+  el.title = 'The authored tree grown to full age with no jitter and no obstacles, compared voxel for voxel with the loaded model.';
+}
+
+function updateStats() {
+  const tips = sk.nodes.filter(n => !n.children.length).length;
+  $('s-nodes').textContent = sk.nodes.length;
+  $('s-tips').textContent = tips;
+  $('s-trunk').textContent = sk.nodes.filter(n => n.isTrunk).length;
+  $('s-wood').textContent = sk.woodList.length;
+  $('s-leaf').textContent = sk.leafList.length;
+  $('s-pruned').textContent = Vmain.pruned.reduce((a, b) => a + b, 0);
+  const minutes = T.Tfull * 30;
+  const h = minutes / 60, d = h / 24;
+  $('realtime').textContent = `Mature at day ${Math.round(T.Tfull).toLocaleString()}: about ${d >= 2 ? `${d.toFixed(1)} real days` : `${h.toFixed(1)} real hours`} of play, at a 30-minute in-game day (a trunk step every ${(T.Tt * 0.5).toFixed(1)} h, a branch step every ${(T.Tb * 0.5).toFixed(1)} h).`;
+  updateCheck();
+}
+
+function frame(force) {
+  const mode = state.view;
+  const id = `${model.name}|${mode}`;
+  if (!force && framedFor === id) return;
+  framedFor = id;
+  const h = model.sy, w = Math.max(model.sx, model.sz);
+  if (mode === 'grow') {
+    const dist = Math.max(h, w) * 1.9 + 6;
+    controls.target.set(0, h * 0.45, 0);
+    camera.position.set(dist * 0.62, h * 0.55 + dist * 0.25, dist * 0.78);
+  } else {
+    const total = (Math.max(model.sx, model.sz) + 5) * 6;
+    controls.target.set(0, h * 0.4, 0);
+    camera.position.set(0, h * 0.7 + total * 0.12, total * 0.95);
+  }
+  const R = mode === 'grow' ? Math.max(h, w) * 0.9 + 4 : (Math.max(model.sx, model.sz) + 5) * 3.4;
+  ground.scale.setScalar(mode === 'grow' ? Math.max(w * 2.2, 40) : R * 1.3);
+  sun.position.set(R * 0.6, R * 1.4 + h, R * 0.45);
+  sun.target.position.set(0, 0, 0);
+  Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R, near: 1, far: R * 4 + h * 2 });
+  sun.shadow.camera.updateProjectionMatrix();
+  controls.update();
+}
+
+function render() {
+  if (!model) return;
+  const grow = state.view === 'grow';
+  treeGroup.visible = grow; variantGroup.visible = !grow;
+  $('legend').style.display = grow ? '' : 'none';
+  $('badge').style.display = grow ? '' : 'none';
+  if (grow) renderGrow();
+  else if (variantsDirty) renderVariants();
+  // Footprint outline of the structure's cells.
+  const fx0 = -model.anchor[0] - 0.5, fz0 = -model.anchor[2] - 0.5, fx1 = fx0 + model.sx, fz1 = fz0 + model.sz;
+  const fp = grow ? [fx0, 0.02, fz0, fx1, 0.02, fz0, fx1, 0.02, fz0, fx1, 0.02, fz1, fx1, 0.02, fz1, fx0, 0.02, fz1, fx0, 0.02, fz1, fx0, 0.02, fz0] : [];
+  footprint.geometry.dispose();
+  footprint.geometry = new THREE.BufferGeometry();
+  footprint.geometry.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3));
+  frame(false);
+  updateLabels();
+  updateAgeRead();
+}
+
+function updateLabels() {
+  const box = $('labels');
+  if (state.view !== 'variants') { box.innerHTML = ''; return; }
+  if (box.children.length !== variantTiles.length) box.innerHTML = variantTiles.map(() => '<div class="vlabel"></div>').join('');
+  const rect = stageEl.getBoundingClientRect();
+  variantTiles.forEach((t, i) => {
+    const p = new THREE.Vector3(t.x, -0.6, Math.max(model.sz, model.sx) * 0.55).project(camera);
+    const el = box.children[i];
+    el.textContent = t.label;
+    el.style.left = `${(p.x * 0.5 + 0.5) * rect.width}px`;
+    el.style.top = `${(-p.y * 0.5 + 0.5) * rect.height}px`;
+    el.style.display = p.z < 1 ? '' : 'none';
+  });
+}
+
+function resize() {
+  const r = stageEl.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(1, r.height);
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stageEl);
+
+// ---------------------------------------------------------------------------------------------
+// Controls.
+function updateAgeRead() {
+  if (!T) return;
+  const age = $('age');
+  age.max = String(Math.ceil(T.Tfull));
+  age.value = String(Math.round(state.age));
+  $('age-days').textContent = `Day ${Math.round(state.age).toLocaleString()}`;
+  const realH = state.age * 0.5;
+  $('age-sub').textContent = `of ${Math.round(T.Tfull).toLocaleString()} · ${realH >= 48 ? `${(realH / 24).toFixed(1)} real days` : `${realH.toFixed(1)} real hours`}`;
+}
+function syncControls() {
+  $('p-trunk').value = state.trunkDays;
+  $('p-ratio').value = +state.ratio.toFixed(3);
+  $('p-speed').value = state.worldSpeed;
+  $('p-tip').value = state.tipRadius;
+  $('seed').value = state.seed;
+  $('j-angle').value = state.jitter.angle; $('o-angle').textContent = `±${state.jitter.angle}°`;
+  $('j-length').value = state.jitter.length; $('o-length').textContent = `±${Math.round(state.jitter.length * 100)}%`;
+  $('j-droop').value = state.jitter.droop; $('o-droop').textContent = `${state.jitter.droop.toFixed(1)}° per m`;
+  $('j-drop').value = state.jitter.drop; $('o-drop').textContent = `${Math.round(state.jitter.drop * 100)}%`;
+  $('opt-skel').checked = state.skeleton; $('opt-leaves').checked = state.leaves; $('opt-tips').checked = state.markTips; $('opt-variant').checked = state.showVariant;
+  for (const b of $('view-mode').children) b.setAttribute('aria-pressed', String(b.dataset.v === state.view));
+  for (const b of $('speed').children) b.setAttribute('aria-pressed', String(+b.dataset.v === state.speed));
+  for (const b of $('samples').children) b.setAttribute('aria-pressed', String(b.dataset.v === state.sample));
+  $('play').textContent = playing ? 'Pause' : 'Play';
+  $('tool-obstacle').setAttribute('aria-pressed', String(tool));
+  stageEl.classList.toggle('tool', tool);
+  const n = obstacleList().length;
+  $('obstacle-status').textContent = n ? `${n} obstacle${n > 1 ? 's' : ''}; ${Vmain ? Vmain.pruned.reduce((a, b) => a + b, 0) : 0} nodes pruned (dropped branches count too). ${tool ? 'Click a face or the ground to place; click a stone to remove.' : ''}` : `${tool ? 'Click a voxel face or the ground to place a stone.' : 'Turn on, then click a voxel face or the ground to place a stone; click a stone to remove it.'} A node whose core runs into a stone is pruned with everything beyond it.`;
+}
+
+let playing = false, tool = false, lastT = 0;
+for (const [k, s] of Object.entries(SAMPLES)) $('samples').insertAdjacentHTML('beforeend', `<button type="button" class="chip" data-v="${k}">${s.label}</button>`);
+$('samples').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.sample = b.dataset.v; state.custom = null;
+  setModel(SAMPLES[b.dataset.v].make(), 'Sample');
+});
+$('load-btn').addEventListener('click', () => loadText($('load-json').value, 'Loaded'));
+$('load-file').addEventListener('change', async e => { const f = e.target.files[0]; if (f) loadText(await f.text(), f.name); e.target.value = ''; });
+$('load-current').addEventListener('click', () => { $('load-json').value = JSON.stringify(model.raw, null, 1); });
+function loadText(text, label) {
+  try {
+    const obj = JSON.parse(text);
+    setModel(obj, label);
+    state.sample = 'custom'; state.custom = obj; syncControls(); save();
+  } catch (err) {
+    $('load-status').className = 'status err';
+    $('load-status').textContent = `Couldn't load: ${err.message}`;
+  }
+}
+$('age').addEventListener('input', e => { state.age = +e.target.value; render(); save(); });
+$('play').addEventListener('click', togglePlay);
+function togglePlay() {
+  playing = !playing;
+  if (playing && state.age >= T.Tfull - 0.5) state.age = 0;
+  lastT = performance.now();
+  syncControls();
+}
+$('speed').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; state.speed = +b.dataset.v; syncControls(); save(); });
+const stageAt = f => () => { state.age = Math.round(T.Tfull * f); playing = false; syncControls(); render(); save(); };
+$('age-0').addEventListener('click', stageAt(0));
+$('age-sapling').addEventListener('click', stageAt(0.25));
+$('age-young').addEventListener('click', stageAt(0.6));
+$('age-full').addEventListener('click', stageAt(1));
+const numField = (id, k, lo, hi) => $(id).addEventListener('change', e => {
+  const v = +e.target.value;
+  if (!Number.isFinite(v)) return;
+  const frac = state.age / T.Tfull;
+  state[k] = Math.max(lo, Math.min(hi, v));
+  T = timing(sk, params()); state.age = frac * T.Tfull;
+  recompute(false);
+});
+numField('p-trunk', 'trunkDays', 1, 1000); numField('p-ratio', 'ratio', 0.05, 1); numField('p-speed', 'worldSpeed', 0.05, 100); numField('p-tip', 'tipRadius', 0, 5);
+$('view-mode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; state.view = b.dataset.v; tool = false; syncControls(); render(); save(); });
+const toggle = (id, k, rebuild) => $(id).addEventListener('change', e => { state[k] = e.target.checked; if (rebuild) recompute(false); else { variantsDirty = true; render(); save(); } });
+toggle('opt-skel', 'skeleton'); toggle('opt-leaves', 'leaves'); toggle('opt-tips', 'markTips'); toggle('opt-variant', 'showVariant', true);
+$('seed').addEventListener('change', e => { state.seed = Math.max(0, Math.floor(+e.target.value || 0)); recompute(false); });
+$('roll').addEventListener('click', roll);
+function roll() { state.seed = hashN(state.seed, Date.now() & 0xffff) % 100000; recompute(false); }
+for (const [id, k] of [['j-angle', 'angle'], ['j-length', 'length'], ['j-droop', 'droop'], ['j-drop', 'drop']]) {
+  $(id).addEventListener('input', e => { state.jitter[k] = +e.target.value; syncControls(); });
+  $(id).addEventListener('change', () => recompute(false));
+}
+$('tool-obstacle').addEventListener('click', () => { tool = !tool; if (tool && state.view !== 'grow') state.view = 'grow'; syncControls(); render(); });
+$('obstacle-clear').addEventListener('click', () => { delete state.obstacles[obstacleKey()]; recompute(false); });
+
+// Obstacle placement by clicking (a click, not an orbit drag).
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let downAt = null;
+canvas.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (!tool || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+  const c = pickCell(e);
+  if (!c) return;
+  const list = obstacleList().slice();
+  const at = list.findIndex(o => o[0] === c.cell[0] && o[1] === c.cell[1] && o[2] === c.cell[2]);
+  if (c.remove && at >= 0) list.splice(at, 1);
+  else if (!c.remove && at < 0) list.push(c.cell);
+  state.obstacles[obstacleKey()] = list;
+  recompute(false);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!tool || e.buttons) { ghost.visible = false; return; }
+  const c = pickCell(e);
+  ghost.visible = !!c;
+  if (c) ghost.position.set(c.cell[0] + 0.5, c.cell[1] + 0.5, c.cell[2] + 0.5);
+});
+function pickCell(e) {
+  if (state.view !== 'grow') return null;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hits = ray.intersectObjects([treeMesh, ground], false);
+  if (!hits.length) return null;
+  const h = hits[0];
+  const local = treeGroup.worldToLocal(h.point.clone());
+  if (h.object === ground) return { cell: [Math.floor(local.x), model.anchor[1], Math.floor(local.z)] };
+  const nrm = h.face.normal;
+  const inside = [Math.floor(local.x - nrm.x * 0.5), Math.floor(local.y - nrm.y * 0.5), Math.floor(local.z - nrm.z * 0.5)];
+  if (obstacleList().some(o => o[0] === inside[0] && o[1] === inside[1] && o[2] === inside[2])) return { cell: inside, remove: true };
+  return { cell: [inside[0] + Math.round(nrm.x), inside[1] + Math.round(nrm.y), inside[2] + Math.round(nrm.z)] };
+}
+
+// Export: the growth and variants sections (TREE_GROWTH.md §6, in S1's variants-object form).
+function growthSection() {
+  return {
+    growth: {
+      engine: 'skeleton_reveal',
+      trunk_days_per_m: state.trunkDays,
+      branch_rate: +state.ratio.toFixed(4),
+      thickness: { op: 'pipe_model', exponent: 2, min: 1 },
+      leaves: { op: 'around_tips', radius: state.tipRadius },
+      blocked: 'prune_subtree',
+    },
+    variants: {
+      ...(model.raw.variants && !Array.isArray(model.raw.variants) ? model.raw.variants : {}),
+      branch_jitter: { angle_deg: state.jitter.angle, length: state.jitter.length, droop_deg_per_m: state.jitter.droop, drop_chance: state.jitter.drop },
+    },
+  };
+}
+$('export-growth').addEventListener('click', async () => {
+  const text = JSON.stringify({ ...growthSection(), $world_settings: { growth_speed: state.worldSpeed } }, null, 2);
+  const area = $('export-json');
+  area.hidden = false; area.value = text; area.select();
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch {}
+  $('export-status').textContent = ok ? 'Copied. The growth speed is a world setting, shown alongside, not structure data.' : 'Select the text above and copy it.';
+});
+$('export-structure').addEventListener('click', () => {
+  const raw = structuredClone(model.raw);
+  const pal = {};
+  for (const [ch, p] of Object.entries(model.palette)) pal[ch] = p === null ? null : p.role === 'air' ? p.block : { block: p.block, role: p.role === 'other' ? undefined : p.role };
+  raw.palette = pal;
+  Object.assign(raw, growthSection());
+  const blob = new Blob([JSON.stringify(raw, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `${model.name.split(':').pop()}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea')) return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'r') roll();
+  else if (e.key === 'k') { state.skeleton = !state.skeleton; syncControls(); render(); save(); }
+  else if (e.key === 'l') { state.leaves = !state.leaves; variantsDirty = true; syncControls(); render(); save(); }
+  else if (e.key === 'o') $('tool-obstacle').click();
+  else if (e.key === 'v') { state.view = state.view === 'grow' ? 'variants' : 'grow'; syncControls(); render(); save(); }
+});
+
+let lastSig = '';
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (playing && T) {
+    const dt = Math.min(0.1, (now - lastT) / 1000);
+    state.age = Math.min(T.Tfull, state.age + dt * state.speed);
+    if (state.age >= T.Tfull) { playing = false; syncControls(); save(); }
+    const sig = `${Math.floor(state.age)}`;
+    if (sig !== lastSig) { lastSig = sig; render(); }
+  }
+  lastT = now;
+  controls.update();
+  if (state.view === 'variants') updateLabels();
+  renderer.render(scene, camera);
+}
+
+// Boot: the saved state, else the oak sample.
+loadSaved();
+resize();
+try {
+  if (state.sample === 'custom' && state.custom) setModel(state.custom, 'Saved');
+  else setModel((SAMPLES[state.sample] || SAMPLES.oak).make(), 'Sample');
+} catch (err) {
+  state.sample = 'oak'; state.custom = null;
+  setModel(SAMPLES.oak.make(), 'Sample');
+}
+frame(true);
+requestAnimationFrame(loop);
+// Hooks for scripted checks (the Playwright verification in the PR).
+window.__treeGrowth = { get state() { return state; }, get sk() { return sk; }, get T() { return T; }, get check() { return checkResult; }, setAge(d) { state.age = d; render(); }, render, recompute, SAMPLES, setModel, parseStructure, frame };
+</script>
