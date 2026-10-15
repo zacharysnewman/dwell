@@ -184,17 +184,22 @@ that touches the public API, a release or the workflows:
 
 ## Known CI failures (e2e, not caused by feature work)
 
-Check these before chasing an e2e failure. Both were seen with the C++/Three.js build before the
-Rust cutover (Phase 24); whether they persist on the Rust build is not yet known from CI (both pass
-locally on it):
+Check these before chasing an e2e failure:
 
-- `e2e/touch.spec.ts` "touch controls: stick, look, and jump": on CI the jump peak read exactly
-  0.4158 m against a 0.5 m bar (every run, deterministic there; it passed locally). Cause not found:
-  if it recurs and you fix it, find why CI's jump stops short rather than only widening the wait.
-- `e2e/play.spec.ts` "two clients on a native server see each other move": one run showed a single
-  prediction snap (`snaps: 1`, `lastCorrection` ~2.1 m) and passed on other runs of the same code.
-  Treat as an intermittent timing failure on loaded runners; if it fails twice in a row on one
-  commit, it is real.
+- `e2e/touch.spec.ts` "touch controls: stick, look, and jump": the jump peak has read short of the
+  0.5 m bar on CI. On the C++ build it read exactly 0.4158 m on every run. On the Rust build it
+  read 0.455 m on one PR branch (A1, run 38694905876), and it passed on main's runs up to 9a4dc44.
+  Locally on SwiftShader it read 0.11 m before the slow-device fix (`MAX_TICKS_PER_FRAME`,
+  2026-10-15) and passed after. If it recurs, check the page's tick rate (`stats.ticks` against
+  wall time) before widening the wait.
+- CI's software renderer draws the e2e pages at ~5 fps. That is why `play.spec.ts`'s two-client
+  test snapped (fixed 2026-10-15: a client that dropped time predicted fewer ticks than the
+  server's 60 Hz). A page that predicts far fewer than 60 ticks a second is the first thing to
+  check when prediction misbehaves only on CI.
+- Locally on a Mac, the suite's SwiftShader flags run the pages at ~3 fps, slower than CI. Then
+  the native-server and friend tests (`edit` ×2, `friend`, `join:30`, `lobby`, `play` two-client)
+  time out waiting for terrain or a join, and they pass on CI. To check those locally, run with
+  the real GPU: a copy of `playwright.config.ts` without the four SwiftShader flags.
 - The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (5); update it when the palette
   changes.
 
