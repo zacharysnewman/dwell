@@ -16,6 +16,7 @@ pub mod timing;
 
 use dwell_world::hash::HashMap;
 
+use dwell_game::brush_tool::BrushOutline;
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
 use dwell_look::{DEFAULT_EXPOSURE, LIGHT, hex, sanitize_exposure, srgb_to_linear};
@@ -337,7 +338,14 @@ enum DrawMesh {
     Outline,
     Debug,
     Region(usize),
+    Brush,
 }
+
+/// The brush outline's colour (BRUSHES.md): warm, apart from the region tools' white and blue.
+const BRUSH_COLOR: u32 = 0xffb347;
+/// How far a brush outline reaches from its centre at most (m): a line's length aside, the
+/// largest brush stretched, for the passes it is drawn in.
+const MAX_BRUSH_EXTENT: f32 = 80.0;
 
 pub struct Renderer {
     device: wgpu::Device,
@@ -371,6 +379,8 @@ pub struct Renderer {
     debug: Option<GpuMesh>,
     /// The region tools' boxes, each with its edges (rebuilt only when the boxes change).
     region_boxes: Vec<(RegionBox, GpuMesh)>,
+    /// The brush tool's wireframe (rebuilt only when it changes).
+    brush: Option<(BrushOutline, GpuMesh)>,
     /// The GPU pages every mesh lives in (arena.rs).
     arena: ArenaRef,
     eye: V3,
@@ -707,6 +717,7 @@ impl Renderer {
             outline_mesh,
             debug: None,
             region_boxes: Vec::new(),
+            brush: None,
             arena,
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
@@ -925,6 +936,21 @@ impl Renderer {
             })
             .collect();
     }
+    /// The brush tool's wireframe (BRUSHES.md), outlined over the terrain, or none.
+    pub fn set_brush_outline(&mut self, outline: Option<&BrushOutline>) {
+        if self.brush.as_ref().map(|(o, _)| o) == outline {
+            return;
+        }
+        self.brush = outline.filter(|o| !o.segments.is_empty()).map(|o| {
+            let c = hex(BRUSH_COLOR).map(|v| v as f32);
+            let pts: Vec<([f32; 3], [f32; 3])> = o
+                .segments
+                .iter()
+                .flat_map(|&(a, b)| [(a, c), (b, c)])
+                .collect();
+            (o.clone(), GpuMesh::lines(&self.arena, &pts))
+        });
+    }
     pub fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
             Some(v) => {
@@ -1087,6 +1113,10 @@ impl Renderer {
             DrawMesh::Outline => (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()]),
             DrawMesh::Region(i) => {
                 let m = &self.region_boxes[*i].1;
+                (m, vec![m.parts[0].clone()])
+            }
+            DrawMesh::Brush => {
+                let m = &self.brush.as_ref().expect("collected").1;
                 (m, vec![m.parts[0].clone()])
             }
             DrawMesh::Debug => {
@@ -1288,6 +1318,28 @@ impl Renderer {
                 key: 0,
                 mesh: DrawMesh::Region(i),
             });
+        }
+        // The brush wireframe (BRUSHES.md): over everything, like the region boxes.
+        if let Some((o, _)) = &self.brush {
+            let side = 2.0 * f64::from(MAX_BRUSH_EXTENT);
+            let corner = o.origin.map(|v| v - f64::from(MAX_BRUSH_EXTENT));
+            let passes = reaches(corner, side);
+            if passes != 0 {
+                let r = self.rel(o.origin);
+                out.push(DrawItem {
+                    kind: Kind::Line,
+                    water: false,
+                    no_depth: true,
+                    offset: [r[0], r[1], r[2], 1.0],
+                    clip: None,
+                    tint: [1.0, 1.0, 1.0, 0.95],
+                    rotation: NO_ROTATION,
+                    page: 0,
+                    passes,
+                    key: 0,
+                    mesh: DrawMesh::Brush,
+                });
+            }
         }
         // Debug lines: in the pass that draws from the near plane.
         let passes = u8::from(passes[0].0 < NEAR_PLANE * 2.0)
@@ -1650,6 +1702,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
         Renderer::set_region_boxes(self, boxes);
+    }
+    fn set_brush_outline(&mut self, outline: Option<&BrushOutline>) {
+        Renderer::set_brush_outline(self, outline);
     }
     fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
         Renderer::set_debug_lines(self, lines);

@@ -11,6 +11,7 @@ use dwell_protocol::InputFrame;
 
 pub use dwell_physics::net::{dequantize_pitch, dequantize_yaw, quantize_pitch, quantize_yaw};
 
+use crate::brush_tool::{BrushAction, brush_key};
 use crate::flight::FlightToggle;
 use crate::flight_speed::clamp_fly_speed_level;
 use crate::region_tools::{ToolAction, tool_for_key};
@@ -96,6 +97,8 @@ pub enum InputEvent {
     FlightChanged(bool),
     /// A region tool's key (`region_tools::tool_for_key`).
     Tool(ToolAction),
+    /// A brush tool's key (`brush_tool::brush_key`).
+    Brush(BrushAction),
 }
 
 /// A key press's results: whether the shell should `preventDefault()` it, and what it asks for.
@@ -138,6 +141,9 @@ pub struct KeyboardMouseInput {
     pub flight: FlightToggle,
     /// The pointer is locked to the game view (the shell tracks `pointerLockElement`).
     pub pointer_locked: bool,
+    /// The world allows brushes (V turns the tool on), and the tool is on (its keys are live).
+    pub brushes: bool,
+    pub brush_active: bool,
 }
 
 impl Default for KeyboardMouseInput {
@@ -148,6 +154,8 @@ impl Default for KeyboardMouseInput {
             sensitivity: 0.12,
             flight: FlightToggle::new(),
             pointer_locked: false,
+            brushes: false,
+            brush_active: false,
         }
     }
 }
@@ -214,6 +222,22 @@ impl KeyboardMouseInput {
         // Region tools (§6.5), only while playing (the pointer locked: never while typing in a
         // menu). The key is not held: with ⌘ down, macOS sends no keyup for it.
         let shift = self.keys.contains("ShiftLeft") || self.keys.contains("ShiftRight");
+        // The brush tool (BRUSHES.md), in worlds that allow it: V, and its keys while it is on.
+        if self.pointer_locked
+            && self.brushes
+            && !ctrl
+            && !meta
+            && let Some(action) = brush_key(code, shift, self.brush_active)
+        {
+            return KeyDown {
+                prevent_default: true,
+                events: if repeat && action == BrushAction::Toggle {
+                    Vec::new()
+                } else {
+                    vec![InputEvent::Brush(action)]
+                },
+            };
+        }
         if self.pointer_locked
             && let Some(tool) = tool_for_key(code, ctrl || meta, shift)
         {
@@ -431,6 +455,51 @@ mod tests {
         // C alone still crouches.
         input.key_down("KeyC", false, false, false, 0.0);
         assert!(input.sample(None).crouch);
+    }
+
+    #[test]
+    fn brush_keys_only_where_brushes_are_allowed_and_while_the_tool_is_on() {
+        let mut input = KeyboardMouseInput::new();
+        input.pointer_locked = true;
+        // A world without brushes: V and E are not taken (nothing else binds them).
+        assert!(
+            input
+                .key_down("KeyV", false, false, false, 0.0)
+                .events
+                .is_empty()
+        );
+        input.blur();
+        input.brushes = true;
+        assert_eq!(
+            input.key_down("KeyV", false, false, false, 0.0).events,
+            vec![InputEvent::Brush(BrushAction::Toggle)]
+        );
+        assert!(
+            input
+                .key_down("KeyE", false, false, false, 0.0)
+                .events
+                .is_empty()
+        );
+        input.blur();
+        input.brush_active = true;
+        assert_eq!(
+            input.key_down("KeyE", false, false, false, 0.0).events,
+            vec![InputEvent::Brush(BrushAction::NextPreset)]
+        );
+        // Held ] keeps growing the brush; Ctrl+Z is still undo, not the brush cycle.
+        assert_eq!(
+            input
+                .key_down("BracketRight", true, false, false, 0.0)
+                .events,
+            vec![InputEvent::Brush(BrushAction::Bigger)]
+        );
+        assert_eq!(
+            input.key_down("KeyZ", false, true, false, 0.0).events,
+            vec![InputEvent::Tool(ToolAction::Undo)]
+        );
+        // Walking still walks.
+        input.key_down("KeyW", false, false, false, 0.0);
+        assert!(input.sample(None).move_y > 0.0);
     }
 
     #[test]

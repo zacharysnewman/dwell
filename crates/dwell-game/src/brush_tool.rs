@@ -71,6 +71,21 @@ pub struct BrushOutline {
     pub segments: Vec<([f32; 3], [f32; 3])>,
 }
 
+/// What the HUD's brush panel shows (`BrushTool::panel`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BrushPanel {
+    pub preset: &'static str,
+    pub brush: &'static str,
+    pub performer: &'static str,
+    pub size: u8,
+    /// The hotbar's block, by name.
+    pub material: String,
+    /// What a replace (or a target mask) replaces, when the performer uses it.
+    pub replace: Option<String>,
+    /// The last action's message.
+    pub note: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct BrushTool {
     /// The server takes brushes in this world (`welcome_flags::BRUSHES`).
@@ -361,43 +376,22 @@ impl BrushTool {
         Some(BrushOutline { origin, segments })
     }
 
-    /// One line for the HUD while the tool is on: preset, brush, performer, size, the blocks.
-    pub fn status(&self, material: StateId) -> String {
-        if !self.active() {
-            return String::new();
-        }
-        let s = &self.spec;
-        let mut parts = vec![format!(
-            "{} · {} · {} · size {}",
-            PRESETS[self.preset].label,
-            s.brush.label(),
-            s.performer.label(),
-            s.size
-        )];
-        parts.push(block_name(material));
-        if s.performer.uses_target(s.params.mask) {
-            parts.push(format!(
-                "replacing {}",
-                self.replace.map_or("the aimed-at block".into(), block_name)
-            ));
-        }
-        if !self.note.is_empty() {
-            parts.push(self.note.clone());
-        }
-        parts.join(" · ")
-    }
-
-    /// The HUD panel's fields: (preset, brush, performer, size, replace target name).
-    pub fn panel(&self) -> Option<(&'static str, &'static str, &'static str, u8, Option<String>)> {
+    /// The HUD panel's fields while the tool is on.
+    pub fn panel(&self, material: StateId) -> Option<BrushPanel> {
         self.active().then(|| {
             let s = &self.spec;
-            (
-                PRESETS[self.preset].label,
-                s.brush.label(),
-                s.performer.label(),
-                s.size,
-                self.replace.map(block_name),
-            )
+            BrushPanel {
+                preset: PRESETS[self.preset].label,
+                brush: s.brush.label(),
+                performer: s.performer.label(),
+                size: s.size,
+                material: block_name(material),
+                replace: s
+                    .performer
+                    .uses_target(s.params.mask)
+                    .then(|| self.replace.map_or("aimed-at block".into(), block_name)),
+                note: self.note.clone(),
+            }
         })
     }
 

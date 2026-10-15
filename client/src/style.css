@@ -1487,6 +1487,58 @@ body:has(#main-menu) #build-info {
   display: none;
 }
 
+/* The brush tool's panel (BRUSHES.md): preset, brush, performer, size, blocks, keys. */
+#brush-panel {
+  min-width: 220px;
+  max-width: min(92vw, 420px);
+  padding: 7px 12px 8px;
+  border: 1px solid var(--glass-line);
+  border-left: 3px solid #ffb347;
+  border-radius: 8px;
+  background: var(--glass);
+  font: 600 12px var(--font-body);
+  text-shadow: 0 1px 3px rgb(0 0 0 / 60%);
+}
+
+#brush-panel[hidden],
+#brush-panel .brush-note[hidden] {
+  display: none;
+}
+
+#brush-panel .brush-title {
+  margin-bottom: 4px;
+  font: 800 14px var(--font-display);
+  color: #ffcf8a;
+}
+
+#brush-panel .brush-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 12px;
+  margin: 0;
+}
+
+#brush-panel dt {
+  opacity: 0.7;
+}
+
+#brush-panel dd {
+  margin: 0;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+#brush-panel .brush-note {
+  margin-top: 4px;
+  font-weight: 700;
+}
+
+#brush-panel .brush-hint {
+  margin-top: 5px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 .hotbar-slots {
   display: flex;
   gap: 4px;

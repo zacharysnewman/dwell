@@ -13,6 +13,7 @@ use dwell_client::net::session::{Out, Session, SessionState};
 use dwell_client::pool::{InlineJobs, Pool};
 use dwell_client::render::display::RenderStats;
 use dwell_client::render::{Line, PlayerView, RegionBox, StandIn};
+use dwell_game::brush_tool::{BrushAction, BrushOutline};
 use dwell_game::input::{EditAction, KeyboardMouseInput};
 use dwell_game::region_tools::ToolAction;
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
@@ -21,7 +22,7 @@ use dwell_protocol::{Channel, TransportKind};
 use dwell_sim::entropy::SeededEntropy;
 use dwell_sim::server::OutKind;
 use dwell_storage::StorageBackend;
-use dwell_world::{ChunkCoord, GENERATOR_TERRAIN};
+use dwell_world::{ChunkCoord, GENERATOR_SANDBOX, GENERATOR_TERRAIN};
 use ed25519_dalek::{Signer, SigningKey};
 
 #[derive(Default)]
@@ -34,6 +35,7 @@ struct Recorder {
     camera: Option<[f64; 3]>,
     outline: Option<[f64; 3]>,
     region_boxes: Vec<RegionBox>,
+    brush: Option<BrushOutline>,
 }
 
 impl Scene for Recorder {
@@ -72,6 +74,9 @@ impl Scene for Recorder {
     fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
         self.region_boxes = boxes.to_vec();
     }
+    fn set_brush_outline(&mut self, outline: Option<&BrushOutline>) {
+        self.brush = outline.cloned();
+    }
     fn set_debug_lines(&mut self, _lines: Option<&[Line]>) {}
     fn stats(&self) -> RenderStats {
         RenderStats::default()
@@ -79,6 +84,7 @@ impl Scene for Recorder {
 }
 
 struct Rig {
+    generator: u32,
     core: LocalCore,
     session: Session,
     key: SigningKey,
@@ -97,9 +103,13 @@ const SEED: u64 = 1;
 
 impl Rig {
     fn new() -> Self {
+        Self::with_generator(GENERATOR_TERRAIN)
+    }
+
+    fn with_generator(generator: u32) -> Self {
         let mut core = LocalCore::create(
             SEED,
-            GENERATOR_TERRAIN,
+            generator,
             None::<NoStorage>,
             Box::new(SeededEntropy(1)),
         )
@@ -109,6 +119,7 @@ impl Rig {
         let mut session = Session::new([0; 32], key.verifying_key().to_bytes(), "Me", "t", 1000.0);
         session.start(0.0);
         Self {
+            generator,
             core,
             session,
             key,
@@ -188,7 +199,7 @@ impl Rig {
             } = self.session.state().clone()
         {
             let pool = Pool::new(Box::new(InlineJobs::new(Runner::world(
-                GENERATOR_TERRAIN,
+                self.generator,
                 SEED,
             ))));
             let c = ChunkCoord::from_array(verification_chunk);
@@ -350,6 +361,80 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     assert!(
         rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == before),
         "undo puts the block back"
+    );
+}
+
+#[test]
+fn a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_step() {
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined {
+        region_edits,
+        brushes,
+        generator_version,
+        ..
+    } = rig.session.state().clone()
+    else {
+        panic!("joined")
+    };
+    assert!(brushes, "a sandbox server announces brushes");
+    let game = rig.game.as_mut().unwrap();
+    game.set_capabilities(region_edits, brushes, generator_version);
+    assert!(game.brush.available);
+    assert!(game.brush.reach >= 128.0);
+    game.brush_key(BrushAction::Toggle);
+    let ball = dwell_world::brush::PRESETS
+        .iter()
+        .position(|p| p.name == "ball")
+        .unwrap();
+    game.brush_key(BrushAction::Preset(ball));
+    game.interaction.select(0); // stone
+    // Looking down at the floor a few metres ahead: the brush aims there and outlines itself.
+    rig.input.look.pitch = -45.0;
+    assert!(rig.run_until(30, |r| r.game.as_ref().unwrap().brush.target().is_some()));
+    assert!(rig.scene.borrow().brush.is_some(), "the brush is outlined");
+    let target = rig.game.as_ref().unwrap().brush.target().unwrap().cell;
+    let above = [target[0], target[1] + 1, target[2]];
+    let stone = dwell_blocks::require("dwell:stone");
+    let now = rig.now;
+    assert!(
+        rig.game.as_mut().unwrap().brush_apply(false, now),
+        "the stroke is queued"
+    );
+    assert!(
+        rig.run_until(60, |r| r
+            .game
+            .as_mut()
+            .unwrap()
+            .voxel(above[0], above[1], above[2])
+            == stone),
+        "the server's modification arrives"
+    );
+    // The floor stays, and one undo takes the whole ball away.
+    let floor = rig
+        .game
+        .as_mut()
+        .unwrap()
+        .voxel(target[0], target[1], target[2]);
+    assert!(
+        dwell_blocks::info(floor).indestructible,
+        "the sandbox floor"
+    );
+    assert_eq!(rig.game.as_ref().unwrap().region.undo_depth(), (1, 0));
+    let now = rig.now;
+    rig.game.as_mut().unwrap().tool(ToolAction::Undo, now);
+    assert!(
+        rig.run_until(60, |r| r
+            .game
+            .as_mut()
+            .unwrap()
+            .voxel(above[0], above[1], above[2])
+            == 0),
+        "undo takes the stroke back"
     );
 }
 
