@@ -6,6 +6,7 @@
 //! worldgen, network) are traits or callbacks, so it all runs natively under test and in the browser.
 
 pub mod block_interaction;
+pub mod brush_tool;
 pub mod chunk_diff;
 pub mod chunk_stream;
 pub mod eye;
