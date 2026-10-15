@@ -5,13 +5,11 @@ use crate::motion::*;
 /// The motion effects' tunables (shared/look/motion.json).
 pub const MOTION: MotionTunables = MotionTunables {
     fov: FovTunables {
-        sprint_boost_deg: 10.0,
-        flight_boost_deg: 18.0,
+        sprint_boost_pct: 10.0,
+        flight_boost_pct: 20.0,
         full_mps: 2000.0,
         widen_rate: 8.0,
         settle_rate: 3.5,
-        max_horizontal_deg: 118.0,
-        max_vertical_deg: 100.0,
     },
     wind: WindTunables {
         start: 0.5,

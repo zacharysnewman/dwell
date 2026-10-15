@@ -1,14 +1,12 @@
 {
   "$comment": "Motion effects' tunables (docs/MOTION_EFFECTS.md, Phase 29): the speed FOV and the wind streaks. Speeds are relative to the controller's walk and run speeds (dwell-physics config) except the m/s fields. Run `node shared/look/gen.mjs` after editing; CI fails if crates/dwell-look/src/motion.gen.rs is stale.",
   "fov": {
-    "$comment": "Degrees added to the vertical FOV: eased 0 → sprintBoostDeg from walk to run speed, then up to flightBoostDeg at fullMps on a log scale. Critically damped spring rates (1/s): widen fast, settle slower. The boosted view never exceeds these caps (or the unboosted view, if that is already wider).",
-    "sprintBoostDeg": 10,
-    "flightBoostDeg": 18,
+    "$comment": "The vertical FOV widens by a percentage of the base (the player's Field of view setting): eased 0 → sprintBoostPct from walk to run speed, then up to flightBoostPct at fullMps on a log scale (75° → 82.5° and 90°). Critically damped spring rates (1/s): widen fast, settle slower.",
+    "sprintBoostPct": 10,
+    "flightBoostPct": 20,
     "fullMps": 2000,
     "widenRate": 8,
-    "settleRate": 3.5,
-    "maxHorizontalDeg": 118,
-    "maxVerticalDeg": 100
+    "settleRate": 3.5
   },
   "wind": {
     "$comment": "Streak intensity 0–1: 0 until `start` of the way from walk to run speed, sprintIntensity at run speed, 1 at fullMps (log scale). Streaks: count around the vanishing point (flightStreaks more fade in above sprint), lit fraction of each cycle (length), width in CSS px, peak opacity, colour (sRGB), the screen-centre radii they fade in between (units of half the screen height), the edge vignette's strength, the flow speed, and the edge blur toward the vanishing point (a fraction of the distance to it, at full intensity, from the scene colour).",

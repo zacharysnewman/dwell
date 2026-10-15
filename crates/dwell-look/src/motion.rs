@@ -15,17 +15,14 @@ pub use generated::MOTION;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FovTunables {
-    /// Degrees added at run speed (eased in from walk speed).
-    pub sprint_boost_deg: f64,
-    /// Degrees added at `full_mps` and above (log-scaled from run speed).
-    pub flight_boost_deg: f64,
+    /// Percent of the base FOV added at run speed (eased in from walk speed).
+    pub sprint_boost_pct: f64,
+    /// Percent added at `full_mps` and above (log-scaled from run speed).
+    pub flight_boost_pct: f64,
     pub full_mps: f64,
     /// Critically damped spring rates (1/s) toward a wider and a narrower target.
     pub widen_rate: f64,
     pub settle_rate: f64,
-    /// The boosted view's caps (degrees); a view already wider than these is never narrowed.
-    pub max_horizontal_deg: f64,
-    pub max_vertical_deg: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -101,13 +98,13 @@ fn state_gain(t: &MotionTunables, state: PlayerState) -> f64 {
     t.state_gain[state as usize]
 }
 
-/// Degrees the vertical FOV widens by at `speed` (m/s) in `state`, before smoothing.
+/// Percent of the base the vertical FOV widens by at `speed` (m/s) in `state`, before smoothing.
 pub fn target_fov_boost(speed: f64, state: PlayerState, s: Speeds, t: &MotionTunables) -> f64 {
     let f = &t.fov;
     let sprint = smoothstep((speed - s.walk) / (s.run - s.walk).max(1e-6));
     let flight = smoothstep(log_ramp(speed, s.run, f.full_mps));
     let boost =
-        f.sprint_boost_deg * sprint + (f.flight_boost_deg - f.sprint_boost_deg).max(0.0) * flight;
+        f.sprint_boost_pct * sprint + (f.flight_boost_pct - f.sprint_boost_pct).max(0.0) * flight;
     boost * state_gain(t, state)
 }
 
@@ -145,23 +142,21 @@ impl Spring {
     }
 }
 
-/// Horizontal field of view (degrees) that a vertical one gives at an aspect ratio (width / height).
-pub fn horizontal_fov(vertical_deg: f64, aspect: f64) -> f64 {
-    (2.0 * ((vertical_deg.to_radians() / 2.0).tan() * aspect).atan()).to_degrees()
-}
-/// The vertical field of view that gives a horizontal one.
-fn vertical_for_horizontal(horizontal_deg: f64, aspect: f64) -> f64 {
-    (2.0 * ((horizontal_deg.to_radians() / 2.0).tan() / aspect).atan()).to_degrees()
-}
+/// The widest the boosted view may be (degrees, vertical): a safety net.
+pub const MAX_BOOSTED_FOV: f64 = 120.0;
 
-/// The vertical FOV a frame draws with: `base` (the screen's unboosted FOV) widened by `boost`
-/// degrees, but never past the caps — the horizontal one, then the vertical — unless the base view
-/// already is (a cap never narrows the view).
-pub fn effective_fov(base: f64, boost: f64, aspect: f64, t: &MotionTunables) -> f64 {
-    let wanted = base + boost.max(0.0);
-    let by_width = vertical_for_horizontal(t.fov.max_horizontal_deg, aspect);
-    let cap = by_width.min(t.fov.max_vertical_deg).max(base);
-    wanted.min(cap)
+/// The vertical FOV a frame draws with: `base` (the screen's unboosted FOV, from the player's
+/// Field of view setting) zoomed out by `boost_pct` percent — the view's half-height tangent
+/// scaled, as a camera zoom is: `2·atan(tan(base / 2) · (1 + boost))`. It feels the same at any
+/// base and tapers at wide ones; clamped to [`MAX_BOOSTED_FOV`] (never below the base).
+pub fn effective_fov(base: f64, boost_pct: f64) -> f64 {
+    let k = 1.0 + boost_pct.max(0.0) / 100.0;
+    let v = 2.0 * ((base.to_radians() / 2.0).tan() * k).atan().to_degrees();
+    if boost_pct <= 0.0 {
+        base
+    } else {
+        v.min(MAX_BOOSTED_FOV.max(base))
+    }
 }
 
 /// Where the direction of travel projects on the screen (NDC, ±1 at the edges) and +1 when moving
@@ -196,8 +191,8 @@ pub struct MotionInput {
 /// What the renderer draws with this frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MotionOutput {
-    /// Degrees added to the vertical FOV (before the caps, `effective_fov`).
-    pub fov_boost_deg: f64,
+    /// Percent of the base FOV added (`effective_fov`).
+    pub fov_boost_pct: f64,
     /// 0–1.
     pub wind: f64,
     /// The flight layer 0–1 (the wind beyond sprint intensity).
@@ -295,7 +290,7 @@ impl MotionFx {
         let wind = self.wind.value.clamp(0.0, 1.0);
         let s = t.wind.sprint_intensity;
         MotionOutput {
-            fov_boost_deg: self.fov.value.max(0.0),
+            fov_boost_pct: self.fov.value.max(0.0),
             wind,
             flight: if s < 1.0 {
                 ((wind - s) / (1.0 - s)).clamp(0.0, 1.0)
@@ -352,15 +347,15 @@ mod tests {
         let at = |v: f64| target_fov_boost(v, PlayerState::Running, SPEEDS, t);
         assert_eq!(at(0.0), 0.0);
         assert_eq!(at(SPEEDS.walk), 0.0);
-        assert!((at(SPEEDS.run) - t.fov.sprint_boost_deg).abs() < 1e-9);
-        assert!(at(6.5) > 0.0 && at(6.5) < t.fov.sprint_boost_deg);
+        assert!((at(SPEEDS.run) - t.fov.sprint_boost_pct).abs() < 1e-9);
+        assert!(at(6.5) > 0.0 && at(6.5) < t.fov.sprint_boost_pct);
         // Log-scaled beyond run speed: 100 m/s is well short of the flight boost, the full speed reaches it.
         let mid = at(100.0);
         assert!(
-            mid > t.fov.sprint_boost_deg && mid < t.fov.flight_boost_deg,
+            mid > t.fov.sprint_boost_pct && mid < t.fov.flight_boost_pct,
             "{mid}"
         );
-        assert!((at(t.fov.full_mps) - t.fov.flight_boost_deg).abs() < 1e-9);
+        assert!((at(t.fov.full_mps) - t.fov.flight_boost_pct).abs() < 1e-9);
         assert_eq!(at(1e9), at(t.fov.full_mps));
         // Monotonic.
         let mut last = 0.0;
@@ -386,7 +381,7 @@ mod tests {
     fn a_tunable_changed_by_data_changes_the_effect() {
         let mut t = MOTION;
         let before = target_fov_boost(SPEEDS.run, PlayerState::Running, SPEEDS, &t);
-        t.fov.sprint_boost_deg = 4.0;
+        t.fov.sprint_boost_pct = 4.0;
         assert_eq!(
             target_fov_boost(SPEEDS.run, PlayerState::Running, SPEEDS, &t),
             4.0
@@ -435,12 +430,12 @@ mod tests {
         let mut fx = MotionFx::new();
         let mut i = input(SPEEDS.run, PlayerState::Running);
         let (mut up, mut down) = (0, 0);
-        while fx.fov.value < 0.9 * t.fov.sprint_boost_deg {
+        while fx.fov.value < 0.9 * t.fov.sprint_boost_pct {
             run(&mut fx, &mut i, 1.0 / 60.0, t);
             up += 1;
         }
         i.velocity = [0.0; 3];
-        while fx.fov.value > 0.1 * t.fov.sprint_boost_deg {
+        while fx.fov.value > 0.1 * t.fov.sprint_boost_pct {
             run(&mut fx, &mut i, 1.0 / 60.0, t);
             down += 1;
         }
@@ -449,23 +444,30 @@ mod tests {
     }
 
     #[test]
-    fn the_caps_bound_the_horizontal_and_vertical_view_but_never_narrow_it() {
+    fn the_boost_zooms_the_base_out_by_a_percentage_at_any_setting() {
         let t = &MOTION;
-        let wide = 16.0 / 9.0;
-        let base = 67.0;
-        let v = effective_fov(base, 40.0, wide, t);
-        assert!((horizontal_fov(v, wide) - t.fov.max_horizontal_deg).abs() < 1e-6);
-        // A tall screen stops at the vertical cap.
-        let v = effective_fov(75.0, 60.0, 0.4, t);
-        assert!((v - t.fov.max_vertical_deg).abs() < 1e-9);
-        // Under the caps the boost is added whole; none leaves the base as it is.
-        assert!((effective_fov(base, 5.0, wide, t) - (base + 5.0)).abs() < 1e-9);
-        assert_eq!(effective_fov(base, 0.0, wide, t), base);
-        assert_eq!(effective_fov(base, -3.0, wide, t), base);
-        // A base already past the caps (a very wide screen) is kept, not narrowed.
-        let mut low = MOTION;
-        low.fov.max_horizontal_deg = 90.0;
-        assert_eq!(effective_fov(base, 10.0, wide, &low), base);
+        let sprint = target_fov_boost(SPEEDS.run, PlayerState::Running, SPEEDS, t);
+        let flight = target_fov_boost(t.fov.full_mps, PlayerState::Flying, SPEEDS, t);
+        assert_eq!(
+            (sprint, flight),
+            (10.0, 20.0),
+            "+10 % sprinting, +20 % at top flight speed"
+        );
+        // 2·atan(tan(base / 2) · (1 + boost)) at boosts 0, 10 % and 20 %.
+        for (base, want) in [
+            (60.0, [60.0, 64.838, 69.430]),
+            (75.0, [75.0, 80.333, 85.277]),
+            (100.0, [100.0, 105.326, 110.074]),
+        ] {
+            for (pct, w) in [0.0, sprint, flight].into_iter().zip(want) {
+                let got = effective_fov(base, pct);
+                assert!((got - w).abs() < 1e-3, "{base}° + {pct} %: {got}");
+            }
+            assert_eq!(effective_fov(base, -3.0), base);
+        }
+        // The safety net: never past 120°, never narrower than the base.
+        assert_eq!(effective_fov(115.0, 50.0), MAX_BOOSTED_FOV);
+        assert_eq!(effective_fov(125.0, 10.0), 125.0);
     }
 
     #[test]
@@ -475,7 +477,7 @@ mod tests {
             let mut fx = MotionFx::new();
             let mut i = input(SPEEDS.run, PlayerState::Running);
             run(&mut fx, &mut i, 2.0, t);
-            assert!(fx.fov.value > 0.9 * t.fov.sprint_boost_deg);
+            assert!(fx.fov.value > 0.9 * t.fov.sprint_boost_pct);
             assert!(fx.wind.value > 0.0);
             (fx, i)
         };
@@ -483,23 +485,23 @@ mod tests {
         let (mut fx, mut i) = settled();
         i.eye[0] += 500.0;
         let out = fx.frame(&i, MotionSettings::default(), SPEEDS, t);
-        assert!(out.fov_boost_deg < 0.5, "{}", out.fov_boost_deg);
+        assert!(out.fov_boost_pct < 0.5, "{}", out.fov_boost_pct);
         // Moving fast is no teleport.
         let (mut fx, mut i) = settled();
         i.velocity = [0.0, 0.0, 1e6];
         i.eye[2] += 1e6 / 60.0;
         let out = fx.frame(&i, MotionSettings::default(), SPEEDS, t);
-        assert!(out.fov_boost_deg > 0.9 * t.fov.sprint_boost_deg);
+        assert!(out.fov_boost_pct > 0.9 * t.fov.sprint_boost_pct);
         // Respawn (third person while dead, then back): nothing carried over.
         let (mut fx, mut i) = settled();
         i.first_person = false;
         let out = fx.frame(&i, MotionSettings::default(), SPEEDS, t);
-        assert!(out.fov_boost_deg < 0.5 && out.wind < 0.05);
+        assert!(out.fov_boost_pct < 0.5 && out.wind < 0.05);
         // The turn-over across the midplane.
         let (mut fx, mut i) = settled();
         i.turned_over = true;
         let out = fx.frame(&i, MotionSettings::default(), SPEEDS, t);
-        assert!(out.fov_boost_deg < 0.5 && out.wind < 0.05);
+        assert!(out.fov_boost_pct < 0.5 && out.wind < 0.05);
     }
 
     #[test]
@@ -523,14 +525,14 @@ mod tests {
         for _ in 0..240 {
             fx.frame(&i, half, SPEEDS, t);
         }
-        assert!((fx.fov.value - 0.5 * t.fov.sprint_boost_deg).abs() < 1e-3);
+        assert!((fx.fov.value - 0.5 * t.fov.sprint_boost_pct).abs() < 1e-3);
         i.velocity = [0.0, 0.0, 500.0];
         let off = MotionSettings {
             enabled: false,
             fov_strength: 1.0,
         };
         let out = fx.frame(&i, off, SPEEDS, t);
-        assert_eq!((out.fov_boost_deg, out.wind), (0.0, 0.0));
+        assert_eq!((out.fov_boost_pct, out.wind), (0.0, 0.0));
     }
 
     #[test]
@@ -552,8 +554,8 @@ mod tests {
     fn the_generated_tunables_match_the_data() {
         let json = include_str!("../../../shared/look/motion.json");
         assert!(json.contains(&format!(
-            "\"sprintBoostDeg\": {}",
-            MOTION.fov.sprint_boost_deg
+            "\"sprintBoostPct\": {}",
+            MOTION.fov.sprint_boost_pct
         )));
         assert!(json.contains(&format!("\"streaks\": {}", MOTION.wind.streaks)));
     }

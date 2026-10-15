@@ -371,7 +371,7 @@ fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
     let fov = rig.scene.borrow().fov.unwrap();
     let state = rig.game.as_ref().unwrap().state().state;
     assert!(
-        fov > base + 5.0,
+        fov > base + 3.0,
         "sprinting widens the view: {fov} vs {base} ({state:?})"
     );
     assert!(
@@ -397,4 +397,13 @@ fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
     rig.run_until(180, |_| false);
     let settled = rig.scene.borrow().fov.unwrap();
     assert!(settled < base + 0.5, "standing settles back: {settled}");
+
+    // The Field of view setting is the base for the renderer and the LOD alike.
+    rig.game.as_mut().unwrap().fov_setting = 90.0;
+    rig.run_until(240, |_| false);
+    let wider = dwell_lod::base_fov(90.0, 1280.0 / 720.0);
+    assert!((rig.scene.borrow().fov.unwrap() - wider).abs() < 1e-6);
+    assert!(wider > base + 10.0);
+    let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
+    assert!((lod.fov_y_deg - wider).abs() < 1e-6);
 }

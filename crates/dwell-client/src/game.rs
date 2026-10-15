@@ -360,6 +360,9 @@ pub struct Game<S: Scene> {
     pub motion_settings: MotionSettings,
     /// The game menu is open: the effects hold still.
     pub menu_open: bool,
+    /// The Field of view setting (degrees, vertical; `dwell_lod::base_fov` narrows it on wide
+    /// screens): the base of the projection, the LOD's pixel error and the culling.
+    pub fov_setting: f64,
     /// The controller's walk and run speeds the effects scale to.
     speeds: Speeds,
     /// The face the last drawn frame's camera was on (a change is the turn-over).
@@ -441,6 +444,7 @@ impl<S: Scene> Game<S> {
             motion: MotionFx::new(),
             motion_settings: MotionSettings::default(),
             menu_open: false,
+            fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             speeds,
             motion_face: None,
             frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
@@ -984,13 +988,8 @@ impl<S: Scene> Game<S> {
             self.speeds,
             &MOTION,
         );
-        let viewport = dwell_lod::lod_viewport(self.viewport_css.0, self.viewport_css.1);
-        self.frame_fov = effective_fov(
-            viewport.fov_y_deg,
-            out.fov_boost_deg,
-            viewport.aspect,
-            &MOTION,
-        );
+        let viewport = self.viewport();
+        self.frame_fov = effective_fov(viewport.fov_y_deg, out.fov_boost_pct);
         let mut scene = self.scene.borrow_mut();
         scene.set_fov(Some(self.frame_fov));
         scene.set_wind(WindView {
@@ -1001,12 +1000,18 @@ impl<S: Scene> Game<S> {
         });
     }
 
+    /// The drawing's viewport at the player's Field of view setting (its base FOV, before the
+    /// speed boost).
+    fn viewport(&self) -> dwell_lod::LodViewport {
+        dwell_lod::lod_viewport(self.fov_setting, self.viewport_css.0, self.viewport_css.1)
+    }
+
     /// The whole-world view around the camera.
     fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
         if !c.active || self.lod.is_none() {
             return;
         }
-        let viewport = dwell_lod::lod_viewport(self.viewport_css.0, self.viewport_css.1);
+        let viewport = self.viewport();
         let (position, yaw_deg, pitch_deg) = match self.view {
             Some(v) => (v.eye, v.yaw_deg, v.face() * v.pitch_deg),
             None => (
