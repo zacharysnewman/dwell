@@ -118,7 +118,7 @@ fn too_steep_ground_is_not_walkable() {
 fn a_low_voxel_ceiling_is_detected() {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.fill(-2, 2, -2, 2, 2, 2, stone()); // underside at 2.0
+    w.fill(-2, 2, -2, 2, 2, 2, cube_block()); // underside at 2.0
     let e = w.spawn(v(0.5, 0.15, 0.5)); // head at 1.95
     w.step(1);
     assert!(w.c(e).ground.ceiling_blocked);
@@ -128,7 +128,7 @@ fn a_low_voxel_ceiling_is_detected() {
 fn an_adjacent_voxel_wall_is_detected() {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.fill(1, 0, -3, 1, 3, 3, stone()); // face at x = 1
+    w.fill(1, 0, -3, 1, 3, 3, cube_block()); // face at x = 1
     let e = w.spawn(v(0.65, 0.0, 0.5));
     w.step(2);
     let g = w.c(e).ground;
@@ -254,7 +254,7 @@ fn reversing_brakes_faster_than_releasing() {
 fn a_voxel_wall_blocks_movement() {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.fill(-3, 0, 3, 3, 3, 3, stone()); // face at z = 3
+    w.fill(-3, 0, 3, 3, 3, 3, cube_block()); // face at z = 3
     let e = w.spawn(v(0.5, 0.0, 0.0));
     w.set_input(|_, _| mv(0.0, 1.0));
     w.step(ticks(2.0));
@@ -297,7 +297,7 @@ fn walks_up_a_half_step_without_leaving_the_ground() {
 fn a_full_block_needs_a_jump() {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.fill(-3, 0, 2, 3, 0, 12, stone());
+    w.fill(-3, 0, 2, 3, 0, 12, cube_block());
     let e = w.spawn(v(0.5, 0.0, 0.0));
     w.set_input(|_, _| mv(0.0, 1.0));
     w.step(ticks(1.5));
@@ -314,7 +314,7 @@ fn stepping_up_never_moves_the_player_faster_than_its_speed() {
         for jump_tick in (0..=60).step_by(2) {
             let mut w = PlayerTestWorld::new();
             w.floor_at(0, 40);
-            w.fill(-3, 0, 3, 3, 0, 20, stone());
+            w.fill(-3, 0, 3, 3, 0, 20, cube_block());
             let e = w.spawn(v(0.5, 0.0, 0.0));
             w.set_input(move |t, _| {
                 input(
@@ -371,7 +371,7 @@ fn clearing_a_blocks_top_edge_does_not_launch() {
         for jump_tick in (0..=60).step_by(3) {
             let mut w = PlayerTestWorld::new();
             w.floor_at(0, 40);
-            w.fill(0, 0, 3, 0, 0, 3, stone());
+            w.fill(0, 0, 3, 0, 0, 3, cube_block());
             let e = w.spawn(v(0.5, 0.0, 0.0));
             w.set_input(move |t, _| {
                 input(
@@ -405,7 +405,7 @@ fn one_jump_climbs_one_step_of_a_diagonal_staircase() {
         for x in 0..30 {
             let height = x.min(z) - 2;
             for y in 0..height {
-                w.set(x, y, z, stone());
+                w.set(x, y, z, cube_block());
             }
         }
     }
@@ -476,7 +476,7 @@ fn air_drag_decays_an_air_kick_unity_parity() {
 fn jump_at_a_block(run: bool, jump_tick: i32) -> (f32, f32) {
     let mut w = PlayerTestWorld::new();
     w.floor_at(0, 40);
-    w.fill(-3, 0, 3, 3, 0, 20, stone());
+    w.fill(-3, 0, 3, 3, 0, 20, cube_block());
     let e = w.spawn(v(0.5, 0.0, 0.0));
     w.set_input(move |t, _| {
         input(
@@ -520,7 +520,7 @@ fn crouching_against_a_wall_never_moves_the_player_backwards() {
     for jump in [false, true] {
         let mut w = PlayerTestWorld::new();
         w.floor_at(0, 40);
-        w.fill(-3, 0, 3, 3, 2, 20, stone());
+        w.fill(-3, 0, 3, 3, 2, 20, cube_block());
         let e = w.spawn(v(0.5, 0.0, 0.0));
         w.set_input(move |t, _| {
             input(

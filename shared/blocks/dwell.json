@@ -36,6 +36,11 @@
     {
       "name": "sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#eed9a4", "textures": "sand"
+    },
+    {
+      "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white, untextured, not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
+      "name": "sandbox_floor", "density": 2400, "shape": "full", "indestructible": true,
+      "color": "#ffffff"
     }
   ]
 }
