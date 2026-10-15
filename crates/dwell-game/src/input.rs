@@ -77,6 +77,9 @@ pub fn quantize_input(input: &PlayerInputState, seq: u32) -> InputFrame {
     dwell_physics::net::quantize_input(&input.to_input(), seq)
 }
 
+/// The key that turns creative flight on or off (`KeyboardEvent.code`), where the world allows it.
+pub const FLY_KEY: &str = "KeyF";
+
 /// Block interaction actions (§6.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum EditAction {
@@ -91,7 +94,7 @@ pub enum InputEvent {
     Toggle(String),
     /// Hotbar: a number key (its code, e.g. `Digit3`).
     Digit(String),
-    /// Flight turned on or off (double-tapped Space).
+    /// Flight turned on or off (the fly key).
     FlightChanged(bool),
 }
 
@@ -122,8 +125,8 @@ impl Default for Look {
     }
 }
 
-/// Keyboard + pointer-lock mouse look. WASD move, Space jump, Shift run, C / Ctrl crouch, double-tap
-/// Space to fly (up with Space, down with crouch); left and right click break and place, number keys
+/// Keyboard + pointer-lock mouse look. WASD move, Space jump, Shift run, C / Ctrl crouch, F
+/// (`FLY_KEY`) to fly (up with Space, down with crouch); left and right click break and place, number keys
 /// and the wheel pick a block (§6.5).
 #[derive(Clone, Debug)]
 pub struct KeyboardMouseInput {
@@ -131,7 +134,7 @@ pub struct KeyboardMouseInput {
     pub look: Look,
     /// Degrees per pixel of mouse movement.
     pub sensitivity: f64,
-    /// Creative flight, toggled by double-tapping Space (or the touch Fly button).
+    /// Creative flight, toggled by the fly key (or the touch Fly button).
     pub flight: FlightToggle,
     /// The pointer is locked to the game view (the shell tracks `pointerLockElement`).
     pub pointer_locked: bool,
@@ -186,15 +189,8 @@ impl KeyboardMouseInput {
         }
     }
 
-    /// A `keydown`: `code` is `KeyboardEvent.code`, `time_stamp_ms` its `timeStamp`.
-    pub fn key_down(
-        &mut self,
-        code: &str,
-        repeat: bool,
-        ctrl: bool,
-        meta: bool,
-        time_stamp_ms: f64,
-    ) -> KeyDown {
+    /// A `keydown`: `code` is `KeyboardEvent.code`.
+    pub fn key_down(&mut self, code: &str, repeat: bool, ctrl: bool, meta: bool) -> KeyDown {
         if matches!(code, "F3" | "F4" | "F6") {
             return KeyDown {
                 prevent_default: true,
@@ -210,9 +206,12 @@ impl KeyboardMouseInput {
         }
         self.keys.insert(code.to_owned());
         let mut events = Vec::new();
-        if code == "Space"
+        // The fly key, unless a browser shortcut (Ctrl/⌘+F, find) is meant.
+        if code == FLY_KEY
             && !repeat
-            && let Some(on) = self.flight.jump_pressed(time_stamp_ms)
+            && !ctrl
+            && !meta
+            && let Some(on) = self.flight.toggle()
         {
             events.push(InputEvent::FlightChanged(on));
         }
@@ -220,7 +219,9 @@ impl KeyboardMouseInput {
             events.push(InputEvent::Digit(code.to_owned()));
         }
         KeyDown {
-            prevent_default: code == "Space" || code.starts_with("Arrow"),
+            prevent_default: code == "Space"
+                || code.starts_with("Arrow")
+                || (code == FLY_KEY && !ctrl && !meta),
             events,
         }
     }
@@ -318,9 +319,9 @@ mod tests {
     #[test]
     fn maps_keys_and_merges_touch() {
         let mut input = KeyboardMouseInput::new();
-        input.key_down("KeyW", false, false, false, 0.0);
-        input.key_down("KeyA", false, false, false, 0.0);
-        input.key_down("ShiftLeft", false, false, false, 0.0);
+        input.key_down("KeyW", false, false, false);
+        input.key_down("KeyA", false, false, false);
+        input.key_down("ShiftLeft", false, false, false);
         let s = input.sample(None);
         assert_eq!((s.move_x, s.move_y, s.run), (-1.0, 1.0, true));
         let touch = TouchState {
@@ -337,40 +338,98 @@ mod tests {
     }
 
     #[test]
-    fn reports_toggles_digits_and_double_tap_flight() {
+    fn reports_toggles_and_digits() {
         let mut input = KeyboardMouseInput::new();
-        let f3 = input.key_down("F3", false, false, false, 0.0);
+        let f3 = input.key_down("F3", false, false, false);
         assert!(f3.prevent_default);
         assert_eq!(f3.events, vec![InputEvent::Toggle("F3".into())]);
         assert!(!input.key_held("F3"));
         assert!(
             input
-                .key_down("Minus", false, true, false, 0.0)
+                .key_down("Minus", false, true, false)
                 .events
                 .is_empty()
         );
         assert_eq!(
-            input.key_down("Digit3", false, false, false, 0.0).events,
+            input.key_down("Digit3", false, false, false).events,
             vec![InputEvent::Digit("Digit3".into())]
         );
+        assert!(input.key_down("Space", false, false, false).prevent_default);
+    }
+
+    // Owner, 2026-10-15: flight has its own key; Jump pressed twice is two jumps, not flight.
+    #[test]
+    fn a_double_tapped_space_jumps_and_does_not_toggle_flight() {
+        let mut input = KeyboardMouseInput::new();
+        for press in 1..=4 {
+            assert!(
+                input
+                    .key_down("Space", false, false, false)
+                    .events
+                    .is_empty(),
+                "Space press {press} asked for something besides the jump"
+            );
+            assert!(input.sample(None).jump);
+            input.key_up("Space");
+        }
+        assert!(!input.sample(None).fly);
+        assert!(!input.flight.flying());
+    }
+
+    #[test]
+    fn the_fly_key_toggles_flight_on_and_off() {
+        let mut input = KeyboardMouseInput::new();
+        let on = input.key_down(FLY_KEY, false, false, false);
+        assert_eq!(on.events, vec![InputEvent::FlightChanged(true)]);
+        assert!(on.prevent_default);
+        assert!(input.sample(None).fly);
+        input.key_up(FLY_KEY);
+        // Held down, the key repeats: a repeat doesn't toggle it back.
+        input.key_down(FLY_KEY, false, false, false);
         assert!(
             input
-                .key_down("Space", false, false, false, 100.0)
-                .prevent_default
-        );
-        input.key_up("Space");
-        // A key repeat does not count as the second press.
-        assert!(
-            input
-                .key_down("Space", true, false, false, 150.0)
+                .key_down(FLY_KEY, true, false, false)
                 .events
                 .is_empty()
         );
+        assert!(!input.sample(None).fly);
+        input.key_up(FLY_KEY);
+        // While flying, Space and C climb and descend (the jump and crouch bits).
+        input.key_down(FLY_KEY, false, false, false);
+        input.key_down("Space", false, false, false);
+        input.key_down("KeyC", false, false, false);
+        let s = input.sample(None);
+        assert!(s.fly && s.jump && s.crouch);
+        // Ctrl/⌘+F is the browser's find, not flight.
+        input.key_up(FLY_KEY);
+        for (ctrl, meta) in [(true, false), (false, true)] {
+            let find = input.key_down(FLY_KEY, false, ctrl, meta);
+            assert!(find.events.is_empty() && !find.prevent_default);
+            input.key_up(FLY_KEY);
+        }
+        assert!(input.sample(None).fly);
+    }
+
+    #[test]
+    fn the_fly_key_is_refused_where_the_world_disallows_flight() {
+        let mut input = KeyboardMouseInput::new();
+        input.flight.set_allowed(false);
+        for _ in 0..3 {
+            assert!(
+                input
+                    .key_down(FLY_KEY, false, false, false)
+                    .events
+                    .is_empty()
+            );
+            input.key_up(FLY_KEY);
+        }
+        assert!(!input.sample(None).fly);
+        // Allowed again (a new Welcome), the key works.
+        input.flight.set_allowed(true);
         assert_eq!(
-            input.key_down("Space", false, false, false, 200.0).events,
+            input.key_down(FLY_KEY, false, false, false).events,
             vec![InputEvent::FlightChanged(true)]
         );
-        assert!(input.sample(None).fly);
     }
 
     #[test]
