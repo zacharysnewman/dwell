@@ -11,7 +11,7 @@
     "maxVerticalDeg": 100
   },
   "wind": {
-    "$comment": "Streak intensity 0–1: 0 until `start` of the way from walk to run speed, sprintIntensity at run speed, 1 at fullMps (log scale). Streaks: count around the vanishing point (flightStreaks more fade in above sprint), lit fraction of each cycle (length), width in CSS px, peak opacity, colour (sRGB), the screen-centre radii they fade in between (units of half the screen height), the edge vignette's strength and the flow speed.",
+    "$comment": "Streak intensity 0–1: 0 until `start` of the way from walk to run speed, sprintIntensity at run speed, 1 at fullMps (log scale). Streaks: count around the vanishing point (flightStreaks more fade in above sprint), lit fraction of each cycle (length), width in CSS px, peak opacity, colour (sRGB), the screen-centre radii they fade in between (units of half the screen height), the edge vignette's strength, the flow speed, and the edge blur toward the vanishing point (a fraction of the distance to it, at full intensity, from the scene colour).",
     "start": 0.5,
     "sprintIntensity": 0.35,
     "fullMps": 2000,
@@ -26,7 +26,8 @@
     "innerRadius": 0.55,
     "outerRadius": 1.45,
     "vignette": 0.22,
-    "flowSpeed": 1.4
+    "flowSpeed": 1.4,
+    "blur": 0.035
   },
   "stateGain": {
     "$comment": "How much each controller state lets the effects show (0–1), multiplied into both targets. Every state is listed.",

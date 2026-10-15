@@ -37,6 +37,7 @@ const SCHEMA = {
     outerRadius: [0, 8],
     vignette: [0, 1],
     flowSpeed: [0, 50],
+    blur: [0, 0.25],
   },
   teleportM: [0.1, 1e6],
 };

@@ -47,6 +47,8 @@ pub struct WindTunables {
     pub outer_radius: f64,
     pub vignette: f64,
     pub flow_speed: f64,
+    /// The edge blur toward the vanishing point: a fraction of the distance to it, at full wind.
+    pub blur: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

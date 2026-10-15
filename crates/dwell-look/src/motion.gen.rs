@@ -29,6 +29,7 @@ pub const MOTION: MotionTunables = MotionTunables {
         outer_radius: 1.45,
         vignette: 0.22,
         flow_speed: 1.4,
+        blur: 0.035,
     },
     // By controller state id: Idle, Walking, Running, Crouching, Sliding, Jumping, Falling, Climbing, Swimming, Flying.
     state_gain: [1.0, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 0.0, 0.4, 1.0],

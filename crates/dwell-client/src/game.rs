@@ -19,6 +19,7 @@ use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
+use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
@@ -33,7 +34,7 @@ use dwell_world::{ChunkCoord, VoxelWorld};
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
-use crate::render::{Line, PlayerView, StandIn};
+use crate::render::{Line, PlayerView, StandIn, WindView};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
@@ -63,6 +64,11 @@ pub trait Scene {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    /// The frame's vertical FOV (degrees; the speed boost, docs/MOTION_EFFECTS.md): the same value
+    /// the LOD selection uses. `None`: the screen's own.
+    fn set_fov(&mut self, fov_y_deg: Option<f64>);
+    /// The wind streaks to draw this frame.
+    fn set_wind(&mut self, wind: WindView);
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
 }
@@ -348,6 +354,20 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
+    /// The motion effects (docs/MOTION_EFFECTS.md): read the camera's state, never write it.
+    motion: MotionFx,
+    /// The player's choices for them (the settings menu).
+    pub motion_settings: MotionSettings,
+    /// The game menu is open: the effects hold still.
+    pub menu_open: bool,
+    /// The controller's walk and run speeds the effects scale to.
+    speeds: Speeds,
+    /// The face the last drawn frame's camera was on (a change is the turn-over).
+    motion_face: Option<i32>,
+    /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
+    frame_fov: f64,
+    /// The camera the LOD selection last used.
+    lod_camera: Option<LodCamera>,
 }
 
 impl<S: Scene> Game<S> {
@@ -373,6 +393,10 @@ impl<S: Scene> Game<S> {
                     .push(Send::Control(Message::ChunkResync(coords.to_vec())));
             },
         );
+        let speeds = Speeds {
+            walk: f64::from(config.movement.walk_speed),
+            run: f64::from(config.movement.run_speed),
+        };
         let predictor = Predictor::new(config);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
@@ -414,6 +438,13 @@ impl<S: Scene> Game<S> {
             pending_lod: None,
             map: None,
             view: None,
+            motion: MotionFx::new(),
+            motion_settings: MotionSettings::default(),
+            menu_open: false,
+            speeds,
+            motion_face: None,
+            frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
+            lod_camera: None,
         };
         match verification {
             Some(c) => game
@@ -431,6 +462,14 @@ impl<S: Scene> Game<S> {
     }
     pub fn view(&self) -> Option<ViewOverride> {
         self.view
+    }
+    /// The vertical FOV the last frame drew with (and the LOD selected with).
+    pub fn frame_fov(&self) -> f64 {
+        self.frame_fov
+    }
+    /// The camera the LOD selection last used (tests: it has the frame's FOV).
+    pub fn lod_camera(&self) -> Option<LodCamera> {
+        self.lod_camera
     }
 
     /// Turns the whole-world view on once the verification is known (`?lod=0` leaves it off).
@@ -792,10 +831,8 @@ impl<S: Scene> Game<S> {
     fn draw(&mut self, now_ms: f64, input: &KeyboardMouseInput, now: &mut dyn FnMut() -> f64) {
         let c = self.current;
         let face = c.face;
-        let flip = self.flip.draw(
-            face,
-            self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0),
-        );
+        let dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
+        let flip = self.flip.draw(face, dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;
@@ -863,6 +900,7 @@ impl<S: Scene> Game<S> {
             drop(scene);
             self.show_hud_text();
             self.target(None, input);
+            self.update_motion(c.position, dt);
         } else {
             self.scene
                 .borrow_mut()
@@ -875,6 +913,7 @@ impl<S: Scene> Game<S> {
                 .set_camera(eye, yaw, pitch, f64::from(face), flip);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input);
+            self.update_motion(eye, dt);
         }
         if let Some(v) = self.view {
             self.scene
@@ -924,6 +963,44 @@ impl<S: Scene> Game<S> {
         self.hud.status = text.status;
     }
 
+    /// The motion effects for this frame (docs/MOTION_EFFECTS.md): the FOV boost from the camera's
+    /// velocity and state, and the wind. They only read the predicted state. The frame's FOV goes to
+    /// the renderer and, in `update_lod`, to the LOD selection.
+    fn update_motion(&mut self, eye: [f64; 3], dt: f64) {
+        let c = &self.current;
+        let turned_over = self.motion_face.is_some_and(|f| f != c.face);
+        self.motion_face = Some(c.face);
+        let out = self.motion.frame(
+            &MotionInput {
+                eye,
+                velocity: c.velocity,
+                state: c.state,
+                dt,
+                first_person: c.active && !self.dead && self.view.is_none(),
+                turned_over,
+                paused: self.menu_open,
+            },
+            self.motion_settings,
+            self.speeds,
+            &MOTION,
+        );
+        let viewport = dwell_lod::lod_viewport(self.viewport_css.0, self.viewport_css.1);
+        self.frame_fov = effective_fov(
+            viewport.fov_y_deg,
+            out.fov_boost_deg,
+            viewport.aspect,
+            &MOTION,
+        );
+        let mut scene = self.scene.borrow_mut();
+        scene.set_fov(Some(self.frame_fov));
+        scene.set_wind(WindView {
+            intensity: out.wind,
+            flight: out.flight,
+            direction: out.direction,
+            time: out.time,
+        });
+    }
+
     /// The whole-world view around the camera.
     fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
         if !c.active || self.lod.is_none() {
@@ -947,10 +1024,12 @@ impl<S: Scene> Game<S> {
             position,
             yaw_deg,
             pitch_deg,
-            fov_y_deg: viewport.fov_y_deg,
+            // The frame's FOV, speed boost included: what the renderer draws with.
+            fov_y_deg: self.frame_fov,
             aspect: viewport.aspect,
             height_px: viewport.height_px,
         };
+        self.lod_camera = Some(camera);
         let mut host = LodHost {
             pool_gen: ChunkJobs(self.pool.clone()),
             pool_mesh: MeshJobs(self.pool.clone()),

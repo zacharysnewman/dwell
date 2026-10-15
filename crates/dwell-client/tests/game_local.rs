@@ -12,7 +12,7 @@ use dwell_client::local::{LOCAL_SESSION, LocalCore};
 use dwell_client::net::session::{Out, Session, SessionState};
 use dwell_client::pool::{InlineJobs, Pool};
 use dwell_client::render::display::RenderStats;
-use dwell_client::render::{Line, PlayerView, StandIn};
+use dwell_client::render::{Line, PlayerView, StandIn, WindView};
 use dwell_game::input::{EditAction, KeyboardMouseInput};
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
@@ -32,6 +32,8 @@ struct Recorder {
     shown: Vec<i64>,
     camera: Option<[f64; 3]>,
     outline: Option<[f64; 3]>,
+    fov: Option<f64>,
+    wind: WindView,
 }
 
 impl Scene for Recorder {
@@ -66,6 +68,12 @@ impl Scene for Recorder {
     }
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _height: f64) {
         self.outline = cell;
+    }
+    fn set_fov(&mut self, fov_y_deg: Option<f64>) {
+        self.fov = fov_y_deg;
+    }
+    fn set_wind(&mut self, wind: WindView) {
+        self.wind = wind;
     }
     fn set_debug_lines(&mut self, _lines: Option<&[Line]>) {}
     fn stats(&self) -> RenderStats {
@@ -327,4 +335,66 @@ fn a_placed_camera_views_the_world_from_there() {
     rig.run_until(2, |_| false);
     let camera = rig.scene.borrow().camera.unwrap();
     assert!((camera[0] - feet[0]).abs() < 2.0 && (camera[2] - feet[2]).abs() < 2.0);
+}
+
+#[test]
+fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
+    // Motion effects (Phase 29): the camera's velocity widens the FOV, and the frame's FOV is the
+    // one the LOD selects with; standing still settles it back, and the menu holds it.
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 2.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: None,
+            full_mode: false,
+        });
+    rig.run_until(60, |_| false);
+    let base = rig.scene.borrow().fov.expect("the game sets the FOV");
+    assert_eq!(
+        base,
+        dwell_lod::vertical_fov(1280.0 / 720.0),
+        "standing: no boost"
+    );
+    assert_eq!(rig.scene.borrow().wind.intensity, 0.0);
+
+    rig.input.set_key("ShiftLeft", true);
+    rig.input.set_key("KeyW", true);
+    rig.run_until(90, |_| false);
+    let fov = rig.scene.borrow().fov.unwrap();
+    let state = rig.game.as_ref().unwrap().state().state;
+    assert!(
+        fov > base + 5.0,
+        "sprinting widens the view: {fov} vs {base} ({state:?})"
+    );
+    assert!(
+        rig.scene.borrow().wind.intensity > 0.1,
+        "and the wind blows"
+    );
+    let lod = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .lod_camera()
+        .expect("the LOD ran");
+    assert_eq!(lod.fov_y_deg, fov, "the LOD selects with the frame's FOV");
+    assert_eq!(rig.game.as_ref().unwrap().frame_fov(), fov);
+
+    // The menu opens: nothing changes, even standing still.
+    rig.input.set_key("ShiftLeft", false);
+    rig.input.set_key("KeyW", false);
+    rig.game.as_mut().unwrap().menu_open = true;
+    rig.run_until(60, |_| false);
+    assert_eq!(rig.scene.borrow().fov.unwrap(), fov);
+    rig.game.as_mut().unwrap().menu_open = false;
+    rig.run_until(180, |_| false);
+    let settled = rig.scene.borrow().fov.unwrap();
+    assert!(settled < base + 0.5, "standing settles back: {settled}");
 }
