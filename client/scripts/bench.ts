@@ -84,6 +84,10 @@ function launch(o: Options): Promise<Browser> {
     '--disable-renderer-backgrounding',
     '--disable-backgrounding-occluded-windows',
     '--no-proxy-server',
+    // Full-precision WebGPU timestamps for the `gpu.<pass>` samples (otherwise Chrome rounds them
+    // to 65.536 µs; `--enable-features=WebGPUDeveloperFeatures` does not lift that, checked
+    // 2026-10-14).
+    '--enable-webgpu-developer-features',
     ...(o.unthrottled ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []),
   ];
   if (o.swiftshader) {
@@ -225,6 +229,13 @@ function summarise(name: string, t: Telemetry, longTasks: number[][], seconds: n
       `    ${k.padEnd(22)} n ${String(s.n).padStart(5)}  run p50 ${f(s.p50)} p95 ${f(s.p95)} ms` +
         (wait ? `  queued p50 ${f(wait.p50)} p95 ${f(wait.p95)} ms` : ''),
     );
+  }
+  for (const [k, s] of Object.entries(t.samples)) {
+    if (s && k.startsWith('gpu.')) {
+      console.log(
+        `    ${k.padEnd(22)} n ${String(s.n).padStart(5)}  ms mean ${f(s.mean)} p50 ${f(s.p50)} p95 ${f(s.p95)} p99 ${f(s.p99)}`,
+      );
+    }
   }
   if (longTasks.length) {
     const total = longTasks.reduce((a, [, d]) => a + d, 0);

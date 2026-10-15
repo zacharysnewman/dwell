@@ -135,6 +135,7 @@ pub enum EditCheck {
     NoLineOfSight,
     /// Break: target is air or liquid; Place: nothing to place against.
     NothingThere,
+    /// Break, or Place into its cell: the block data marks the state `"indestructible": true`.
     Unbreakable,
     /// Place: not in the palette, or an unknown id.
     NotPlaceable,
@@ -303,6 +304,10 @@ pub fn check_block_edit(
     let existing = world.get_voxel(cell[0], cell[1], cell[2]);
     if targetable(existing) {
         return EditOutcome::fail(EditCheck::Occupied);
+    }
+    // Placing into a liquid replaces it: not one the data marks indestructible.
+    if unbreakable(existing) {
+        return EditOutcome::fail(EditCheck::Unbreakable);
     }
     let material = flooded_for(request.material, existing);
     if overlaps_player(material, cell, players) {
