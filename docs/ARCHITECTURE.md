@@ -1858,7 +1858,10 @@ Details and measurements: PLAYER_CONTROLLER.md §8.
   `{inputSeq, input, controller state, body state}` per tick, and sends inputs with the previous 3
   for loss resilience.
 - The server applies inputs in sequence order, one per step, through a 2-input jitter buffer; a
-  missing input repeats the last known one (and re-primes the buffer). The client nudges its tick
+  missing input repeats the last known one (and re-primes the buffer); inputs queued beyond 6 for
+  a whole 30-tick window are skipped (a burst from a slow client's frame is not). The client
+  catches up at most 15 ticks a frame (250 ms), so a device at 4 fps or more keeps the server's
+  time (PLAYER_CONTROLLER.md §8). The client nudges its tick
   rate ±2 % to keep the server's queue (reported in snapshots) between 1 and 4. Snapshots carry `ackInputSeq`, the authoritative body state, and the local player's
   controller state (layers, timers, crouch/climb/swim, ground ref).
 - On snapshot: if the stored prediction for `ackInputSeq` matches within tolerance, nothing is
