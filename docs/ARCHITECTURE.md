@@ -107,14 +107,15 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
    dedicated servers generate the **procedural terrain** world (generator version 12, §6.3) by
-   default; `?world=flat` and `?seed=N` (local mode) or `--generator N` and `--seed N`
-   (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
+   default; `?world=flat`, `?world=sandbox` and `?seed=N` (local mode) or `--generator N` and
+   `--seed N` (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
    test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
    **[built, Phase 3e]** Local worlds are saved in the browser: one world file per generator and
    seed in OPFS (`dwell/worlds/local-g<generator>-s<seed>.dwellworld`, §6.4), at every autosave
    (`AUTOSAVE_SECONDS`) and when the page is hidden or closed; a reload continues the same world. **[built, Phase 5a]** Worlds
    are named and managed from the menu: create (name, seed — a number, or text hashed with
-   FNV-1a, blank for random — and type), play, regenerate (the files deleted and recreated from the
+   FNV-1a, blank for random — and type: Terrain, Flat or **[built, Phase 27 S2a]** Sandbox, also
+   `?new=1&type=sandbox`; an unknown type makes terrain), play, regenerate (the files deleted and recreated from the
    seed with the type's current generator) and delete. Menu-created worlds use id-based files
    (`dwell/worlds/w<10 base-36 chars>.dwellworld`); links keep opening the per-generator-and-seed
    files. An index in local storage (`dwell.worlds`, `local/worldIndex.ts`) holds each world's name,
@@ -489,16 +490,22 @@ each worker keeps two jobs (one running, one waiting). Pool sizes are capped, lo
 > later, through the generator version and the block data files, without architectural change.
 
 Built (Phases 1–3a; registry Phase 8; cut to the baseline in Phase 15, ADR 0025): the prototype
-blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists them) — where
+blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists the placeable ones), and since Phase 27 S2a the sandbox floor — where
 each state has a collision **shape** (`Empty`, `Full`, or `Shaped`, below), `climbable` + facing,
-`liquid`, `flooded` and `indestructible` (PLAYER_CONTROLLER.md §6; no block is indestructible
-since bedrock went: the property stays for the structural anchor of Phase 20). Phase 15 removed
+`liquid`, `flooded` and `indestructible` (block data `"indestructible": true`; PLAYER_CONTROLLER.md §6).
+**[built, Phase 27 S2a]** One block is indestructible: `dwell:sandbox_floor` (prototype content:
+full, white, untextured, not in the palette, not adaptive), the structure sandbox's ground — the
+property bedrock had, reused rather than a new flag; it stays what the structural anchor of
+Phase 20 may use. Phase 15 removed
 bedrock, the debug launch pad (and its `launch_speed` property, decision D6), the stone slab and
 every slope and slab family, sandstone, gravel, snow, ice, log, leaves and the three ores, with
 their texture tiles. 32³ chunks with revisions (generated chunks start at revision 0);
 `VoxelWorld` (`dwell-world`), generate-on-access with eviction of unmodified chunks on the server, and *streamed*
 (no generator; missing chunks read as air) in the client; a flat test world (grass top face at
-y = 0, stone down to the midplane, its core — no bedrock). The movement playground is a structure
+y = 0, stone down to the midplane, its core — no bedrock), whose layers are a parameter
+(`FlatLayers`: top, the three under it, the rest; the voxel and LOD generators take them), so
+**[built, Phase 27 S2a]** the **structure sandbox** (generator **100**, `GENERATOR_SANDBOX`) is the
+same world made of `dwell:sandbox_floor` alone (`dwell-worldgen` resolves it by name). The movement playground is a structure
 file the tests stamp over the flat world (§6.3). **Terrain collision** (`dwell-physics`
 `terrain.rs`; Rust port, Phase 24): one static Rapier **voxel collider** (Parry's `Voxels` shape)
 holding the solid cells of the chunks around players. Parry classifies each voxel by its
@@ -635,7 +642,12 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
-default for dedicated servers and local mode; version **0** (flat) remains for tests. The **movement
+default for dedicated servers and local mode; version **0** (flat) remains for tests, and
+**[built, Phase 27 S2a]** version **100** is the structure sandbox (the flat world in its white,
+indestructible floor block, `docs/proposals/STRUCTURES.md`; numbered away from the terrain's
+versions, which grow; 1–7 are retired and load as the flat world, as any unknown version does).
+Creative flight is the server's flight policy (everyone by default, so on in every local world,
+the sandbox included). The **movement
 playground** (generator 1 until Phase 15) is now a **structure file**
 (`shared/structures/playground.structure`, below) that the controller and netcode tests stamp over
 the flat world; no world uses it. Players spawn on the first dry, level 9 × 9 patch (top voxels at
@@ -1022,9 +1034,9 @@ Players break and place blocks. Server-authoritative like every voxel change
   view of the eye (checked first, so a far request reads nothing); a targetable cell; the eye in
   front of the targeted face and a ray to its centre or one of four points near its corners
   reaching the target first (line of sight; on a shape, the sample points lie on the polygons whose
-  normal points through the requested face); Break — not indestructible, leaving water
-  where a flooded state stood; Place — a placeable state, into an air or liquid cell inside the
-  world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
+  normal points through the requested face); Break — not indestructible (block data; else
+  `Unbreakable`), leaving water where a flooded state stood; Place — a placeable state, into an air
+  or liquid cell (not an indestructible one: placing would replace it) inside the world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
   player's capsule, tested against the shape's true volume. Accepted edits of a step are batched into one
   `VoxelModification` (one entry per chunk, its revision + 1) sent to each client streaming a
   changed chunk; clients streaming it later get the chunk Explicit. The client does not predict
@@ -2139,7 +2151,7 @@ drivers) get the "unsupported" message (§5).
   unknown button bits fail decoding. The per-session queue is capped at 16. Rejections are counted
   per session (`SessionStats`).
 - **[built, Phase 3d]** Block edits are checked for reach, line of sight, rate (token bucket),
-  and permissions (`ServerConfig::edits`); indestructible states cannot be broken, only palette materials can be
+  and permissions (`ServerConfig::edits`); indestructible states cannot be broken or replaced, only palette materials can be
   placed, and placements into blocks, outside the world, or overlapping any player capsule are
   rejected (§6.5). At most 8 requests per session queue per tick; `ChunkResync` answers only chunks
   the client is streamed, at most `MAX_RESYNC_CHUNKS` per request.

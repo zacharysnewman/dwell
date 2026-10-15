@@ -14,6 +14,7 @@ describe('local world options', () => {
     // The movement playground was retired (Phase 15): terrain instead.
     expect(parseLocalWorld('?world=playground').generatorVersion).toBe(GENERATORS.terrain);
     expect(parseLocalWorld('?world=flat').generatorVersion).toBe(GENERATORS.flat);
+    expect(parseLocalWorld('?world=sandbox').generatorVersion).toBe(GENERATORS.sandbox);
   });
 
   it('ignores unknown worlds and invalid seeds', () => {
