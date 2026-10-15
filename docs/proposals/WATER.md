@@ -16,7 +16,7 @@
   Fresnel, specular, reflection or refraction.
 - **Why reflections and refraction can't be added today.** The frame renders with 4× MSAA straight
   into the canvas, and depth is render-attachment only with `StoreOp::Discard`. No scene colour or
-  depth can be sampled. This is the main structural change (`RAY_MARCHING.md` step R1).
+  depth can be sampled. This is the main structural change (`RAY_MARCHING.md` step A1).
 - **Submersion.** Only physics knows (`submerged_fraction`, `crates/dwell-physics/src/query.rs`),
   and it counts the whole cell as wet while the drawn surface is at 0.875. An eye test needs the
   cell at `floor(eye)` to be liquid **and**, when the cell above isn't water, `frac(eye.y) < 0.875`
@@ -65,7 +65,7 @@ or write linear depth to a colour target that resolves.
 analytic sky (`dwell_sky(reflect(v, n))`, already available and free). Planar reflection doubles
 opaque draws and only suits one plane (sea level), so it's an Ultra-tier extra at most. Ray marched:
 one reflection ray through the GPU voxel structure — exact, and the recommended path once
-`RAY_MARCHING.md` R2 exists.
+`RAY_MARCHING.md` A3 exists.
 
 **Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id).
 Per-pixel split where the near plane crosses the surface (Crest's "water line"). Per-channel
@@ -87,7 +87,7 @@ rays: one bounce, a coarse level, a short max distance ending at the sky.
 | Low (phone default) | Normal maps, Fresnel, glint, sky-only reflection, absorption at constant depth; underwater fog only. No copies |
 | Medium | Half-res colour and depth copy: refraction, depth absorption, foam, caustics |
 | High | Plus half-res SSR and god rays |
-| Ultra (desktop) | Full-res SSR; ray-marched reflections when R2 exists |
+| Ultra (desktop) | Full-res SSR; ray-marched reflections when A3 exists |
 
 Copy cost at 1080p (*estimate*): about 25 MB per frame of colour and depth copies, plus the resolve.
 Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-res copies there.
@@ -97,11 +97,11 @@ Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-re
 | Step | Work | Exit check |
 |---|---|---|
 | **W1** | Fluid data in the registry (§2), a dedicated `water_fs` (normal maps, Fresnel, GGX, sky reflection), the eye-submerged uniform with the 0.875 rule. No new passes | Fixture-fluid test; **regression test for the cell-vs-surface mismatch, seen failing first**; owner look |
-| **W2** | The frame restructure — `RAY_MARCHING.md` R1 (built once, shared) | As R1 |
+| **W2** | The frame restructure — `RAY_MARCHING.md` A1 (built once, shared) | As A1 |
 | **W3** | Refraction with the depth check, Beer–Lambert absorption, shoreline foam | Screenshots of shore views; bench |
 | **W4** | Underwater: fog, the split line, Snell's window and TIR, caustics, distortion | Named views underwater and half in; owner look |
 | **W5** | SSR and the quality tiers, phone defaults | Bench on desktop and a phone |
-| **W6** | Under ray marching (after R2): reflection and refraction rays replace SSR and the copy on high tiers | Parity against W5's views |
+| **W6** | Under ray marching (after A3, if marching is kept): reflection and refraction rays replace SSR and the copy on high tiers | Parity against W5's views |
 
 Each step updates `ARCHITECTURE.md` (render, `dwell-look`, `dwell-mesh`) and gets a phase in the
 implementation plan — most naturally in Phase 19 (looks and textures as data). None of it changes

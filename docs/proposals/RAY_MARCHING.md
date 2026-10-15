@@ -1,60 +1,87 @@
-# Proposal: ray-marched voxel rendering
+# Proposal: a ray-marched renderer as an alternative, compared side by side
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions open (§8).
+**Status:** investigated 2026-10-14, not adopted. Owner direction (2026-10-14): **plan ray marching as
+an alternative rendering method and compare it side by side with the raster renderer.** Remaining
+owner questions in §9.
 
-Should Dwell's terrain be drawn by GPU ray marching over a sparse voxel structure (compute shaders,
-per-pixel marching, low-resolution marching with upscaling) instead of, or as well as, rasterized
-chunk meshes? This plan comes from five read-only investigations: the current pipeline, the voxel
-data structure, traversal and upscaling, moving bodies and compositing, and WebGPU feasibility and
-budget.
+The game gets a second, complete terrain renderer: GPU ray marching over a sparse voxel structure
+(compute shaders, per-pixel marching, low-resolution marching with upscaling). The two can be
+switched at runtime, shown side by side on one screen, and benchmarked against each other on the
+same scenarios. Raster stays the default and always ships; the comparison decides what happens next.
 
-## 1. Conclusion
+This plan comes from five read-only investigations: the current pipeline, the voxel data structure,
+traversal and upscaling, moving bodies and compositing, and WebGPU feasibility and budget.
 
-**Don't replace the raster renderer yet. Add ray marching beside it, for what it does better.**
+## 1. What the comparison is expected to show
 
-- Today's frame is **CPU-bound**: encoding (WASM→JS calls) and the LOD walk, about 4.3 ms idle and
-  5.5 ms p50 flying low (`docs/DEV_TOOLS.md`). Ray marching doesn't remove that work, and GPU time
-  has never been measured.
-- Published software traversals reach about 100–200 Mrays/s on integrated GPUs (VoxelRT, below).
-  Primary rays at 1080p need 124 Mrays/s at 60 fps, so full-resolution primary marching on an
-  integrated GPU or a phone would cost about 11–20 ms (*estimate*), worse than today. Malyshau's
-  "Six Ways to Draw Vangers with WebGPU" (arXiv 2608.17390, 2026) compared six renderers of an
-  editable multi-layer height field in one wgpu engine, including height-field and
-  voxel-accelerated ray marching, and found a fitted triangle mesh fastest on every device measured.
-  Its terrain is 2.5D, not a full 3D voxel world, so this is a pointer, not proof.
-- Phones lose most: their raster depth and colour stay in on-chip tile memory, and a compute
-  marcher's G-buffer round trip through main memory is mostly bandwidth.
-- What ray marching gives cheaply is **lighting**: exact ambient occlusion, sun shadows without
-  shadow maps, reflections, and later one-bounce GI. Rays for those are short or start on a surface,
-  so they are cheap, and they run at half resolution with no loss to voxel edges.
+Written down before building so the results can be checked against it.
 
-So the plan is a **hybrid**: raster keeps primary visibility; a GPU copy of the voxels serves
-shadow, AO and reflection rays at half resolution; then, if the bench says so, far terrain and
-finally primary visibility move to the marcher. Each step is behind a runtime switch and raster
-always ships.
+- Today's frame is **CPU-bound** (encoding and the LOD walk: about 4.3 ms idle, 5.5 ms p50 flying
+  low, `docs/DEV_TOOLS.md`). GPU time has never been measured.
+- Published software voxel traversal reaches about 100–200 Mrays/s on integrated GPUs (VoxelRT).
+  Primary rays at 1080p and 60 fps need 124 Mrays/s, so **full-resolution marching on an integrated
+  GPU or phone is expected to be slower than raster** (about 11–20 ms, *estimate*); at half
+  resolution per axis with upscaling, about 3–4 ms on an M1-class GPU (*estimate*).
+- Malyshau's "Six Ways to Draw Vangers with WebGPU" (arXiv 2608.17390, 2026) drew an editable
+  multi-layer height field six ways in one wgpu engine, including two kinds of ray marching, and
+  found a fitted triangle mesh fastest on every device measured. Its terrain is 2.5D, so it's a
+  pointer, not proof.
+- Phones keep raster depth and colour in on-chip tile memory; a compute marcher's G-buffer goes
+  through main memory, so phones are expected to favour raster most.
+- **Where marching is expected to win**: CPU time (no meshes to encode, no per-chunk draws), edit
+  latency (one brick write, no remesh), memory for far terrain, and lighting — exact AO, sun shadows
+  and reflections come almost free once the voxels are on the GPU.
 
-## 2. Constraints the port must keep (from the current pipeline)
+If marching loses on speed but wins on looks, the fallback is the hybrid (raster primary
+visibility, marched lighting), which this plan builds along the way (§7, step A6).
+
+## 2. Constraints both renderers must meet
 
 - **Two depth passes** (far, then near at 1024 m; `render/mod.rs` 1262–1388) exist for precision
-  across an 8,000 km world. A marcher needs camera-relative, chunk-rebased integer+fraction ray state.
+  across an 8,000 km world. The marcher uses camera-relative, chunk-rebased integer+fraction ray
+  state instead.
 - **The bifacial world**: face B is mirrored, the camera turns over, lighting is weighted by side
   (`own()` in `render/shaders.rs`). Every "up" is the face's up.
 - **Shapes**: cubes only ship today, but the registry has the corner-height shape mechanism, ladder
-  plates (inset 0.05 m) and water at 0.875 of a cell; adaptive blocks (Phase 18) are planned. A
-  marcher needs analytic ray-vs-shape tests from the same shape data as the mesher and collision.
-- **LOD column surfaces** have exact heights off the cell grid and side tints; a plain downsampled
-  octree loses that look.
+  plates (inset 0.05 m) and water at 0.875 of a cell; adaptive blocks (Phase 18) are planned. The
+  marcher tests rays against the same shape data as the mesher and collision.
+- **LOD column surfaces** have exact heights off the cell grid and side tints.
 - **The look**: atlas tiles with explicit-gradient mips, face tints, ACES with exposure, fog mixed
-  toward the sky, 4× MSAA. The lighting functions (`lambert`, `aces`, `fogged`, `sky()`) can be
-  reused verbatim on a marched G-buffer.
-- **Raster overlays**: players, the outline, debug lines, water, and Phase 20's clusters.
+  toward the sky, 4× MSAA. The lighting functions (`lambert`, `aces`, `fogged`, `sky()`) are shared
+  by both renderers so a difference in the comparison is a difference in visibility, not shading.
+- **Raster overlays** on both: players, the outline, debug lines, water, Phase 20's clusters.
 - **Device**: `DeviceDescriptor::default()` today (no features, WebGPU default limits), SwiftShader
   in CI, a 96 MB distant-terrain budget on phones.
 
-## 3. The GPU voxel structure
+## 3. The renderer seam
 
-**A fixed-depth two-level brickmap with a 64-tree node per chunk, under a clipmap per LOD level.**
-Dwell's 32³ chunk is exactly one 4×4×4 node of 8³ bricks.
+The game already talks to rendering through narrow interfaces, which makes a second renderer a
+sibling rather than a fork:
+
+- `Scene` (`crates/dwell-client/src/game.rs:52`) — camera, players, outline, debug lines, LOD
+  visibility, stats.
+- `TerrainView<M>` (`crates/dwell-game/src/chunk_stream.rs:143`) — the streamer is already generic
+  over the terrain payload `M`; today `M = ChunkMeshes`.
+
+Plan:
+
+- Split `Scene`'s terrain calls into a payload-generic part. Raster takes `ChunkMeshes` and
+  `SectionMeshes`; the marcher takes `ChunkBricks` and `SectionBricks` (§4). Everything else
+  (camera, players, outline, lines, stats) is shared code.
+- The worker job kind follows the active renderer: mesh jobs for raster, brick jobs for the marcher,
+  both in compare mode. CPU chunk and LOD cell data are already kept, so **switching renderer at
+  runtime rebuilds the GPU data from them without a reload**.
+- `?renderer=raster|march|compare` and a Settings → Graphics choice (the baseline's D4 already asks
+  for the active renderer to be shown in the settings menu). The F3 overlay shows which is drawing.
+- Shared frame code: the offscreen HDR target, depth, composite (fog, tone mapping), overlays, GPU
+  timing. Each renderer only fills colour/G-buffer and depth.
+
+## 4. The ray-marched renderer
+
+### Data: a fixed-depth brickmap
+
+A two-level brickmap with a 64-tree node per chunk, under a clipmap per LOD level. Dwell's 32³ chunk
+is exactly one 4×4×4 node of 8³ bricks.
 
 ```wgsl
 struct LevelInfo { origin: vec3<i32>, dims: vec3<u32>, slot_base: u32, cell_log2: u32 };
@@ -71,114 +98,190 @@ struct Node {
 ```
 
 - **Why this one.** Fixed depth means a stackless hierarchical DDA (no subgroups and 16 KiB of
-  workgroup memory on the default limits). An edit rewrites one brick in place. LOD sections use
-  the same node type at cell size 2^L.
+  workgroup memory on the default limits). An edit rewrites one brick in place. LOD sections use the
+  same node type at cell size 2^L, so far terrain is the same code at a coarser level.
 - **Rejected:** pointer octrees (deep; slower in benchmarks; inserts reallocate), SVDAGs (smallest,
   but edits need hash-consing; Aokana doesn't support edits at all), 3D textures (no bindless, 2048³
-  cap). 3D textures do suit per-body volumes for moving clusters (§5).
-- **Built on the CPU**, in the workers that mesh today: split a chunk into 64 bricks, classify each
+  cap). 3D textures do suit per-body volumes for moving clusters (§6).
+- **Built on the CPU** in the workers that mesh today: split a chunk into 64 bricks, classify each
   (air, uniform, mixed), pack mixed bricks (palette-packed for LOD), upload with
-  `queue.writeBuffer`. Deterministic and testable without a GPU. Adaptive shapes are resolved on
-  the worker into a per-brick shape plane, never derived from neighbours in the shader.
+  `queue.writeBuffer`. Deterministic and testable without a GPU. Adaptive shapes are resolved on the
+  worker into a per-brick shape plane, never derived from neighbours in the shader. LOD column
+  surfaces (exact heights, side tints) are carried as a per-column height and tint in LOD bricks.
 - **Allocation:** a free-slot stack for fixed-size level-0 bricks; `render/arena.rs`'s `FreeList`
-  for LOD palette bricks. Without bindless, one pool buffer grown by `copy_buffer_to_buffer`, or
-  2–4 bound pages.
-- **Memory at today's view distance** (*estimate*): about 47 MiB for level 0 (about 1,400 chunks with
-  surface), about 18 MiB for palette-packed LOD, about 1.5 MiB of nodes and slots: **65–70 MiB**,
-  inside the default 128 MiB binding. Unpacked LOD would push the total past it.
+  for LOD palette bricks. Without bindless, one pool buffer grown by `copy_buffer_to_buffer`, or 2–4
+  bound pages.
+- **Memory at today's view distance** (*estimate*): about 47 MiB for level 0, about 18 MiB for
+  palette-packed LOD, about 1.5 MiB of nodes and slots: **65–70 MiB**, inside the default 128 MiB
+  binding. (Raster's comparable figure is its mesh arena plus the LOD cache; the comparison measures
+  both.)
 
-## 4. Traversal, acceleration and upscaling
+### Passes
 
-Ranked by value for effort:
+1. **Beam prepass**, 1/8 resolution: one conservative ray per 8×8 tile writes a start distance.
+2. **Primary march**, at the render scale (1, 0.75, 0.5): bitmask long-step marching over nodes,
+   branchless Amanatides–Woo DDA inside bricks (its step mask gives the face normal free), analytic
+   shape planes in shaped cells. Writes a G-buffer: albedo (atlas lookup with the hit's face UV and
+   ray-cone mip level), normal, linear distance, cell id.
+3. **Upscale** to output resolution when the scale is under 1: depth- and normal-aware, then FSR 1
+   (EASU + RCAS) or TAA-U with reprojection. Both are compared (§5).
+4. **Shading**: the shared `lambert`/`aces`/`fogged`/`sky` on the G-buffer, in the shared composite.
+5. **Depth for overlays**: the march writes linear distance to `r32float` (depth formats can't be
+   storage textures or copied into from `r32float`); a full-screen pass writes
+   `@builtin(frag_depth)` into the depth buffer, then players, outline, lines and water raster on
+   top with a normal depth test. With 4× MSAA the overlay edges alias against marched terrain:
+   per-sample shading or TAA instead.
 
-1. **Bitmask long-step marching** over 64-tree nodes (`countOneBits`/`firstTrailingBit` on
-   `vec2<u32>` masks; WGSL has no u64), with a **branchless Amanatides–Woo DDA** inside bricks. The
-   DDA's step mask gives the face normal free, which the per-face look needs.
-2. **Camera-relative, chunk-rebased ray state.** Hit positions come from integer cell + face + t,
-   never `floor(origin + t·dir)` (that is where acne and seam cracks come from). Secondary rays start
-   from the hit cell's face, not `p + ε`.
-3. **Ray start from raster depth**: secondary rays start at the G-buffer surface; primary rays (if
-   ever) start at rasterized chunk bounds (Teardown, Aokana).
-4. **Full-resolution geometry, half-resolution lighting**, joint-bilateral upsampled with full-res
-   depth and normal, plus temporal accumulation. Voxel silhouettes stay exact; only soft lighting
-   is upscaled. This is the main answer to "lower resolution with upscaling".
-5. **Temporal reprojection** (motion vectors are needed for physics bodies anyway), invalidated on
-   edits and disocclusion.
-6. **A tile beam prepass** (one conservative ray per 8×8 tile writes a start depth) — only for
-   marched primary visibility.
-7. **Analytic shape planes** in leaf cells (2–6 planes per shape, a generated shape table).
-8. **FSR 1** (EASU + RCAS, two small passes) or **TAA-U** — only if primary visibility goes
-   low-res. FSR 2/3 in WGSL is not worth porting.
-9. **Subgroup fast paths** — optional: about 68 % of devices, almost none on iOS, and wgpu 30's web
-   backend doesn't map the feature.
+Rules that keep it correct and bounded: hit positions from integer cell + face + t (never
+`floor(origin + t·dir)` — the source of acne and seam cracks); secondary rays start from the hit
+face; a step cap (128 on phones) with the fog distance as max range and the sky colour on the cap;
+temporal start depth from last frame, invalidated on edits and disocclusion. Subgroups are an
+optional fast path only (about 68 % of devices, almost none on iOS, not mapped by wgpu 30's web
+backend).
 
-Early termination everywhere: a step cap (e.g. 128 on mobile), the fog distance as max range, and
-the sky colour when the cap is hit. Grazing horizon rays dominate the p99 step count on a flat world.
+## 5. Side-by-side comparison
 
-## 5. Moving bodies, entities and compositing
+Three ways to compare, each answering a different question.
+
+### In the game: compare mode (`?renderer=compare`)
+
+Both renderers draw the same frame from the same camera and `Scene` state:
+
+- **Split** (default): raster left, marched right, a draggable divider. Each renderer draws only its
+  side (scissor), so the cost is about one full frame of each rather than two.
+- **Blink**: a key swaps the whole screen between the two each press — the quickest way to see
+  small shifts.
+- **Difference**: a heatmap of where the two disagree — cell id or face differs (red), depth
+  differs by more than a threshold (orange), colour ΔE over a threshold (yellow).
+- An overlay on each side shows that renderer's live CPU time, GPU time (timestamp queries), GPU
+  memory and its settings (scale, upscaler).
+- Compare mode keeps both sets of GPU data, so memory is the sum; its frame timings are labelled
+  "compare mode" and not used for decisions. Decisions use the bench.
+
+### In the bench: `npm run bench -- --compare <scenario…>`
+
+Runs each scenario once per configuration, in fresh pages, on the same seed and inputs, and writes
+a comparison report (`OUT/compare.json` and a printed table) plus side-by-side and difference
+images for every `shot` step. Configurations, so like is compared with like:
+
+| Config | Renderer | Scale | Upscaler |
+|---|---|---|---|
+| `raster` | raster | 1 | — |
+| `raster-half` | raster | 0.5 | browser bilinear (today's `?scale=`) |
+| `march` | march | 1 | — |
+| `march-half-fsr` | march | 0.5 | FSR 1 |
+| `march-half-taa` | march | 0.5 | TAA-U |
+| `march-075-taa` | march | 0.75 | TAA-U |
+
+Metrics per config:
+
+| Metric | Source |
+|---|---|
+| Frame interval p50/p95/p99, dropped frames at 60 Hz | existing rAF telemetry (`--unthrottled` and vsynced) |
+| CPU per phase (`draw.render`, `lod`, jobs) | existing telemetry spans |
+| GPU per pass | new timestamp queries (`gpu.<pass>`) |
+| GPU memory, CPU memory | renderer stats, `memory()` |
+| Upload bytes per frame and per edit | existing upload counters |
+| Edit-to-visible latency | new: edit request → first frame showing it |
+| Streaming: time to a complete view after spawn and while flying | existing chunk/LOD stats |
+| Image agreement against `raster` | cell-id/face match %, depth error, colour ΔE histogram |
+
+Scenarios: the existing `idle-spawn`, `fly-low-fast`, `fly-low-faster`, `jump-onto-block`, plus new
+ones for this comparison — `look-horizon` (grazing rays, the marcher's worst case), `look-down`
+(its best), `edit-burst` (place and break a few hundred blocks), `fly-high` (far terrain), and
+`thermal-10min` for phones.
+
+### Correctness under both
+
+- A **CPU reference marcher** in Rust over the same brick structure, unit-tested on crafted layouts
+  (first hit cell, face, distance, rebasing, both faces, shapes). The GPU marcher is checked against
+  it per pixel on small offscreen scenes (exact ids, depth within about 1e-4 relative); offscreen
+  compute runs headless on SwiftShader, so this runs in CI.
+- **Raster vs march** on the named views (`client/views/views.json`): over 99.5 % cell-id match where
+  both hit, differences only at silhouettes, colour within a ΔE threshold. This is the same check as
+  the bench's image agreement, run as an e2e spec at a small resolution on SwiftShader.
+- `e2e/terrainDraw.spec.ts` and `views.spec.ts` assume one draw per mesh; they get per-renderer
+  expectations.
+
+### Devices
+
+Every bench comparison runs on: a Mac (M-series), a Windows laptop (integrated GPU), a Windows
+desktop (discrete GPU), an iPhone, an Android phone, and SwiftShader (correctness only, never
+speed). Phones need the bench to drive a device; until then, compare mode's live overlay on the
+phone is the check.
+
+### Decision criteria
+
+Agreed before the numbers come in (to be confirmed by the owner, §9):
+
+| Outcome | Then |
+|---|---|
+| March at its best config is at or under raster's p95 on desktop **and** phone, with image agreement passing and the owner preferring or accepting its look | Make it the default per device class where it wins; raster stays as the fallback |
+| March wins on desktop only | Default on desktop; raster on phones |
+| March loses on speed everywhere but its lighting (A6) is wanted | Keep raster primary visibility; ship the marched lighting as the hybrid |
+| March loses and its lighting isn't wanted | Keep raster; remove the marcher (or keep it behind the flag) |
+
+## 6. Moving bodies and other content
 
 - **Moving voxel bodies aren't built yet** (Phases 20–22 are planned). Build them as raster meshes
-  first, as planned (`EntitySpawn` layout → greedy mesh), and generalise the per-draw yaw to a
-  quaternion (needed either way). Later, give each body a small brick volume in the pool and a
-  top-level grid over up to 512 body bounds, so shadow and AO rays see them. Teardown's
-  box-rasterized marching is the middle option. Sequence this so cluster rendering isn't built twice.
-- **Depth for raster overlays.** WebGPU depth formats can't be storage textures and can't be copied
-  into from `r32float`. The marcher writes linear distance to an `r32float` storage texture, and a
-  full-screen pass writes `@builtin(frag_depth)` into the existing depth buffer, per projection of
-  the two split passes. With 4× MSAA that edge aliases: shade per sample or replace MSAA with TAA.
-- **Raster stays for** players, held items, particles, debris, the outline, debug lines and water.
-  The UI is DOM and unaffected.
-- **Edits** get faster: one brick write, visible next frame, with no mesher in between.
-
-## 6. Measurement and tests
-
-- **GPU timing first.** Request `timestamp-query` when the adapter has it (about 99 %), put
-  `timestamp_writes` on each pass, resolve into a ring of three `MAP_READ` buffers, report
-  `telemetry::sample("gpu.<pass>", ms)`. Chrome rounds to 100 µs without
-  `--enable-webgpu-developer-features`; `bench.ts` should pass it. Also useful for raster today.
-- **A/B in the bench**: a `renderer` field in scenarios and `?renderer=raster|march`. Raster at
-  `scale: 0.5` is the fair baseline for half-resolution marching. Add a 10-minute flight scenario
-  for phone thermals.
-- **A CPU reference marcher** in Rust over the same brick structure, unit-tested on crafted layouts
-  (first hit cell, face, distance, rebasing, both faces). The GPU marcher is checked against it per
-  pixel on small offscreen scenes (exact ids, depth within about 1e-4 relative); offscreen compute
-  runs headless on SwiftShader.
-- **Against raster**: render the named views (`client/views/views.json`) both ways and compare a
-  cell-id/face buffer (over 99.5 % match where both hit; differences only at silhouettes), and
-  colour within a ΔE threshold.
-- `e2e/terrainDraw.spec.ts` and `views.spec.ts` assume one draw per mesh; a marched path needs its
-  own expectations.
+  first, as planned, under both renderers (composited by depth), and generalise the per-draw yaw to
+  a quaternion (needed either way). Later, give each body a small brick volume in the pool and a
+  top-level grid over up to 512 body bounds, so marched rays see them; Teardown's box-rasterized
+  marching is the middle option. Sequence this so cluster rendering isn't built twice.
+- **Water** stays a raster pass over both renderers at first; under the marcher it later becomes a
+  hit type with reflection and refraction rays (`WATER.md` W6).
+- **Raster under both**: players, held items, particles, debris, outline, debug lines. The UI is DOM.
 
 ## 7. Plan
 
-Each step is shippable on its own; raster stays the default until R6.
+Raster stays the default throughout; every step leaves the game shippable.
 
 | Step | Work | Exit check |
 |---|---|---|
-| **R0** | ADR (changes ADR 0028's renderer description and ARCHITECTURE §5); owner answers §8 | ADR accepted |
-| **R1** | **Frame restructure + GPU timing** (shared with `WATER.md`): offscreen `rgba16float` target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved to a composite pass, timestamp queries in the telemetry and bench | Bench before/after; screenshots match the current look (or the owner approves the difference) |
-| **R2** | `Renderer` switch behind the `Scene` trait (`?renderer=`, shown in settings); generated GPU state table from `shared/blocks`; brick building in the workers and the GPU pool for level-0 chunks; the CPU reference marcher | Reference-marcher tests; brick round-trip tests; memory readout in F3 |
-| **R3** | **Half-res sun shadow + AO rays** from the G-buffer, bilateral upsample, temporal accumulation; a quality setting (off on low) | Bench on desktop and a phone; owner look |
-| **R4** | LOD sections in the pool (palette bricks); **far-terrain marching** for pixels raster leaves empty, at half res; reflections for water (`WATER.md` W6) | Parity of distant terrain against raster views; bench |
-| **R5** | Moving bodies in the marcher (after Phase 20 ships them as meshes); player proxies for shadows | Bodies cast and receive shadows |
-| **R6** | *Only if R3–R4's numbers justify it:* marched primary visibility with a beam prepass, temporal start depth, FSR 1 or TAA-U at 0.67–0.75 scale; flip the default per device class | Bench parity or better on desktop, phone and CI |
+| **A0** | ADR: a second renderer behind a runtime switch (amends ADR 0028's renderer description and ARCHITECTURE §5); owner answers §9 | ADR accepted |
+| **A1** | **Shared frame + GPU timing** (also `WATER.md` W2): offscreen `rgba16float` target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved to a composite pass; timestamp queries in the telemetry; `bench.ts` passes `--enable-webgpu-developer-features` | Bench before/after; raster screenshots match today (or the owner approves the difference) |
+| **A2** | **The seam and compare mode**: payload-generic terrain calls, the `?renderer=` switch and setting, compare mode's split/blink/difference with an empty "march" side; `bench --compare` with the configs table and report | Compare mode runs with raster on both sides and reports zero difference |
+| **A3** | **Near-field marcher**: the generated GPU state table, brick jobs in the workers, the pool and allocator, the CPU reference marcher, primary march at full resolution for level-0 chunks; LOD drawn by raster beyond them for now; overlays via the frag_depth pass | Reference-marcher tests; GPU-vs-reference per-pixel test in CI; first comparison report (desktop) |
+| **A4** | **Far field**: LOD sections as palette bricks at their levels, the column-surface data; raster LOD retired under `march` | Named-view agreement for distant terrain; fly-high comparison |
+| **A5** | **Low resolution and speed**: beam prepass, temporal start depth, FSR 1 and TAA-U, render scales 0.5/0.75; shapes (analytic planes) | Full comparison report on every device (§5) |
+| **A6** | **Lighting under both**: half-res sun-shadow and AO rays from the G-buffer (march) or from raster's depth (hybrid), bilateral upsample, temporal accumulation; a quality setting | Comparison with lighting on and off; owner look |
+| **A7** | **Decision** by the criteria in §5; update ARCHITECTURE.md and the plan for whichever path is chosen | Owner decision recorded in the ADR |
 
-## 8. Questions for the owner
+Moving bodies in the marcher (§6) and water rays (`WATER.md` W6) follow A7 if marching is kept.
 
-1. Is the goal **looks** (shadows, AO, reflections) or **speed** or **view distance**? The hybrid
-   serves the first; the evidence says a full port doesn't deliver the second.
-2. Is a hybrid acceptable as the long-term answer, or is a full ray-marched renderer the goal
-   regardless of the bench?
-3. Minimum devices: which phones must hold 60 fps, and is a lighting quality setting (off on low)
-   acceptable?
-4. Should R1 (the frame restructure) go first as its own step, since water needs it too?
-5. Is 4× MSAA kept, or can it give way to TAA if the composite needs it?
-6. Do moving bodies (Phase 20) wait for this, or ship as meshes first (recommended)?
+Each step updates `docs/ARCHITECTURE.md` and gets deliverables in `docs/IMPLEMENTATION_PLAN.md` when
+adopted; likely alongside Phase 19 (looks and textures), which the shared frame (A1) also serves.
+Nothing here changes public API (world files, seeds' terrain, protocols), so no new compatibility line.
+
+## 8. Risks
+
+- Full-resolution marching may be slower than raster on mobile and iOS (expected, §1); the
+  comparison exists to measure it.
+- Two terrain paths (meshes and bricks) must agree, including adaptive shapes — both generated from
+  the shape registry, and the image-agreement check catches drift.
+- Compare mode doubles GPU memory; on a phone it may not fit at full view distance (shorter
+  distance in compare mode).
+- Temporal techniques ghost on fast bodies and edits.
+- Precision far from the origin if rebasing is wrong (the reference marcher's tests cover it).
+- Upload bandwidth for bricks on edits and re-bakes.
+- The 4× MSAA edge between marched terrain and raster overlays.
+- No subgroups on iOS, no 64-bit atomics anywhere on WebGPU.
+
+## 9. Questions for the owner
+
+1. **Decision criteria**: are the outcomes in §5 the right ones? What matters most — speed, looks,
+   view distance, or edit latency?
+2. **Minimum devices**: which phones must hold 60 fps under the chosen renderer?
+3. Should the shared frame (A1) go first, since water needs it too?
+4. Is 4× MSAA kept, or can it give way to TAA if the composite needs it?
+5. Should compare mode ship in release builds (players could look), or only dev builds and the bench?
+6. Do moving bodies (Phase 20) wait for the decision, or ship as meshes first (recommended)?
 
 ## Sources
 
 - VoxelRT benchmarks (Tree64 93–209 Mrays/s, DDA 31, ESVO 57–137, integrated GPU):
   https://github.com/dubiousconst282/VoxelRT · https://dubiousconst282.github.io/2024/10/03/voxel-ray-tracing/
+- Malyshau, Six Ways to Draw Vangers with WebGPU: https://arxiv.org/abs/2608.17390
 - Editable 64-tree in Rust: https://github.com/expenses/tree64
 - Aokana (SVDAG + LOD + streaming, ~6 ms on an RTX 3060 Ti, combined with meshes): https://arxiv.org/abs/2505.02017
 - Laine & Karras, Efficient Sparse Voxel Octrees: https://research.nvidia.com/publication/efficient-sparse-voxel-octrees
