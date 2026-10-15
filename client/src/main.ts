@@ -39,6 +39,13 @@ import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import {
+  CompareOverlay,
+  RENDERER_CHOICES,
+  choiceOf,
+  rendererParams,
+  type CompareState,
+} from './ui/renderer';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -107,6 +114,20 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /**
+   * The terrain renderers `?renderer=` can pick in this build (docs/DEV_TOOLS.md: `bench
+   * --compare` skips the others), and the upscalers.
+   */
+  renderers(): string[];
+  upscalers(): string[];
+  /** What draws the terrain: `raster`, `march` or `compare raster | march`. */
+  renderer(): string;
+  /** Switches renderer at runtime (local builds; false otherwise): see `?renderer=`. */
+  setRenderer(name: string, compare?: string): boolean;
+  /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
+  compare(): CompareState | null;
+  /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
+  setCompare(view?: string, divider?: number): void;
   /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
@@ -206,6 +227,8 @@ interface App {
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
+  /** Compare mode's labels and divider (the renderer switch, local builds). */
+  compare: CompareOverlay | null;
 }
 
 /** The ?scale= drawing-buffer scale (comparing performance on a device). */
@@ -321,6 +344,7 @@ function showHud(app: App, now: number): void {
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.region ?? '');
   if (h.debug) app.hud.setDebug(h.debug);
+  app.compare?.show(app.client.compareState() as CompareState | null);
 }
 
 async function start(): Promise<App | null> {
@@ -344,6 +368,9 @@ async function start(): Promise<App | null> {
       fullChunks: params.get('chunks') === 'full',
       netsim: params.get('netsim') ?? undefined,
       search: location.search,
+      // ?renderer= and compare mode: local builds only (vite.config.ts, RAY_MARCHED_RENDERER.md §3).
+      rendererSwitch: __RENDERER_SWITCH__,
+      ...rendererParams(location.search, __RENDERER_SWITCH__),
     });
   } catch (err) {
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -376,6 +403,11 @@ async function start(): Promise<App | null> {
     loopback: null,
     world: null,
     playing: false,
+    compare: __RENDERER_SWITCH__
+      ? new CompareOverlay(document.body, canvas, (share) => {
+          client.setCompare(undefined, share);
+        })
+      : null,
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -408,6 +440,20 @@ async function start(): Promise<App | null> {
     client.setMenuOpen(open);
   };
   settings.setFootnote(formatBuildInfo(buildInfo));
+  const showRenderer = (): void => {
+    const label = client.renderer();
+    settings.setRenderer(
+      label,
+      client.rendererSwitch() ? RENDERER_CHOICES : null,
+      choiceOf(label)?.id,
+      (id) => {
+        const c = RENDERER_CHOICES.find((r) => r.id === id);
+        if (c) client.setRenderer(c.renderer, c.compare);
+        showRenderer();
+      },
+    );
+  };
+  showRenderer();
   settings.addDebugTools([
     {
       key: 'F3',
@@ -474,6 +520,18 @@ async function start(): Promise<App | null> {
       client.releaseCamera();
     },
     renderStats: () => client.renderStats() as RenderStats,
+    renderers: () => client.renderers() as string[],
+    upscalers: () => client.upscalers() as string[],
+    renderer: () => client.renderer(),
+    setRenderer: (name, compare) => {
+      const ok = client.setRenderer(name, compare);
+      showRenderer();
+      return ok;
+    },
+    compare: () => client.compareState() as CompareState | null,
+    setCompare: (view, divider) => {
+      client.setCompare(view, divider);
+    },
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,
