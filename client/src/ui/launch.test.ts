@@ -125,4 +125,21 @@ describe('where routes open', () => {
       '/dwell/?code=KQ7XM4',
     );
   });
+
+  it('reads the menu routes the launcher sends: a new world, a regenerated one', () => {
+    expect(launchOf('?new=1&name=Hill&seed=42&type=flat')).toEqual({
+      kind: 'new',
+      name: 'Hill',
+      seed: '42',
+      type: 'flat',
+    });
+    // `seed` alone is a world by link; with `new` it is the new world's seed.
+    expect(launchOf('?seed=42').kind).toBe('link');
+    expect(launchOf('?regenerate=wabc')).toEqual({ kind: 'regenerate', id: 'wabc' });
+    // A route replaces another's parameters, keeping debug flags.
+    expect(withRoute('?new=1&name=Hill&seed=1&type=flat&debug=1', { play: 'wabc' })).toBe(
+      '?debug=1&play=wabc',
+    );
+    expect(withRoute('?say=gone', {})).toBe('');
+  });
 });

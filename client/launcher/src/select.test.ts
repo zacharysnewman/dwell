@@ -8,6 +8,8 @@ import {
   listBuilds,
   parseWorldIndex,
   type Channel,
+  canRegenerate,
+  supportsMenuRoutes,
 } from './select';
 
 function manifest(versions: string[], minLauncher: Record<string, number> = {}): Manifest {
@@ -234,5 +236,36 @@ describe('the landing screen', () => {
       '?versions',
     ])
       expect(isPlainVisit(q)).toBe(false);
+  });
+});
+
+describe('the menu routes (the launcher owns the menu)', () => {
+  const m = manifest(['0.10.3', '0.10.2', '0.1.0']);
+
+  it('regenerates a world in the build that opens it, and makes new worlds in the latest', () => {
+    const worldVersion = (id: string) => (id === 'w1' ? '0.10.2' : null);
+    expect(choose(m, { search: '?regenerate=w1', worldVersion, channel: 'stable' })).toEqual({
+      kind: 'open',
+      version: '0.10.3',
+      why: 'world',
+    });
+    expect(
+      choose(m, { search: '?new=1&name=A&seed=1&type=flat', worldVersion, channel: 'stable' }),
+    ).toMatchObject({ kind: 'open', version: '0.10.3' });
+  });
+
+  it('counts menu routes and world links as routes, not a plain visit (which shows the menu)', () => {
+    for (const q of ['?new=1', '?regenerate=w1', '?local=1', '?seed=7', '?world=flat']) {
+      expect(isPlainVisit(q), q).toBe(false);
+    }
+    expect(isPlainVisit('?say=gone&debug=1')).toBe(true);
+  });
+
+  it('offers Regenerate only where the build that opens the world carries it out', () => {
+    expect(supportsMenuRoutes('0.10.3-dev.1')).toBe(true);
+    expect(supportsMenuRoutes('0.10.2')).toBe(false);
+    expect(canRegenerate(m, '0.10.2')).toBe(true); // opened by 0.10.3
+    expect(canRegenerate(m, '0.1.0')).toBe(false); // only 0.1.0 opens it
+    expect(canRegenerate(m, null)).toBe(false);
   });
 });

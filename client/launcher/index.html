@@ -2,15 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="theme-color" content="#86b3ea" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <!-- The launcher (RELEASES.md §5): the only page that is not versioned. Reads versions.json. -->
+    <!-- The launcher (RELEASES.md §5): the only page that is not versioned. Reads versions.json and
+         shows the main menu; every choice opens the build it needs. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'"
     />
     <title>Dwell</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
     <main id="launcher">

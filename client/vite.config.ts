@@ -95,6 +95,16 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      // The game's page, and `tools.js` at a fixed name for the launcher (src/tools.ts).
+      input: { index: 'index.html', tools: 'src/tools.ts' },
+      // Keep `tools.js`'s exports: nothing in the build imports them.
+      preserveEntrySignatures: 'exports-only',
+      output: {
+        entryFileNames: (chunk) =>
+          chunk.name === 'tools' ? 'tools.js' : 'assets/[name]-[hash].js',
+      },
+    },
   },
   test: {
     environment: 'node',

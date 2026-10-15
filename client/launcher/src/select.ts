@@ -62,8 +62,9 @@ export function choose(manifest: Manifest, req: Request): Choice {
       : { kind: 'error', message: `Version ${pinned} is not published.` };
   }
 
-  // A world from the menu: the newest build that may open it (same line, not older).
-  const play = params.get('play');
+  // A world from the menu: the newest build that may open it (same line, not older). Regenerating
+  // one is the same build's to do.
+  const play = params.get('play') ?? params.get('regenerate');
   const worldVersion = play ? req.worldVersion(play) : null;
   if (worldVersion && isVersion(worldVersion)) {
     const e = newest(manifest, (v) => canOpenWorld(v, worldVersion));
@@ -165,10 +166,40 @@ export function listBuilds(manifest: Manifest, showDev: boolean, worlds: WorldRe
 }
 
 /** Query parameters that route to a particular build or game: a visit with none is "plain". */
-const ROUTING_PARAMS = ['play', 'join', 'code', 'v', 'version', VERSIONS_PARAM];
+const ROUTING_PARAMS = [
+  'play',
+  'join',
+  'code',
+  'v',
+  'version',
+  VERSIONS_PARAM,
+  // The menu's new and regenerated worlds, and local worlds by link (src/ui/launch.ts).
+  'new',
+  'regenerate',
+  'local',
+  'world',
+  'seed',
+];
 
 /** Whether the address asks for nothing in particular (the site root, maybe `?debug=1`). */
 export function isPlainVisit(search: string): boolean {
   const params = new URLSearchParams(search);
   return !ROUTING_PARAMS.some((key) => params.has(key));
+}
+
+/**
+ * The first builds that carry out the menu's routes (`?new=…`, `?regenerate=<id>`, src/ui/launch.ts)
+ * and publish `tools.js`: the launcher owns the menu from these on (RELEASES.md §5).
+ */
+export const MENU_ROUTES_SINCE = '0.10.3-0';
+
+export function supportsMenuRoutes(version: string): boolean {
+  return compareVersionText(version, MENU_ROUTES_SINCE) >= 0;
+}
+
+/** Whether a world can be regenerated: the build that would open it carries `?regenerate=` out. */
+export function canRegenerate(manifest: Manifest, worldVersion: string | null): boolean {
+  if (!worldVersion || !isVersion(worldVersion)) return false;
+  const e = newest(manifest, (v) => canOpenWorld(v, worldVersion));
+  return e !== null && supportsMenuRoutes(e.version);
 }

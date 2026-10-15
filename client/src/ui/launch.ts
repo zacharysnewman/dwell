@@ -14,11 +14,35 @@ export type Launch =
   | { kind: 'code'; code: string }
   /** A world from the menu (`?play=<world id>`). */
   | { kind: 'play'; id: string }
+  /**
+   * A new world from the menu (`?new=1&name=…&seed=…&type=…`): created by the build that opens it,
+   * which records its own generator and version (RELEASES.md §5: the launcher owns the menu).
+   */
+  | { kind: 'new'; name: string; seed: string; type: string }
+  /** A world regenerated from its seed by the build that opens it (`?regenerate=<world id>`). */
+  | { kind: 'regenerate'; id: string }
   /** A local world by link (`?local=1`, `?world=`, `?seed=`): one per generator and seed. */
   | { kind: 'link' };
 
 /** Parameters that choose what the page opens; every other one (debug flags) is kept. */
-const ROUTE_PARAMS = ['join', 'cert', 'rtc', 'ice', 'code', 'play', 'local', 'world', 'seed', 'v'];
+const ROUTE_PARAMS = [
+  'join',
+  'cert',
+  'rtc',
+  'ice',
+  'code',
+  'play',
+  'local',
+  'world',
+  'seed',
+  'v',
+  'new',
+  'name',
+  'type',
+  'regenerate',
+  // A message for the menu (the launcher's): why it came up instead of a game.
+  'say',
+];
 /**
  * What an invite link carries; `v` is the host's app version (RELEASES.md §5), which the launcher
  * reads to open a build on the host's compatibility line.
@@ -34,6 +58,16 @@ export function launchOf(search: string): Launch {
     const normalized = normalizeCode(code);
     return normalized ? { kind: 'code', code: normalized } : { kind: 'menu' };
   }
+  if (params.get('new') === '1') {
+    return {
+      kind: 'new',
+      name: params.get('name') ?? '',
+      seed: params.get('seed') ?? '',
+      type: params.get('type') ?? '',
+    };
+  }
+  const regenerate = params.get('regenerate');
+  if (regenerate) return { kind: 'regenerate', id: regenerate };
   const play = params.get('play');
   if (play) return { kind: 'play', id: play };
   if (params.has('world') || params.has('seed')) return { kind: 'link' };

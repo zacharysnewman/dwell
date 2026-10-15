@@ -99,7 +99,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    (`client/src/local/worker.ts`), connected through the TS `LoopbackTransport`, which the shell
    hands to the Rust client like any transport (§8.1). Same code, same protocol, same device-key
    handshake, no network. **[built, Phase 5a]** A page with no world or server in its
-   address opens the **main menu** (`ui/mainMenu.ts`: your worlds, and playing with others — join, nearby, recent, the server browser);
+   address opens the **main menu** (`ui/mainMenu.ts`: your worlds, and playing with others — join, nearby, recent, the server browser), which the **launcher** shows at `/dwell/` (RELEASES.md §5: every choice, creating and regenerating worlds included, is a route to the build that carries it out; a build with no route hands over to the launcher);
    choosing a world navigates to `?play=<world id>` and joining to the invite, so a reload
    continues the same game and Back returns to the menu (`ui/launch.ts`). **[built, Phase 6]**
    Those navigations go to `/dwell/` (`launcherHref`, `launcherPath.ts`), never to a version's own
