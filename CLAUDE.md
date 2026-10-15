@@ -38,6 +38,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   drive it with scripted scenarios (`client/bench/scenarios.json`, `npm run bench`) and read frame
   timings, job latencies, controller ticks, traces and screenshots. Use and extend it to test and
   benchmark in the browser.
+- `docs/proposals/` — investigated but not adopted plans (ray-marched rendering, water rendering,
+  a structure sandbox), each with open questions for the owner; not architecture until an ADR adopts it.
 - `docs/adr/` — architecture decision records.
 - `docs/FUTURE.md` — out-of-scope future plans; items move into the architecture only via an ADR.
 
