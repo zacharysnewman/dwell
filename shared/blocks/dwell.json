@@ -13,20 +13,20 @@
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
-      "name": "stone", "density": 2400, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#bbafa6", "textures": "stone"
     },
     {
-      "name": "dirt", "density": 1500, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#8a5a3a", "textures": "dirt"
     },
     {
-      "name": "grass", "density": 1400, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#8dbf3f",
       "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
     {
-      "name": "ladder", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
+      "name": "ladder", "sound": "dwell:wood", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
       "facingProperty": "facing",
       "properties": {
         "facing": ["north", "east", "south", "west"],
@@ -38,16 +38,16 @@
       "color": "#a0703a", "textures": "ladder"
     },
     {
-      "name": "water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
+      "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
       "liquid": true, "color": "#3fb2d6", "textures": "water"
     },
     {
-      "name": "sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#eed9a4", "textures": "sand"
     },
     {
       "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white, untextured, not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
-      "name": "sandbox_floor", "density": 2400, "shape": "full", "indestructible": true,
+      "name": "sandbox_floor", "sound": "dwell:stone", "density": 2400, "shape": "full", "indestructible": true,
       "color": "#ffffff"
     }
   ]

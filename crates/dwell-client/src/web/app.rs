@@ -735,6 +735,26 @@ impl Client {
         self.inner.borrow_mut().shell_events.drain(..).collect()
     }
 
+    /// The game's sound events since the last call (docs/AUDIO.md §5): 7 numbers each (kind,
+    /// block state, intensity, x, y, z, flags), for the shell's audio (`client/src/audio`).
+    #[wasm_bindgen(js_name = takeSounds)]
+    pub fn take_sounds(&self) -> Vec<f64> {
+        let mut s = self.inner.borrow_mut();
+        s.game
+            .as_mut()
+            .map_or_else(Vec::new, |g| dwell_game::sound::encode(&g.take_sounds()))
+    }
+
+    /// The audio listener (the camera at the last frame): eye, forward and up, 9 numbers; empty
+    /// before playing.
+    pub fn listener(&self) -> Vec<f64> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(Vec::new, |g| g.listener().to_vec())
+    }
+
     // ----- Game actions (the debug hooks use these too) -----
 
     /// Breaks (`"break"`) or places (`"place"`) at the crosshair.

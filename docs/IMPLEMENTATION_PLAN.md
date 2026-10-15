@@ -45,6 +45,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; next: W1b, the water shader, after A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9 |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -80,6 +81,9 @@ phases: **25 — the ray-marched renderer comparison** ([ADR 0029](./adr/0029-ra
 **27 — the structure sandbox** ([ADR 0031](./adr/0031-data-driven-structures.md)). Each needs Phase 24
 only; they can run alongside Phases 16–19. Phase 20 waits for Phase 25's decision (A7). Deliverables
 are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
+On 2026-10-14 the owner asked for sound effects (procedural, data-driven, every game and menu
+action): **Phase 28** ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)); it needs Phase 24
+only.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -2744,6 +2748,60 @@ Exit criteria
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
   over the cap or outside the build volume are rejected (test).
+
+---
+
+## Phase 28 — Sound Effects
+
+**Goal:** Procedural, data-driven sound effects for every game and menu action: block sound sets
+(footsteps, landing, break, place, a refused hit), the player's movement and water, flight, the
+hotbar and the menus, with per-play variation for game sounds and none for UI sounds, spatialised
+for other players ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)).
+
+**Status:** In progress — F0–F6 built; every automated exit criterion verified (Vitest, Rust tests,
+`npm run sfx:render`) and the sounds checked playing in the built game and the main menu in Chromium
+(a local world: footsteps, jump, landing, place, break, refusal, hotbar, game menu and its tabs; the
+menu's hover, click and error). Outstanding: the owner's listening review of the WAV renders and the
+open questions (`AUDIO.md` §9). Needs Phase 24 only. Defaults chosen without the owner's
+answers (the owner gave the brief directly); open questions in `AUDIO.md` §9.
+
+Deliverables
+- [x] **F0** — `AUDIO.md` and ADR 0032 (procedural, plain Web Audio, no library; data format;
+  events from the Rust game; UI sounds without variation; volumes).
+- [x] **F1** — The sound data (`shared/sounds/dwell.json`) and `shared/sounds/gen.mjs`: validation
+  with messages, generated TS and Rust, the registry's `sound` field checked by
+  `shared/blocks/gen.mjs`, CI stale check.
+- [x] **F2** — Rust sound events (`dwell-game` `sound.rs`): footsteps by gait stride, climbing,
+  swimming, landing, jump, water enter/exit, crouch, sprint, slide, flight rise/dive, local and
+  remote edits, refused edits; `takeSounds` and `listener` on the JS API.
+- [x] **F3** — The synth, variation and mixer (`client/src/audio/`): the vocabulary, seeded
+  variation, buses, room reverb, limiter, spatial playback, autoplay unlock, mute when hidden.
+- [x] **F4** — Game actions and menus: event playback in the game page; action sounds (hotbar,
+  flight, game menu, F3/F4/F6, touch mode); delegated UI sounds on the main menu (launcher too) and
+  the game menu; the controls coverage test.
+- [x] **F5** — Master, Effects and Interface volume sliders (append-only `dwell.audio` store).
+- [x] **F6** — Offline renders (`npm run sfx:render`): every sound rendered in Chromium, checked
+  (non-silent, peak < 1.0, sensible length) and written to WAV, with footstep sequences and
+  break/place variations.
+
+Exit criteria
+- [x] A new sound set and block mapping work by data alone (Vitest); bad entries fail naming the
+  entry.
+- [x] Rust tests: footstep cadence from distance, landing intensity from impact speed, edit events
+  (echo suppressed, remote spatial, refused hit).
+- [x] Every controls-table action has a sound mapping (Vitest); a new button gets the UI click
+  without wiring (Vitest).
+- [x] Every render is non-silent, peaks below 1.0 and has a sensible length.
+- [ ] The owner listens to the WAV renders and approves them.
+
+Deviations
+- The levels of the sounds were set by measuring the renders (A-weighted loudness per category:
+  footsteps, landings, breaks, places, hits, player and UI sounds) rather than by ear; the owner's
+  listening review may retune them in the data.
+- Chat and screenshots do not exist yet, so they have no sounds; the coverage test asks for them
+  when they join the controls table.
+- The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
+  its own make-up gain, which pushed sequences past full scale in the renders.
 
 ---
 
