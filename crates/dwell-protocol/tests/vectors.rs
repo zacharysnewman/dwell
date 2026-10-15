@@ -83,6 +83,11 @@ fn decoded_fields_are_the_vectors_values() {
     assert_eq!(r.cells, [1, 1, 1, 1, 4, 0, 4, 0, 0, 0, 0, 0]);
     // Layer order: x fastest, then z, then y.
     assert_eq!(r.cells[RegionEdit::cell_index(r.size, 0, 1, 1)], 4);
+    let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_paste_keep")) else {
+        panic!("region_edit_paste_keep")
+    };
+    let keep = region_edit::KEEP as u16;
+    assert_eq!((r.size, r.cells.as_slice()), ([3, 1, 1], [keep, 2, keep].as_slice()));
     let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_replace")) else {
         panic!("region_edit_replace")
     };
