@@ -279,6 +279,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      the shell's block dump) and vectors.txt.
 /shared/worldgen     golden/: chunk and LOD-section hashes of generator version 12 (§6.3).
 /shared/structures   playground.structure: the movement playground the tests stamp (§6.3).
+/shared/brushes      brushes.json (brush presets and the per-world-type brush policy) + gen.mjs
+                     (→ Rust for dwell-world brushes.gen.rs, TS for the shell's controls table; §6.5).
 /shared/version      vectors.txt: version precedence, compatibility lines and "may open" cases that the
                      TypeScript (client/src/version) and Rust (dwell-sim app_version.rs)
                      implementations both pass.
@@ -431,7 +433,7 @@ returns. Without WebGPU (no `navigator.gpu`, no adapter or device) the page show
 | `telemetry.rs` **[built]** | Dev telemetry ([DEV_TOOLS.md](./DEV_TOOLS.md)): per-frame series (named spans and counts: the frame's phases — network, job polling and applying, ticks, chunk meshing, the LOD update, encoding and presenting — and GPU uploads), event samples (each job kind's queue and run times, from the pool) and a trace of the predicted controller's ticks, kept for the last 600 frames and summarised as percentiles. Always on, one per thread; the bench (`client/scripts/bench.ts`) drives scenarios in a real browser and reads it. |
 | `web/transport.rs`, `net/` **[built]** | Browser transports over `web-sys`: WebTransport to dedicated servers (certificate-hash pinning, the §8.1 framing; a closing connection first reads the control stream to its end so the server's last message — a `Reject` such as `Replaced` — is not lost; datagram writes never queue — one in flight and only the newest waiting per message type, `net/datagram.rs`, so slow frames cannot build input latency) and WebRTC to their ICE-lite endpoint (the server's answer built locally from the invite, `net/sdp.rs`); a JS transport object (friend-world peers, local mode's loopback) wrapped as a third kind. All deliver into one event queue the frame drains. `net/session.rs`: the join handshake and connection health as a poll-driven state machine (signing is the host's: the session asks the shell's function on a `Challenge`), reliable and datagram RTT. `net/netsim.rs`: `?netsim=rtt,jitter,loss%`. `web/mod.rs` `pingServer`: a lobby entry's `StatusRequest` round trip over a fresh connection (5 s timeout). |
 | `game.rs` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with `dwell-physics`'s `Predictor` (the same controller and Rapier setup as the server, against the client's streamed `VoxelWorld`), sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the predictor, nudges its tick rate from the server's input buffer, streams terrain around the player (`dwell-game`'s chunk streamer, mesh jobs within a 4 ms frame budget), drives the first-person camera (per-tick eye height with crouch and step-up/down smoothing, and the turn-over across the midplane), block targeting and its outline, the whole-world view (`dwell-lod`), the HUD text and the F3 overlay. A tool can place the camera (`set_view`, a `ViewOverride`): the renderer and the LOD view from it while the player stays put (named views, §6.3). Platform-free behind a `Scene` trait (the renderer) and a job pool, so `tests/game_local.rs` plays a local world natively through the real session and handshake. |
-| `dwell-game` **[built]** | `remotes.rs`: snapshot buffer and interpolation `INTERP_DELAY_MS` in the past. `input.rs`: keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4 and its zoom `-`/`=`; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block) and input quantization. `flight.rs`, `flight_speed.rs`: the creative-flight toggle (Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1) and the speed level. `touch.rs`: touch controls for phones and tablets (floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button toggling the F3 overlay, one captured pointer per control, merged into the same sampled input; the DOM elements are the shell's `ui/touchControls.ts`). `eye.rs`, `face_flip.rs`: the eye and the camera's turn-over between the faces. `block_interaction.rs` (§6.5): the target under the crosshair (`raycast_block` from the eye, `REACH_DISTANCE`), the palette (every placeable state, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. `region_tools.rs` (§6.5): the region tools — box selection, fill / hollow / replace / remove, copy, paste with rotate and mirror, undo/redo — turned into `RegionEdit`s, and their keys (`tool_for_key`). `chunk_stream.rs`: applies `ChunkData` (Generated through the generation workers, Explicit decoded) and `ChunkUnload` to the streamed world, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first (each job's padded voxels copied row by row from the chunk and its 26 neighbours, each looked up once), and tells the game when the terrain around the player is loaded (`gate.rs`, §6.3). `chunk_diff.rs`: the F3 overlay's chunk regenerated and diffed. `hud_text.rs`: the HUD's lines (background work such as terrain loading is a small status in the bottom-left corner, never over the view). |
+| `dwell-game` **[built]** | `remotes.rs`: snapshot buffer and interpolation `INTERP_DELAY_MS` in the past. `input.rs`: keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F3, F4 and its zoom `-`/`=`; while the pointer is locked, left/right click break/place, number keys and the wheel pick a block) and input quantization. `flight.rs`, `flight_speed.rs`: the creative-flight toggle (Phase 4: double-tap Space or Jump, or the touch Fly button; only if `Welcome` allows it; §9.1) and the speed level. `touch.rs`: touch controls for phones and tablets (floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places — held Jump and Crouch buttons, latching Run and Break/Place buttons, a Fly button, an ⓘ button toggling the F3 overlay, one captured pointer per control, merged into the same sampled input; the DOM elements are the shell's `ui/touchControls.ts`). `eye.rs`, `face_flip.rs`: the eye and the camera's turn-over between the faces. `block_interaction.rs` (§6.5): the target under the crosshair (`raycast_block` from the eye, `REACH_DISTANCE`), the palette (every placeable state, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. `region_tools.rs` (§6.5): the region tools — box selection, fill / hollow / replace / remove, copy, paste with rotate and mirror, undo/redo of steps of one or more edits, a queue paced by the server's cell rate — turned into `RegionEdit`s, and their keys (`tool_for_key`). `brush_tool.rs` (§6.5, [`BRUSHES.md`](./BRUSHES.md)): the brush tool — the preset, brush, performer and size, ranged aim, the wireframe outline, arrow/gunpowder strokes and the replace pick — and its keys (`brush_key`, live while V has it on). `chunk_stream.rs`: applies `ChunkData` (Generated through the generation workers, Explicit decoded) and `ChunkUnload` to the streamed world, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first (each job's padded voxels copied row by row from the chunk and its 26 neighbours, each looked up once), and tells the game when the terrain around the player is loaded (`gate.rs`, §6.3). `chunk_diff.rs`: the F3 overlay's chunk regenerated and diffed. `hud_text.rs`: the HUD's lines (background work such as terrain loading is a small status in the bottom-left corner, never over the view). |
 | `jobs/`, `pool.rs`, `web/jobs.rs` **[built]** | Background jobs (§5.1): chunk generation (and the verification hash), LOD bounds and sections, the F4 map's height samples, chunk and section meshing. `jobs/codec.rs` encodes jobs and results as bytes (one transferred buffer each way); `pool.rs` keeps at most the workers' capacity in flight per kind (generation, meshing), cancels queued chunk jobs on unload and routes results to the streamer, the LOD system and the debug tools; `web/jobs.rs` posts to the least busy worker. Natively the same jobs run inline (tests). |
 | `dwell-mesh` **[built, Phase 3d; LOD 4c]** | Greedy chunk mesher: a chunk's voxels with a one-voxel apron (34³) in; positions, normals, face-tinted colours, texture coordinates in blocks and per-vertex atlas tile rectangles out, an opaque and a transparent (water) mesh. Faces are culled like collision (hidden by full cubes; water by water; a ladder draws only its facing plate); faces of full cubes and water merge into rectangles of one material per slice, ladders stay one quad per face. Render meshes only: collision stays in `dwell-physics` (§6.1), so prediction collides with exactly the server's geometry. LOD sections (`lod_mesher.rs`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. **Block textures** (`textures.rs`): generated from tiled noise — periodic value-noise fBm whose lattice wraps at the 32-texel tile, so every tile is seamless across blocks — for grass (top, a side with a grass fringe), dirt, stone, sand, rippled water, ladders (rails and rungs) and **[built, Phase 27 S2a]** `grid` (white with a one-texel line along two edges, so every block edge gets a faint line; the sandbox floor's), named by the registry's texture names; packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters, mipmapped down to the level where the gutter is one texel wide (five levels, two texels per tile at the last): filtering a smaller level at a tile's edge would reach past the gutter into the neighbouring tiles and the atlas's empty space, which a grazing view of distant ground samples; the hotbar's swatches are cut from it (`hotbarSwatch`). Each tile's average colour in linear light is the flat colour of LOD faces. |
 | `dwell-look` **[built, Phase 7]** | The look as plain data shared by both meshers, the lights, the sky and the fog (WORLD_GENERATION.md §1): one per-face RGB tint table — warm on top, cooler on the sides, blue underneath — in the chunk and LOD meshers alike (`normal_tint` for shaped faces); a warm sun and a green-bounce hemisphere light per face; the exposure (`DEFAULT_EXPOSURE`); the **sky** (`sky_color` and its generated WGSL twin, `sky_wgsl`), the sky frame (`sky_frame.rs`) and the height fog's model (`fog.rs`, unit-tested). Block colours and tiles are tuned to the measured palette; water is turquoise. |
@@ -1086,6 +1088,36 @@ Players break and place blocks. Server-authoritative like every voxel change
   what the server would (too big, too far, too fast, chunks not loaded, an older server) with a
   message on that line. The tools read the client's world through the chunk streamer (its
   `BoxSource`), so an Air chunk the server sent counts as loaded though the client never stores it. No touch controls yet.
+  With a server that takes `KEEP` cells (below), undo keeps unbreakable cells as `KEEP`: no paste may
+  put one down, so the undo of a box over the sandbox floor would otherwise be rejected.
+- **Brushes [built, structure sandbox S5]** ([ADR 0035](./adr/0035-brushes.md),
+  [`BRUSHES.md`](./BRUSHES.md); `dwell-world` `brush.rs`, `dwell-game` `brush_tool.rs`):
+  VoxelSniper-style painting and sculpting in world types whose brush policy allows it (today only
+  `sandbox`).
+  - **Engine.** A **brush** (ball, disc, cylinder, cube, ellipsoid, seeded splatter, line) is a set
+    of cells around a centre, with a radius of 1–16. A **performer** changes the cells read from a
+    grid of the world: set, replace, overlay (the top layers), erase, or the sculpt performers
+    smooth (a 26-neighbour majority filter), erode (VoxelSniper's erode/fill by open and solid
+    faces), flatten, raise and lower (by column). A mask (air, solid, target) limits a set, erase
+    or overlay. These are a fixed vocabulary in code.
+  - **Data.** Named **presets** (brush, performer, size, an optional free key, parameters) and the
+    per-world-type **policy** (`brushes`, `reach`) are data in `shared/brushes/brushes.json`,
+    validated by `gen.mjs` into `brushes.gen.rs` and `brushes.gen.ts`; CI fails on stale output.
+  - **Strokes.** A stroke's changed cells (never an unbreakable one) go as `RegionEdit` **Paste**es
+    of at most 32³, split by 32-cell tiles and trimmed to their cells, with every other cell
+    **`KEEP`** (`region_edit::KEEP`, 0xFFFF), which the server leaves as it is. The client sends
+    them only to a server whose `Welcome` has the **`brushes`** flag. Such a server sets the flag in
+    world types whose policy allows brushes, and there its region-edit reach is the policy's
+    (`region_reach`: 128 m + 1 m in the sandbox, `REGION_EDIT_REACH` + 1 m elsewhere). Every other
+    check is the region edit's.
+  - **Pacing and undo.** The client mirrors the server's cell bucket and sends a stroke's edits as
+    it allows, with the progress on the HUD; a stroke is one undo step, however many edits it took.
+    Not predicted.
+  - **Client.** The tool aims along the view up to the policy's reach and outlines the brush (a
+    wireframe over everything, like the region boxes). Left click centres a stroke on the aimed-at
+    block (VoxelSniper's arrow), right click on the cell in front of it (gunpowder), and a middle
+    or Alt click picks the replace target. V turns the tool on; Q/E choose the preset, Z the
+    brush, P the performer, `[`/`]` or Alt+wheel the size; a panel above the hotbar shows them.
 - **Inventory:** creative-style and infinite — every *placeable* material in the (prototype, §6.1)
   material table is always available: all but air and liquids (water) — since Phase 15 stone, dirt,
   grass, sand and ladders, five hotbar slots; nothing is consumed or collected. Ladders are one hotbar slot: placed against a side face the ladder is
@@ -1508,6 +1540,9 @@ in the code yet.
 | `REGION_EDIT_CELLS_PER_SECOND` / `BURST_CELLS` | 65 536 / 131 072 | Region edit rate: a token bucket of cells, each request costing its box's volume |
 | `REGION_EDIT_REACH` | 64 m | A region edit's nearest cell from the eye (the server allows 1 m more for latency) |
 | `REGION_EDIT_MAX_QUEUED` | 4 | Region edits queued per session per tick; more are dropped |
+| `REGION_EDIT_KEEP` | 0xFFFF | A paste cell the server leaves as it is (brush strokes; only with the `brushes` Welcome flag) |
+| Brush reach (data) | 128 m | `shared/brushes/brushes.json` `worldTypes.sandbox.reach`: the brush's aim and the sandbox's region-edit reach (§6.5) |
+| Brush size (data) | 1–16 | A brush's radius in cells (`sizes`); at 16 a stroke spans 33 cells and splits into several region edits |
 | `MAX_RESYNC_CHUNKS` | 64 | Chunks per `ChunkResync` or `ChunkRequest` message |
 | `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~256 KB; 16 bytes each since Phase 13) |
 | `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
@@ -1620,7 +1655,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (structure sandbox S5; still protocol v12, negotiated by the flag) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
 vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
@@ -1712,7 +1747,8 @@ C→S  ClientAuth    u8[64] signature over (nonce ‖ transport binding ‖ publ
 S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick,
                    i32×3 verificationChunk, u8 flags (WelcomeFlags: 1 = flight — this
                    player may use creative flight; 2 = regionEdits — the server takes
-                   RegionEdit, §6.5), u64 registryHash (the block registry
+                   RegionEdit, §6.5; 4 = brushes — pastes may hold KEEP cells and region
+                   edits reach the world type's brush reach, §6.5), u64 registryHash (the block registry
                    hash, §6.1: runtime state ids on the wire mean the same blocks only if
                    it matches; the client rejects the server otherwise)
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
@@ -1743,7 +1779,9 @@ u8×3 size                       // cells along x, y, z: each 1..REGION_EDIT_MAX
 Fill, Hollow: u16 material      // Hollow: the box's shell; air inside
 Replace:      u16 from, u16 material
 Paste:        palette + RLE (as ChunkData Explicit) of size.x·size.y·size.z states,
-              x fastest, then z, then y
+              x fastest, then z, then y; a state 0xFFFF (KEEP) leaves its cell as it is —
+              sent only to a server whose Welcome has the brushes flag (older ones reject it
+              as an unknown state)
 ```
 
 **Client → Server: `ChunkResync` (reliable, `control`) [built, Phase 3d]** — a revision gap (§6.3)
@@ -2180,7 +2218,9 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
   own bits). So a new client→server message may ship within a line only behind a `Welcome` flag:
   newer servers set it, and clients send the message only when it is set. Older clients never send
   it; newer clients on an older server see no flag and keep the feature off. `RegionEdit` is the
-  first (`regionEdits`, from the first 0.10 build after 0.10.3). A change to an existing layout still needs a new line.
+  first (`regionEdits`, from the first 0.10 build after 0.10.3). The `brushes` flag is the second: it
+  adds a cell value (`KEEP`) to `RegionEdit` Paste's existing layout, one older servers reject as an
+  unknown state (failing safe), so clients use it only behind the flag. A change to an existing layout's meaning that older servers would accept still needs a new line.
 - **App version** ([ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md)):
   Semantic Versioning 2.0.0, one for the whole app, kept in `client/package.json` as the version the
   next release can have at least (a floor, §2.1), embedded in every build (TS shell: `__APP_VERSION__`; Rust:

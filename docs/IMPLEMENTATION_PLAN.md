@@ -44,7 +44,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built; the owner approved A1's image differences (2026-10-14); outstanding for A1: the e2e suite on CI; next: A2; local builds only until the owner's decision (A7); `package.json` raised to 0.11.1, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S2a (floor block, sandbox world type) and S3a (region edits, the region tools) done; S2a's e2e check, S3b (anchor, touch) and the S3 sandbox e2e outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S2a (floor block, sandbox world type), S3a (region edits, the region tools) and S5 (VoxelSniper-style brushes, ADR 0035) built; S2a's e2e check, S3b (anchor, touch), the S3 sandbox e2e and the owner's try-out of S5 outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2685,9 +2685,10 @@ Exit criteria
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR), S2a (the floor and the sandbox world type) and S3a (region
-edits and the region tools) done; outstanding: S2a's e2e exit check, S3b (anchor, touch) and the S3
-sandbox e2e; next: S1, the structure format and its generator.
+**Status:** In progress — S0 (the ADR), S2a (the floor and the sandbox world type), S3a (region
+edits and the region tools) and S5 (brushes, [ADR 0035](./adr/0035-brushes.md)) built; outstanding:
+S2a's e2e exit check, S3b (anchor, touch), the S3 sandbox e2e, and the owner's try-out of S5 (and
+answers to `BRUSHES.md` §5); next: S1, the structure format and its generator.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
@@ -2717,6 +2718,15 @@ Deliverables
   controls table).
 - [ ] **S3b** — Set anchor (moved here from S3: it belongs with saving a selection as a structure,
   S2b); touch controls for the region tools.
+- [x] **S5** — Brushes ([`BRUSHES.md`](./BRUSHES.md), [ADR 0035](./adr/0035-brushes.md); the owner's
+  brief, 2026-10-15: "painting tooling … like Voxel Sniper"): brushes (ball, disc, cylinder, cube,
+  ellipsoid, seeded splatter, line), performers (set, replace, overlay, erase; masks) and sculpt
+  (smooth, erode/fill, flatten, raise, lower) in `dwell-world` `brush.rs`; presets and the
+  per-world-type policy as data (`shared/brushes/brushes.json`, `gen.mjs`, CI stale check); strokes
+  as `KEEP` pastes of ≤ 32³ behind a `brushes` Welcome flag with the sandbox's 128 m reach
+  (server-validated as region edits); the brush tool (`dwell-game` `brush_tool.rs`: keys, ranged
+  aim, wireframe outline, arrow/gunpowder, pick, one undo step per stroke, rate-paced sending);
+  the HUD panel and the controls table.
 - [ ] **S4** — *Deferred (owner: decided once structures exist).* Placement in worldgen, after Phase
   17: placement rules in the terrain definition, hashed jittered-grid placement, conditions, LOD
   handling, goldens; a new ADR revisiting B10, and a new compatibility line.
@@ -2743,12 +2753,27 @@ Exit criteria
   `region_tools` tests).
 - [x] S3: region edits over the cap or outside the build volume are rejected (`dwell-sim`
   `tests/region_edits.rs`, `dwell-world` `region.rs` tests).
+- [x] S5: each brush's cells (counts, symmetry, seeded splatter, lines), each performer and sculpt
+  on fixtures, splitting into ≤ 32³ edits, and every preset stroke (`dwell-world` `brush.rs` tests);
+  a preset added by data alone and bad entries failing with a message (`brushesGen.test.ts`,
+  `brush.rs` `a_preset_added_by_data_alone_works`); ranged region edits accepted in the sandbox only
+  and `KEEP` cells kept (`dwell-sim` `tests/region_edits.rs`); a stroke as one undo step, round trip
+  (`dwell-game` `brush_tool.rs`, `dwell-client` `game_local`
+  `a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_step`).
+- [ ] S5: in the browser (2026-10-15, Chrome, a sandbox world): a mound built and sculpted with a
+  ball set, disc, smooth, erode, splatter and surface paint, each screenshotted (BRUSHES.md §3).
+- [ ] S5: the owner tries the brushes and answers `BRUSHES.md` §5.
 
 Deviations (S3a): region edits leave **indestructible** cells as they are — the registry's existing
 `indestructible` flag and the same check single breaks make, not a new `breakable` flag
 (coordinator, 2026-10-14). `RegionEdit` ships without a `protocolVersion` bump: an older server
 rejects unknown messages, so it is gated by the `regionEdits` Welcome flag instead (ARCHITECTURE.md
 §10.5); a new compatibility line was not needed.
+
+Deviations (S5): built without the "ask before designing" questions (the coordinator's defaults,
+recorded with open questions in `BRUSHES.md` §5). The S3 paste could not leave cells alone (and a
+paste over the unbreakable floor is rejected), so strokes use a `KEEP` paste cell behind a new
+`brushes` Welcome flag rather than no protocol change at all; still protocol v12 and the 0.11 line.
 
 ## Phase 30 — Tree Growth
 

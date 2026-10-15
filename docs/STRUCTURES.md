@@ -98,6 +98,22 @@ rotate and mirror on paste; undo/redo (a client-side stack of region diffs); eye
 for organic shapes; save, load, export, import. In the game these need a server-side region edit
 capped at about 32³ per request.
 
+*Built:*
+
+- **S3a:** box select, fill, hollow, replace, copy and paste with rotate and mirror, and undo/redo
+  (ARCHITECTURE.md §6.5).
+- **S5:** VoxelSniper-style **brushes** for organic shapes, in [`BRUSHES.md`](./BRUSHES.md):
+  - brushes: ball, disc, cylinder, cube, ellipsoid, splatter, line;
+  - painting: set, replace, paint surface, erase, with masks;
+  - sculpting: smooth, erode, melt, fill/inflate, flatten, raise, lower.
+
+  They aim up to 128 m along the view and show a wireframe preview. A brush's size runs from 1 to 16.
+  Presets are data, in `shared/brushes/brushes.json`. A stroke goes as region-edit pastes whose
+  untouched cells are `KEEP`, and is one undo step.
+
+Still to build: the anchor, the eyedropper (the brushes' replace pick covers part of it), and save,
+load, export and import.
+
 ## 6. Plan and compatibility
 
 | Step | Work | Effort (*estimate*) |
