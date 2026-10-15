@@ -278,18 +278,22 @@ impl MarchTest {
             }
         }
         self.pump();
+        self.marcher.collect();
         if let Some(timer) = &mut self.timer {
             for (name, ms) in timer.collect() {
                 telemetry::sample(name, ms);
             }
-            timer.begin();
         }
-        self.marcher.collect();
         let frame_tex = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             _ => return,
         };
+        // Only a frame that will be submitted takes a readback buffer (an early return above
+        // would hold it forever).
+        if let Some(timer) = &mut self.timer {
+            timer.begin();
+        }
         let size = (self.config.width, self.config.height);
         if self.targets.as_ref().is_none_or(|t| t.size != size) {
             self.targets = Some(self.marcher.targets(size));
