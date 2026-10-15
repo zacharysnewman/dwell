@@ -53,6 +53,10 @@ import { FpsMeter } from './ui/fps';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
+import { audio } from './audio/engine';
+import { decodeSounds, EventPlayer } from './audio/events';
+import { installPageSounds } from './audio/page';
+import { SOUND_DATA } from './audio/sounds.gen';
 
 type Vec3 = [number, number, number];
 
@@ -239,6 +243,28 @@ function displayName(): string {
 function toggleDebug(app: App): void {
   app.hud.toggleDebug();
   app.client.setDebugVisible(app.hud.debugVisible);
+  audio().action(app.hud.debugVisible ? 'overlay_on' : 'overlay_off');
+}
+
+/** The F4 map on or off, with its sound. */
+function toggleMap(app: App): void {
+  app.map.toggle();
+  audio().action(app.map.visible ? 'map_open' : 'map_close');
+}
+
+/** The F4 map's zoom (− and =), with its sound while the map shows. */
+function zoomMap(app: App, delta: number): void {
+  if (app.map.zoomBy(delta) && app.map.visible) audio().action('map_zoom');
+}
+
+/** The game's sound events since the last frame, and the listener at the camera (docs/AUDIO.md). */
+function playSounds(app: App, player: EventPlayer): void {
+  player.playAll(decodeSounds(app.client.takeSounds()));
+  const l = app.client.listener();
+  if (l.length === 9) {
+    const v = (i: number): [number, number, number] => [l[i] ?? 0, l[i + 1] ?? 0, l[i + 2] ?? 0];
+    audio().setListener(v(0), v(3), v(6));
+  }
 }
 
 /** Keyboard and mouse: the DOM's events, forwarded to the client's input (dwell-game input.rs). */
@@ -292,18 +318,21 @@ function handleEvents(app: App): void {
     if (e.t === 'toggle') {
       if (e.value === 'F3') toggleDebug(app);
       if (e.value === 'F6') copyBlockDump(app);
-      if (e.value === 'F4') app.map.toggle();
-      if (e.value === 'Minus') app.map.zoomBy(1);
-      if (e.value === 'Equal') app.map.zoomBy(-1);
+      if (e.value === 'F4') toggleMap(app);
+      if (e.value === 'Minus') zoomMap(app, 1);
+      if (e.value === 'Equal') zoomMap(app, -1);
     } else if (e.t === 'slot') {
       app.hotbar?.setSelected(e.value as number);
+      audio().action('hotbar');
     } else if (e.t === 'flight' || e.t === 'flightAllowed') {
       const flying = app.client.flying();
       app.touch?.setFlight(app.client.flightAllowed(), flying);
       app.flightSpeed.visible = flying;
+      if (e.t === 'flight') audio().action(flying ? 'fly_on' : 'fly_off');
     } else if (e.t === 'flySpeed') {
       app.flightSpeed.show(e.value as number);
       saveFlySpeedLevel(e.value as number);
+      audio().action('fly_speed');
     }
   }
 }
@@ -393,8 +422,20 @@ async function start(): Promise<App | null> {
     { once: true, passive: true },
   );
   forwardInput(app);
+  // Sound (docs/AUDIO.md): started by the first gesture; menus sound by delegation.
+  const sfx = installPageSounds();
+  const sounds = new EventPlayer(SOUND_DATA, (sound, o) => {
+    sfx.play(sound, {
+      bus: 'effects',
+      intensity: o.intensity,
+      at: o.at,
+      gain: o.gain,
+      ...(o.pan !== undefined ? { pan: o.pan } : {}),
+    });
+  });
   // The game menu (top left, or Esc): settings applied as the sliders move.
   const settings = new SettingsMenu(document.body, mobile, (s) => {
+    sfx.setVolumes(s.audio);
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setSkyRotation(s.skyRotation);
@@ -404,6 +445,7 @@ async function start(): Promise<App | null> {
   // While the menu is open the touch controls step aside: they would take its taps.
   settings.onOpenChange = (open) => {
     touch.visible = touchWanted && !open;
+    sfx.action(open ? 'menu_open' : 'menu_close');
   };
   settings.setFootnote(formatBuildInfo(buildInfo));
   settings.addDebugTools([
@@ -417,7 +459,7 @@ async function start(): Promise<App | null> {
     {
       key: 'F4',
       run: () => {
-        app.map.toggle();
+        toggleMap(app);
       },
       on: () => app.map.visible,
     },
@@ -429,7 +471,7 @@ async function start(): Promise<App | null> {
     },
   ]);
   app.hud.onToggleMap = () => {
-    app.map.toggle();
+    toggleMap(app);
   };
   app.hud.onCloseDebug = () => {
     toggleDebug(app);
@@ -485,6 +527,7 @@ async function start(): Promise<App | null> {
     app.fps.frame(now);
     client.frame(now);
     handleEvents(app);
+    playSounds(app, sounds);
     showHud(app, now);
     requestAnimationFrame(frame);
   };
@@ -583,6 +626,7 @@ function copyBlockDump(app: App): void {
   const dump = blockDumpOf(app);
   if (!dump) {
     app.hud.flash('No world to dump yet');
+    audio().ui('error');
     return;
   }
   const text = formatBlockDump(dump);
@@ -592,6 +636,7 @@ function copyBlockDump(app: App): void {
   try {
     navigator.clipboard.writeText(text).then(() => {
       app.hud.flash('Block info copied');
+      audio().action('copy');
     }, shown);
   } catch {
     shown(); // no clipboard (an insecure context)

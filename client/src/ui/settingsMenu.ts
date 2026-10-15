@@ -1,13 +1,16 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
 // with pages — Settings (the height fog, render/fog.ts; the detail settings, lod/detail.ts; the
-// tone-mapping exposure and the sky, render/look.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
-// and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
+// tone-mapping exposure and the sky, render/look.ts; the volumes, audio/settings.ts; ARCHITECTURE.md
+// §5, §6.6), Controls (every key and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
+import { audio } from '../audio/engine';
+import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
+import { loadVolumes, saveVolumes } from '../audio/settings';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -40,6 +43,8 @@ export interface Settings {
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
+  /** Master, effects and interface volumes, 0–1 (audio/settings.ts; this browser only). */
+  audio: Volumes;
 }
 
 export function defaultSettings(mobile: boolean): Settings {
@@ -48,6 +53,7 @@ export function defaultSettings(mobile: boolean): Settings {
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
+    audio: { ...DEFAULT_VOLUMES },
   };
 }
 
@@ -66,6 +72,11 @@ export function settingsJson(s: Settings): string {
     },
     exposure: Math.round(s.exposure * 100) / 100,
     skyRotation: Math.round(s.skyRotation),
+    audio: {
+      master: Math.round(s.audio.master * 100) / 100,
+      effects: Math.round(s.audio.effects * 100) / 100,
+      ui: Math.round(s.audio.ui * 100) / 100,
+    },
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -100,6 +111,7 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
+    audio: loadVolumes(),
   };
 }
 
@@ -112,6 +124,7 @@ function save(s: Settings): void {
   } catch {
     // Not kept: the settings still apply for this visit.
   }
+  saveVolumes(s.audio);
 }
 
 interface SliderSpec {
@@ -133,7 +146,25 @@ const withFog = (key: keyof FogSettings) => (s: Settings, v: number) => ({
 /** The menu's sliders; the detail ranges depend on the device (lod/detail.ts). */
 function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
   const DETAIL_LIMITS = detailLimits(mobile);
+  const volume = (label: string, hint: string, key: keyof Volumes): SliderSpec => ({
+    label,
+    hint,
+    min: 0,
+    max: 1,
+    log: false,
+    format: (v) => `${String(Math.round(v * 100))}%`,
+    get: (s) => s.audio[key],
+    with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
+  });
   return [
+    {
+      title: 'Sound',
+      sliders: [
+        volume('Master', 'Everything Dwell plays', 'master'),
+        volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
+        volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
+      ],
+    },
     {
       title: 'Fog',
       sliders: [
@@ -308,6 +339,8 @@ export class SettingsMenu {
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', 'settings-menu');
     button.title = 'Menu and settings (Esc)';
+    // Opening and closing have their own sounds (main.ts), not a click.
+    button.dataset.sound = 'none';
     button.append(el('span', 'menu-glyph'));
 
     this.panel = document.createElement('div');
@@ -326,6 +359,7 @@ export class SettingsMenu {
     close.type = 'button';
     close.setAttribute('aria-label', 'Close menu');
     close.title = 'Close (Esc)';
+    close.dataset.sound = 'none';
     close.addEventListener('click', () => {
       this.setOpen(false);
     });
@@ -381,6 +415,7 @@ export class SettingsMenu {
     const resume = el('button', 'block-button', 'Resume');
     resume.type = 'button';
     resume.id = 'menu-resume';
+    resume.dataset.sound = 'none';
     resume.addEventListener('click', () => {
       this.setOpen(false);
       onResume();
@@ -425,6 +460,8 @@ export class SettingsMenu {
       const c = DEBUG_KEYS.find((d) => d.keys.includes(tool.key));
       const b = el('button', 'debug-tool');
       b.type = 'button';
+      // Each tool sounds as its key does (main.ts).
+      b.dataset.sound = 'none';
       b.append(el('span', 'debug-tool-name', c?.action ?? tool.key), ...keycaps(tool.key));
       if (c?.when) b.append(el('span', 'debug-tool-when', c.when));
       b.addEventListener('click', () => {
@@ -591,12 +628,14 @@ export class SettingsMenu {
       await navigator.clipboard.writeText(json);
       this.fallback.hidden = true;
       button.textContent = 'Copied';
+      audio().ui('success');
     } catch {
       // No clipboard (an insecure page, or permission denied): select the JSON to copy by hand.
       this.fallback.value = json;
       this.fallback.hidden = false;
       this.fallback.select();
       button.textContent = 'Select and copy';
+      audio().ui('error');
     }
     setTimeout(() => {
       button.textContent = 'Copy JSON';

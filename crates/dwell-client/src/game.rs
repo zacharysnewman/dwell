@@ -17,6 +17,7 @@ use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
 use dwell_game::remotes::RemotePlayers;
+use dwell_game::sound::{CellChange, EditSounds, MoverSample, MoverSounds, SoundEvent, SoundKind};
 use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
@@ -348,6 +349,13 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
+    /// Sound events since the shell last took them (docs/AUDIO.md §5): a side channel.
+    sounds: Vec<SoundEvent>,
+    mover_sounds: MoverSounds,
+    remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
+    edit_sounds: EditSounds,
+    /// The camera at the last draw: eye, forward, up (the audio listener).
+    listener: [f64; 9],
 }
 
 impl<S: Scene> Game<S> {
@@ -414,6 +422,11 @@ impl<S: Scene> Game<S> {
             pending_lod: None,
             map: None,
             view: None,
+            sounds: Vec::new(),
+            mover_sounds: MoverSounds::new(),
+            remote_sounds: Default::default(),
+            edit_sounds: EditSounds::new(),
+            listener: [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0],
         };
         match verification {
             Some(c) => game
@@ -537,7 +550,13 @@ impl<S: Scene> Game<S> {
         match m {
             Message::ChunkData(d) => self.streamer.on_chunk_data(ChunkMessage::from(d)),
             Message::ChunkUnload(u) => self.streamer.on_chunk_unload(&u.coords),
-            Message::VoxelModification(v) => self.streamer.on_voxel_modification(&v.chunks),
+            Message::VoxelModification(v) => {
+                if v.reason == dwell_protocol::VoxelModificationReason::Edit {
+                    let changes = self.cell_changes(&v.chunks);
+                    self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
+                }
+                self.streamer.on_voxel_modification(&v.chunks)
+            }
             Message::LodIndex(_) | Message::LodIndexUpdate(_) | Message::LodData(_) => {
                 if let Some(lod) = &mut self.lod {
                     lod.on_message(&m, byte_len, now_ms);
@@ -713,17 +732,107 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Breaks or places at the crosshair (§6.5): only while alive and playing.
+    /// Breaks or places at the crosshair (§6.5): only while alive and playing. Sounds at once
+    /// (the client does not predict edits); nothing targeted sounds a refusal.
     pub fn edit(&mut self, action: EditAction, now_ms: f64) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        let Some(target) = self.interaction.target() else {
+            self.sounds.push(sound_event(SoundKind::Deny));
+            return false;
+        };
+        let placement = self.interaction.placement();
         match self.interaction.act(action, now_ms) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
+                match (action, placement) {
+                    (EditAction::Break, _) => {
+                        let [x, y, z] = target.cell;
+                        let block = self.voxel(x, y, z);
+                        self.edit_sounds
+                            .local_break(target.cell, block, now_ms, &mut self.sounds);
+                    }
+                    (EditAction::Place, Some((cell, block))) => {
+                        self.edit_sounds
+                            .local_place(cell, block, now_ms, &mut self.sounds);
+                    }
+                    (EditAction::Place, None) => {}
+                }
                 true
             }
             None => false,
+        }
+    }
+
+    /// The sound events since the last call (docs/AUDIO.md §5).
+    pub fn take_sounds(&mut self) -> Vec<SoundEvent> {
+        std::mem::take(&mut self.sounds)
+    }
+
+    /// The camera at the last draw, for the audio listener: eye, forward, up.
+    pub fn listener(&self) -> [f64; 9] {
+        self.listener
+    }
+
+    /// A modification's changes with what each cell held before (read before it is applied).
+    fn cell_changes(&mut self, chunks: &[dwell_protocol::ChunkChanges]) -> Vec<CellChange> {
+        let n = dwell_world::CHUNK_SIZE;
+        let mut out = Vec::new();
+        for c in chunks {
+            let [cx, cy, cz] = c.coord;
+            for ch in &c.changes {
+                let i = i32::from(ch.index);
+                let cell = [
+                    cx * n + (i & 31),
+                    cy * n + ((i >> 5) & 31),
+                    cz * n + ((i >> 10) & 31),
+                ];
+                let old = self.voxel(cell[0], cell[1], cell[2]);
+                out.push(CellChange {
+                    cell,
+                    old,
+                    new: ch.material,
+                });
+            }
+        }
+        out
+    }
+
+    /// What the movement sounds read of a body with its feet at `feet`.
+    #[allow(clippy::too_many_arguments)]
+    fn mover_sample(
+        &mut self,
+        feet: [f64; 3],
+        velocity: [f64; 3],
+        state: PlayerState,
+        grounded: bool,
+        crouched: bool,
+        face: f64,
+        submerged: Option<f64>,
+    ) -> MoverSample {
+        let at = |dy: f64| {
+            [
+                feet[0].floor() as i32,
+                (feet[1] + face * dy).floor() as i32,
+                feet[2].floor() as i32,
+            ]
+        };
+        let [gx, gy, gz] = at(-0.2);
+        let [bx, by, bz] = at(0.5);
+        let ground = self.voxel(gx, gy, gz);
+        let body = self.voxel(bx, by, bz);
+        let liquid = |id: u16| id != 0 && dwell_blocks::info(id).liquid;
+        MoverSample {
+            feet,
+            velocity,
+            state,
+            grounded,
+            crouched,
+            face,
+            submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
+            ground,
+            body,
         }
     }
 
@@ -777,6 +886,22 @@ impl<S: Scene> Game<S> {
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
         record_tick(&self.current, &frame);
+        let c = self.current;
+        let face = f64::from(c.face);
+        let sample = self.mover_sample(
+            [
+                c.position[0],
+                c.position[1] - face * c.half_height,
+                c.position[2],
+            ],
+            c.velocity,
+            c.state,
+            c.controller_flags & controller_flags::GROUNDED != 0,
+            c.controller_flags & controller_flags::CROUCHING != 0,
+            face,
+            Some(c.submerged),
+        );
+        self.mover_sounds.update(&sample, None, &mut self.sounds);
         // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
         let turn = self.flip.tick(self.current.face);
         if turn != 0.0 {
@@ -816,6 +941,31 @@ impl<S: Scene> Game<S> {
         let mut drawn = HashSet::default();
         for v in &views {
             drawn.insert(v.player_id);
+            if !v.is_dead() {
+                let grounded = matches!(
+                    v.state,
+                    PlayerState::Idle
+                        | PlayerState::Walking
+                        | PlayerState::Running
+                        | PlayerState::Crouching
+                        | PlayerState::Sliding
+                );
+                let face = if v.is_face_b() { -1.0 } else { 1.0 };
+                let sample = self.mover_sample(
+                    v.feet,
+                    v.velocity.map(f64::from),
+                    v.state,
+                    grounded,
+                    v.is_crouched(),
+                    face,
+                    None,
+                );
+                self.remote_sounds.entry(v.player_id).or_default().update(
+                    &sample,
+                    Some(v.feet),
+                    &mut self.sounds,
+                );
+            }
             let view = self.player_view(
                 v.player_id,
                 v.feet,
@@ -833,6 +983,7 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
+        self.remote_sounds.retain(|id, _| drawn.contains(id));
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
         if self.dead {
@@ -873,6 +1024,7 @@ impl<S: Scene> Game<S> {
             self.scene
                 .borrow_mut()
                 .set_camera(eye, yaw, pitch, f64::from(face), flip);
+            self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input);
         }
@@ -1073,6 +1225,43 @@ impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
             .borrow_mut()
             .push(Send::Control(Message::ChunkRequest(coords)));
     }
+}
+
+fn sound_event(kind: SoundKind) -> SoundEvent {
+    SoundEvent {
+        kind,
+        block: 0,
+        intensity: 1.0,
+        at: None,
+        gait: None,
+    }
+}
+
+/// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.
+fn listener(eye: [f64; 3], yaw: f64, pitch: f64, face: i32) -> [f64; 9] {
+    let f = dwell_game::block_interaction::view_direction(yaw, pitch, face);
+    // Up: perpendicular to forward, toward the face's up.
+    let world_up = [0.0, f64::from(face), 0.0];
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let norm = |v: [f64; 3]| {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if l < 1e-9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            v.map(|x| x / l)
+        }
+    };
+    let right = norm(cross(f, world_up));
+    let up = norm(cross(right, f));
+    [
+        eye[0], eye[1], eye[2], f[0], f[1], f[2], up[0], up[1], up[2],
+    ]
 }
 
 fn js_round(v: f64) -> i64 {
