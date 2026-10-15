@@ -1695,7 +1695,7 @@ Exit criteria
 8,192 km, the disc's radius; decided by the owner, 2026-10-05), and the sky inside it is sparsely
 populated with separate floating islands, after the Aether mod's sky-island terrain (landforms
 only — no dungeons or creatures; the owner's spec of it is kept in
-[`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md)), using existing
+`docs/reference/aether-floating-islands.md`, removed in Phase 15), using existing
 blocks only. Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
 
 **Status:** Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features;
