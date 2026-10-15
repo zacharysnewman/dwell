@@ -2718,8 +2718,12 @@ Exit criteria
   the playground's tests pass on the converted file.
 - [x] S2a: breaking or replacing an indestructible state (the sandbox floor) is rejected by the
   server (`dwell-world` test `the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on`).
-- [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec; a
-  manual browser check is described in the S2a PR.
+- [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
+  check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
+  (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor reads light grey, close
+  to the sky's fog colour, so the horizon disappears and only placed blocks give depth — a grid or
+  faint texture on the floor may be wanted (owner's call).
 - [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
