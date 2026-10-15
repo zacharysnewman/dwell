@@ -87,7 +87,10 @@ fn decoded_fields_are_the_vectors_values() {
         panic!("region_edit_paste_keep")
     };
     let keep = region_edit::KEEP as u16;
-    assert_eq!((r.size, r.cells.as_slice()), ([3, 1, 1], [keep, 2, keep].as_slice()));
+    assert_eq!(
+        (r.size, r.cells.as_slice()),
+        ([3, 1, 1], [keep, 2, keep].as_slice())
+    );
     let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_replace")) else {
         panic!("region_edit_replace")
     };
