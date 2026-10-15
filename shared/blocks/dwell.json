@@ -1,7 +1,15 @@
 {
-  "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). `fluids` are the named fluid looks (docs/BLOCK_REGISTRY.md, 'Fluid looks') that blocks with `\"look\": \"fluid\"` reference by name; a fluid block's opacity is its fluid's. The content is prototype (ARCHITECTURE.md §6.1).",
   "namespace": "dwell",
   "shapeFamilies": [],
+  "fluids": {
+    "dwell:water": {
+      "opacity": 0.55, "surfaceDrop": 0.125,
+      "absorption": [0.45, 0.09, 0.06], "scatter": "#1d6f8a", "roughness": 0.08, "ior": 1.333,
+      "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
+      "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0
+    }
+  },
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
@@ -30,8 +38,8 @@
       "color": "#a0703a", "textures": "ladder"
     },
     {
-      "name": "water", "density": 1000, "shape": "empty", "look": "water", "liquid": true,
-      "color": "#3fb2d6", "opacity": 0.55, "textures": "water"
+      "name": "water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
+      "liquid": true, "color": "#3fb2d6", "textures": "water"
     },
     {
       "name": "sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,

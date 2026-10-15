@@ -16,6 +16,7 @@ use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
 use dwell_look::{DEFAULT_EXPOSURE, HORIZON_COLOR, LIGHT, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
+use dwell_world::fluid::EyeFluid;
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
 
 use arena::{Arena, ArenaRef, Region};
@@ -38,7 +39,21 @@ pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
     }
 }
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-const WATER_OPACITY: f32 = 0.55;
+
+/// The alpha transparent (fluid) meshes are drawn with: the registry's `dwell:water` opacity. A
+/// chunk's fluids share one draw until the water shader reads each vertex's fluid (WATER_RENDERING.md W1b).
+fn water_opacity() -> f32 {
+    dwell_blocks::require_fluid("dwell:water").opacity
+}
+
+/// The frame uniform's `water` vec4 (shaders.rs `Frame`): x 1 when the eye is under a fluid's
+/// drawn surface, y its fluid id, z the surface's world y; zeros otherwise.
+fn water_uniform(eye_fluid: Option<EyeFluid>) -> [f32; 4] {
+    match eye_fluid {
+        Some(e) => [1.0, f32::from(e.fluid), e.surface_y as f32, 0.0],
+        None => [0.0; 4],
+    }
+}
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
 /// Bytes per draw in the draws storage array (`Draw` in the shaders: five vec4f).
 const DRAW_STRIDE: u64 = 80;
@@ -374,6 +389,8 @@ pub struct Renderer {
     face: f64,
     flip: f64,
     fog: FogSettings,
+    /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
+    eye_fluid: Option<EyeFluid>,
     exposure: f64,
     sky: SkyFrame,
     stats: RenderStats,
@@ -662,6 +679,7 @@ impl Renderer {
             face: 1.0,
             flip: 0.0,
             fog: DEFAULT_FOG,
+            eye_fluid: None,
             exposure: DEFAULT_EXPOSURE,
             sky: sky_rest(),
             stats: RenderStats::default(),
@@ -842,6 +860,11 @@ impl Renderer {
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
     }
+    /// The fluid whose drawn surface the eye is under (`dwell_world::fluid::eye_fluid`), or none:
+    /// written to the frame uniform for underwater effects (no shader reads it yet).
+    pub fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
+        self.eye_fluid = eye_fluid;
+    }
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
     }
@@ -971,6 +994,7 @@ impl Renderer {
         put(&f3(basis.forward()));
         let tan_y = (fov.to_radians() / 2.0).tan();
         put(&[(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0]);
+        put(&water_uniform(self.eye_fluid));
         u
     }
 
@@ -1025,7 +1049,7 @@ impl Renderer {
     ) -> [Vec<DrawItem>; 2] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
-        let water = [1.0, 1.0, 1.0, WATER_OPACITY];
+        let water = [1.0, 1.0, 1.0, water_opacity()];
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
         let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
         let view = PassView::new(self.eye, forward, aspect);
@@ -1116,7 +1140,7 @@ impl Renderer {
                     no_depth: false,
                     offset,
                     clip: None,
-                    tint: level_tint(s, WATER_OPACITY),
+                    tint: level_tint(s, water_opacity()),
                     rotation: NO_ROTATION,
                     page: 0,
                     passes,
@@ -1438,8 +1462,8 @@ impl PassView {
     }
 }
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
-const FRAME_FLOATS: usize = 16 + 15 * 4;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 16 vec4s.
+const FRAME_FLOATS: usize = 16 + 16 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -1511,6 +1535,9 @@ impl crate::game::Scene for Renderer {
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
     }
+    fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
+        Renderer::set_eye_fluid(self, eye_fluid);
+    }
     fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
         Renderer::set_block_outline(self, cell, height);
     }
@@ -1525,6 +1552,20 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_water_uniform_carries_the_eye_fluid_and_the_water_alpha_is_the_registrys() {
+        assert_eq!(water_uniform(None), [0.0; 4]);
+        let e = EyeFluid {
+            fluid: 0,
+            surface_y: -12.125,
+        };
+        assert_eq!(water_uniform(Some(e)), [1.0, 0.0, -12.125, 0.0]);
+        assert_eq!(
+            water_opacity(),
+            dwell_blocks::info(dwell_blocks::require("dwell:water")).opacity
+        );
+    }
 
     #[test]
     fn draw_order_opaque_near_to_far_by_pipeline_then_water_far_to_near_then_lines() {

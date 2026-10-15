@@ -43,7 +43,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
-| 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; next: W1b, the water shader, after A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2646,20 +2646,22 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** Not started. W1a needs Phase 24 only; W1b and W3–W5 need A1 (Phase 25), which is W2; W6
-needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+**Status:** In progress — W1a done (fluid looks in the registry, the surface drop and opacity read
+from them, the eye-under-fluid test in the frame uniform). Next: W1b, which needs A1 (Phase 25),
+which is W2; W3–W5 need A1 too; W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
 Deliverables
-- [ ] **W1a** — Fluid data: a `fluids` table in `shared/blocks/` (absorption, scatter, roughness,
+- [x] **W1a** — Fluid data: a `fluids` table in `shared/blocks/` (absorption, scatter, roughness,
   IOR, normal and wave scales, flow speed, foam, caustics, surface drop), blocks referencing a fluid
   by name (`"look": "fluid", "fluid": "dwell:water"`), validated by `gen.mjs` and emitted as a fluid
-  table; the mesher writing the fluid id per vertex and taking the surface drop from the data
+  table; the mesher taking the surface drop from the data
   (`WATER_SURFACE`, `CHUNK_WATER_DROP_M` gone); `WATER_OPACITY` from the data; the eye-submerged test
   with the 0.875 rule (the cell at `floor(eye)` liquid and, under a non-fluid cell, `frac(eye.y)`
   below the surface; the face's up) into a frame uniform, with its regression test.
-- [ ] **W1b** — The water shader (after A1): a dedicated `water_fs` with scrolling normal maps,
-  Schlick Fresnel, a GGX glint by the fluid's roughness and the sky reflection.
+- [ ] **W1b** — The water shader (after A1): the mesher writing the fluid id per vertex (moved from
+  W1a), a dedicated `water_fs` with scrolling normal maps, Schlick Fresnel, a GGX glint by the
+  fluid's roughness and the sky reflection.
 - [ ] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
 - [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
@@ -2672,11 +2674,25 @@ Deliverables
   refraction rays replace SSR and the copy on the high tiers.
 
 Exit criteria
-- [ ] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
+- [x] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
   own parameters; a bad fluid entry fails `gen.mjs` naming it; the regression test for the
   cell-against-surface mismatch (the eye 0.9 into a water cell under air is not underwater), seen
   failing first.
 - [ ] W1b: the fixture fluid drawn with its own parameters; the owner's look.
+
+Deviations (W1a):
+- The per-vertex fluid id moved to W1b: it changes the terrain vertex format, which Phase 25's A1
+  is restructuring, and nothing reads it before the water shader. Until then a chunk's fluids share
+  one transparent draw at `dwell:water`'s opacity.
+- A fluid's `opacity` is a field of the fluid (the fixed alpha until W3's absorption replaces it);
+  fluid blocks take it from there instead of declaring their own.
+- The fixture fluid is a test registry generated alongside the build's
+  (`shared/blocks/fixtures/` → `crates/dwell-blocks/src/fixture.gen.rs`, feature `fixture`); the
+  chunk mesher takes a registry's kinds so the test meshes `test:oil` by data alone.
+- Checked by: `client/src/world/fluids.test.ts` (bad entries fail naming the fluid and field),
+  `dwell-mesh` `a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity`, and
+  `dwell-world` `fluid::tests` (the regression: an eye 0.9 m up a water cell under air is not
+  underwater; failed against the whole-cell rule, as physics counts it, then passed).
 - [ ] W3: screenshots of shore views; bench.
 - [ ] W4: named views underwater and half in; the owner's look.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
