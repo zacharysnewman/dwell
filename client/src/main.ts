@@ -398,6 +398,7 @@ async function start(): Promise<App | null> {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setSkyRotation(s.skyRotation);
+    client.setClouds(s.clouds);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;

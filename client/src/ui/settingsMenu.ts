@@ -7,6 +7,7 @@
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
+import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
@@ -40,6 +41,8 @@ export interface Settings {
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
+  /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
+  clouds: CloudQuality;
 }
 
 export function defaultSettings(mobile: boolean): Settings {
@@ -48,6 +51,7 @@ export function defaultSettings(mobile: boolean): Settings {
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
+    clouds: defaultClouds(mobile),
   };
 }
 
@@ -66,6 +70,7 @@ export function settingsJson(s: Settings): string {
     },
     exposure: Math.round(s.exposure * 100) / 100,
     skyRotation: Math.round(s.skyRotation),
+    clouds: s.clouds,
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -74,6 +79,8 @@ const FOG_KEY = 'dwell.fog';
 const DETAIL_KEY = 'dwell.detail';
 const EXPOSURE_KEY = 'dwell.exposure';
 const SKY_ROTATION_KEY = 'dwell.skyRotation';
+/** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
+const CLOUDS_KEY = 'dwell.clouds';
 
 /** A sky rotation in degrees from storage: 0–360, anything else 0. */
 export function sanitizeSkyRotation(value: unknown): number {
@@ -100,6 +107,7 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
+    clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
   };
 }
 
@@ -109,6 +117,7 @@ function save(s: Settings): void {
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
+    localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -124,6 +133,26 @@ interface SliderSpec {
   get: (s: Settings) => number;
   with: (s: Settings, v: number) => Settings;
 }
+
+/** A setting picked from a few named options (a row of buttons). */
+interface ChoiceSpec<T extends string> {
+  label: string;
+  hint: string;
+  options: readonly { value: T; label: string }[];
+  get: (s: Settings) => T;
+  with: (s: Settings, v: T) => Settings;
+}
+
+/** The Look section's choices. */
+const CHOICES: ChoiceSpec<CloudQuality>[] = [
+  {
+    label: 'Clouds',
+    hint: 'Clouds in the sky; Low is lighter on the GPU',
+    options: CLOUD_QUALITIES.map((q) => ({ value: q, label: q[0].toUpperCase() + q.slice(1) })),
+    get: (s) => s.clouds,
+    with: (s, v) => ({ ...s, clouds: v }),
+  },
+];
 
 const withFog = (key: keyof FogSettings) => (s: Settings, v: number) => ({
   ...s,
@@ -287,6 +316,8 @@ export class SettingsMenu {
   private readonly pages = new Map<Page, { tab: HTMLButtonElement; page: HTMLElement }>();
   private readonly debugButtons: { tool: DebugTool; button: HTMLButtonElement }[] = [];
   private readonly rows: { spec: SliderSpec; input: HTMLInputElement; value: HTMLSpanElement }[] =
+    [];
+  private readonly choices: { spec: ChoiceSpec<CloudQuality>; buttons: HTMLButtonElement[] }[] =
     [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
@@ -503,6 +534,7 @@ export class SettingsMenu {
       group.append(el('h2', undefined, section.title));
       const grid = el('div', 'gm-grid');
       for (const spec of section.sliders) grid.append(this.slider(spec));
+      if (section.title === 'Look') for (const spec of CHOICES) grid.append(this.choice(spec));
       group.append(grid);
       page.append(group);
     }
@@ -569,6 +601,34 @@ export class SettingsMenu {
     return row;
   }
 
+  private choice(spec: ChoiceSpec<CloudQuality>): HTMLDivElement {
+    const row = el('div', 'settings-row settings-choice');
+    const name = el('span', 'settings-name', spec.label);
+    const group = el('div', 'settings-options');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', spec.label);
+    const buttons = spec.options.map((o) => {
+      const b = el('button', 'settings-option', o.label);
+      b.type = 'button';
+      b.dataset.value = o.value;
+      b.setAttribute('role', 'radio');
+      b.addEventListener('click', () => {
+        this.settings = spec.with(this.settings, o.value);
+        this.mark(buttons, o.value);
+        this.apply();
+      });
+      return b;
+    });
+    group.append(...buttons);
+    row.append(name, group, el('span', 'settings-hint', spec.hint));
+    this.choices.push({ spec, buttons });
+    return row;
+  }
+
+  private mark(buttons: HTMLButtonElement[], value: string): void {
+    for (const b of buttons) b.setAttribute('aria-checked', String(b.dataset.value === value));
+  }
+
   /** The slider's filled part, as a CSS variable the track's gradient reads. */
   private paint(input: HTMLInputElement): void {
     input.style.setProperty('--fill', `${String((100 * Number(input.value)) / SLIDER_STEPS)}%`);
@@ -582,6 +642,7 @@ export class SettingsMenu {
       value.textContent = spec.format(v);
       this.paint(input);
     }
+    for (const { spec, buttons } of this.choices) this.mark(buttons, spec.get(settings));
     this.apply();
   }
 

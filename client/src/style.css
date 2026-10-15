@@ -848,6 +848,31 @@ body.menu-open #menu-button {
   line-height: 1.35;
 }
 
+/* Choices (Clouds: Off / Low / High): a row of buttons, the chosen one filled with grass. */
+.settings-options {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.settings-option {
+  flex: 1;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink-soft);
+  font: 700 13px var(--font-body);
+  cursor: pointer;
+}
+
+.settings-option[aria-checked='true'] {
+  border-color: var(--grass-dark);
+  background: var(--grass-dark);
+  color: #fff;
+}
+
 /* Sliders: a track filled with grass up to the value, and a block for a thumb. */
 .settings-row input[type='range'],
 #flight-speed input[type='range'] {

@@ -44,3 +44,17 @@ export function sanitizeExposure(value: unknown): number {
     ? Math.min(EXPOSURE_LIMITS.max, Math.max(EXPOSURE_LIMITS.min, value))
     : DEFAULT_EXPOSURE;
 }
+
+/** The sky's clouds (dwell-look's clouds.rs): Low has fewer noise octaves and no self-shadow. */
+export const CLOUD_QUALITIES = ['off', 'low', 'high'] as const;
+export type CloudQuality = (typeof CLOUD_QUALITIES)[number];
+
+/** High on desktops, Low on phones (the GPU time a phone can spare). */
+export function defaultClouds(mobile: boolean): CloudQuality {
+  return mobile ? 'low' : 'high';
+}
+
+/** A stored Clouds setting; anything else (missing, unknown) takes the device's default. */
+export function sanitizeClouds(value: unknown, mobile: boolean): CloudQuality {
+  return CLOUD_QUALITIES.find((q) => q === value) ?? defaultClouds(mobile);
+}

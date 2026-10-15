@@ -22,6 +22,8 @@ jobs:
         run: |
           node shared/protocol/gen.mjs
           node shared/blocks/gen.mjs
+          node shared/look/clouds.mjs
+          node --test shared/look/clouds.test.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
           git diff --exit-code

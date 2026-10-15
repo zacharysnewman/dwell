@@ -16,6 +16,7 @@ pub mod timing;
 
 use dwell_world::hash::HashMap;
 
+use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
 use dwell_look::{DEFAULT_EXPOSURE, LIGHT, hex, sanitize_exposure, srgb_to_linear};
@@ -369,6 +370,11 @@ pub struct Renderer {
     fog: FogSettings,
     exposure: f64,
     sky: SkyFrame,
+    /// The sky's clouds: the setting, the coverage (the data's, or a weather system's) and their
+    /// clock (s).
+    clouds: CloudQuality,
+    cloud_coverage: f64,
+    cloud_seconds: f64,
     stats: RenderStats,
 }
 
@@ -680,6 +686,9 @@ impl Renderer {
             fog: DEFAULT_FOG,
             exposure: DEFAULT_EXPOSURE,
             sky: sky_rest(),
+            clouds: CloudQuality::High,
+            cloud_coverage: CLOUDS.shape.coverage,
+            cloud_seconds: 0.0,
             stats: RenderStats::default(),
         }
     }
@@ -858,6 +867,19 @@ impl Renderer {
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
     }
+    /// The Clouds setting (Off, Low, High).
+    pub fn set_clouds(&mut self, quality: CloudQuality) {
+        self.clouds = quality;
+    }
+    /// The clouds' coverage, 0 (clear) to 1 (overcast): the data's by default; a weather system's
+    /// to set.
+    pub fn set_cloud_coverage(&mut self, coverage: f64) {
+        self.cloud_coverage = coverage.clamp(0.0, 1.0);
+    }
+    /// The clouds' clock (s): world time where there is one, so clients roughly agree.
+    pub fn set_cloud_time(&mut self, seconds: f64) {
+        self.cloud_seconds = seconds;
+    }
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
     }
@@ -987,6 +1009,16 @@ impl Renderer {
         put(&f3(basis.forward()));
         let tan_y = (fov.to_radians() / 2.0).tan();
         put(&[(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0]);
+        let clouds = cloud_uniforms(
+            &CLOUDS,
+            self.eye,
+            self.face,
+            self.cloud_seconds,
+            self.clouds,
+            self.cloud_coverage,
+        );
+        put(&clouds[0]);
+        put(&clouds[1]);
         u
     }
 
@@ -1486,8 +1518,8 @@ impl PassView {
     }
 }
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
-const FRAME_FLOATS: usize = 16 + 15 * 4;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 17 vec4s.
+const FRAME_FLOATS: usize = 16 + 17 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into

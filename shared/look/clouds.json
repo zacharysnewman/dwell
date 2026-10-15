@@ -1,0 +1,44 @@
+{
+  "$comment": "The sky's cloud layer (docs/CLOUDS.md, ADR 0034, Phase 31): a thin deck at a fixed altitude drawn in the sky, its shape a domain-warped fBm, lit by the sun and the moon. Run `node shared/look/clouds.mjs` after editing; CI fails if crates/dwell-look/src/clouds.gen.rs is stale.",
+  "deck": {
+    "$comment": "altitudeM: the deck's height above sea level, on the viewer's face. curvatureM: the radius of the sphere the deck lies on (smaller: the deck meets the horizon nearer). ceilingFadeM: the clouds fade out as the eye rises to within this of the deck (none above it). horizonFade: the elevation sine over which clouds fade in above the horizon. fadeStartM/fadeEndM: the distance along the view ray over which clouds fade into the sky's haze.",
+    "altitudeM": 1800,
+    "curvatureM": 120000,
+    "ceilingFadeM": 400,
+    "horizonFade": 0.06,
+    "fadeStartM": 9000,
+    "fadeEndM": 28000
+  },
+  "shape": {
+    "$comment": "scaleM: the size of the largest noise cell (m). wrapM: the noise repeats every this many metres (a multiple of scaleM; keeps the shader's f32 coordinates small far from the origin). octaves/lowOctaves: noise octaves on High and Low. gain: each octave's weight relative to the last. warp: how far the domain warp moves a point (in cells). coverage: the share of the sky covered, 0 (clear) to 1 (overcast); the renderer can override it at run time (weather). edgeSoftness: the width of a cloud's soft edge, in noise value. opacity: the densest cloud's opacity.",
+    "scaleM": 2048,
+    "wrapM": 131072,
+    "octaves": 5,
+    "lowOctaves": 3,
+    "gain": 0.5,
+    "warp": 0.75,
+    "coverage": 0.45,
+    "edgeSoftness": 0.22,
+    "opacity": 0.95
+  },
+  "wind": {
+    "$comment": "The clouds drift at speedMps toward directionDeg (degrees from +X toward +Z); the warp field drifts at evolveMps toward evolveDirectionDeg, so the shapes change slowly as they go.",
+    "speedMps": 6,
+    "directionDeg": 70,
+    "evolveMps": 2.5,
+    "evolveDirectionDeg": 200
+  },
+  "light": {
+    "$comment": "sRGB tints of the frame's lights (the renderer's sun, moon and sky ambient colours, so the clouds follow whatever sets the lights): sunlit (the sun's) and shade (the day sky's ambient) by day, nightLit (the moon's) and nightShade (the night sky's ambient) by moonlight, sunset the warm tint of a low sun. absorption: how fast light dims through cloud. shadowStepM: how far toward the light the self-shadow samples (High only). silverLining/silverPower: the bright rim of thin cloud near the sun or moon, and how tight it is around it. sunWarmth: how much a low sun tints the clouds.",
+    "sunlit": "#fffaf0",
+    "shade": "#d6d6d6",
+    "sunset": "#ffbc8a",
+    "nightLit": "#7a8296",
+    "nightShade": "#3a3e4c",
+    "absorption": 2.2,
+    "shadowStepM": 320,
+    "silverLining": 0.6,
+    "silverPower": 8,
+    "sunWarmth": 0.4
+  }
+}

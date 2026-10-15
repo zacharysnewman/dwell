@@ -26,6 +26,9 @@ export interface View {
     fog?: { distanceM: number; density: number; heightM: number };
     detail?: { distanceM: number; pixelError: number; memoryMb: number };
     exposure?: number;
+    /** The sky's rotation (degrees; 180 is night) and the Clouds setting. */
+    skyRotation?: number;
+    clouds?: 'off' | 'low' | 'high';
   };
   /** The F3 overlay (`?debug=1`) and per-level LOD tints (`?lodcolors=1`) in the shot. */
   debug: boolean;
@@ -138,7 +141,13 @@ function parseView(index: string, raw: unknown): View {
   const s =
     o.settings === undefined
       ? {}
-      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure']);
+      : fields(`${at}.settings`, o.settings, [
+          'fog',
+          'detail',
+          'exposure',
+          'skyRotation',
+          'clouds',
+        ]);
   const settings: View['settings'] = {};
   if (s.fog !== undefined) {
     settings.fog = numbers(`${at}.settings.fog`, s.fog, ['distanceM', 'density', 'heightM']);
@@ -152,6 +161,14 @@ function parseView(index: string, raw: unknown): View {
   }
   if (s.exposure !== undefined)
     settings.exposure = num(`${at}.settings.exposure`, s.exposure, 0, 10);
+  if (s.skyRotation !== undefined)
+    settings.skyRotation = num(`${at}.settings.skyRotation`, s.skyRotation, 0, 360);
+  if (s.clouds !== undefined) {
+    if (s.clouds !== 'off' && s.clouds !== 'low' && s.clouds !== 'high') {
+      throw new ViewError(`${at}.settings.clouds: expected "off", "low" or "high"`);
+    }
+    settings.clouds = s.clouds;
+  }
 
   return {
     name: o.name,
@@ -208,5 +225,9 @@ export function viewStorage(view: View): Record<string, string> {
   if (view.settings.exposure !== undefined) {
     out['dwell.exposure'] = JSON.stringify(view.settings.exposure);
   }
+  if (view.settings.skyRotation !== undefined) {
+    out['dwell.skyRotation'] = JSON.stringify(view.settings.skyRotation);
+  }
+  if (view.settings.clouds) out['dwell.clouds'] = JSON.stringify(view.settings.clouds);
   return out;
 }

@@ -320,6 +320,8 @@ pub struct Game<S: Scene> {
     accumulator: f64,
     last_frame_ms: Option<f64>,
     last_snapshot_tick: u32,
+    /// The server's clock, from its snapshots (client-side visuals: the clouds' drift).
+    pub clock: crate::world_clock::WorldClock,
     input_buffer: u8,
     tick_rate: f64,
     health: u8,
@@ -392,6 +394,7 @@ impl<S: Scene> Game<S> {
             accumulator: 0.0,
             last_frame_ms: None,
             last_snapshot_tick: 0,
+            clock: Default::default(),
             input_buffer: 0,
             tick_rate: 1.0,
             health: 0,
@@ -548,6 +551,7 @@ impl<S: Scene> Game<S> {
                     return; // reordered datagram
                 }
                 self.last_snapshot_tick = s.server_tick;
+                self.clock.observe(s.server_tick, now_ms);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
                 self.health = s.local.health;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
