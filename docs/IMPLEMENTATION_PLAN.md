@@ -42,8 +42,8 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
-| 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built; the owner approved A1's image differences (2026-10-14); outstanding for A1: the e2e suite on CI; next: A2; local builds only until the owner's decision (A7); `package.json` raised to 0.11.1, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) and S2a (floor block, sandbox world type) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
@@ -2581,15 +2581,18 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) done; next: A1, the shared frame and GPU timing. Needs Phase
-24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+**Status:** In progress — A0 (the ADR) done; A1 (the shared frame and GPU timing) built, its exit
+check outstanding: the bench before/after is done (design doc §7, "A1 as built") and the picture
+differs slightly — antialiased edges, the sea's colour (water now blends in linear light), the
+outline no longer multisampled — which needs the owner's approval; the e2e suite runs on CI. Next:
+A2. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
 Deliverables
 - [x] **A0** — ADR 0029 (a second renderer behind a runtime switch, amending ADR 0028's renderer);
   the owner's answers recorded (`RAY_MARCHED_RENDERER.md` §9).
-- [ ] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
+- [x] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
   target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved
   to a composite pass; timestamp queries in the telemetry (`gpu.<pass>`); `bench.ts` passes
   `--enable-webgpu-developer-features`. 4× MSAA kept (owner).
@@ -2613,8 +2616,8 @@ Deliverables
   Phase 20 unblocked).
 
 Exit criteria
-- [ ] A1: bench before/after; raster screenshots match today's, or the owner approves the
-  difference.
+- [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
+  difference. (The owner approved the differences — edges, the sea's colour, the outline — 2026-10-14.)
 - [ ] A2: compare mode runs with raster on both sides and reports zero difference.
 - [ ] A3: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces);
   the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near and
@@ -2637,7 +2640,7 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** Not started. W1a needs Phase 24 only; W1b and W3–W5 need A1 (Phase 25), which is W2; W6
+**Status:** In progress — W2 built (Phase 25's A1). W1a needs Phase 24 only; W1b and W3–W5 build on the shared frame (A1); W6
 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
@@ -2651,7 +2654,7 @@ Deliverables
   below the surface; the face's up) into a frame uniform, with its regression test.
 - [ ] **W1b** — The water shader (after A1): a dedicated `water_fs` with scrolling normal maps,
   Schlick Fresnel, a GGX glint by the fluid's roughness and the sky reflection.
-- [ ] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
+- [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
 - [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
   shoreline foam.
