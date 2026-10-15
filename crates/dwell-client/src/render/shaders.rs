@@ -439,7 +439,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let under = (frame.water.z - (frame.eye.x + rel.y)) * frame.eye.y;
         // Lit by light that came down through the fluid, focused into caustics.
         lit *= exp(-f.absorption.rgb * max(under, 0.0))
-            * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), f);
+            * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f);
     }
     let shown = display(underwater(lit, min(dist, to_surface), f));
     return mix(back, shown, min(c.a, 1.0));
@@ -730,7 +730,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         floor = scene.rgb / scene.a;
         // The floor's pixel footprint: the surface's, scaled out to the floor's distance.
         let floor_fp = footprint * d_b / d_w;
-        floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, floor_fp, f);
+        floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, floor_fp, 1.0, f);
     }
     let t = exp(-(f.absorption.rgb + f.extra.w) * length_in);
     let down = exp(-f.absorption.rgb * min(under, DEEP_M));
@@ -765,8 +765,9 @@ fn foam_amount(xz: vec2f, under: f32, f: Fluid) -> f32 {
     let lap = fract(edge * FOAM_LINES - t * FOAM_LAP_SPEED + n * 0.8);
     let line = smoothstep(0.0, 0.18, lap) * (1.0 - smoothstep(0.3, 0.55, lap));
     let breakup = smoothstep(-0.15, 0.35, n);
-    let rim = smoothstep(0.75, 1.0, edge);
-    return clamp((line * breakup * 0.55 + rim * 0.45 * smoothstep(-0.2, 0.3, n)) * edge, 0.0, 0.7);
+    // At the waterline (where the water meets the bank, a thin line on screen): a soft rim.
+    let rim = smoothstep(0.55, 1.0, edge) * smoothstep(-0.35, 0.25, n);
+    return clamp(line * breakup * 0.45 * edge + rim * 0.8, 0.0, 0.8);
 }
 
 const FOAM_CELL: f32 = 0.9;
@@ -778,7 +779,7 @@ const FOAM_LAP_SPEED: f32 = 0.12;
 // The pattern is shifted back along the refracted sun (or moon, much dimmer), animated with the
 // ripples' flow, and fades with depth over the fluid's caustic depth (render/water.rs
 // `caustic_fade`). Focused, not added: dimmer between the lines, brighter on them.
-fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, f: Fluid) -> f32 {
+fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, boost: f32, f: Fluid) -> f32 {
     // Faded out where a pixel covers a good part of a cell (they would alias into noise).
     let sharp = 1.0 - smoothstep(0.08, 0.3, footprint / max(f.optics.y, 1e-3));
     if (under <= 0.0 || f.extra.y <= 0.0 || sharp <= 0.0) {
@@ -799,13 +800,16 @@ fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, f: Fluid) -
     let back = select(vec2f(0.0), l.xz / max(h, 1e-4) * (under * tan_t), h > 1e-4);
     let c = caustic_pattern(xz + back, f);
     let fade = exp(-under / max(f.optics.z, 1e-3)) * smoothstep(0.0, 0.35, under);
-    let strength = f.extra.y * k * fade * sharp;
+    let strength = f.extra.y * k * fade * sharp * boost;
     return max(1.0 + strength * (c * CAUSTIC_GAIN - CAUSTIC_MEAN), 0.0);
 }
 
 const MOON_CAUSTICS: f32 = 0.2;
-const CAUSTIC_GAIN: f32 = 2.6;
-const CAUSTIC_MEAN: f32 = 0.45;
+// Seen from under the surface the caustics are the show: brighter than through it from above,
+// where the surface's own reflection and glint compete with them.
+const UNDERWATER_CAUSTICS: f32 = 1.7;
+const CAUSTIC_GAIN: f32 = 2.2;
+const CAUSTIC_MEAN: f32 = 0.2;
 
 // Two layers of moving cell edges (Worley F2 − F1), warped so the lines wander, wrapping with the
 // position (cells divide WRAP_M, render/water.rs `caustic_period`): bright thin lines, near 0
