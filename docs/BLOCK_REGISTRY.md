@@ -61,7 +61,10 @@ earlier ids are kept; it is not adaptive (Phase 18), so it stays flat cubes.
 **Grid look option** (**built, Phase 27 S2a**): `"grid": { "every": N, "strength": s }` on a block
 asks the terrain shader for world-aligned lines every `N` blocks (a divisor of the chunk size, 32),
 darkening by `s` (0 < s ≤ 1); `gen.mjs` rejects other values and unknown keys, and emits it as
-`StateInfo::grid`. It is a look option like `textures`, so it does not enter the registry hash. The
+`StateInfo::grid`. The renderer looks it up by texture tile (a table built from the registry, so
+the vertex format does not grow), hence one grid per tile: `gen.mjs` rejects two blocks that draw
+with one tile but want different grids (an untextured block uses the `plain` tile). It is a look
+option like `textures`, so it does not enter the registry hash. The
 sandbox floor pairs it (every 8) with the `grid` texture tile (a faint line at every block edge).
 
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
