@@ -127,12 +127,14 @@ game; bulk edits stressing streaming and save size.
 1. What gets added later: more structures only, new variant kinds, new placement conditions, or
    structures with logic (e.g. trunks that grow to the ground)?
 2. Who adds them and with what: only you, in the sandbox, then a commit — or players too (custom
-   structures per world, shared on servers)?
+   structures per world, shared on servers)? *Owner, 2026-10-14: only the owner — built in the
+   sandbox, exported, committed to `shared/structures/`.*
 3. Is the library per build (committed in `shared/`, part of terrain), per world (saved in the world
    file, pasted by players) or per player (the browser library)?
 4. Should worldgen place them at all, given B10 cut trees and rocks? If yes, now or after Phase 17?
 5. In-game sandbox or standalone page first? How closely must it match the game's renderer and
-   adaptive shapes?
+   adaptive shapes? *Owner, 2026-10-14: the in-game sandbox first (option (a)), so a structure looks
+   as it will in the world.*
 6. What is "white": a new prototype block (`dwell:white`), or a sandbox-only look?
 7. Which editing tools are needed first (box select, fill, copy/paste, mirror, undo, brush)?
 8. Is it acceptable that promoting a structure into worldgen ships as a new minor that changes
