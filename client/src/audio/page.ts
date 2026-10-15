@@ -16,5 +16,7 @@ export function installPageSounds(doc: Document = document): AudioEngine {
   installUiSounds(doc, (kind) => {
     sfx.ui(kind);
   });
+  // For tests and the console, on any page with sound (the menu has no `window.__dwell`).
+  (window as unknown as { __dwellSounds?: () => string[] }).__dwellSounds = () => [...sfx.recent];
   return sfx;
 }

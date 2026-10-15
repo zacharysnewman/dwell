@@ -121,6 +121,8 @@ interface DwellDebug {
   telemetryFrames(): { names: string[]; frames: number[][] };
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
+  /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
+  sounds(): string[];
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
 }
@@ -312,6 +314,9 @@ function forwardInput(app: App): void {
   });
 }
 
+/** The hotbar slot last shown (null before the game selects its first). */
+let shownSlot: number | null = null;
+
 /** What the client's input asked of the shell since the last frame. */
 function handleEvents(app: App): void {
   for (const e of app.client.takeEvents() as { t: string; value: unknown }[]) {
@@ -322,8 +327,11 @@ function handleEvents(app: App): void {
       if (e.value === 'Minus') zoomMap(app, 1);
       if (e.value === 'Equal') zoomMap(app, -1);
     } else if (e.t === 'slot') {
-      app.hotbar?.setSelected(e.value as number);
-      audio().action('hotbar');
+      const slot = e.value as number;
+      app.hotbar?.setSelected(slot);
+      // A change of slot sounds; the first selection, when the game starts, does not.
+      if (shownSlot !== null && shownSlot !== slot) audio().action('hotbar');
+      shownSlot = slot;
     } else if (e.t === 'flight' || e.t === 'flightAllowed') {
       const flying = app.client.flying();
       app.touch?.setFlight(app.client.flightAllowed(), flying);
@@ -521,6 +529,7 @@ async function start(): Promise<App | null> {
     telemetryReset: () => {
       client.telemetryReset();
     },
+    sounds: () => [...sfx.recent],
   };
 
   const frame = (now: number): void => {

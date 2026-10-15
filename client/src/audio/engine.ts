@@ -36,6 +36,8 @@ export class AudioEngine {
   private readonly ends: number[] = [];
   private listener: Vec3 = [0, 0, 0];
   private installed = false;
+  /** The latest plays' ids, newest last (the `window.__dwell.sounds()` debug hook). */
+  readonly recent: string[] = [];
   private hidden = false;
 
   constructor(
@@ -64,9 +66,12 @@ export class AudioEngine {
   unlock(): void {
     try {
       if (!this.ctx) {
-        const Ctx =
-          window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        // Older Safari names it webkitAudioContext.
+        const w = window as unknown as {
+          AudioContext?: typeof AudioContext;
+          webkitAudioContext?: typeof AudioContext;
+        };
+        const Ctx = w.AudioContext ?? w.webkitAudioContext;
         if (!Ctx) return;
         const ctx = new Ctx({ latencyHint: 'interactive' });
         this.ctx = ctx;
@@ -151,6 +156,8 @@ export class AudioEngine {
       ...(req.gain !== undefined ? { gain: req.gain } : {}),
     });
     this.ends.push(end);
+    this.recent.push(id);
+    if (this.recent.length > 64) this.recent.shift();
     this.ends.sort((a, b) => a - b);
     return true;
   }

@@ -12,11 +12,16 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import { build } from 'vite';
-import { renderPlan } from '../src/audio/renderPlan.ts';
+import { renderPlan, type RenderJob } from '../src/audio/renderPlan.ts';
 import { SOUND_DATA } from '../src/audio/sounds.gen.ts';
 import { checkRender, type RenderStats } from '../src/audio/wav.ts';
 
 const PORT = 4178;
+
+/** What src/audio/render.ts puts on the page. */
+interface Page {
+  renderJob?: (job: RenderJob) => Promise<{ name: string; wav: string; stats: RenderStats }>;
+}
 const client = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function arg(name: string): string | undefined {
@@ -78,11 +83,11 @@ async function main(): Promise<void> {
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     await page.goto(url);
-    await page.waitForFunction(() => typeof window.renderJob === 'function');
+    await page.waitForFunction(() => typeof (window as unknown as Page).renderJob === 'function');
     const jobs = renderPlan(SOUND_DATA).filter((j) => !only || j.name.includes(only));
     for (const job of jobs) {
-      const r = await page.evaluate(async (j) => {
-        const render = window.renderJob;
+      const r = await page.evaluate((j) => {
+        const render = (window as unknown as Page).renderJob;
         if (!render) throw new Error('no renderJob');
         return render(j);
       }, job);

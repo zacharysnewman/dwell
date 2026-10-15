@@ -125,7 +125,7 @@
   "sounds": {
     "stone_step": {
       "gain": 1.01,
-      "reverb": 0.18,
+      "reverb": 0.099,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -171,7 +171,7 @@
     },
     "stone_land": {
       "gain": 1.269,
-      "reverb": 0.22,
+      "reverb": 0.121,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
       "intensity": {"gain": [0.35, 1], "cutoff": [0.6, 1], "time": [0.7, 1.15]},
       "layers": [
@@ -210,7 +210,7 @@
     },
     "stone_break": {
       "gain": 0.791,
-      "reverb": 0.25,
+      "reverb": 0.138,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -258,7 +258,7 @@
     },
     "stone_place": {
       "gain": 0.75,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
         {
@@ -293,7 +293,7 @@
     },
     "stone_hit": {
       "gain": 0.764,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
         {
@@ -313,7 +313,7 @@
     },
     "dirt_step": {
       "gain": 1.546,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.15},
       "layers": [
         {
@@ -338,7 +338,7 @@
     },
     "dirt_land": {
       "gain": 1.036,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.12},
       "intensity": {"gain": [0.35, 1], "cutoff": [0.6, 1], "time": [0.7, 1.15]},
       "layers": [
@@ -372,7 +372,7 @@
     },
     "dirt_break": {
       "gain": 1.452,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -405,7 +405,7 @@
     },
     "dirt_place": {
       "gain": 1.274,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.1},
       "layers": [
         {
@@ -435,7 +435,7 @@
     },
     "dirt_hit": {
       "gain": 1.56,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12, "time": 0.1},
       "layers": [
         {
@@ -456,7 +456,7 @@
     },
     "grass_step": {
       "gain": 1.88,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.18},
       "layers": [
         {
@@ -490,7 +490,7 @@
     },
     "grass_land": {
       "gain": 1.195,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.12},
       "intensity": {"gain": [0.35, 1], "cutoff": [0.6, 1], "time": [0.7, 1.15]},
       "layers": [
@@ -525,7 +525,7 @@
     },
     "grass_break": {
       "gain": 2.461,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -559,7 +559,7 @@
     },
     "grass_place": {
       "gain": 1.475,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.1},
       "layers": [
         {
@@ -593,7 +593,7 @@
     },
     "sand_step": {
       "gain": 1.546,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.2},
       "layers": [
         {
@@ -618,7 +618,7 @@
     },
     "sand_land": {
       "gain": 2.023,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.35, 1], "cutoff": [0.6, 1], "time": [0.7, 1.2]},
       "layers": [
@@ -651,7 +651,7 @@
     },
     "sand_break": {
       "gain": 1.511,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -683,7 +683,7 @@
     },
     "sand_place": {
       "gain": 2.323,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.12},
       "layers": [
         {
@@ -712,7 +712,7 @@
     },
     "sand_hit": {
       "gain": 2.296,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12, "time": 0.12},
       "layers": [
         {
@@ -726,7 +726,7 @@
     },
     "wood_step": {
       "gain": 0.88,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
       "layers": [
         {
@@ -754,7 +754,7 @@
     },
     "wood_land": {
       "gain": 1.178,
-      "reverb": 0.22,
+      "reverb": 0.121,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
       "intensity": {"gain": [0.35, 1], "cutoff": [0.6, 1], "time": [0.7, 1.15]},
       "layers": [
@@ -782,7 +782,7 @@
     },
     "wood_break": {
       "gain": 1.494,
-      "reverb": 0.22,
+      "reverb": 0.121,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -818,7 +818,7 @@
     },
     "wood_place": {
       "gain": 0.816,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
         {
@@ -846,7 +846,7 @@
     },
     "wood_hit": {
       "gain": 0.705,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
         {"source": "modal", "freq": 420, "gain": 0.25, "partials": [[1, 1, 0.06], [2.7, 0.4, 0.03]]},
@@ -861,7 +861,7 @@
     },
     "water_step": {
       "gain": 2.094,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.15},
       "layers": [
         {
@@ -885,7 +885,7 @@
     },
     "water_swim": {
       "gain": 1.173,
-      "reverb": 0.18,
+      "reverb": 0.099,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.2, "time": 0.15},
       "layers": [
         {
@@ -916,7 +916,7 @@
     },
     "water_enter": {
       "gain": 1.046,
-      "reverb": 0.25,
+      "reverb": 0.138,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.55, 1], "time": [0.6, 1.25]},
       "layers": [
@@ -959,7 +959,7 @@
     },
     "water_exit": {
       "gain": 1.49,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.4, 1], "cutoff": [0.7, 1], "time": [0.8, 1.1]},
       "layers": [
@@ -984,7 +984,7 @@
     },
     "water_place": {
       "gain": 2.793,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -1007,7 +1007,7 @@
     },
     "jump": {
       "gain": 1.135,
-      "reverb": 0.05,
+      "reverb": 0.028,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
       "layers": [
         {
@@ -1021,7 +1021,7 @@
     },
     "crouch_on": {
       "gain": 0.962,
-      "reverb": 0.04,
+      "reverb": 0.022,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.12},
       "layers": [
         {
@@ -1043,7 +1043,7 @@
     },
     "crouch_off": {
       "gain": 1.007,
-      "reverb": 0.04,
+      "reverb": 0.022,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.12},
       "layers": [
         {
@@ -1065,7 +1065,7 @@
     },
     "sprint": {
       "gain": 0.782,
-      "reverb": 0.04,
+      "reverb": 0.022,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12, "time": 0.12},
       "layers": [
         {
@@ -1086,7 +1086,7 @@
     },
     "slide": {
       "gain": 0.867,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
       "layers": [
         {
@@ -1108,7 +1108,7 @@
     },
     "rise": {
       "gain": 0.892,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.5, 1], "cutoff": [0.7, 1.2], "time": [1, 1]},
       "layers": [
@@ -1123,7 +1123,7 @@
     },
     "dive": {
       "gain": 0.768,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.5, 1], "cutoff": [0.7, 1.2], "time": [1, 1]},
       "layers": [
@@ -1138,7 +1138,7 @@
     },
     "deny": {
       "gain": 0.879,
-      "reverb": 0.05,
+      "reverb": 0.028,
       "variation": "none",
       "layers": [
         {
@@ -1180,7 +1180,7 @@
     },
     "fly_on": {
       "gain": 0.463,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": "none",
       "layers": [
         {
@@ -1212,7 +1212,7 @@
     },
     "fly_off": {
       "gain": 0.447,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": "none",
       "layers": [
         {
@@ -1255,7 +1255,7 @@
     },
     "menu_open": {
       "gain": 0.542,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": "none",
       "layers": [
         {
@@ -1283,7 +1283,7 @@
     },
     "menu_close": {
       "gain": 0.601,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": "none",
       "layers": [
         {
@@ -1357,7 +1357,7 @@
     },
     "map_open": {
       "gain": 0.975,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": "none",
       "layers": [
         {
@@ -1379,7 +1379,7 @@
     },
     "map_close": {
       "gain": 1.172,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": "none",
       "layers": [
         {
@@ -1547,7 +1547,7 @@
     },
     "ui_error": {
       "gain": 0.446,
-      "reverb": 0.05,
+      "reverb": 0.028,
       "variation": "none",
       "layers": [
         {
@@ -1579,7 +1579,7 @@
     },
     "ui_success": {
       "gain": 0.561,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": "none",
       "layers": [
         {

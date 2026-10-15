@@ -267,7 +267,7 @@ export const SOUND_DATA: SoundData = {
   "sounds": {
     "dwell:stone_step": {
       "gain": 1.01,
-      "reverb": 0.18,
+      "reverb": 0.099,
       "variation": {
         "pitch": 1.5,
         "gain": 1.5,
@@ -385,7 +385,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:stone_land": {
       "gain": 1.269,
-      "reverb": 0.22,
+      "reverb": 0.121,
       "variation": {
         "pitch": 1.5,
         "gain": 1.5,
@@ -483,7 +483,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:stone_break": {
       "gain": 0.791,
-      "reverb": 0.25,
+      "reverb": 0.138,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -611,7 +611,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:stone_place": {
       "gain": 0.75,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -687,7 +687,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:stone_hit": {
       "gain": 0.764,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -732,7 +732,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:dirt_step": {
       "gain": 1.546,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -792,7 +792,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:dirt_land": {
       "gain": 1.036,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -877,7 +877,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:dirt_break": {
       "gain": 1.452,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -948,7 +948,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:dirt_place": {
       "gain": 1.274,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -1015,7 +1015,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:dirt_hit": {
       "gain": 1.56,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {
         "pitch": 2,
         "gain": 1,
@@ -1058,7 +1058,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:grass_step": {
       "gain": 1.88,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -1147,7 +1147,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:grass_land": {
       "gain": 1.195,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -1233,7 +1233,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:grass_break": {
       "gain": 2.461,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -1322,7 +1322,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:grass_place": {
       "gain": 1.475,
-      "reverb": 0.12,
+      "reverb": 0.066,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -1394,7 +1394,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:sand_step": {
       "gain": 1.546,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -1454,7 +1454,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:sand_land": {
       "gain": 2.023,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -1542,7 +1542,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:sand_break": {
       "gain": 1.511,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -1619,7 +1619,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:sand_place": {
       "gain": 2.323,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -1691,7 +1691,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:sand_hit": {
       "gain": 2.296,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": {
         "pitch": 2,
         "gain": 1,
@@ -1719,7 +1719,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:wood_step": {
       "gain": 0.88,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {
         "pitch": 1.5,
         "gain": 1.5,
@@ -1800,7 +1800,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:wood_land": {
       "gain": 1.178,
-      "reverb": 0.22,
+      "reverb": 0.121,
       "variation": {
         "pitch": 1.5,
         "gain": 1.5,
@@ -1884,7 +1884,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:wood_break": {
       "gain": 1.494,
-      "reverb": 0.22,
+      "reverb": 0.121,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -1992,7 +1992,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:wood_place": {
       "gain": 0.816,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -2058,7 +2058,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:wood_hit": {
       "gain": 0.705,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -2103,7 +2103,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:water_step": {
       "gain": 2.094,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -2156,7 +2156,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:water_swim": {
       "gain": 1.173,
-      "reverb": 0.18,
+      "reverb": 0.099,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -2225,7 +2225,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:water_enter": {
       "gain": 1.046,
-      "reverb": 0.25,
+      "reverb": 0.138,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -2324,7 +2324,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:water_exit": {
       "gain": 1.49,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -2391,7 +2391,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:water_place": {
       "gain": 2.793,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": {
         "pitch": 2,
         "gain": 1,
@@ -2443,7 +2443,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:jump": {
       "gain": 1.135,
-      "reverb": 0.05,
+      "reverb": 0.028,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
@@ -2472,7 +2472,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:crouch_on": {
       "gain": 0.962,
-      "reverb": 0.04,
+      "reverb": 0.022,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -2528,7 +2528,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:crouch_off": {
       "gain": 1.007,
-      "reverb": 0.04,
+      "reverb": 0.022,
       "variation": {
         "pitch": 1.5,
         "gain": 1,
@@ -2584,7 +2584,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:sprint": {
       "gain": 0.782,
-      "reverb": 0.04,
+      "reverb": 0.022,
       "variation": {
         "pitch": 2,
         "gain": 1,
@@ -2629,7 +2629,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:slide": {
       "gain": 0.867,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {
         "pitch": 2,
         "gain": 1,
@@ -2687,7 +2687,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:rise": {
       "gain": 0.892,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {
         "pitch": 2,
         "gain": 1,
@@ -2731,7 +2731,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:dive": {
       "gain": 0.768,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": {
         "pitch": 2,
         "gain": 1,
@@ -2775,7 +2775,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:deny": {
       "gain": 0.879,
-      "reverb": 0.05,
+      "reverb": 0.028,
       "variation": "none",
       "layers": [
         {
@@ -2852,7 +2852,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:fly_on": {
       "gain": 0.463,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": "none",
       "layers": [
         {
@@ -2900,7 +2900,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:fly_off": {
       "gain": 0.447,
-      "reverb": 0.2,
+      "reverb": 0.11,
       "variation": "none",
       "layers": [
         {
@@ -2968,7 +2968,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:menu_open": {
       "gain": 0.542,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": "none",
       "layers": [
         {
@@ -3033,7 +3033,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:menu_close": {
       "gain": 0.601,
-      "reverb": 0.1,
+      "reverb": 0.055,
       "variation": "none",
       "layers": [
         {
@@ -3176,7 +3176,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:map_open": {
       "gain": 0.975,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": "none",
       "layers": [
         {
@@ -3227,7 +3227,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:map_close": {
       "gain": 1.172,
-      "reverb": 0.08,
+      "reverb": 0.044,
       "variation": "none",
       "layers": [
         {
@@ -3573,7 +3573,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:ui_error": {
       "gain": 0.446,
-      "reverb": 0.05,
+      "reverb": 0.028,
       "variation": "none",
       "layers": [
         {
@@ -3632,7 +3632,7 @@ export const SOUND_DATA: SoundData = {
     },
     "dwell:ui_success": {
       "gain": 0.561,
-      "reverb": 0.15,
+      "reverb": 0.083,
       "variation": "none",
       "layers": [
         {
