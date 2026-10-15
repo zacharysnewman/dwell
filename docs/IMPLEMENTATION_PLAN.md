@@ -44,7 +44,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) and S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted) done; next: S2a, the floor and the sandbox world type; S4 (worldgen placement) deferred |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted) and S2a (floor block, sandbox world type) done, S2a's e2e check outstanding; S2a's registry change needs a new compatibility line (the owner decides the bump); next: S2b, the structures store; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -1979,7 +1979,8 @@ the origin.
 - **LOD slopes** (the mesher's slope pieces, `slopePieces.ts`, `PIECE_NEAREST`) and the shape
   placement preview were cut with the slope stage and shape picking.
 - `indestructible` stays a block property with no block using it (the structural anchor of Phase 20
-  may); the `kUnbreakable` check is untested meanwhile.
+  may); the `kUnbreakable` check is untested meanwhile. *(Phase 27 S2a: the sandbox floor uses
+  it, and the check is tested.)*
 - The LOD surface's per-column data shrank from 6 floats to 4 (tints removed) and the F4 map column
   from 4 bytes to 3 (height and flags).
 
@@ -2681,24 +2682,26 @@ Exit criteria
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR) and S1 (the structure format and its generator) done;
-next: S2a, the floor and the world type.
+**Status:** In progress — S0 (the ADR), S1 (the structure format and its generator) and S2a (the floor
+and the sandbox world type) done; outstanding for S2a: its e2e exit check; next: S2b, the structures store.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
 
 Deliverables
 - [x] **S0** — ADR 0031 (the format with a `kind` and open vocabularies, the sandbox world type, the
-  `breakable` flag, the structures store, owner-only authoring, placement deferred); the owner's
+  unbreakable floor (S2a: the existing `indestructible` property), the structures store, owner-only authoring, placement deferred); the owner's
   answers recorded (`STRUCTURES.md` §7).
 - [x] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
   anchor, palette by block name, layers, named variant operations; capped at 32³);
   `shared/structures/gen.mjs` validation, canonical output and hash, stale check in CI; a Rust loader
   replacing `Structure::parse`; the playground converted.
-- [ ] **S2a** — The floor and the world type: the registry's `breakable` flag (default true) checked
-  by the server's edit validation; an unbreakable white floor block (e.g. `dwell:sandbox_floor`,
-  full, not placeable) appended to the registry; a `sandbox` world type (flat floor, flight on) in
-  the main menu and the launcher's new-world route.
+- [x] **S2a** — The floor and the world type: the registry's existing `indestructible` property
+  (reused instead of a new `breakable` flag) checked by the server's edit validation on Break and,
+  newly, on Place into the cell; an indestructible white floor block (`dwell:sandbox_floor`, full,
+  untextured, not placeable, not adaptive) appended to the registry; a `sandbox` world type
+  (generator 100: the flat generator with a layers parameter, in the floor block; flight on, the
+  default policy) in the main menu and the launcher's new-world route (`?new=1&type=sandbox`).
 - [ ] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
   (unknown fields kept, unreadable files left alone); save a selection as a structure; export and
   import JSON (download, clipboard).
@@ -2717,8 +2720,14 @@ Exit criteria
   ladder turns and mirrors with its wall, the converted playground equals the old boxes cell for
   cell (red on a one-cell change); `shared/structures/gen.test.mjs` covers every bad entry listed and
   the 32³ cap; the netcode suite passes on `playground.json`.)*
-- [ ] S2a: breaking a `breakable: false` state is rejected by the server (test); a sandbox world
-  opens on the white floor with flight on (e2e).
+- [x] S2a: breaking or replacing an indestructible state (the sandbox floor) is rejected by the
+  server (`dwell-world` test `the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on`).
+- [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
+  check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
+  (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor reads light grey, close
+  to the sky's fog colour, so the horizon disappears and only placed blocks give depth — a grid or
+  faint texture on the floor may be wanted (owner's call).
 - [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits

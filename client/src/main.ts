@@ -29,13 +29,7 @@ import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
-import {
-  cleanName,
-  parseSeed,
-  WORLD_TYPES,
-  WorldIndex,
-  type CreatableType,
-} from './local/worldIndex';
+import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
 import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './ui/launch';
@@ -619,9 +613,7 @@ async function makeWorld(
   launch: Extract<Launch, { kind: 'new' | 'regenerate' }>,
 ): Promise<string | { message: string }> {
   if (launch.kind === 'new') {
-    const type = (WORLD_TYPES as readonly string[]).includes(launch.type)
-      ? (launch.type as CreatableType)
-      : 'terrain';
+    const type = creatableType(launch.type);
     const world = index.create(
       { name: cleanName(launch.name, 'New world'), type, seed: parseSeed(launch.seed) },
       Date.now(),

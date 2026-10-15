@@ -51,6 +51,13 @@ blocks, new vegetation materials (Phase 11c), and any later content.
   `shared/protocol/constants.json` → `constants.gen.*` today), replacing the hand-mirrored tables.
   "Content is prototype" (§6.1) now has a concrete home: the real block set replaces these files.
 
+**Indestructible blocks** (**built, Phase 27 S2a**): a block's `"indestructible": true` (default
+false) makes the server's edit validation refuse to break any of its states (`Unbreakable`) or to
+place into its cell (which would replace a liquid). It is per block, in the data, read from the
+generated Rust table (`StateInfo::indestructible`). Its first user since bedrock went is
+`dwell:sandbox_floor` (prototype content), the structure sandbox's ground, appended to the list so
+earlier ids are kept; it is not adaptive (Phase 18), so it stays flat cubes.
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,

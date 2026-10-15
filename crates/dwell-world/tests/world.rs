@@ -233,6 +233,49 @@ fn validation_of_reach_sight_materials_and_occupancy() {
 }
 
 #[test]
+fn the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on() {
+    let floor = s("dwell:sandbox_floor");
+    assert!(
+        dwell_blocks::info(floor).indestructible,
+        "the block data marks it"
+    );
+    let mut world = ground();
+    let eye = [0.5, 1.62, 0.5];
+    world.set_voxel(0, -1, 2, floor);
+    assert_eq!(
+        check(&mut world, brk([0, -1, 2], 2), eye, &[]).check,
+        EditCheck::Unbreakable
+    );
+    // Built on: a block placed against it lands next to it and leaves it be.
+    let on = check(&mut world, place([0, -1, 2], 2, s("dwell:stone")), eye, &[]);
+    assert_eq!((on.check, on.cell), (EditCheck::Ok, [0, 0, 2]));
+    // Never replaced by a placement into its cell.
+    world.set_voxel(0, 0, 3, s("dwell:stone"));
+    world.set_voxel(0, 0, 2, floor);
+    let into = check(&mut world, place([0, 0, 3], 5, s("dwell:stone")), eye, &[]);
+    assert_ne!(into.check, EditCheck::Ok);
+    // Every indestructible state in the data is refused the same way.
+    for m in
+        (0..dwell_blocks::STATES.len() as StateId).filter(|&m| dwell_blocks::info(m).indestructible)
+    {
+        let mut world = ground();
+        world.set_voxel(0, -1, 2, m);
+        if targetable(m) {
+            assert_eq!(
+                check(&mut world, brk([0, -1, 2], 2), eye, &[]).check,
+                EditCheck::Unbreakable
+            );
+        }
+    }
+    // Breakable blocks still break.
+    let mut world = ground();
+    assert_eq!(
+        check(&mut world, brk([0, -1, 2], 2), eye, &[]).check,
+        EditCheck::Ok
+    );
+}
+
+#[test]
 fn placing_into_water_is_allowed_into_players_rejected() {
     let mut world = ground();
     let eye = [0.5, 1.62, 0.5];
