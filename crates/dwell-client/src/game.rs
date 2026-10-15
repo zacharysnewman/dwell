@@ -530,10 +530,12 @@ impl<S: Scene> Game<S> {
     pub fn voxel(&mut self, x: i32, y: i32, z: i32) -> u16 {
         self.streamer.store_mut().get_voxel(x, y, z)
     }
-    /// The client's states in a box, in layer order; empty where a chunk of it isn't loaded
-    /// (`region::read_box`): saving a structure.
+    /// The client's states in a box, in layer order; empty where a chunk of it isn't loaded (Air
+    /// chunks are loaded; the streamer's `BoxSource`): saving a structure.
     pub fn voxels(&mut self, min: [i32; 3], size: [u32; 3]) -> Vec<u16> {
-        dwell_world::region::read_box(self.streamer.store_mut(), min, size.map(|n| n as i32))
+        use dwell_game::region_tools::BoxSource;
+        self.streamer
+            .read_box(min, size.map(|n| n as i32))
             .unwrap_or_default()
     }
     pub fn state(&self) -> &ClientState {
@@ -759,8 +761,8 @@ impl<S: Scene> Game<S> {
             return false;
         }
         let target = self.interaction.target().map(|t| t.cell);
-        let world = self.streamer.store_mut();
-        let target_state = target.map_or(0, |c| world.get_voxel(c[0], c[1], c[2]));
+        let target_state =
+            target.map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2]));
         let material = self
             .interaction
             .palette()
@@ -774,7 +776,8 @@ impl<S: Scene> Game<S> {
             eye: self.target_eye,
             now_ms,
         };
-        let sent = match self.region.act(action, &ctx, world) {
+        // Through the streamer: it knows the Air chunks the client never stores.
+        let sent = match self.region.act(action, &ctx, &mut self.streamer) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
                 true
