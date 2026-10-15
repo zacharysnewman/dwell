@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built; outstanding for A1: the owner's approval of the image differences (edges, the sea's colour, the outline), the e2e suite on CI; next: A2; local builds only until the owner's decision (A7) |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built; the owner approved A1's image differences (2026-10-14); outstanding for A1: the e2e suite on CI; next: A2; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner's approval of its image differences outstanding); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
@@ -2615,8 +2615,8 @@ Deliverables
   Phase 20 unblocked).
 
 Exit criteria
-- [ ] A1: bench before/after; raster screenshots match today's, or the owner approves the
-  difference.
+- [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
+  difference. (The owner approved the differences — edges, the sea's colour, the outline — 2026-10-14.)
 - [ ] A2: compare mode runs with raster on both sides and reports zero difference.
 - [ ] A3: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces);
   the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near and
