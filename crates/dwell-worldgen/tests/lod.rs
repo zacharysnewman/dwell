@@ -328,6 +328,33 @@ fn the_flat_worlds_lod_equals_the_downsample_of_its_chunks() {
 }
 
 #[test]
+fn the_sandbox_lod_is_its_floor_and_equals_the_downsample_of_its_chunks() {
+    let chunks = generator_for(GENERATOR_SANDBOX, 0);
+    let lod = lod_generator_for(GENERATOR_SANDBOX, 0);
+    let floor = dwell_blocks::require(SANDBOX_FLOOR);
+    for level in 1..=3 {
+        let c = section_at(level, 5, -1, -7);
+        let mut generated = LodCells::new();
+        assert_eq!(lod(c, &mut generated), LodKind::Content);
+        assert!(generated.iter().all(|&m| m == M.air || m == floor));
+        assert!(generated.contains(&floor));
+        // The section's own cells (the downsample has no apron).
+        let down = downsampled_from_chunks(&chunks, c);
+        for y in 0..N {
+            for z in 0..N {
+                for x in 0..N {
+                    let i = cell_index(x, y, z);
+                    assert_eq!(generated[i], down[i], "level {level}");
+                }
+            }
+        }
+    }
+    let mut cells = LodCells::new();
+    assert_eq!(lod(section_at(2, 0, -1000, 0), &mut cells), LodKind::Buried);
+    assert!(cells.iter().all(|&m| m == floor));
+}
+
+#[test]
 fn generate_lod_is_pure_and_bounds_decide_empty_and_buried_exactly() {
     let g = BifacialTerrain::new(0);
     let ground = |x: i32, z: i32| g.local(Face::A).column_at(x, z).height as i64;

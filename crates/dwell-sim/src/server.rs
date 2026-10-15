@@ -40,9 +40,14 @@ pub type SessionId = u32;
 pub type TransportBinding = [u8; 32];
 
 const SNAPSHOT_EVERY: u32 = SIM_HZ / SNAPSHOT_HZ; // ticks
-const MAX_QUEUED_INPUTS: usize = 16; // hard cap per session
+const MAX_QUEUED_INPUTS: usize = 32; // hard cap per session (> a slow client's frame of inputs)
 const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
-const MAX_BUFFERED_INPUTS: usize = 6; // beyond this, skip to bound input latency
+/// Inputs queued beyond this for a whole window are skipped, to bound input latency. A window's
+/// low-water mark decides, not the queue at one tick: a client drawing a few frames a second sends
+/// a frame's ticks at once (up to the client's MAX_TICKS_PER_FRAME), and skipping that burst would
+/// drop inputs the client predicted (a correction every frame).
+const MAX_BUFFERED_INPUTS: usize = 6;
+const LATENCY_WINDOW_TICKS: u32 = 30;
 const MAX_SEQ_AHEAD: u32 = 256; // inputs further ahead are rejected
 const INPUT_DATAGRAMS_PER_SECOND: u32 = 2 * SIM_HZ; // §11: SIM_HZ + redundancy
 const PREFETCH_CHUNKS: i32 = 2; // generated ahead around each player (collision reach + 1)
@@ -273,6 +278,9 @@ struct Session {
     handle: Option<PlayerHandle>,   // none while dead
     inputs: VecDeque<(u32, Input)>, // ordered by seq
     primed: bool,                   // jitter buffer: consume only once INPUT_BUFFER are queued
+    /// The fewest inputs queued at any tick of this latency window (`MAX_BUFFERED_INPUTS`).
+    low_water: usize,
+    window_ticks: u32,
     last_processed_seq: u32,
     last_input: Input,
     health: i32,
@@ -317,6 +325,8 @@ impl Session {
             handle: None,
             inputs: VecDeque::new(),
             primed: false,
+            low_water: usize::MAX,
+            window_ticks: 0,
             last_processed_seq: 0,
             last_input: Input::default(),
             health: pc::MAX_HEALTH as i32,
@@ -944,9 +954,18 @@ impl Server {
             let Some(h) = s.handle.filter(|_| s.joined()) else {
                 continue;
             };
-            while s.inputs.len() > MAX_BUFFERED_INPUTS {
-                s.last_processed_seq = s.inputs.pop_front().expect("queued").0;
-                s.stats.inputs_skipped += 1;
+            // Input latency: when the queue stayed above MAX_BUFFERED_INPUTS a whole window, the
+            // excess the window never drained is skipped.
+            s.low_water = s.low_water.min(s.inputs.len());
+            s.window_ticks += 1;
+            if s.window_ticks >= LATENCY_WINDOW_TICKS {
+                let excess = s.low_water.saturating_sub(MAX_BUFFERED_INPUTS);
+                for _ in 0..excess.min(s.inputs.len()) {
+                    s.last_processed_seq = s.inputs.pop_front().expect("queued").0;
+                    s.stats.inputs_skipped += 1;
+                }
+                s.low_water = usize::MAX;
+                s.window_ticks = 0;
             }
             // Jitter buffer: after starving, wait until INPUT_BUFFER inputs are queued again.
             if !s.primed && s.inputs.len() >= INPUT_BUFFER {

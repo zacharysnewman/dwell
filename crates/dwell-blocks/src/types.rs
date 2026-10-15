@@ -44,6 +44,14 @@ pub struct Textures {
     pub bottom: &'static str,
 }
 
+/// World-space grid lines the terrain shader draws on a state's faces (block data `grid`, a look
+/// option): a line every `every` blocks (a divisor of the chunk size), darkening by `strength`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grid {
+    pub every: u8,
+    pub strength: f32,
+}
+
 /// One block state.
 #[derive(Clone, Copy, Debug)]
 pub struct StateInfo {
@@ -69,6 +77,7 @@ pub struct StateInfo {
     pub color: u32,
     pub opacity: f32,
     pub textures: Option<Textures>,
+    pub grid: Option<Grid>,
 }
 
 /// One polygon of a baked shape: `count` points of `v` (metres within the cell).
