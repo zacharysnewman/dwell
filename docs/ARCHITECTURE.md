@@ -224,7 +224,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   /dwell-blocks      The block registry (`blocks.gen.rs` from shared/blocks), looked up by name; state
                      strings and properties; shape geometry (`shape.rs`).
   /dwell-world       Chunks and the voxel grid (`VoxelWorld`), world bounds and the two faces, LOD
-                     sections (`lod.rs`: grid, downsampling, bounds), structure files, block edits
+                     sections (`lod.rs`: grid, downsampling, bounds), structures (`structure.rs`, tables
+                     `structures.gen.rs` from shared/structures), block edits
                      (`edit.rs`: targeting and the server's edit check).
   /dwell-worldgen    Noise, the interim island, the terrain generator, the bifacial world; generator
                      and air-test lookup by version.
@@ -277,7 +278,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/blocks       Block data (dwell.json) + gen.mjs and shapes.mjs (→ Rust for dwell-blocks, TS for
                      the shell's block dump) and vectors.txt.
 /shared/worldgen     golden/: chunk and LOD-section hashes of generator version 12 (§6.3).
-/shared/structures   playground.structure: the movement playground the tests stamp (§6.3).
+/shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
+                     dwell-world) and gen.test.mjs; playground.json is the movement playground the
+                     tests stamp (§6.3).
 /shared/version      vectors.txt: version precedence, compatibility lines and "may open" cases that the
                      TypeScript (client/src/version) and Rust (dwell-sim app_version.rs)
                      implementations both pass.
@@ -637,7 +640,7 @@ B — and are retired: a world saved with one loads as the flat world; the versi
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
 default for dedicated servers and local mode; version **0** (flat) remains for tests. The **movement
 playground** (generator 1 until Phase 15) is now a **structure file**
-(`shared/structures/playground.structure`, below) that the controller and netcode tests stamp over
+(`shared/structures/playground.json`, below) that the controller and netcode tests stamp over
 the flat world; no world uses it. Players spawn on the first dry, level 9 × 9 patch (top voxels at
 one height, at least 2 m above sea level; `SPAWN_CLEAR`, wide enough for the spread of spawning
 players to build beside themselves) found in an 8 m spiral from the origin. Debug tooling: **named
@@ -751,25 +754,39 @@ seeds the island reaches 28–32 km and the sea starts 19–22 km from the origi
 (measured with the C++ build's inspect tool; the Rust generator reproduces its output exactly). The level of detail keeps the coast detail's octaves its cell
 resolves.
 
-#### Structure files **[built, Phase 15]**
+#### Structure files **[in progress, Phase 27: the format and loader built (S1)]**
 
-`dwell-world` `structure.rs`: hand-built voxel geometry as data — a text file of `fill x0 y0 z0 x1 y1 z1
-<block state>` lines (inclusive boxes; blocks named by canonical state string, never by id; later
-lines win), parsed with line-numbered errors and stamped over a base generator (`with_structure`,
-with a matching air test, `with_structure_air`). The movement playground the controller tests walk — a block step, a
-doorway, a crawlspace, a ladder to a ledge and a pool — is one
-(`shared/structures/playground.structure`, decision D7). Placed slabs and slopes went with the
-shaped families, so the tests' half-height steps are static boxes.
+Hand-built voxel geometry as data ([ADR 0031](./adr/0031-data-driven-structures.md),
+[`STRUCTURES.md`](./STRUCTURES.md) §3). The source of truth is one JSON file per structure in
+`shared/structures/` (test fixtures in `shared/structures/test/`, namespace `test`): a format
+version, a namespaced `name` matching the file name, a `kind` (`"voxels"` is the only one), `size`
+(each edge 1–32), an `anchor` cell inside it, a `palette` from single printable characters to block
+state names (`null` keeps what is there, explicit `dwell:air` carves), `layers` (y-slices bottom up
+of z-rows of x characters) and optional `variants`, named operations applied in a fixed order:
+`rotate` (quarter turns about +Y, clockwise from above), `mirror` (`x` or `z`) and `choices`
+(per-voxel weighted blocks for a palette character). Kinds and variant operations are open lists: a
+new one is a name the generator validates plus its engine code, with no change to existing files.
+`shared/structures/gen.mjs` (run after the block generator: names resolve against
+`shared/blocks/vectors.txt`) validates every file, naming the file and entry on any error, and
+emits each structure's canonical form and its hash (FNV-1a 64 over a canonical text) as Rust tables:
+`dwell-world` `structures.gen.rs` for the build, `tests/fixtures/structures.gen.rs` for fixtures;
+CI regenerates them and fails on a diff, and runs the generator's own tests
+(`gen.test.mjs`). `dwell-world` `structure.rs` loads a structure by name (`load`), rebuilds the
+canonical text to check the hash and resolves names once; `place(at, seed)` puts the anchor at
+`at` and picks the orientation and the block choices from the seed with integer hashing (ADR 0010;
+choices hash the unturned cell, so they don't depend on the orientation); facing blocks turn with
+the geometry through the registry's facing property. The result is stamped over a base generator
+(`with_structure`, with a matching air test, `with_structure_air`). The movement playground the
+controller and netcode tests walk — a block step, a doorway, a crawlspace, a ladder to a ledge and
+a pool — is one (`shared/structures/playground.json`, decision D7), placed with its anchor at the
+origin; a test proves it stamps exactly as the old `fill` text file did, which was removed. Worldgen
+places no structures (baseline B10; placement is deferred, and would ship on a new compatibility
+line).
 
-**Data-driven structures [planned, Phase 27]** ([ADR 0031](./adr/0031-data-driven-structures.md),
-[`STRUCTURES.md`](./STRUCTURES.md)). Structures become JSON in `shared/structures/` (a format version, a
-`kind` — `"voxels"` first — size, anchor, a palette by block name, y-layers, named variant operations;
-up to 32³), validated and hashed by `shared/structures/gen.mjs` (CI fails on stale output) and read by
-one Rust loader that replaces the text format. They are per build and added only by the owner, built
-in a **`sandbox` world type** (flat unbreakable white floor, flight on) with region tools (box select,
-fill, copy/paste with rotate and mirror, undo) over a server-validated region edit, saved to a
-separate OPFS store (`dwell/structures/`, append-only) and exported as JSON. Worldgen does not place
-them (baseline B10); placement is deferred, and would ship on a new compatibility line.
+**The structure sandbox [planned, Phase 27]**. Structures are per build and added only by the
+owner, built in a **`sandbox` world type** (flat unbreakable white floor, flight on) with region
+tools (box select, fill, copy/paste with rotate and mirror, undo) over a server-validated region
+edit, saved to a separate OPFS store (`dwell/structures/`, append-only) and exported as JSON.
 
 **Tree growth [planned, Phase 30]** ([ADR 0033](./adr/0033-tree-growth.md),
 [`TREE_GROWTH.md`](./TREE_GROWTH.md)). A tree is a structure whose model is the mature tree: its

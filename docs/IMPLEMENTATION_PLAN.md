@@ -44,7 +44,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) and S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted) done; next: S2a, the floor and the sandbox world type; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2681,7 +2681,8 @@ Exit criteria
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR) done; next: S1, the structure format and its generator.
+**Status:** In progress — S0 (the ADR) and S1 (the structure format and its generator) done;
+next: S2a, the floor and the world type.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
@@ -2690,7 +2691,7 @@ Deliverables
 - [x] **S0** — ADR 0031 (the format with a `kind` and open vocabularies, the sandbox world type, the
   `breakable` flag, the structures store, owner-only authoring, placement deferred); the owner's
   answers recorded (`STRUCTURES.md` §7).
-- [ ] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
+- [x] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
   anchor, palette by block name, layers, named variant operations; capped at 32³);
   `shared/structures/gen.mjs` validation, canonical output and hash, stale check in CI; a Rust loader
   replacing `Structure::parse`; the playground converted.
@@ -2709,15 +2710,28 @@ Deliverables
   handling, goldens; a new ADR revisiting B10, and a new compatibility line.
 
 Exit criteria
-- [ ] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
+- [x] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
   character, wrong layer size, unknown kind or variant operation, over 32³) fail naming the entry;
-  the playground's tests pass on the converted file.
+  the playground's tests pass on the converted file. *(Verified: `dwell-world` `tests/structures.rs`
+  — `shared/structures/test/ladder_post.json` stamps by data alone, variants are deterministic, a
+  ladder turns and mirrors with its wall, the converted playground equals the old boxes cell for
+  cell (red on a one-cell change); `shared/structures/gen.test.mjs` covers every bad entry listed and
+  the 32³ cap; the netcode suite passes on `playground.json`.)*
 - [ ] S2a: breaking a `breakable: false` state is rejected by the server (test); a sandbox world
   opens on the white floor with flight on (e2e).
 - [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test.
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
   over the cap or outside the build volume are rejected (test).
+
+Deviations (S1):
+- Choices are **per voxel** (each cell draws independently, hashed from the seed and the unturned
+  cell); a structure-wide pick would be a new variant operation. Mirroring (`x` or `z`) is applied
+  before rotation, and one of "none" and the listed axes is picked.
+- The playground fits the 32³ cap (22 × 6 × 14), so no box or RLE encoding was needed; its box was
+  extended north to z = 0 (kept cells) so its anchor is the world origin. RLE is not built.
+- Test fixtures are generated into a separate table (`tests/fixtures/structures.gen.rs`), so they
+  are not in the build.
 
 ## Phase 30 — Tree Growth
 
