@@ -4,7 +4,9 @@
 
 use std::sync::OnceLock;
 
-use dwell_blocks::{Cross, Facing, Fade, RenderMode, SHAPES, STATES, ShapeInfo, StateId, Textures, Wind};
+use dwell_blocks::{
+    Cross, Facing, Fade, RenderMode, SHAPES, STATES, ShapeInfo, StateId, Textures, Wind,
+};
 
 /// The look a state is drawn with (the registry's `look` name).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

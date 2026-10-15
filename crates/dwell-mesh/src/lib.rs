@@ -46,8 +46,8 @@ pub use lod_mesher::{
     SURFACE_STRIDE, SectionMeshes, lod_color, mesh_section, mirror_rows, section_bytes,
 };
 pub use mesher::{
-    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at, mirror_padded,
-    padded_index,
+    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at,
+    mirror_padded, padded_index,
 };
 pub use textures::{
     ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, TILE, TILE_ORDER, TileRect,

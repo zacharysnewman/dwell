@@ -206,6 +206,113 @@ fn a_flooded_ladder_draws_the_water_around_it() {
     assert_eq!(quads(&pool.cutout), 1, "the plate");
 }
 
+fn tall_grass() -> u16 {
+    require("dwell:tall_grass")
+}
+
+#[test]
+fn draws_tall_grass_as_crossed_cutout_quads_from_its_data() {
+    let info = dwell_blocks::info(tall_grass());
+    let cross = info.cross.expect("the data gives it a cross");
+    let m = mesh(&[(4, 0, 4, grass()), (4, 1, 4, tall_grass())], false);
+    let c = &m.cutout;
+    // One quad per cross quad (4 vertices, 2 triangles), drawn once: the pipeline is two-sided.
+    let quads_n = usize::from(cross.quads);
+    assert_eq!(c.positions.len(), quads_n * 4 * 3);
+    assert_eq!(c.indices.len(), quads_n * 6);
+    assert_eq!(c.plants.len(), quads_n * 4 * 4);
+    // The grass block below keeps its top face: the plant hides nothing.
+    let alone = quads(&mesh(&[(4, 0, 4, grass())], false).opaque);
+    assert_eq!(quads(&m.opaque), alone);
+    assert_eq!(quads(&m.transparent), 0);
+    for v in 0..c.positions.len() / 3 {
+        let p = vertex(&c.positions, v as u32);
+        // Rooted on the block below, at most the data's height, near the cell.
+        assert!(
+            p[1] >= 1.0 - 1e-6 && p[1] <= 1.0 + f64::from(cross.height) + 1e-6,
+            "{p:?}"
+        );
+        assert!(
+            (p[0] - 4.5).abs() < 1.0 && (p[2] - 4.5).abs() < 1.0,
+            "{p:?}"
+        );
+        // Normals lean up, so the blades are lit from either side.
+        assert!(c.normals[v * 3 + 1] > 0.7);
+        // Sway: none at the foot, the wind's strength (scaled by the plant's height) at the top.
+        let sway = c.plants[v * 4];
+        let wind = info.wind.expect("wind");
+        if p[1] < 1.0 + 1e-6 {
+            assert_eq!(sway, 0.0);
+        } else {
+            assert!(sway > 0.0 && sway <= wind.strength + 1e-6);
+        }
+        let fade = info.fade.expect("fade");
+        assert_eq!(c.plants[v * 4 + 2..v * 4 + 4], [fade.start, fade.end]);
+        assert_eq!(c.tiles[v * 4], tile_rect("tallGrass").u0 as f32);
+    }
+}
+
+#[test]
+fn tall_grass_jitter_is_deterministic_by_world_position() {
+    let cells = [(4, 0, 4, grass()), (4, 1, 4, tall_grass())];
+    let at = |origin| {
+        mesh_chunk_at(&voxels(&cells), false, origin)
+            .expect("meshed")
+            .cutout
+    };
+    // The same plant every time it is meshed.
+    assert_eq!(at([0, 0, 0]), at([0, 0, 0]));
+    // A different place gets a different plant (offset, turn or height).
+    let here = at([0, 0, 0]);
+    let there = at([32, 0, -64]);
+    assert_ne!(here.positions, there.positions);
+    // Neighbouring plants differ too, within the data's jitter.
+    let field: Vec<(i32, i32, i32, u16)> = (0..8)
+        .flat_map(|x| [(x, 0, 0, grass()), (x, 1, 0, tall_grass())])
+        .collect();
+    let m = mesh_chunk_at(&voxels(&field), false, [0; 3])
+        .expect("meshed")
+        .cutout;
+    let cross = dwell_blocks::info(tall_grass()).cross.expect("cross");
+    let per = usize::from(cross.quads) * 4;
+    let tops: Vec<f32> = (0..8)
+        .map(|i| {
+            (0..per)
+                .map(|v| m.positions[(i * per + v) * 3 + 1])
+                .fold(0.0, f32::max)
+        })
+        .collect();
+    assert!(
+        tops.windows(2).any(|w| w[0] != w[1]),
+        "heights vary: {tops:?}"
+    );
+    for t in &tops {
+        let h = t - 1.0;
+        assert!(h >= cross.height * cross.height_min - 1e-5 && h <= cross.height + 1e-5);
+    }
+}
+
+#[test]
+fn ladders_and_plants_share_the_cutout_mesh_with_aligned_streams() {
+    let ladder = require("dwell:ladder[facing=north,flooded=false]");
+    let m = mesh(
+        &[
+            (0, 0, 0, ladder),
+            (4, 0, 4, grass()),
+            (4, 1, 4, tall_grass()),
+            (9, 0, 0, ladder),
+        ],
+        false,
+    );
+    let c = &m.cutout;
+    assert_eq!(c.plants.len() / 4, c.positions.len() / 3);
+    assert_eq!(c.tiles.len() / 4, c.positions.len() / 3);
+    // Mirrored for face B, it is still cutout and keeps its streams.
+    let b = mesh(&[(4, 0, 4, grass()), (4, 1, 4, tall_grass())], true).cutout;
+    assert_eq!(b.plants.len() / 4, b.positions.len() / 3);
+    assert!(!b.indices.is_empty());
+}
+
 #[test]
 fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_magenta() {
     let opaque = mesh(&[(0, 0, 0, grass()), (5, 0, 0, UNKNOWN)], false).opaque;

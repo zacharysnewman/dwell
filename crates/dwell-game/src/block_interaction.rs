@@ -275,7 +275,10 @@ mod tests {
     #[test]
     fn offers_every_placeable_material_once_ladders_as_one_slot() {
         let names: Vec<_> = palette().into_iter().map(|s| s.name).collect();
-        assert_eq!(names, ["stone", "dirt", "grass", "ladder", "sand"]);
+        assert_eq!(
+            names,
+            ["stone", "dirt", "grass", "ladder", "sand", "tall_grass"]
+        );
     }
 
     #[test]

@@ -490,7 +490,7 @@ each worker keeps two jobs (one running, one waiting). Pool sizes are capped, lo
 > later, through the generator version and the block data files, without architectural change.
 
 Built (Phases 1–3a; registry Phase 8; cut to the baseline in Phase 15, ADR 0025): the prototype
-blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists the placeable ones), and since Phase 27 S2a the sandbox floor — where
+blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists the placeable ones), since Phase 27 S2a the sandbox floor, and since Phase 31 **tall grass** (`dwell:tall_grass`, below) — where
 each state has a collision **shape** (`Empty`, `Full`, or `Shaped`, below), `climbable` + facing,
 `liquid`, `flooded` and `indestructible` (block data `"indestructible": true`; PLAYER_CONTROLLER.md §6).
 **[built, Phase 27 S2a]** One block is indestructible: `dwell:sandbox_floor` (prototype content:
@@ -574,6 +574,28 @@ see-through neighbour hides no face. Water declares `translucent` (its look is u
 `cutout`, with a ladder tile whose gaps are transparent. The LOD treats cutout states without a
 solid (ladders, plants) as air (`dwell_world::lod::lod_drawn`). Render modes are look data: they
 don't enter the registry hash.
+
+**The cross look and plants [built, Phase 31]** (same ADR and design doc). `"look": "cross"`: 2–4
+vertical quads through the cell's centre, evenly turned, double-sided (one face each, drawn by the
+cutout pipeline without culling), with data options `cross` (`height`; `quads`; `jitter`: offset,
+turn and height scale, seeded by the cell's **world** position — mesh jobs carry the chunk's
+origin, `mesh_chunk_at` — so a plant is the same on every client and re-mesh), `wind` (strength,
+speed: the mesher writes each vertex's sway, 0 at the foot, into the cutout mesh's `plants` stream;
+the vertex shader leans the tops along a slow gust field of travelling waves whose wavelengths
+divide 1,024 m, sampled at the world position modulo that from the eye's position passed modulo it,
+plus a faster flutter; `Renderer::set_wind` scales it, 0 for none) and `fade` (start, end in metres,
+`gen.mjs` requires end ≤ 96 m, the smallest full-detail distance, so plants are gone before chunks
+meet the LOD). Normals lean up (0.8) so plants are lit like the ground from every side; the tint is
+that normal's face tint. Crosses need `"shape": "empty"`: no collider. **Placement rules** are block
+data too, checked by the server (§6.5): `placeOn` (block ids the block below must be),
+`needsSupport` (`"below"`: removed with what it stands on, in the same modification), `replaceable`
+(placing into its cell replaces it) and `selectionBox` (a smaller box in the cell for targeting,
+line of sight and the outline, `dwell_world::edit::target_box`). The first user is
+**`dwell:tall_grass`** (prototype content, appended to the block list so earlier ids and every
+terrain hash hold): cross, cutout, a `tallGrass` tile of tapering blades in the grass top's colours
+with transparent gaps, wind, a fade from 48 to 88 m, placeable on grass or dirt only, replaceable,
+needing support. World generation doesn't place it (B10 stands; a seed's terrain is unchanged).
+Adding it changes the registry hash: a new compatibility line (0.12), the owner's decision.
 
 **Adaptive natural blocks [planned, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
 [ADR 0024](./adr/0024-adaptive-natural-blocks.md)). Natural blocks (block data `"adaptive": true`)
@@ -1059,10 +1081,18 @@ Players break and place blocks. Server-authoritative like every voxel change
   view of the eye (checked first, so a far request reads nothing); a targetable cell; the eye in
   front of the targeted face and a ray to its centre or one of four points near its corners
   reaching the target first (line of sight; on a shape, the sample points lie on the polygons whose
-  normal points through the requested face); Break — not indestructible (block data; else
+  normal points through the requested face; a block with a `selectionBox` is aimed at and seen
+  by that box); Break — not indestructible (block data; else
   `Unbreakable`), leaving water where a flooded state stood; Place — a placeable state, into an air
   or liquid cell (not an indestructible one: placing would replace it) inside the world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
-  player's capsule, tested against the shape's true volume. Accepted edits of a step are batched into one
+  player's capsule, tested against the shape's true volume. **[built, Phase 31]** Placement rules
+  from the block data: a `replaceable` target is placed *into* (the new block takes its cell), and a
+  replaceable block in the cell placed against doesn't make it `Occupied`; a block with `placeOn`
+  must have one of those blocks below it (toward its face's ground: −y on face A, +y on face B;
+  `dwell_world::edit::below`), and one with `needsSupport` but no list a solid block, else
+  `NoSupport`. After each accepted edit the server removes what it leaves unsupported
+  (`unsupported_after`: the `needsSupport` blocks above the changed cell whose rule no longer holds,
+  in a chain upward, each leaving air or, flooded, water), in the same batch. Accepted edits of a step are batched into one
   `VoxelModification` (one entry per chunk, its revision + 1) sent to each client streaming a
   changed chunk; clients streaming it later get the chunk Explicit. The client does not predict
   edits: the change shows when the modification arrives (one RTT), and terrain collision — server
@@ -1070,7 +1100,7 @@ Players break and place blocks. Server-authoritative like every voxel change
   are counted per session (`SessionStats`), with the last reason.
 - **Inventory:** creative-style and infinite — every *placeable* material in the (prototype, §6.1)
   material table is always available: all but air and liquids (water) — since Phase 15 stone, dirt,
-  grass, sand and ladders, five hotbar slots; nothing is consumed or collected. Ladders are one hotbar slot: placed against a side face the ladder is
+  grass, sand and ladders, and since Phase 31 tall grass, six hotbar slots; nothing is consumed or collected. Ladders are one hotbar slot: placed against a side face the ladder is
   mounted on that block, facing out of it; on a top or bottom face it faces the player. A hotbar
   HUD shows the palette with the selected block highlighted; number keys (1–9, 0) and the scroll
   wheel (desktop) or tapping a hotbar slot (touch) change the selection. Selection is client-side

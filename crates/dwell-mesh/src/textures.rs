@@ -272,7 +272,10 @@ fn tall_grass(x: i64, y: i64) -> Rgb {
     let base = mix(GRASS_LOW, GRASS, 0.35 + 0.5 * shade);
     let tip = mix(GRASS, GRASS_HIGH, 0.3 + 0.6 * shade);
     let grain = 0.94 + 0.12 * hash(x, y, 1, 172);
-    scale(mix(base, tip, t.powf(0.8)), grain * (0.78 + 0.22 * t.sqrt()))
+    scale(
+        mix(base, tip, t.powf(0.8)),
+        grain * (0.78 + 0.22 * t.sqrt()),
+    )
 }
 
 fn tall_grass_alpha(x: i64, y: i64) -> f64 {
@@ -501,7 +504,11 @@ mod tests {
         assert!((0.12..0.5).contains(&share), "{share}");
         // Dense at the foot, open at the top; nothing on the top row or the side columns (no
         // blade wraps round the tile).
-        let row = |y: i64| (0..TILE as i64).filter(|&x| alpha("tallGrass", x, y) > 0.0).count();
+        let row = |y: i64| {
+            (0..TILE as i64)
+                .filter(|&x| alpha("tallGrass", x, y) > 0.0)
+                .count()
+        };
         assert!(row(1) > row(20) && row(20) > 0);
         assert_eq!(row(TILE as i64 - 1), 0);
         for y in 0..TILE as i64 {

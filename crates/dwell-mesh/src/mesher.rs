@@ -396,13 +396,15 @@ fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z
     let cx = f64::from(x) + 0.5 + jitter(1) * f64::from(c.offset);
     let cz = f64::from(z) + 0.5 + jitter(2) * f64::from(c.offset);
     let turn = jitter(3) * f64::from(c.rotation_deg).to_radians();
-    let scale = f64::from(c.height_min)
-        + f64::from(c.height_max - c.height_min) * cell_noise(world, 4);
+    let scale =
+        f64::from(c.height_min) + f64::from(c.height_max - c.height_min) * cell_noise(world, 4);
     let height = f64::from(c.height) * scale;
     let (y0, y1) = (f64::from(y), f64::from(y) + height);
     let sway = style.wind.map_or(0.0, |w| f64::from(w.strength) * scale);
     let speed = style.wind.map_or(0.0, |w| f64::from(w.speed));
-    let (fade0, fade1) = style.fade.map_or((0.0, 0.0), |f| (f64::from(f.start), f64::from(f.end)));
+    let (fade0, fade1) = style
+        .fade
+        .map_or((0.0, 0.0), |f| (f64::from(f.start), f64::from(f.end)));
     let tile = surface(style, 0, 1).1;
     // Ladders before it carry no sway: line the plants stream up with the vertices.
     b.m.plants.resize(b.vertex_count() as usize * 4, 0.0);
@@ -440,10 +442,10 @@ fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z
             ]);
             b.m.uvs.extend([u as f32, v as f32]);
             b.push_tile(&tile);
-            b.m.plants.extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
+            b.m.plants
+                .extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
         }
-        b.m
-            .indices
+        b.m.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 }
@@ -673,7 +675,7 @@ pub fn mesh_chunk_at(
                         }
                         continue;
                     }
-                    if k.shape == Shape::Shaped {
+                    if k.shape == Shape::Shaped || k.style.look == Look::Cross {
                         continue; // drawn whole, below
                     }
                     let [nx, ny, nz] = neighbour_of(cx, cy, cz, axis, sign);
