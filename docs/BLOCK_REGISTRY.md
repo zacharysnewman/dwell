@@ -68,7 +68,7 @@ answers §7: per build, edited in the data file, other fluids by data, looks onl
 ```json
 "fluids": { "dwell:water": {
   "opacity": 0.72, "surfaceDrop": 0.125,
-  "absorption": [0.7, 0.28, 0.06], "scatter": "#1c7ed8", "roughness": 0.08, "ior": 1.333,
+  "absorption": [0.45, 0.12, 0.04], "scatter": "#1a8ee0", "roughness": 0.08, "ior": 1.333,
   "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
   "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0 } }
 ```

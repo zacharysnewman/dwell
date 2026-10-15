@@ -190,7 +190,11 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
   average, and near and far water both shade with the fluid's scatter); scatter from `#2b9cc0` to
   `#1c7ed8`; absorption from [0.45, 0.09, 0.06] to [0.7, 0.28, 0.06] (more red and green absorbed,
   so the underwater fog reads blue rather than teal); opacity from 0.65 to 0.72, so the sand under
-  the shallows doesn't grey the blue. Glint, Fresnel and sky reflection are unchanged.
+  the shallows doesn't grey the blue. Glint, Fresnel and sky reflection are unchanged. Then, for a
+  **tropical** look (owner): scatter `#1a8ee0` and absorption [0.45, 0.12, 0.04], near clear
+  water's own (red absorbed first, green a little, blue least), so the underwater view reads a
+  clear cyan-blue and, once W3 grades the colour by depth, shallows read turquoise and deep water
+  blue.
 - **Bench:** the `water-views` scenario flies from the seed-7 spawn to the coast about 20 km
   east-south-east, down into the sea, and shoots four views: across the sea, the shallows toward the
   shore, 1 km up, and with the eye just under the surface. The `camera` step gained `aroundPlayer`
