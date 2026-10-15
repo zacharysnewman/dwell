@@ -753,8 +753,8 @@ impl<S: Scene> Game<S> {
             return false;
         }
         let target = self.interaction.target().map(|t| t.cell);
-        let world = self.streamer.store_mut();
-        let target_state = target.map_or(0, |c| world.get_voxel(c[0], c[1], c[2]));
+        let target_state =
+            target.map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2]));
         let material = self
             .interaction
             .palette()
@@ -768,7 +768,8 @@ impl<S: Scene> Game<S> {
             eye: self.target_eye,
             now_ms,
         };
-        let sent = match self.region.act(action, &ctx, world) {
+        // Through the streamer: it knows the Air chunks the client never stores.
+        let sent = match self.region.act(action, &ctx, &mut self.streamer) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
                 true

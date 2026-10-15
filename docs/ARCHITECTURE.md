@@ -1059,7 +1059,8 @@ Players break and place blocks. Server-authoritative like every voxel change
   a client-side stack of `UNDO_DEPTH` (64) region diffs: each keeps the box's states read just before
   its edit was sent; undo pastes them back (keeping what it replaced, for redo). The client refuses
   what the server would (too big, too far, too fast, chunks not loaded, an older server) with a
-  message on that line. No touch controls yet.
+  message on that line. The tools read the client's world through the chunk streamer (its
+  `BoxSource`), so an Air chunk the server sent counts as loaded though the client never stores it. No touch controls yet.
 - **Inventory:** creative-style and infinite — every *placeable* material in the (prototype, §6.1)
   material table is always available: all but air and liquids (water) — since Phase 15 stone, dirt,
   grass, sand and ladders, five hotbar slots; nothing is consumed or collected. Ladders are one hotbar slot: placed against a side face the ladder is
