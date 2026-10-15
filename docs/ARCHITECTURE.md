@@ -546,9 +546,11 @@ foam, caustics, surface drop); a liquid block references one by name (`"look": "
 takes the fluid id and surface drop from it (no hardcoded water opacity or drop). Fluids are per
 build and looks only: no flow or other behaviour.
 
-**Unbreakable blocks [planned, Phase 27]** ([ADR 0031](./adr/0031-data-driven-structures.md)). A
-`breakable` flag in the block data (default true); the server's edit validation rejects breaking a
-state with `breakable: false`. The structure sandbox's white floor block uses it.
+**Unbreakable blocks [built, Phase 27 S2a]** ([ADR 0031](./adr/0031-data-driven-structures.md)). The
+block data's existing `indestructible` property (bedrock's, kept for Phase 20's structural anchor)
+is the flag: no new `breakable` flag was added. The server's edit validation rejects breaking an
+indestructible state, and placing into its cell (which would replace a liquid). The structure
+sandbox's white floor block (`dwell:sandbox_floor`) is the one block that uses it.
 
 **Adaptive natural blocks [planned, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
 [ADR 0024](./adr/0024-adaptive-natural-blocks.md)). Natural blocks (block data `"adaptive": true`)
