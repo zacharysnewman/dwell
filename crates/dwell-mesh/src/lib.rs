@@ -50,8 +50,9 @@ pub use mesher::{
     padded_index,
 };
 pub use textures::{
-    ATLAS_CELLS, ATLAS_SIZE, CELL, GUTTER, TILE, TILE_ORDER, TileRect, average_tile_color,
-    build_atlas, linear_to_srgb_byte, srgb_to_linear, swatch, tile_rect,
+    ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, TILE, TILE_ORDER, TileRect,
+    average_tile_color, build_atlas, linear_to_srgb_byte, srgb_to_linear, swatch, tile_grids,
+    tile_rect,
 };
 
 /// JavaScript's `Math.round`: the nearest integer, ties toward +∞ (Rust's `round` ties away from

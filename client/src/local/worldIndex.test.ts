@@ -3,6 +3,7 @@ import { recordedVersion } from '../buildInfo';
 import { GENERATORS } from './world';
 import {
   cleanName,
+  creatableType,
   hashSeed,
   INDEX_KEY,
   newWorldId,
@@ -192,6 +193,26 @@ describe('world index', () => {
       expect(stored).toMatchObject({ sky: { islands: 3 }, favourite: true, name: 'Renamed' });
     });
 
+    it('creates sandbox worlds and keeps them through a rewrite', () => {
+      const store = memoryStore({ [INDEX_KEY]: JSON.stringify([record]) });
+      const index = new WorldIndex(store);
+      const sandbox = index.create({ name: 'Trees', type: 'sandbox', seed: 3 }, 7);
+      expect(sandbox).toMatchObject({ type: 'sandbox', generatorVersion: GENERATORS.sandbox });
+      index.touch('wabc', 9);
+      expect(index.get(sandbox.id)).toMatchObject({ type: 'sandbox', name: 'Trees' });
+      // A link-opened sandbox file (`local-g<generator>-s<seed>`) is adopted as a sandbox.
+      expect(index.adopt(`local-g${String(GENERATORS.sandbox)}-s5`, 1)?.type).toBe('sandbox');
+    });
+
+    it('leaves a sandbox record as stored when it rewrites another', () => {
+      // Builds from before the sandbox cannot read it; they keep it (the test below), as this one does.
+      const sandbox = { ...record, id: 'wsand', type: 'sandbox', generatorVersion: 100, extra: 1 };
+      const store = memoryStore({ [INDEX_KEY]: JSON.stringify([sandbox, record]) });
+      const index = new WorldIndex(store);
+      index.touch('wabc', 99);
+      expect(JSON.parse(store.data[INDEX_KEY] ?? '[]')).toContainEqual(sandbox);
+    });
+
     it('keeps records it cannot read when it rewrites the index', () => {
       const unreadable = { ...record, id: 'wnew', type: 'sky-island' };
       const notAnObject = 'future format';
@@ -219,6 +240,15 @@ describe('world index', () => {
     expect(typeOfGenerator(1)).toBe('playground'); // retired: old worlds only
     expect(typeOfGenerator(GENERATORS.terrain)).toBe('terrain');
     expect(typeOfGenerator(2)).toBe('terrain');
+    expect(typeOfGenerator(GENERATORS.sandbox)).toBe('sandbox');
+  });
+
+  it('makes the type a new world names, terrain for one it does not know', () => {
+    expect(creatableType('sandbox')).toBe('sandbox');
+    expect(creatableType('flat')).toBe('flat');
+    expect(creatableType('terrain')).toBe('terrain');
+    expect(creatableType('playground')).toBe('terrain'); // retired
+    expect(creatableType('')).toBe('terrain');
   });
 
   it('makes ids from the random source', () => {
