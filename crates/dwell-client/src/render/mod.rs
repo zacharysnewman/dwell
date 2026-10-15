@@ -2201,8 +2201,8 @@ mod tests {
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
-        // `tan` is the vec4 before the wind's six.
-        let tan_y = f64::from(u[FRAME_FLOATS - 6 * 4 - 3]);
+        // `tan` is the vec4 before the water's and the wind's six.
+        let tan_y = f64::from(u[FRAME_FLOATS - 7 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
