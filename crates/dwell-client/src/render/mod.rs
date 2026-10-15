@@ -442,6 +442,17 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // Each atlas tile's grid lines (dwell_mesh::tile_grids), written once.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -607,6 +618,14 @@ impl Renderer {
         });
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
+        let tile_grids: Vec<f32> = dwell_mesh::tile_grids().into_iter().flatten().collect();
+        let tile_grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("tile grids"),
+            size: tile_grids.len() as u64 * 4,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&tile_grid_buffer, 0, floats(&tile_grids));
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -631,6 +650,10 @@ impl Renderer {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: tile_grid_buffer.as_entire_binding(),
                     },
                 ],
             })

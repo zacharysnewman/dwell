@@ -33,6 +33,9 @@ struct Frame {
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+// Per atlas tile (index cx + cy × ATLAS_CELLS): its grid lines (x every, y strength; 0 for none),
+// from the registry's `grid` look option of the blocks that use the tile (dwell-mesh tile_grids).
+@group(0) @binding(3) var<uniform> tile_grids: array<vec4f, ATLAS_TILES>;
 
 // Per draw (group 1, a storage array indexed by the draw's instance: draw k is drawn as instance k,
 // so a draw needs no bind call of its own): the mesh's origin relative to the eye (xyz) and its scale (w),
@@ -196,6 +199,32 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     return o;
 }
 
+// The grid of the atlas tile whose rectangle starts at `tile_origin` (its cell: the tile's origin
+// lies inside its cell, past the gutter).
+fn tile_grid(tile_origin: vec2f) -> vec2f {
+    let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
+    return tile_grids[cell.x + cell.y * ATLAS_CELLS].xy;
+}
+
+// World-space grid lines (the registry's `grid` look option): a line GRID_WIDTH blocks wide every
+// `grid.x` blocks, darkening by `grid.y`. The uvs are chunk-local blocks and `grid.x` divides the
+// chunk size, so the lines line up across chunks. Antialiased by the pixel's footprint, and where
+// the footprint outgrows the line the line's coverage spreads over it (it averages out, as a
+// mipmap would: no shimmer at a distance); beyond half a period the lines fade to that average.
+const GRID_WIDTH: f32 = 0.12;
+fn grid_shade(uv: vec2f, grid: vec2f) -> f32 {
+    // Derivatives first, in uniform control flow; a face without a grid shades 1.
+    let foot = max(fwidth(uv), vec2f(1e-4));
+    let every = max(grid.x, 1.0);
+    let d = abs(fract(uv / every + 0.5) - 0.5) * every;
+    let w = max(vec2f(GRID_WIDTH), foot);
+    let line = (1.0 - smoothstep(w * 0.5 - foot * 0.5, w * 0.5 + foot * 0.5, d)) * (GRID_WIDTH / w);
+    let average = GRID_WIDTH / every;
+    let far = smoothstep(vec2f(0.25 * every), vec2f(0.5 * every), foot);
+    let cover = mix(line, vec2f(average), far);
+    return select(1.0, 1.0 - grid.y * max(cover.x, cover.y), grid.x > 0.0);
+}
+
 // The texture repeats once per block across merged quads: tile.xy + fract(uv) × tile.zw, with the
 // gradients of the unwrapped uv so mip selection is continuous across block edges. Opaque draws
 // (tint alpha 1) cover their pixels fully whatever the texel's alpha.
@@ -205,8 +234,9 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let n = select(-i.normal, i.normal, front);
+    let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    return scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, alpha);
+    return scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha);
 }
 
 struct FlatIn {
@@ -372,9 +402,11 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n{TERRAIN}",
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n{TERRAIN}",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
+        dwell_mesh::ATLAS_CELLS,
+        dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,
         scene_bindings(samples),
         dwell_look::sky_wgsl()

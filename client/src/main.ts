@@ -29,13 +29,7 @@ import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
-import {
-  cleanName,
-  parseSeed,
-  WORLD_TYPES,
-  WorldIndex,
-  type CreatableType,
-} from './local/worldIndex';
+import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
 import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './ui/launch';
@@ -631,9 +625,7 @@ async function makeWorld(
   launch: Extract<Launch, { kind: 'new' | 'regenerate' }>,
 ): Promise<string | { message: string }> {
   if (launch.kind === 'new') {
-    const type = (WORLD_TYPES as readonly string[]).includes(launch.type)
-      ? (launch.type as CreatableType)
-      : 'terrain';
+    const type = creatableType(launch.type);
     const world = index.create(
       { name: cleanName(launch.name, 'New world'), type, seed: parseSeed(launch.seed) },
       Date.now(),
@@ -722,24 +714,18 @@ function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
 async function connect(app: App): Promise<void> {
   const status = element('net-status', HTMLDivElement);
   const params = new URLSearchParams(location.search);
-  let launch = launchOf(location.search);
+  const launch = launchOf(location.search);
   if (launch.kind === 'menu') {
     openMainMenu(app, params.get('say') ?? undefined);
     return;
   }
 
-  // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1).
+  // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1). The menu's
+  // new and regenerated worlds were made before the client started (routeMadeWorld).
   const index = new WorldIndex(storage());
-  // The menu's new and regenerated worlds are this build's to make (RELEASES.md §5); then they are
-  // played as any world, the address saying so (a reload continues it rather than making another).
   if (launch.kind === 'new' || launch.kind === 'regenerate') {
-    const id = await makeWorld(index, launch);
-    if (typeof id !== 'string') {
-      openMainMenu(app, id.message);
-      return;
-    }
-    history.replaceState(null, '', withRoute(location.search, { play: id }));
-    launch = { kind: 'play', id };
+    openMainMenu(app);
+    return;
   }
   let localWorld: LocalWorld | null = null;
   let worldName = 'Local world';
@@ -855,12 +841,32 @@ async function connect(app: App): Promise<void> {
 
 // The main menu needs no game client (nor WebGPU): it opens at once. Anything else starts the
 // client, and shows the unsupported screen where it cannot.
+/**
+ * The menu's new and regenerated worlds are this build's to make (RELEASES.md §5), before the
+ * client starts (they need no WASM or WebGPU): the address then says `?play=<id>` at once, so a
+ * reload while the game loads continues the world rather than making another. False: it could not
+ * be made, and the menu says why.
+ */
+async function routeMadeWorld(): Promise<boolean> {
+  const launch = launchOf(location.search);
+  if (launch.kind !== 'new' && launch.kind !== 'regenerate') return true;
+  const id = await makeWorld(new WorldIndex(storage()), launch);
+  if (typeof id !== 'string') {
+    openMainMenu(null, id.message);
+    return false;
+  }
+  history.replaceState(null, '', withRoute(location.search, { play: id }));
+  return true;
+}
+
 if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();
 } else {
-  void start().then((app) => {
+  void routeMadeWorld().then(async (ok) => {
+    if (!ok) return;
+    const app = await start();
     if (app) void connect(app);
   });
 }
