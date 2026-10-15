@@ -510,9 +510,13 @@ edges; with f64 positions it is exact anywhere in the 8,192 km world, so it need
 anchors and there is no seam under a player (PLAYER_CONTROLLER.md §5). Chunks are added on demand
 around each player (out to 3 m plus twice a tick's travel, capped), re-synced in the same tick as
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
-a chunk with no solid cell holds nothing, so open sky costs no collision memory. Every solid state
-collides as its full cell: the baseline has only cubes (Phase 15); shaped blocks (Phase 18) will
-need their own colliders. The procedural terrain generator and streaming are built (§6.3), and so
+a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
+as their full cube go into the `Voxels` collider; **shaped cells** — adaptive top blocks (below,
+Phase 18) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
+at the chunk's corner) of the faces of their derived shapes that no neighbour covers. A chunk's
+collision reads its voxels with a two-cell apron (a shape reads the columns around it, and its faces
+are culled against its neighbours' shapes), so it is rebuilt when any of the 27 chunks around it
+changes (each loaded chunk's neighbourhood is watched by stamp and revision). The procedural terrain generator and streaming are built (§6.3), and so
 are block edits (§6.5, Phase 3d): the placeable set is the registry's `palette` data (a state's
 `placeable` flag; not air, liquid or indestructible), read from the same generated Rust registry by
 the server and the client.
@@ -554,10 +558,38 @@ fluid table is rendering data: it is not in the registry hash and changes no pub
 `breakable` flag in the block data (default true); the server's edit validation rejects breaking a
 state with `breakable: false`. The structure sandbox's white floor block uses it.
 
-**Adaptive natural blocks [planned, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
-[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). Natural blocks (block data `"adaptive": true`)
-will be stored as cubes and shaped at use from the 3 × 3 columns around them by a rule table kept as
-data in `shared/blocks/`, read by the server and the client alike, on the shape mechanism below.
+**Adaptive natural blocks [in progress, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
+[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). A block with `"adaptive": true` in its data
+(grass, dirt, stone and sand; not water, the ladder or the sandbox floor) is stored as a plain cube
+and **shaped at use**: when nothing solid is above it (a *top block*), its shape comes from its 8
+horizontal neighbours, each **higher** (filled one row up), **the same** or **lower** (open in its
+row) — a table of 3⁸ = 6,561 neighbourhoods. Any other adaptive block is a cube. Neighbours are
+compared by occupancy, never by their derived shapes, so nothing iterates and an edit changes the
+shapes of at most the 9 top blocks around and under it. On face B, whose up is −y, the same table
+is read with the rows mirrored and the shape hangs.
+- **The table is data:** `shared/blocks/adaptive.json` names the rule set (`"five-rules"`, the
+  Shape Playground's rules) and holds per-neighbourhood **overrides** (`around` "+==/=.-/===",
+  `shape`, `facing`). `shared/blocks/adaptive.mjs` builds the 6,561 entries, rejects unknown
+  shapes, facings and repeated neighbourhoods with a message naming the entry, and runs the
+  exhaustive adjacency test (every equal-height neighbour pair: the baked side faces match the
+  profiles the meshers cull by, and the two surfaces meet at their shared corners); `gen.mjs`
+  emits `ADAPTIVE_UP` / `ADAPTIVE_DOWN` (shape indices, upright and hanging) in
+  `crates/dwell-blocks/src/adaptive.gen.rs` and the readable `adaptive_vectors.txt`, which the Rust
+  tests check; CI regenerates (stale output fails) and runs `node --test
+  shared/blocks/adaptive.test.mjs` (the owner's 151 hand-shaped playground blocks,
+  `playground-export.json`, are reproduced; an override changes one entry by data alone).
+- **One derivation:** `dwell_blocks::adaptive` (`derive`, `shape_at`, `flooded_at`, over any
+  voxel accessor) and `VoxelWorld::shape_at` / `flooded_at` (world coordinates, face by row).
+  Every user reads it: the chunk mesher (from its padded voxels), the terrain collider (above), the
+  controller's probes (`VoxelQuery::shape`, `FaceQuery::shape`), block targeting and the edit's
+  line of sight (`raycast_block`), the terrain's point queries (`TerrainGenerator::surface_y_at`,
+  spawn) and the LOD mesher (on its cells, §6.6). Server and client hold the same voxels and the
+  same table, so prediction walks the server's shapes.
+- **Water:** an adaptive top block holds water in its open part (it is drawn and swum as flooded)
+  when a liquid is above it or beside it in its row — a shore's shaped bank — unless the rules make
+  it a full cube.
+- **Not stored:** world files, edits and the wire carry the material alone; the registry's state
+  strings and hash do not change (the flag is not part of a state's string).
 
 **Shapes [built, Phase 9; no shaped block since Phase 15]** ([ADR 0016](./adr/0016-slope-blocks.md),
 [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). Every solid state has a **shape**: its top surface is given
@@ -566,7 +598,12 @@ one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube
 mechanism stays: `shapeFamilies` in the block data generates a material's slope and slab families
 (nine slope shapes in four facings and two halves, and the slab; `flooded` means water fills the
 shape's open part) — but since Phase 15 no block uses it (the list is empty), so the shape table
-holds the empty shape and the cube until Phase 18. The geometry is baked once by
+held the empty shape and the cube until Phase 18, which appends the shapes the adaptive table
+derives: the 12 adaptive corner shapes (split along their higher diagonal) and 6 **ridge shapes**
+given as 3 × 3 surface points (corners, edge midpoints, centre; the surface is the fan of 8
+triangles around the centre), each in its facings, upright and hanging — 191 more. Every shape
+carries its 3 × 3 points and three-point side profiles (quarters of a cell), and `solid_span_at`
+reads a ridge shape's fan. The geometry is baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
 culling, volume, convexity and extent — one table, so server, client and meshers agree.
@@ -575,9 +612,11 @@ culling, volume, convexity and extent — one table, so server, client and meshe
 every point query: **block targeting** (`raycast_block`, the controller's ray probes) enters the
 exact shape (a block without a solid, a ladder, is targeted and seen as its whole cell), the
 **edit check** tests the capsule against the placed shape's true volume, and the controller's
-overlap test (uncrouching) uses the true surface; the terrain collider treats every solid as a
-full cell until Phase 18 (above). The exhaustive adjacency test checks every pair of shapes in the
-table. The chunk mesher draws shaped polygons with their true normals and a face tint interpolated
+overlap test (uncrouching) uses the true surface; the terrain collider collides shaped cells as
+their triangle meshes (above). The exhaustive adjacency test checks every pair of shapes in the
+table (the mesher's culling of any two shapes side by side leaves no hole), and geometry tests
+check every shape is closed, wound outward, of its stated volume, with sides covering exactly
+their profiles and a top the probes read where the ray enters (`crates/dwell-blocks/tests/shapes.rs`). The chunk mesher draws shaped polygons with their true normals and a face tint interpolated
 by the normal (`dwell-look` `normal_tint`).
 A state with a `flooded` property (today the ladder) takes it from its cell on placement (placed
 into water: flooded; anywhere else: dry — no water from nothing), breaking a flooded state leaves

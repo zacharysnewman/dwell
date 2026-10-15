@@ -184,6 +184,35 @@ impl Builder {
         self.push_indices(base, sign);
     }
 
+    /// A convex polygon (counter-clockwise from outside) of cell-local points `pts` at `at`, shaded
+    /// by its normal as the chunks shade sloped faces.
+    fn polygon(&mut self, pts: &[[f32; 3]], at: [f64; 3], color: u32) {
+        let p: Vec<[f64; 3]> = pts
+            .iter()
+            .map(|q| [at[0] + f64::from(q[0]), at[1] + f64::from(q[1]), at[2] + f64::from(q[2])])
+            .collect();
+        let (a, b, c) = (p[0], p[1], p[2]);
+        let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let n = [
+            e1[1] * e2[2] - e1[2] * e2[1],
+            e1[2] * e2[0] - e1[0] * e2[2],
+            e1[0] * e2[1] - e1[1] * e2[0],
+        ];
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+        let n = n.map(|v| v / len);
+        let rgb = linear_rgb(color, dwell_look::normal_tint(n[0], n[1], n[2]));
+        let base = (self.m.positions.len() / 3) as u32;
+        for q in &p {
+            self.m.positions.extend(q.map(|v| v as f32));
+            self.m.normals.extend(n.map(|v| v as f32));
+            self.m.colors.extend(rgb);
+        }
+        for k in 1..p.len() as u32 - 1 {
+            self.m.indices.extend([base, base + k, base + k + 1]);
+        }
+    }
+
     /// A wall in the plane `axis = plane` (axis 0: u = y, v = z; axis 2: u = x, v = y) over the run
     /// [b0, b1] along the wall, from heights lo to hi that may differ at the two ends.
     #[allow(clippy::too_many_arguments)]
@@ -492,6 +521,13 @@ struct Surfaces {
     shore: Vec<u8>,
     /// The column's top tint toward its side colour, in TINT_STEPS steps.
     t: Vec<u8>,
+    /// Where the surface cell is an adaptive top block with a sloped top (ADAPTIVE_BLOCKS.md §4.4):
+    /// its shape (index into SHAPES; 0 none). A flat top (the rules' slab) is drawn at `h`.
+    shape: Vec<u16>,
+    /// Apron columns whose surface cell is an adaptive top block: their shape needs cells beyond
+    /// the apron, so walls toward them are drawn down to the row's floor (any part they hide lies
+    /// inside them).
+    apron: Vec<bool>,
 }
 
 const NO_SURFACE: i16 = -1000;
@@ -532,6 +568,8 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
         w: vec![0.0; n],
         shore: vec![0; n],
         t: vec![0; n],
+        shape: vec![0; n],
+        apron: vec![false; n],
     };
     let data = surface.filter(|s| s.len() >= n * SURFACE_STRIDE);
     let top = N;
@@ -651,8 +689,62 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
             }
         }
     }
+    adaptive_tops(cells, &mut out);
     tint_slopes(cells, &mut out);
     out
+}
+
+/// The adaptive rule on LOD cells (ADAPTIVE_BLOCKS.md §4.4): a dry column's topmost cell, if an
+/// adaptive block with nothing above it, takes the shape the rule table gives its neighbourhood
+/// of cells — corner heights in halves of a cell — replacing the surface data's heights there.
+/// Wet columns and shores keep their exact heights.
+fn adaptive_tops(cells: &[u16], out: &mut Surfaces) {
+    let top = N;
+    let inside = |v: i32| (-1..=top).contains(&v);
+    for z in -1..=top {
+        for x in -1..=top {
+            let c = col(x, z);
+            if out.shore[c] != 0 {
+                continue;
+            }
+            let y = topmost_filled(cells, x, z);
+            if y < 0 || y >= top {
+                continue; // none, or its top is another section's
+            }
+            let m = cell(cells, x, y, z);
+            if is_liquid(m) || !STATES.get(usize::from(m)).is_some_and(|s| s.adaptive) {
+                continue;
+            }
+            if out.y[c] != NO_SURFACE && i32::from(out.y[c]) != y {
+                continue; // a sea floor drawn in a water cell
+            }
+            let fy = y as f32;
+            if !(0..top).contains(&x) || !(0..top).contains(&z) {
+                out.apron[c] = true;
+                out.y[c] = y as i16;
+                out.h[c] = fy + 0.5;
+                out.m[c] = m;
+                continue;
+            }
+            let get = |dx: i32, dy: i32, dz: i32| {
+                let (a, b, d) = (x + dx, y + dy, z + dz);
+                if inside(a) && inside(b) && inside(d) { cell(cells, a, b, d) } else { 0 }
+            };
+            let Some(i) = dwell_blocks::adaptive::derive(get, 1) else {
+                continue;
+            };
+            let shape = &dwell_blocks::SHAPES[usize::from(i)];
+            if !shape.fan && shape.corners == [2, 2, 2, 2] {
+                out.y[c] = NO_SURFACE; // the rules say full: a plain cell
+                continue;
+            }
+            out.y[c] = y as i16;
+            out.m[c] = m;
+            out.h[c] = fy + f32::from(shape.points[1][1]) / 4.0;
+            let flat = shape.points.iter().flatten().all(|&q| q == shape.points[0][0]);
+            out.shape[c] = if flat { 0 } else { i };
+        }
+    }
 }
 
 /// Each dry column's top tint from its gradient: its height against its four neighbours'.
@@ -693,11 +785,23 @@ fn tint_slopes(cells: &[u16], out: &mut Surfaces) {
     }
 }
 
-/// Heights (in cells) of a column's top along one of its sides, in the order the wall runs. Tops
-/// are flat.
-fn profile(s: &Surfaces, c: usize) -> [f64; 2] {
+/// Heights (in cells) of a column's top along its side (axis, sign) at the side's ends and middle,
+/// in the order the wall runs (z for ±X walls, x for ±Z). Flat tops are level; adaptive tops follow
+/// their shape.
+fn profile(s: &Surfaces, c: usize, axis: usize, sign: i32) -> [f64; 3] {
     let h = f64::from(s.h[c]);
-    [h, h]
+    if s.shape[c] == 0 {
+        return [h, h, h];
+    }
+    let p = dwell_blocks::SHAPES[usize::from(s.shape[c])].points;
+    let y = f64::from(s.y[c]);
+    let q: [u8; 3] = match (axis, sign > 0) {
+        (0, true) => [p[0][2], p[1][2], p[2][2]],
+        (0, false) => [p[0][0], p[1][0], p[2][0]],
+        (_, true) => p[2],
+        (_, false) => p[0],
+    };
+    q.map(|v| y + f64::from(v) / 4.0)
 }
 
 /// [axis, sign, face index] for ±X and ±Z.
@@ -709,14 +813,15 @@ struct Wall {
     /// 0 opaque, else skirt face + 1.
     target: usize,
     sign: i32,
-    lo: [f64; 2],
-    hi: [f64; 2],
+    /// Heights at the wall's two ends and middle.
+    lo: [f64; 3],
+    hi: [f64; 3],
     material: StateId,
 }
 
 impl Wall {
     fn flat(&self) -> bool {
-        self.lo[0] == self.lo[1] && self.hi[0] == self.hi[1]
+        self.lo.iter().all(|&v| v == self.lo[0]) && self.hi.iter().all(|&v| v == self.hi[0])
     }
 }
 
@@ -738,6 +843,18 @@ fn emit_surfaces(
         for x in 0..N {
             let c = col(x, z);
             if s.y[c] < 0 {
+                continue;
+            }
+            if s.shape[c] != 0 {
+                // A sloped adaptive top: its shape's surface, polygon by polygon.
+                let shape = &dwell_blocks::SHAPES[usize::from(s.shape[c])];
+                let color = lod_top(s.m[c], i32::from(s.t[c]));
+                let at = [f64::from(x), f64::from(s.y[c]), f64::from(z)];
+                for f in dwell_blocks::shape::faces_of(shape) {
+                    if f.tag == dwell_blocks::shape::SURFACE_TAG {
+                        opaque.polygon(&f.v[..usize::from(f.count)], at, color);
+                    }
+                }
                 continue;
             }
             let at = z as usize + NU * x as usize;
@@ -890,26 +1007,36 @@ fn emit_surfaces(
                     if same {
                         continue;
                     }
-                    // Flush the run.
-                    if let Some(r) = run
-                        && !(r.hi[0] - r.lo[0] < 1e-4 && r.hi[1] - r.lo[1] < 1e-4)
-                    {
+                    // Flush the run: a flat run whole, a sloped wall (one column) in two halves.
+                    if let Some(r) = run {
                         let plane = f64::from(if sign > 0 { a + 1 } else { a });
                         let builder = if r.target == 0 {
                             &mut *opaque
                         } else {
                             &mut skirts[r.target - 1]
                         };
-                        builder.wall(
-                            axis,
-                            r.sign,
-                            plane,
-                            f64::from(run_start),
-                            f64::from(b),
-                            r.lo,
-                            r.hi,
-                            lod_color(r.material, 1),
-                        );
+                        let (b0, b1) = (f64::from(run_start), f64::from(b));
+                        let halves = if r.flat() {
+                            vec![(b0, b1, 0, 0)]
+                        } else {
+                            let m = (b0 + b1) / 2.0;
+                            vec![(b0, m, 0, 1), (m, b1, 1, 2)]
+                        };
+                        for (s0, s1, i, j) in halves {
+                            if r.hi[i] - r.lo[i] < 1e-4 && r.hi[j] - r.lo[j] < 1e-4 {
+                                continue;
+                            }
+                            builder.wall(
+                                axis,
+                                r.sign,
+                                plane,
+                                s0,
+                                s1,
+                                [r.lo[i], r.lo[j]],
+                                [r.hi[i], r.hi[j]],
+                                lod_color(r.material, 1),
+                            );
+                        }
                     }
                     run = wall;
                     run_start = b;
@@ -942,7 +1069,7 @@ fn wall_of(
         return None;
     }
     let yf = f64::from(y);
-    let ours = profile(s, c);
+    let ours = profile(s, c, axis, sign);
     let nx = if axis == 0 { x + sign } else { x };
     let nz = if axis == 2 { z + sign } else { z };
     let nc = col(nx, nz);
@@ -952,7 +1079,7 @@ fn wall_of(
     let n_filled = n_surface_here || (nm != 0 && !is_liquid(nm));
     let material = s.m[c];
     let skirt = face + 1;
-    let floor = [yf, yf];
+    let floor = [yf; 3];
     if !n_filled {
         // Open.
         return (slot == 0).then_some(Wall {
@@ -967,10 +1094,11 @@ fn wall_of(
         // Both surfaces in this row: the higher one's side shows down to the lower (and below
         // that, on the border, a skirt). The neighbour's top along the same edge is its opposite
         // side.
-        let theirs = profile(s, nc);
-        let lo = [theirs[0].min(ours[0]), theirs[1].min(ours[1])];
+        // (An apron column's adaptive top: its shape is unknown here, so it hides nothing.)
+        let theirs = if s.apron[nc] { floor } else { profile(s, nc, axis, -sign) };
+        let lo = [0, 1, 2].map(|i| theirs[i].min(ours[i]));
         if slot == 0 {
-            return (lo[0] < ours[0] || lo[1] < ours[1]).then_some(Wall {
+            return (0..3).any(|i| lo[i] < ours[i]).then_some(Wall {
                 target: 0,
                 sign,
                 lo,
@@ -978,7 +1106,7 @@ fn wall_of(
                 material,
             });
         }
-        return (border && (lo[0] > yf || lo[1] > yf)).then_some(Wall {
+        return (border && lo.iter().any(|&v| v > yf)).then_some(Wall {
             target: skirt,
             sign,
             lo: floor,
@@ -993,7 +1121,7 @@ fn wall_of(
             target: 0,
             sign: -sign,
             lo: ours,
-            hi: [yf + 1.0, yf + 1.0],
+            hi: [yf + 1.0; 3],
             material: nm,
         });
     }

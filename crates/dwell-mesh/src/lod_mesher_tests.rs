@@ -16,6 +16,11 @@ fn sand() -> u16 {
 fn stone() -> u16 {
     require("dwell:stone")
 }
+/// A full cube that is not adaptive: the cell mechanics below (cubes, skirts, surface heights)
+/// apart from the adaptive rule, which shapes natural blocks' tops (`adaptive_tops` below).
+fn cube_block() -> u16 {
+    require("dwell:sandbox_floor")
+}
 
 fn quads(m: &FlatMesh) -> usize {
     m.indices.len() / 6
@@ -98,7 +103,7 @@ mod face_b {
         for y in lo..=hi {
             for z in -1..=32 {
                 for x in -1..=32 {
-                    put(&mut cells, x, y, z, grass());
+                    put(&mut cells, x, y, z, cube_block());
                 }
             }
         }
@@ -198,7 +203,7 @@ mod face_b {
 #[test]
 fn draws_a_lone_cell_as_six_faces_in_cell_units() {
     let mut cells = new_cells();
-    put(&mut cells, 3, 4, 5, stone());
+    put(&mut cells, 3, 4, 5, cube_block());
     let m = mesh(&cells);
     assert_eq!(quads(&m.opaque), 6);
     assert_eq!(max(m.opaque.positions.iter().copied()), 6.0);
@@ -211,7 +216,7 @@ fn merges_a_floor_and_puts_border_faces_the_apron_hides_into_per_side_skirts() {
     let mut cells = new_cells();
     for z in -1..=32 {
         for x in -1..=32 {
-            put(&mut cells, x, 0, z, grass());
+            put(&mut cells, x, 0, z, cube_block());
         }
     }
     let m = mesh(&cells);
@@ -225,7 +230,7 @@ fn merges_a_floor_and_puts_border_faces_the_apron_hides_into_per_side_skirts() {
     let mut alone = new_cells();
     for z in 0..32 {
         for x in 0..32 {
-            put(&mut alone, x, 0, z, grass());
+            put(&mut alone, x, 0, z, cube_block());
         }
     }
     let a = mesh(&alone);
@@ -255,14 +260,15 @@ fn draws_water_apart_hides_it_against_water_and_colours_faces_flat() {
 #[test]
 fn writes_linear_vertex_colours_the_textured_chunks_are_srgb_decoded_before_lighting() {
     // Regression (phone playtest): sRGB bytes used as linear colours drew distant land paler.
+    // The middle of a 7 × 7 field of grass: flat (the rule's slab) and level all round (untinted).
     let mut cells = new_cells();
-    put(&mut cells, 3, 4, 5, grass());
+    for z in 2..9 {
+        for x in 0..7 {
+            put(&mut cells, x, 4, z, grass());
+        }
+    }
     let m = mesh(&cells);
     let n = &m.opaque.normals;
-    let top = (0..n.len() / 3)
-        .rev()
-        .find(|v| n[v * 3 + 1] == 1.0)
-        .expect("a top");
     let srgb = average_tile_color("grass");
     let linear = |byte: u32| {
         let c = f64::from(byte) / 255.0;
@@ -273,13 +279,17 @@ fn writes_linear_vertex_colours_the_textured_chunks_are_srgb_decoded_before_ligh
         }
     };
     let rgb = [(srgb >> 16) & 0xff, (srgb >> 8) & 0xff, srgb & 0xff];
-    for (ch, byte) in rgb.into_iter().enumerate() {
-        assert!(close(
-            f64::from(m.opaque.colors[top * 3 + ch]),
-            linear(byte) * face_tint(1, 1)[ch],
-            4
-        ));
-    }
+    // Some flat top (the untinted middle) has exactly the decoded colour.
+    let decoded = (0..n.len() / 3).filter(|v| n[v * 3 + 1] == 1.0).any(|top| {
+        rgb.into_iter().enumerate().all(|(ch, byte)| {
+            close(
+                f64::from(m.opaque.colors[top * 3 + ch]),
+                linear(byte) * face_tint(1, 1)[ch],
+                4,
+            )
+        })
+    });
+    assert!(decoded);
 }
 
 #[test]
@@ -290,10 +300,10 @@ fn draws_a_column_top_at_its_surface_height_not_at_its_cell_top() {
     let mut surface = new_surface();
     for z in -1..=32 {
         for x in -1..=32 {
-            put(&mut cells, x, 0, z, grass()); // one cell thick
+            put(&mut cells, x, 0, z, cube_block()); // one cell thick
             let c = surface_at(x, z);
             surface[c] = if x < 16 { 0.5 } else { 1.0 }; // a terrace at half height, then the cell
-            surface[c + 1] = f32::from(grass());
+            surface[c + 1] = f32::from(cube_block());
             surface[c + 2] = 1.0; // valid
         }
     }
@@ -558,8 +568,9 @@ mod step_sides_on_slopes {
         let flat = top_colours(0.0)[0].clone();
         let gentle = top_colours(0.25);
         let steep = top_colours(1.0);
-        // No top of a sloped ramp is drawn in the flat top colour.
-        assert!(!gentle.contains(&flat));
+        // On a steep ramp every column steps: no top is drawn in the flat top colour. A gentle one
+        // is terraces (the adaptive rule rests a level run at half height) whose steps are tinted.
+        assert!(gentle.iter().any(|k| *k != flat));
         assert!(!steep.contains(&flat));
         // Grass's side (dirt) is redder and less green than its top: steeper, less green.
         let green = |k: &String| {
@@ -721,11 +732,11 @@ fn closes_steps_between_surfaces_across_the_section_border_without_skirts() {
     let mut cells = new_cells();
     let set = |cells: &mut Vec<u16>, surface: &mut Vec<f32>, x: i32, z: i32, top: i32, h: f32| {
         for y in -1..=top {
-            put(cells, x, y, z, grass());
+            put(cells, x, y, z, cube_block());
         }
         let c = surface_at(x, z);
         surface[c] = h;
-        surface[c + 1] = f32::from(grass());
+        surface[c + 1] = f32::from(cube_block());
         surface[c + 2] = 1.0;
     };
     for z in -1..=32 {
@@ -776,8 +787,80 @@ fn rejects_a_wrong_cell_count_and_accounts_bytes() {
         })
     );
     let mut cells = new_cells();
-    put(&mut cells, 3, 4, 5, stone());
+    put(&mut cells, 3, 4, 5, cube_block());
     let m = mesh(&cells);
     // 24 vertices × 9 floats + 36 indices, 4 bytes each.
     assert_eq!(section_bytes(&m), 4 * (24 * 9 + 36));
+}
+
+mod adaptive_tops {
+    //! The adaptive rule on LOD cells (ADAPTIVE_BLOCKS.md §4.4): a natural column's top cell takes
+    //! the shape the rule table gives its neighbourhood of cells, as the chunks' blocks do.
+    use super::*;
+
+    fn normal_ys(m: &FlatMesh) -> Vec<i32> {
+        let mut out: Vec<i32> = (0..m.normals.len() / 3)
+            .map(|v| (m.normals[v * 3 + 1] * 1000.0).round() as i32)
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    #[test]
+    fn a_lone_natural_cell_is_a_half_pyramid() {
+        let mut cells = new_cells();
+        put(&mut cells, 3, 4, 5, grass());
+        let m = mesh(&cells);
+        // Four 45° faces (normal y = cos 45°) and the floor; nothing reaches the cell's top.
+        assert_eq!(normal_ys(&m.opaque), [-1000, 707]);
+        assert_eq!(max(m.opaque.positions.iter().skip(1).step_by(3).copied()), 4.5);
+    }
+
+    #[test]
+    fn a_natural_field_rests_at_half_a_cell_and_merges() {
+        let mut cells = new_cells();
+        for z in -1..=32 {
+            for x in -1..=32 {
+                put(&mut cells, x, 0, z, grass());
+            }
+        }
+        let m = mesh(&cells);
+        let tops = distinct(
+            (0..m.opaque.normals.len() / 3)
+                .filter(|v| m.opaque.normals[v * 3 + 1] == 1.0)
+                .map(|v| m.opaque.positions[v * 3 + 1]),
+        );
+        assert_eq!(tops, [0.5]);
+        let flat_tops = (0..quads(&m.opaque))
+            .filter(|q| m.opaque.normals[q * 12 + 1] == 1.0)
+            .count();
+        assert_eq!(flat_tops, 1);
+    }
+
+    #[test]
+    fn a_one_cell_step_is_one_even_slope_and_face_b_hangs() {
+        // Natural ground one cell deep for x < 16, two from x = 16: the step slopes.
+        let mut cells = new_cells();
+        for z in -1..=32 {
+            for x in -1..=32 {
+                put(&mut cells, x, 0, z, grass());
+                if x >= 16 {
+                    put(&mut cells, x, 1, z, grass());
+                }
+            }
+        }
+        let a = mesh(&cells);
+        // The lower block rises to its top, the upper sinks to its floor: ½ cell per cell, 26.57°.
+        assert!(normal_ys(&a.opaque).contains(&894), "{:?}", normal_ys(&a.opaque));
+        let b = mesh_section(
+            &mirror_rows(&cells),
+            &MeshSectionOptions {
+                mirror: true,
+                ..MeshSectionOptions::default()
+            },
+        )
+        .expect("section volume");
+        assert!(normal_ys(&b.opaque).contains(&-894), "{:?}", normal_ys(&b.opaque));
+    }
 }

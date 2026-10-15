@@ -310,18 +310,26 @@ fn players_spawn_on_level_open_ground_near_the_origin() {
     for seed in 0..16u64 {
         let s = spawn_point_for(GENERATOR_TERRAIN, seed);
         let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
-        let (x, y, z) = (s[0].floor() as i32, s[1] as i32, s[2].floor() as i32);
+        // The feet stand on the shaped surface: a level patch's top blocks rest at half height
+        // (ADAPTIVE_BLOCKS.md), half a block above the top voxel's floor.
+        let (x, g, z) = (s[0].floor() as i32, s[1].floor() as i32, s[2].floor() as i32);
+        assert_eq!(s[1], f64::from(g) + 0.5, "seed {seed}: {s:?}");
         assert!(
-            x.abs() < 512 && z.abs() < 512 && y > SEA_LEVEL,
+            x.abs() < 512 && z.abs() < 512 && g >= SEA_LEVEL,
             "seed {seed}: {s:?}"
         );
         for dz in -4..=4 {
             for dx in -4..=4 {
-                assert!(solid(world.get_voxel(x + dx, y - 1, z + dz)), "seed {seed}");
-                assert_eq!(world.get_voxel(x + dx, y, z + dz), M.air);
-                assert_eq!(world.get_voxel(x + dx, y + 1, z + dz), M.air);
+                assert!(solid(world.get_voxel(x + dx, g, z + dz)), "seed {seed}");
+                assert_eq!(world.get_voxel(x + dx, g + 1, z + dz), M.air);
+                assert_eq!(world.get_voxel(x + dx, g + 2, z + dz), M.air);
             }
         }
+        assert_eq!(
+            world.shape_at(x, g, z).max_y,
+            0.5,
+            "seed {seed}: the generator's point query agrees with the world's derived shape"
+        );
     }
     assert_eq!(spawn_point_for(GENERATOR_FLAT, 9)[1], 0.0);
 }
