@@ -190,33 +190,40 @@ fn draws_a_ladder_as_one_plate_near_the_back_of_its_cell() {
 
 #[test]
 fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_magenta() {
-    // A grass block under a cube (so a cube itself: its sides), and the middle of a 3 x 3 field
-    // of grass (a flat half-height top, x 10..13).
-    let mut cells = vec![
+    // A grass block under a cube (so a cube itself: its sides).
+    let cells = vec![
         (0, 0, 0, grass()),
         (0, 1, 0, cube_block()),
         (5, 0, 0, UNKNOWN),
     ];
-    for z in 0..3 {
-        for x in 10..13 {
-            cells.push((x, 0, z, grass()));
-        }
-    }
     let opaque = mesh(&cells, false).opaque;
     let tile_of = |q: usize| [opaque.tiles[q * 16], opaque.tiles[q * 16 + 1]];
     let find = |pred: &dyn Fn(usize) -> bool| (0..quads(&opaque)).find(|q| pred(*q)).expect("quad");
-    let grass_top = find(&|q| opaque.normals[q * 12 + 1] == 1.0 && bounds(&opaque, q).1[0] == 12.0);
     let grass_side = find(&|q| opaque.normals[q * 12] == 1.0 && bounds(&opaque, q).1[0] == 1.0);
+    // The middle of a 3 x 3 field of grass: a flat half-height top with the grass top tile.
+    let mut field = Vec::new();
+    for z in 0..3 {
+        for x in 10..13 {
+            field.push((x, 0, z, grass()));
+        }
+    }
+    let f = mesh(&field, false).opaque;
+    let grass_top = (0..f.normals.len() / 3)
+        .find(|&v| f.normals[v * 3 + 1] == 1.0)
+        .expect("a flat top");
     let unknown = find(&|q| bounds(&opaque, q).0[0] >= 5.0);
     let rect = |name: &str| {
         let r = tile_rect(name);
         [r.u0 as f32, r.v0 as f32]
     };
-    assert_eq!(tile_of(grass_top), rect("grass"));
+    assert_eq!(
+        [f.tiles[grass_top * 4], f.tiles[grass_top * 4 + 1]],
+        rect("grass")
+    );
     assert_eq!(tile_of(grass_side), rect("grassSide"));
     assert_eq!(tile_of(unknown), rect("plain"));
     // Textured faces shade white (the texture carries the colour); unknown ids keep a flat colour.
-    assert_eq!(opaque.colors[grass_top * 12], 1.0);
+    assert_eq!(f.colors[grass_top * 3], 1.0);
     assert_eq!(opaque.colors[unknown * 12 + 1], 0.0); // magenta
 }
 
@@ -554,4 +561,23 @@ fn face_b_shapes_hang_toward_its_sky() {
     let m = mesh(&[(5, 3, 5, grass())], true).opaque;
     let ys = normal_ys(&m);
     assert_eq!(ys.iter().filter(|&&y| y == -707).count(), 4, "{ys:?}");
+}
+
+#[test]
+fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
+    // 10 × 10 grass: the 8 × 8 inside rests at half height in one rectangle; the rim slopes.
+    let mut field = Vec::new();
+    for z in 0..10 {
+        for x in 0..10 {
+            field.push((x, 2, z, grass()));
+        }
+    }
+    let m = mesh(&field, false).opaque;
+    let flat: Vec<usize> = (0..m.normals.len() / 3)
+        .filter(|&v| m.normals[v * 3 + 1] == 1.0)
+        .collect();
+    assert_eq!(flat.len(), 4, "one merged quad");
+    for &v in &flat {
+        assert_eq!(m.positions[v * 3 + 1], 2.5);
+    }
 }

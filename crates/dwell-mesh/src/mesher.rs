@@ -509,13 +509,76 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
     n
 }
 
+/// An upright shape whose top is flat at half height (the adaptive rules' slab).
+fn is_half_slab(s: &ShapeInfo) -> bool {
+    !s.inverted && !s.fan && s.corners == [1, 1, 1, 1]
+}
+
+/// Greedy rectangles of the flat half-height tops in layer `y` (`mask`: material + 1 per
+/// x + N·z), drawn as the shaped mesher draws a top: the top tile, the top's shading.
+fn flat_tops(b: &mut Builder, kinds: &Kinds, mask: &mut [i32], y: i32) {
+    let n = N as usize;
+    for z in 0..n {
+        let mut x = 0;
+        while x < n {
+            let key = mask[x + n * z];
+            if key == 0 {
+                x += 1;
+                continue;
+            }
+            let mut w = 1;
+            while x + w < n && mask[x + w + n * z] == key {
+                w += 1;
+            }
+            let mut h = 1;
+            'grow: while z + h < n {
+                for k in 0..w {
+                    if mask[x + k + n * (z + h)] != key {
+                        break 'grow;
+                    }
+                }
+                h += 1;
+            }
+            for dz in 0..h {
+                mask[x + n * (z + dz)..x + w + n * (z + dz)].fill(0);
+            }
+            let style = kinds.of((key - 1) as StateId).style;
+            let (color, tile) = surface(&style, 1, 1);
+            // Axis y: u = z, v = x.
+            b.quad(
+                1,
+                1,
+                f64::from(y) + 0.5,
+                (z as f64, (z + h) as f64),
+                (x as f64, (x + w) as f64),
+                color,
+                &tile,
+            );
+            x += w;
+        }
+    }
+}
+
 /// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
-fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32) {
+/// `merged_top`: its flat top is drawn merged with its neighbours' (`flat_tops`), not here.
+#[allow(clippy::too_many_arguments)]
+fn shaped_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    x: i32,
+    y: i32,
+    z: i32,
+    merged_top: bool,
+) {
     let Some(def) = k.def else {
         return;
     };
     for f in faces_of(def) {
         let tag = usize::from(f.tag);
+        if merged_top && f.tag == dwell_blocks::shape::SURFACE_TAG {
+            continue;
+        }
         if tag < 6 {
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
@@ -736,9 +799,12 @@ pub(crate) fn mesh_chunk_with(
             }
         }
     }
-    // Shaped blocks: whole voxels, not slices.
-    for cz in 0..N {
-        for cy in 0..N {
+    // Shaped blocks: whole voxels, not slices — but the flat tops of a level run of adaptive
+    // blocks (the rules' slab, half a block up) merge into rectangles like cube faces.
+    for cy in 0..N {
+        mask.fill(0);
+        let mut any = false;
+        for cz in 0..N {
             for cx in 0..N {
                 let m = padded[padded_index(cx, cy, cz)];
                 if m == 0 {
@@ -748,11 +814,19 @@ pub(crate) fn mesh_chunk_with(
                 if k.shape != Shape::Shaped {
                     continue;
                 }
-                shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
+                let flat = k.def.is_some_and(is_half_slab);
+                if flat {
+                    mask[cx as usize + n * cz as usize] = i32::from(m) + 1;
+                    any = true;
+                }
+                shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz, flat);
                 if k.flooded {
                     flooded_water(&mut transparent, &cells, cx, cy, cz);
                 }
             }
+        }
+        if any {
+            flat_tops(&mut opaque, kinds, &mut mask, cy);
         }
     }
     Ok(ChunkMeshes {
