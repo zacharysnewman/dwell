@@ -4,8 +4,8 @@
 use crate::bytes::{ByteReader, ByteWriter, clamp_str};
 use crate::{
     AUTH_DOMAIN_TAG, BlockEditAction, ChunkForm, DamageCause, GroundKind, HostState,
-    MAX_INPUTS_PER_DATAGRAM, MessageType, PlayerEventKind, PlayerState, RegionEditOp,
-    RejectReason, controller_flags, input_buttons, limits, lod, player_flags, region_edit, world,
+    MAX_INPUTS_PER_DATAGRAM, MessageType, PlayerEventKind, PlayerState, RegionEditOp, RejectReason,
+    controller_flags, input_buttons, limits, lod, player_flags, region_edit, world,
 };
 
 pub type PublicKey = [u8; 32];

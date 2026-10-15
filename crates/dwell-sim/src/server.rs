@@ -23,8 +23,8 @@ use dwell_protocol::{
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
 use dwell_world::edit::{DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit};
-use dwell_world::region::{DEFAULT_REGION_REACH, RegionCheck, check_region_edit};
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
+use dwell_world::region::{DEFAULT_REGION_REACH, RegionCheck, check_region_edit};
 use dwell_world::{
     AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y,
     SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
@@ -340,7 +340,7 @@ struct Session {
     edits: Vec<BlockEditRequest>, // applied at the start of the next step
     edit_credit: f64,
     region_edits: Vec<RegionEdit>, // applied after the block edits, in order
-    region_credit: f64,           // cells
+    region_credit: f64,            // cells
 
     stats: SessionStats,
     // Terrain streaming.
@@ -1511,13 +1511,8 @@ impl Server {
                     continue;
                 };
                 s.region_credit -= cost;
-                let outcome = check_region_edit(
-                    &mut self.world,
-                    &edit,
-                    eye,
-                    &capsules,
-                    DEFAULT_REGION_REACH,
-                );
+                let outcome =
+                    check_region_edit(&mut self.world, &edit, eye, &capsules, DEFAULT_REGION_REACH);
                 s.stats.last_region_check = outcome.check;
                 if outcome.check != RegionCheck::Ok {
                     s.stats.region_edits_rejected += 1;
@@ -1530,7 +1525,10 @@ impl Server {
                 }
             }
         }
-        let TickChanges { chunks: mut changed, .. } = changes;
+        let TickChanges {
+            chunks: mut changed,
+            ..
+        } = changes;
         if changed.is_empty() {
             return;
         }

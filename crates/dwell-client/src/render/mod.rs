@@ -865,7 +865,11 @@ impl Renderer {
     /// The region tools' boxes (§6.5), outlined over the terrain.
     pub fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
         if self.region_boxes.len() == boxes.len()
-            && self.region_boxes.iter().zip(boxes).all(|((a, _), b)| a == b)
+            && self
+                .region_boxes
+                .iter()
+                .zip(boxes)
+                .all(|((a, _), b)| a == b)
         {
             return;
         }

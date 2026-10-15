@@ -79,9 +79,14 @@ pub fn box_in_world(min: [i32; 3], size: [i32; 3]) -> bool {
     // The disc is convex, so the four column corners inside means every column is.
     lo[1] >= i64::from(WORLD_BOTTOM_Y)
         && hi[1] < i64::from(WORLD_MAX_Y)
-        && [(lo[0], lo[2]), (lo[0], hi[2]), (hi[0], lo[2]), (hi[0], hi[2])]
-            .iter()
-            .all(|&(x, z)| inside_world_disc(x, z))
+        && [
+            (lo[0], lo[2]),
+            (lo[0], hi[2]),
+            (hi[0], lo[2]),
+            (hi[0], hi[2]),
+        ]
+        .iter()
+        .all(|&(x, z)| inside_world_disc(x, z))
 }
 
 fn known(m: StateId) -> bool {
@@ -165,8 +170,12 @@ fn check_region_edit_with(
                     }
                     RegionEditOp::Replace => continue,
                     RegionEditOp::Paste => {
-                        request.cells
-                            [RegionEdit::cell_index(request.size, x as usize, y as usize, z as usize)]
+                        request.cells[RegionEdit::cell_index(
+                            request.size,
+                            x as usize,
+                            y as usize,
+                            z as usize,
+                        )]
                     }
                 };
                 if wanted == existing {
@@ -191,7 +200,10 @@ fn check_region_edit_with(
 /// (a streamed world reads missing chunks as air, which would be wrong to copy or undo to).
 pub fn read_box(world: &mut VoxelWorld, min: [i32; 3], size: [i32; 3]) -> Option<Vec<StateId>> {
     let hi: [i32; 3] = std::array::from_fn(|i| min[i] + size[i] - 1);
-    let (a, b) = (chunk_of(min[0], min[1], min[2]), chunk_of(hi[0], hi[1], hi[2]));
+    let (a, b) = (
+        chunk_of(min[0], min[1], min[2]),
+        chunk_of(hi[0], hi[1], hi[2]),
+    );
     if world.is_streamed() {
         for cy in a.y..=b.y {
             for cz in a.z..=b.z {
@@ -347,9 +359,16 @@ mod tests {
     fn rejects_bad_sizes_reach_world_and_blocks() {
         let stone = require("dwell:stone");
         let mut w = world();
-        let check = |w: &mut VoxelWorld, r: &RegionEdit| check_region_edit(w, r, EYE, &[], 64.0).check;
-        assert_eq!(check(&mut w, &fill([0, 0, 0], [33, 1, 1], stone)), RegionCheck::BadSize);
-        assert_eq!(check(&mut w, &fill([0, 0, 0], [0, 1, 1], stone)), RegionCheck::BadSize);
+        let check =
+            |w: &mut VoxelWorld, r: &RegionEdit| check_region_edit(w, r, EYE, &[], 64.0).check;
+        assert_eq!(
+            check(&mut w, &fill([0, 0, 0], [33, 1, 1], stone)),
+            RegionCheck::BadSize
+        );
+        assert_eq!(
+            check(&mut w, &fill([0, 0, 0], [0, 1, 1], stone)),
+            RegionCheck::BadSize
+        );
         let short = RegionEdit {
             op: RegionEditOp::Paste,
             cells: vec![stone; 3],
@@ -357,23 +376,47 @@ mod tests {
         };
         assert_eq!(check(&mut w, &short), RegionCheck::BadSize);
         // 64 m of reach to the nearest cell's face (the eye is at x = 0.5).
-        assert_eq!(check(&mut w, &fill([64, 1, 0], [1, 1, 1], stone)), RegionCheck::Ok);
-        assert_eq!(check(&mut w, &fill([65, 1, 0], [1, 1, 1], stone)), RegionCheck::OutOfReach);
+        assert_eq!(
+            check(&mut w, &fill([64, 1, 0], [1, 1, 1], stone)),
+            RegionCheck::Ok
+        );
+        assert_eq!(
+            check(&mut w, &fill([65, 1, 0], [1, 1, 1], stone)),
+            RegionCheck::OutOfReach
+        );
         let far_eye = [8_191_990.0, 0.0, 0.0];
         assert_eq!(
-            check_region_edit(&mut w, &fill([8_191_998, 0, 0], [4, 1, 1], stone), far_eye, &[], 64.0)
-                .check,
+            check_region_edit(
+                &mut w,
+                &fill([8_191_998, 0, 0], [4, 1, 1], stone),
+                far_eye,
+                &[],
+                64.0
+            )
+            .check,
             RegionCheck::OutOfWorld
         );
         let top = [0.0, f64::from(WORLD_MAX_Y), 0.0];
         assert_eq!(
-            check_region_edit(&mut w, &fill([0, WORLD_MAX_Y - 1, 0], [1, 2, 1], stone), top, &[], 64.0)
-                .check,
+            check_region_edit(
+                &mut w,
+                &fill([0, WORLD_MAX_Y - 1, 0], [1, 2, 1], stone),
+                top,
+                &[],
+                64.0
+            )
+            .check,
             RegionCheck::OutOfWorld
         );
         let water = require("dwell:water");
-        assert_eq!(check(&mut w, &fill([0, 0, 0], [1, 1, 1], water)), RegionCheck::NotPlaceable);
-        assert_eq!(check(&mut w, &fill([0, 0, 0], [1, 1, 1], u16::MAX)), RegionCheck::NotPlaceable);
+        assert_eq!(
+            check(&mut w, &fill([0, 0, 0], [1, 1, 1], water)),
+            RegionCheck::NotPlaceable
+        );
+        assert_eq!(
+            check(&mut w, &fill([0, 0, 0], [1, 1, 1], u16::MAX)),
+            RegionCheck::NotPlaceable
+        );
         let bad_paste = RegionEdit {
             op: RegionEditOp::Paste,
             cells: vec![u16::MAX],
@@ -396,8 +439,9 @@ mod tests {
         let mut w = world();
         w.set_voxel(1, 0, 0, stone);
         w.set_voxel(2, 0, 0, sand);
-        let check =
-            |w: &mut VoxelWorld, r: &RegionEdit| check_region_edit_with(w, r, EYE, &[], 64.0, locked);
+        let check = |w: &mut VoxelWorld, r: &RegionEdit| {
+            check_region_edit_with(w, r, EYE, &[], 64.0, locked)
+        };
         for op in [RegionEditOp::Fill, RegionEditOp::Hollow] {
             let r = RegionEdit {
                 op,
@@ -444,7 +488,13 @@ mod tests {
             radius: 0.3,
             half_cylinder: 0.6,
         };
-        let out = check_region_edit(&mut w, &fill([3, 0, 3], [3, 3, 3], stone), EYE, &[player], 64.0);
+        let out = check_region_edit(
+            &mut w,
+            &fill([3, 0, 3], [3, 3, 3], stone),
+            EYE,
+            &[player],
+            64.0,
+        );
         assert_eq!(out.check, RegionCheck::Ok);
         assert!(out.into_player >= 2);
         assert_eq!(out.changes.len() as u32 + out.into_player, 27);
@@ -457,8 +507,14 @@ mod tests {
         w.set_voxel(1, 0, 0, require("dwell:water"));
         let ladder = parse_state("dwell:ladder[facing=east]").expect("ladder");
         let out = check_region_edit(&mut w, &fill([0, 0, 0], [2, 1, 1], ladder), EYE, &[], 64.0);
-        assert_eq!(info(out.changes[0].1).name, "dwell:ladder[facing=east,flooded=false]");
-        assert_eq!(info(out.changes[1].1).name, "dwell:ladder[facing=east,flooded=true]");
+        assert_eq!(
+            info(out.changes[0].1).name,
+            "dwell:ladder[facing=east,flooded=false]"
+        );
+        assert_eq!(
+            info(out.changes[1].1).name,
+            "dwell:ladder[facing=east,flooded=true]"
+        );
     }
 
     #[test]
@@ -518,7 +574,9 @@ mod tests {
 
     #[test]
     fn facing_blocks_turn_with_the_box() {
-        let l = |f: &str| parse_state(&format!("dwell:ladder[facing={f},flooded=true]")).expect("ladder");
+        let l = |f: &str| {
+            parse_state(&format!("dwell:ladder[facing={f},flooded=true]")).expect("ladder")
+        };
         let turn = PasteTransform {
             quarter_turns: 1,
             mirror_x: false,

@@ -395,14 +395,28 @@ mod tests {
     fn region_tool_keys_only_while_playing_and_command_keys_are_not_held() {
         let mut input = KeyboardMouseInput::new();
         // Not playing (a menu's text box has the keys): Backspace and Ctrl+C are the page's.
-        assert!(!input.key_down("Backspace", false, false, false, 0.0).prevent_default);
-        assert!(input.key_down("KeyC", false, true, false, 0.0).events.is_empty());
+        assert!(
+            !input
+                .key_down("Backspace", false, false, false, 0.0)
+                .prevent_default
+        );
+        assert!(
+            input
+                .key_down("KeyC", false, true, false, 0.0)
+                .events
+                .is_empty()
+        );
         input.blur();
         input.pointer_locked = true;
         let g = input.key_down("KeyG", false, false, false, 0.0);
         assert!(g.prevent_default);
         assert_eq!(g.events, vec![InputEvent::Tool(ToolAction::Fill)]);
-        assert!(input.key_down("KeyG", true, false, false, 0.0).events.is_empty());
+        assert!(
+            input
+                .key_down("KeyG", true, false, false, 0.0)
+                .events
+                .is_empty()
+        );
         // ⌘C copies and doesn't crouch (macOS sends no keyup for C while ⌘ is down).
         assert_eq!(
             input.key_down("KeyC", false, false, true, 0.0).events,

@@ -86,7 +86,10 @@ fn decoded_fields_are_the_vectors_values() {
     let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_replace")) else {
         panic!("region_edit_replace")
     };
-    assert_eq!((r.op, r.from, r.material, r.size), (RegionEditOp::Replace, 2, 6, [1, 32, 2]));
+    assert_eq!(
+        (r.op, r.from, r.material, r.size),
+        (RegionEditOp::Replace, 2, 6, [1, 32, 2])
+    );
 }
 
 #[test]

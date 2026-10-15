@@ -393,9 +393,7 @@ impl RegionTools {
             self.note = "This server doesn't take region edits (an older build)".into();
             return None;
         }
-        let Some(eye) = ctx.eye else {
-            return None;
-        };
+        let eye = ctx.eye?;
         let reach = f64::from(region_edit::REACH);
         if box_distance_sq(edit.min, dims(edit.size), eye) > reach * reach {
             self.note = "Too far away".into();
@@ -455,7 +453,12 @@ impl RegionTools {
     ) -> Option<Message> {
         let from = if undo { &self.undo } else { &self.redo };
         let Some(step) = from.last().cloned() else {
-            self.note = if undo { "Nothing to undo" } else { "Nothing to redo" }.into();
+            self.note = if undo {
+                "Nothing to undo"
+            } else {
+                "Nothing to redo"
+            }
+            .into();
             return None;
         };
         let edit = if undo {
@@ -543,7 +546,10 @@ mod tests {
 
     #[test]
     fn keys_pick_tools_and_command_keys_never_select_corners() {
-        assert_eq!(tool_for_key("KeyB", false, false), Some(ToolAction::CornerA));
+        assert_eq!(
+            tool_for_key("KeyB", false, false),
+            Some(ToolAction::CornerA)
+        );
         assert_eq!(tool_for_key("KeyC", true, false), Some(ToolAction::Copy));
         assert_eq!(tool_for_key("KeyZ", true, true), Some(ToolAction::Redo));
         assert_eq!(tool_for_key("KeyZ", true, false), Some(ToolAction::Undo));
@@ -624,7 +630,11 @@ mod tests {
         };
         step(&mut t, &mut w, ToolAction::Replace, &aim);
         assert_eq!(
-            [w.get_voxel(0, 0, 0), w.get_voxel(1, 0, 0), w.get_voxel(2, 0, 0)],
+            [
+                w.get_voxel(0, 0, 0),
+                w.get_voxel(1, 0, 0),
+                w.get_voxel(2, 0, 0)
+            ],
             [dirt, sand, dirt]
         );
     }
@@ -651,7 +661,12 @@ mod tests {
         let ghost = t.boxes()[1];
         assert_eq!(ghost.kind, ToolBoxKind::Ghost);
         assert_eq!((ghost.min, ghost.size), ([10, 1, 9], [1, 2, 3]));
-        step(&mut t, &mut w, ToolAction::Paste, &ctx(Some([10, 0, 10]), 0));
+        step(
+            &mut t,
+            &mut w,
+            ToolAction::Paste,
+            &ctx(Some([10, 0, 10]), 0),
+        );
         // Turned clockwise: +X became +Z, and the ladder faces south.
         for z in 9..12 {
             assert_eq!(w.get_voxel(10, 1, z), stone, "z {z}");
@@ -682,7 +697,11 @@ mod tests {
         let mut t = RegionTools::new(); // an older server: no region edits
         t.act(ToolAction::CornerA, &ctx(Some([0, 0, 0]), 0), &mut w);
         assert_eq!(t.act(ToolAction::Fill, &ctx(None, stone), &mut w), None);
-        assert!(t.status().contains("doesn't take region edits"), "{}", t.status());
+        assert!(
+            t.status().contains("doesn't take region edits"),
+            "{}",
+            t.status()
+        );
         t.enabled = true;
         // Too big.
         t.act(ToolAction::CornerB, &ctx(Some([32, 0, 0]), 0), &mut w);
