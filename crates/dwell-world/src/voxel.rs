@@ -338,7 +338,7 @@ impl FlatLayers {
     }
 
     fn at(&self, y: i32) -> StateId {
-        if y < MIDPLANE_Y || y >= 0 {
+        if !(MIDPLANE_Y..0).contains(&y) {
             M.air
         } else {
             self.at_depth(i64::from(-1 - y))
