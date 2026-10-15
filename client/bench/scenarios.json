@@ -91,7 +91,7 @@
     },
     {
       "name": "walk-over-a-placed-block",
-      "notes": "Places a block in front of the spawn and walks over it without jumping (Phase 18, ADAPTIVE_BLOCKS.md): natural ground shapes itself, so the placed block is a half pyramid and the ground under and around it ramps up — the controller trace should stay grounded, with no jump and no launch.",
+      "notes": "Places a block in front of the spawn and walks over it without jumping (Phase 18, ADAPTIVE_BLOCKS.md): natural ground shapes itself, so the placed block is a half pyramid (45° faces: a slide, owner 2026-10-15) and the ground under and around it ramps up at 27° — the controller trace shows what the player does on it (no jump, no launch).",
       "steps": [
         { "do": "settle", "maxS": 120 },
         { "do": "select", "slot": 0 },

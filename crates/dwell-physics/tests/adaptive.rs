@@ -1,9 +1,11 @@
 //! The controller on adaptive natural blocks (docs/ADAPTIVE_BLOCKS.md, Phase 18): grass shapes
 //! itself from its neighbours, and the player walks the result — the Shape Playground's 28
 //! situations (every shape the rules make: slopes, ridges, saddles, half-and-half corners, 45°
-//! ramps) built as terrain, a terrace's 1-block step, a ridge, a field across chunk seams — with no
-//! launches, hops or sliding at rest. Runs in the local frame like every suite (far from the origin
-//! and on face B too).
+//! ramps) built as terrain, a terrace's 1-block step, a field across chunk seams — with no
+//! launches or hops, and no sliding at rest on gentle (27°) ground. Faces steeper than 44° (45°
+//! ramps, ridge flanks, saddles) are slides by the owner's decision (2026-10-15): resting on or
+//! walking up them is tested with the slide, not here. Runs in the local frame like every suite
+//! (far from the origin and on face B too).
 
 mod common;
 
@@ -56,6 +58,33 @@ fn surface(height: &dyn Fn(i32, i32) -> i32, x: f32, z: f32) -> f32 {
     };
     let s = adaptive::shape_at(at, 1);
     (h - 1) as f32 + solid_span_at(s, x - cx as f32, z - cz as f32).hi
+}
+
+/// The steepest face (degrees) of the top block's derived shape at column (x, z).
+fn steepest_at(height: &dyn Fn(i32, i32) -> i32, x: i32, z: i32) -> f32 {
+    let h = height(x, z);
+    let (g, cube) = (grass(), cube_block());
+    let at = |dx: i32, dy: i32, dz: i32| {
+        let y = h - 1 + dy;
+        if y < 0 {
+            cube
+        } else if y < height(x + dx, z + dz) {
+            g
+        } else {
+            0
+        }
+    };
+    let s = adaptive::shape_at(at, 1);
+    let mut steepest = 0.0f32;
+    for f in dwell_blocks::shape::faces_of(s) {
+        if f.tag != dwell_blocks::shape::SURFACE_TAG {
+            continue;
+        }
+        let (a, b, c) = (Vec3::from(f.v[0]), Vec3::from(f.v[1]), Vec3::from(f.v[2]));
+        let n = (b - a).cross(c - a).normalize();
+        steepest = steepest.max(n.y.clamp(-1.0, 1.0).acos().to_degrees());
+    }
+    steepest
 }
 
 /// What one walker saw.
@@ -168,11 +197,13 @@ fn standing_still_on_every_playground_block_never_slides() {
     let height = playground();
     let mut w = PlayerTestWorld::new();
     terrain(&mut w, (0, 0, 31, 31), &height);
-    // One player on the centre of every block's top (they stand 1 m apart: no touching).
+    // One player on the centre of every block's top whose slopes are gentle (they stand 1 m
+    // apart: no touching). Faces steeper than 44° — 45° ramps and ridge flanks, saddles —
+    // are slides, not ground (owner, 2026-10-15): their behaviour is the slide's to test.
     let mut players = Vec::new();
     for z in 0..32 {
         for x in 0..32 {
-            if height(x, z) == 0 {
+            if height(x, z) == 0 || steepest_at(&height, x, z) > 30.0 {
                 continue;
             }
             let (fx, fz) = (x as f32 + 0.5, z as f32 + 0.5);
@@ -180,7 +211,7 @@ fn standing_still_on_every_playground_block_never_slides() {
             players.push((x, z, w.spawn(Vec3::new(fx, feet, fz))));
         }
     }
-    assert!(players.len() > 240, "{}", players.len());
+    assert!(players.len() > 120, "{}", players.len());
     w.step(ticks(1.0));
     let start: Vec<Vec3> = players.iter().map(|&(_, _, e)| w.pos(e)).collect();
     w.step(ticks(2.0));
@@ -297,57 +328,6 @@ fn a_one_block_terrace_step_is_walked_up_and_down_without_jumping() {
 }
 
 #[test]
-fn a_one_wide_ridge_is_walked_over_without_a_launch() {
-    // A row of blocks one higher than the field: a half-height ridge between two 27° slopes.
-    let height = |_: i32, z: i32| if z == 4 { 2 } else { 1 };
-    let mut w = PlayerTestWorld::new();
-    terrain(&mut w, (-8, -8, 8, 16), &height);
-    let e = w.spawn(Vec3::new(0.5, 0.52, 0.5));
-    w.step(ticks(0.5));
-    w.set_input(|_, _| input(0.0, 1.0, true, false, false, 0.0, 0.0));
-    let mut walk = Walk::default();
-    for _ in 0..ticks(2.0) {
-        w.step(1);
-        watch(&w, e, &height, &mut walk);
-    }
-    assert!(w.pos(e).z > 8.0, "{}", w.pos(e));
-    // (The capsule's round bottom on a 45° flank or the crest sits up to its radius, 0.3 m, above
-    // the surface under its centre: more is a hop.)
-    assert!(walk.max_gap < 0.4, "never far above the ground: {walk:?}");
-    assert!(walk.rising_airborne <= 3, "{walk:?}");
-    assert!(approx(w.feet(e), 0.5, 0.01), "{}", w.feet(e));
-}
-
-#[test]
-fn single_block_stairs_are_a_run_of_45_degree_ramps_walked_without_jumping() {
-    // Situation P: one-wide stairs 1, 2, 3, 4, 5 high along +x; each is a wedge up to the next.
-    let height = |x: i32, z: i32| {
-        if z == 0 && (0..5).contains(&x) {
-            x + 1
-        } else {
-            0
-        }
-    };
-    let mut w = PlayerTestWorld::new();
-    terrain(&mut w, (-4, -4, 8, 4), &height);
-    let e = w.spawn_yaw(Vec3::new(-2.5, 0.02, 0.5), 90.0);
-    w.set_input(|_, _| input(0.0, 1.0, false, false, false, 90.0, 0.0));
-    let mut walk = Walk::default();
-    for _ in 0..ticks(1.6) {
-        w.step(1);
-        watch(&w, e, &height, &mut walk);
-    }
-    assert_eq!(w.count(e, events::JUMPED), 0);
-    assert!(
-        w.feet(e) > 4.0,
-        "climbed the ramps: {} at {}",
-        w.feet(e),
-        w.pos(e)
-    );
-    assert!(walk.rising_airborne <= 3, "{walk:?}");
-}
-
-#[test]
 fn walking_a_grass_field_across_chunk_seams_never_loses_the_ground() {
     // Shaped cells collide as one triangle mesh per chunk: crossing between meshes must not catch.
     let height = |_: i32, _: i32| 1;
@@ -402,32 +382,5 @@ fn a_block_placed_beside_a_standing_player_reshapes_the_ground_without_a_launch(
         (w.feet(e) - ground).abs() < 0.05,
         "on the new surface: {} vs {ground}",
         w.feet(e)
-    );
-}
-
-#[test]
-fn every_slope_the_adaptive_table_makes_is_walkable() {
-    // The steepest faces are the saddle's and the dimple's: from their crest (a raised diagonal)
-    // down to a floor corner, arctan(√2) ≈ 54.74° — the "tetrahedral corner" Phase 9 rejected for
-    // placed slopes, which the owner's rules make. They must be ground the controller stands on.
-    let mut steepest = 0.0f32;
-    for &i in dwell_blocks::ADAPTIVE_UP.iter() {
-        let s = &dwell_blocks::SHAPES[usize::from(i)];
-        for f in dwell_blocks::shape::faces_of(s) {
-            if f.tag != dwell_blocks::shape::SURFACE_TAG {
-                continue;
-            }
-            let (a, b, c) = (Vec3::from(f.v[0]), Vec3::from(f.v[1]), Vec3::from(f.v[2]));
-            let n = (b - a).cross(c - a).normalize();
-            steepest = steepest.max(n.y.clamp(-1.0, 1.0).acos().to_degrees());
-        }
-    }
-    assert!((steepest - 54.7356).abs() < 0.01, "{steepest}");
-    let limit = dwell_physics::config::PlayerControllerConfig::default()
-        .probes
-        .max_slope_angle;
-    assert!(
-        steepest < limit - 1.0,
-        "{steepest}° against a limit of {limit}°"
     );
 }

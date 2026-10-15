@@ -91,8 +91,9 @@ The 1 m grid stays.
   hand-shaped playground blocks (`playground-export.json`), in node and in the Rust world.
 - **Adaptive:** grass, dirt, stone, sand. The registry's state strings and hash are unchanged.
 - **Collision:** full-cube cells in Parry's `Voxels` collider, shaped cells one triangle mesh per
-  chunk; the controller's slope limit was raised from 50° to 56°, because the saddle's and dimple's
-  faces are 54.74° (a player on a saddle was not grounded at 50°).
+  chunk. The owner decided (2026-10-15) that faces steeper than 44° — 45° ramps and ridge flanks,
+  the saddles' 54.74° — are slides, not stairs (stairs become their own block); sliding is built
+  separately.
 - **Generation:** the generator's voxels are unchanged (its goldens too); spawn and the generator's
   point query read the shaped surface. With the shapes' effect on collision, spawn height and what
   a seed's terrain is, it is a new compatibility line (the owner raises `client/package.json`);

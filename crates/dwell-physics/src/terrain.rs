@@ -144,7 +144,7 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
     let at = |x: i32, y: i32, z: i32| block[padded(x, y, z)];
     let shape_at =
         |x: i32, y: i32, z: i32| adaptive::shape_at(|dx, dy, dz| at(x + dx, y + dy, z + dz), up);
-    let voxels = *world.read(c).voxels();
+    let voxels = world.read(c).voxels(); // borrowed: a 64 KiB copy overflows a WASM stack
     for (i, &m) in voxels.iter().enumerate() {
         if !info(m).solid {
             continue;
