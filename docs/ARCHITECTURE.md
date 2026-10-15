@@ -690,7 +690,10 @@ playground** (generator 1 until Phase 15) is now a **structure file**
 (`shared/structures/playground.structure`, below) that the controller and netcode tests stamp over
 the flat world; no world uses it. Players spawn on the first dry, level 9 × 9 patch (top voxels at
 one height, at least 2 m above sea level; `SPAWN_CLEAR`, wide enough for the spread of spawning
-players to build beside themselves) found in an 8 m spiral from the origin. Debug tooling: **named
+players to build beside themselves) found in an 8 m spiral from the origin, standing on the
+shaped surface (`TerrainGenerator::surface_y_at`: the top voxel's adaptive shape, ADAPTIVE_BLOCKS.md —
+on a level patch half a block above the top voxel's floor). Water is still generated in open cells
+below sea level; a shaped bank beside or under it holds water in its open part (§6.1). Debug tooling: **named
 views** **[built]** — `client/views/views.json` lists views by name: a seed, a camera (a world
 position and a look, or none for the player's eyes at the spawn), a window size, settings-menu
 values (fog, detail, exposure), the F3 overlay and LOD level tints, a resolution scale and how long
@@ -1039,8 +1042,9 @@ Players break and place blocks. Server-authoritative like every voxel change
 - **Targeting (client):** each frame `raycast_block` (a DDA from the eye along the view,
   `REACH_DISTANCE` long, in float relative to the eye's cell so it is exact anywhere in the world)
   finds the first *targetable* cell — anything but air and liquids — by entering its exact shape
-  (a slab, a slope: `ray_enter_shape`; a ladder, which has no solid, as its whole cell — the server's
-  line-of-sight check sees it the same way), and the face it entered through (a sloped surface counts as
+  (an adaptive block's derived shape, `VoxelWorld::shape_at`: `ray_enter_shape`; a ladder, which has
+  no solid, as its whole cell — the server's line-of-sight check sees it the same way), and the face
+  it entered through (a sloped surface counts as
   the face its normal mostly points through, the top on a tie); the renderer outlines the cell. The
   client runs the same Rust as the server.
 - **Actions:** desktop — left click breaks the targeted block, right click places the selected
@@ -1339,9 +1343,15 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   cracks along section borders, found in a playtest.) The cells themselves — and so the
   server, downsampling, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
-- **Slopes [built, Phase 9d; removed in Phase 15]**: distant terrain was drawn as the slope pieces
-  of the generator's slope stage; both went with the placed shapes. Tops are flat at their surface
-  height until Phase 18's adaptive blocks shape them again.
+- **Adaptive tops [built, Phase 18]** (ADAPTIVE_BLOCKS.md §4.4): the LOD mesher applies the
+  adaptive rule table to its cells — a dry column's topmost cell, if a natural block with nothing
+  above it, takes the shape its neighbourhood of cells gives (corner heights in halves of a cell),
+  so near and far terrain follow one rule. A level run's tops (the rule's slab) rest at half a cell
+  and merge as flat tops; sloped tops are drawn polygon by polygon, shaded by their normal; walls
+  between columns follow three-point profiles. Wet columns and shores keep the surface data's exact
+  heights. An apron column's shape needs cells beyond the apron, so walls toward an apron column's
+  adaptive top are drawn down to the row's floor (any part it hides lies inside it). The LOD format
+  and the cells do not change. (Phase 9d's slope pieces went with the placed shapes in Phase 15.)
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;

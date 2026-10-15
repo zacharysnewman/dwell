@@ -157,6 +157,7 @@ textarea { margin-top: 8px; width: 100%; box-sizing: border-box; font-family: va
     <section>
       <h2>Share with Claude</h2>
       <button type="button" class="btn primary" id="export">Copy all shapes as JSON</button>
+      <button type="button" class="btn" id="export-overrides">Copy overrides for the game</button>
       <p class="hint-text" id="export-status">Copies every block's shape and the heights around it, grouped by situation, for you to paste into the chat.</p>
       <textarea id="export-json" readonly rows="6" spellcheck="false" aria-label="Exported JSON" hidden></textarea>
       <details style="margin-top:10px">
@@ -880,6 +881,46 @@ function exportJson() {
   try { navigator.clipboard.writeText(text).then(() => { status.className = 'hint-text ok'; status.textContent = `Copied ${groups.reduce((n, g) => n + g.blocks.length, 0)} blocks. Paste them into the chat.`; }, fallback); } catch { fallback(); }
 }
 $('export').addEventListener('click', exportJson);
+
+// ---- Export overrides in the game's format (shared/blocks/adaptive.json, ADAPTIVE_BLOCKS.md §4):
+// every block whose shape differs from the rules', keyed by its neighbourhood — "+" higher, "="
+// the same, "-" lower, rows north to south. Paste the list into adaptive.json's "overrides" and run
+// `node shared/blocks/gen.mjs`. Two blocks with one neighbourhood and different shapes conflict.
+function exportOverrides() {
+  const byAround = new Map();
+  const conflicts = [];
+  for (let c = 0; c < W * D; c++) {
+    if (!cols[c]) continue;
+    const rule = rulesFor(c), user = tops[c];
+    if (!rule.missing && gridEq(pointsOf(user.shape, user.turns), pointsOf(rule.shape, rule.turns))) continue;
+    const x = c % W, z = Math.floor(c / W), t = cols[c];
+    const rows = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      let row = '';
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dz === 0) { row += '.'; continue; }
+        const xx = x + dx, zz = z + dz;
+        const h = xx < 0 || xx >= W || zz < 0 || zz >= D ? t : cols[idx(xx, zz)];
+        row += h > t ? '+' : h < t ? '-' : '=';
+      }
+      rows.push(row);
+    }
+    const around = rows.join('/');
+    const entry = { around, shape: user.shape };
+    if (!SYMMETRIC.has(user.shape)) entry.facing = user.shape === 'half_ridge' ? (user.turns % 2 ? 'north_south' : 'east_west') : FACINGS[user.turns];
+    const prev = byAround.get(around);
+    if (prev && (prev.shape !== entry.shape || prev.facing !== entry.facing)) conflicts.push(`(${x},${z}) ${around}`);
+    else byAround.set(around, entry);
+  }
+  const list = [...byAround.values()];
+  const text = JSON.stringify(list, null, 1).replace(/\n\s+(?="|\})/g, ' ').replace(/\{ /g, '{ ');
+  const area = $('export-json'), status = $('export-status');
+  area.value = text; area.hidden = false;
+  const note = `${list.length} override${list.length === 1 ? '' : 's'}${conflicts.length ? `; ${conflicts.length} conflicting (same neighbourhood, another shape): ${conflicts.join(', ')}` : ''}.`;
+  const fallback = () => { area.focus(); area.select(); status.className = 'hint-text'; status.textContent = `${note} The clipboard is blocked: copy the JSON below.`; };
+  try { navigator.clipboard.writeText(text).then(() => { status.className = 'hint-text ok'; status.textContent = `Copied ${note} Paste them into "overrides" in shared/blocks/adaptive.json.`; }, fallback); } catch { fallback(); }
+}
+$('export-overrides').addEventListener('click', exportOverrides);
 
 // ---- Loop.
 function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }

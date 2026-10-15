@@ -35,7 +35,12 @@ Both feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) 
   amber: no such shape), and a list of the blocks that disagree with the rules, with "Use the rules'
   shape".
 - Edits are saved in the browser; **Your last export** restores the owner's final shapes (embedded
-  in the page, 2026-10-08: all 250 blocks match the rules); export and import as JSON.
+  in the page, 2026-10-08: all 250 blocks match the rules; extracted for the game's tests into
+  `shared/blocks/playground-export.json`); export and import as JSON.
+- **Copy overrides for the game** (Phase 18): every block whose shape differs from the rules', as
+  entries for `overrides` in `shared/blocks/adaptive.json` (`{ "around": "+==/=.-/===", "shape",
+  "facing" }`); blocks with one neighbourhood and different shapes are reported as conflicts. Paste
+  them in and run `node shared/blocks/gen.mjs`, which validates them and the adjacency test.
 
 ## Updating them
 

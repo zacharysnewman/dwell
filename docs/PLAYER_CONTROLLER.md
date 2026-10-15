@@ -268,13 +268,16 @@ Why:
 - `FaceQuery` (`frame.rs`) wraps these for a face-B player's mirrored frame (§11).
 
 **Terrain collision** (`TerrainCollision`, `terrain.rs`): one static body with one Rapier (Parry)
-`Voxels` collider for the whole world, holding the solid cells of the chunks around players. Parry
+`Voxels` collider for the whole world, holding the cells of the chunks around players that collide
+as full cubes (shaped cells — adaptive top blocks — are each chunk's triangle mesh, below). Parry
 classifies each voxel by its neighbours, so the capsule slides across voxel edges and chunk borders
 without catching on internal edges (`walking_across_chunk_seams_in_every_direction_never_loses_the_ground`:
 no loss of ground crossing chunk borders in 8 directions). With `f64` positions it is exact anywhere
-in the world, so it needs no regions, anchors or seams between bodies. Every solid state collides
-as its full cell: the baseline has only cubes (Phase 15); shaped blocks (Phase 18) will need their
-own colliders.
+in the world, so it needs no regions, anchors or seams between bodies. **Shaped cells** (Phase 18)
+collide as one Parry `TriMesh` per chunk (`FIX_INTERNAL_EDGES`, at the chunk's corner) of their
+derived shapes' faces that no neighbour covers; a chunk's collision reads a two-cell apron and is
+rebuilt when any of the 27 chunks around it changes stamp or revision. Crossing between chunks'
+meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_the_ground`).
 - Chunks are added on demand: each tick, `Players::tick` makes sure every chunk within
   `3 m + min(2 ticks of travel, 64 m)` of each player is in the collider. Each loaded chunk keeps
   its stamp, revision and a bit mask of its solid cells; a chunk with no solid cells keeps no mask,
@@ -295,8 +298,8 @@ Rules that keep the grid and the physics world consistent:
   `crates/dwell-sim/tests/netcode.rs`).
 - Probes read voxels from the world (`VoxelWorld::read`, generating a chunk if needed), so a probe
   and the collider see the same cells.
-- Non-cube voxel shapes extend the DDA through the block shape table; the probe interface does not
-  change.
+- Non-cube voxel shapes extend the DDA through the block shape table, adaptive blocks through
+  their derived shapes (`VoxelQuery::shape`); the probe interface does not change.
 
 ---
 
@@ -308,14 +311,26 @@ through a 1-wide, 2-tall doorway. Dwell's defaults (§7): **radius 0.3, height 1
 openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.2 Blocks, steps, slopes
-- The baseline's blocks are full cubes with axis-aligned faces: Phase 15 cut the placed slope and
-  slab families and terrain slope shaping ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). The shape
-  mechanism stays in the probes (§5) for Phase 18's adaptive blocks, which bring their own
-  scenarios. Slope logic matters on **Tier 1 bodies** (rotated clusters; ramps in the tests are
+- **Natural ground is shaped** (Phase 18, [`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)): grass,
+  dirt, stone and sand top blocks take their shapes from their neighbours — a level field rests at
+  half height, edges slope 27° to the ground, a 1-block step is one even 27° slope across both
+  blocks (walked up without jumping), one-wide rows are half-height ridges, a one-wide block
+  against a higher one is a 45° ramp, saddles and dimples reach 54.74°. The probes (§5) read the
+  derived shapes (`VoxelQuery::shape`, `FaceQuery::shape`, turned over on face B), and the
+  terrain collider holds shaped cells as per-chunk triangle meshes (§5). The suites build cube
+  geometry from the non-adaptive `dwell:sandbox_floor` (`cube_block()`), and
+  `tests/adaptive.rs` walks the adaptive shapes: the Shape Playground's 28 situations built as
+  terrain (every shape the rules make), where a player stands still on every block without
+  sliding and walkers along every row and column never launch, hop or jump; a terrace's 1-block
+  step up and down; a one-wide ridge; single-block 45° stairs; a grass field across chunk seams
+  (the per-chunk meshes) without losing the ground; a block placed beside a standing player
+  reshaping the ground under it without a launch — at the origin, far out and on face B. Slope logic matters on **Tier 1 bodies** (rotated clusters; ramps in the tests are
   rotated Tier 1 boxes, `walks_up_and_down_a_20_degree_ramp_staying_grounded`), and half-height
   steps (stairs, the scenario's step) are static Tier 1 boxes (`PlayerTestWorld::half_step`).
-- `max_slope_angle` is **50°**: a standard 45° slope face must not hinge on float rounding of its
-  normal (`the_slope_limit_leaves_room_for_45_degrees`).
+- `max_slope_angle` is **56°** (Phase 18; 50° before): every face the adaptive shapes make must be
+  ground, and the steepest — a saddle's or a dimple's, from its raised diagonal down to a floor
+  corner — is arctan √2 ≈ 54.74°; at 50° a player standing on situation V's saddle was not grounded
+  (`every_slope_the_adaptive_table_makes_is_walkable`, `the_slope_limit_leaves_room_for_45_degrees`).
 - The bifacial world puts a second face on the disc's underside, where up is −y; the controller
   runs in a face-local frame there (§11, [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
 - `max_step_height` 0.55 m (PPC: 0.45): half-height steps (0.5 m) are stepped up without leaving
@@ -464,7 +479,7 @@ PPC default for voxels.
 | | `max_push_force` ◆ | 800 N | — | Contact limit (Phase 20) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
-| | `max_slope_angle` | 50° ◆ (45° would hinge on rounding at a 45° face) | same | |
+| | `max_slope_angle` | 56° ◆ (above the adaptive saddle's 54.74°; 45° would hinge on rounding) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |
 | | `buffer_ticks` / `coyote_ticks` ◆ | 12 / 12 ticks (0.2 / 0.2 s) | 0.2 / 0.1 s | Coyote time doubled: 0.1 s felt stingy next to other games |
 | `crouch` | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |
