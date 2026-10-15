@@ -13,7 +13,9 @@ use dwell_blocks::{FLUIDS, FluidInfo, STATES, ShapeInfo, StateId, StateInfo, sha
 use dwell_protocol::CHUNK_SIZE;
 
 use crate::LengthError;
-use crate::style::{Look, MaterialStyle, cube, material_style, mirror_material, style_of};
+use crate::style::{
+    Look, MaterialStyle, cube, fluid_value, material_style, mirror_material, style_of,
+};
 use crate::textures::{TileRect, tile_rect};
 use dwell_look::{face_tint, normal_tint};
 
@@ -42,6 +44,9 @@ pub struct MeshArrays {
     pub uvs: Vec<f32>,
     /// Atlas rectangle per vertex: u0, v0, width, height.
     pub tiles: Vec<f32>,
+    /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
+    /// is no fluid's); empty in the opaque mesh.
+    pub fluids: Vec<f32>,
     /// Triangles, counter-clockwise seen from outside.
     pub indices: Vec<u32>,
 }
@@ -54,6 +59,7 @@ impl MeshArrays {
             + self.colors.len()
             + self.uvs.len()
             + self.tiles.len()
+            + self.fluids.len()
             + self.indices.len())
     }
 }
@@ -215,6 +221,12 @@ struct Builder {
 impl Builder {
     fn vertex_count(&self) -> u32 {
         (self.m.positions.len() / 3) as u32
+    }
+
+    /// Tags the vertices added since the last tag with `fluid` (the transparent mesh's `fluids`).
+    fn tag_fluid(&mut self, fluid: Option<dwell_blocks::FluidId>) {
+        let n = self.vertex_count() as usize;
+        self.m.fluids.resize(n, fluid_value(fluid));
     }
 
     fn push_tile(&mut self, tile: &TileRect) {
@@ -497,6 +509,7 @@ fn flooded_water(b: &mut Builder, kinds: &Kinds, padded: &[u16], x: i32, y: i32,
             color,
             &tile,
         );
+        b.tag_fluid(water.style.fluid);
     }
 }
 
@@ -632,7 +645,8 @@ pub(crate) fn mesh_chunk_with(
                         plane = fluid_top(d, &style);
                     }
                     let (color, tile) = surface(&style, axis, sign);
-                    let target = if style.opacity < 1.0 {
+                    let see_through = style.opacity < 1.0;
+                    let target = if see_through {
                         &mut transparent
                     } else {
                         &mut opaque
@@ -646,6 +660,9 @@ pub(crate) fn mesh_chunk_with(
                         color,
                         &tile,
                     );
+                    if see_through {
+                        target.tag_fluid(style.fluid);
+                    }
                     i += w;
                 }
             }

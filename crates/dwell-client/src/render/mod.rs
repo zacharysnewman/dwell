@@ -13,6 +13,7 @@ pub mod frame;
 pub mod geometry;
 pub mod shaders;
 pub mod timing;
+pub mod water;
 
 use dwell_world::hash::HashMap;
 
@@ -28,6 +29,7 @@ use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
 pub use display::RenderStats;
 use frame::{DEPTH, HDR, Targets, VIEW_DEPTH};
 use timing::GpuTimer;
+use water::WaterQuality;
 
 /// Beyond this the far pass draws (§6.6); the near pass's far plane.
 pub const NEAR_SPLIT: f64 = dwell_protocol::lod::NEAR_SPLIT_M as f64;
@@ -44,18 +46,14 @@ pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
         SAMPLES
     }
 }
-/// The alpha transparent (fluid) meshes are drawn with: the registry's `dwell:water` opacity. A
-/// chunk's fluids share one draw until the water shader reads each vertex's fluid (WATER_RENDERING.md W1b).
-fn water_opacity() -> f32 {
-    dwell_blocks::require_fluid("dwell:water").opacity
-}
 
 /// The frame uniform's `water` vec4 (shaders.rs `Frame`): x 1 when the eye is under a fluid's
-/// drawn surface, y its fluid id, z the surface's world y; zeros otherwise.
-fn water_uniform(eye_fluid: Option<EyeFluid>) -> [f32; 4] {
+/// drawn surface, y its fluid id, z the surface's world y (zeros when it isn't); w the water
+/// quality.
+fn water_uniform(eye_fluid: Option<EyeFluid>, quality: WaterQuality) -> [f32; 4] {
     match eye_fluid {
-        Some(e) => [1.0, f32::from(e.fluid), e.surface_y as f32, 0.0],
-        None => [0.0; 4],
+        Some(e) => [1.0, f32::from(e.fluid), e.surface_y as f32, quality.level()],
+        None => [0.0, 0.0, 0.0, quality.level()],
     }
 }
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
@@ -115,10 +113,11 @@ struct GpuMesh {
 }
 
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts).
-const STRIDES: [u64; 3] = [
+const STRIDES: [u64; 4] = [
     4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
     4 * (3 + 3 + 3),         // Flat: position, normal, colour
     4 * (3 + 3),             // Line: position, colour
+    4 * (3 + 3 + 3 + 1),     // Fluid: position, normal, colour, fluid id
 ];
 
 fn floats(v: &[f32]) -> &[u8] {
@@ -215,6 +214,35 @@ impl GpuMesh {
         ))
     }
 
+    /// A fluid mesh (a chunk's transparent mesh, a section's water): position, normal, colour and
+    /// fluid id per vertex (`dwell_mesh::NO_FLUID` where the stream is short). The water shader
+    /// draws its ripples procedurally, so the chunks' uvs and tiles are left behind.
+    fn fluid(
+        arena: &ArenaRef,
+        positions: &[f32],
+        normals: &[f32],
+        colors: &[f32],
+        fluids: &[f32],
+        indices: &[u32],
+    ) -> Option<Self> {
+        if indices.is_empty() {
+            return None;
+        }
+        let count = positions.len() / 3;
+        let mut ids = fluids.to_vec();
+        ids.resize(count, dwell_mesh::NO_FLUID);
+        let vertices = interleave(&[(positions, 3), (normals, 3), (colors, 3), (&ids, 1)]);
+        let bytes = 4 * (vertices.len() + indices.len()) as u64;
+        Some(Self::upload(
+            arena,
+            Kind::Fluid,
+            &vertices,
+            indices,
+            std::iter::once(0..indices.len() as u32).collect(),
+            bytes,
+        ))
+    }
+
     /// Flat meshes concatenated into one (an LOD section's surface and its six skirts).
     fn flat(arena: &ArenaRef, meshes: &[&FlatMesh]) -> Option<Self> {
         if meshes.iter().all(|m| m.indices.is_empty()) {
@@ -282,11 +310,13 @@ struct Section {
     water: Option<GpuMesh>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Kind {
     Terrain,
     Flat,
     Line,
+    /// Fluids (chunk and LOD water): the water shader.
+    Fluid,
 }
 
 /// One draw, collected before the passes record.
@@ -298,8 +328,9 @@ struct DrawItem {
     offset: [f32; 4],
     clip: Option<([f32; 3], [f32; 3])>,
     tint: [f32; 4],
-    /// Turn about +y (cos, sin of the yaw): players face their heading.
-    rotation: [f32; 2],
+    /// Turn about +y (cos, sin of the yaw): players face their heading; fluids carry their origin's
+    /// x and z wrapped for the normal detail in zw (`water::wrapped_origin`).
+    rotation: [f32; 4],
     mesh: DrawMesh,
     /// The arena page the mesh is in (filled in by `collect`): draws from a page bind it once.
     page: usize,
@@ -332,7 +363,13 @@ fn draw_order(d: &DrawItem) -> u128 {
 }
 
 /// No turn.
-const NO_ROTATION: [f32; 2] = [1.0, 0.0];
+const NO_ROTATION: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+
+/// A fluid draw's `rotation`: no turn, and its origin wrapped for the normal detail.
+fn fluid_rotation(origin: V3) -> [f32; 4] {
+    let [x, z] = water::wrapped_origin(origin);
+    [1.0, 0.0, x, z]
+}
 
 #[derive(Clone)]
 enum DrawMesh {
@@ -383,6 +420,10 @@ pub struct Renderer {
     fog: FogSettings,
     /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
     eye_fluid: Option<EyeFluid>,
+    /// The water quality setting (`set_water_quality`).
+    water_quality: WaterQuality,
+    /// When the renderer started (ms, telemetry's clock): the water's scroll time.
+    start_ms: f64,
     exposure: f64,
     sky: SkyFrame,
     stats: RenderStats,
@@ -456,6 +497,17 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // The fluid looks (water.rs), indexed by fluid id.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(water::FLUID_STRIDE),
+                    },
+                    count: None,
+                },
             ],
         });
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -491,6 +543,7 @@ impl Renderer {
                 .iter()
                 .map(|&(location, n)| {
                     let format = match n {
+                        1 => wgpu::VertexFormat::Float32,
                         2 => wgpu::VertexFormat::Float32x2,
                         3 => wgpu::VertexFormat::Float32x3,
                         _ => wgpu::VertexFormat::Float32x4,
@@ -509,93 +562,97 @@ impl Renderer {
         let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
+        let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
         let mut pipelines = HashMap::default();
-        for kind in [Kind::Terrain, Kind::Flat, Kind::Line] {
-            for water in [false, true] {
-                for no_depth in [false, true] {
-                    let line = kind == Kind::Line;
-                    let (vs, fs, a) = match kind {
-                        Kind::Terrain => ("terrain_vs", "terrain_fs", &terrain_attrs),
-                        Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
-                        Kind::Line if no_depth => ("line_vs", "line_top_fs", &line_attrs),
-                        Kind::Line => ("line_vs", "line_fs", &line_attrs),
-                    };
-                    let buffers = [Some(wgpu::VertexBufferLayout {
-                        array_stride: a.0,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &a.1,
-                    })];
-                    let blend = (water || line).then_some(wgpu::BlendState::ALPHA_BLENDING);
-                    // The scene's draws write colour and (opaque only) view depth into the frame;
-                    // lines draw into the canvas over the composite, depth-tested in the shader.
-                    let scene_targets = [
-                        Some(wgpu::ColorTargetState {
-                            format: HDR,
-                            blend,
-                            write_mask: wgpu::ColorWrites::ALL,
-                        }),
-                        Some(wgpu::ColorTargetState {
-                            format: VIEW_DEPTH,
-                            blend: None,
-                            write_mask: if water {
-                                wgpu::ColorWrites::empty()
-                            } else {
-                                wgpu::ColorWrites::ALL
-                            },
-                        }),
-                    ];
-                    let line_targets = [Some(wgpu::ColorTargetState {
-                        format,
-                        blend,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })];
-                    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some(fs),
-                        layout: Some(if line { &overlay_layout } else { &layout }),
-                        vertex: wgpu::VertexState {
-                            module: &module,
-                            entry_point: Some(vs),
-                            compilation_options: Default::default(),
-                            buffers: &buffers,
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &module,
-                            entry_point: Some(fs),
-                            compilation_options: Default::default(),
-                            targets: if line { &line_targets } else { &scene_targets },
-                        }),
-                        primitive: wgpu::PrimitiveState {
-                            topology: if kind == Kind::Line {
-                                wgpu::PrimitiveTopology::LineList
-                            } else {
-                                wgpu::PrimitiveTopology::TriangleList
-                            },
-                            front_face: wgpu::FrontFace::Ccw,
-                            // Water is seen from both sides; opaque faces are culled from behind.
-                            cull_mode: (!water && kind != Kind::Line).then_some(wgpu::Face::Back),
-                            ..Default::default()
-                        },
-                        depth_stencil: (!line).then(|| wgpu::DepthStencilState {
-                            format: DEPTH,
-                            depth_write_enabled: Some(!water),
-                            depth_compare: Some(if no_depth {
-                                wgpu::CompareFunction::Always
-                            } else {
-                                wgpu::CompareFunction::LessEqual
-                            }),
-                            stencil: Default::default(),
-                            bias: Default::default(),
-                        }),
-                        multisample: wgpu::MultisampleState {
-                            count: if line { 1 } else { samples },
-                            ..Default::default()
-                        },
-                        multiview_mask: None,
-                        cache: None,
-                    });
-                    pipelines.insert((kind, water, no_depth), pipeline);
-                }
-            }
+        // Opaque terrain, LOD sections and players; lines (depth-tested or over everything); and
+        // fluids, the only see-through draws (blended, both sides, no depth writes).
+        let variants = [Kind::Terrain, Kind::Flat, Kind::Line]
+            .into_iter()
+            .flat_map(|k| [(k, false, false), (k, false, true)])
+            .chain(std::iter::once((Kind::Fluid, true, false)));
+        for (kind, water, no_depth) in variants {
+            let line = kind == Kind::Line;
+            let (vs, fs, a) = match kind {
+                Kind::Terrain => ("terrain_vs", "terrain_fs", &terrain_attrs),
+                Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
+                Kind::Line if no_depth => ("line_vs", "line_top_fs", &line_attrs),
+                Kind::Line => ("line_vs", "line_fs", &line_attrs),
+                Kind::Fluid => ("fluid_vs", "water_fs", &fluid_attrs),
+            };
+            let buffers = [Some(wgpu::VertexBufferLayout {
+                array_stride: a.0,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &a.1,
+            })];
+            let blend = (water || line).then_some(wgpu::BlendState::ALPHA_BLENDING);
+            // The scene's draws write colour and (opaque only) view depth into the frame;
+            // lines draw into the canvas over the composite, depth-tested in the shader.
+            let scene_targets = [
+                Some(wgpu::ColorTargetState {
+                    format: HDR,
+                    blend,
+                    write_mask: wgpu::ColorWrites::ALL,
+                }),
+                Some(wgpu::ColorTargetState {
+                    format: VIEW_DEPTH,
+                    blend: None,
+                    write_mask: if water {
+                        wgpu::ColorWrites::empty()
+                    } else {
+                        wgpu::ColorWrites::ALL
+                    },
+                }),
+            ];
+            let line_targets = [Some(wgpu::ColorTargetState {
+                format,
+                blend,
+                write_mask: wgpu::ColorWrites::ALL,
+            })];
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(fs),
+                layout: Some(if line { &overlay_layout } else { &layout }),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some(vs),
+                    compilation_options: Default::default(),
+                    buffers: &buffers,
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(fs),
+                    compilation_options: Default::default(),
+                    targets: if line { &line_targets } else { &scene_targets },
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: if kind == Kind::Line {
+                        wgpu::PrimitiveTopology::LineList
+                    } else {
+                        wgpu::PrimitiveTopology::TriangleList
+                    },
+                    front_face: wgpu::FrontFace::Ccw,
+                    // Water is seen from both sides; opaque faces are culled from behind.
+                    cull_mode: (!water && kind != Kind::Line).then_some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: (!line).then(|| wgpu::DepthStencilState {
+                    format: DEPTH,
+                    depth_write_enabled: Some(!water),
+                    depth_compare: Some(if no_depth {
+                        wgpu::CompareFunction::Always
+                    } else {
+                        wgpu::CompareFunction::LessEqual
+                    }),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: if line { 1 } else { samples },
+                    ..Default::default()
+                },
+                multiview_mask: None,
+                cache: None,
+            });
+            pipelines.insert((kind, water, no_depth), pipeline);
         }
         // The composite: a full-screen triangle into the canvas.
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -621,6 +678,15 @@ impl Renderer {
         });
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
+        // The fluid looks, generated from the registry (water.rs `pack_fluids`): fixed per build.
+        let fluid_data = water::pack_fluids(&dwell_blocks::FLUIDS);
+        let fluid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("fluids"),
+            size: (fluid_data.len() * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&fluid_buffer, 0, floats(&fluid_data));
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -645,6 +711,10 @@ impl Renderer {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: fluid_buffer.as_entire_binding(),
                     },
                 ],
             })
@@ -695,6 +765,8 @@ impl Renderer {
             flip: 0.0,
             fog: DEFAULT_FOG,
             eye_fluid: None,
+            water_quality: WaterQuality::default(),
+            start_ms: crate::telemetry::now_ms(),
             exposure: DEFAULT_EXPOSURE,
             sky: sky_rest(),
             stats: RenderStats::default(),
@@ -801,9 +873,17 @@ impl Renderer {
         self.chunks.remove(&coord);
         let Some(m) = meshes else { return };
         let t0 = crate::telemetry::now_ms();
+        let t = &m.transparent;
         let (opaque, water) = (
             GpuMesh::textured(&self.arena, &m.opaque),
-            GpuMesh::textured(&self.arena, &m.transparent),
+            GpuMesh::fluid(
+                &self.arena,
+                &t.positions,
+                &t.normals,
+                &t.colors,
+                &t.fluids,
+                &t.indices,
+            ),
         );
         crate::telemetry::add("upload.chunk", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.chunks", 1.0);
@@ -840,7 +920,15 @@ impl Renderer {
         parts.extend(m.skirts.iter());
         let t0 = crate::telemetry::now_ms();
         let opaque = GpuMesh::flat(&self.arena, &parts);
-        let water = GpuMesh::flat(&self.arena, &[&m.water]);
+        let w = &m.water;
+        let water = GpuMesh::fluid(
+            &self.arena,
+            &w.positions,
+            &w.normals,
+            &w.colors,
+            &w.fluids,
+            &w.indices,
+        );
         crate::telemetry::add("upload.section", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.sections", 1.0);
         crate::telemetry::add(
@@ -876,9 +964,13 @@ impl Renderer {
         self.fog = fog;
     }
     /// The fluid whose drawn surface the eye is under (`dwell_world::fluid::eye_fluid`), or none:
-    /// written to the frame uniform for underwater effects (no shader reads it yet).
+    /// written to the frame uniform, where the composite fogs by it (the W4 stub).
     pub fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         self.eye_fluid = eye_fluid;
+    }
+    /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
+    pub fn set_water_quality(&mut self, quality: WaterQuality) {
+        self.water_quality = quality;
     }
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
@@ -899,6 +991,7 @@ impl Renderer {
                         positions: g.positions,
                         normals: g.normals,
                         colors: g.colors,
+                        fluids: Vec::new(),
                         indices: g.indices,
                     };
                     GpuMesh::flat(&self.arena, &[&m]).expect("a capsule has faces")
@@ -981,10 +1074,12 @@ impl Renderer {
             self.exposure as f32,
             self.fog.density as f32,
         ]);
+        // The water's scroll time, seconds since the renderer started.
+        let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
         put(&[
             fog_sigma(self.fog.distance_m) as f32,
             self.fog.height_m as f32,
-            0.0,
+            seconds as f32,
             0.0,
         ]);
         let f3 = |v: [f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32];
@@ -1009,7 +1104,7 @@ impl Renderer {
         put(&f3(basis.forward()));
         let tan_y = (fov.to_radians() / 2.0).tan();
         put(&[(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0]);
-        put(&water_uniform(self.eye_fluid));
+        put(&water_uniform(self.eye_fluid, self.water_quality));
         u
     }
 
@@ -1064,7 +1159,6 @@ impl Renderer {
     ) -> [Vec<DrawItem>; 3] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
-        let water = [1.0, 1.0, 1.0, water_opacity()];
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
         let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
         let view = PassView::new(self.eye, forward, aspect);
@@ -1101,13 +1195,13 @@ impl Renderer {
             }
             if c.water.is_some() {
                 out.push(DrawItem {
-                    kind: Kind::Terrain,
+                    kind: Kind::Fluid,
                     water: true,
                     no_depth: false,
                     offset,
                     clip: None,
-                    tint: water,
-                    rotation: NO_ROTATION,
+                    tint: plain,
+                    rotation: fluid_rotation(c.origin),
                     page: 0,
                     passes,
                     key: 0,
@@ -1150,13 +1244,13 @@ impl Renderer {
             }
             if s.water.is_some() {
                 out.push(DrawItem {
-                    kind: Kind::Flat,
+                    kind: Kind::Fluid,
                     water: true,
                     no_depth: false,
                     offset,
                     clip: None,
-                    tint: level_tint(s, water_opacity()),
-                    rotation: NO_ROTATION,
+                    tint: level_tint(s, 1.0),
+                    rotation: fluid_rotation(s.origin),
                     page: 0,
                     passes,
                     key: 0,
@@ -1201,7 +1295,7 @@ impl Renderer {
                 offset: [r[0], r[1], r[2], 1.0],
                 clip: None,
                 tint: [1.0, 1.0, 1.0, 1.0],
-                rotation: [yaw.cos(), yaw.sin()],
+                rotation: [yaw.cos(), yaw.sin(), 0.0, 0.0],
                 page: 0,
                 passes,
                 key: 0,
@@ -1330,7 +1424,7 @@ impl Renderer {
                 data[at + 8..at + 12].copy_from_slice(&[hi[0], hi[1], hi[2], 0.0]);
             }
             data[at + 12..at + 16].copy_from_slice(&d.tint);
-            data[at + 16..at + 18].copy_from_slice(&d.rotation);
+            data[at + 16..at + 20].copy_from_slice(&d.rotation);
         }
         if !data.is_empty() {
             self.queue.write_buffer(&self.draw_buffer, 0, floats(&data));
@@ -1601,17 +1695,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_water_uniform_carries_the_eye_fluid_and_the_water_alpha_is_the_registrys() {
-        assert_eq!(water_uniform(None), [0.0; 4]);
+    fn the_water_uniform_carries_the_eye_fluid_and_the_water_quality() {
+        assert_eq!(water_uniform(None, WaterQuality::Low), [0.0; 4]);
         let e = EyeFluid {
             fluid: 0,
             surface_y: -12.125,
         };
-        assert_eq!(water_uniform(Some(e)), [1.0, 0.0, -12.125, 0.0]);
         assert_eq!(
-            water_opacity(),
-            dwell_blocks::info(dwell_blocks::require("dwell:water")).opacity
+            water_uniform(Some(e), WaterQuality::High),
+            [1.0, 0.0, -12.125, 2.0]
         );
+        assert_eq!(water_uniform(None, WaterQuality::Medium)[3], 1.0);
     }
 
     #[test]
@@ -1844,6 +1938,7 @@ mod tests {
             positions: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
             normals: vec![0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
             colors: vec![1.0; 9],
+            fluids: Vec::new(),
             indices: vec![0, 1, 2],
         };
         let section = SectionMeshes {
@@ -1936,14 +2031,18 @@ mod tests {
         for x in -1..=32 {
             for z in -1..=32 {
                 padded[dwell_mesh::padded_index(x, 0, z)] = dwell_blocks::require("dwell:grass");
+                padded[dwell_mesh::padded_index(x, 1, z)] = dwell_blocks::require("dwell:water");
             }
         }
         let meshes = dwell_mesh::mesh_chunk(&padded, false).expect("meshed");
-        // A water surface (the see-through pipelines), the outline and debug lines (the overlay).
+        assert!(!meshes.transparent.indices.is_empty(), "a water surface");
+        // Chunk water and a section's water (the fluid pipeline: its fluid ids missing, so drawn as
+        // no fluid's), the outline and debug lines (the overlay).
         let quad = FlatMesh {
             positions: vec![0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0],
             normals: vec![0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
             colors: vec![1.0; 9],
+            fluids: Vec::new(),
             indices: vec![0, 1, 2],
         };
         let section = SectionMeshes {
@@ -1962,6 +2061,12 @@ mod tests {
         r.set_camera([16.0, 4.0, 16.0], 0.0, -30.0, 1.0, 0.0);
         for frame in 0..4 {
             r.resize(64, 64, 1.0 + f64::from(frame));
+            // Under water on odd frames (the composite's underwater branch), every quality.
+            r.set_eye_fluid((frame % 2 == 1).then_some(EyeFluid {
+                fluid: 0,
+                surface_y: 5.0,
+            }));
+            r.set_water_quality(water::WaterQuality::from_level(frame as u32));
             for x in 0..=frame {
                 r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, Some(&meshes));
             }

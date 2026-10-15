@@ -829,6 +829,15 @@ impl Client {
             .borrow_mut()
             .set_exposure(exposure);
     }
+    /// The water quality (0 Low, 1 Medium, 2 High; WATER_RENDERING.md §4).
+    #[wasm_bindgen(js_name = setWaterQuality)]
+    pub fn set_water_quality(&self, level: u32) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_water_quality(crate::render::water::WaterQuality::from_level(level));
+    }
     #[wasm_bindgen(js_name = setSkyRotation)]
     pub fn set_sky_rotation(&self, degrees: f64) {
         self.inner.borrow_mut().sky_setting_deg = degrees;

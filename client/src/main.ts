@@ -45,6 +45,7 @@ import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import { waterQualityLevel } from './ui/waterSettings';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -397,6 +398,7 @@ async function start(): Promise<App | null> {
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
+    client.setWaterQuality(waterQualityLevel(s.water.quality));
     client.setSkyRotation(s.skyRotation);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });

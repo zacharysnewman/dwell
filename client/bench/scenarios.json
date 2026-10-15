@@ -79,6 +79,51 @@
       ]
     },
     {
+      "name": "water-views",
+      "notes": "The sea seen four ways (Phase 26 W1b, the water shader): flies from the seed-7 spawn to the coast about 20 km east-south-east (yaw 112.5) and down into the sea, then places the camera around the player, where the chunks are streamed: across the sea at a low angle, down into the shallows toward the coast, from 1 km up, and with the eye just under the surface (the underwater stub). Records the frame over the sea.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "fly", "on": true },
+        { "do": "flySpeed", "level": 12 },
+        { "do": "hold", "code": "Space", "s": 1.0 },
+        { "do": "look", "yaw": 112.5, "pitch": 0 },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 28.3 },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "wait", "s": 1 },
+        { "do": "flySpeed", "level": 6 },
+        { "do": "hold", "code": "KeyC", "s": 10 },
+        { "do": "settle", "maxS": 120 },
+        { "do": "camera", "position": [0, 2, 0], "yaw": 112.5, "pitch": -3, "aroundPlayer": true },
+        { "do": "wait", "s": 2 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "sea" },
+        { "do": "shot", "name": "sea-low" },
+        { "do": "camera", "position": [0, 6, 0], "yaw": 292.5, "pitch": -50, "aroundPlayer": true },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "shallow-down" },
+        {
+          "do": "camera",
+          "position": [0, -0.6, 0],
+          "yaw": 112.5,
+          "pitch": 8,
+          "aroundPlayer": true
+        },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "underwater" },
+        {
+          "do": "camera",
+          "position": [0, 1000, 0],
+          "yaw": 292.5,
+          "pitch": -35,
+          "aroundPlayer": true
+        },
+        { "do": "settle", "maxS": 120 },
+        { "do": "shot", "name": "high-1000" }
+      ]
+    },
+    {
       "name": "jump-in-place",
       "notes": "Jumps on flat ground at the spawn: the controller trace shows the jump's peak.",
       "steps": [
