@@ -101,10 +101,11 @@ struct GpuMesh {
 }
 
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts).
-const STRIDES: [u64; 3] = [
-    4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
-    4 * (3 + 3 + 3),         // Flat: position, normal, colour
-    4 * (3 + 3),             // Line: position, colour
+const STRIDES: [u64; 4] = [
+    4 * (3 + 3 + 3 + 2 + 4),     // Terrain: position, normal, colour, uv, tile
+    4 * (3 + 3 + 3),             // Flat: position, normal, colour
+    4 * (3 + 3),                 // Line: position, colour
+    4 * (3 + 3 + 3 + 2 + 4 + 4), // Cutout: the terrain's, and plant (sway, wind speed, fade)
 ];
 
 fn floats(v: &[f32]) -> &[u8] {
@@ -181,19 +182,32 @@ impl GpuMesh {
     }
 
     fn textured(arena: &ArenaRef, m: &MeshArrays) -> Option<Self> {
+        Self::textured_as(arena, m, Kind::Terrain)
+    }
+
+    /// A chunk's cutout mesh: the terrain format and its `plants` stream.
+    fn cutout(arena: &ArenaRef, m: &MeshArrays) -> Option<Self> {
+        Self::textured_as(arena, m, Kind::Cutout)
+    }
+
+    fn textured_as(arena: &ArenaRef, m: &MeshArrays, kind: Kind) -> Option<Self> {
         if m.indices.is_empty() {
             return None;
         }
-        let vertices = interleave(&[
+        let mut streams: Vec<(&[f32], usize)> = vec![
             (&m.positions, 3),
             (&m.normals, 3),
             (&m.colors, 3),
             (&m.uvs, 2),
             (&m.tiles, 4),
-        ]);
+        ];
+        if kind == Kind::Cutout {
+            streams.push((&m.plants, 4));
+        }
+        let vertices = interleave(&streams);
         Some(Self::upload(
             arena,
-            Kind::Terrain,
+            kind,
             &vertices,
             &m.indices,
             std::iter::once(0..m.indices.len() as u32).collect(),
@@ -258,6 +272,15 @@ struct Chunk {
     origin: V3,
     opaque: Option<GpuMesh>,
     water: Option<GpuMesh>,
+    cutout: Option<GpuMesh>,
+}
+
+/// Which of a chunk's meshes a draw is (one per render mode).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Part {
+    Opaque,
+    Water,
+    Cutout,
 }
 
 struct Section {
@@ -273,6 +296,8 @@ enum Kind {
     Terrain,
     Flat,
     Line,
+    /// Cutout terrain (ladders, plants): alpha-tested, depth-writing, both sides, wind sway.
+    Cutout,
 }
 
 /// One draw, collected before the passes record.
@@ -322,7 +347,7 @@ const NO_ROTATION: [f32; 2] = [1.0, 0.0];
 
 #[derive(Clone)]
 enum DrawMesh {
-    Chunk(ChunkCoord, bool),
+    Chunk(ChunkCoord, Part),
     Section(i64, bool, u8),
     Player(PlayerShape),
     Outline,
@@ -361,6 +386,8 @@ pub struct Renderer {
     debug: Option<GpuMesh>,
     /// The GPU pages every mesh lives in (arena.rs).
     arena: ArenaRef,
+    /// The wind's scale (1 by default; 0 stops plants swaying, for low effects).
+    wind: f64,
     eye: V3,
     yaw: f64,
     pitch: f64,
@@ -502,15 +529,21 @@ impl Renderer {
             (offset, attributes)
         };
         let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
+        let cutout_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 4)]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
         let mut pipelines = HashMap::default();
-        for kind in [Kind::Terrain, Kind::Flat, Kind::Line] {
+        for kind in [Kind::Terrain, Kind::Flat, Kind::Line, Kind::Cutout] {
             for water in [false, true] {
                 for no_depth in [false, true] {
                     let line = kind == Kind::Line;
+                    let cutout = kind == Kind::Cutout;
+                    if cutout && (water || no_depth) {
+                        continue;
+                    }
                     let (vs, fs, a) = match kind {
                         Kind::Terrain => ("terrain_vs", "terrain_fs", &terrain_attrs),
+                        Kind::Cutout => ("cutout_vs", "cutout_fs", &cutout_attrs),
                         Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
                         Kind::Line if no_depth => ("line_vs", "line_top_fs", &line_attrs),
                         Kind::Line => ("line_vs", "line_fs", &line_attrs),
@@ -566,8 +599,10 @@ impl Renderer {
                                 wgpu::PrimitiveTopology::TriangleList
                             },
                             front_face: wgpu::FrontFace::Ccw,
-                            // Water is seen from both sides; opaque faces are culled from behind.
-                            cull_mode: (!water && kind != Kind::Line).then_some(wgpu::Face::Back),
+                            // Water and cutout faces are seen from both sides; opaque faces are
+                            // culled from behind.
+                            cull_mode: (!water && !cutout && kind != Kind::Line)
+                                .then_some(wgpu::Face::Back),
                             ..Default::default()
                         },
                         depth_stencil: (!line).then(|| wgpu::DepthStencilState {
@@ -695,6 +730,7 @@ impl Renderer {
             outline_mesh,
             debug: None,
             arena,
+            wind: 1.0,
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
             pitch: -20.0,
@@ -807,17 +843,19 @@ impl Renderer {
         self.chunks.remove(&coord);
         let Some(m) = meshes else { return };
         let t0 = crate::telemetry::now_ms();
-        let (opaque, water) = (
+        let (opaque, water, cutout) = (
             GpuMesh::textured(&self.arena, &m.opaque),
             GpuMesh::textured(&self.arena, &m.transparent),
+            GpuMesh::cutout(&self.arena, &m.cutout),
         );
         crate::telemetry::add("upload.chunk", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.chunks", 1.0);
+        let bytes = |m: &Option<GpuMesh>| m.as_ref().map_or(0, |m| m.bytes);
         crate::telemetry::add(
             "upload.bytes",
-            (opaque.as_ref().map_or(0, |m| m.bytes) + water.as_ref().map_or(0, |m| m.bytes)) as f64,
+            (bytes(&opaque) + bytes(&water) + bytes(&cutout)) as f64,
         );
-        if opaque.is_none() && water.is_none() {
+        if opaque.is_none() && water.is_none() && cutout.is_none() {
             return;
         }
         let origin = [coord.x, coord.y, coord.z].map(|c| f64::from(c * CHUNK_SIZE));
@@ -827,6 +865,7 @@ impl Renderer {
                 origin,
                 opaque,
                 water,
+                cutout,
             },
         );
     }
@@ -877,6 +916,14 @@ impl Renderer {
     }
     pub fn set_sky_frame(&mut self, frame: SkyFrame) {
         self.sky = frame;
+    }
+    /// The wind's scale on plants (block data `wind`): 1 by default, 0 for none (low effects).
+    pub fn set_wind(&mut self, scale: f64) {
+        self.wind = if scale.is_finite() {
+            scale.clamp(0.0, 4.0)
+        } else {
+            1.0
+        };
     }
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
@@ -942,7 +989,7 @@ impl Renderer {
         let mesh_bytes = self
             .chunks
             .values()
-            .flat_map(|c| [&c.opaque, &c.water])
+            .flat_map(|c| [&c.opaque, &c.water, &c.cutout])
             .chain(self.sections.values().flat_map(|s| [&s.opaque, &s.water]))
             .flatten()
             .map(|m| m.bytes)
@@ -982,11 +1029,13 @@ impl Renderer {
             self.exposure as f32,
             self.fog.density as f32,
         ]);
+        // The wind's clock: seconds, wrapped long before f32 loses the fraction.
+        let time = (crate::telemetry::now_ms() / 1000.0).rem_euclid(WIND_CLOCK_S);
         put(&[
             fog_sigma(self.fog.distance_m) as f32,
             self.fog.height_m as f32,
-            0.0,
-            0.0,
+            time as f32,
+            self.wind as f32,
         ]);
         let f3 = |v: [f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32];
         put(&f3(self.sky.day_pole));
@@ -1009,7 +1058,12 @@ impl Renderer {
         put(&f3(basis.up));
         put(&f3(basis.forward()));
         let tan_y = (fov.to_radians() / 2.0).tan();
-        put(&[(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0]);
+        put(&[
+            (tan_y * aspect) as f32,
+            tan_y as f32,
+            self.eye[0].rem_euclid(WIND_PERIOD) as f32,
+            self.eye[2].rem_euclid(WIND_PERIOD) as f32,
+        ]);
         u
     }
 
@@ -1017,12 +1071,12 @@ impl Renderer {
     /// A draw's mesh and the index ranges it draws (a section's surface and its shown skirts).
     fn mesh_of(&self, m: &DrawMesh) -> (&GpuMesh, Vec<std::ops::Range<u32>>) {
         match m {
-            DrawMesh::Chunk(c, w) => {
+            DrawMesh::Chunk(c, part) => {
                 let chunk = &self.chunks[c];
-                let m = if *w {
-                    chunk.water.as_ref()
-                } else {
-                    chunk.opaque.as_ref()
+                let m = match part {
+                    Part::Opaque => chunk.opaque.as_ref(),
+                    Part::Water => chunk.water.as_ref(),
+                    Part::Cutout => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
                 (m, vec![m.parts[0].clone()])
@@ -1096,7 +1150,22 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Chunk(coord, false),
+                    mesh: DrawMesh::Chunk(coord, Part::Opaque),
+                });
+            }
+            if c.cutout.is_some() {
+                out.push(DrawItem {
+                    kind: Kind::Cutout,
+                    water: false,
+                    no_depth: false,
+                    offset,
+                    clip: None,
+                    tint: plain,
+                    rotation: NO_ROTATION,
+                    page: 0,
+                    passes,
+                    key: 0,
+                    mesh: DrawMesh::Chunk(coord, Part::Cutout),
                 });
             }
             if c.water.is_some() {
@@ -1111,7 +1180,7 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Chunk(coord, true),
+                    mesh: DrawMesh::Chunk(coord, Part::Water),
                 });
             }
         }
@@ -1509,6 +1578,12 @@ impl PassView {
     }
 }
 
+/// The wind's clock wraps after this many seconds (an hour: f32 keeps a millisecond's precision).
+const WIND_CLOCK_S: f64 = 3600.0;
+/// The gust field repeats every this many metres (`WIND_PERIOD` in the shader): the eye's position
+/// is passed modulo it.
+const WIND_PERIOD: f64 = 1024.0;
+
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
 const FRAME_FLOATS: usize = 16 + 15 * 4;
 
@@ -1523,7 +1598,73 @@ fn atlas_levels() -> Vec<(Vec<u8>, usize)> {
     {
         levels.push((downsample(level, s), s / 2));
     }
+    preserve_coverage(&mut levels);
     levels
+}
+
+/// The alpha a cutout texel must reach to be drawn (the shader's edge, 0.5).
+const CUTOUT_EDGE: f64 = 127.5;
+
+/// The share of a tile's texels at mip level (`texels`, `size`) that a cutout draw covers (alpha
+/// at least the edge) with the alpha scaled by `scale`.
+fn tile_coverage(texels: &[u8], size: usize, tile: usize, scale: f64) -> f64 {
+    let k = dwell_mesh::ATLAS_SIZE / size;
+    let cell = dwell_mesh::CELL;
+    let (x0, y0) = (
+        ((tile % dwell_mesh::ATLAS_CELLS) * cell + dwell_mesh::GUTTER) / k,
+        ((tile / dwell_mesh::ATLAS_CELLS) * cell + dwell_mesh::GUTTER) / k,
+    );
+    let n = (dwell_mesh::TILE / k).max(1);
+    let mut covered = 0usize;
+    for y in y0..y0 + n {
+        for x in x0..x0 + n {
+            if f64::from(texels[(y * size + x) * 4 + 3]) * scale >= CUTOUT_EDGE {
+                covered += 1;
+            }
+        }
+    }
+    covered as f64 / (n * n) as f64
+}
+
+/// Averaging alpha down the mips thins cutout texels out (a blade a texel wide averages to half
+/// alpha and fails the test), so distant grass and ladders would vanish. Each level of a tile with
+/// transparent texels has its alpha scaled so the share it covers matches the full-size tile's
+/// (the coverage-preserving mipmaps of Castaño, 2010); opaque tiles stay untouched.
+fn preserve_coverage(levels: &mut [(Vec<u8>, usize)]) {
+    for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+        if !dwell_mesh::tile_has_alpha(name) {
+            continue;
+        }
+        let want = tile_coverage(&levels[0].0, levels[0].1, tile, 1.0);
+        for (texels, size) in levels.iter_mut().skip(1) {
+            // Coverage grows with the scale: the smallest scale that reaches the full-size share.
+            let (mut lo, mut hi) = (0.0f64, 16.0f64);
+            for _ in 0..24 {
+                let mid = 0.5 * (lo + hi);
+                if tile_coverage(texels, *size, tile, mid) >= want {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            // Coverage moves in steps: take whichever side of the step lands nearer.
+            let below = tile_coverage(texels, *size, tile, lo);
+            let above = tile_coverage(texels, *size, tile, hi);
+            let scale = if want - below < above - want { lo } else { hi };
+            let k = dwell_mesh::ATLAS_SIZE / *size;
+            let cell = dwell_mesh::CELL / k;
+            let (cx, cy) = (
+                (tile % dwell_mesh::ATLAS_CELLS) * cell,
+                (tile / dwell_mesh::ATLAS_CELLS) * cell,
+            );
+            for y in cy..cy + cell {
+                for x in cx..cx + cell {
+                    let a = &mut texels[(y * *size + x) * 4 + 3];
+                    *a = (f64::from(*a) * scale).round().min(255.0) as u8;
+                }
+            }
+        }
+    }
 }
 
 /// Halves an RGBA8 sRGB image, averaging in linear light.
@@ -1683,6 +1824,41 @@ mod tests {
         assert_eq!(out[3], 255);
     }
 
+    #[test]
+    fn cutout_tiles_keep_their_coverage_down_the_mips() {
+        // A cutout tile's share of drawn texels stays the full-size tile's at every level (within a
+        // texel's worth at the smallest), so ladders and grass don't thin out with distance.
+        let levels = atlas_levels();
+        let mut checked = 0;
+        for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+            if !dwell_mesh::tile_has_alpha(name) {
+                continue;
+            }
+            checked += 1;
+            let want = tile_coverage(&levels[0].0, levels[0].1, tile, 1.0);
+            assert!(want > 0.05 && want < 0.95, "{name}: {want}");
+            for (level, (texels, size)) in levels.iter().enumerate() {
+                let n = (dwell_mesh::TILE * size / dwell_mesh::ATLAS_SIZE).max(1);
+                let got = tile_coverage(texels, *size, tile, 1.0);
+                // Within the step a regular pattern (rungs) moves in; at the last levels, a tile
+                // of 2 × 2 texels is all or nothing, and must not be nothing.
+                if n >= 4 {
+                    assert!(
+                        (got - want).abs() <= 0.15,
+                        "{name} at mip {level}: {got} vs {want}"
+                    );
+                } else {
+                    assert!(got > 0.0, "{name} vanishes at mip {level}");
+                }
+            }
+            // Plain averaging would have lost it: the unscaled level 2 covers much less.
+            let plain = downsample(&downsample(&levels[0].0, levels[0].1), levels[0].1 / 2);
+            let lost = tile_coverage(&plain, levels[0].1 / 4, tile, 1.0);
+            assert!(lost < want, "{name}: plain mips keep {lost} of {want}");
+        }
+        assert!(checked >= 1, "the ladder tile has transparent texels");
+    }
+
     /// Bilinear filtering of mip level (`texels`, `size`) at atlas coordinates (u, v), as the GPU
     /// samples it (texel centres at half-integers, clamped at the edge), in 0–255 per channel.
     fn bilinear(texels: &[u8], size: usize, u: f64, v: f64) -> [f64; 4] {
@@ -1727,7 +1903,9 @@ mod tests {
                         );
                     }
                     let got = bilinear(texels, *size, u, v);
-                    assert_eq!(got[3], 255.0, "{name} at mip {level}, ({u}, {v})");
+                    if !dwell_mesh::tile_has_alpha(name) {
+                        assert_eq!(got[3], 255.0, "{name} at mip {level}, ({u}, {v})");
+                    }
                 }
             }
         }

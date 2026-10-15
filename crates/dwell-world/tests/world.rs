@@ -234,6 +234,28 @@ fn validation_of_reach_sight_materials_and_occupancy() {
 }
 
 #[test]
+fn cutout_blocks_without_a_solid_are_air_at_lod() {
+    // Ladders (and plants) are thin and see-through: the LOD doesn't draw them as cubes.
+    let ladder = s("dwell:ladder[facing=north,flooded=false]");
+    let stone = s("dwell:stone");
+    assert!(!lod::lod_drawn(ladder));
+    assert!(lod::lod_drawn(stone) && lod::lod_drawn(s("dwell:water")));
+    // Four ladders and four air: air (before, four filled cells made a ladder-coloured cube).
+    let half: [StateId; 8] = std::array::from_fn(|i| if i & 2 == 0 { ladder } else { 0 });
+    assert_eq!(lod::downsample_block(&half), 0);
+    // Ladders beside stone neither fill the cell nor give it their material.
+    let mixed: [StateId; 8] = std::array::from_fn(|i| match i {
+        0..=2 => stone,
+        3 => ladder,
+        _ => 0,
+    });
+    assert_eq!(lod::downsample_block(&mixed), 0);
+    // A ladder on top of stone: the stone is what shows.
+    let on_top: [StateId; 8] = std::array::from_fn(|i| if i & 2 == 0 { stone } else { ladder });
+    assert_eq!(lod::downsample_block(&on_top), stone);
+}
+
+#[test]
 fn the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on() {
     let floor = s("dwell:sandbox_floor");
     assert!(

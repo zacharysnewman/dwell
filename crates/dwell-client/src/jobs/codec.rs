@@ -63,6 +63,7 @@ impl W {
         self.f32s(&m.colors);
         self.f32s(&m.uvs);
         self.f32s(&m.tiles);
+        self.f32s(&m.plants);
         self.u32s(&m.indices);
     }
     fn flat(&mut self, m: &FlatMesh) {
@@ -157,6 +158,7 @@ impl R<'_> {
             colors: self.f32s()?,
             uvs: self.f32s()?,
             tiles: self.f32s()?,
+            plants: self.f32s()?,
             indices: self.u32s()?,
         })
     }
@@ -310,6 +312,7 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             w.u8(4);
             w.arrays(&m.opaque);
             w.arrays(&m.transparent);
+            w.arrays(&m.cutout);
         }
         Output::SectionMesh(m) => {
             w.u8(5);
@@ -357,6 +360,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
         4 => Output::ChunkMesh(Box::new(ChunkMeshes {
             opaque: r.arrays()?,
             transparent: r.arrays()?,
+            cutout: r.arrays()?,
         })),
         5 => {
             let (opaque, water) = (r.flat()?, r.flat()?);

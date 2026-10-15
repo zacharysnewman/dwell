@@ -38,6 +38,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0030](0030-fluid-looks-and-water-rendering.md) | Fluid looks as registry data, and a water shader with refraction, underwater and reflections in quality tiers | Accepted |
 | [0031](0031-data-driven-structures.md) | Data-driven structures, built in an in-game sandbox world | Accepted |
 | [0033](0033-tree-growth.md) | Tree growth: hand-built trees revealed along their skeleton, as a layer composed at load | Accepted |
+| [0034](0034-render-modes-and-cross-geometry.md) | Render modes as block data (opaque, cutout, translucent), a cross geometry, and placement rules as data | Proposed |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

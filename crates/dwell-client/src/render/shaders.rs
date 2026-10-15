@@ -18,7 +18,7 @@ struct Frame {
     view_proj: mat4x4f,
     // x eye height (world y), y face (±1), z exposure, w fog density
     eye: vec4f,
-    // x fog sigma, y fog scale height, z/w unused
+    // x fog sigma, y fog scale height, z time (s, for the wind), w the wind's scale (0: off)
     fog: vec4f,
     day_pole: vec4f,
     sun: vec4f,
@@ -30,7 +30,8 @@ struct Frame {
     day_ground: vec4f,
     night_sky: vec4f,
     night_ground: vec4f,
-    // The sky's view rays: the camera's axes and the half-angle tangents (x, y).
+    // The sky's view rays: the camera's axes and the half-angle tangents (x, y); z, w the eye's
+    // world x and z modulo WIND_PERIOD (the gust field's place).
     right: vec4f,
     up: vec4f,
     forward: vec4f,
@@ -233,6 +234,124 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     return scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha);
 }
 
+// Cutout geometry (docs/TRANSPARENT_BLOCKS.md): the terrain vertex and a `plant` vec4 — how far
+// wind sways the vertex (m; 0 at a plant's base and on ladders), the wind's speed, and the distance
+// fade's start and end (m; end 0: no fade).
+struct CutoutIn {
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) color: vec3f,
+    @location(3) uv: vec2f,
+    @location(4) tile: vec4f,
+    @location(5) plant: vec4f,
+};
+struct CutoutOut {
+    @builtin(position) clip: vec4f,
+    @location(0) rel: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) color: vec3f,
+    @location(3) uv: vec2f,
+    @location(4) tile: vec4f,
+    @location(5) @interpolate(flat) draw: u32,
+    @location(6) fade: vec2f,
+};
+
+// The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
+// position modulo that period (the eye's, frame.tan.zw, plus the offset), so it is seamless and
+// stays put as the eye moves. In [0, 1].
+const WIND_PERIOD: f32 = 1024.0;
+fn gust(p: vec2f, t: f32) -> f32 {
+    let k = 2.0 * PI / WIND_PERIOD;
+    let a = sin(dot(p, vec2f(27.0, 11.0) * k) - 0.9 * t);
+    let b = sin(dot(p, vec2f(-13.0, 31.0) * k) - 0.6 * t + 1.7);
+    let c = sin(dot(p, vec2f(61.0, 47.0) * k) - 1.7 * t + 4.1);
+    return clamp(0.5 + 0.3 * a + 0.15 * b + 0.1 * c, 0.0, 1.0);
+}
+
+// The wind sways a vertex by its `plant.x` (m): leaning with the gusts, a faster flutter on top.
+// frame.fog.z is the time (s), frame.fog.w the wind's scale (0 when effects are off).
+fn sway(rel: vec3f, plant: vec4f) -> vec3f {
+    let amount = plant.x * frame.fog.w;
+    if (amount == 0.0) {
+        return rel;
+    }
+    let t = frame.fog.z * plant.y;
+    let p = frame.tan.zw + rel.xz;
+    let g = gust(p, t);
+    let flutter = sin(2.7 * t + dot(p, vec2f(0.73, 0.41))) * 0.25;
+    let dir = normalize(vec2f(1.0, 0.35));
+    let lean = amount * (0.25 + g + flutter * (0.4 + g));
+    // Swaying shortens the plant a little, as a bent blade does.
+    return rel + vec3f(dir.x * lean, -0.4 * lean * lean / max(plant.x, 1e-3), dir.y * lean);
+}
+
+@vertex
+fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
+    let draw = draws[k];
+    var o: CutoutOut;
+    o.draw = k;
+    o.rel = sway(draw.offset.xyz + v.position * draw.offset.w, v.plant);
+    o.clip = frame.view_proj * vec4f(o.rel, 1.0);
+    o.normal = v.normal;
+    o.color = v.color;
+    o.uv = v.uv;
+    o.tile = v.tile;
+    o.fade = v.plant.zw;
+    return o;
+}
+
+// What a cutout fragment writes: the scene's outputs and the samples it covers.
+struct CutoutSceneOut {
+    @location(0) color: vec4f,
+    @location(1) depth: f32,
+    @builtin(sample_mask) mask: u32,
+};
+
+// A per-pixel value in [0, 1) that varies from pixel to pixel (interleaved gradient noise).
+fn pixel_noise(p: vec2f) -> f32 {
+    return fract(52.9829189 * fract(dot(floor(p), vec2f(0.06711056, 0.00583715))));
+}
+
+// Alpha-tested texels (the atlas's alpha), with alpha-to-coverage done here: the texel's alpha is
+// sharpened to its edge over one pixel (so a blade's edge is antialiased whatever the mip), times
+// the distance fade, and covers that share of the pixel's samples, the samples picked per pixel so
+// overlapping blades add up. Covered samples write alpha 1 (the frame is premultiplied by
+// coverage). Without multisampling it is a plain test, dithered while fading. Drawn from both
+// sides: the back of a face takes the normal mirrored in the horizontal only, so a plant's
+// up-leaning normals stay lit from either side and a ladder's plate is lit as its own back.
+@fragment
+fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut {
+    let draw = draws[i.draw];
+    let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
+    let edge = max(fwidth(texel.a), 1e-3);
+    var cover = clamp((texel.a - 0.5) / edge + 0.5, 0.0, 1.0);
+    if (i.fade.y > 0.0) {
+        cover *= 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+    }
+    let noise = pixel_noise(i.clip.xy);
+    var mask = 0xffffffffu;
+    if (SCENE_SAMPLES > 1) {
+        let n = u32(floor(cover * f32(SCENE_SAMPLES) + noise));
+        let full = (1u << u32(SCENE_SAMPLES)) - 1u;
+        let first = u32(noise * f32(SCENE_SAMPLES)) % u32(SCENE_SAMPLES);
+        let run = (1u << n) - 1u;
+        mask = ((run << first) | (run >> (u32(SCENE_SAMPLES) - first))) & full;
+        if (n == 0u) {
+            discard;
+        }
+    } else if (cover <= noise) {
+        discard;
+    }
+    let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
+    let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0);
+    var o: CutoutSceneOut;
+    o.color = lit.color;
+    o.depth = lit.depth;
+    o.mask = mask;
+    return o;
+}
+
 struct FlatIn {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
@@ -417,6 +536,8 @@ mod tests {
             for entry in [
                 "terrain_vs",
                 "terrain_fs",
+                "cutout_vs",
+                "cutout_fs",
                 "flat_vs",
                 "flat_fs",
                 "line_vs",
@@ -443,7 +564,7 @@ mod tests {
             let rest = &src[at..];
             rest[..rest.find("\n}\n").expect("end")].to_string()
         };
-        for entry in ["terrain_fs", "flat_fs", "scene_out"] {
+        for entry in ["terrain_fs", "cutout_fs", "flat_fs", "scene_out"] {
             let b = body(entry);
             for f in ["aces(", "srgb_encode(", "display(", "fog_amount(", "sky("] {
                 assert!(!b.contains(f), "{entry} calls {f}");

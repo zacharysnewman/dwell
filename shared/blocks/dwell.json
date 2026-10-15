@@ -27,10 +27,12 @@
       "palette": [
         { "facing": "north" }, { "facing": "east" }, { "facing": "south" }, { "facing": "west" }
       ],
-      "color": "#a0703a", "textures": "ladder"
+      "$comment": "Drawn cutout: the ladder tile's gaps between rails and rungs are transparent.",
+      "render": "cutout", "color": "#a0703a", "textures": "ladder"
     },
     {
       "name": "water", "density": 1000, "shape": "empty", "look": "water", "liquid": true,
+      "render": "translucent",
       "color": "#3fb2d6", "opacity": 0.55, "textures": "water"
     },
     {
