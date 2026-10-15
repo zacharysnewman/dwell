@@ -27,9 +27,12 @@ export async function startMarchTest(canvas: HTMLCanvasElement, search: string):
     return params.has(name) && Number.isFinite(v) ? v : fallback;
   };
   const size = () => {
+    // Only on a change: assigning the size, even the same one, reallocates the canvas.
     const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round(canvas.clientWidth * ratio));
-    canvas.height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+    const w = Math.max(1, Math.round(canvas.clientWidth * ratio));
+    const h = Math.max(1, Math.round(canvas.clientHeight * ratio));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
   };
   size();
   const test = await MarchTest.create(
