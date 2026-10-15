@@ -8,6 +8,14 @@
 > sorting by name; the per-state `placeable` set comes from an optional `palette` list in the data
 > (partial property assignments); paletted in-memory chunks were measured and **deferred**.
 
+> **Since Phase 24** ([ADR 0028](./adr/0028-rust-port.md)) the C++ and TypeScript code this file
+> names is Rust: `shared/blocks/gen.mjs` emits the registry for `dwell-blocks` (`blocks.gen.rs`, looked
+> up by name in `registry.rs`) and TypeScript only for the shell's block dump
+> (`client/src/world/blocks.gen.ts`); both are checked against `shared/blocks/vectors.txt`
+> (`dwell-blocks` `tests/vectors.rs`, `client/src/world/blocks.test.ts`). The world file is redb,
+> not SQLite, with LZ4 instead of zstd (`dwell-storage` `db.rs`), and keeps the `block_states` table
+> of world state ids. The text below describes the design as it was made, in Phase 8's terms.
+
 ## 1. Why
 
 Today a voxel is a `u16` **material id** from one global, hand-numbered table
