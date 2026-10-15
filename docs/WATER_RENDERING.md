@@ -184,6 +184,13 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
 - **Data tuning** (prototype content), from screenshots: `dwell:water`'s scatter changed from
   `#1d6f8a` to `#2b9cc0`, because the old value read as black underwater and grey from above. Its
   opacity changed from 0.55 to 0.65, so the shallows' sand doesn't wash the colour out.
+  Then, at the owner's request for **bluer** water (a clear, saturated blue, away from turquoise and
+  green): the block colour went from `#3fb2d6` to `#2f86e0` (it paints the `water` tile, so
+  `crates/dwell-mesh/src/textures.rs`'s `WATER` follows it; the LOD's flat colour is that tile's
+  average, and near and far water both shade with the fluid's scatter); scatter from `#2b9cc0` to
+  `#1c7ed8`; absorption from [0.45, 0.09, 0.06] to [0.7, 0.28, 0.06] (more red and green absorbed,
+  so the underwater fog reads blue rather than teal); opacity from 0.65 to 0.72, so the sand under
+  the shallows doesn't grey the blue. Glint, Fresnel and sky reflection are unchanged.
 - **Bench:** the `water-views` scenario flies from the seed-7 spawn to the coast about 20 km
   east-south-east, down into the sea, and shoots four views: across the sea, the shallows toward the
   shore, 1 km up, and with the eye just under the surface. The `camera` step gained `aroundPlayer`

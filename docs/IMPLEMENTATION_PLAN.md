@@ -2688,7 +2688,9 @@ Deviations (W1b):
   each layer fades by its own wavelength against the pixel's footprint, which mipmaps would do less
   well for a scrolling, wrapped pattern.
 - `dwell:water`'s data tuned from the screenshots (prototype content): scatter `#2b9cc0` (was
-  `#1d6f8a`), opacity 0.65 (was 0.55).
+  `#1d6f8a`), opacity 0.65 (was 0.55). Then, at the owner's request for bluer water: block colour
+  `#2f86e0` (was `#3fb2d6`), scatter `#1c7ed8`, absorption [0.7, 0.28, 0.06] (was [0.45, 0.09,
+  0.06]), opacity 0.72.
 
 Deviations (W1a):
 - The per-vertex fluid id moved to W1b: it changes the terrain vertex format, which Phase 25's A1
