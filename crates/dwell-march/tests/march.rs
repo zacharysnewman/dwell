@@ -1,6 +1,6 @@
-//! The reference marcher on crafted layouts (RAY_MARCHING.md §5 "Correctness under both"): first
-//! hits against a brute-force DDA, borders, precision far from the origin, both faces, skipping,
-//! cone LOD and a state added by data alone.
+//! The reference marcher on crafted layouts (RAY_MARCHED_RENDERER.md §5 "Correctness under both"):
+//! first hits against a brute-force DDA, borders, precision far from the origin, both faces,
+//! skipping, cone LOD and a state added by data alone.
 
 use std::collections::HashMap;
 

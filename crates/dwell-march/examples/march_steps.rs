@@ -1,5 +1,5 @@
-//! Steps per ray on generated terrain (RAY_MARCHING.md §4.3): builds the brick structure for the
-//! chunks around the spawn point and LOD sections out to a few hundred kilometres, marches
+//! Steps per ray on generated terrain (RAY_MARCHED_RENDERER.md §4.3): builds the brick structure
+//! for the chunks around the spawn point and LOD sections out to a few hundred kilometres, marches
 //! horizon, downward and high-altitude rays with empty-space skipping on and off, and prints the
 //! histograms and the memory the structure takes.
 //!

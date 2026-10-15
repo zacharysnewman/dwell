@@ -1,5 +1,5 @@
-//! Steps-per-ray histograms (RAY_MARCHING.md §4.3): median, p95, p99 and the share at the cap —
-//! what the marcher reports to telemetry and the bench.
+//! Steps-per-ray histograms (RAY_MARCHED_RENDERER.md §4.3): median, p95, p99 and the share at the
+//! cap — what the marcher reports to telemetry and the bench.
 
 use crate::march::{March, Outcome};
 

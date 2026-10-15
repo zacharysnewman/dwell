@@ -1,6 +1,6 @@
-//! The GPU data layout (RAY_MARCHING.md §4.1), as `u32` words. Every buffer the marcher reads is a
-//! `array<u32>` (or a struct of `u32`s) in WGSL, so each type here has a `to_words` and the shader
-//! decodes the same words with the same shifts and masks.
+//! The GPU data layout (RAY_MARCHED_RENDERER.md §4.1), as `u32` words. Every buffer the marcher
+//! reads is a `array<u32>` (or a struct of `u32`s) in WGSL, so each type here has a `to_words` and
+//! the shader decodes the same words with the same shifts and masks.
 //!
 //! # The grid frame
 //!
@@ -21,10 +21,10 @@
 //!   cell_log2: u32,             // L: a cell is 2^L m
 //! };
 //! @binding(0) var<storage, read> levels: array<LevelInfo, 20>;
-//! @binding(1) var<storage, read> slots: array<u32>;         // slot_base + x + dims.x * (y + dims.y * z)
+//! @binding(1) var<storage, read> slots: array<u32>;   // slot_base + x + dims.x * (y + dims.y * z)
 //! struct Node { mixed: vec2<u32>, uniform: vec2<u32>, brick: array<u32, 64> };   // 68 words
 //! @binding(2) var<storage, read> nodes: array<Node>;
-//! @binding(3) var<storage, read> node_columns: array<u32>; // per node: word offset in `columns`, or NONE
+//! @binding(3) var<storage, read> node_columns: array<u32>;  // per node: offset in `columns` or NONE
 //! @binding(4) var<storage, read> columns: array<u32>;      // column min-max grids
 //! @binding(5) var<storage, read> pool: array<u32>;         // bricks
 //! @binding(6) var<storage, read> states: array<StateGpu>;  // crate::state
@@ -38,24 +38,27 @@
 //! of `mixed` (word `b >> 5`, bit `b & 31`) marks a brick with a pool payload, of `uniform` one
 //! wholly of one occupied state. `brick[b]` is then the payload's word offset in `pool` (mixed),
 //! the state id (uniform), or — for an empty brick — the Chebyshev distance in bricks to the
-//! nearest non-empty brick of the node (RAY_MARCHING.md §4.3 item 4; 1 = a neighbour is not empty).
+//! nearest non-empty brick of the node (RAY_MARCHED_RENDERER.md §4.3 item 4; 1 = a neighbour is not
+//! empty).
 //!
 //! **Brick** (in `pool`, at the offset): word 0 a header — bits 0–4 the index width (1, 2 or 4 for
 //! a palette brick, 16 for raw states), bits 8–15 the palette length, bit 16 a shape plane follows.
 //! Words 1–16: the 512-bit occupancy (voxel `v = x + 8·y + 64·z`, word `1 + (v >> 5)`, bit
 //! `v & 31`). Then:
-//! - raw (`width = 16`, level-0 bricks): 256 words of `u16` states, voxel `v` in word `17 + (v >> 1)`,
-//!   low half for even `v` ([`RAW_BRICK_WORDS`]); with a shape plane, 128 more words of one `u8` per
-//!   voxel (word `273 + (v >> 2)`, byte `v & 3`): the shape the cell is hit against (0 = its
-//!   cube), resolved on the worker (adaptive shapes, Phase 18) — [`SHAPED_BRICK_WORDS`];
-//! - palette (`width` 1/2/4, LOD bricks): `2^width / 2` words of `u16` palette entries (entry `i` in
-//!   word `17 + (i >> 1)`), then `16 · width` words of indices (voxel `v`'s index at bit
+//! - raw (`width = 16`, level-0 bricks): 256 words of `u16` states, voxel `v` in word
+//!   `17 + (v >> 1)`, low half for even `v` ([`RAW_BRICK_WORDS`]); with a shape plane, 128 more
+//!   words of one `u8` per voxel (word `273 + (v >> 2)`, byte `v & 3`): the shape the cell is hit
+//!   against (0 = its cube), resolved on the worker (adaptive shapes, Phase 18) —
+//!   [`SHAPED_BRICK_WORDS`];
+//! - palette (`width` 1/2/4, LOD bricks): `2^width / 2` words of `u16` palette entries (entry `i`
+//!   in word `17 + (i >> 1)`), then `16 · width` words of indices (voxel `v`'s index at bit
 //!   `v · width` of that run). Sizes: [`palette_brick_words`].
 //!
-//! **Columns** ([`ColumnGrid`]): per node, a min-max mip of the occupied rows of each column:
-//! 32², 16², 8², 4², 2², 1² regions, region `(rx, rz)` of mip `m` (2^m columns wide) at entry
+//! **Columns** ([`ColumnGrid`]): per node, a min-max mip of the occupied rows of each column: 32²,
+//! 16², 8², 4², 2², 1² regions, region `(rx, rz)` of mip `m` (2^m columns wide) at entry
 //! `MIP_OFFSET[m] + rx + rz · (32 >> m)`; two `u16` entries per word (even entry low), each
-//! `lo | hi << 8` in cells from the node's bottom (`hi` exclusive; an empty column is `32 | 0 << 8`).
+//! `lo | hi << 8` in cells from the node's bottom (`hi` exclusive; an empty column is
+//! `32 | 0 << 8`).
 
 pub const NODE_CELLS: i32 = 32;
 pub const BRICK_CELLS: i32 = 8;

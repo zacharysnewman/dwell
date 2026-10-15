@@ -1,7 +1,7 @@
-//! The brick pool's allocator (RAY_MARCHING.md §4.1): one growable `u32` buffer, carved into
-//! fixed-size slots per **size class**, each class with its own free-slot stack — so allocating
-//! and freeing are O(1). Level-0 bricks are one class (raw, or raw with a shape plane); LOD
-//! palette bricks are a class per index width. A freed slot is reused only by its class; new
+//! The brick pool's allocator (RAY_MARCHED_RENDERER.md §4.1): one growable `u32` buffer, carved
+//! into fixed-size slots per **size class**, each class with its own free-slot stack — so
+//! allocating and freeing are O(1). Level-0 bricks are one class (raw, or raw with a shape plane);
+//! LOD palette bricks are a class per index width. A freed slot is reused only by its class; new
 //! slots are appended at the end, so the GPU buffer only grows (by `copy_buffer_to_buffer`) and a
 //! slot's offset never moves. Pure: tested without a GPU.
 

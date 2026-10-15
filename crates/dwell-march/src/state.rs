@@ -3,20 +3,20 @@
 //!
 //! A state's **march class** decides what a primary ray does in its cell:
 //!
-//! | class         | rule (registry fields)                                   | primary ray        |
-//! |---------------|----------------------------------------------------------|--------------------|
-//! | `Empty`       | not liquid, `shape: Empty`, `opacity` 0 (air)            | passes             |
-//! | `Transparent` | `liquid` (water)                                         | passes (raster)    |
-//! | `Solid`       | `shape: Full`                                            | hits the cube      |
-//! | `Shaped`      | `shape: Shaped`, or `shape: Empty` with `opacity` > 0     | the shape hook     |
+//! | class         | rule (registry fields)                                | primary ray     |
+//! |---------------|-------------------------------------------------------|-----------------|
+//! | `Empty`       | not liquid, `shape: Empty`, `opacity` 0 (air)         | passes          |
+//! | `Transparent` | `liquid` (water)                                      | passes (raster) |
+//! | `Solid`       | `shape: Full`                                         | hits the cube   |
+//! | `Shaped`      | `shape: Shaped`, or `shape: Empty` with `opacity` > 0 | the shape hook  |
 //!
 //! Only `Solid` and `Shaped` set a brick's occupancy bits. **Water** is its own `Transparent`
-//! class: it stays a raster pass over both renderers at first (RAY_MARCHING.md §6), so it is not
-//! occupied for primary rays; its ids are still kept in a mixed brick's states for the water rays
-//! of WATER.md W6, and a brick holding only air and water is empty. `Shaped` covers the
-//! registry's shape table and thin looks the mesher draws without a shape (a ladder's plate):
-//! the shape hook ([`crate::march::shape_hit`]) is where analytic shape planes go (step A5);
-//! today it hits the cell's cube.
+//! class: it stays a raster pass over both renderers at first (RAY_MARCHED_RENDERER.md §6), so it
+//! is not occupied for primary rays; its ids are still kept in a mixed brick's states for the water
+//! rays of WATER_RENDERING.md W6, and a brick holding only air and water is empty. `Shaped` covers
+//! the registry's shape table and thin looks the mesher draws without a shape (a ladder's plate):
+//! the shape hook ([`crate::march::shape_hit`]) is where analytic shape planes go (step A5); today
+//! it hits the cell's cube.
 
 use dwell_blocks::{StateId, StateInfo, VoxelShape};
 

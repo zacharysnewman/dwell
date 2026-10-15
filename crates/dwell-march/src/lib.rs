@@ -1,8 +1,8 @@
-//! Dwell's ray-marched terrain, CPU core (docs/proposals/RAY_MARCHING.md, step A3): the GPU data
-//! layout of the fixed-depth brickmap ([`layout`]), the builders that turn chunks and LOD sections
-//! into it ([`build`]), the pool allocator ([`alloc`]), the CPU mirror of the buffers ([`scene`])
-//! and the reference marcher ([`march`]) with its brute-force oracle ([`reference`]) and
-//! steps-per-ray statistics ([`stats`]).
+//! Dwell's ray-marched terrain, CPU core (docs/RAY_MARCHED_RENDERER.md; Phase 25, step A3a): the
+//! GPU data layout of the fixed-depth brickmap ([`layout`]), the builders that turn chunks and LOD
+//! sections into it ([`build`]), the pool allocator ([`alloc`]), the CPU mirror of the buffers
+//! ([`scene`]) and the reference marcher ([`march`]) with its brute-force oracle ([`reference`])
+//! and steps-per-ray statistics ([`stats`]).
 //!
 //! Pure data, no GPU, threads or I/O: it runs in the workers, natively and in tests, and builds
 //! for `wasm32-unknown-unknown`. What counts as occupied comes from the block registry's data

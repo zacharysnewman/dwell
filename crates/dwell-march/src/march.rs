@@ -1,5 +1,5 @@
-//! The CPU reference marcher (RAY_MARCHING.md §4.2–4.3, §5 "Correctness under both"): the same
-//! traversal the GPU marcher runs, over the same words, in plain Rust — the oracle the GPU is
+//! The CPU reference marcher (RAY_MARCHED_RENDERER.md §4.2–4.3, §5 "Correctness under both"): the
+//! same traversal the GPU marcher runs, over the same words, in plain Rust — the oracle the GPU is
 //! checked against per pixel, and the place skipping is measured.
 //!
 //! # Ray state: integer + fraction
@@ -81,7 +81,7 @@ impl Ray {
 pub struct MarchParams {
     /// The fog distance: no hit beyond it.
     pub max_t: f32,
-    /// Iterations before giving up (RAY_MARCHING.md: 128 on phones).
+    /// Iterations before giving up (RAY_MARCHED_RENDERER.md: 128 on phones).
     pub step_cap: u32,
     /// Radians per pixel (0: always the finest level with data).
     pub pixel_angle: f32,
@@ -280,7 +280,8 @@ impl RayMath {
                 }
                 _ if self.d[k] == 0.0 => self.c[k],
                 _ => {
-                    // Crossed at exactly t: below the entry axis yes, above it (or at the start) no.
+                    // Crossed at exactly t: below the entry axis yes, above it (or at the start)
+                    // no.
                     let strict = entry.is_none_or(|(a, _)| k > a);
                     let crossed = |tp: f32| tp < t || (tp == t && !strict);
                     let mut g = self.c[k] + (self.f[k] + t * self.d[k]).floor() as i32;

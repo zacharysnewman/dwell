@@ -1,6 +1,7 @@
-//! Builders (RAY_MARCHING.md §4.1): a chunk's voxels or a LOD section's cells → a node, its bricks
-//! and, for sections, its column min-max grid. Pure and deterministic, so they run in the workers
-//! that mesh today and are tested without a GPU. A build is position-free: the scene places it.
+//! Builders (RAY_MARCHED_RENDERER.md §4.1): a chunk's voxels or a LOD section's cells → a node, its
+//! bricks and, for sections, its column min-max grid. Pure and deterministic, so they run in the
+//! workers that mesh today and are tested without a GPU. A build is position-free: the scene places
+//! it.
 
 use dwell_blocks::StateId;
 use dwell_world::{CHUNK_VOLUME, local_index, lod};

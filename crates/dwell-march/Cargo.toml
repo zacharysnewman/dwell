@@ -1,6 +1,6 @@
 [package]
 name = "dwell-march"
-description = "Dwell's ray-marched terrain, CPU core: the GPU brick layout, its builders, the pool and the reference marcher (docs/proposals/RAY_MARCHING.md)."
+description = "Dwell's ray-marched terrain, CPU core: the GPU brick layout, its builders, the pool and the reference marcher (docs/RAY_MARCHED_RENDERER.md)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
