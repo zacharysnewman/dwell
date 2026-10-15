@@ -4,17 +4,46 @@
 
 use crate::grid::Vec3;
 
-/// Vertical field of view (degrees) on screens narrow enough not to hit the horizontal cap
-/// (`client/src/render/fov.ts`, ported here for the viewport).
+/// The default vertical field of view (degrees): the Field of view setting's default.
 pub const VERTICAL_FOV: f64 = 75.0;
-/// Widest horizontal field of view (degrees); wider screens get a narrower vertical one.
+/// The Field of view setting's range (degrees).
+pub const FOV_SETTING_RANGE: (f64, f64) = (60.0, 100.0);
+/// Widest horizontal field of view (degrees) at the default setting; wider screens get a narrower
+/// vertical one.
 pub const MAX_HORIZONTAL_FOV: f64 = 100.0;
 
-/// Vertical field of view (degrees) for the given aspect ratio (width / height).
+/// The aspect ratio (width / height) beyond which the view narrows vertically: where the default
+/// 75° vertical meets the 100° horizontal cap (≈ 1.55). Any setting uses the same aspect, so the
+/// cap scales with the setting: a screen wider than this sees the horizontal FOV the setting has at
+/// this aspect, and a narrower one the setting's vertical FOV.
+pub fn wide_aspect() -> f64 {
+    (MAX_HORIZONTAL_FOV.to_radians() / 2.0).tan() / (VERTICAL_FOV.to_radians() / 2.0).tan()
+}
+
+/// The setting clamped into its range (anything not a number: the default).
+pub fn sanitize_fov_setting(deg: f64) -> f64 {
+    if deg.is_finite() {
+        deg.clamp(FOV_SETTING_RANGE.0, FOV_SETTING_RANGE.1)
+    } else {
+        VERTICAL_FOV
+    }
+}
+
+/// The base vertical field of view (degrees) for the Field of view setting `setting_deg` at an
+/// aspect ratio (width / height): the setting, narrowed on screens wider than `wide_aspect()` so the
+/// horizontal FOV stays what the setting gives at that aspect (100° at the default 75°).
+pub fn base_fov(setting_deg: f64, aspect: f64) -> f64 {
+    let wide = wide_aspect();
+    if aspect <= wide {
+        return setting_deg;
+    }
+    let t = (setting_deg.to_radians() / 2.0).tan();
+    2.0 * (t * wide / aspect).atan().to_degrees()
+}
+
+/// Vertical field of view (degrees) at the default setting for the given aspect ratio.
 pub fn vertical_fov(aspect: f64) -> f64 {
-    let h = MAX_HORIZONTAL_FOV.to_radians();
-    let capped = 2.0 * ((h / 2.0).tan() / aspect).atan() * 180.0 / std::f64::consts::PI;
-    VERTICAL_FOV.min(capped)
+    base_fov(VERTICAL_FOV, aspect)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -37,12 +66,13 @@ pub struct LodViewport {
     pub height_px: f64,
 }
 
-/// The viewport from the drawing's size in CSS pixels. The pixel error is in CSS pixels, whatever
-/// the screen's density: counted in device pixels, a 2× screen asked for four times the sections.
-pub fn lod_viewport(css_width: f64, css_height: f64) -> LodViewport {
+/// The viewport from the drawing's size in CSS pixels at the Field of view setting (degrees). The
+/// pixel error is in CSS pixels, whatever the screen's density: counted in device pixels, a 2×
+/// screen asked for four times the sections.
+pub fn lod_viewport(setting_deg: f64, css_width: f64, css_height: f64) -> LodViewport {
     let aspect = css_width / css_height.max(1.0);
     LodViewport {
-        fov_y_deg: vertical_fov(aspect),
+        fov_y_deg: base_fov(setting_deg, aspect),
         aspect,
         height_px: css_height,
     }
@@ -141,7 +171,7 @@ mod tests {
     fn measures_the_pixel_error_in_css_pixels_whatever_the_screen_density() {
         // Regression (playtest: frame rate and memory on 2× screens): the height was in device
         // pixels, so a 2× screen refined as if it were twice as tall — four times the sections.
-        let v = lod_viewport(1440.0, 900.0);
+        let v = lod_viewport(VERTICAL_FOV, 1440.0, 900.0);
         assert_eq!(
             v,
             LodViewport {
@@ -169,5 +199,28 @@ mod tests {
         assert!(wide < VERTICAL_FOV);
         let horizontal = 2.0 * ((wide.to_radians() / 2.0).tan() * 3.0).atan();
         assert!((horizontal.to_degrees() - MAX_HORIZONTAL_FOV).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_setting_is_the_base_and_the_wide_screen_cap_scales_with_it() {
+        let h =
+            |v: f64, aspect: f64| 2.0 * ((v.to_radians() / 2.0).tan() * aspect).atan().to_degrees();
+        for setting in [60.0, 75.0, 100.0] {
+            // Up to the wide aspect the base is the setting itself.
+            for aspect in [0.5, 1.0, 4.0 / 3.0, wide_aspect()] {
+                assert!((base_fov(setting, aspect) - setting).abs() < 1e-9);
+            }
+            // Wider screens keep the horizontal FOV the setting has at the wide aspect.
+            let cap = h(setting, wide_aspect());
+            for aspect in [16.0 / 9.0, 21.0 / 9.0] {
+                let v = base_fov(setting, aspect);
+                assert!(v < setting && (h(v, aspect) - cap).abs() < 1e-9);
+            }
+        }
+        // The default is today's rule exactly: 75° vertical, at most 100° horizontal.
+        assert!((h(VERTICAL_FOV, wide_aspect()) - MAX_HORIZONTAL_FOV).abs() < 1e-9);
+        assert_eq!(sanitize_fov_setting(120.0), 100.0);
+        assert_eq!(sanitize_fov_setting(f64::NAN), VERTICAL_FOV);
+        assert_eq!(lod_viewport(90.0, 1000.0, 1000.0).fov_y_deg, 90.0);
     }
 }

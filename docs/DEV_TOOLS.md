@@ -53,7 +53,9 @@ Output per scenario, in `OUT/<scenario>/`:
   "steps": [ { "do": "settle", "maxS": 120 }, { "do": "fly", "on": true }, … ] }
 ```
 
-`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views),
+`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
+`fog`, `detail`, `exposure`, `motion` — `{ "speedEffects": false }` turns the motion effects off, for
+a before/after of their cost in one build),
 `debug` (`?debug=1`), `scale`, `renderer` (`?renderer=`: a renderer by name; a build without the
 renderer switch ignores it) and `split` (`near` or `far`: which part of the view it measures, for
 `--compare`'s split) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
@@ -181,6 +183,11 @@ The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, �
 Zero-difference check (Phase 25's A2 exit): open `?renderer=compare&compare=raster`, then
 `__dwell.setCompare('difference')`; after a frame or two `__dwell.compare().difference` reads 0 in
 every class.
+
+Kept scenarios include `idle-spawn`, `fly-low-fast`, `fly-low-faster`, `jump-onto-block`,
+`jump-in-place`, and the motion effects' `sprint-straight` (shots standing, mid-sprint and after) and
+`fly-fast-turn` (shots in fast flight, turning and diving: the wind's vanishing point following the
+travel).
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 

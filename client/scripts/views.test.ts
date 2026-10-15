@@ -54,6 +54,14 @@ describe('views', () => {
     expect(viewStorage(v)).toEqual({});
   });
 
+  it('stores the speed effects setting under its own key', () => {
+    const v = only({ ...minimal, settings: { motion: { speedEffects: false } } });
+    expect(viewStorage(v)).toEqual({ 'dwell.motion': '{"speedEffects":false,"fovBoost":1}' });
+    expect(() => only({ ...minimal, settings: { motion: { fovBoost: 2 } } })).toThrow(
+      'settings.motion.fovBoost: 2 is outside 0–1',
+    );
+  });
+
   it.each([
     [{ ...minimal, name: 'Bad Name' }, 'views[0].name: expected lowercase'],
     [{ ...minimal, camera: { yaw: 0 } }, 'views["a"].camera.pitch: expected a number'],

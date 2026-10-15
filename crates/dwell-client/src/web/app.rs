@@ -214,6 +214,11 @@ struct Inner {
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
     debug_visible: bool,
+    /// The motion effects' settings and whether the game menu is open (docs/MOTION_EFFECTS.md).
+    motion: dwell_look::motion::MotionSettings,
+    menu_open: bool,
+    /// The Field of view setting (degrees, vertical).
+    fov_setting: f64,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -338,6 +343,9 @@ impl Client {
             started_ms: None,
             shell_events: Vec::new(),
             debug_visible: false,
+            motion: Default::default(),
+            menu_open: false,
+            fov_setting: dwell_lod::frustum::VERTICAL_FOV,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -449,6 +457,9 @@ impl Client {
             }
             let stats = session.stats();
             game.rtt_ms = stats.datagram_rtt_ms.or(stats.rtt_ms);
+            game.motion_settings = s.motion;
+            game.menu_open = s.menu_open;
+            game.fov_setting = s.fov_setting;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -887,6 +898,28 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_exposure(exposure);
+    }
+    /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
+    #[wasm_bindgen(js_name = setMotion)]
+    pub fn set_motion(&self, enabled: bool, fov_strength: f64) {
+        self.inner.borrow_mut().motion = dwell_look::motion::MotionSettings {
+            enabled,
+            fov_strength: if fov_strength.is_finite() {
+                fov_strength.clamp(0.0, 1.0)
+            } else {
+                1.0
+            },
+        };
+    }
+    /// The Field of view setting: the vertical FOV in degrees (60–100, `dwell_lod::base_fov`).
+    #[wasm_bindgen(js_name = setFov)]
+    pub fn set_fov(&self, degrees: f64) {
+        self.inner.borrow_mut().fov_setting = dwell_lod::sanitize_fov_setting(degrees);
+    }
+    /// The game menu opened or closed: the motion effects hold still while it is open.
+    #[wasm_bindgen(js_name = setMenuOpen)]
+    pub fn set_menu_open(&self, open: bool) {
+        self.inner.borrow_mut().menu_open = open;
     }
     #[wasm_bindgen(js_name = setSkyRotation)]
     pub fn set_sky_rotation(&self, degrees: f64) {

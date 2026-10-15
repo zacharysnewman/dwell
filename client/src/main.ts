@@ -428,12 +428,16 @@ async function start(): Promise<App | null> {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setSkyRotation(s.skyRotation);
+    client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;
   // While the menu is open the touch controls step aside: they would take its taps.
   settings.onOpenChange = (open) => {
     touch.visible = touchWanted && !open;
+    // The speed effects hold still while the menu is open.
+    client.setMenuOpen(open);
   };
   settings.setFootnote(formatBuildInfo(buildInfo));
   const showRenderer = (): void => {

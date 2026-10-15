@@ -21,9 +21,11 @@ pub mod timing;
 use dwell_world::hash::HashMap;
 
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
+use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
 use dwell_look::{DEFAULT_EXPOSURE, LIGHT, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
+use dwell_world::fluid::EyeFluid;
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
 
 use arena::{Arena, ArenaRef, Region};
@@ -53,7 +55,20 @@ pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
         SAMPLES
     }
 }
-const WATER_OPACITY: f32 = 0.55;
+/// The alpha transparent (fluid) meshes are drawn with: the registry's `dwell:water` opacity. A
+/// chunk's fluids share one draw until the water shader reads each vertex's fluid (WATER_RENDERING.md W1b).
+fn water_opacity() -> f32 {
+    dwell_blocks::require_fluid("dwell:water").opacity
+}
+
+/// The frame uniform's `water` vec4 (shaders.rs `Frame`): x 1 when the eye is under a fluid's
+/// drawn surface, y its fluid id, z the surface's world y; zeros otherwise.
+fn water_uniform(eye_fluid: Option<EyeFluid>) -> [f32; 4] {
+    match eye_fluid {
+        Some(e) => [1.0, f32::from(e.fluid), e.surface_y as f32, 0.0],
+        None => [0.0; 4],
+    }
+}
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
 /// Bytes per draw in the draws storage array (`Draw` in the shaders: five vec4f).
 const DRAW_STRIDE: u64 = 80;
@@ -80,6 +95,19 @@ pub struct PlayerView {
     pub color: u32,
     pub radius: f32,
     pub height: f32,
+}
+
+/// The wind to draw this frame (docs/MOTION_EFFECTS.md): none when `intensity` is 0.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WindView {
+    /// 0–1.
+    pub intensity: f64,
+    /// The flight layer, 0–1.
+    pub flight: f64,
+    /// Unit world direction of travel.
+    pub direction: V3,
+    /// Seconds of animation.
+    pub time: f64,
 }
 
 /// A debug line segment, sRGB colour.
@@ -480,6 +508,11 @@ pub struct Renderer {
     /// Recent GPU pass times and each side's CPU time (ms), for the compare overlay.
     gpu_recent: HashMap<&'static str, f64>,
     cpu_recent: [f64; 2],
+    /// The vertical FOV the game chose for this frame (the speed boost, `set_fov`); none: the
+    /// screen's own (`vertical_fov`).
+    fov: Option<f64>,
+    /// The wind streaks and edge blur, drawn by the composite.
+    wind: WindView,
     /// GPU pass timing, when the device has timestamp queries (`timing.rs`).
     timer: Option<GpuTimer>,
     frame_buffers: [wgpu::Buffer; 2],
@@ -503,6 +536,8 @@ pub struct Renderer {
     face: f64,
     flip: f64,
     fog: FogSettings,
+    /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
+    eye_fluid: Option<EyeFluid>,
     exposure: f64,
     sky: SkyFrame,
     stats: RenderStats,
@@ -861,6 +896,8 @@ impl Renderer {
             compare: Compare::default(),
             gpu_recent: HashMap::default(),
             cpu_recent: [0.0; 2],
+            fov: None,
+            wind: WindView::default(),
             timer,
             frame_buffers,
             frame_groups,
@@ -881,6 +918,7 @@ impl Renderer {
             face: 1.0,
             flip: 0.0,
             fog: DEFAULT_FOG,
+            eye_fluid: None,
             exposure: DEFAULT_EXPOSURE,
             sky: sky_rest(),
             stats: RenderStats::default(),
@@ -1015,6 +1053,11 @@ impl Renderer {
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
     }
+    /// The fluid whose drawn surface the eye is under (`dwell_world::fluid::eye_fluid`), or none:
+    /// written to the frame uniform for underwater effects (no shader reads it yet).
+    pub fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
+        self.eye_fluid = eye_fluid;
+    }
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
     }
@@ -1075,6 +1118,20 @@ impl Renderer {
         (self.eye, self.yaw, self.pitch, self.face, self.flip) =
             (eye, yaw_deg, pitch_deg, face, flip);
     }
+    /// The frame's vertical FOV (degrees), as the game chose it for the speed boost and gave the
+    /// LOD selection too; `None` draws with the screen's own (`vertical_fov`).
+    pub fn set_fov(&mut self, fov_y_deg: Option<f64>) {
+        self.fov = fov_y_deg;
+    }
+    /// The wind for this frame (the composite draws it).
+    pub fn set_wind(&mut self, wind: WindView) {
+        self.wind = wind;
+    }
+    /// The vertical FOV this frame draws with.
+    pub fn frame_fov(&self) -> f64 {
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
+        self.fov.unwrap_or_else(|| vertical_fov(aspect))
+    }
     /// Debug line segments, or `None` to clear.
     pub fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
         self.debug = lines.filter(|l| !l.is_empty()).map(|lines| {
@@ -1118,7 +1175,7 @@ impl Renderer {
 
     fn frame_uniforms(&self, basis: &Basis, near: f64, far: f64) -> [f32; FRAME_FLOATS] {
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let fov = vertical_fov(aspect);
+        let fov = self.frame_fov();
         let vp = mul(&perspective(fov, aspect, near, far), &view_matrix(basis));
         let mut u = [0.0f32; FRAME_FLOATS];
         let mut i = 0;
@@ -1163,7 +1220,46 @@ impl Renderer {
         put(&f3(basis.forward()));
         let tan_y = (fov.to_radians() / 2.0).tan();
         put(&[(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0]);
+        put(&water_uniform(self.eye_fluid));
+        for v in self.wind_uniforms(basis, aspect, tan_y) {
+            put(&v);
+        }
         u
+    }
+
+    /// The wind's part of the frame block (`wind_*` in shaders.rs): the vanishing point of the
+    /// travel in this frame's view, the intensity, and the look from the tunables (dwell-look's
+    /// MOTION).
+    fn wind_uniforms(&self, basis: &Basis, aspect: f64, tan_y: f64) -> [[f32; 4]; 6] {
+        let w = &self.wind;
+        let d = w.direction;
+        let view_dir = [
+            camera::dot(d, basis.right),
+            camera::dot(d, basis.up),
+            camera::dot(d, basis.forward()),
+        ];
+        let (point, sign) = vanishing_point(view_dir, tan_y * aspect, tan_y);
+        let t = &MOTION.wind;
+        let ratio = self.pixel_ratio.max(0.01);
+        let f = |v: f64| v as f32;
+        [
+            [f(point[0]), f(point[1]), f(w.intensity), f(w.time)],
+            [f(aspect), f(w.flight), self.size.1 as f32, f(sign)],
+            [f(t.color[0]), f(t.color[1]), f(t.color[2]), f(t.opacity)],
+            [
+                t.streaks as f32,
+                t.flight_streaks as f32,
+                f(t.length),
+                f(t.width_px * ratio),
+            ],
+            [
+                f(t.inner_radius),
+                f(t.outer_radius),
+                f(t.vignette),
+                f(t.flow_speed),
+            ],
+            [f(t.blur), 0.0, 0.0, 0.0],
+        ]
     }
 
     /// The draws of one pass: everything whose distance range meets [near, far].
@@ -1221,10 +1317,10 @@ impl Renderer {
     ) -> [Vec<DrawItem>; 3] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
-        let water = [1.0, 1.0, 1.0, WATER_OPACITY];
+        let water = [1.0, 1.0, 1.0, water_opacity()];
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
         let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
-        let view = PassView::new(self.eye, forward, aspect);
+        let view = PassView::new(self.eye, forward, self.frame_fov(), aspect);
         // Which passes (bit per pass) a box reaches into.
         let reaches = |origin: V3, size: f64| -> u8 {
             u8::from(view.holds(origin, size, passes[0].0, passes[0].1))
@@ -1312,7 +1408,7 @@ impl Renderer {
                     no_depth: false,
                     offset,
                     clip: None,
-                    tint: level_tint(s, WATER_OPACITY),
+                    tint: level_tint(s, water_opacity()),
                     rotation: NO_ROTATION,
                     page: 0,
                     passes,
@@ -1848,8 +1944,8 @@ struct PassView {
 }
 
 impl PassView {
-    fn new(eye: V3, forward: V3, aspect: f64) -> Self {
-        let tan_y = (vertical_fov(aspect).to_radians() / 2.0).tan();
+    fn new(eye: V3, forward: V3, fov_y_deg: f64, aspect: f64) -> Self {
+        let tan_y = (fov_y_deg.to_radians() / 2.0).tan();
         let tan_x = tan_y * aspect;
         Self {
             eye,
@@ -1883,8 +1979,9 @@ impl PassView {
     }
 }
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
-const FRAME_FLOATS: usize = 16 + 15 * 4;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 22 vec4s (the 17th
+/// the water's, the last six the wind's).
+const FRAME_FLOATS: usize = 16 + 22 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -1973,6 +2070,9 @@ impl crate::game::Scene for Renderer {
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
     }
+    fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
+        Renderer::set_eye_fluid(self, eye_fluid);
+    }
     fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
         Renderer::set_block_outline(self, cell, height);
     }
@@ -1982,6 +2082,12 @@ impl crate::game::Scene for Renderer {
     fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
         Renderer::set_debug_lines(self, lines);
     }
+    fn set_fov(&mut self, fov_y_deg: Option<f64>) {
+        Renderer::set_fov(self, fov_y_deg);
+    }
+    fn set_wind(&mut self, wind: WindView) {
+        Renderer::set_wind(self, wind);
+    }
     fn stats(&self) -> RenderStats {
         Renderer::stats(self)
     }
@@ -1990,6 +2096,20 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_water_uniform_carries_the_eye_fluid_and_the_water_alpha_is_the_registrys() {
+        assert_eq!(water_uniform(None), [0.0; 4]);
+        let e = EyeFluid {
+            fluid: 0,
+            surface_y: -12.125,
+        };
+        assert_eq!(water_uniform(Some(e)), [1.0, 0.0, -12.125, 0.0]);
+        assert_eq!(
+            water_opacity(),
+            dwell_blocks::info(dwell_blocks::require("dwell:water")).opacity
+        );
+    }
 
     #[test]
     fn draw_order_opaque_near_to_far_by_pipeline_then_water_far_to_near_then_lines() {
@@ -2133,7 +2253,7 @@ mod tests {
         // view depth (where the near pass draws it and the far pass clips it), though more than the
         // split away in a straight line: it must be in the near pass, or neither pass draws it (the
         // gaps in the ground seen from high up, playtest 2026-10-14).
-        let view = PassView::new([0.0; 3], [0.0, 0.0, 1.0], 2.0);
+        let view = PassView::new([0.0; 3], [0.0, 0.0, 1.0], vertical_fov(2.0), 2.0);
         let origin = [600.0, -16.0, 884.0];
         assert!(view.holds(origin, 32.0, NEAR_PLANE, NEAR_SPLIT));
         assert!(!view.holds(origin, 32.0, NEAR_SPLIT * 0.95, FAR_PLANE));
@@ -2389,6 +2509,14 @@ mod tests {
             color: 0xff0000,
         }]));
         r.set_camera([16.0, 4.0, 16.0], 0.0, -30.0, 1.0, 0.0);
+        // A boosted FOV and the wind (streaks, vignette, edge blur in the composite) too.
+        r.set_fov(Some(85.0));
+        r.set_wind(WindView {
+            intensity: 0.8,
+            flight: 0.5,
+            direction: [0.0, 0.0, 1.0],
+            time: 1.0,
+        });
         for frame in 0..4 {
             r.resize(64, 64, 1.0 + f64::from(frame));
             for x in 0..=frame {
@@ -2491,6 +2619,49 @@ mod tests {
             std::task::Poll::Ready(e) => assert!(e.is_none(), "{e:?}"),
             std::task::Poll::Pending => panic!("error scope pending"),
         }
+    }
+
+    #[test]
+    fn the_frame_uses_the_fov_the_game_chose() {
+        // The projection, the sky's rays and each pass's culling all use the frame's FOV.
+        let mut r = noop_renderer();
+        r.resize(1600, 900, 1.0);
+        assert_eq!(r.frame_fov(), vertical_fov(16.0 / 9.0));
+        r.set_fov(Some(80.0));
+        assert_eq!(r.frame_fov(), 80.0);
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let u = r.frame_uniforms(&basis, 1.0, 100.0);
+        let f = 1.0 / (80f64.to_radians() / 2.0).tan();
+        assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
+        // `tan` is the vec4 before the water's and the wind's six.
+        let tan_y = f64::from(u[FRAME_FLOATS - 7 * 4 - 3]);
+        assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
+        // The culling's corner stretch widens with the view.
+        let aspect = 16.0 / 9.0;
+        let narrow = PassView::new([0.0; 3], [0.0, 0.0, 1.0], vertical_fov(aspect), aspect);
+        let wide = PassView::new([0.0; 3], [0.0, 0.0, 1.0], 80.0, aspect);
+        assert!(wide.stretch > narrow.stretch);
+    }
+
+    #[test]
+    fn the_wind_reaches_the_composite_through_the_frame_block() {
+        let mut r = noop_renderer();
+        r.resize(1600, 900, 2.0);
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let wind =
+            |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - 24..].to_vec();
+        assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
+        // Falling forward: the vanishing point drops below the centre, the intensity is passed.
+        r.set_wind(WindView {
+            intensity: 0.5,
+            flight: 0.0,
+            direction: camera::normalize([0.0, -0.5, 1.0]),
+            time: 2.0,
+        });
+        let w = wind(&r);
+        assert!(w[1] < -0.3 && w[0].abs() < 1e-6 && w[2] == 0.5 && w[7] == 1.0);
+        // Widths are in CSS pixels: doubled on a 2× screen.
+        assert!((f64::from(w[15]) - 2.0 * MOTION.wind.width_px).abs() < 1e-5);
     }
 
     #[test]
