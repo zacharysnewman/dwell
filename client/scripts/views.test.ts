@@ -27,7 +27,12 @@ describe('views', () => {
           seed: 42,
           camera: { position: [100, 900, -50], yaw: 90, pitch: -40 },
           window: { width: 640, height: 480 },
-          settings: { detail: { distanceM: 96, pixelError: 3, memoryMb: 512 }, exposure: 1.2 },
+          settings: {
+            detail: { distanceM: 96, pixelError: 3, memoryMb: 512 },
+            exposure: 1.2,
+            timeOfDay: 0,
+            clouds: 'low',
+          },
           debug: true,
           lodColors: true,
           scale: 0.5,
@@ -37,10 +42,11 @@ describe('views', () => {
     const [v] = selectViews(views, ['fixture-high']);
     expect(v.camera).toEqual({ position: [100, 900, -50], yaw: 90, pitch: -40 });
     expect(v.window).toEqual({ width: 640, height: 480 });
-    expect(viewUrl('./', v)).toBe('./?local=1&seed=42&scale=0.5&debug=1&lodcolors=1');
+    expect(viewUrl('./', v)).toBe('./?local=1&seed=42&scale=0.5&debug=1&lodcolors=1&time=0');
     expect(viewStorage(v)).toEqual({
       'dwell.detail': '{"distanceM":96,"pixelError":3,"memoryMb":512}',
       'dwell.exposure': '1.2',
+      'dwell.clouds': '"low"',
     });
   });
 
@@ -62,6 +68,8 @@ describe('views', () => {
     [{ ...minimal, window: { width: 10 } }, 'window.width: 10 is outside'],
     [{ ...minimal, settings: { detail: { distanceM: 96 } } }, 'settings.detail.pixelError'],
     [{ ...minimal, settings: { fov: 90 } }, 'settings: unknown field "fov"'],
+    [{ ...minimal, settings: { clouds: 'ultra' } }, 'settings.clouds: expected "off"'],
+    [{ ...minimal, settings: { timeOfDay: 1.5 } }, 'settings.timeOfDay: 1.5 is outside'],
     [{ ...minimal, pitch: 0 }, 'views["a"]: unknown field "pitch"'],
     [{ ...minimal, seed: 1.5 }, 'seed: expected a whole number'],
     [{ ...minimal, debug: 'yes' }, 'debug: expected true or false'],

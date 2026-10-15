@@ -7,6 +7,9 @@ import {
   FOG_LIMITS,
   sanitizeExposure,
   sanitizeFog,
+  CLOUD_QUALITIES,
+  defaultClouds,
+  sanitizeClouds,
 } from './viewSettings';
 
 describe('fog settings', () => {
@@ -31,5 +34,24 @@ describe('exposure', () => {
     expect(sanitizeExposure(100)).toBe(EXPOSURE_LIMITS.max);
     expect(sanitizeExposure(0)).toBe(EXPOSURE_LIMITS.min);
     expect(sanitizeExposure(1.3)).toBe(1.3);
+  });
+});
+
+describe('clouds setting', () => {
+  it('defaults to High on desktops and Low on phones', () => {
+    expect(defaultClouds(false)).toBe('high');
+    expect(defaultClouds(true)).toBe('low');
+  });
+
+  it('reads a stored choice and defaults anything else by device', () => {
+    for (const q of CLOUD_QUALITIES) {
+      expect(sanitizeClouds(q, false)).toBe(q);
+      expect(sanitizeClouds(q, true)).toBe(q);
+    }
+    for (const bad of [null, undefined, 'ultra', 2, { q: 'low' }]) {
+      expect(sanitizeClouds(bad, false)).toBe('high');
+      expect(sanitizeClouds(bad, true)).toBe('low');
+    }
+    expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'high']);
   });
 });

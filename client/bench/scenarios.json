@@ -1162,6 +1162,418 @@
           "name": "noon-sky"
         }
       ]
+    },
+    {
+      "name": "clouds-high",
+      "notes": "The sky's clouds on High (docs/CLOUDS.md): shots looking up, at the horizon and toward the sun, then 5 s recorded looking 25\u00b0 up (mostly sky). Run with --unthrottled to compare gpu.composite between clouds-high, clouds-low and clouds-off.",
+      "settings": {
+        "clouds": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 70
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "up"
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 8
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "horizon"
+        },
+        {
+          "do": "look",
+          "yaw": 60,
+          "pitch": 30
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "toward-sun"
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 25
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "sky"
+        }
+      ]
+    },
+    {
+      "name": "clouds-low",
+      "notes": "clouds-high on Low (fewer octaves, no self-shadow).",
+      "settings": {
+        "clouds": "low"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 70
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "up"
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 8
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "horizon"
+        },
+        {
+          "do": "look",
+          "yaw": 60,
+          "pitch": 30
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "toward-sun"
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 25
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "sky"
+        }
+      ]
+    },
+    {
+      "name": "clouds-off",
+      "notes": "clouds-high with the clouds off: the baseline for their GPU cost.",
+      "settings": {
+        "clouds": "off"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 70
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "up"
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 8
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "horizon"
+        },
+        {
+          "do": "look",
+          "yaw": 60,
+          "pitch": 30
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "toward-sun"
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": 25
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "sky"
+        }
+      ]
+    },
+    {
+      "name": "clouds-night",
+      "notes": "The clouds by moonlight (midnight).",
+      "settings": {
+        "clouds": "high",
+        "timeOfDay": 0.0
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 121,
+          "pitch": 30
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "night"
+        }
+      ]
+    },
+    {
+      "name": "clouds-dusk",
+      "notes": "The clouds with a low sun (golden hour, the sun about 5\u00b0 up toward yaw \u2212152), toward it and away.",
+      "settings": {
+        "clouds": "high",
+        "timeOfDay": 0.82
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 208,
+          "pitch": 6
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dusk"
+        },
+        {
+          "do": "look",
+          "yaw": 28,
+          "pitch": 20
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "away"
+        }
+      ]
+    },
+    {
+      "name": "clouds-fly",
+      "notes": "Flying fast (level 10, at least 352 m/s) climbing toward the cloud deck: the clouds move past with parallax and drift; shots every few seconds, the last looking up from near the deck as the clouds fade.",
+      "settings": {
+        "clouds": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 1.5
+        },
+        {
+          "do": "flySpeed",
+          "level": 10
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 25
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "t0"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "t2"
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "t4"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "t8"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 60
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "up"
+        }
+      ]
+    },
+    {
+      "name": "clouds-altitude",
+      "notes": "The camera placed 1000 m, 1500 m and 1700 m up (the deck is at 1800 m): the clouds come nearer and larger, then fade out as the eye reaches the deck.",
+      "settings": {
+        "clouds": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, 1000, 0],
+          "yaw": 240,
+          "pitch": 20
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "y1000"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1500, 0],
+          "yaw": 240,
+          "pitch": 20
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "y1500"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1700, 0],
+          "yaw": 240,
+          "pitch": 20
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "y1700"
+        }
+      ]
     }
   ]
 }

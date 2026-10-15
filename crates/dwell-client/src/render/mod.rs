@@ -16,8 +16,9 @@ pub mod timing;
 
 use dwell_world::hash::HashMap;
 
-use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
+use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
+use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
@@ -371,6 +372,11 @@ pub struct Renderer {
     /// The day/night cycle's state (the game sets it each frame) and seconds for the stars' twinkle.
     day: DayState,
     day_seconds: f64,
+    /// The sky's clouds: the setting, the coverage (the data's, or a weather system's) and their
+    /// clock (s).
+    clouds: CloudQuality,
+    cloud_coverage: f64,
+    cloud_seconds: f64,
     stats: RenderStats,
 }
 
@@ -706,6 +712,9 @@ impl Renderer {
             exposure: DEFAULT_EXPOSURE,
             day: DayState::default(),
             day_seconds: 0.0,
+            clouds: CloudQuality::High,
+            cloud_coverage: CLOUDS.shape.coverage,
+            cloud_seconds: 0.0,
             stats: RenderStats::default(),
         }
     }
@@ -894,6 +903,19 @@ impl Renderer {
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
     }
+    /// The Clouds setting (Off, Low, High).
+    pub fn set_clouds(&mut self, quality: CloudQuality) {
+        self.clouds = quality;
+    }
+    /// The clouds' coverage, 0 (clear) to 1 (overcast): the data's by default; a weather system's
+    /// to set.
+    pub fn set_cloud_coverage(&mut self, coverage: f64) {
+        self.cloud_coverage = coverage.clamp(0.0, 1.0);
+    }
+    /// The clouds' clock (s): world time where there is one, so clients roughly agree.
+    pub fn set_cloud_time(&mut self, seconds: f64) {
+        self.cloud_seconds = seconds;
+    }
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
     }
@@ -1009,6 +1031,16 @@ impl Renderer {
         put(&f3(basis.forward()));
         let tan_y = (fov.to_radians() / 2.0).tan();
         put(&[(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0]);
+        let clouds = cloud_uniforms(
+            &CLOUDS,
+            self.eye,
+            self.face,
+            self.cloud_seconds,
+            self.clouds,
+            self.cloud_coverage,
+        );
+        put(&clouds[0]);
+        put(&clouds[1]);
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         put(&self.day.pack(weight_a, self.day_seconds, pixel_angle));
         u
@@ -1510,8 +1542,8 @@ impl PassView {
     }
 }
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
-const FRAME_FLOATS: usize = 16 + 6 * 4 + DAY_SKY_FLOATS;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 8 vec4s and the day's block.
+const FRAME_FLOATS: usize = 16 + 8 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into

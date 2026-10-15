@@ -18,9 +18,8 @@ use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::touch::TouchState;
-use dwell_game::world_clock::WorldClock;
-use dwell_look::daynight::{DAY_NIGHT, DayState};
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
+use dwell_look::daynight::{DAY_NIGHT, DayState};
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
@@ -374,6 +373,9 @@ pub struct Game<S: Scene> {
     accumulator: f64,
     last_frame_ms: Option<f64>,
     last_snapshot_tick: u32,
+    /// The server's clock, from its snapshots: world time for the day/night cycle and the clouds'
+    /// drift.
+    pub clock: crate::world_clock::WorldClock,
     input_buffer: u8,
     tick_rate: f64,
     health: u8,
@@ -402,9 +404,8 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
-    /// World time from the server's snapshots, the dev switches over it, and the cycle's state at
-    /// the last frame.
-    clock: WorldClock,
+    /// The dev switches over the day/night cycle, and its state at the last frame (world time is
+    /// `clock`'s).
     pub day_override: DayOverride,
     day: DayState,
     first_draw_ms: Option<f64>,
@@ -452,6 +453,7 @@ impl<S: Scene> Game<S> {
             accumulator: 0.0,
             last_frame_ms: None,
             last_snapshot_tick: 0,
+            clock: Default::default(),
             input_buffer: 0,
             tick_rate: 1.0,
             health: 0,
@@ -474,7 +476,6 @@ impl<S: Scene> Game<S> {
             pending_lod: None,
             map: None,
             view: None,
-            clock: WorldClock::default(),
             day_override: DayOverride::default(),
             day: DayState::default(),
             first_draw_ms: None,
@@ -985,8 +986,8 @@ impl<S: Scene> Game<S> {
     fn update_day(&mut self, now_ms: f64) {
         let first = *self.first_draw_ms.get_or_insert(now_ms);
         let o = self.day_override;
-        let world_s = self.clock.seconds(now_ms).unwrap_or(0.0)
-            + (o.speed - 1.0) * (now_ms - first) / 1000.0;
+        let world_s =
+            self.clock.seconds(now_ms).unwrap_or(0.0) + (o.speed - 1.0) * (now_ms - first) / 1000.0;
         self.day = DAY_NIGHT.state(world_s, o.time, o.moon);
         self.scene
             .borrow_mut()

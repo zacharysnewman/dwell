@@ -46,6 +46,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted) and S2a (floor block, sandbox world type) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S2b and S3; S4 (worldgen placement) deferred; `package.json` raised to 0.11.4, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
+| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -84,6 +85,11 @@ are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
 Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
 existing phases; it builds on Phase 27's structures, and its deliverables are G-ADR and G0–G4.
+On 2026-10-15 the owner asked for procedural clouds in the sky ("in the skybox, not 3D"), added as
+**Phase 31 — sky clouds** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)). It
+builds on Phase 25's A1 (the shared frame's composite pass draws the sky) and changes no world file,
+protocol or terrain. Phases 28 and 29 are taken by work on other branches (sound effects, motion
+effects).
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -2835,6 +2841,50 @@ Exit criteria
   speed multiplier scales growth; protocol golden tests for the tree records and the `Growth` reason.
 - [ ] G4: two variant seeds give different trees from one model, each reproducible from its seed,
   and a variant's final stage equals its jittered model.
+
+---
+
+## Phase 31 — Sky Clouds
+
+**Goal:** Procedural clouds drawn as part of the sky, not 3D (owner, 2026-10-15). A thin cloud deck
+at a fixed altitude has true perspective and parallax, a domain-warped noise shape, wind drift, and
+light from the sky frame's sun and moon. It is an extendable system: tunables as data, coverage one
+run-time parameter for a future weather system, and a quality setting
+([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)).
+
+**Status:** In progress. C0–C4 are built and tested, natively, in Node and in a browser on the
+GPU. Outstanding: the owner's look and answers to `CLOUDS.md` §6 (the defaults were taken without
+asking: clouds are new), CI, and a phone's frame time. Built on Phase 25's A1 (branch
+`claude/a1-shared-frame`).
+
+Deliverables
+- [x] **C0** — ADR 0034 and `CLOUDS.md` (the defaults for CLAUDE.md's questions, the model, the open
+  questions); ARCHITECTURE.md §5, §6.6 (Clouds) and §7.4.
+- [x] **C1** — The cloud deck in the composite (`dwell-look` `clouds.rs`, `cloud_wgsl`): the ray's
+  hit on a sphere-curved deck (hidden below the horizon, faded with distance and near the deck);
+  periodic value-noise fBm with a domain warp and a lattice-preserving octave transform, offsets
+  wrapped in f64 (f32-safe anywhere); octaves faded by the pixel's footprint; light from the
+  frame's sky frame and lights (self-shadow on High, silver lining, low-sun warmth, night by
+  direction); the terrain's fog toward the clear sky; face B over its own horizon.
+- [x] **C2** — Tunables as data: `shared/look/clouds.json` → `clouds.gen.rs` by
+  `shared/look/clouds.mjs` (validated, with `clouds.test.mjs`; CI regenerates and fails on a diff);
+  coverage a frame uniform (`Renderer::set_cloud_coverage`, `Client.setCloudCoverage`).
+- [x] **C3** — The Clouds setting (Off / Low / High: fewer octaves and no self-shadow on Low), High on
+  desktops and Low on touch devices, kept under `dwell.clouds` (append-only store); the drift's
+  clock is the server's tick (`world_clock.rs`).
+- [x] **C4** — Bench scenarios `clouds-high`, `-low`, `-off` (GPU cost), `-night`, `-dusk`, `-fly`
+  and `-altitude`; named views and scenarios take `settings.clouds` and `settings.skyRotation`.
+
+Exit criteria
+- [x] The deck intersection, the wrap, coverage, the quality setting, the clock and a tunable changed
+  by data are pinned by tests; the WGSL validates with Naga (alone and in the renderer's module);
+  the generator's output matches the data (`node --test shared/look/clouds.test.mjs`).
+- [x] In a browser on the GPU: clouds looking up, at the horizon, toward the sun, at night, with a
+  low sun, while flying fast (parallax and drift), fading near the deck, and over face B by day and
+  night, from screenshots.
+- [x] GPU cost measured against Off (`gpu.composite`, `--unthrottled`, `CLOUDS.md` §4).
+- [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
+- [ ] CI green, and the frame time on a phone with the default (Low).
 
 ---
 

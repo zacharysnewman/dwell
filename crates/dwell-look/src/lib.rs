@@ -4,6 +4,9 @@
 //! The sky, the lights and the fog's colour follow the day/night cycle (`daynight`, from
 //! `shared/look/daynight.json`).
 
+pub mod clouds;
+#[path = "clouds.gen.rs"]
+mod clouds_gen;
 pub mod daynight;
 pub mod fog;
 
@@ -136,8 +139,14 @@ pub fn sky_color(dir: Rgb, face: f64, s: &Sample, day: &DayState) -> Rgb {
     let g = s.glow_strength * halo(dot(d, sun), sl.bloom, sl.bloom_deg, sl.glow, sl.glow_deg);
     c = mix(c, s.glow, g.clamp(0.0, GLOW_CAP));
     let ml = &DAY_NIGHT.moon;
-    let m =
-        moon_glow(s, day) * halo(dot(d, day.moon), ml.bloom, ml.bloom_deg, ml.glow, ml.glow_deg);
+    let m = moon_glow(s, day)
+        * halo(
+            dot(d, day.moon),
+            ml.bloom,
+            ml.bloom_deg,
+            ml.glow,
+            ml.glow_deg,
+        );
     mix(c, ml.glow_color, m.clamp(0.0, 1.0))
 }
 
@@ -446,17 +455,18 @@ mod tests {
     #[test]
     fn a_keyframe_changed_by_data_changes_the_sky() {
         let mut frames: Vec<Keyframe> = DAY_NIGHT.keyframes.to_vec();
-        let noon = frames
-            .iter()
-            .position(|k| k.name == "noon")
-            .expect("noon");
+        let noon = frames.iter().position(|k| k.name == "noon").expect("noon");
         frames[noon].sky_zenith = [1.0, 0.0, 0.0];
         let changed = DayNight {
             keyframes: Box::leak(frames.into_boxed_slice()),
             ..DAY_NIGHT
         };
         let at_noon = changed.sample(changed.keyframes[noon].sun);
-        assert!(dist(at_noon.sky_zenith, [1.0, 0.0, 0.0]) < 1e-3, "{:?}", at_noon.sky_zenith);
+        assert!(
+            dist(at_noon.sky_zenith, [1.0, 0.0, 0.0]) < 1e-3,
+            "{:?}",
+            at_noon.sky_zenith
+        );
         assert!(dist(DAY_NIGHT.sample(90.0).sky_zenith, hex(0x649ada)) < 1e-3);
         let before = changed.keyframes[noon - 1].sun;
         assert!(

@@ -26,6 +26,10 @@ export interface View {
     fog?: { distanceM: number; density: number; heightM: number };
     detail?: { distanceM: number; pixelError: number; memoryMb: number };
     exposure?: number;
+    /** The Clouds setting. */
+    clouds?: 'off' | 'low' | 'high';
+    /** The time of day shown (0–1, 0 midnight, 0.5 noon): `?time=`, this client only. */
+    timeOfDay?: number;
   };
   /** The F3 overlay (`?debug=1`) and per-level LOD tints (`?lodcolors=1`) in the shot. */
   debug: boolean;
@@ -138,7 +142,7 @@ function parseView(index: string, raw: unknown): View {
   const s =
     o.settings === undefined
       ? {}
-      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure']);
+      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure', 'clouds', 'timeOfDay']);
   const settings: View['settings'] = {};
   if (s.fog !== undefined) {
     settings.fog = numbers(`${at}.settings.fog`, s.fog, ['distanceM', 'density', 'heightM']);
@@ -152,6 +156,14 @@ function parseView(index: string, raw: unknown): View {
   }
   if (s.exposure !== undefined)
     settings.exposure = num(`${at}.settings.exposure`, s.exposure, 0, 10);
+  if (s.timeOfDay !== undefined)
+    settings.timeOfDay = num(`${at}.settings.timeOfDay`, s.timeOfDay, 0, 1);
+  if (s.clouds !== undefined) {
+    if (s.clouds !== 'off' && s.clouds !== 'low' && s.clouds !== 'high') {
+      throw new ViewError(`${at}.settings.clouds: expected "off", "low" or "high"`);
+    }
+    settings.clouds = s.clouds;
+  }
 
   return {
     name: o.name,
@@ -197,6 +209,7 @@ export function viewUrl(base: string, view: View): string {
   if (view.scale !== 1) q.set('scale', String(view.scale));
   if (view.debug) q.set('debug', '1');
   if (view.lodColors) q.set('lodcolors', '1');
+  if (view.settings.timeOfDay !== undefined) q.set('time', String(view.settings.timeOfDay));
   return `${base}?${q.toString()}`;
 }
 
@@ -208,5 +221,6 @@ export function viewStorage(view: View): Record<string, string> {
   if (view.settings.exposure !== undefined) {
     out['dwell.exposure'] = JSON.stringify(view.settings.exposure);
   }
+  if (view.settings.clouds) out['dwell.clouds'] = JSON.stringify(view.settings.clouds);
   return out;
 }

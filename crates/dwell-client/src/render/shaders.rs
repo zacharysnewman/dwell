@@ -26,6 +26,11 @@ struct Frame {
     up: vec4f,
     forward: vec4f,
     tan: vec4f,
+    // The sky's clouds (dwell-look's cloud_uniforms): the noise point under the eye and the warp
+    // field's offset (cells), and coverage, octaves (0: off), self-shadow, the deck's height above
+    // the eye.
+    clouds: vec4f,
+    cloud_cfg: vec4f,
     // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
     // face's lights.
     day: DaySky,
@@ -359,26 +364,58 @@ fn scene_depth_at(p: vec2i) -> vec2f {
     return vec2f(select(0.0, sum / n, n > 0.0), n / f32(SCENE_SAMPLES));
 }
 
+// The clouds' light, from the frame: the sky frame and the lights, as the terrain takes them.
+//
+// The day/night cycle's light for the viewer's face: its sun, moon and sky light, and a day pole
+// whose height over the horizon is the sun's (and square to the sun's azimuth, so clouds on every
+// side of the sky take the same time of day).
+fn cloud_lighting() -> CloudLighting {
+    let d = frame.day;
+    let up = vec3f(0.0, frame.eye.y, 0.0);
+    let el = dot(d.sun.xyz, up);
+    let side = cross(up, d.sun.xyz);
+    let across = select(vec3f(1.0, 0.0, 0.0), side / max(length(side), 1e-6), length(side) > 1e-4);
+    let pole = el * up + sqrt(max(1.0 - el * el, 0.0)) * across;
+    let on_a = frame.eye.x >= MIDPLANE_Y;
+    let sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
+    return CloudLighting(pole, d.sun.xyz, d.moon.xyz, select(d.sun_b.rgb, d.sun_a.rgb, on_a), select(d.moon_b.rgb, d.moon_a.rgb, on_a), sky, sky);
+}
+
+// The scene's colour as the canvas shows it, at the time of day's saturation.
+fn scene_display(c: vec4f) -> vec3f {
+    let lit = display(c.rgb / c.a);
+    return mix(vec3f(dot(lit, vec3f(0.2126, 0.7152, 0.0722))), lit, frame.day.horizon.a);
+}
+
 // The composite: the scene's colour tone-mapped and encoded, fogged by its depth toward the sky
-// of the pixel's view direction (already sRGB; no tone mapping), and over the sky behind — the
-// sky with the sun, moon and stars — by its coverage, so the haze terrain fades into is the colour
-// behind it. The time of day sets the scene's saturation (lower by moonlight). Dithered last.
+// of the pixel's view direction (already sRGB; no tone mapping), and over the sky behind by its
+// coverage — so the haze terrain fades into is the colour behind it. The sky behind is the clear sky
+// with the sun, moon and stars (`dwell_sky_bodies`) and the clouds over them (dwell-look's
+// clouds.rs), drawn only where the sky shows: distant ground fades into the clear sky, never a
+// cloud's colour or a star. The time of day sets the scene's saturation (lower by moonlight).
+// Dithered last.
 @fragment
 fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     let p = vec2i(i.clip.xy);
-    let dir = normalize(view_ray(i.ndc));
-    let haze = sky(dir);
-    let back = dwell_sky_bodies(dir, frame.eye.y, frame.day, haze);
+    let ray = view_ray(i.ndc);
+    let dir = normalize(ray);
+    let face = frame.eye.y;
+    // In uniform control flow, for the pixel's footprint on the deck.
+    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
+    let fw = max(fwidth(deck.x), fwidth(deck.y));
+    let clear = sky(dir);
     let c = textureLoad(scene_color, p, 0);
-    var out = back;
-    if (c.a > 0.0) {
-        let ray = view_ray(i.ndc);
-        let lit = display(c.rgb / c.a);
-        let toned = mix(vec3f(dot(lit, vec3f(0.2126, 0.7152, 0.0722))), lit, frame.day.horizon.a);
-        let shown = mix(toned, haze, fog_amount(ray * scene_depth_at(p).x));
-        out = mix(back, shown, min(c.a, 1.0));
+    let grain = dither(p);
+    if (c.a >= 1.0) {
+        return vec4f(mix(scene_display(c), clear, fog_amount(ray * scene_depth_at(p).x)) + grain, 1.0);
     }
-    return vec4f(out + dither(p), 1.0);
+    let behind = dwell_sky_bodies(dir, face, frame.day, clear);
+    let back = dwell_clouds(behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
+    if (c.a <= 0.0) {
+        return vec4f(back + grain, 1.0);
+    }
+    let shown = mix(scene_display(c), clear, fog_amount(ray * scene_depth_at(p).x));
+    return vec4f(mix(back, shown, c.a) + grain, 1.0);
 }
 ";
 
@@ -402,14 +439,15 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n{TERRAIN}",
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{FRAME}\n{}\n{}\n{}\n{COMMON}\n{TERRAIN}",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,
         scene_bindings(samples),
-        dwell_look::sky_wgsl()
+        dwell_look::sky_wgsl(),
+        dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS)
     )
 }
 
@@ -464,5 +502,26 @@ mod tests {
         }
         let c = body("composite_fs");
         assert!(c.contains("display(") && c.contains("fog_amount(") && c.contains("sky("));
+        assert!(c.contains("dwell_clouds(") && c.contains("dwell_cloud_deck("));
+    }
+
+    #[test]
+    fn terrain_fogs_toward_the_clear_sky_and_clouds_only_where_the_sky_shows() {
+        // Distant ground fades into the sky without the clouds (they are above the haze): the fog
+        // mixes toward `clear`; the clouds go into `back`, under the scene by its coverage.
+        let src = super::source(1);
+        let at = src.find("fn composite_fs(").expect("composite");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert_eq!(body.matches("fog_amount(").count(), 2);
+        for line in body.lines().filter(|l| l.contains("fog_amount(")) {
+            assert!(line.contains(", clear, fog_amount("), "{line}");
+        }
+        assert!(body.contains("mix(back, shown, c.a)"));
+        // The deck's footprint is taken before any branch (derivatives need uniform control flow).
+        let deck = body.find("dwell_cloud_deck(").expect("deck");
+        assert!(
+            deck < body.find("if (").expect("branch")
+                && body.find("fwidth(").expect("fw") < body.find("if (").unwrap()
+        );
     }
 }

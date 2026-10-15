@@ -254,6 +254,15 @@ fn wrap360(deg: f64) -> f64 {
 }
 
 impl DayNight {
+    /// The keyframe with the strongest sun (noon): the sun's glow colour for the clouds' silver
+    /// lining.
+    pub fn brightest(&self) -> &Keyframe {
+        self.keyframes
+            .iter()
+            .max_by(|a, b| a.sun_intensity.total_cmp(&b.sun_intensity))
+            .expect("at least one keyframe")
+    }
+
     /// The length of a whole day and night (s).
     pub fn day_length_s(&self) -> f64 {
         self.clock.day_s + self.clock.night_s
@@ -289,7 +298,11 @@ impl DayNight {
     fn path_basis(&self) -> (Rgb, Rgb) {
         let yaw = self.sun_path.rise_yaw_deg.to_radians();
         let rise = [yaw.sin(), 0.0, yaw.cos()];
-        let side = [(yaw + std::f64::consts::FRAC_PI_2).sin(), 0.0, (yaw + std::f64::consts::FRAC_PI_2).cos()];
+        let side = [
+            (yaw + std::f64::consts::FRAC_PI_2).sin(),
+            0.0,
+            (yaw + std::f64::consts::FRAC_PI_2).cos(),
+        ];
         (rise, side)
     }
 
@@ -348,7 +361,11 @@ impl DayNight {
     /// angle (cyclic), colours in Oklab.
     pub fn sample(&self, solar_deg: f64) -> Sample {
         let (i, j, t) = self.segment(solar_deg);
-        let name = if t < 0.5 { self.keyframes[i].name } else { self.keyframes[j].name };
+        let name = if t < 0.5 {
+            self.keyframes[i].name
+        } else {
+            self.keyframes[j].name
+        };
         from_channels(&self.sample_channels(solar_deg), name, wrap360(solar_deg))
     }
 
@@ -480,8 +497,8 @@ impl DayState {
     /// across.
     pub fn pack(&self, weight_a: f64, seconds: f64, pixel_angle: f64) -> [f32; DAY_SKY_FLOATS] {
         let v = self.viewer(weight_a);
-        let moon_light = DAY_NIGHT.moon.new_moon_light
-            + (1.0 - DAY_NIGHT.moon.new_moon_light) * self.moon_lit;
+        let moon_light =
+            DAY_NIGHT.moon.new_moon_light + (1.0 - DAY_NIGHT.moon.new_moon_light) * self.moon_lit;
         let mut u = [0.0f32; DAY_SKY_FLOATS];
         let mut i = 0;
         let mut put = |v: [f64; 4]| {
@@ -503,7 +520,12 @@ impl DayState {
         put(with(v.glow, v.glow_strength));
         put(with(v.band, v.band_strength));
         put(with(v.sun_disc, v.moon_glow * self.moon_lit.max(0.25)));
-        put([v.stars, seconds.rem_euclid(3600.0), pixel_angle, self.moon_lit]);
+        put([
+            v.stars,
+            seconds.rem_euclid(3600.0),
+            pixel_angle,
+            self.moon_lit,
+        ]);
         for s in [&self.a, &self.b] {
             put(lit(s.sun_light, s.sun_intensity));
             put(lit(s.moon_light, s.moon_intensity * moon_light));
