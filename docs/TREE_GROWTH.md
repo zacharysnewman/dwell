@@ -160,8 +160,10 @@ a stage; world format and protocol both change at G3.
 | — | Procedural or planted trees? | **Both**, from the owner's persistence model (§5a) |
 
 Notes:
-- The day/night cycle isn't designed yet; the world file already keeps a world time (`meta`), which
-  `stage(t)` reads. Growth catch-up uses world time, not wall-clock time, so a world that isn't
+- The day length now lives in the day/night cycle's data (Phase 32, [`DAY_NIGHT.md`](./DAY_NIGHT.md)):
+  `clock` in `shared/look/daynight.json` (`dayS` 1200 + `nightS` 600 = a 30-minute day), generated
+  into `dwell_look::daynight::DAY_NIGHT`; `DAY_NIGHT.days(world_s)` is the in-game day count from
+  world time (the server's tick, saved in `meta` as `world_tick`), which `stage(t)` reads. Growth catch-up uses world time, not wall-clock time, so a world that isn't
   running doesn't grow.
 - With a step every 15 real hours, the sandbox needs a way to preview growth (G2: a "preview growth"
   command or slider) — nobody will wait for it.

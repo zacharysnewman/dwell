@@ -73,7 +73,9 @@ fields, ranges and names fail with the entry named):
 | `record {name}` | saves everything above under `name` |
 | `shot {name}` | screenshot |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
-| `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot` or trace steps inside |
+| `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
+| `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
+| `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
 Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
 §5), besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and `jump-onto-block`: `look-horizon`

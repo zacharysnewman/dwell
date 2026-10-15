@@ -366,16 +366,11 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 
 // The clouds' light, from the frame: the sky frame and the lights, as the terrain takes them.
 //
-// The day/night cycle's light for the viewer's face: its sun, moon and sky light, and a day pole
-// whose height over the horizon is the sun's (and square to the sun's azimuth, so clouds on every
-// side of the sky take the same time of day).
+// The day/night cycle's light for the viewer's face: its sun, moon and sky light; the day pole is
+// the sun (its height over the horizon sets day or night).
 fn cloud_lighting() -> CloudLighting {
     let d = frame.day;
-    let up = vec3f(0.0, frame.eye.y, 0.0);
-    let el = dot(d.sun.xyz, up);
-    let side = cross(up, d.sun.xyz);
-    let across = select(vec3f(1.0, 0.0, 0.0), side / max(length(side), 1e-6), length(side) > 1e-4);
-    let pole = el * up + sqrt(max(1.0 - el * el, 0.0)) * across;
+    let pole = d.sun.xyz;
     let on_a = frame.eye.x >= MIDPLANE_Y;
     let sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
     return CloudLighting(pole, d.sun.xyz, d.moon.xyz, select(d.sun_b.rgb, d.sun_a.rgb, on_a), select(d.moon_b.rgb, d.moon_a.rgb, on_a), sky, sky);

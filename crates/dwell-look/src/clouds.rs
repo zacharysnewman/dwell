@@ -441,10 +441,9 @@ fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offse
 		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
 	}
 	let lit = exp(-CLOUD_ABSORPTION * occl);
-	// Day or night as the sky behind is: the sphere's gradient runs by the direction's dot with the
-	// day zenith, so a turned sky can be night on one side and day on the other.
-	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole))
-		* smoothstep(-0.3, 0.1, dot(dir, day_pole));
+	// Day or night as the viewer's sky is (the day/night cycle: the same time of day all round the
+	// sky), by the day pole's height: the sun's.
+	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole));
 	var day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
 	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
 	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);

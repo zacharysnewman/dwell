@@ -128,6 +128,9 @@ Spawn is always on face A (owner, 2026-10-05).
   day zenith, the sun and the moon), which first turns as a whole about a horizontal axis — the
   sun's elevation changes, π swaps day and night — client-side only (`?skyrot`, `?skyspin`, a
   settings slider); the lights are weighted smoothly by their height over each face's horizon.
+  *Superseded by the day/night cycle (Phase 32, [`DAY_NIGHT.md`](./DAY_NIGHT.md)): the sun moves
+  with world time, the moon stays opposite it, and each face's sky and lights are keyframes at its
+  own solar angle (face B's is face A's + 180°); the slider and switches are gone.*
 - **Rendering:** the camera's up vector follows the face; the meshers' per-face shading (Phase 7's
   tint table) treats a face-B chunk's −y faces as its tops; the sky gradient (face B: a moonlit
   night sky with the moon's glow where the sun's is on face A) and haze are evaluated in the
