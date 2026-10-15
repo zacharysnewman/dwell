@@ -330,6 +330,8 @@ pub struct Game<S: Scene> {
     flip: FaceFlip,
     last_draw_ms: Option<f64>,
     eye: EyeCamera,
+    /// The eye the last frame targeted from (None while not playing): edits by cell aim from it.
+    last_eye: Option<[f64; 3]>,
     pub interaction: BlockInteraction,
     lod: Option<LodSystem>,
     /// The drawing's size in CSS pixels, for LOD selection.
@@ -402,6 +404,7 @@ impl<S: Scene> Game<S> {
             flip,
             last_draw_ms: None,
             eye,
+            last_eye: None,
             interaction: BlockInteraction::new(),
             lod: None,
             viewport_css: (1280.0, 720.0),
@@ -727,6 +730,41 @@ impl<S: Scene> Game<S> {
         }
     }
 
+    /// Breaks `cell` or places `material` against its `face`, not at the crosshair (the
+    /// structure stamp, STRUCTURES.md §4): only while alive and playing, at the edit rate limit.
+    pub fn edit_at(
+        &mut self,
+        action: EditAction,
+        cell: [i32; 3],
+        face: u8,
+        material: u16,
+        now_ms: f64,
+    ) -> bool {
+        if self.dead || !self.terrain_ready() {
+            return false;
+        }
+        match self
+            .interaction
+            .act_at(action, cell, face, material, now_ms)
+        {
+            Some(m) => {
+                self.outbox.borrow_mut().push(Send::Control(m));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The eye the last frame aimed from; None while not playing.
+    pub fn eye(&self) -> Option<[f64; 3]> {
+        self.last_eye
+    }
+
+    /// The client's states in a box (`VoxelWorld::read_box`): saving a structure.
+    pub fn voxels(&mut self, min: [i32; 3], size: [u32; 3]) -> Vec<u16> {
+        self.streamer.store_mut().read_box(min, size)
+    }
+
     /// Prediction waits until the terrain around the player has arrived (collision needs it).
     fn terrain_ready(&self) -> bool {
         self.current.active && self.streamer.ready_around(self.current.position)
@@ -965,6 +1003,7 @@ impl<S: Scene> Game<S> {
 
     /// Targets the block under the crosshair from `eye` and outlines it (none while not playing).
     fn target(&mut self, eye: Option<[f64; 3]>, input: &KeyboardMouseInput) {
+        self.last_eye = eye;
         let face = self.current.face;
         let t = self.interaction.update(
             self.streamer.store_mut(),
