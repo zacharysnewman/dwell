@@ -12,8 +12,9 @@ use dwell_client::local::{LOCAL_SESSION, LocalCore};
 use dwell_client::net::session::{Out, Session, SessionState};
 use dwell_client::pool::{InlineJobs, Pool};
 use dwell_client::render::display::RenderStats;
-use dwell_client::render::{Line, PlayerView, StandIn};
+use dwell_client::render::{Line, PlayerView, RegionBox, StandIn};
 use dwell_game::input::{EditAction, KeyboardMouseInput};
+use dwell_game::region_tools::ToolAction;
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_protocol::{Channel, TransportKind};
@@ -32,6 +33,7 @@ struct Recorder {
     shown: Vec<i64>,
     camera: Option<[f64; 3]>,
     outline: Option<[f64; 3]>,
+    region_boxes: Vec<RegionBox>,
 }
 
 impl Scene for Recorder {
@@ -67,6 +69,9 @@ impl Scene for Recorder {
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _height: f64) {
         self.outline = cell;
     }
+    fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
+        self.region_boxes = boxes.to_vec();
+    }
     fn set_debug_lines(&mut self, _lines: Option<&[Line]>) {}
     fn stats(&self) -> RenderStats {
         RenderStats::default()
@@ -81,6 +86,11 @@ struct Rig {
     scene: Rc<RefCell<Recorder>>,
     input: KeyboardMouseInput,
     now: f64,
+    /// One-way delay of the link, in server ticks (0: none), and the messages on it.
+    latency_steps: u32,
+    step: u32,
+    up: std::collections::VecDeque<(u32, bool, Vec<u8>)>,
+    down: std::collections::VecDeque<(u32, Option<Channel>, Vec<u8>)>,
 }
 
 const SEED: u64 = 1;
@@ -106,30 +116,70 @@ impl Rig {
             scene: Rc::default(),
             input: KeyboardMouseInput::new(),
             now: 0.0,
+            latency_steps: 0,
+            step: 0,
+            up: std::collections::VecDeque::new(),
+            down: std::collections::VecDeque::new(),
         }
     }
 
     /// One 60 Hz frame: the server steps, messages flow both ways, the game runs a frame.
     fn frame(&mut self) {
+        self.server_step();
+        self.game_frame();
+    }
+
+    /// A frame that took `steps` server ticks (a slow device: `steps` / 60 s per frame).
+    fn slow_frame(&mut self, steps: usize) {
+        for _ in 0..steps {
+            self.server_step();
+        }
+        self.game_frame();
+    }
+
+    /// 1/60 s of the server's time: the client's messages reach it, it steps, its answers return.
+    fn server_step(&mut self) {
         self.now += 1000.0 / 60.0;
+        self.step += 1;
         let now = self.now;
+        let due = self.step + self.latency_steps;
         for out in self.session.take_out() {
             match out {
-                Out::Reliable(b) => self.core.reliable(LOCAL_SESSION, Channel::Control, &b),
-                Out::Datagram(b) => self.core.datagram(LOCAL_SESSION, &b),
+                Out::Reliable(b) => self.up.push_back((due, true, b)),
+                Out::Datagram(b) => self.up.push_back((due, false, b)),
                 Out::Sign(t) => self.session.signed(self.key.sign(&t).to_bytes()),
                 Out::Close => {}
+            }
+        }
+        while self.up.front().is_some_and(|m| m.0 <= self.step) {
+            let (_, reliable, b) = self.up.pop_front().unwrap();
+            if reliable {
+                self.core.reliable(LOCAL_SESSION, Channel::Control, &b);
+            } else {
+                self.core.datagram(LOCAL_SESSION, &b);
             }
         }
         self.core.advance(1.0 / 60.0);
         for o in self.core.take_outbox() {
             match o.kind {
-                OutKind::Reliable(channel) => self.session.on_reliable(channel, &o.bytes, now),
-                OutKind::Datagram => self.session.on_datagram(&o.bytes, now),
+                OutKind::Reliable(channel) => self.down.push_back((due, Some(channel), o.bytes)),
+                OutKind::Datagram => self.down.push_back((due, None, o.bytes)),
                 OutKind::Close => {}
             }
         }
+        while self.down.front().is_some_and(|m| m.0 <= self.step) {
+            let (_, channel, b) = self.down.pop_front().unwrap();
+            match channel {
+                Some(channel) => self.session.on_reliable(channel, &b, now),
+                None => self.session.on_datagram(&b, now),
+            }
+        }
         self.session.tick(now);
+    }
+
+    /// One frame of the game at the current time: it reads what arrived, ticks, draws and sends.
+    fn game_frame(&mut self) {
+        let now = self.now;
         if self.game.is_none()
             && let SessionState::Joined {
                 player_id,
@@ -254,6 +304,56 @@ fn joins_streams_walks_and_breaks_a_block() {
 }
 
 #[test]
+fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined { region_edits, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    assert!(region_edits, "the local server announces region edits");
+    rig.game.as_mut().unwrap().region.enabled = region_edits;
+    rig.input.look.pitch = -60.0;
+    assert!(rig.run_until(30, |r| {
+        r.game.as_ref().unwrap().debug_state().target.is_some()
+    }));
+    let [x, y, z] = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell;
+    let game = rig.game.as_mut().unwrap();
+    let before = game.voxel(x, y, z);
+    let stone = dwell_blocks::require("dwell:stone");
+    assert_ne!(before, stone);
+    game.interaction.select(0); // stone
+    assert!(!game.tool(ToolAction::CornerA, rig.now));
+    assert_eq!(
+        rig.scene.borrow().region_boxes.len(),
+        1,
+        "the selection is outlined"
+    );
+    assert_eq!(rig.scene.borrow().region_boxes[0].size, [1.0; 3]);
+    assert!(game.tool(ToolAction::Fill, rig.now), "the fill is sent");
+    assert!(
+        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == stone),
+        "the server's modification arrives"
+    );
+    let now = rig.now;
+    assert!(rig.game.as_mut().unwrap().tool(ToolAction::Undo, now));
+    assert!(
+        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == before),
+        "undo puts the block back"
+    );
+}
+
+#[test]
 fn the_whole_world_view_generates_and_meshes_sections() {
     let mut rig = Rig::new();
     assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
@@ -327,4 +427,61 @@ fn a_placed_camera_views_the_world_from_there() {
     rig.run_until(2, |_| false);
     let camera = rig.scene.borrow().camera.unwrap();
     assert!((camera[0] - feet[0]).abs() < 2.0 && (camera[2] - feet[2]).abs() < 2.0);
+}
+
+#[test]
+fn a_slow_device_walks_without_snapping() {
+    // A device drawing ~5.5 frames a second (CI's software renderer with two pages,
+    // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks. Its prediction must
+    // keep the server's time, or the server fills the missing ticks by repeating the last input
+    // (walking further than the player did) and the replays drag the player along, snapping it
+    // once a correction passes RECONCILE_SNAP_DISTANCE.
+    let mut rig = Rig::new();
+    assert!(
+        rig.run_until(60 * 30, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "the player is placed and the terrain around them arrives"
+    );
+    // Settle on the ground at full speed, then slow down, over a 150 ms round trip (as the e2e
+    // test's B page: `?netsim=150,…`).
+    rig.run_until(60, |_| false);
+    rig.latency_steps = 5;
+    let stats = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats;
+    let mut worst = 0.0f32;
+    let mut slow_frames = |rig: &mut Rig, n: usize| {
+        for _ in 0..n {
+            let replays = stats(rig).replays;
+            rig.slow_frame(11);
+            let s = stats(rig);
+            if s.replays > replays {
+                worst = worst.max(s.last_correction);
+            }
+        }
+    };
+    slow_frames(&mut rig, 10);
+    let before = stats(&rig);
+    let start = rig.game.as_ref().unwrap().debug_state().feet;
+    rig.input.set_key("KeyW", true);
+    slow_frames(&mut rig, 6);
+    rig.input.set_key("KeyW", false);
+    slow_frames(&mut rig, 10);
+    let after = stats(&rig);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let moved = ((feet[0] - start[0]).powi(2) + (feet[2] - start[2]).powi(2)).sqrt();
+    assert!(moved > 2.0, "walked {moved} m");
+    // The prediction matches the server: no correction to speak of, so no snap.
+    assert!(
+        worst < 0.2,
+        "a {worst} m correction: {before:?} -> {after:?}"
+    );
+    assert_eq!(after.snaps, before.snaps);
+    // Predicted ticks keep up with the server's (16 frames of 11 ticks).
+    let predicted = after.ticks - before.ticks;
+    assert!(
+        predicted >= 16 * 11 - 11,
+        "{predicted} ticks predicted for {} of the server's",
+        16 * 11
+    );
 }
