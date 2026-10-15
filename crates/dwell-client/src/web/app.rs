@@ -10,7 +10,6 @@ use std::rc::Rc;
 use dwell_game::input::{EditAction, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
 use dwell_look::fog::FogSettings;
-use dwell_look::sky_frame::{SkySwitches, sky_angle, sky_frame, sky_switches};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_protocol::{Channel, TransportKind};
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
@@ -20,7 +19,7 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use super::jobs::WebJobs;
 use super::transport::{TransportEvent, WebRtcConn, WebTransportConn};
-use crate::game::{Game, LodSettings, Send};
+use crate::game::{DayOverride, Game, LodSettings, Send};
 use crate::net::netsim::{Direction, NetConditions, parse_net_conditions};
 use crate::net::sdp::WebRtcInvite;
 use crate::net::session::{Out, Session, SessionState};
@@ -181,7 +180,8 @@ struct Options {
     lod_colors: bool,
     full_chunks: bool,
     netsim: Option<NetConditions>,
-    sky: SkySwitches,
+    /// `?time=`, `?moon=`, `?timespeed=` (the day/night cycle's dev switches).
+    day: DayOverride,
 }
 
 struct Inner {
@@ -202,8 +202,6 @@ struct Inner {
     signature: SignatureSlot,
     game: Option<Game<Renderer>>,
     lod_settings: LodSettings,
-    sky_setting_deg: f64,
-    started_ms: Option<f64>,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -247,7 +245,7 @@ impl Client {
             lod_colors: get("lodColors").as_bool().unwrap_or(false),
             full_chunks: get("fullChunks").as_bool().unwrap_or(false),
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
-            sky: sky_switches(&get("search").as_string().unwrap_or_default()),
+            day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
         };
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
@@ -317,8 +315,6 @@ impl Client {
                 detail_distance_m: None,
                 full_mode: false,
             },
-            sky_setting_deg: 0.0,
-            started_ms: None,
             shell_events: Vec::new(),
             debug_visible: false,
         };
@@ -444,12 +440,6 @@ impl Client {
             }
         }
         telemetry::span("net", || s.pump_network(now_ms));
-        let start = *s.started_ms.get_or_insert(now_ms);
-        s.renderer.borrow_mut().set_sky_frame(sky_frame(sky_angle(
-            s.sky_setting_deg,
-            s.options.sky,
-            (now_ms - start) / 1000.0,
-        )));
         s.draw();
         telemetry::add("frame.cpu", telemetry::now_ms() - t0);
     }
@@ -829,9 +819,26 @@ impl Client {
             .borrow_mut()
             .set_exposure(exposure);
     }
-    #[wasm_bindgen(js_name = setSkyRotation)]
-    pub fn set_sky_rotation(&self, degrees: f64) {
-        self.inner.borrow_mut().sky_setting_deg = degrees;
+    /// Sets the time of day this client shows (0–1, 0 midnight), or returns to the world's with
+    /// `undefined` (a dev switch: the bench's `time` step; the world's time is the server's).
+    #[wasm_bindgen(js_name = setTimeOfDay)]
+    pub fn set_time_of_day(&self, t: Option<f64>) {
+        let mut s = self.inner.borrow_mut();
+        s.options.day.time = t.filter(|v| v.is_finite()).map(|v| v.rem_euclid(1.0));
+        let day = s.options.day;
+        if let Some(g) = &mut s.game {
+            g.day_override = day;
+        }
+    }
+    /// Sets the moon's phase this client shows (0 new, 0.5 full), or the world's with `undefined`.
+    #[wasm_bindgen(js_name = setMoonPhase)]
+    pub fn set_moon_phase(&self, phase: Option<f64>) {
+        let mut s = self.inner.borrow_mut();
+        s.options.day.moon = phase.filter(|v| v.is_finite()).map(|v| v.rem_euclid(1.0));
+        let day = s.options.day;
+        if let Some(g) = &mut s.game {
+            g.day_override = day;
+        }
     }
     /// The whole-world view's detail (§6.6): distance (m, or negative for none), pixel error and
     /// memory budget (MB).
@@ -955,6 +962,10 @@ impl Client {
         set(&o, "feet", v3(d.feet));
         set(&o, "health", d.health);
         set(&o, "dead", d.dead);
+        let day = g.day();
+        set(&o, "timeOfDay", day.time_of_day);
+        set(&o, "day", day.day as f64);
+        set(&o, "moonPhase", day.moon_phase);
         let remotes: Array = d
             .remotes
             .iter()
@@ -1306,6 +1317,7 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
+        game.day_override = self.options.day;
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }

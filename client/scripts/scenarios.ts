@@ -36,7 +36,17 @@ export type Step =
   | { do: 'shot'; name: string }
   /** Starts or stops a Chrome performance trace (`<name>.trace.json`, open in DevTools). */
   | { do: 'traceStart' }
-  | { do: 'traceStop'; name: string };
+  | { do: 'traceStop'; name: string }
+  /**
+   * Shows the time of day `t` (0–1, 0 midnight, 0.5 noon on face A) and, if given, the moon's
+   * phase (0 new, 0.5 full), on this client only (docs/DAY_NIGHT.md).
+   */
+  | { do: 'time'; t: number; moon?: number }
+  /**
+   * A timelapse: `frames` screenshots `<name>-00.png`… from time of day `from` to `to` (wrapping
+   * past midnight when `to` < `from`), waiting `waitS` after each change.
+   */
+  | { do: 'timelapse'; name: string; frames: number; from: number; to: number; waitS: number };
 
 export interface Scenario {
   name: string;
@@ -114,6 +124,8 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   shot: ['name'],
   traceStart: [],
   traceStop: ['name'],
+  time: ['t', 'moon'],
+  timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
 };
 
 export function parseStep(where: string, v: unknown): Step {
@@ -167,6 +179,19 @@ export function parseStep(where: string, v: unknown): Step {
     case 'mark':
     case 'traceStart':
       return { do: d };
+    case 'time': {
+      const t = num(at('t'), o.t, 0, 1);
+      return o.moon === undefined ? { do: d, t } : { do: d, t, moon: num(at('moon'), o.moon, 0, 1) };
+    }
+    case 'timelapse':
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        frames: Math.round(num(at('frames'), o.frames, 2, 1000)),
+        from: num(at('from'), o.from, 0, 1, 0),
+        to: num(at('to'), o.to, 0, 1, 1),
+        waitS: num(at('waitS'), o.waitS, 0, 60, 0.3),
+      };
   }
 }
 
@@ -228,6 +253,12 @@ export function parseScenarios(json: unknown): Scenario[] {
     seen.add(s.name);
   }
   return list;
+}
+
+/** The times of day a timelapse shows, `frames` of them from `from` toward `to` (not reaching it). */
+export function timelapseTimes(s: { from: number; to: number; frames: number }): number[] {
+  const span = s.to > s.from ? s.to - s.from : s.to + 1 - s.from;
+  return Array.from({ length: s.frames }, (_, i) => (s.from + (span * i) / s.frames) % 1);
 }
 
 /** The scenario as a view (its page address and stored settings come from views.ts). */

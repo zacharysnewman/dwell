@@ -16,25 +16,19 @@ use dwell_protocol::world;
 const FRAME: &str = r"
 struct Frame {
     view_proj: mat4x4f,
-    // x eye height (world y), y face (±1), z exposure, w fog density
+    // x eye height (world y), y face (±1), z exposure (× the time of day's), w fog density (× the
+    // time of day's)
     eye: vec4f,
     // x fog sigma, y fog scale height, z/w unused
     fog: vec4f,
-    day_pole: vec4f,
-    sun: vec4f,
-    moon: vec4f,
-    // Linear colours × intensity.
-    sun_color: vec4f,
-    moon_color: vec4f,
-    day_sky: vec4f,
-    day_ground: vec4f,
-    night_sky: vec4f,
-    night_ground: vec4f,
     // The sky's view rays: the camera's axes and the half-angle tangents (x, y).
     right: vec4f,
     up: vec4f,
     forward: vec4f,
     tan: vec4f,
+    // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
+    // face's lights.
+    day: DaySky,
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
@@ -63,18 +57,20 @@ fn own(light_up: f32, frag_on_a: bool) -> f32 {
     return smoothstep(-0.1, 0.1, light_up * face_up);
 }
 
-// three's Lambert: (direct + hemisphere irradiance) × albedo / π, each light weighted to the
-// fragment's own face (BIFACIAL_WORLD.md §6).
+// three's Lambert: (direct + hemisphere irradiance) × albedo / π, with the lights of the fragment's
+// own face (BIFACIAL_WORLD.md §6): its time of day's sun, moon and sky, each direct light weighted
+// by its height over that face's horizon.
 fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
     let on_a = frag_y >= MIDPLANE_Y;
-    var irradiance = vec3f(0.0);
-    irradiance += max(dot(n, frame.sun.xyz), 0.0) * frame.sun_color.rgb * own(frame.sun.y, on_a);
-    irradiance += max(dot(n, frame.moon.xyz), 0.0) * frame.moon_color.rgb * own(frame.moon.y, on_a);
-    let day = frame.day_pole.xyz;
-    let hemi_day = mix(frame.day_ground.rgb, frame.day_sky.rgb, dot(n, day) * 0.5 + 0.5);
-    irradiance += hemi_day * own(day.y, on_a);
-    let hemi_night = mix(frame.night_ground.rgb, frame.night_sky.rgb, dot(n, -day) * 0.5 + 0.5);
-    irradiance += hemi_night * own(-day.y, on_a);
+    let d = frame.day;
+    let face_up = select(-1.0, 1.0, on_a);
+    let sun = select(d.sun_b.rgb, d.sun_a.rgb, on_a);
+    let moon = select(d.moon_b.rgb, d.moon_a.rgb, on_a);
+    let hemi_sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
+    let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
+    var irradiance = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.y, on_a);
+    irradiance += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.y, on_a);
+    irradiance += mix(hemi_ground, hemi_sky, n.y * face_up * 0.5 + 0.5);
     return irradiance * albedo / PI;
 }
 
@@ -110,8 +106,18 @@ fn view_ray(ndc: vec2f) -> vec3f {
     return frame.forward.xyz + ndc.x * frame.tan.x * frame.right.xyz + ndc.y * frame.tan.y * frame.up.xyz;
 }
 
+// The sky's colour toward `dir` (output colour): what far terrain fogs to and water reflects.
 fn sky(dir: vec3f) -> vec3f {
-    return dwell_sky(dir, frame.eye.y, frame.day_pole.xyz, frame.sun.xyz, frame.moon.xyz);
+    return dwell_sky(dir, frame.eye.y, frame.day);
+}
+
+// Half-a-step dither for the 8-bit canvas (interleaved gradient noise, triangular): smooth night
+// and twilight gradients without bands.
+fn dither(p: vec2i) -> f32 {
+    let q = vec2f(p);
+    let a = fract(52.9829189 * fract(dot(q, vec2f(0.06711056, 0.00583715))));
+    let b = fract(52.9829189 * fract(dot(q + vec2f(17.0, 59.0), vec2f(0.06711056, 0.00583715))));
+    return (a + b - 1.0) / 255.0;
 }
 
 // The height fog (dwell-look's haze_amount, per pixel): how much of the sky behind to mix in, in
@@ -324,19 +330,23 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 }
 
 // The composite: the scene's colour tone-mapped and encoded, fogged by its depth toward the sky
-// of the pixel's view direction (already sRGB; no tone mapping), and over that sky by its coverage
-// — so the haze terrain fades into is the colour behind it.
+// of the pixel's view direction (already sRGB; no tone mapping), and over the sky behind — the
+// sky with the sun, moon and stars — by its coverage, so the haze terrain fades into is the colour
+// behind it. Dithered last.
 @fragment
 fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     let p = vec2i(i.clip.xy);
-    let ray = view_ray(i.ndc);
-    let back = sky(normalize(ray));
+    let dir = normalize(view_ray(i.ndc));
+    let haze = sky(dir);
+    let back = dwell_sky_bodies(dir, frame.eye.y, frame.day, haze);
     let c = textureLoad(scene_color, p, 0);
-    if (c.a <= 0.0) {
-        return vec4f(back, 1.0);
+    var out = back;
+    if (c.a > 0.0) {
+        let ray = view_ray(i.ndc);
+        let shown = mix(display(c.rgb / c.a), haze, fog_amount(ray * scene_depth_at(p).x));
+        out = mix(back, shown, min(c.a, 1.0));
     }
-    let shown = mix(display(c.rgb / c.a), back, fog_amount(ray * scene_depth_at(p).x));
-    return vec4f(mix(back, shown, min(c.a, 1.0)), 1.0);
+    return vec4f(out + dither(p), 1.0);
 }
 ";
 
@@ -360,9 +370,10 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\n{FRAME}\n{}\n{}\n{COMMON}\n{TERRAIN}",
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n{TERRAIN}",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
+        dwell_look::daynight::DAY_SKY_WGSL,
         scene_bindings(samples),
         dwell_look::sky_wgsl()
     )

@@ -70,6 +70,10 @@ export interface GameDebugState {
   target: BlockTarget | null;
   lod: Record<string, unknown> | null;
   flying: boolean;
+  /** The day/night cycle as this client shows it: 0 midnight, 0.5 noon; the day; 0 new, 0.5 full. */
+  timeOfDay: number;
+  day: number;
+  moonPhase: number;
 }
 
 interface RenderStats {
@@ -119,6 +123,11 @@ interface DwellDebug {
   ticks(): TickSample[];
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
+  /**
+   * Shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase (0 new, 0.5 full)
+   * on this client only, as `?time=` and `?moon=` do; null returns to the world's.
+   */
+  setTime(t: number | null, moon?: number | null): void;
 }
 
 /** A distribution's summary (telemetry.rs `Stats`). */
@@ -397,7 +406,6 @@ async function start(): Promise<App | null> {
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
-    client.setSkyRotation(s.skyRotation);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;
@@ -478,6 +486,10 @@ async function start(): Promise<App | null> {
     ticks: () => client.telemetryTicks() as TickSample[],
     telemetryReset: () => {
       client.telemetryReset();
+    },
+    setTime: (t, moon) => {
+      client.setTimeOfDay(t ?? undefined);
+      if (moon !== undefined) client.setMoonPhase(moon ?? undefined);
     },
   };
 

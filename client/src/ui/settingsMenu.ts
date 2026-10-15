@@ -36,10 +36,8 @@ export function formatMetres(m: number): string {
 export interface Settings {
   fog: FogSettings;
   detail: DetailSettings;
-  /** Tone-mapping exposure (render/look.ts). */
+  /** Tone-mapping exposure (dwell-look; the time of day's exposure multiplies it). */
   exposure: number;
-  /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
-  skyRotation: number;
 }
 
 export function defaultSettings(mobile: boolean): Settings {
@@ -47,7 +45,6 @@ export function defaultSettings(mobile: boolean): Settings {
     fog: { ...DEFAULT_FOG },
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
-    skyRotation: 0,
   };
 }
 
@@ -65,7 +62,6 @@ export function settingsJson(s: Settings): string {
       memoryMb: Math.round(s.detail.memoryMb),
     },
     exposure: Math.round(s.exposure * 100) / 100,
-    skyRotation: Math.round(s.skyRotation),
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -73,14 +69,8 @@ export function settingsJson(s: Settings): string {
 const FOG_KEY = 'dwell.fog';
 const DETAIL_KEY = 'dwell.detail';
 const EXPOSURE_KEY = 'dwell.exposure';
-const SKY_ROTATION_KEY = 'dwell.skyRotation';
-
-/** A sky rotation in degrees from storage: 0–360, anything else 0. */
-export function sanitizeSkyRotation(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.min(360, Math.max(0, value))
-    : 0;
-}
+// `dwell.skyRotation` (the sky rotation slider before the day/night cycle) is no longer read or
+// written: the time of day is the world's. Builds before it still read it; it is left as it is.
 
 function load(key: string): unknown {
   try {
@@ -99,7 +89,6 @@ export function loadSettings(mobile: boolean): Settings {
     fog: fog ? sanitizeFog(fog) : defaults.fog,
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
-    skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
   };
 }
 
@@ -108,7 +97,6 @@ function save(s: Settings): void {
     localStorage.setItem(FOG_KEY, JSON.stringify(s.fog));
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
-    localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -209,16 +197,6 @@ function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
           format: (v) => `${v.toFixed(2)}×`,
           get: (s) => s.exposure,
           with: (s, v) => ({ ...s, exposure: v }),
-        },
-        {
-          label: 'Sky rotation',
-          hint: 'Turns the sky as a whole, day to night (this browser only)',
-          min: 0,
-          max: 360,
-          log: false,
-          format: (v) => `${String(Math.round(v))}°`,
-          get: (s) => s.skyRotation,
-          with: (s, v) => ({ ...s, skyRotation: v }),
         },
       ],
     },

@@ -18,6 +18,8 @@ use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::touch::TouchState;
+use dwell_game::world_clock::WorldClock;
+use dwell_look::daynight::{DAY_NIGHT, DayState};
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
@@ -65,6 +67,54 @@ pub trait Scene {
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
+    /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
+    fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
+}
+
+/// Dev switches over the day/night cycle (`?time=`, `?moon=`, `?timespeed=`, the bench's `time`
+/// step): they change this client's view only, never the world's time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DayOverride {
+    /// The time of day (0–1, 0 midnight) instead of the world's.
+    pub time: Option<f64>,
+    /// The moon's phase (0 new, 0.5 full) instead of the day count's.
+    pub moon: Option<f64>,
+    /// World time runs this many times faster here (1 = as the server's).
+    pub speed: f64,
+}
+
+impl Default for DayOverride {
+    fn default() -> Self {
+        Self {
+            time: None,
+            moon: None,
+            speed: 1.0,
+        }
+    }
+}
+
+impl DayOverride {
+    /// Reads `?time=`, `?moon=` and `?timespeed=` from a query string; anything missing, not a
+    /// number or out of range is left alone.
+    pub fn from_query(search: &str) -> Self {
+        let read = |key: &str| {
+            search
+                .trim_start_matches('?')
+                .split('&')
+                .filter_map(|kv| kv.split_once('='))
+                .find(|(k, _)| *k == key)
+                .and_then(|(_, v)| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite())
+        };
+        let unit = |v: Option<f64>| v.filter(|v| (0.0..=1.0).contains(v));
+        Self {
+            time: unit(read("time")),
+            moon: unit(read("moon")),
+            speed: read("timespeed")
+                .filter(|v| *v > 0.0 && *v <= 10_000.0)
+                .unwrap_or(1.0),
+        }
+    }
 }
 
 pub type SceneRef<S> = Rc<RefCell<S>>;
@@ -348,6 +398,12 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
+    /// World time from the server's snapshots, the dev switches over it, and the cycle's state at
+    /// the last frame.
+    clock: WorldClock,
+    pub day_override: DayOverride,
+    day: DayState,
+    first_draw_ms: Option<f64>,
 }
 
 impl<S: Scene> Game<S> {
@@ -414,6 +470,10 @@ impl<S: Scene> Game<S> {
             pending_lod: None,
             map: None,
             view: None,
+            clock: WorldClock::default(),
+            day_override: DayOverride::default(),
+            day: DayState::default(),
+            first_draw_ms: None,
         };
         match verification {
             Some(c) => game
@@ -548,6 +608,7 @@ impl<S: Scene> Game<S> {
                     return; // reordered datagram
                 }
                 self.last_snapshot_tick = s.server_tick;
+                self.clock.observe(s.server_tick, now_ms);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
                 self.health = s.local.health;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
@@ -883,6 +944,7 @@ impl<S: Scene> Game<S> {
             self.scene.borrow_mut().set_block_outline(None, 1.0);
         }
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
+        self.update_day(now_ms);
 
         self.hud.health = self.health;
         if self.debug_visible {
@@ -898,6 +960,7 @@ impl<S: Scene> Game<S> {
                 lines.push(format_lod_stats(&lod.debug_stats()));
             }
             lines.push(format_render_stats(&self.scene.borrow().stats()));
+            lines.push(self.day.debug_line());
             if !self.memory_note.is_empty() {
                 lines.push(self.memory_note.clone());
             }
@@ -911,6 +974,24 @@ impl<S: Scene> Game<S> {
             self.hud.debug = None;
             self.scene.borrow_mut().set_debug_lines(None);
         }
+    }
+
+    /// The day/night cycle at `now_ms`: world time from the server (none before the first
+    /// snapshot: the world's start), sped up or replaced by the dev switches.
+    fn update_day(&mut self, now_ms: f64) {
+        let first = *self.first_draw_ms.get_or_insert(now_ms);
+        let o = self.day_override;
+        let world_s = self.clock.seconds(now_ms).unwrap_or(0.0)
+            + (o.speed - 1.0) * (now_ms - first) / 1000.0;
+        self.day = DAY_NIGHT.state(world_s, o.time, o.moon);
+        self.scene
+            .borrow_mut()
+            .set_day(&self.day, (now_ms - first) / 1000.0);
+    }
+
+    /// The day/night cycle's state at the last frame.
+    pub fn day(&self) -> &DayState {
+        &self.day
     }
 
     fn show_hud_text(&mut self) {
