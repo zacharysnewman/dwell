@@ -646,7 +646,7 @@ B — and are retired: a world saved with one loads as the flat world; the versi
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
 default for dedicated servers and local mode; version **0** (flat) remains for tests, and
 **[built, Phase 27 S2a]** version **100** is the structure sandbox (the flat world in its white,
-indestructible floor block, `docs/proposals/STRUCTURES.md`; numbered away from the terrain's
+indestructible floor block, `docs/STRUCTURES.md`; numbered away from the terrain's
 versions, which grow; 1–7 are retired and load as the flat world, as any unknown version does).
 Creative flight is the server's flight policy (everyone by default, so on in every local world,
 the sandbox included). The **movement
