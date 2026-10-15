@@ -186,6 +186,22 @@ p99, and the share hitting the cap) that the marcher writes to telemetry and the
 the whole way, so masks alone help little; column heights (3) and brick distances (4) are what keep
 them bounded. `look-horizon` in the bench is the scenario that measures it.
 
+**Measured on the CPU reference marcher** (`crates/dwell-march`, `cargo run --release -p
+dwell-march --example march_steps`, seed 1, 2026-10-14): chunks within 12 of the spawn and LOD
+levels 1–12 (13 × 13 sections each), 1080p at 70°, 4 px, cap 1,024. Steps per ray, median / p95 /
+p99:
+
+| Rays | Masks only | + skipping, column grids on sections only | + column grids on chunks too |
+|---|---|---|---|
+| Horizon (pitch −6°..+1°) | 41 / 927 / 1,025 (3.4 % capped) | 41 / 330 / 455 | 8 / 68 / 83 |
+| Down (pitch −90°..−30°) | 4 / 6 / 7 | 4 / 6 / 7 | 3 / 5 / 5 |
+| 3 km up (pitch −30°..0°) | 79 / 131 / 157 | 44 / 60 / 71 | 44 / 60 / 71 |
+
+Column grids help near grazing rays as much as far ones, so **chunks carry them too** (a deviation
+from item 3, which named LOD sections): 2.7 KiB on a chunk node's ~25 KiB, and every horizon ray
+then fits a 128-step cap. Memory measured: 28 KiB per non-trivial chunk node, 6 KiB per LOD
+section node (with its column grid); 35 MiB for that whole view.
+
 Rules that keep it correct and bounded: hit positions from integer cell + face + t (never
 `floor(origin + t·dir)` — the source of acne and seam cracks); secondary rays start from the hit
 face; a step cap (128 on phones) with the fog distance as max range and the sky colour on the cap;
