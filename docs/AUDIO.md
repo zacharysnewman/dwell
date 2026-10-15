@@ -1,6 +1,7 @@
 # Dwell — Sound Effects
 
-> **Status: [in progress, Phase 28]** — decisions in [ADR 0032](./adr/0032-audio.md); the built
+> **Status: [in progress, Phase 28]** — built and tested; waiting for the owner's listening review
+> of the WAV renders and answers to §9. Decisions in [ADR 0032](./adr/0032-audio.md); the built
 > mechanisms are summarised in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §5.2 and §6.1 (the
 > registry's `sound` field). The sounds themselves are **prototype content** (§6.1), like the
 > block set: they exercise the system and are expected to be replaced.
@@ -76,9 +77,18 @@ envelope (linear attack, hold, exponential decay); grains repeat that per burst.
 released when their envelope ends. The same code renders into an `OfflineAudioContext` for tests and
 the WAV renders.
 
-The **mixer** (`engine.ts`): effects bus and UI bus → master gain → a soft limiter
-(`DynamicsCompressorNode`, fast attack, high ratio) → output. Effects also feed a small room
-(a `ConvolverNode` with a generated 0.5 s stereo impulse), at each sound's `reverb` send.
+The **mixer** (`mixer.ts`): effects bus and UI bus → master gain → a soft limiter (a
+`WaveShaperNode`: linear to 0.7, then a tanh knee that never passes full scale; Chrome's
+`DynamicsCompressorNode` adds its own make-up gain, which pushed renders past full scale) → output.
+Effects also feed a small room (a `ConvolverNode` with a generated 0.55 s stereo impulse: early
+reflections and a darkening tail), at each sound's `reverb` send (kept low: the world is outdoors).
+Envelopes hold their gain at 0 before they start (a param's intrinsic 1 would pass a source's first
+sample as a click).
+
+**Levels** were set from the renders: each sound's `gain` was tuned to an A-weighted loudness
+target for its category (footsteps quieter than landings and breaks, hits and player sounds
+quieter still, UI sounds soft), with single plays peaking at or below about 0.6 so overlapping
+sequences stay under the limiter's knee. Footsteps are then scaled by their gait's `gain`.
 
 ## 4. Variation (`variation.ts`)
 
@@ -119,6 +129,10 @@ simulation, and it reads only the predicted state the game already has.
 
 ## 6. The shell (`client/src/audio/`)
 
+- Game actions the shell handles play their `actions` sound: a hotbar change (keys, wheel, tap),
+  flight on and off and its speed, the game menu opening and closing (Esc, ☰, Resume, the backdrop),
+  the F3 overlay, the F4 map and its zoom, F6's copy (success, or error), the touch Break/Place
+  switch. Their buttons carry `data-sound="none"` so they do not also click.
 - `engine.ts`: the AudioContext (created and resumed on the first pointer, key or touch gesture —
   browser autoplay rules, iOS Safari's "interrupted" state), the buses, volumes, muting while the tab
   is hidden, spatial playback (`PannerNode`, HRTF on desktop and equal-power on phones, inverse
@@ -142,10 +156,15 @@ simulation, and it reads only the predicted state the game already has.
   new button gets the click), the settings store.
 - Rust: footstep cadence from distance travelled, landing intensity from impact speed, jump,
   crouch, splash, edits (immediate, echo suppressed, remote spatial, indestructible → hit).
-- Offline renders (`npm run sfx:render`): every sound of every set and every action and UI sound
-  rendered in Chromium with `OfflineAudioContext` through the real mixer; asserted non-silent,
-  peak < 1.0 and a sensible length; written to WAV for listening, with 10-step sequences per surface
-  and several break/place variations per block.
+- Offline renders (`npm run sfx:render -- --out <dir>`): every sound of every set and every action
+  and UI sound rendered in Chromium with `OfflineAudioContext` through the real mixer (the page is
+  built from `client/src/audio/render.ts` and served with `vite preview` on port 4178); asserted
+  non-silent, peak < 1.0 and a sensible length; written to WAV for listening (`set_<set>_<event>`,
+  `event_*`, `action_*`, `ui_*`), with 10-step walk and run sequences per surface
+  (`steps_<set>_<gait>_x10`), four break and four place variations per set (`break_<set>_x4`,
+  `place_<set>_x4`) and landings soft to hard (`land_<set>_soft_to_hard`), plus `summary.txt`.
+- Debug hooks: `window.__dwell.sounds()` in a game and `window.__dwellSounds()` on any page with
+  sound list the latest sounds played.
 
 ## 8. Not covered
 
