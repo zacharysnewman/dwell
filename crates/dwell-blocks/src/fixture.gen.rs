@@ -63,6 +63,6 @@ pub static STATES: [StateInfo; 15] = [
 ];
 
 pub static FLUIDS: [FluidInfo; 2] = [
-    FluidInfo { name: "dwell:water", opacity: 0.72, surface_drop: 0.125, absorption: [0.7, 0.28, 0.06], scatter: 0x1c7ed8, roughness: 0.08, ior: 1.333, normal_scale: 1.0, wave_scale: 2.0, flow_speed: 0.03, foam_depth: 0.4, foam_color: 0xeef6f8, caustics: 1.0 },
+    FluidInfo { name: "dwell:water", opacity: 0.72, surface_drop: 0.125, absorption: [0.45, 0.12, 0.04], scatter: 0x1a8ee0, roughness: 0.08, ior: 1.333, normal_scale: 1.0, wave_scale: 2.0, flow_speed: 0.03, foam_depth: 0.4, foam_color: 0xeef6f8, caustics: 1.0 },
     FluidInfo { name: "test:oil", opacity: 0.8, surface_drop: 0.25, absorption: [2.0, 2.5, 3.0], scatter: 0x2a2410, roughness: 0.02, ior: 1.47, normal_scale: 0.4, wave_scale: 4.0, flow_speed: 0.005, foam_depth: 0.0, foam_color: 0xc8b070, caustics: 0.2 },
 ];

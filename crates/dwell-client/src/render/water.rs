@@ -299,7 +299,7 @@ mod tests {
         let water = at("dwell:water");
         // absorption, opacity
         assert_eq!(&oil[0..4], &[2.0, 2.5, 3.0, 0.8]);
-        assert_eq!(&water[0..4], &[0.7, 0.28, 0.06, 0.72]);
+        assert_eq!(&water[0..4], &[0.45, 0.12, 0.04, 0.72]);
         // scatter (linear), roughness
         let s = linear_rgb(0x2a2410);
         assert_eq!(&oil[4..8], &[s[0], s[1], s[2], 0.02]);
