@@ -111,6 +111,20 @@ impl Rig {
 
     /// One 60 Hz frame: the server steps, messages flow both ways, the game runs a frame.
     fn frame(&mut self) {
+        self.server_step();
+        self.game_frame();
+    }
+
+    /// A frame that took `steps` server ticks (a slow device: `steps` / 60 s per frame).
+    fn slow_frame(&mut self, steps: usize) {
+        for _ in 0..steps {
+            self.server_step();
+        }
+        self.game_frame();
+    }
+
+    /// 1/60 s of the server's time: the client's messages reach it, it steps, its answers return.
+    fn server_step(&mut self) {
         self.now += 1000.0 / 60.0;
         let now = self.now;
         for out in self.session.take_out() {
@@ -130,6 +144,11 @@ impl Rig {
             }
         }
         self.session.tick(now);
+    }
+
+    /// One frame of the game at the current time: it reads what arrived, ticks, draws and sends.
+    fn game_frame(&mut self) {
+        let now = self.now;
         if self.game.is_none()
             && let SessionState::Joined {
                 player_id,
@@ -327,4 +346,48 @@ fn a_placed_camera_views_the_world_from_there() {
     rig.run_until(2, |_| false);
     let camera = rig.scene.borrow().camera.unwrap();
     assert!((camera[0] - feet[0]).abs() < 2.0 && (camera[2] - feet[2]).abs() < 2.0);
+}
+
+#[test]
+fn a_slow_device_walks_without_snapping() {
+    // A device drawing ~5.5 frames a second (CI's software renderer with two pages,
+    // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks. Its prediction must
+    // keep the server's time, or the server fills the missing ticks by repeating the last input
+    // (walking further than the player did) and every snapshot snaps the player back.
+    let mut rig = Rig::new();
+    assert!(
+        rig.run_until(60 * 30, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "the player is placed and the terrain around them arrives"
+    );
+    // Settle on the ground at full speed, then slow down.
+    rig.run_until(60, |_| false);
+    for _ in 0..10 {
+        rig.slow_frame(11);
+    }
+    let game = |r: &Rig| r.game.as_ref().unwrap().debug_state();
+    let before = game(&rig).stats;
+    let start = game(&rig).feet;
+    rig.input.set_key("KeyW", true);
+    for _ in 0..6 {
+        rig.slow_frame(11);
+    }
+    rig.input.set_key("KeyW", false);
+    for _ in 0..10 {
+        rig.slow_frame(11);
+    }
+    let after = game(&rig).stats;
+    let feet = game(&rig).feet;
+    let moved = ((feet[0] - start[0]).powi(2) + (feet[2] - start[2]).powi(2)).sqrt();
+    assert!(moved > 2.0, "walked {moved} m");
+    // Predicted ticks keep up with the server's (66 frames of 11 ticks = 1.1 s here).
+    assert!(
+        after.ticks - before.ticks >= 16 * 11 - 11,
+        "{} ticks predicted for {} of the server's",
+        after.ticks - before.ticks,
+        16 * 11
+    );
+    assert_eq!(after.snaps, before.snaps, "{after:?}");
 }
