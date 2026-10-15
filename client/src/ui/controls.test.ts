@@ -20,6 +20,26 @@ describe('controls', () => {
     expect(new Set(keyboard).size).toBe(keyboard.length);
   });
 
+  it('lists the region tools (dwell-game region_tools.rs tool_for_key)', () => {
+    const tools = KEYBOARD.find((g) => g.title === 'Region tools')?.controls ?? [];
+    const keys = tools.flatMap((c) => c.keys);
+    for (const k of [
+      'B',
+      'N',
+      'X',
+      'G',
+      'H',
+      'T',
+      'Delete',
+      'R',
+      'M',
+      'Ctrl+C',
+      'Ctrl+V',
+      'Ctrl+Z',
+    ])
+      expect(keys).toContain(k);
+  });
+
   it('joins alternatives', () => {
     expect(keysLabel({ action: 'Crouch', keys: ['C', 'Ctrl'] })).toBe('C / Ctrl');
   });

@@ -618,7 +618,7 @@ impl Client {
         }
         let k = s.input.key_down(code, repeat, ctrl, meta, time_stamp_ms);
         for e in k.events {
-            s.on_input_event(e);
+            s.on_input_event(e, time_stamp_ms);
         }
         k.prevent_default
     }
@@ -776,6 +776,34 @@ impl Client {
             EditAction::Break
         };
         self.inner.borrow_mut().edit(action, now_ms)
+    }
+    /// Runs a region tool by name (`cornerA`, `cornerB`, `deselect`, `fill`, `hollow`, `replace`,
+    /// `clear`, `copy`, `pasteMode`, `rotate`, `mirror`, `paste`, `undo`, `redo`) as its key would;
+    /// true if it sent a region edit. For tools and tests (keys need the pointer locked).
+    pub fn tool(&self, name: &str, now_ms: f64) -> bool {
+        use dwell_game::region_tools::ToolAction as T;
+        let tool = match name {
+            "cornerA" => T::CornerA,
+            "cornerB" => T::CornerB,
+            "deselect" => T::Deselect,
+            "fill" => T::Fill,
+            "hollow" => T::Hollow,
+            "replace" => T::Replace,
+            "clear" => T::Clear,
+            "copy" => T::Copy,
+            "pasteMode" => T::PasteMode,
+            "rotate" => T::Rotate,
+            "mirror" => T::Mirror,
+            "paste" => T::Paste,
+            "undo" => T::Undo,
+            "redo" => T::Redo,
+            _ => return false,
+        };
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .is_some_and(|g| g.tool(tool, now_ms))
     }
     pub fn select(&self, slot: i32) {
         let mut s = self.inner.borrow_mut();
@@ -1068,6 +1096,7 @@ impl Client {
                 g.hud.debug.as_deref().map_or(JsValue::NULL, JsValue::from),
             );
             set(&o, "damaged", std::mem::take(&mut g.hud.damaged));
+            set(&o, "region", g.region.status().as_str());
         }
         o.into()
     }
@@ -1262,7 +1291,7 @@ impl Inner {
         self.game.as_mut().is_some_and(|g| g.edit(action, now_ms))
     }
 
-    fn on_input_event(&mut self, e: InputEvent) {
+    fn on_input_event(&mut self, e: InputEvent, now_ms: f64) {
         match e {
             InputEvent::Toggle(key) => self.shell_events.push(shell_event("toggle", key)),
             InputEvent::Digit(code) => {
@@ -1278,6 +1307,11 @@ impl Inner {
                 }
             }
             InputEvent::FlightChanged(on) => self.shell_events.push(shell_event("flight", on)),
+            InputEvent::Tool(tool) => {
+                if let Some(g) = &mut self.game {
+                    g.tool(tool, now_ms);
+                }
+            }
         }
     }
 
@@ -1407,6 +1441,7 @@ impl Inner {
             generator_version,
             verification_chunk,
             may_fly,
+            region_edits,
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;
@@ -1438,6 +1473,7 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
+        game.region.enabled = region_edits;
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }

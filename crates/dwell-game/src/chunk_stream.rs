@@ -25,6 +25,43 @@ pub type Coord = [i32; 3];
 pub const MIN_CHUNK_Y: i32 = WORLD_BOTTOM_Y.div_euclid(CHUNK_SIZE);
 pub const MAX_CHUNK_Y: i32 = WORLD_MAX_Y / CHUNK_SIZE - 1;
 
+/// The region tools read the client's world through the streamer: a box is loaded when every chunk
+/// it covers is, Air chunks included — the client never stores those, and its world reads them as
+/// air. (`region::read_box` on the bare world counts them as missing.)
+impl<G, M, V> crate::region_tools::BoxSource for ChunkStreamer<VoxelWorld, G, M, V>
+where
+    G: ChunkSource,
+    M: Mesher,
+    V: TerrainView<M::Meshes>,
+{
+    fn read_box(&mut self, min: [i32; 3], size: [i32; 3]) -> Option<Vec<u16>> {
+        if size.iter().any(|&n| n < 1) {
+            return Some(Vec::new());
+        }
+        let lo = min.map(|v| v.div_euclid(CHUNK_SIZE));
+        let hi: [i32; 3] = std::array::from_fn(|i| (min[i] + size[i] - 1).div_euclid(CHUNK_SIZE));
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                for x in lo[0]..=hi[0] {
+                    if !self.is_loaded([x, y, z]) {
+                        return None;
+                    }
+                }
+            }
+        }
+        let world = self.store_mut();
+        let mut out = Vec::with_capacity(size.iter().map(|&n| n as usize).product());
+        for y in 0..size[1] {
+            for z in 0..size[2] {
+                for x in 0..size[0] {
+                    out.push(world.get_voxel(min[0] + x, min[1] + y, min[2] + z));
+                }
+            }
+        }
+        Some(out)
+    }
+}
+
 /// What the streamer needs from the client sim.
 pub trait ChunkStore {
     fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]);
@@ -834,6 +871,25 @@ mod tests {
     fn sorted(mut v: Vec<Coord>) -> Vec<Coord> {
         v.sort();
         v
+    }
+
+    /// The region tools read a box through the streamer: an Air chunk the server sent is loaded
+    /// (all air), though the client never stores it; a chunk not sent is not.
+    #[test]
+    fn a_box_over_an_air_chunk_reads_as_loaded_air() {
+        use crate::region_tools::BoxSource;
+        let mut s = ChunkStreamer::new(
+            VoxelWorld::streamed(),
+            ManualSource::default(),
+            FakeMesher::default(),
+            FakeView::default(),
+        );
+        s.on_chunk_data(explicit([0, -1, 0], 1, 7));
+        s.on_chunk_data(air([0, 0, 0]));
+        // A 1 × 2 × 1 box across the border: the top of the stored chunk and the bottom of the Air one.
+        assert_eq!(s.read_box([3, -1, 3], [1, 2, 1]), Some(vec![7, 0]));
+        // Into a chunk the server hasn't sent: not loaded.
+        assert_eq!(s.read_box([3, 31, 3], [1, 2, 1]), None);
     }
 
     #[test]

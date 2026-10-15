@@ -13,6 +13,7 @@ pub use dwell_physics::net::{dequantize_pitch, dequantize_yaw, quantize_pitch, q
 
 use crate::flight::FlightToggle;
 use crate::flight_speed::clamp_fly_speed_level;
+use crate::region_tools::{ToolAction, tool_for_key};
 use crate::touch::TouchState;
 use crate::wrap_degrees;
 
@@ -93,6 +94,8 @@ pub enum InputEvent {
     Digit(String),
     /// Flight turned on or off (double-tapped Space).
     FlightChanged(bool),
+    /// A region tool's key (`region_tools::tool_for_key`).
+    Tool(ToolAction),
 }
 
 /// A key press's results: whether the shell should `preventDefault()` it, and what it asks for.
@@ -206,6 +209,21 @@ impl KeyboardMouseInput {
             return KeyDown {
                 prevent_default: false,
                 events: vec![InputEvent::Toggle(code.to_owned())],
+            };
+        }
+        // Region tools (§6.5), only while playing (the pointer locked: never while typing in a
+        // menu). The key is not held: with ⌘ down, macOS sends no keyup for it.
+        let shift = self.keys.contains("ShiftLeft") || self.keys.contains("ShiftRight");
+        if self.pointer_locked
+            && let Some(tool) = tool_for_key(code, ctrl || meta, shift)
+        {
+            return KeyDown {
+                prevent_default: true,
+                events: if repeat {
+                    Vec::new()
+                } else {
+                    vec![InputEvent::Tool(tool)]
+                },
             };
         }
         self.keys.insert(code.to_owned());
@@ -371,6 +389,48 @@ mod tests {
             vec![InputEvent::FlightChanged(true)]
         );
         assert!(input.sample(None).fly);
+    }
+
+    #[test]
+    fn region_tool_keys_only_while_playing_and_command_keys_are_not_held() {
+        let mut input = KeyboardMouseInput::new();
+        // Not playing (a menu's text box has the keys): Backspace and Ctrl+C are the page's.
+        assert!(
+            !input
+                .key_down("Backspace", false, false, false, 0.0)
+                .prevent_default
+        );
+        assert!(
+            input
+                .key_down("KeyC", false, true, false, 0.0)
+                .events
+                .is_empty()
+        );
+        input.blur();
+        input.pointer_locked = true;
+        let g = input.key_down("KeyG", false, false, false, 0.0);
+        assert!(g.prevent_default);
+        assert_eq!(g.events, vec![InputEvent::Tool(ToolAction::Fill)]);
+        assert!(
+            input
+                .key_down("KeyG", true, false, false, 0.0)
+                .events
+                .is_empty()
+        );
+        // ⌘C copies and doesn't crouch (macOS sends no keyup for C while ⌘ is down).
+        assert_eq!(
+            input.key_down("KeyC", false, false, true, 0.0).events,
+            vec![InputEvent::Tool(ToolAction::Copy)]
+        );
+        assert!(!input.sample(None).crouch);
+        input.key_down("ShiftLeft", false, false, false, 0.0);
+        assert_eq!(
+            input.key_down("KeyZ", false, true, false, 0.0).events,
+            vec![InputEvent::Tool(ToolAction::Redo)]
+        );
+        // C alone still crouches.
+        input.key_down("KeyC", false, false, false, 0.0);
+        assert!(input.sample(None).crouch);
     }
 
     #[test]
