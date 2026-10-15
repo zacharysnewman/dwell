@@ -9,7 +9,7 @@ Open proposals:
 
 | Proposal | What | Status |
 |---|---|---|
-| [TREE_GROWTH.md](TREE_GROWTH.md) | Growing a hand-built tree over time from its extracted skeleton, and variations of it | Investigated 2026-10-14; owner questions open |
+| [TREE_GROWTH.md](TREE_GROWTH.md) | Growing a hand-built tree over time from its extracted skeleton, and variations of it | Investigated 2026-10-14; owner questions answered except grafting |
 
 Adopted proposals, and where they went:
 

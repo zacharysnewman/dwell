@@ -1,6 +1,6 @@
 # Proposal: growing and varying hand-built trees
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions open (§7). Builds on the adopted
+**Status:** investigated 2026-10-14, not adopted. Owner questions answered except grafting (§7). Builds on the adopted
 structure system ([`docs/STRUCTURES.md`](../STRUCTURES.md), ADR 0031, Phase 27).
 
 The ask: take a custom-built tree model and extrapolate from it so it "grows" over time, and produce
@@ -147,16 +147,25 @@ prototype content. The 32³ cap and JSON fields must match what S1 actually buil
 (Phase 18) reshaping wood or leaves; trees across chunk borders need all their chunks loaded to grow
 a stage; world format and protocol both change at G3.
 
-## 7. Questions for the owner
+## 7. Owner answers (2026-10-14)
 
-1. Growth visible over minutes or days? In stages or block by block?
-2. Must every stage be hand-approved (authored stages), or may in-between stages be inferred?
-3. Trees planted by players, placed already grown by worldgen, or both?
-4. Obstacles: stop the branch, or grow around?
-5. Does a cut trunk fell the tree (a Phase 20 body), and do leaves decay?
-6. Variation as "same tree, wiggled" (jitter) or "same species, different tree" (space colonization)?
-7. Grafting parts between models: wanted?
-8. Growth per build only, or a per-world growth-speed setting?
+| # | Question | Answer |
+|---|---|---|
+| 1 | How fast, in stages or block by block? | **1 m every 30 in-game days**, in 1 m (one-voxel) steps. In-game days aren't specced yet; assume a 30-minute day (20 min day, 10 min night), so a step every **15 real hours** and a 10 m tree in about 6 real days of world time. The rate is defined in in-game days so it follows whatever day length is chosen. One step extends every growing tip by one voxel along the skeleton (geodesic distance from the root), thickening and leaves following the pipe model and the tips |
+| 2 | Hand-approved or computed stages? | **Computed** (the skeleton reveal) |
+| 3 | Obstacles: stop or grow around? | **Stop**: a blocked node prunes its subtree |
+| 4 | Cut trunk, leaf decay? | **Phase 20's plan**: the cut-off part becomes its own physics body, settles and re-bakes into the ground (ARCHITECTURE §7.1–7.3); leaf decay not asked for |
+| 5 | Kind of variation? | **Branches placed differently, longer or shorter** (and their leaves with them): skeleton jitter (§4). Space colonization isn't needed |
+| 6 | Grafting parts between models? | Open: explained again to the owner (a trunk from one model with the crown of another, to multiply variety) |
+| 7 | Per-world growth speed? | **Yes**: a per-world growth-speed multiplier, stored with the world's settings and applied by the server |
+| — | Procedural or planted trees? | **Both**, from the owner's persistence model (§5a) |
+
+Notes:
+- The day/night cycle isn't designed yet; the world file already keeps a world time (`meta`), which
+  `stage(t)` reads. Growth catch-up uses world time, not wall-clock time, so a world that isn't
+  running doesn't grow.
+- With a step every 15 real hours, the sandbox needs a way to preview growth (G2: a "preview growth"
+  command or slider) — nobody will wait for it.
 
 ## Sources
 
