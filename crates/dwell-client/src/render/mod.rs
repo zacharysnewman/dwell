@@ -1019,6 +1019,7 @@ impl Renderer {
         );
         put(&clouds[0]);
         put(&clouds[1]);
+        put(&clouds[2]);
         u
     }
 
@@ -1518,8 +1519,8 @@ impl PassView {
     }
 }
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 17 vec4s.
-const FRAME_FLOATS: usize = 16 + 17 * 4;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 18 vec4s.
+const FRAME_FLOATS: usize = 16 + 18 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into

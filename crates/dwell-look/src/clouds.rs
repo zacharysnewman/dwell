@@ -19,7 +19,8 @@ use crate::{MOON_GLOW, Rgb, SUN_GLOW, TWILIGHT};
 pub struct DeckTunables {
     pub altitude_m: f64,
     pub curvature_m: f64,
-    pub ceiling_fade_m: f64,
+    pub cross_fade_m: f64,
+    pub inside_fog: f64,
     pub horizon_fade: f64,
     pub fade_start_m: f64,
     pub fade_end_m: f64,
@@ -61,6 +62,7 @@ pub struct CloudLight {
     pub silver_lining: f64,
     pub silver_power: f64,
     pub sun_warmth: f64,
+    pub top_light: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -113,17 +115,42 @@ impl CloudQuality {
     }
 }
 
-/// The distance along a unit view ray to the deck, for a ray whose dot with the viewer's up is
-/// `above`, with the deck `height` metres above the eye on a sphere of radius `curvature`: the
-/// positive root of |r·up + t·dir| = r + h, in the form that doesn't cancel (h straight up). None
-/// when the eye is at or above the deck.
-pub fn deck_distance(above: f64, height: f64, curvature: f64) -> Option<f64> {
-    if height <= 0.0 {
-        return None;
+/// The distance along a unit view ray to the deck. The deck is the sphere of radius `curvature +
+/// altitude` about a centre `curvature` below sea level, under the eye; the eye is `height` below it
+/// (negative: above it). `above` is the ray's dot with the viewer's up. From below (inside the
+/// sphere) every ray meets it; from above only rays down past the deck's own horizon do, at the near
+/// root. Each root is in the form that doesn't cancel (straight up or down it is |h|). None at the
+/// deck itself, or for a ray that misses.
+pub fn deck_distance(above: f64, height: f64, altitude: f64, curvature: f64) -> Option<f64> {
+    // The eye's distance from the centre, and |eye|² − |deck|² (< 0 inside).
+    let e = curvature + altitude - height;
+    let k = -height * (2.0 * (curvature + altitude) - height);
+    let ey = e * above;
+    if k < 0.0 {
+        Some(-k / (ey + (ey * ey - k).sqrt()))
+    } else if k == 0.0 || above >= 0.0 {
+        None
+    } else {
+        let disc = ey * ey - k;
+        (disc >= 0.0).then(|| k / (-ey + disc.sqrt()))
     }
-    let c = 2.0 * curvature * height + height * height;
-    let ry = curvature * above;
-    Some(c / (ry + (ry * ry + c).sqrt()))
+}
+
+/// How far the deck's horizon is from the eye, over how far it is from sea level: the distance
+/// fade stretches by this (at least 1), so from high above the deck reads as a cloud sea out to its
+/// own horizon.
+pub fn deck_reach(height: f64, altitude: f64, curvature: f64) -> f64 {
+    let k = height * (2.0 * (curvature + altitude) - height);
+    let sea = altitude * (2.0 * curvature + altitude);
+    (k.abs() / sea).sqrt().max(1.0)
+}
+
+/// Whether the deck, met `t` metres along a unit ray, is in front of what the scene drew there: the
+/// view ray scaled to view depth 1 is `ray_len` long, so the hit is at view depth `t / ray_len`;
+/// `scene_depth` is the opaque scene's view depth (0: nothing, the sky). The composite's
+/// `dwell_cloud_in_front` is this.
+pub fn cloud_in_front(t: f64, ray_len: f64, scene_depth: f64) -> bool {
+    scene_depth <= 0.0 || t / ray_len < scene_depth
 }
 
 /// The deck's height above the eye: the eye's height above sea level on its own face.
@@ -142,9 +169,12 @@ fn heading(deg: f64) -> [f64; 2] {
 }
 
 /// The clouds' per-frame uniforms: `offsets` (the noise point under the eye, and the warp field's
-/// offset from it, in cells, each wrapped into one period) and `cfg` (coverage, octaves, 1 with the
-/// self-shadow, the deck's height above the eye). `seconds` is the clouds' clock (world time where
-/// there is one). Face B's clouds are another part of the noise (half a period away).
+/// offset from it, in cells, each wrapped into one period), `cfg` (coverage, octaves, 1 with the
+/// self-shadow, the deck's height above the eye: negative above it) and `inside` (x: how much the
+/// eye is in cloud — the cloud's density under the eye, faded in over `cross_fade_m` either side of
+/// the deck, times `inside_fog`; y: the distance fade's stretch, `deck_reach`). `seconds` is the
+/// clouds' clock (world time where there is one). Face B's clouds are another part of the noise
+/// (half a period away).
 pub fn cloud_uniforms(
     t: &CloudTunables,
     eye: [f64; 3],
@@ -152,12 +182,24 @@ pub fn cloud_uniforms(
     seconds: f64,
     quality: CloudQuality,
     coverage: f64,
-) -> [[f32; 4]; 2] {
+) -> [[f32; 4]; 3] {
     let wrap = t.shape.wrap_m;
     let [wx, wz] = heading(t.wind.direction_deg).map(|c| c * t.wind.speed_mps * seconds);
     let [ex, ez] = heading(t.wind.evolve_direction_deg).map(|c| c * t.wind.evolve_mps * seconds);
     let side = if face < 0.0 { wrap / 2.0 } else { 0.0 };
-    let cells = |m: f64| (m.rem_euclid(wrap) / t.shape.scale_m) as f32;
+    let cells = |m: f64| (m.rem_euclid(wrap) / t.shape.scale_m);
+    let under = [cells(eye[0] - wx + side), cells(eye[2] - wz + side)];
+    let warp = [cells(wx - ex), cells(wz - ez)];
+    let height = deck_height(t, eye[1], face);
+    let coverage = coverage.clamp(0.0, 1.0);
+    let octaves = quality.octaves(t);
+    let near = 1.0 - smoothstep(0.0, t.deck.cross_fade_m, height.abs());
+    let inside = if near > 0.0 {
+        near * t.deck.inside_fog * t.shape.opacity * density(t, under, warp, octaves, coverage)
+    } else {
+        0.0
+    };
+    let cells = |m: f64| cells(m) as f32;
     [
         [
             cells(eye[0] - wx + side),
@@ -169,7 +211,13 @@ pub fn cloud_uniforms(
             coverage.clamp(0.0, 1.0) as f32,
             quality.octaves(t) as f32,
             if quality.self_shadow() { 1.0 } else { 0.0 },
-            deck_height(t, eye[1], face) as f32,
+            height as f32,
+        ],
+        [
+            inside as f32,
+            deck_reach(height, t.deck.altitude_m, t.deck.curvature_m) as f32,
+            0.0,
+            0.0,
         ],
     ]
 }
@@ -289,7 +337,9 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_MAX_OCTAVES: i32 = {MAX_OCTAVES};"),
         format!("const CLOUD_SCALE: f32 = {};", f(s.scale_m)),
         format!("const CLOUD_CURVATURE: f32 = {};", f(d.curvature_m)),
-        format!("const CLOUD_CEILING_FADE: f32 = {};", f(d.ceiling_fade_m)),
+        format!("const CLOUD_ALTITUDE: f32 = {};", f(d.altitude_m)),
+        format!("const CLOUD_CROSS_FADE: f32 = {};", f(d.cross_fade_m)),
+        format!("const CLOUD_TOP_LIGHT: f32 = {};", f(l.top_light)),
         format!("const CLOUD_HORIZON_FADE: f32 = {};", f(d.horizon_fade)),
         format!("const CLOUD_FADE_START: f32 = {};", f(d.fade_start_m)),
         format!("const CLOUD_FADE_END: f32 = {};", f(d.fade_end_m)),
@@ -375,17 +425,33 @@ fn cloud_shape(n_in: f32, coverage: f32) -> f32 {
 	return select(0.0, smoothstep(cut, cut + CLOUD_SOFTNESS, n), coverage > 0.0);
 }
 
-fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f {
+// `height` is the deck's height above the eye (negative: the eye is above it), `reach` the
+// distance fade's stretch (deck_reach). From below, clouds show above the horizon; from above, rays
+// down past the deck's horizon meet its top, faded where they graze it.
+fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32, reach: f32) -> vec4f {
 	let above = dir.y * face;
-	let h = max(height, 1e-3);
-	let c = 2.0 * CLOUD_CURVATURE * h + h * h;
-	let ry = CLOUD_CURVATURE * above;
-	let t = c / (ry + sqrt(ry * ry + c));
+	let e = CLOUD_CURVATURE + CLOUD_ALTITUDE - height;
+	let k = -height * (2.0 * (CLOUD_CURVATURE + CLOUD_ALTITUDE) - height);
+	let ey = e * above;
+	let disc = ey * ey - k;
+	let s = sqrt(max(disc, 0.0));
+	let from_below = k < 0.0;
+	let t = select(k / max(-ey + s, 1e-6), -k / max(ey + s, 1e-6), from_below);
+	let hit = from_below || (above < 0.0 && disc >= 0.0 && k > 0.0);
+	// The sine of the angle the ray meets the deck at, from above: 0 at the deck's horizon.
+	let graze = s / (CLOUD_CURVATURE + CLOUD_ALTITUDE);
+	let facing = select(smoothstep(0.0, CLOUD_HORIZON_FADE, graze), smoothstep(0.0, CLOUD_HORIZON_FADE, above), from_below);
 	let q = offsets.xy + dir.xz * (t / CLOUD_SCALE);
-	let shown = smoothstep(0.0, CLOUD_HORIZON_FADE, above)
-		* smoothstep(0.0, CLOUD_CEILING_FADE, height)
-		* (1.0 - smoothstep(CLOUD_FADE_START, CLOUD_FADE_END, t));
+	let shown = select(0.0, 1.0, hit) * facing
+		* smoothstep(0.0, CLOUD_CROSS_FADE, abs(height))
+		* (1.0 - smoothstep(CLOUD_FADE_START * reach, CLOUD_FADE_END * reach, t));
 	return vec4f(q, t, shown);
+}
+
+// Whether the deck point `t` along the unit ray is in front of the opaque scene at view depth
+// `depth` (0: the sky); `ray_len` is the length of the view ray scaled to view depth 1.
+fn dwell_cloud_in_front(t: f32, ray_len: f32, depth: f32) -> bool {
+	return depth <= 0.0 || t / ray_len < depth;
 }
 
 // The light the clouds take, from the renderer's frame (so they follow the sky frame and the
@@ -406,18 +472,18 @@ fn cloud_hue(c: vec3f) -> vec3f {
 	return pow(c / max(max(c.r, max(c.g, c.b)), 1e-4), vec3f(1.0 / 2.2));
 }
 
-fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offsets: vec4f, cfg: vec4f, lights: CloudLighting) -> vec3f {
+fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offsets: vec4f, cfg: vec4f, lights: CloudLighting) -> vec3f {
 	let day_pole = lights.day_pole;
 	let sun = lights.sun;
 	let moon = lights.moon;
 	let octaves = i32(cfg.y);
 	if (octaves <= 0 || deck.w <= 0.0) {
-		return clear;
+		return under;
 	}
 	let p = cloud_warped(deck.xy, offsets.zw, fw);
 	let d = cloud_shape(cloud_fbm(p, octaves, fw), cfg.x);
 	if (d <= 0.0) {
-		return clear;
+		return under;
 	}
 	let up = vec3f(0.0, face, 0.0);
 	// The light: the sun or the moon, whichever is above this face.
@@ -429,11 +495,17 @@ fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offse
 		let toward = light.xz * CLOUD_SHADOW_STEP;
 		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
 	}
-	let lit = exp(-CLOUD_ABSORPTION * occl);
+	// Seen from above, the deck's sunlit top: the light reaches it through less cloud.
+	let from_above = cfg.w < 0.0;
+	let lit = exp(-CLOUD_ABSORPTION * occl * select(1.0, 1.0 - CLOUD_TOP_LIGHT, from_above && dot(light, up) > 0.0));
 	// Day or night as the sky behind is: the sphere's gradient runs by the direction's dot with the
 	// day zenith, so a turned sky can be night on one side and day on the other.
+	// Below the horizon (the deck from above) it is the sky's level direction, as dwell_sky takes it.
+	let rise = dot(dir, up);
+	let level = dir - min(rise, 0.0) * up;
+	let flat = select(dir, level / max(length(level), 1e-6), rise < 0.0);
 	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole))
-		* smoothstep(-0.3, 0.1, dot(dir, day_pole));
+		* smoothstep(-0.3, 0.1, dot(flat, day_pole));
 	var day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
 	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
 	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);
@@ -445,7 +517,20 @@ fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offse
 	col += rim * mix(CLOUD_MOON_GLOW * 0.5, CLOUD_SUN_GLOW, dayness);
 	// Far cloud takes the sky's haze behind it.
 	col = mix(col, clear, 0.85 * smoothstep(0.0, CLOUD_FADE_END, deck.z));
-	return mix(clear, col, d * CLOUD_OPACITY * deck.w);
+	return mix(under, col, d * CLOUD_OPACITY * deck.w);
+}
+
+// Inside the cloud: the whole view mixed toward the cloud's lit colour by `amount` (cloud_uniforms'
+// inside.x), so passing through the deck is a fog, not a pop.
+fn dwell_cloud_fog(color: vec3f, amount: f32, face: f32, lights: CloudLighting) -> vec3f {
+	if (amount <= 0.0) {
+		return color;
+	}
+	let up = vec3f(0.0, face, 0.0);
+	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, lights.day_pole));
+	let day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), 0.6);
+	let night = mix(CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5), CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color), 0.6);
+	return mix(color, mix(night, day, dayness), amount);
 }
 ";
 
@@ -469,27 +554,113 @@ mod tests {
     }
 
     #[test]
-    fn the_deck_is_its_height_straight_up_and_finite_at_the_horizon() {
-        let (h, r) = (1500.0, 120_000.0);
-        assert!((deck_distance(1.0, h, r).unwrap() - h).abs() < 1e-9);
+    /// The hit `t` along the ray with dot `y` with up, from an eye `h` below the deck, lies on the
+    /// deck's sphere (radius r + a about a centre r below sea level).
+    fn on_sphere(y: f64, h: f64, a: f64, r: f64, t: f64) {
+        let e = r + a - h;
+        let (x, z) = ((1.0 - y * y).sqrt() * t, y * t + e);
+        assert!(((x * x + z * z).sqrt() - (r + a)).abs() < 1e-6, "y {y} h {h} t {t}");
+    }
+
+    #[test]
+    fn from_below_the_deck_is_its_height_straight_up_and_finite_at_the_horizon() {
+        // The eye at sea level, the deck 1.5 km up.
+        let (a, r) = (1500.0, 120_000.0);
+        let h = a;
+        assert!((deck_distance(1.0, h, a, r).unwrap() - h).abs() < 1e-9);
         // At the horizon: the tangent's length to the sphere r + h, √(2rh + h²).
-        let horizon = deck_distance(0.0, h, r).unwrap();
+        let horizon = deck_distance(0.0, h, a, r).unwrap();
         assert!((horizon - (2.0 * r * h + h * h).sqrt()).abs() < 1e-6);
         // Farther as the ray drops toward the horizon, and the hit is on the sphere.
         let mut last = 0.0;
         for i in (0..=100).rev() {
             let y = f64::from(i) / 100.0;
-            let t = deck_distance(y, h, r).unwrap();
+            let t = deck_distance(y, h, a, r).unwrap();
             assert!(t > last);
             last = t;
-            let (x, z) = ((1.0 - y * y).sqrt() * t, y * t + r);
-            assert!(((x * x + z * z).sqrt() - (r + h)).abs() < 1e-6);
+            on_sphere(y, h, a, r, t);
         }
         // A flat deck's 1/sin(e) for a huge radius.
-        let flat = deck_distance(0.25, h, 1e12).unwrap();
+        let flat = deck_distance(0.25, h, a, 1e12).unwrap();
         assert!((flat - h / 0.25).abs() < 1e-3);
-        assert_eq!(deck_distance(1.0, 0.0, r), None);
-        assert_eq!(deck_distance(1.0, -10.0, r), None);
+        // From below every ray meets it, even one aimed down (the composite's depth test hides it).
+        assert!(deck_distance(-0.5, h, a, r).is_some());
+        assert_eq!(deck_reach(h, a, r), 1.0);
+    }
+
+    #[test]
+    fn from_above_only_rays_down_past_its_horizon_meet_the_deck_top() {
+        let (a, r) = (1800.0, 120_000.0);
+        let h = -1200.0; // the eye 3 km up, 1.2 km over the deck
+        assert!((deck_distance(-1.0, h, a, r).unwrap() - 1200.0).abs() < 1e-9);
+        assert_eq!(deck_distance(1.0, h, a, r), None);
+        assert_eq!(deck_distance(0.0, h, a, r), None);
+        // The deck's horizon, seen from above: the ray grazing the sphere, √(|eye|² − |deck|²) away.
+        let e = r + a - h;
+        let grazing = -((e * e - (r + a) * (r + a)) / (e * e)).sqrt();
+        let at_horizon = deck_distance(grazing - 1e-9, h, a, r).unwrap();
+        assert!((at_horizon - (e * e - (r + a) * (r + a)).sqrt()).abs() < 1.0);
+        assert_eq!(deck_distance(grazing + 1e-3, h, a, r), None);
+        // Nearer as the ray steepens, on the sphere, and the near side (not through the far one).
+        let mut last = f64::INFINITY;
+        for i in 0..=100 {
+            let y = grazing - (1.0 + grazing) * f64::from(i) / 100.0;
+            let t = deck_distance(y, h, a, r).unwrap();
+            assert!(t < last + 1e-9 && t >= 1200.0 - 1e-9);
+            last = t;
+            on_sphere(y, h, a, r, t);
+        }
+        // High above, the deck reads as a sea out to its own horizon: the fade stretches.
+        assert!(deck_reach(-50_000.0, a, r) > 3.0);
+    }
+
+    #[test]
+    fn inside_the_deck_it_is_near_and_the_crossing_has_no_jump() {
+        let (a, r) = (1800.0, 120_000.0);
+        assert_eq!(deck_distance(1.0, 0.0, a, r), None);
+        // Just under and just over: straight up or down it is the small gap, and level rays meet it
+        // nearby from below and miss from above.
+        assert!((deck_distance(1.0, 0.5, a, r).unwrap() - 0.5).abs() < 1e-9);
+        assert!((deck_distance(-1.0, -0.5, a, r).unwrap() - 0.5).abs() < 1e-9);
+        assert!(deck_distance(0.0, 0.5, a, r).unwrap() < 400.0);
+        assert_eq!(deck_distance(0.0, -0.5, a, r), None);
+        // The view fogs as the eye nears the deck inside a cloud, from either side alike, and the
+        // deck itself fades out over the same band (dwell_cloud_deck's cross fade): no pop.
+        let mut t = CLOUDS;
+        t.shape.coverage = 1.0;
+        let at = |y: f64| {
+            cloud_uniforms(&t, [0.0, y, 0.0], 1.0, 0.0, CloudQuality::High, 1.0)[2][0]
+        };
+        let deck = t.deck.altitude_m;
+        assert!(at(deck) > 0.5, "{}", at(deck));
+        assert!((at(deck - 100.0) - at(deck + 100.0)).abs() < 0.05);
+        assert!(at(deck - 50.0) < at(deck) && at(deck - 300.0) < at(deck - 50.0));
+        assert_eq!(at(deck - t.deck.cross_fade_m - 1.0), 0.0);
+        assert_eq!(at(deck + t.deck.cross_fade_m + 1.0), 0.0);
+        assert_eq!(
+            cloud_uniforms(&t, [0.0, deck, 0.0], 1.0, 0.0, CloudQuality::Off, 1.0)[2][0],
+            0.0
+        );
+    }
+
+    #[test]
+    fn the_deck_draws_over_the_scene_only_in_front_of_it() {
+        // A view ray 20° off the view axis is 1/cos 20° long at view depth 1.
+        let len = 1.0 / 20f64.to_radians().cos();
+        let depth_of = |t: f64| t / len;
+        // The sky (no depth): always.
+        assert!(cloud_in_front(5000.0, len, 0.0));
+        // A chunk 50 m away in front of a deck 1.2 km below: the chunk shows.
+        assert!(!cloud_in_front(1200.0, len, depth_of(50.0)));
+        // A full-detail chunk at the edge of its range (352 m), and a LOD section 20 km away,
+        // with the deck at 5 km: the chunk shows, the far section is under the cloud.
+        assert!(!cloud_in_front(5000.0, len, depth_of(352.0)));
+        assert!(cloud_in_front(5000.0, len, depth_of(20_000.0)));
+        // Exactly at the surface the scene wins (strictly nearer to draw over it).
+        assert!(!cloud_in_front(1000.0, len, depth_of(1000.0)));
+        // The shader's twin is the same expression.
+        let src = cloud_wgsl(&CLOUDS);
+        assert!(src.contains("return depth <= 0.0 || t / ray_len < depth;"));
     }
 
     #[test]

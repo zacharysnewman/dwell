@@ -1,10 +1,11 @@
 {
   "$comment": "The sky's cloud layer (docs/CLOUDS.md, ADR 0034, Phase 31): a thin deck at a fixed altitude drawn in the sky, its shape a domain-warped fBm, lit by the sun and the moon. Run `node shared/look/clouds.mjs` after editing; CI fails if crates/dwell-look/src/clouds.gen.rs is stale.",
   "deck": {
-    "$comment": "altitudeM: the deck's height above sea level, on the viewer's face. curvatureM: the radius of the sphere the deck lies on (smaller: the deck meets the horizon nearer). ceilingFadeM: the clouds fade out as the eye rises to within this of the deck (none above it). horizonFade: the elevation sine over which clouds fade in above the horizon. fadeStartM/fadeEndM: the distance along the view ray over which clouds fade into the sky's haze.",
+    "$comment": "altitudeM: the deck's height above sea level, on the viewer's face. curvatureM: the radius of the sphere the deck lies on (smaller: the deck meets the horizon nearer). crossFadeM: the deck fades out as the eye comes within this of it, from below or above, and insideFog fades in instead: the view mixed toward the cloud colour by the density of the cloud the eye is in (0–1). horizonFade: the elevation sine over which clouds fade in above the horizon. fadeStartM/fadeEndM: the distance along the view ray over which clouds fade into the sky's haze.",
     "altitudeM": 1800,
     "curvatureM": 120000,
-    "ceilingFadeM": 400,
+    "crossFadeM": 400,
+    "insideFog": 0.9,
     "horizonFade": 0.06,
     "fadeStartM": 9000,
     "fadeEndM": 28000
@@ -29,7 +30,7 @@
     "evolveDirectionDeg": 200
   },
   "light": {
-    "$comment": "sRGB tints of the frame's lights (the renderer's sun, moon and sky ambient colours, so the clouds follow whatever sets the lights): sunlit (the sun's) and shade (the day sky's ambient) by day, nightLit (the moon's) and nightShade (the night sky's ambient) by moonlight, sunset the warm tint of a low sun. absorption: how fast light dims through cloud. shadowStepM: how far toward the light the self-shadow samples (High only). silverLining/silverPower: the bright rim of thin cloud near the sun or moon, and how tight it is around it. sunWarmth: how much a low sun tints the clouds.",
+    "$comment": "sRGB tints of the frame's lights (the renderer's sun, moon and sky ambient colours, so the clouds follow whatever sets the lights): sunlit (the sun's) and shade (the day sky's ambient) by day, nightLit (the moon's) and nightShade (the night sky's ambient) by moonlight, sunset the warm tint of a low sun. absorption: how fast light dims through cloud. shadowStepM: how far toward the light the self-shadow samples (High only). silverLining/silverPower: the bright rim of thin cloud near the sun or moon, and how tight it is around it. sunWarmth: how much a low sun tints the clouds. topLight: how much less light the deck's top loses through the cloud, seen from above (bright sunlit tops).",
     "sunlit": "#fffaf0",
     "shade": "#eceae6",
     "sunset": "#ffbc8a",
@@ -39,6 +40,7 @@
     "shadowStepM": 320,
     "silverLining": 0.9,
     "silverPower": 8,
-    "sunWarmth": 0.4
+    "sunWarmth": 0.4,
+    "topLight": 0.7
   }
 }

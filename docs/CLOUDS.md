@@ -12,21 +12,22 @@ defaults were chosen and are open to change (§6):
 
 | Question | Default taken |
 |---|---|
-| What gets added later? | More tunables in the data, a weather system driving the coverage, and maybe more cloud layers (one deck now). |
+| What gets added later? | More tunables in the data, a weather system driving the coverage (decided, §6), cloud shadows on the terrain (decided, §6), and maybe more cloud layers (one deck now). |
 | Who adds them, and with what? | A developer edits `shared/look/clouds.json` (validated, generated, CI stale check). A weather system would call `setCloudCoverage` / `Renderer::set_cloud_coverage`. |
 | What stays fixed in code? | The deck model (a sphere-curved plane), the noise (value-noise fBm with a domain warp), the lighting terms, the octave transform. |
-| What is data? | Altitude, curvature, fades, cell size, wrap, octaves (High and Low), gain, warp, coverage, edge softness, opacity, wind and evolve speeds and directions, the colour tints, absorption, the shadow step, the silver lining, the sunset warmth. |
+| What is data? | Altitude, curvature, fades, cell size, wrap, octaves (High and Low), gain, warp, coverage, edge softness, opacity, wind and evolve speeds and directions, the colour tints, absorption, the shadow step, the silver lining, the sunset warmth, the cross fade, the in-cloud fog and the top light. |
 | Per build, per world or per player? | Tunables per build. The Clouds quality setting per browser. Coverage per frame (a uniform, for weather). |
 
 ## 2. The model
 
 - **The deck.** The deck is a thin layer `altitudeM` (1.8 km) above the viewer's face's sea level. It
-  lies on a sphere of radius `curvatureM` (120 km) centred that far below the eye. A sky pixel's view
-  ray `d` meets it at distance `t = c / (r·y + √(r²y² + c))`, with `c = 2rh + h²`, `y = d·up` and `h`
-  the deck's height above the eye. This form doesn't cancel: `t = h` straight up and `√(2rh + h²)`
+  lies on a sphere about a centre `curvatureM` (120 km) below sea level, under the eye. From an eye
+  at sea level, a sky pixel's view ray `d` meets it at distance `t = c / (r·y + √(r²y² + c))`, with
+  `c = 2rh + h²`, `y = d·up` and `h` the deck's height above the eye (§7 has the general form, from
+  any height). This form doesn't cancel: `t = h` straight up and `√(2rh + h²)`
   ≈ 21 km at the horizon. Below the horizon the clouds are hidden. They fade in over `horizonFade`,
-  fade out between `fadeStartM` and `fadeEndM` along the ray, and fade as the eye rises within
-  `ceilingFadeM` of the deck (none above it).
+  fade out between `fadeStartM` and `fadeEndM` along the ray, and fade as the eye comes within
+  `crossFadeM` of the deck. From above, the deck's top shows (§7).
 - **World-anchored, f32-safe.** The hit's horizontal offset from the eye is added to the noise point
   under the eye. That point is `(eye − wind·t) mod wrapM` in cells, computed in f64 on the CPU. The
   lattice repeats every `wrapM` (128 km, a whole number of `scaleM` cells), and each octave's
@@ -102,17 +103,56 @@ on a phone.
   drift), and the fade near the deck. Face B by day and night was checked with a scratch scenario
   (the camera placed over B).
 
-## 6. Open questions for the owner
+## 6. The owner's answers (2026-10-15) and what's still open
 
-1. **The look.** Is this the right style? It is soft, stylised, painterly flat cumulus with warm lit
-   edges and cool shade. Should it be puffier, flatter, more or less coverage, faster wind?
-2. **Clouds from above.** Flying through the deck makes the clouds fade out, with nothing above it.
-   Should the deck be visible from above (looking down at it over the terrain), or rise with the
-   camera?
-3. **Weather.** Should a weather system drive coverage (and later colour), per world and
-   synchronised? The hook (`setCloudCoverage`) exists, but nothing calls it.
-4. **Shadows.** Should cloud shadows on the terrain come later? They are out of scope now.
+Decided:
+
+1. **The look**: the stylised look is right.
+2. **Clouds from above**: yes. The deck is drawn below an eye above it, over the terrain (§7).
+3. **Weather**: a weather system will drive the coverage later. Not built: it's a future item in
+   Phase 31 (C6). The hook (`setCloudCoverage`, a frame uniform) is there.
+4. **Shadows**: clouds will cast shadows on the terrain later. Not built: it's a future item in
+   Phase 31 (C7).
+
+Still open:
+
 5. **Synchronisation.** The drift runs on the server's tick, so players on one server see roughly the
-   same sky. Is that enough, or should the pattern be tied to a world seed?
+   same sky. Is that enough, or should the pattern be tied to a world seed? A weather system (C6)
+   would decide this with it.
 6. **The data's location.** These tunables sit beside the motion effects' `shared/look/motion.json`
    (another branch), each with its own generator. Should they be folded into one look generator?
+
+## 7. Clouds from above (C5)
+
+The owner asked for the deck to be visible from above (answer 2 in §6).
+
+- **One sphere, both sides.** The deck is the sphere of radius `curvatureM + altitudeM` about a centre
+  `curvatureM` below sea level, under the eye. The eye is `h` below the deck (negative: above it).
+  - From below (inside the sphere), every ray meets the deck at the far root, and the clouds show
+    above the horizon as before.
+  - From above (outside), only rays aimed down past the deck's own horizon meet it, at the near
+    root: the deck's top.
+  - Both roots are in forms that don't cancel. `deck_distance` is the f64 twin, tested from below,
+    above and inside.
+  - From above, the clouds fade where the ray grazes the deck (`horizonFade`, on the sine of the
+    angle it meets the sphere at). The distance fade stretches by `deck_reach`: how far the deck's
+    horizon is from the eye, over how far it is from sea level. So from high up the deck reads as a
+    cloud sea out to its own horizon.
+- **Over the scene, by depth.** The deck hit is `t` along the unit ray. The view ray scaled to view
+  depth 1 is `|ray|` long, so the hit's view depth is `t / |ray|`. The composite draws the clouds
+  over a covered pixel only when that is nearer than the stored view depth (A1's `r32float` target,
+  the mean of the covered samples). The view depth has one meaning across the far and near passes,
+  so chunks and LOD sections compare alike. This is `dwell_cloud_in_front`; its twin
+  `cloud_in_front` is tested at chunk and LOD distances. It also puts the deck correctly in front of
+  a peak seen through it from below. The terrain still fogs toward the clear sky first, and the
+  clouds go over that.
+- **Bright tops.** Seen from above with the light over the face, the light reaches the top through
+  less cloud: the self-shadow's absorption is cut by `topLight` (0.7). Day or night follows the sky
+  in the ray's level direction, as `dwell_sky` takes it below the horizon.
+- **The crossing.** The deck fades out over `crossFadeM` (400 m) either side of it, from below as
+  before and now from above. As it does, an in-cloud fog fades in: the whole view mixes toward the
+  cloud's lit colour by the density of the cloud at the eye's position, times `insideFog` (0.9), times
+  how near the eye is to the deck. The CPU computes that density once a frame with the noise's twin
+  (`cloud_uniforms`' third vector). Clear air at the deck gives no fog, a cloud gives a white-out,
+  and nothing pops.
+- **Face B** uses its own deck: the height is face-local, and up is `(0, face, 0)`.

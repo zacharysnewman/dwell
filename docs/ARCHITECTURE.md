@@ -1268,9 +1268,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   output colour, as the sky is drawn.
 - **Clouds [built, Phase 31]** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)): a
   2D cloud layer drawn as part of the sky in the composite pass (not volumetric, no geometry). A thin
-  deck lies `altitudeM` above the viewer's own face's sea level, on a sphere of radius `curvatureM`
-  centred that far below the eye, so the deck meets the horizon about 21 km away. Each sky pixel's
-  view ray meets it (`dwell_cloud_deck`, a closed form that doesn't cancel; `deck_distance` is its
+  deck lies `altitudeM` above the viewer's own face's sea level, on a sphere about a centre
+  `curvatureM` below sea level, under the eye, so from the ground the deck meets the horizon about
+  21 km away. Each pixel's view ray meets it (`dwell_cloud_deck`, a closed form that doesn't cancel; `deck_distance` is its
   tested f64 twin), and the hit's horizontal world position drives a domain-warped fBm of value
   noise. Clouds have true perspective: large overhead, compressed toward the horizon, and the eye
   moves under them as it flies. The noise lattice repeats every `wrapM` (128 km, a whole number of
@@ -1283,7 +1283,15 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   moon, whichever is over the face. Day or night follows the sky behind each pixel. The data's
   colours tint the lights' hues. High adds a self-shadow sample a step toward the light. There is a
   silver lining near the light, a warm tint from a low sun, and a mix toward the clear sky with
-  distance. Clouds are hidden below the horizon and fade out as the eye rises to the deck. The
+  distance. From below, clouds are hidden below the horizon. **From above** (Phase 31 C5,
+  `CLOUDS.md` §7), rays aimed down past the deck's own horizon meet its top. The top is lit
+  brighter (`topLight`), and the distance fade stretches with the deck's horizon (`deck_reach`), so
+  from high up it reads as a cloud sea. The composite draws the clouds over the sky, and over the
+  scene where the deck's hit is nearer than the stored view depth (`dwell_cloud_in_front`: the hit's
+  view depth is `t / |ray|`, compared with A1's `r32float` target, so chunks and LOD sections alike
+  are tested). The deck fades out over `crossFadeM` either side of the eye. An in-cloud fog fades in
+  instead: the whole view mixes toward the cloud colour by the cloud's density at the eye, which the
+  CPU computes once a frame with the noise's twin. So passing through the deck has no pop. The
   terrain's fog still mixes toward the clear sky, so distant ground never takes a cloud's colour.
   The wind drifts the pattern, and the warp field drifts on its own, so the shapes change slowly.
   Their clock is the server's tick (`world_clock.rs`, from snapshots, so clients roughly agree),

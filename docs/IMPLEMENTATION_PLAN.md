@@ -46,7 +46,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner's approval of its image differences outstanding); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
-| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time |
+| 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing); outstanding: CI, a phone's frame time; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7) |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -2791,9 +2791,10 @@ light from the sky frame's sun and moon. It is an extendable system: tunables as
 run-time parameter for a future weather system, and a quality setting
 ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)).
 
-**Status:** In progress. C0–C4 are built and tested, natively, in Node and in a browser on the
-GPU. Outstanding: the owner's look and answers to `CLOUDS.md` §6 (the defaults were taken without
-asking: clouds are new), CI, and a phone's frame time. Built on Phase 25's A1 (branch
+**Status:** In progress. C0–C5 are built and tested, natively, in Node and in a browser on the
+GPU. The owner approved the look and answered `CLOUDS.md` §6 (2026-10-15); C5 (clouds from above)
+is built. Outstanding: CI and a phone's frame time. Future, not started: C6 (weather-driven
+coverage) and C7 (cloud shadows on the terrain). Built on Phase 25's A1 (branch
 `claude/a1-shared-frame`).
 
 Deliverables
@@ -2822,8 +2823,24 @@ Exit criteria
   low sun, while flying fast (parallax and drift), fading near the deck, and over face B by day and
   night, from screenshots.
 - [x] GPU cost measured against Off (`gpu.composite`, `--unthrottled`, `CLOUDS.md` §4).
-- [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
+- [x] The owner's look at the clouds, and answers to `CLOUDS.md` §6 (2026-10-15: the look is
+  right; clouds visible from above; weather and terrain shadows later; questions 5 and 6 stay open).
 - [ ] CI green, and the frame time on a phone with the default (Low).
+
+Follow-up (owner, 2026-10-15)
+- [x] **C5** — Clouds from above (`CLOUDS.md` §7):
+  - the deck's top drawn below an eye above it;
+  - over the terrain where the deck is nearer than the stored view depth (`dwell_cloud_in_front`);
+  - sunlit tops (`topLight`), and a cloud sea to the deck's horizon from high up (`deck_reach`);
+  - a cross-fade through the layer with an in-cloud fog (`crossFadeM`, `insideFog`), with no pop;
+  - face B on its own deck;
+  - tests from below, above and inside, and the depth comparison at chunk and LOD distances;
+  - bench scenarios `clouds-above`, `-through`, `-level` and `-above-night`.
+- [ ] **C6** — Weather-driven coverage (not started): a weather system sets the clouds' coverage
+  (`set_cloud_coverage`), with how it is synchronised between players decided with it
+  (`CLOUDS.md` §6, questions 3 and 5).
+- [ ] **C7** — Cloud shadows on the terrain (not started): the lit scene darkened where the deck is
+  between it and the light (`CLOUDS.md` §6, question 4).
 
 ---
 
