@@ -1,8 +1,13 @@
 # Proposal: a ray-marched renderer as an alternative, compared side by side
 
-**Status:** investigated 2026-10-14, not adopted. Owner direction (2026-10-14): **plan ray marching as
-an alternative rendering method and compare it side by side with the raster renderer.** Remaining
-owner questions in §9.
+**Status:** investigated 2026-10-14, not adopted. Owner direction (2026-10-14):
+
+- **Plan ray marching as an alternative rendering method and compare it side by side with the
+  raster renderer.**
+- **Ray marching for distant terrain is required**; the work is making it skip empty space well
+  (§4.3). So the comparison decides the *near field* only; the far field is marched either way.
+
+Remaining owner questions in §9.
 
 The game gets a second, complete terrain renderer: GPU ray marching over a sparse voxel structure
 (compute shaders, per-pixel marching, low-resolution marching with upscaling). The two can be
@@ -34,6 +39,13 @@ Written down before building so the results can be checked against it.
 
 If marching loses on speed but wins on looks, the fallback is the hybrid (raster primary
 visibility, marched lighting), which this plan builds along the way (§7, step A6).
+
+**Why the far field is the right place to march.** The LOD traversal is the largest CPU span today
+(about 2.6–2.9 ms of the frame), plus one draw per section, skirts and clipped stand-ins. A marched
+far field replaces all of that with a fixed set of passes whose cost depends on pixels, not on how
+many sections are in view, and the structure only changes when a section streams in. Distant
+terrain is also mostly empty space above a surface — the case hierarchical skipping is good at —
+and far pixels are small, so a coarse level per pixel is enough (§4.3).
 
 ## 2. Constraints both renderers must meet
 
@@ -78,7 +90,7 @@ Plan:
 
 ## 4. The ray-marched renderer
 
-### Data: a fixed-depth brickmap
+### 4.1 Data: a fixed-depth brickmap
 
 A two-level brickmap with a 64-tree node per chunk, under a clipmap per LOD level. Dwell's 32³ chunk
 is exactly one 4×4×4 node of 8³ bricks.
@@ -116,7 +128,7 @@ struct Node {
   binding. (Raster's comparable figure is its mesh arena plus the LOD cache; the comparison measures
   both.)
 
-### Passes
+### 4.2 Passes
 
 1. **Beam prepass**, 1/8 resolution: one conservative ray per 8×8 tile writes a start distance.
 2. **Primary march**, at the render scale (1, 0.75, 0.5): bitmask long-step marching over nodes,
@@ -131,6 +143,41 @@ struct Node {
    `@builtin(frag_depth)` into the depth buffer, then players, outline, lines and water raster on
    top with a normal depth test. With 4× MSAA the overlay edges alias against marched terrain:
    per-sample shading or TAA instead.
+
+### 4.3 Empty-space skipping (what makes the far field work)
+
+The cost of a ray is its step count; almost all of those steps are through air. Every layer below
+removes steps, ranked by value. Each one is measured by a **steps-per-ray histogram** (median, p95,
+p99, and the share hitting the cap) that the marcher writes to telemetry and the bench reports.
+
+1. **Cone LOD: the coarsest level that is still sub-pixel.** A ray's footprint grows with distance
+   (`distance × pixel angle`). The ray marches at the level whose cell is about one pixel wide, the
+   same pixel-error rule the LOD uses today (4 px desktop, 8 px phones), and moves up a level as it
+   goes further. Each level then covers a distance band of a fixed number of cells (about 176–350),
+   so the step count grows with the **number of levels** (log of distance), not the distance. This is
+   the single largest saving and the reason a world 8,000 km across is marchable at all.
+2. **The hierarchy's own masks.** Whole slots marked `ALL_AIR`, empty bricks in a node's 64-bit mask
+   and empty voxels in a brick's 512-bit mask are each skipped in one step; with the 2×2×2-coalesced
+   variant VoxelRT measured about 20 iterations per ray on average.
+3. **Column heights: skip everything above the ground.** Distant terrain is a surface with air above
+   it. Each LOD section keeps a small max-height grid per column (it already has exact column
+   surfaces, §2), with a min-max mip over it. A ray above the max height of a region crosses the whole
+   region in one step — the classic min-max height-field traversal. Rays looking up past the world's
+   max height exit to the sky immediately.
+4. **Distance per empty brick.** Each empty brick stores the Chebyshev distance (in bricks) to the
+   nearest non-empty one, computed when the node is built; a ray in an empty brick jumps that many
+   bricks at once. One byte per brick, built in the worker. Most useful for grazing rays, where the
+   masks alone still step brick by brick.
+5. **Start rays late.** The beam prepass (one conservative ray per 8×8 tile at 1/8 resolution) and
+   last frame's reprojected hit distance give each ray a start distance, so most rays begin a few
+   cells before their hit. In the hybrid split, rays also start at the end of the raster near field.
+6. **End rays early.** The fog distance is the max range; past about 99 % fog the colour is the
+   sky's. A step cap (128 on phones) returns fog colour if reached — visible only on the worst
+   grazing rays, and counted in the histogram.
+
+**Grazing rays are the hard case.** Rays skimming just above flat ground pass through mixed bricks
+the whole way, so masks alone help little; column heights (3) and brick distances (4) are what keep
+them bounded. `look-horizon` in the bench is the scenario that measures it.
 
 Rules that keep it correct and bounded: hit positions from integer cell + face + t (never
 `floor(origin + t·dir)` — the source of acne and seam cracks); secondary rays start from the hit
@@ -212,14 +259,19 @@ phone is the check.
 
 ### Decision criteria
 
-Agreed before the numbers come in (to be confirmed by the owner, §9):
+The far field is marched regardless (owner, 2026-10-14). Its bar is to be **at or under raster LOD's
+cost** (CPU + GPU) on every device, with the distant views' image agreement passing; if it isn't,
+the work is more skipping (§4.3), not a fallback.
+
+For the **near field** (full-detail chunks), agreed before the numbers come in (to be confirmed by
+the owner, §9):
 
 | Outcome | Then |
 |---|---|
-| March at its best config is at or under raster's p95 on desktop **and** phone, with image agreement passing and the owner preferring or accepting its look | Make it the default per device class where it wins; raster stays as the fallback |
-| March wins on desktop only | Default on desktop; raster on phones |
-| March loses on speed everywhere but its lighting (A6) is wanted | Keep raster primary visibility; ship the marched lighting as the hybrid |
-| March loses and its lighting isn't wanted | Keep raster; remove the marcher (or keep it behind the flag) |
+| Marched near field at its best config is at or under raster's p95 on desktop **and** phone, with image agreement passing and the owner preferring or accepting its look | Fully marched terrain, default per device class where it wins; raster chunks stay as the fallback |
+| It wins on desktop only | Fully marched on desktop; raster near field + marched far field on phones |
+| It loses on speed everywhere but its lighting (A6) is wanted | Raster near field + marched far field + marched lighting |
+| It loses and its lighting isn't wanted | Raster near field + marched far field |
 
 ## 6. Moving bodies and other content
 
@@ -241,11 +293,11 @@ Raster stays the default throughout; every step leaves the game shippable.
 | **A0** | ADR: a second renderer behind a runtime switch (amends ADR 0028's renderer description and ARCHITECTURE §5); owner answers §9 | ADR accepted |
 | **A1** | **Shared frame + GPU timing** (also `WATER.md` W2): offscreen `rgba16float` target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved to a composite pass; timestamp queries in the telemetry; `bench.ts` passes `--enable-webgpu-developer-features` | Bench before/after; raster screenshots match today (or the owner approves the difference) |
 | **A2** | **The seam and compare mode**: payload-generic terrain calls, the `?renderer=` switch and setting, compare mode's split/blink/difference with an empty "march" side; `bench --compare` with the configs table and report | Compare mode runs with raster on both sides and reports zero difference |
-| **A3** | **Near-field marcher**: the generated GPU state table, brick jobs in the workers, the pool and allocator, the CPU reference marcher, primary march at full resolution for level-0 chunks; LOD drawn by raster beyond them for now; overlays via the frag_depth pass | Reference-marcher tests; GPU-vs-reference per-pixel test in CI; first comparison report (desktop) |
-| **A4** | **Far field**: LOD sections as palette bricks at their levels, the column-surface data; raster LOD retired under `march` | Named-view agreement for distant terrain; fly-high comparison |
-| **A5** | **Low resolution and speed**: beam prepass, temporal start depth, FSR 1 and TAA-U, render scales 0.5/0.75; shapes (analytic planes) | Full comparison report on every device (§5) |
+| **A3** | **Far-field marcher (required)**: the generated GPU state table, LOD sections as palette bricks at their levels with column max-heights, brick jobs in the workers, the pool and allocator, the CPU reference marcher; the march draws everything beyond the full-detail chunks, which raster draws over it by depth (the clipmap leaves the chunk region empty, so rays pass through it); overlays via the frag_depth pass; steps-per-ray telemetry | Reference-marcher tests; GPU-vs-reference per-pixel test in CI; distant named views agree with raster LOD; `fly-high` and `look-horizon` comparisons on desktop |
+| **A4** | **Empty-space skipping** (§4.3): cone LOD, column min-max heights, brick distances, beam prepass, temporal start, fog and step-cap exits; tuned until the far field meets its bar on every device | Steps-per-ray p99 and far-field cost at or under raster LOD on desktop and phone |
+| **A5** | **Near-field marcher (for the comparison)**: level-0 chunk bricks, shapes (analytic planes), low resolution with FSR 1 and TAA-U, render scales 0.5/0.75; `march` mode draws all terrain | Full comparison report on every device (§5) |
 | **A6** | **Lighting under both**: half-res sun-shadow and AO rays from the G-buffer (march) or from raster's depth (hybrid), bilateral upsample, temporal accumulation; a quality setting | Comparison with lighting on and off; owner look |
-| **A7** | **Decision** by the criteria in §5; update ARCHITECTURE.md and the plan for whichever path is chosen | Owner decision recorded in the ADR |
+| **A7** | **Near-field decision** by the criteria in §5; retire raster LOD (the far field is marched in every outcome); update ARCHITECTURE.md and the plan | Owner decision recorded in the ADR |
 
 Moving bodies in the marcher (§6) and water rays (`WATER.md` W6) follow A7 if marching is kept.
 
@@ -269,8 +321,8 @@ Nothing here changes public API (world files, seeds' terrain, protocols), so no 
 
 ## 9. Questions for the owner
 
-1. **Decision criteria**: are the outcomes in §5 the right ones? What matters most — speed, looks,
-   view distance, or edit latency?
+1. **Near-field decision criteria**: are the outcomes in §5 the right ones? What matters most for
+   the near field — speed, looks, or edit latency?
 2. **Minimum devices**: which phones must hold 60 fps under the chosen renderer?
 3. Should the shared frame (A1) go first, since water needs it too?
 4. Is 4× MSAA kept, or can it give way to TAA if the composite needs it?
