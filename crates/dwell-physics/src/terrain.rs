@@ -30,6 +30,9 @@ struct Loaded {
     solid: Option<Mask>,
     /// The shaped cells' triangle mesh, if any.
     mesh: Option<ColliderHandle>,
+    /// What the mesh was built from (its vertices and triangles), so a rebuild that changes
+    /// nothing keeps the collider — and the body's contacts with it.
+    mesh_hash: u64,
 }
 
 type Mask = Box<[u64; CHUNK_VOLUME / 64]>;
@@ -65,7 +68,9 @@ fn is_cube(s: &ShapeInfo) -> bool {
 }
 
 fn signature(world: &VoxelWorld, c: ChunkCoord) -> (u64, u32) {
-    world.find(c).map_or((0, 0), |ch| (ch.stamp(), ch.revision()))
+    world
+        .find(c)
+        .map_or((0, 0), |ch| (ch.stamp(), ch.revision()))
 }
 
 fn around(c: ChunkCoord) -> impl Iterator<Item = ChunkCoord> {
@@ -82,6 +87,28 @@ struct Built {
     solid: Option<Mask>,
     vertices: Vec<DVec3>,
     triangles: Vec<[u32; 3]>,
+}
+
+impl Built {
+    /// FNV-1a 64 over the vertices' bits and the triangles.
+    fn mesh_hash(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut eat = |v: u64| {
+            for b in v.to_le_bytes() {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+        for v in &self.vertices {
+            eat(v.x.to_bits());
+            eat(v.y.to_bits());
+            eat(v.z.to_bits());
+        }
+        for t in &self.triangles {
+            eat(u64::from(t[0]) | u64::from(t[1]) << 21 | u64::from(t[2]) << 42);
+        }
+        h
+    }
 }
 
 fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
@@ -130,7 +157,8 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
         };
         if is_cube(shape) {
             out.solid
-                .get_or_insert_with(|| Box::new([0u64; CHUNK_VOLUME / 64]))[i / 64] |= 1 << (i % 64);
+                .get_or_insert_with(|| Box::new([0u64; CHUNK_VOLUME / 64]))[i / 64] |=
+                1 << (i % 64);
             continue;
         }
         for f in faces_of(shape) {
@@ -218,7 +246,12 @@ impl TerrainCollision {
         }
     }
 
-    fn insert_mesh(&self, physics: &mut Physics, c: ChunkCoord, b: Built) -> Option<ColliderHandle> {
+    fn insert_mesh(
+        &self,
+        physics: &mut Physics,
+        c: ChunkCoord,
+        b: Built,
+    ) -> Option<ColliderHandle> {
         if b.triangles.is_empty() {
             return None;
         }
@@ -245,16 +278,29 @@ impl TerrainCollision {
     /// (Re)builds a chunk's collision from the world, replacing what it held.
     fn load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) {
         let built = build(world, c);
+        let mesh_hash = built.mesh_hash();
         let old = self.chunks.remove(&c);
         let fresh = old.is_none();
-        let (old_solid, old_mesh) = old.map_or((None, None), |o| (o.solid, o.mesh));
+        let (old_solid, old_mesh, old_hash) =
+            old.map_or((None, None, 0), |o| (o.solid, o.mesh, o.mesh_hash));
         self.apply(physics, c, old_solid.as_ref(), built.solid.as_ref());
-        if let Some(h) = old_mesh {
-            physics.w.remove_collider(h);
-        }
         let solid = built.solid.clone();
-        let mesh = self.insert_mesh(physics, c, built);
-        self.chunks.insert(c, Loaded { solid, mesh });
+        let mesh = if !fresh && old_hash == mesh_hash {
+            old_mesh // the same triangles: keep the collider and its contacts
+        } else {
+            if let Some(h) = old_mesh {
+                physics.w.remove_collider(h);
+            }
+            self.insert_mesh(physics, c, built)
+        };
+        self.chunks.insert(
+            c,
+            Loaded {
+                solid,
+                mesh,
+                mesh_hash,
+            },
+        );
         if fresh {
             for d in around(c) {
                 let (stamp, revision) = signature(world, d);

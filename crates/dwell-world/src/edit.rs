@@ -28,10 +28,12 @@ pub fn placeable(m: StateId) -> bool {
     usize::from(m) < dwell_blocks::STATES.len() && info(m).placeable
 }
 
-/// The cell face a surface normal points through: its dominant axis, ties to the vertical.
+/// The cell face a surface normal points through: its dominant axis, ties to the vertical. A 45°
+/// slope (an adaptive ramp or ridge) is a tie whatever the rounding of its normal: within 1e-5.
 fn face_of_normal(n: [f32; 3]) -> u8 {
     let (ax, ay, az) = (n[0].abs(), n[1].abs(), n[2].abs());
-    if ay >= ax && ay >= az {
+    const TIE: f32 = 1e-5;
+    if ay + TIE >= ax && ay + TIE >= az {
         return if n[1] > 0.0 { 2 } else { 3 };
     }
     if ax >= az {

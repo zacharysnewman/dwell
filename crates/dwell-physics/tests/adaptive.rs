@@ -77,7 +77,11 @@ fn watch(w: &PlayerTestWorld, e: u32, height: &dyn Fn(i32, i32) -> i32, walk: &m
     if !w.c(e).ground.grounded && v.y > 0.5 {
         walk.rising_airborne += 1;
         if std::env::var("DWELL_DEBUG").is_ok() {
-            eprintln!("player {e} tick {} rising at {p} v {v} surface {}", w.tick, surface(height, p.x, p.z));
+            eprintln!(
+                "player {e} tick {} rising at {p} v {v} surface {}",
+                w.tick,
+                surface(height, p.x, p.z)
+            );
         }
     }
     walk.max_gap = walk.max_gap.max(w.feet(e) - surface(height, p.x, p.z));
@@ -129,13 +133,23 @@ fn the_game_world_shapes_the_playground_like_the_owner_did() {
             .split(',')
             .map(|s| s.trim().trim_matches('"'))
             .collect();
-        let (x, z, h): (i32, i32, i32) = (f[0].parse().unwrap(), f[1].parse().unwrap(), f[2].parse().unwrap());
+        let (x, z, h): (i32, i32, i32) = (
+            f[0].parse().unwrap(),
+            f[1].parse().unwrap(),
+            f[2].parse().unwrap(),
+        );
         assert_eq!(height(x, z), h);
-        let s = w
-            .world
-            .shape_at(world_cell_x(x), world_cell_y(h - 1), z);
+        let s = w.world.shape_at(world_cell_x(x), world_cell_y(h - 1), z);
         // The points the rules gave, against the local derivation `surface` uses.
-        for (fx, fz) in [(0.5, 0.5), (0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9), (0.5, 0.05), (0.05, 0.5)] {
+        for (fx, fz) in [
+            (0.5, 0.5),
+            (0.1, 0.1),
+            (0.9, 0.1),
+            (0.9, 0.9),
+            (0.1, 0.9),
+            (0.5, 0.05),
+            (0.05, 0.5),
+        ] {
             let world = solid_span_at(s, fx, fz);
             let height_world = if face_b() { 1.0 - world.lo } else { world.hi };
             let local = surface(&height, x as f32 + fx, z as f32 + fz) - (h - 1) as f32;
@@ -175,7 +189,10 @@ fn standing_still_on_every_playground_block_never_slides() {
     for (&(x, z, e), s) in players.iter().zip(&start) {
         let d = w.pos(e) - *s;
         if !w.c(e).ground.grounded || d.length() > 0.01 {
-            moved.push(format!("({x},{z}) moved {d} grounded {}", w.c(e).ground.grounded));
+            moved.push(format!(
+                "({x},{z}) moved {d} grounded {}",
+                w.c(e).ground.grounded
+            ));
         }
     }
     assert!(moved.is_empty(), "{} slid: {moved:?}", moved.len());
@@ -191,7 +208,11 @@ fn walk_the_playground(along_x: bool) -> Vec<String> {
     let walkers: Vec<u32> = (1..31)
         .map(|k| {
             let c = k as f32 + 0.5;
-            let start = if along_x { Vec3::new(-1.5, 0.02, c) } else { Vec3::new(c, 0.02, -1.5) };
+            let start = if along_x {
+                Vec3::new(-1.5, 0.02, c)
+            } else {
+                Vec3::new(c, 0.02, -1.5)
+            };
             w.spawn_yaw(start, yaw)
         })
         .collect();
@@ -209,7 +230,11 @@ fn walk_the_playground(along_x: bool) -> Vec<String> {
         let s = &seen[k];
         // Up a 45° ramp at walking speed the body rises at most at that speed.
         if s.rising_airborne > 3 || s.max_up > walk + 0.5 || w.count(e, events::JUMPED) > 0 {
-            bad.push(format!("{} {}: {s:?}", if along_x { "row" } else { "column" }, k + 1));
+            bad.push(format!(
+                "{} {}: {s:?}",
+                if along_x { "row" } else { "column" },
+                k + 1
+            ));
         }
     }
     bad
@@ -236,7 +261,11 @@ fn a_one_block_terrace_step_is_walked_up_and_down_without_jumping() {
     terrain(&mut w, (-8, -8, 8, 16), &height);
     let e = w.spawn(Vec3::new(0.5, 0.52, 0.5));
     w.step(ticks(0.5));
-    assert!(approx(w.feet(e), 0.5, 0.01), "rests at half height: {}", w.feet(e));
+    assert!(
+        approx(w.feet(e), 0.5, 0.01),
+        "rests at half height: {}",
+        w.feet(e)
+    );
     w.set_input(|_, _| mv(0.0, 1.0));
     let mut walk = Walk::default();
     for _ in 0..ticks(2.0) {
@@ -244,7 +273,11 @@ fn a_one_block_terrace_step_is_walked_up_and_down_without_jumping() {
         watch(&w, e, &height, &mut walk);
     }
     assert!(w.pos(e).z > 7.0, "{}", w.pos(e));
-    assert!(approx(w.feet(e), 1.5, 0.01), "on the upper level: {}", w.feet(e));
+    assert!(
+        approx(w.feet(e), 1.5, 0.01),
+        "on the upper level: {}",
+        w.feet(e)
+    );
     assert_eq!(w.count(e, events::JUMPED), 0);
     assert_eq!(walk.rising_airborne, 0, "{walk:?}");
     // And back down.
@@ -258,7 +291,10 @@ fn a_one_block_terrace_step_is_walked_up_and_down_without_jumping() {
     }
     assert!(w.pos(e).z < 2.0, "{}", w.pos(e));
     assert!(approx(w.feet(e), 0.5, 0.01), "{}", w.feet(e));
-    assert!(airborne <= 2, "walks down the slope, not off a ledge: {airborne}");
+    assert!(
+        airborne <= 2,
+        "walks down the slope, not off a ledge: {airborne}"
+    );
 }
 
 #[test]
@@ -286,7 +322,13 @@ fn a_one_wide_ridge_is_walked_over_without_a_launch() {
 #[test]
 fn single_block_stairs_are_a_run_of_45_degree_ramps_walked_without_jumping() {
     // Situation P: one-wide stairs 1, 2, 3, 4, 5 high along +x; each is a wedge up to the next.
-    let height = |x: i32, z: i32| if z == 0 && (0..5).contains(&x) { x + 1 } else { 0 };
+    let height = |x: i32, z: i32| {
+        if z == 0 && (0..5).contains(&x) {
+            x + 1
+        } else {
+            0
+        }
+    };
     let mut w = PlayerTestWorld::new();
     terrain(&mut w, (-4, -4, 8, 4), &height);
     let e = w.spawn_yaw(Vec3::new(-2.5, 0.02, 0.5), 90.0);
@@ -297,7 +339,12 @@ fn single_block_stairs_are_a_run_of_45_degree_ramps_walked_without_jumping() {
         watch(&w, e, &height, &mut walk);
     }
     assert_eq!(w.count(e, events::JUMPED), 0);
-    assert!(w.feet(e) > 4.0, "climbed the ramps: {} at {}", w.feet(e), w.pos(e));
+    assert!(
+        w.feet(e) > 4.0,
+        "climbed the ramps: {} at {}",
+        w.feet(e),
+        w.pos(e)
+    );
     assert!(walk.rising_airborne <= 3, "{walk:?}");
 }
 
@@ -322,7 +369,10 @@ fn walking_a_grass_field_across_chunk_seams_never_loses_the_ground() {
         }
     }
     assert_eq!(airborne, 0);
-    assert!(max_lift < 0.003, "sub-millimetre ripples at most: {max_lift}");
+    assert!(
+        max_lift < 0.003,
+        "sub-millimetre ripples at most: {max_lift}"
+    );
 }
 
 #[test]
@@ -349,7 +399,11 @@ fn a_block_placed_beside_a_standing_player_reshapes_the_ground_without_a_launch(
     let p = w.pos(e);
     let ground = surface(&|x, z| if (x, z) == (1, 0) { 2 } else { 1 }, p.x, p.z);
     // (On the 27° slope the capsule's round bottom sits ~4 cm above the surface under its centre.)
-    assert!((w.feet(e) - ground).abs() < 0.05, "on the new surface: {} vs {ground}", w.feet(e));
+    assert!(
+        (w.feet(e) - ground).abs() < 0.05,
+        "on the new surface: {} vs {ground}",
+        w.feet(e)
+    );
 }
 
 #[test]
@@ -373,5 +427,8 @@ fn every_slope_the_adaptive_table_makes_is_walkable() {
     let limit = dwell_physics::config::PlayerControllerConfig::default()
         .probes
         .max_slope_angle;
-    assert!(steepest < limit - 1.0, "{steepest}° against a limit of {limit}°");
+    assert!(
+        steepest < limit - 1.0,
+        "{steepest}° against a limit of {limit}°"
+    );
 }

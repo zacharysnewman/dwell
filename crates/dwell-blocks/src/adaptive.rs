@@ -7,7 +7,9 @@
 //! voxels, so server and client agree. A pure function of occupancy: neighbours are compared by
 //! whether their cells are filled, never by their derived shapes, so nothing iterates.
 
-use crate::{ADAPTIVE_DOWN, ADAPTIVE_UP, SHAPES, STATES, ShapeInfo, StateId, StateInfo, shape::shape_of};
+use crate::{
+    ADAPTIVE_DOWN, ADAPTIVE_UP, SHAPES, STATES, ShapeInfo, StateId, StateInfo, shape::shape_of,
+};
 
 /// A state's row, or none for an id outside this build's registry (read as open, never adaptive).
 fn row(state: StateId) -> Option<&'static StateInfo> {
@@ -65,7 +67,11 @@ pub fn derive(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> Option<
         };
     }
     let i = index(codes);
-    Some(if up > 0 { ADAPTIVE_UP[i] } else { ADAPTIVE_DOWN[i] })
+    Some(if up > 0 {
+        ADAPTIVE_UP[i]
+    } else {
+        ADAPTIVE_DOWN[i]
+    })
 }
 
 /// The shape a cell is drawn, collided and targeted as: its derived shape, or its own.
@@ -131,7 +137,11 @@ mod tests {
         // Face B reads its neighbours toward −y: the same columns mirrored give the hanging shape.
         let stone = require("dwell:stone");
         let mirrored = move |dx: i32, dy: i32, dz: i32| {
-            if dx == 0 && dz == 0 && dy == 0 { stone } else { 0 }
+            if dx == 0 && dz == 0 && dy == 0 {
+                stone
+            } else {
+                0
+            }
         };
         let down = &SHAPES[usize::from(derive(mirrored, -1).expect("adaptive"))];
         assert!(down.inverted && down.fan);

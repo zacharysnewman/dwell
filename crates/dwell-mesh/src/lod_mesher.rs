@@ -189,7 +189,13 @@ impl Builder {
     fn polygon(&mut self, pts: &[[f32; 3]], at: [f64; 3], color: u32) {
         let p: Vec<[f64; 3]> = pts
             .iter()
-            .map(|q| [at[0] + f64::from(q[0]), at[1] + f64::from(q[1]), at[2] + f64::from(q[2])])
+            .map(|q| {
+                [
+                    at[0] + f64::from(q[0]),
+                    at[1] + f64::from(q[1]),
+                    at[2] + f64::from(q[2]),
+                ]
+            })
             .collect();
         let (a, b, c) = (p[0], p[1], p[2]);
         let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
@@ -728,7 +734,11 @@ fn adaptive_tops(cells: &[u16], out: &mut Surfaces) {
             }
             let get = |dx: i32, dy: i32, dz: i32| {
                 let (a, b, d) = (x + dx, y + dy, z + dz);
-                if inside(a) && inside(b) && inside(d) { cell(cells, a, b, d) } else { 0 }
+                if inside(a) && inside(b) && inside(d) {
+                    cell(cells, a, b, d)
+                } else {
+                    0
+                }
             };
             let Some(i) = dwell_blocks::adaptive::derive(get, 1) else {
                 continue;
@@ -741,7 +751,11 @@ fn adaptive_tops(cells: &[u16], out: &mut Surfaces) {
             out.y[c] = y as i16;
             out.m[c] = m;
             out.h[c] = fy + f32::from(shape.points[1][1]) / 4.0;
-            let flat = shape.points.iter().flatten().all(|&q| q == shape.points[0][0]);
+            let flat = shape
+                .points
+                .iter()
+                .flatten()
+                .all(|&q| q == shape.points[0][0]);
             out.shape[c] = if flat { 0 } else { i };
         }
     }
@@ -1095,7 +1109,11 @@ fn wall_of(
         // that, on the border, a skirt). The neighbour's top along the same edge is its opposite
         // side.
         // (An apron column's adaptive top: its shape is unknown here, so it hides nothing.)
-        let theirs = if s.apron[nc] { floor } else { profile(s, nc, axis, -sign) };
+        let theirs = if s.apron[nc] {
+            floor
+        } else {
+            profile(s, nc, axis, -sign)
+        };
         let lo = [0, 1, 2].map(|i| theirs[i].min(ours[i]));
         if slot == 0 {
             return (0..3).any(|i| lo[i] < ours[i]).then_some(Wall {

@@ -48,9 +48,23 @@ fn every_shape_is_closed_and_wound_outward_with_its_volume() {
             if f.tag < SURFACE_TAG {
                 let axis = usize::from(f.tag / 2);
                 let sign = if f.tag % 2 == 0 { 1.0 } else { -1.0 };
-                assert!(n[axis] * sign > 0.0, "shape {i}: face tag {} wound inward", f.tag);
-                assert_eq!(n[(axis + 1) % 3], 0.0, "shape {i}: face tag {} not in its plane", f.tag);
-                assert_eq!(n[(axis + 2) % 3], 0.0, "shape {i}: face tag {} not in its plane", f.tag);
+                assert!(
+                    n[axis] * sign > 0.0,
+                    "shape {i}: face tag {} wound inward",
+                    f.tag
+                );
+                assert_eq!(
+                    n[(axis + 1) % 3],
+                    0.0,
+                    "shape {i}: face tag {} not in its plane",
+                    f.tag
+                );
+                assert_eq!(
+                    n[(axis + 2) % 3],
+                    0.0,
+                    "shape {i}: face tag {} not in its plane",
+                    f.tag
+                );
             } else {
                 assert!(
                     (n[1] > 0.0) != s.inverted,
@@ -67,11 +81,17 @@ fn every_shape_is_closed_and_wound_outward_with_its_volume() {
                     e1[2] * e2[0] - e1[0] * e2[2],
                     e1[0] * e2[1] - e1[1] * e2[0],
                 ];
-                assert!(t[0] * n[0] + t[1] * n[1] + t[2] * n[2] >= -1e-9, "shape {i}: a concave face");
+                assert!(
+                    t[0] * n[0] + t[1] * n[1] + t[2] * n[2] >= -1e-9,
+                    "shape {i}: a concave face"
+                );
             }
         }
         for (k, v) in sum.iter().enumerate() {
-            assert!(v.abs() < 1e-6, "shape {i}: not closed (area vector {k} = {v})");
+            assert!(
+                v.abs() < 1e-6,
+                "shape {i}: not closed (area vector {k} = {v})"
+            );
         }
         assert!(
             (volume - f64::from(s.volume)).abs() < 1e-5,
@@ -110,12 +130,24 @@ fn the_top_surface_covers_the_cell_once_at_the_height_the_probes_read() {
     for (i, s) in shapes() {
         let projected: f64 = faces_of(s)
             .iter()
-            .filter(|f| f.tag == SURFACE_TAG || f.tag == 2 && !s.inverted || f.tag == 3 && s.inverted)
+            .filter(|f| {
+                f.tag == SURFACE_TAG || f.tag == 2 && !s.inverted || f.tag == 3 && s.inverted
+            })
             .map(|f| area2(&pts(f))[1].abs() / 2.0)
             .sum();
-        assert!((projected - 1.0).abs() < 1e-6, "shape {i}: top covers {projected}");
+        assert!(
+            (projected - 1.0).abs() < 1e-6,
+            "shape {i}: top covers {projected}"
+        );
         // A ray straight down (or up, hanging) enters the solid where `solid_span_at` says.
-        for (x, z) in [(0.1, 0.2), (0.5, 0.5), (0.8, 0.3), (0.25, 0.75), (0.9, 0.9), (0.6, 0.05)] {
+        for (x, z) in [
+            (0.1, 0.2),
+            (0.5, 0.5),
+            (0.8, 0.3),
+            (0.25, 0.75),
+            (0.9, 0.9),
+            (0.6, 0.05),
+        ] {
             let span = solid_span_at(s, x, z);
             let (origin, dir, want) = if s.inverted {
                 ([x, -1.0, z], [0.0, 1.0, 0.0], span.lo + 1.0)
@@ -136,7 +168,10 @@ fn the_top_surface_covers_the_cell_once_at_the_height_the_probes_read() {
 fn the_adaptive_table_matches_its_shared_vector() {
     let text = include_str!("../../../shared/blocks/adaptive_vectors.txt");
     let mut count = 0;
-    for line in text.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
+    for line in text
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
         let f: Vec<&str> = line.split(' ').collect();
         let i: usize = f[0].parse().expect("index");
         let (up, down): (u16, u16) = (

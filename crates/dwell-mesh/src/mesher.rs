@@ -238,11 +238,16 @@ impl<'a> Cells<'a> {
                     if m == 0 || !STATES.get(usize::from(m)).is_some_and(|s| s.adaptive) {
                         continue;
                     }
-                    let interior = (0..N).contains(&x) && (0..N).contains(&y) && (0..N).contains(&z);
+                    let interior =
+                        (0..N).contains(&x) && (0..N).contains(&y) && (0..N).contains(&z);
                     let get = |dx: i32, dy: i32, dz: i32| at(x + dx, y + dy, z + dz);
                     let derived = if interior {
                         dwell_blocks::adaptive::derive(get, 1)
-                    } else if y < N && !STATES.get(usize::from(get(0, 1, 0))).is_some_and(|s| s.solid) {
+                    } else if y < N
+                        && !STATES
+                            .get(usize::from(get(0, 1, 0)))
+                            .is_some_and(|s| s.solid)
+                    {
                         Some(apron_shape())
                     } else {
                         None

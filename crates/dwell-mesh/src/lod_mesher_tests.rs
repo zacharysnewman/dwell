@@ -814,7 +814,10 @@ mod adaptive_tops {
         let m = mesh(&cells);
         // Four 45° faces (normal y = cos 45°) and the floor; nothing reaches the cell's top.
         assert_eq!(normal_ys(&m.opaque), [-1000, 707]);
-        assert_eq!(max(m.opaque.positions.iter().skip(1).step_by(3).copied()), 4.5);
+        assert_eq!(
+            max(m.opaque.positions.iter().skip(1).step_by(3).copied()),
+            4.5
+        );
     }
 
     #[test]
@@ -852,7 +855,11 @@ mod adaptive_tops {
         }
         let a = mesh(&cells);
         // The lower block rises to its top, the upper sinks to its floor: ½ cell per cell, 26.57°.
-        assert!(normal_ys(&a.opaque).contains(&894), "{:?}", normal_ys(&a.opaque));
+        assert!(
+            normal_ys(&a.opaque).contains(&894),
+            "{:?}",
+            normal_ys(&a.opaque)
+        );
         let b = mesh_section(
             &mirror_rows(&cells),
             &MeshSectionOptions {
@@ -861,6 +868,10 @@ mod adaptive_tops {
             },
         )
         .expect("section volume");
-        assert!(normal_ys(&b.opaque).contains(&-894), "{:?}", normal_ys(&b.opaque));
+        assert!(
+            normal_ys(&b.opaque).contains(&-894),
+            "{:?}",
+            normal_ys(&b.opaque)
+        );
     }
 }

@@ -192,7 +192,11 @@ fn draws_a_ladder_as_one_plate_near_the_back_of_its_cell() {
 fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_magenta() {
     // A grass block under a cube (so a cube itself: its sides), and the middle of a 3 x 3 field
     // of grass (a flat half-height top, x 10..13).
-    let mut cells = vec![(0, 0, 0, grass()), (0, 1, 0, cube_block()), (5, 0, 0, UNKNOWN)];
+    let mut cells = vec![
+        (0, 0, 0, grass()),
+        (0, 1, 0, cube_block()),
+        (5, 0, 0, UNKNOWN),
+    ];
     for z in 0..3 {
         for x in 10..13 {
             cells.push((x, 0, z, grass()));
@@ -507,7 +511,10 @@ fn a_lone_grass_block_is_a_half_pyramid_and_a_field_rests_at_half_height() {
         .filter(|&i| m.normals[i * 3 + 1] == 1.0)
         .map(|i| m.positions[i * 3 + 1])
         .collect();
-    assert!(!flat.is_empty() && flat.iter().all(|&y| y == 3.5), "{flat:?}");
+    assert!(
+        !flat.is_empty() && flat.iter().all(|&y| y == 3.5),
+        "{flat:?}"
+    );
 }
 
 #[test]
@@ -522,7 +529,10 @@ fn a_grass_block_with_a_block_on_it_stays_a_cube() {
 fn a_shaped_bank_beside_water_holds_water_in_its_open_part() {
     // Sand at the water's row beside water: shaped, and flooded — its cell's water faces are drawn
     // (toward the air), and the water beside it draws none against it.
-    let m = mesh(&[(5, 3, 5, require("dwell:sand")), (6, 3, 5, water())], false);
+    let m = mesh(
+        &[(5, 3, 5, require("dwell:sand")), (6, 3, 5, water())],
+        false,
+    );
     let tops: Vec<f32> = (0..m.transparent.normals.len() / 3)
         .filter(|&i| m.transparent.normals[i * 3 + 1] == 1.0)
         .map(|i| m.transparent.positions[i * 3])
@@ -532,7 +542,8 @@ fn a_shaped_bank_beside_water_holds_water_in_its_open_part() {
     assert!(tops.iter().any(|&x| x >= 6.0), "{tops:?}");
     // No water face stands between them (at x = 6, facing ±x).
     let between = (0..m.transparent.normals.len() / 3).any(|i| {
-        m.transparent.normals[i * 3].abs() == 1.0 && (m.transparent.positions[i * 3] - 6.0).abs() < 0.01
+        m.transparent.normals[i * 3].abs() == 1.0
+            && (m.transparent.positions[i * 3] - 6.0).abs() < 0.01
     });
     assert!(!between);
 }

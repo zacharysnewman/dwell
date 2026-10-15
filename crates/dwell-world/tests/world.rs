@@ -97,7 +97,8 @@ fn the_palette_is_the_registrys_placeable_states() {
 fn the_ray_finds_the_first_targetable_cell_and_its_face() {
     for ox in [0, FAR_X] {
         let mut world = empty();
-        world.set_voxel(ox, 0, 5, s("dwell:stone"));
+        // A non-adaptive cube (a lone stone block would be a half pyramid: its slopes count as tops).
+        world.set_voxel(ox, 0, 5, s("dwell:sandbox_floor"));
         world.set_voxel(ox, 0, 3, s("dwell:water")); // liquids are not targets
         let eye = [f64::from(ox) + 0.5, 0.5, 0.5];
         let hit = raycast_block(&mut world, eye, [0.0, 0.0, 1.0], 5.0).expect("hit");
@@ -105,7 +106,7 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         assert!((hit.distance - 4.5).abs() < 1e-5);
         assert!(raycast_block(&mut world, eye, [0.0, 0.0, 1.0], 4.4).is_none());
         // Looking down onto a floor: its top face.
-        world.set_voxel(ox + 2, -1, 0, s("dwell:grass"));
+        world.set_voxel(ox + 2, -1, 0, s("dwell:sandbox_floor"));
         let d = 0.5f32.sqrt();
         let hit = raycast_block(
             &mut world,
@@ -311,7 +312,7 @@ fn flooded_blocks_follow_their_cell_and_leave_water() {
 fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
     let mut world = empty();
     let top = WORLD_MAX_Y - 1;
-    world.set_voxel(0, top, 2, s("dwell:stone"));
+    world.set_voxel(0, top, 2, s("dwell:sandbox_floor")); // a cube: its −Z face is there to aim at
     let r = place([0, top, 2], 2, s("dwell:stone"));
     assert_eq!(
         check(&mut world, r, [0.5, f64::from(WORLD_MAX_Y) + 0.6, 2.5], &[]).check,
@@ -323,7 +324,7 @@ fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
         EditCheck::Ok
     );
     let rim = WORLD_RADIUS - 1;
-    world.set_voxel(rim, 0, 0, s("dwell:stone"));
+    world.set_voxel(rim, 0, 0, s("dwell:sandbox_floor"));
     let r = place([rim, 0, 0], 0, s("dwell:stone"));
     assert_eq!(
         check(&mut world, r, [f64::from(rim) + 1.5, 0.5, 0.5], &[]).check,

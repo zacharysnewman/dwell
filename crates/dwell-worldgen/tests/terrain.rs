@@ -312,7 +312,11 @@ fn players_spawn_on_level_open_ground_near_the_origin() {
         let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
         // The feet stand on the shaped surface: a level patch's top blocks rest at half height
         // (ADAPTIVE_BLOCKS.md), half a block above the top voxel's floor.
-        let (x, g, z) = (s[0].floor() as i32, s[1].floor() as i32, s[2].floor() as i32);
+        let (x, g, z) = (
+            s[0].floor() as i32,
+            s[1].floor() as i32,
+            s[2].floor() as i32,
+        );
         assert_eq!(s[1], f64::from(g) + 0.5, "seed {seed}: {s:?}");
         assert!(
             x.abs() < 512 && z.abs() < 512 && g >= SEA_LEVEL,
@@ -331,7 +335,8 @@ fn players_spawn_on_level_open_ground_near_the_origin() {
             "seed {seed}: the generator's point query agrees with the world's derived shape"
         );
     }
-    assert_eq!(spawn_point_for(GENERATOR_FLAT, 9)[1], 0.0);
+    // The flat world's grass top rests at half height.
+    assert_eq!(spawn_point_for(GENERATOR_FLAT, 9)[1], -0.5);
 }
 
 #[test]

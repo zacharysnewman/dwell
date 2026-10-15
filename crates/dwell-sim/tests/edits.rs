@@ -210,8 +210,10 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
     let z = spawn.z.floor() as i32;
     let y = 4000; // open sky
     let sky = chunk_of(x, y, z + 2);
-    // A floating block (tests put it directly), then the player next to it breaks it.
+    // A floating block (tests put it directly), then the player next to it breaks it. Another on
+    // it keeps it a cube (alone, a natural block is a half pyramid, with no side to aim at).
     f.server.world().set_voxel(x, y, z + 2, M.stone);
+    f.server.world().set_voxel(x, y + 1, z + 2, M.stone);
     f.move_to(
         w.player_id,
         f64::from(x) + 0.5,
@@ -225,7 +227,7 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
         .find(|m| coord_of(m) == sky)
         .expect("the sky chunk streamed");
     assert_eq!(it.form, ChunkForm::Explicit);
-    assert_eq!(it.revision, 1);
+    assert_eq!(it.revision, 2); // the two blocks put
     assert!(chunks.iter().filter(|m| m.form == ChunkForm::Air).count() > 0);
 
     f.send(1, brk([x, y, z + 2], 5));
@@ -235,5 +237,5 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
         EditCheck::Ok
     );
     assert_eq!(f.server.world().get_voxel(x, y, z + 2), M.air);
-    assert_eq!(f.server.world().find(sky).unwrap().revision(), 2); // modified: kept, not read as air
+    assert_eq!(f.server.world().find(sky).unwrap().revision(), 3); // modified: kept, not read as air
 }
