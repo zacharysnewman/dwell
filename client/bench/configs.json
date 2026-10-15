@@ -1,5 +1,5 @@
 {
-  "$comment": "Renderer configurations for `npm run bench -- --compare` (docs/DEV_TOOLS.md; scripts/configs.ts describes the fields). Each scenario runs once per configuration and is compared with the baseline. A configuration whose renderer or upscaler the build doesn't offer (`__dwell.renderers()`, `__dwell.upscalers()`; without them, only `raster`) is skipped with a note. The march entries wait for the ray-marched renderer (docs/proposals/RAY_MARCHING.md, steps A3 and A5).",
+  "$comment": "Renderer configurations for `npm run bench -- --compare` (docs/DEV_TOOLS.md; scripts/configs.ts describes the fields). Each scenario runs once per configuration and is compared with the baseline. A configuration whose renderer or upscaler the build doesn't offer (`__dwell.renderers()`, `__dwell.upscalers()`; without them, only `raster`) is skipped with a note. The march entries wait for the ray-marched renderer (docs/RAY_MARCHED_RENDERER.md, steps A3 and A5).",
   "baseline": "raster",
   "deltaE": 2.3,
   "configs": [

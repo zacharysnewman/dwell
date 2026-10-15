@@ -1,5 +1,5 @@
 // Renderer configurations for `bench --compare` (docs/DEV_TOOLS.md, client/bench/configs.json,
-// docs/proposals/RAY_MARCHING.md §5): each scenario runs once per configuration, in a fresh page
+// docs/RAY_MARCHED_RENDERER.md §5): each scenario runs once per configuration, in a fresh page
 // on the same seed and inputs, and the report puts them side by side. A configuration is a
 // renderer, a resolution scale and an upscaler, passed to the page as `?renderer=`, `?scale=` and
 // `?upscaler=`. A configuration whose renderer or upscaler the build doesn't offer is skipped with

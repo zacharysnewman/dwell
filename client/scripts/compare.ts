@@ -1,4 +1,4 @@
-// `npm run bench -- --compare <scenario…>` (docs/DEV_TOOLS.md, docs/proposals/RAY_MARCHING.md §5):
+// `npm run bench -- --compare <scenario…>` (docs/DEV_TOOLS.md, docs/RAY_MARCHED_RENDERER.md §5):
 // each scenario runs once per renderer configuration (client/bench/configs.json, scripts/configs.ts)
 // in a fresh page on the same seed and inputs. Writes OUT/compare.json and prints a table side by
 // side; for every `shot` step, OUT/<scenario>/<shot>.<config>.side.png (the baseline left, the

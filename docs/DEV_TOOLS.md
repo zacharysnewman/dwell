@@ -74,7 +74,7 @@ fields, ranges and names fail with the entry named):
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot` or trace steps inside |
 
-Scenarios for the renderer comparison ([`proposals/RAY_MARCHING.md`](./proposals/RAY_MARCHING.md)
+Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
 §5), besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and `jump-onto-block`: `look-horizon`
 (grazing view along the ground; far), `look-down` (near), `edit-burst` (300 place/break edits;
 near), `fly-high` (about 540 m up, flying; far) and `thermal-10min` (phone-oriented: ten minutes of
@@ -131,7 +131,7 @@ upload bytes (total and per frame), chunks and sections; streaming: whether the 
 had anything left to generate, mesh or ask for at the record (and what), and each `settle`'s time
 (the first: time to a complete view after spawn).
 
-**TODO — edit-to-visible latency** (RAY_MARCHING.md §5): the telemetry can't tie a frame's uploads to
+**TODO — edit-to-visible latency** (RAY_MARCHED_RENDERER.md §5): the telemetry can't tie a frame's uploads to
 the edit that caused them (an edit is a request to the server, the reply re-meshes the chunk in a
 worker, and the upload is counted per frame), so it isn't measured yet. It needs an edit sequence
 number carried through the remesh and a telemetry sample (`edit.visible`, ms from the request to the

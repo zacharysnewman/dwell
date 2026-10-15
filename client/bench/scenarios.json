@@ -91,7 +91,7 @@
     },
     {
       "name": "look-horizon",
-      "notes": "From the player's eyes at the spawn, looking along the ground 3° below the horizon (heading +X): grazing rays, a ray marcher's worst case (docs/proposals/RAY_MARCHING.md §5).",
+      "notes": "From the player's eyes at the spawn, looking along the ground 3° below the horizon (heading +X): grazing rays, a ray marcher's worst case (docs/RAY_MARCHED_RENDERER.md §5).",
       "split": "far",
       "steps": [
         { "do": "look", "yaw": 90, "pitch": -3 },
