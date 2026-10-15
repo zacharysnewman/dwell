@@ -58,8 +58,8 @@ export interface ShapeDef {
   diagonal: number;
   convex: boolean;
   volume: number;
-  /** Side profile heights (halves) at the face's low and high running coordinate, faces +X −X +Z −Z. */
-  sides: readonly (readonly [number, number])[];
+  /** Side profile heights (halves) at the face's low end, middle and high end, faces +X −X +Z −Z. */
+  sides: readonly (readonly [number, number, number])[];
   fullTop: boolean;
   fullBottom: boolean;
   minY: number;
@@ -80,9 +80,10 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:sand', first: 13, count: 1, properties: [] },
 ];
 
+/** The shapes block states use (the adaptive table's derived shapes are in the Rust tables only). */
 export const SHAPES: readonly ShapeDef[] = [
-  { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0], [0, 0], [0, 0], [0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },
-  { corners: [2, 2, 2, 2], inverted: false, diagonal: 0, convex: true, volume: 1, sides: [[2, 2], [2, 2], [2, 2], [2, 2]], fullTop: true, fullBottom: true, minY: 0, maxY: 1, faces: [{ tag: 1, pts: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, { tag: 0, pts: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] }, { tag: 3, pts: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, { tag: 2, pts: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] }, { tag: 5, pts: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] }, { tag: 4, pts: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] }] },
+  { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },
+  { corners: [2, 2, 2, 2], inverted: false, diagonal: 0, convex: true, volume: 1, sides: [[2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]], fullTop: true, fullBottom: true, minY: 0, maxY: 1, faces: [{ tag: 1, pts: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, { tag: 0, pts: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] }, { tag: 3, pts: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, { tag: 2, pts: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] }, { tag: 5, pts: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] }, { tag: 4, pts: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] }] },
 ];
 
 const STATES_0: readonly StateDef[] = [

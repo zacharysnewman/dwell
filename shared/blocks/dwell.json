@@ -5,15 +5,15 @@
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
-      "name": "stone", "density": 2400, "shape": "full", "placeable": true,
+      "name": "stone", "density": 2400, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#bbafa6", "textures": "stone"
     },
     {
-      "name": "dirt", "density": 1500, "shape": "full", "placeable": true,
+      "name": "dirt", "density": 1500, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#8a5a3a", "textures": "dirt"
     },
     {
-      "name": "grass", "density": 1400, "shape": "full", "placeable": true,
+      "name": "grass", "density": 1400, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#8dbf3f",
       "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
@@ -34,7 +34,7 @@
       "color": "#3fb2d6", "opacity": 0.55, "textures": "water"
     },
     {
-      "name": "sand", "density": 1600, "shape": "full", "placeable": true,
+      "name": "sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#eed9a4", "textures": "sand"
     }
   ]
