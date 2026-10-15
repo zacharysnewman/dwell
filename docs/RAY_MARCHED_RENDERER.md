@@ -392,6 +392,87 @@ Nothing here changes public API (world files, seeds' terrain, protocols), so no 
   marcher's output). The placeholder's clear-only pass reports no GPU time (its timestamps don't
   advance), so its overlay shows "–".
 
+### A3b as built (2026-10-15)
+
+- **The WGSL marcher** (`crates/dwell-client/src/render/march/wgsl.rs`): a line-for-line
+  transcription of `dwell_march::march` over the words `Scene::gpu` uploads — clipmap levels and
+  slots, node masks, brick DDA over raw and palette bricks, column min-max grids, empty-brick
+  distances, cone LOD, the step cap and `max_t` exit, camera-relative integer + fraction ray state.
+  One compute pass (8 × 8 workgroups) writes three single-sample storage textures: lit linear colour
+  (`rgba16float`, alpha 1 on a hit, 0 for the sky), view depth (`r32float`, metres along the view
+  axis, 0 for none) and a cell id + face (`r32uint`, `cell_id`: hashed level and cell, face + 1 in the
+  low 3 bits). Shading uses the raster renderer's `lambert` (`shaders.rs` `lighting_source()`, shared
+  verbatim) and the meshers' colours: at level 0 the chunk mesher's vertex colour × face tint × the
+  atlas texel (`textureSampleLevel`, mip from the ray cone's footprint and the slant), above it the
+  LOD mesher's linear flat colour × face tint; on face B the top and bottom swap (`face_up`) and
+  side textures flip. Fog, tone mapping and the sky stay in A1's composite.
+- **Generated, not copied**: every constant the shader knows (layout sizes, tags and masks, the
+  histogram and debug layout, the face tints, the atlas geometry, the midplane in grid cells) is
+  written from its Rust source; a test parses the module with naga and compares each constant with
+  the Rust value, and checks the uniform struct's size equals what its writer fills. To make the GPU
+  reproduce the reference exactly, `dwell_march::level_for` now takes ⌊log₂⌋ from the exponent bits
+  (the GPU's `log2` is approximate), and the shader takes 2^−L from the bits too.
+- **The state table** (`looks.rs`): per state its march class (from `StateTable`), the chunk
+  mesher's colour, its top/side/bottom atlas tiles and the LOD mesher's three flat colours, built from
+  the registry's data (a test adds a state by data alone).
+- **Uploads** (`gpu_scene.rs`): the GPU buffers mirror `dwell_march::Scene` word for word — the
+  allocator stays on the CPU, so a brick's pool offset is the same on both. `Scene::take_dirty` names
+  the slots, nodes, column grids and pool ranges changed since the last frame; each (coalesced) is a
+  `queue.writeBuffer`. A level whose box grows re-sends the levels and slots. Buffers double when
+  they fill (re-filled from the CPU copy; no `copy_buffer_to_buffer` needed, since the CPU holds every
+  word) and are capped at the device's `max_storage_buffer_binding_size` (128 MiB by default; the
+  device's own limit is read); a build that would pass it is refused and counted
+  (`march.pool_full`). **Binding layout** (group 1): 0 uniforms (the 20 levels and the camera, 1,088
+  B), 1 slots, 2 nodes, 3 node column offsets, 4 column grids, 5 the brick pool, 6 the state table,
+  7 the stats buffer (atomics: the histogram, and per-pixel debug records for the test) — 7 storage
+  buffers of the default 8, 3 storage textures of 4. Group 0 is the frame (uniforms, atlas, sampler);
+  group 2 the outputs. Measured at seed 7's spawn (chunks radius 8 × 7 rows, sections radius 6 on
+  levels 1–12): 1,156 chunks and 4,283 sections, 3,337 nodes, a 16 MiB pool, 33.5 MiB of buffers.
+  An edit uploads its node, its changed bricks and its column grid (under 8 KiB; a test).
+- **Worker jobs**: the bricks are made by A2's masked meshing jobs (`Payloads::BRICKS`):
+  `build_chunk_bricks(padded, mirror)` takes the 32³ interior of the mesher's padded voxels,
+  `build_section_bricks` the section's cells; both in world orientation, so `mirror` changes nothing
+  (the shader turns face B's textures). They travel as `NodeBuild::to_words`.
+- **Behind the seam** (`renderer.rs`, `MarchRenderer`): a section is placed by its origin and cell
+  size (level = log₂ cell, node = grid ≫ (L + 5)); every held section stays in the clipmap (cone
+  LOD picks the level per ray; a coarser level is the stand-in where a finer one has no data).
+  `draw` marches into its storage textures and then copies them into the side's shared-frame targets
+  with a full-screen pass that writes every sample (compute can't write multisampled targets); the
+  march's compute pass begins the `gpu.march` timestamp and the copy ends it. `BUILT = true`.
+- **GPU vs reference** (`march/check.rs`): 12 crafted views at 64² — chunks (from above, oblique,
+  grazing, from outside the data box, from inside solid), the same 4,000 km from the origin, face B
+  from below, and LOD sections on levels 1–3 under chunks (near, high, horizon) — read back id,
+  depth and a per-pixel debug record (outcome, steps, level, cell, face, `t`, state, the ray's
+  direction), and march each ray on the CPU with the GPU's own direction. **Apple M1 (Metal,
+  native test):** 49,152 px, 37,153 hits, ids differ 0, records differ 0, `t` within 2 ULP on
+  6,195 hits (Metal's `1/d` isn't correctly rounded), depth error 2.6e-7 relative, ray directions
+  within 1.8e-7 of the CPU's. **SwiftShader (headless Chromium, the CI probe):** every record
+  bit-identical, `t` included; depth error 1.5e-7.
+- **Measured, 1280 × 720, Apple M1, Chrome on the GPU** (`bench --compare`, seed 7, unthrottled
+  off): `gpu.march` p50 **30.6 ms** at the spawn looking at the horizon (`idle-spawn`), 30.0 ms
+  `look-horizon`, **8.9 ms** p95 `look-down`, 31.1 ms p95 `fly-high`; raster's whole GPU frame
+  (`gpu.frame`) 2.6–2.9 ms p50 on the same views. CPU: `draw.render` 0.3–0.4 ms for the marcher
+  against 2.2–3.2 ms for raster. Steps per ray on the GPU (the histogram): horizon p50 15–18, p95
+  64–79, p99 66–87, none capped (cap 512); looking down p50 6, p95 8, p99 9; the `?marchtest=1`
+  views: near-down p50 11 / p95 72 / p99 79, far-horizon 18 / 24 / 26. So the step counts match the
+  CPU reference's measurements (§4.3), and the cost is per step: about 0.8 G iterations/s, too slow
+  for 60 fps at full resolution — A4's work (profile the inner loop: the column search runs on every
+  iteration; the beam prepass and temporal start), with A5's lower render scales.
+- **Image against the mesher** (`bench --compare`, ΔE > 2.3): `look-horizon` 3.1 % of pixels,
+  `look-down` 0.01 %, `fly-high` 19.6 % (the far LOD: see below), `idle-spawn` in
+  `compare.html`. In game, `?renderer=compare` difference view at the spawn: coverage differs on
+  2,981 px, depth on 28,599, colour on 15,917 of 921,600.
+- **Where the looks differ**: LOD column surfaces (exact heights off the grid, side tints) are not
+  in the bricks yet, so distant terrain is terraced at its level's cell size and its step sides show
+  as dark lines, bands of them near the horizon where grazing rays see mostly sides; the mesher
+  draws smooth column surfaces. Where the cone LOD moves up a level the ray hits the coarser cell on
+  the plane it last crossed, which shows as faint arcs on flat ground seen from above. Water is not
+  drawn by the marcher (it stays a raster pass; the overlay pass is A3's remaining work).
+- **Not yet** (A3's rest): overlays over marched terrain (`frag_depth` pass: players, outline,
+  water), raster ids for an id-based difference view and bench agreement, edit-to-visible latency,
+  LOD column heights in the bricks. Clipmap level boxes only grow (a long flight keeps every slot
+  it ever reserved; recentring is A4's).
+
 ## 8. Risks
 
 - Full-resolution marching may be slower than raster on mobile and iOS (expected, §1); the
