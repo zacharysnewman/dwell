@@ -71,6 +71,8 @@ pub trait Scene {
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandIn]);
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
+    /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
+    fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
     /// The frame's vertical FOV (degrees; the speed boost, docs/MOTION_EFFECTS.md): the same value
     /// the LOD selection uses. `None`: the screen's own.
@@ -951,6 +953,7 @@ impl<S: Scene> Game<S> {
         }
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
+        let camera_eye;
         if self.dead {
             // Third person over the body.
             let view = self.player_view(
@@ -965,17 +968,12 @@ impl<S: Scene> Game<S> {
             scene.set_player(u32::from(self.player_id), Some(view));
             let r = yaw.to_radians();
             let [x, y, z] = self.death_feet;
-            scene.set_camera(
-                [
-                    x - r.sin() * 4.0,
-                    y + f64::from(face) * 2.5,
-                    z - r.cos() * 4.0,
-                ],
-                yaw,
-                -25.0,
-                f64::from(face),
-                0.0,
-            );
+            camera_eye = [
+                x - r.sin() * 4.0,
+                y + f64::from(face) * 2.5,
+                z - r.cos() * 4.0,
+            ];
+            scene.set_camera(camera_eye, yaw, -25.0, f64::from(face), 0.0);
             drop(scene);
             self.show_hud_text();
             self.target(None, input);
@@ -987,6 +985,7 @@ impl<S: Scene> Game<S> {
             self.show_hud_text();
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
+            camera_eye = eye;
             self.scene
                 .borrow_mut()
                 .set_camera(eye, yaw, pitch, f64::from(face), flip);
@@ -994,12 +993,20 @@ impl<S: Scene> Game<S> {
             self.target(ready.then_some(eye), input);
             self.update_motion(eye, dt);
         }
-        if let Some(v) = self.view {
-            self.scene
-                .borrow_mut()
-                .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
-            self.scene.borrow_mut().set_block_outline(None, 1.0);
-        }
+        let camera_eye = match self.view {
+            Some(v) => {
+                self.scene
+                    .borrow_mut()
+                    .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
+                self.scene.borrow_mut().set_block_outline(None, 1.0);
+                v.eye
+            }
+            None => camera_eye,
+        };
+        let store = self.streamer.store_mut();
+        let eye_fluid =
+            dwell_world::fluid::eye_fluid(camera_eye, |x, y, z| store.get_voxel(x, y, z));
+        self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
 
         self.hud.health = self.health;

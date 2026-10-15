@@ -35,6 +35,8 @@ struct Frame {
     up: vec4f,
     forward: vec4f,
     tan: vec4f,
+    // The eye under a fluid's drawn surface: x 1 (else 0), y fluid id, z the surface's world y.
+    water: vec4f,
     // The wind (docs/MOTION_EFFECTS.md; `wind_uniforms` in mod.rs). point: the vanishing point
     // (NDC xy), intensity 0–1, time (s). view: aspect, the flight layer 0–1, drawing height (px),
     // +1 moving into the view or −1 away. color: streak colour (sRGB), peak opacity. streaks:

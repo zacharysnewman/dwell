@@ -68,7 +68,7 @@ fn is_liquid(m: StateId) -> bool {
     static LIQUID: OnceLock<Vec<bool>> = OnceLock::new();
     let table = LIQUID.get_or_init(|| {
         (0..STATES.len())
-            .map(|i| material_style(i as StateId).look == Look::Water)
+            .map(|i| material_style(i as StateId).look == Look::Fluid)
             .collect()
     });
     table.get(usize::from(m)).copied().unwrap_or(false)
