@@ -4,6 +4,7 @@
 //! Port of client/src/render/{look,fog,skyFrame}.ts.
 
 pub mod fog;
+pub mod motion;
 pub mod sky_frame;
 
 use sky_frame::SkyFrame;

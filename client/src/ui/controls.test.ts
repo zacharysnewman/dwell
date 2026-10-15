@@ -8,6 +8,11 @@ describe('controls', () => {
     for (const k of ['F3', 'F4']) expect(START_HINT).toContain(k);
   });
 
+  it("names compare mode's keys (web/app.rs handles them in compare mode)", () => {
+    const keys = DEBUG_KEYS.flatMap((c) => c.keys);
+    for (const k of ['F7', 'F8']) expect(keys).toContain(k);
+  });
+
   it('lists each action once, with keys', () => {
     const all = [...KEYBOARD.flatMap((g) => g.controls), ...DEBUG_KEYS, ...TOUCH];
     for (const c of all) expect(c.keys.length).toBeGreaterThan(0);

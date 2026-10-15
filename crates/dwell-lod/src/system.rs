@@ -84,16 +84,24 @@ pub struct StandInBox {
     pub hi: Vec3,
 }
 
+/// What a meshing job makes for the renderer (the payload): the mesher's [`SectionMeshes`], or a
+/// renderer's own (RAY_MARCHED_RENDERER.md §3: the marcher's bricks, or both in compare mode). The
+/// LOD system only passes it through and counts its bytes against the cache budget.
+pub trait SectionPayload {
+    /// Bytes held for the section (the cache budget's measure).
+    fn payload_bytes(&self) -> usize;
+}
+
+impl SectionPayload for SectionMeshes {
+    fn payload_bytes(&self) -> usize {
+        section_bytes(self)
+    }
+}
+
 /// What the LOD system draws with (the renderer). Sections are keyed by `lod_id`.
-pub trait LodView {
-    /// Adds, replaces or (None) removes a section's meshes; positions are in cells from `origin`.
-    fn set_lod_section(
-        &mut self,
-        id: LodId,
-        origin: Vec3,
-        cell_size: f64,
-        meshes: Option<SectionMeshes>,
-    );
+pub trait LodView<P = SectionMeshes> {
+    /// Adds, replaces or (None) removes a section's payload; positions are in cells from `origin`.
+    fn set_lod_section(&mut self, id: LodId, origin: Vec3, cell_size: f64, meshes: Option<P>);
     /// The sections to draw this frame, with the sides (bit per face index) whose skirt shows.
     fn show_lod_sections(&mut self, visible: &[(LodId, u8)]);
     /// Ancestor meshes drawn clipped to boxes this frame; empty for none.
@@ -119,8 +127,14 @@ pub trait LodNetwork {
 }
 
 /// Everything [`LodSystem::update`] talks to.
-pub trait LodHost: SectionSource + SectionMesher + LodView + ChunkReadiness + LodNetwork {}
-impl<T: SectionSource + SectionMesher + LodView + ChunkReadiness + LodNetwork> LodHost for T {}
+pub trait LodHost<P = SectionMeshes>:
+    SectionSource + SectionMesher + LodView<P> + ChunkReadiness + LodNetwork
+{
+}
+impl<P, T: SectionSource + SectionMesher + LodView<P> + ChunkReadiness + LodNetwork> LodHost<P>
+    for T
+{
+}
 
 // --- options, stats, selection -------------------------------------------------------------------
 
@@ -561,7 +575,7 @@ impl LodSystem {
 
     /// One frame: selects what to draw for `camera`, hands the renderer its sections, and starts
     /// the jobs and requests the view is waiting for.
-    pub fn update(&mut self, camera: &LodCamera, now_ms: f64, host: &mut dyn LodHost) {
+    pub fn update<P>(&mut self, camera: &LodCamera, now_ms: f64, host: &mut dyn LodHost<P>) {
         self.frame += 1;
         let p = camera.position;
         let view_face = if p[1] >= f64::from(MIDPLANE_Y) { 1 } else { -1 };
@@ -687,7 +701,12 @@ impl LodSystem {
     }
 
     /// A meshing job's result: the section's meshes go to the renderer.
-    pub fn on_meshed(&mut self, token: u64, meshes: SectionMeshes, view: &mut dyn LodView) {
+    pub fn on_meshed<P: SectionPayload>(
+        &mut self,
+        token: u64,
+        meshes: P,
+        view: &mut dyn LodView<P>,
+    ) {
         let Some(id) = self.mesh_jobs.remove(&token) else {
             return;
         };
@@ -701,7 +720,7 @@ impl LodSystem {
         if n.token != token {
             return;
         }
-        let bytes = section_bytes(&meshes);
+        let bytes = meshes.payload_bytes();
         self.cache_bytes = (self.cache_bytes + bytes).saturating_sub(n.bytes);
         n.bytes = bytes;
         view.set_lod_section(
@@ -713,6 +732,17 @@ impl LodSystem {
         n.meshed = true;
         if !n.modified {
             self.set_cells(id, None); // regenerated if a neighbour's border changes
+        }
+    }
+
+    /// Builds every drawn section's payload again (a renderer switch, RAY_MARCHED_RENDERER.md §3):
+    /// each meshed section is meshed anew, from its held cells or, where they were dropped after
+    /// meshing, regenerated (modified sections keep theirs). What is drawn stays selected meanwhile.
+    pub fn rebuild_all(&mut self) {
+        for n in self.nodes.values_mut() {
+            if n.meshed {
+                n.remesh = true;
+            }
         }
     }
 
@@ -785,13 +815,13 @@ impl LodSystem {
         out
     }
 
-    fn visit(
+    fn visit<P>(
         &mut self,
         id: LodId,
         frustum: &Frustum,
         selection: &mut Selection,
         fallback: Option<LodId>,
-        host: &mut dyn LodHost,
+        host: &mut dyn LodHost<P>,
     ) {
         // One lookup for the node's fields (this runs for every node in view, every frame).
         let n = self.n(id);
@@ -907,12 +937,12 @@ impl LodSystem {
     /// out deep caves, §6.6). Up close the streamed chunks are the truth, caves and all, so a buried
     /// section the camera would refine descends to them; its children are buried too. Where no
     /// chunks are drawable it stays undrawn. Buried chunks are never asked for (want_chunks).
-    fn visit_buried(
+    fn visit_buried<P>(
         &mut self,
         id: LodId,
         frustum: &Frustum,
         selection: &mut Selection,
-        host: &mut dyn LodHost,
+        host: &mut dyn LodHost<P>,
     ) {
         let coord = self.n(id).coord;
         if self.culled(id) {
@@ -945,13 +975,13 @@ impl LodSystem {
     }
 
     /// Visits the children of a node that is not ready itself (on the way to covered chunks).
-    fn visit_kids(
+    fn visit_kids<P>(
         &mut self,
         id: LodId,
         frustum: &Frustum,
         selection: &mut Selection,
         fallback: Option<LodId>,
-        host: &mut dyn LodHost,
+        host: &mut dyn LodHost<P>,
     ) {
         for &kid in self.kids(id).as_slice() {
             if self.culled(kid) {
@@ -968,7 +998,7 @@ impl LodSystem {
     /// Level-1 sections near `p` whose chunks have all been drawable for FORCE_CHUNKS_AFTER_MS, and
     /// their ancestors. Normally the traversal reaches them long before; the grace period keeps
     /// holes (unready siblings on the forced path) to devices whose LOD is stalled or very slow.
-    fn find_covered(&mut self, p: Vec3, now_ms: f64, host: &dyn LodHost) {
+    fn find_covered<P>(&mut self, p: Vec3, now_ms: f64, host: &dyn LodHost<P>) {
         self.covered.clear();
         self.covered_ancestors.clear();
         let mut seen = HashSet::default();
@@ -1081,7 +1111,7 @@ impl LodSystem {
     /// Asks for the wanted chunks, nearest first, paced under the chunk request rate. Chunks the
     /// client already holds are asked for once too: the server then keeps them while they are
     /// within its render radius, rather than unloading them when they leave the view.
-    fn send_chunk_requests(&mut self, now_ms: f64, host: &mut dyn LodHost) {
+    fn send_chunk_requests<P>(&mut self, now_ms: f64, host: &mut dyn LodHost<P>) {
         if !self.options.request_chunks {
             return;
         }
@@ -1242,7 +1272,7 @@ impl LodSystem {
             .unwrap_or(DEFAULT_REQUESTS_PER_SECOND)
     }
 
-    fn send_requests(&mut self, now_ms: f64, host: &mut dyn LodHost) {
+    fn send_requests<P>(&mut self, now_ms: f64, host: &mut dyn LodHost<P>) {
         let rate = self.rate();
         if let Some(last) = self.last_request_ms {
             self.request_credit = rate.min(self.request_credit + (now_ms - last) / 1000.0 * rate);
@@ -1300,7 +1330,7 @@ impl LodSystem {
     // --- jobs ------------------------------------------------------------------------------------
 
     /// By projected cell size: bounds, generation and meshing for what the view waits for.
-    fn schedule(&mut self, frustum: &Frustum, host: &mut dyn LodHost) {
+    fn schedule<P>(&mut self, frustum: &Frustum, host: &mut dyn LodHost<P>) {
         let mut wanted = std::mem::take(&mut self.wanted);
         for &id in &self.remeshed {
             if self.ready(id) {
@@ -1354,7 +1384,7 @@ impl LodSystem {
     }
 
     /// Empty and buried sections from their column's bounds; the rest generated.
-    fn classify(&mut self, id: LodId, host: &mut dyn LodHost) {
+    fn classify<P>(&mut self, id: LodId, host: &mut dyn LodHost<P>) {
         let c = self.n(id).coord;
         let key = bounds_key(c.level, c.i, c.k);
         let b = match self.bounds.get(&key) {
@@ -1380,7 +1410,7 @@ impl LodSystem {
         self.generate(id, host);
     }
 
-    fn generate(&mut self, id: LodId, host: &mut dyn LodHost) {
+    fn generate<P>(&mut self, id: LodId, host: &mut dyn LodHost<P>) {
         if self.n(id).generating || self.generating >= self.options.max_generation_jobs {
             return;
         }
@@ -1395,7 +1425,7 @@ impl LodSystem {
         host.lod(n.coord, token);
     }
 
-    fn mesh(&mut self, id: LodId, host: &mut dyn LodHost) {
+    fn mesh<P>(&mut self, id: LodId, host: &mut dyn LodHost<P>) {
         let n = self.n(id);
         if n.meshing || n.cells.is_none() || self.meshing >= self.options.max_mesh_jobs {
             return;
@@ -1565,7 +1595,7 @@ impl LodSystem {
 
     /// While over the cache budget, drops sets of children the traversal no longer visits, least
     /// recently used first (from the leaves up: a node's children go before the node).
-    fn evict(&mut self, view: &mut dyn LodView) {
+    fn evict<P>(&mut self, view: &mut dyn LodView<P>) {
         if self.cache_bytes <= self.options.cache_bytes {
             return;
         }
@@ -1604,7 +1634,7 @@ impl LodSystem {
         }
     }
 
-    fn remove(&mut self, id: LodId, view: &mut dyn LodView) {
+    fn remove<P>(&mut self, id: LodId, view: &mut dyn LodView<P>) {
         let Some(n) = self.nodes.get(&id) else { return };
         if n.meshed {
             view.set_lod_section(id, [0.0; 3], 1.0, None);
@@ -1688,6 +1718,6 @@ impl Kids {
     }
 }
 
-fn all_drawable(c: LodCoord, host: &dyn LodHost) -> bool {
+fn all_drawable<P>(c: LodCoord, host: &dyn LodHost<P>) -> bool {
     (0..8).all(|o| host.chunk_drawable(chunk_of_lod(child(c, o))))
 }

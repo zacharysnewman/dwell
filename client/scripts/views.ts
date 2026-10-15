@@ -28,6 +28,8 @@ export interface View {
     exposure?: number;
     /** The water quality (ui/waterSettings.ts). */
     water?: { quality: 'low' | 'medium' | 'high' };
+    /** Speed effects (ui/motionSettings.ts): on or off and the FOV boost's strength 0–1. */
+    motion?: { speedEffects: boolean; fovBoost: number };
   };
   /** The F3 overlay (`?debug=1`) and per-level LOD tints (`?lodcolors=1`) in the shot. */
   debug: boolean;
@@ -140,7 +142,7 @@ function parseView(index: string, raw: unknown): View {
   const s =
     o.settings === undefined
       ? {}
-      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure', 'water']);
+      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure', 'motion', 'water']);
   const settings: View['settings'] = {};
   if (s.fog !== undefined) {
     settings.fog = numbers(`${at}.settings.fog`, s.fog, ['distanceM', 'density', 'heightM']);
@@ -160,6 +162,16 @@ function parseView(index: string, raw: unknown): View {
       throw new ViewError(`${at}.settings.water.quality: expected "low", "medium" or "high"`);
     }
     settings.water = { quality: w.quality };
+  }
+  if (s.motion !== undefined) {
+    const m = fields(`${at}.settings.motion`, s.motion, ['speedEffects', 'fovBoost']);
+    settings.motion = {
+      speedEffects:
+        m.speedEffects === undefined
+          ? true
+          : bool(`${at}.settings.motion.speedEffects`, m.speedEffects),
+      fovBoost: num(`${at}.settings.motion.fovBoost`, m.fovBoost, 0, 1, 1),
+    };
   }
 
   return {
@@ -218,5 +230,6 @@ export function viewStorage(view: View): Record<string, string> {
     out['dwell.exposure'] = JSON.stringify(view.settings.exposure);
   }
   if (view.settings.water) out['dwell.water'] = JSON.stringify(view.settings.water);
+  if (view.settings.motion) out['dwell.motion'] = JSON.stringify(view.settings.motion);
   return out;
 }

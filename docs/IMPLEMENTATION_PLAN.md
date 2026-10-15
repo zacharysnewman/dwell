@@ -42,9 +42,10 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built, A2's bench `--compare` and A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: the rest of A2 (the renderer seam and compare mode); the rest of A3 (GPU march, brick jobs) outstanding; local builds only until the owner's decision (A7); `package.json` raised to 0.11.3, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S2b; S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.5, a patch release of the 0.11 line |
+| 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2581,13 +2582,14 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR), A2's bench `--compare` and A3a (the CPU core in `crates/dwell-march`: layout,
-builders, pool, reference marcher) done; A1 (the shared frame and GPU timing) built, its exit
-check outstanding: the bench before/after is done (design doc §7, "A1 as built") and the picture
-differs slightly — antialiased edges, the sea's colour (water now blends in linear light), the
-outline no longer multisampled — which the owner approved (2026-10-14); the e2e suite passes on CI. Next:
-the rest of A2. Outstanding in A3: the GPU march, worker brick jobs, uploads, overlays and
-telemetry (A3b). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+**Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
+builders, pool, reference marcher) done; A2 (the renderer seam, compare mode with a placeholder
+marcher, bench `--compare`) built, its exit check done (compare mode with raster on both sides
+reports zero difference); A1 (the shared frame and GPU timing) built, its exit check done: the
+bench before/after (design doc §7, "A1 as built") and the picture differs slightly — antialiased
+edges, the sea's colour (water now blends in linear light), the outline no longer multisampled —
+which the owner approved (2026-10-14); the e2e suite passes on CI. Next: A3b, the GPU march, worker
+brick jobs, uploads, overlays and telemetry. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2608,13 +2610,19 @@ Deliverables
   dropped frames at 60 Hz, CPU phases, `gpu.*` when present, memory, uploads, streaming, a near/far
   split. Scenarios' `renderer` (`?renderer=`) and `split` fields, a `repeat` step, and the scenarios
   `look-horizon`, `look-down`, `edit-burst`, `fly-high`, `thermal-10min` (each run once on a Mac).
-- [ ] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene`, the
-  `?renderer=raster|march|compare` switch (a build-time flag keeps it out of deployed builds) and the
-  active renderer in the settings menu and F3; `__dwell.renderers()` / `upscalers()` for the bench;
-  compare mode's split, blink and difference views with an empty "march" side. Also moved here from
-  the bench item: edit-to-visible latency (needs an edit's sequence carried through the remesh to
-  the frame that draws it; `DEV_TOOLS.md` TODO) and image agreement by cell id, face and depth
-  (needs the renderers' id and depth buffers; the bench compares colour only).
+- [x] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene` (`render/seam.rs`:
+  a `TerrainRenderer` per renderer's payloads, routed by the selection; the meshing jobs make the
+  payloads it needs; a runtime switch rebuilds every chunk and LOD section from the client's data),
+  the `?renderer=raster|march|compare` switch (and `?compare=raster`: raster on both sides) behind
+  the build-time `__RENDERER_SWITCH__` (off in the release workflow's builds) and the active
+  renderer in the settings menu (with a picker) and F3; `__dwell.renderers()` / `upscalers()` for
+  the bench; compare mode's split (scissored, a draggable divider), blink (F8) and difference (F7
+  cycles; coverage, view depth and colour ΔE, counted on the GPU) views and the per-side overlay
+  (CPU, GPU, memory, settings), with a placeholder "march" side (`render/march.rs`, magenta).
+- [ ] **A2 follow-ups, moved to A3** (they need the marcher's output): edit-to-visible latency (an
+  edit's sequence carried through the remesh to the frame that draws it; `DEV_TOOLS.md` TODO) and
+  the bench's image agreement by cell id, face and depth (the renderers' id buffers; the bench
+  compares colour only, compare mode's difference view compares coverage and depth in game).
 - [x] **A3a** — The CPU core (`crates/dwell-march`, pure Rust, native and `wasm32`): the GPU data
   layout as `u32` words (clipmap levels and slots, 64-tree nodes, raw and 1/2/4-bit palette bricks,
   column min-max grids, the state table from the registry's data); the builders (chunk → raw
@@ -2640,7 +2648,10 @@ Deliverables
 Exit criteria
 - [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
   difference. (The owner approved the differences — edges, the sea's colour, the outline — 2026-10-14.)
-- [ ] A2: compare mode runs with raster on both sides and reports zero difference.
+- [x] A2: compare mode runs with raster on both sides and reports zero difference (2026-10-15, Mac,
+  Chrome on the GPU: `?local=1&seed=7&renderer=compare&compare=raster`, difference view at the
+  settled spawn: 0 of 921 600 px in every class over five reads; raster against the placeholder
+  marcher differs as expected; `bench --compare idle-spawn` ran, march configurations skipped).
 - [x] A3a: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces)
   pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
   without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
@@ -2833,6 +2844,54 @@ Deviations (S1):
   extended north to z = 0 (kept cells) so its anchor is the world origin. RLE is not built.
 - Test fixtures are generated into a separate table (`tests/fixtures/structures.gen.rs`), so they
   are not in the build.
+
+## Phase 29 — Motion Effects (Speed FOV and Wind)
+
+**Goal:** A "fast moving" feel (owner, 2026-10-14: "sprint wind effects and dynamic FOV
+adjustment … using shaders for VFX"): the field of view widens with the camera's speed and wind
+streaks blow past the screen's edges, from data-driven tunables
+([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)).
+
+**Status:** In progress — built and tested; outstanding: the owner's look in a browser and approval
+(and the open questions in `MOTION_EFFECTS.md`), CI. Built on Phase 25's shared frame (A1): the
+wind is part of its composite pass.
+
+**Deviation:** the owner was not asked the "ask before designing" questions first; the defaults
+chosen are recorded in `MOTION_EFFECTS.md` with the open questions.
+
+**Deliverables:**
+
+- [x] Tunables as data: `shared/look/motion.json`, validated and generated into dwell-look's
+  `motion.gen.rs` by `shared/look/gen.mjs` (`node --test shared/look/gen.test.mjs`; CI fails on
+  stale output).
+- [x] dwell-look's `motion.rs`: speed → FOV boost and wind targets (eased walk→run, log-scaled to
+  flight), per-state gains, a critically damped spring, the FOV caps, the vanishing point, resets
+  on teleport, respawn, a tool camera and the face-B turn-over, held while the menu is open.
+- [x] The frame's FOV computed once by the game from the predicted velocity and state and used by
+  the renderer (projection, sky rays, pass culling) and the LOD selection.
+- [x] The wind in the composite: procedural streaks from the vanishing point, a flight layer, an
+  edge vignette and an edge radial blur of the scene (WGSL, naga-validated).
+- [x] Settings: Speed effects (off under `prefers-reduced-motion`) and FOV boost 0–100 %, stored
+  append-only under `dwell.motion`.
+- [x] Bench scenarios `sprint-straight` and `fly-fast-turn`; the cost measured on `fly-low-fast`.
+- [x] The owner's answers (2026-10-15): a Field of view setting (60–100°, default 75°, append-only
+  `dwell.view`) as the base for the projection, the LOD and culling, with the wide-screen rule
+  derived from it (`dwell_lod::base_fov`); the boost as a zoom-out percentage of the base (+10 %
+  sprinting, +20 % at top flight speed, clamped to 120°; the boosted caps removed); the open
+  questions decided (`MOTION_EFFECTS.md`).
+
+**Exit criteria:**
+
+- [x] Unit tests: speed → target FOV, the spring, the caps, resets, the menu hold, a tunable changed
+  by data changing the effect; the settings store's append-only test.
+- [x] A local world natively: sprinting widens the view for the renderer and the LOD alike, and
+  standing settles it back; the Field of view setting is the base for both (`tests/game_local.rs`).
+- [x] Setting → base FOV at 60/75/100° (wide screens included) and the boost → effective FOV at
+  0/10/20 % (unit tests).
+- [x] Cost: `fly-low-fast --unthrottled` on this Mac's GPU, effects on against off: the composite
+  +0.2 ms GPU (p50 1.13 → 1.37 ms), no change in frame interval.
+- [ ] The owner looks at it in a browser and approves (subtle at sprint, stronger in fast flight,
+  the crosshair area clear).
 
 ## Phase 30 — Tree Growth
 

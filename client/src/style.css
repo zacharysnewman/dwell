@@ -874,6 +874,18 @@ body.menu-open #menu-button {
   color: #fff;
 }
 
+/* On/off settings: a grass-coloured checkbox beside the name. */
+.settings-toggle {
+  cursor: pointer;
+}
+.settings-toggle input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--grass-dark);
+  cursor: pointer;
+}
+
 /* Sliders: a track filled with grass up to the value, and a block for a thumb. */
 .settings-row input[type='range'],
 #flight-speed input[type='range'] {
@@ -1890,4 +1902,57 @@ body:has(#main-menu) #build-info {
   *::after {
     transition: none !important;
   }
+}
+
+/* Compare mode (ui/renderer.ts, ?renderer=compare in local builds): a label per side and the
+   split's divider. */
+#compare-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.compare-label {
+  position: absolute;
+  bottom: 104px;
+  max-width: 46%;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font:
+    12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+.compare-left {
+  left: 12px;
+}
+.compare-right {
+  right: 12px;
+  text-align: right;
+}
+.compare-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  margin-left: -7px;
+  cursor: ew-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+.compare-divider::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  width: 2px;
+  background: rgb(255 255 255 / 0.85);
+  box-shadow: 0 0 3px rgb(0 0 0 / 0.6);
+}
+.gm-renderer select {
+  font: inherit;
 }

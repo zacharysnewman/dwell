@@ -44,3 +44,29 @@ export function sanitizeExposure(value: unknown): number {
     ? Math.min(EXPOSURE_LIMITS.max, Math.max(EXPOSURE_LIMITS.min, value))
     : DEFAULT_EXPOSURE;
 }
+
+/** The Field of view setting: vertical degrees (dwell-lod's `base_fov` narrows it on wide screens). */
+export const DEFAULT_FOV = 75;
+export const FOV_LIMITS = { min: 60, max: 100 } as const;
+/** The record the view's settings are stored in (append-only: other fields kept on rewrite). */
+export const VIEW_KEY = 'dwell.view';
+
+/** A stored view record's FOV: clamped and rounded to whole degrees, else the default. */
+export function sanitizeFovSetting(record: unknown): number {
+  const v =
+    typeof record === 'object' && record !== null
+      ? (record as Record<string, unknown>).fovDeg
+      : undefined;
+  return typeof v === 'number' && Number.isFinite(v)
+    ? Math.round(Math.min(FOV_LIMITS.max, Math.max(FOV_LIMITS.min, v)))
+    : DEFAULT_FOV;
+}
+
+/** The view record to store: the stored one's other fields kept (newer builds' fields survive). */
+export function viewRecord(stored: unknown, fovDeg: number): Record<string, unknown> {
+  const base =
+    typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : {};
+  return { ...base, fovDeg };
+}
