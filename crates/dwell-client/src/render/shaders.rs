@@ -340,7 +340,11 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // The composite of one pixel: the scene tone-mapped, encoded, fogged and over the sky.
 fn composited(p: vec2i, ndc: vec2f) -> vec3f {
     let ray = view_ray(ndc);
-    let back = sky(normalize(ray));
+    return composited_over(p, ray, sky(normalize(ray)));
+}
+
+// The scene at pixel `p` fogged along `ray` (view depth 1) and over the sky colour `back`.
+fn composited_over(p: vec2i, ray: vec3f, back: vec3f) -> vec3f {
     let c = textureLoad(scene_color, p, 0);
     if (c.a <= 0.0) {
         return back;
@@ -431,6 +435,8 @@ fn motion_wind(ndc: vec2f) -> vec4f {
 
 // The composited picture at pixel `px` blurred toward the vanishing point (the scene streaming
 // past), then the streaks and vignette over it. `color` is the pixel's own composite.
+// The taps share this pixel's view ray and sky (the sky is the composite's costly part; it barely
+// changes over a few pixels) and are jittered per pixel, so the blur is smooth rather than copies.
 fn motion_composite(color: vec3f, px: vec2i, ndc: vec2f) -> vec3f {
     var out = color;
     let blur = frame.wind_extra.x * frame.wind_point.z * frame.wind_point.z * motion_edge(ndc);
@@ -438,14 +444,16 @@ fn motion_composite(color: vec3f, px: vec2i, ndc: vec2f) -> vec3f {
         let dims = vec2f(textureDimensions(scene_color));
         let here = vec2f(px) + 0.5;
         let vp = vec2f(frame.wind_point.x * 0.5 + 0.5, 0.5 - frame.wind_point.y * 0.5) * dims;
-        let step = (vp - here) * blur / 5.0;
+        let step = (vp - here) * blur / 4.0;
+        let ray = view_ray(ndc);
+        let back = sky(normalize(ray));
+        let jitter = motion_hash(u32(px.x) * 1973u + u32(px.y) * 9277u);
         var sum = color;
-        for (var k = 1; k <= 5; k++) {
-            let q = clamp(here + step * f32(k), vec2f(0.5), dims - 0.5);
-            let q_ndc = vec2f(q.x / dims.x * 2.0 - 1.0, 1.0 - q.y / dims.y * 2.0);
-            sum += composited(vec2i(q), q_ndc);
+        for (var k = 0; k < 4; k++) {
+            let q = clamp(here + step * (f32(k) + jitter), vec2f(0.5), dims - 0.5);
+            sum += composited_over(vec2i(q), ray, back);
         }
-        out = sum / 6.0;
+        out = sum / 5.0;
     }
     let w = motion_wind(ndc);
     return w.rgb + out * (1.0 - w.a);
@@ -529,8 +537,9 @@ mod tests {
                 assert!(!b.contains(f), "{entry} calls {f}");
             }
         }
-        let c = body("composited");
-        assert!(c.contains("display(") && c.contains("fog_amount(") && c.contains("sky("));
+        let c = body("composited_over");
+        assert!(c.contains("display(") && c.contains("fog_amount("));
+        assert!(body("composited").contains("sky("));
         assert!(body("composite_fs").contains("composited("));
     }
 
@@ -544,7 +553,7 @@ mod tests {
         let m = &src[src.find("fn motion_hash(").expect("motion")..];
         assert!(!m.contains("textureSample("));
         assert!(
-            m.contains("composited("),
+            m.contains("composited_over("),
             "the blur samples the composited scene"
         );
     }
