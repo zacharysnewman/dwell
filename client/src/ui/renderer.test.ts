@@ -14,7 +14,7 @@ describe('the renderer switch', () => {
       compare: 'raster',
     });
     expect(rendererParams('?renderer=march', false)).toEqual({});
-    expect(rendererParams('', true)).toEqual({ renderer: undefined, compare: undefined });
+    expect(rendererParams('', true)).toEqual({});
   });
 
   it('finds the settings choice for what the client says draws', () => {

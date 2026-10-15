@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) and A1 (the shared frame and GPU timing) built, and A2's bench `--compare`; outstanding for A1: the owner's approval of the image differences (edges, the sea's colour, the outline), the e2e suite on CI; next: the rest of A2; local builds only until the owner's decision (A7) |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built; outstanding: for A1 the owner's approval of the image differences (edges, the sea's colour, the outline), the e2e suite on CI; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); next: A3, the marcher; local builds only until the owner's decision (A7) |
 | 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner's approval of its image differences outstanding); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
@@ -2580,11 +2580,11 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) and A2's bench `--compare` done; A1 (the shared frame and GPU timing) built, its exit
+**Status:** In progress — A0 (the ADR) done; A2 (the renderer seam, compare mode with a placeholder marcher, bench `--compare`) built, its exit check done (compare mode with raster on both sides reports zero difference); A1 (the shared frame and GPU timing) built, its exit
 check outstanding: the bench before/after is done (design doc §7, "A1 as built") and the picture
 differs slightly — antialiased edges, the sea's colour (water now blends in linear light), the
 outline no longer multisampled — which needs the owner's approval; the e2e suite runs on CI. Next:
-A2. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+A3. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2605,13 +2605,19 @@ Deliverables
   dropped frames at 60 Hz, CPU phases, `gpu.*` when present, memory, uploads, streaming, a near/far
   split. Scenarios' `renderer` (`?renderer=`) and `split` fields, a `repeat` step, and the scenarios
   `look-horizon`, `look-down`, `edit-burst`, `fly-high`, `thermal-10min` (each run once on a Mac).
-- [ ] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene`, the
-  `?renderer=raster|march|compare` switch (a build-time flag keeps it out of deployed builds) and the
-  active renderer in the settings menu and F3; `__dwell.renderers()` / `upscalers()` for the bench;
-  compare mode's split, blink and difference views with an empty "march" side. Also moved here from
-  the bench item: edit-to-visible latency (needs an edit's sequence carried through the remesh to
-  the frame that draws it; `DEV_TOOLS.md` TODO) and image agreement by cell id, face and depth
-  (needs the renderers' id and depth buffers; the bench compares colour only).
+- [x] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene` (`render/seam.rs`:
+  a `TerrainRenderer` per renderer's payloads, routed by the selection; the meshing jobs make the
+  payloads it needs; a runtime switch rebuilds every chunk and LOD section from the client's data),
+  the `?renderer=raster|march|compare` switch (and `?compare=raster`: raster on both sides) behind
+  the build-time `__RENDERER_SWITCH__` (off in the release workflow's builds) and the active
+  renderer in the settings menu (with a picker) and F3; `__dwell.renderers()` / `upscalers()` for
+  the bench; compare mode's split (scissored, a draggable divider), blink (F8) and difference (F7
+  cycles; coverage, view depth and colour ΔE, counted on the GPU) views and the per-side overlay
+  (CPU, GPU, memory, settings), with a placeholder "march" side (`render/march.rs`, magenta).
+- [ ] **A2 follow-ups, moved to A3** (they need the marcher's output): edit-to-visible latency (an
+  edit's sequence carried through the remesh to the frame that draws it; `DEV_TOOLS.md` TODO) and
+  the bench's image agreement by cell id, face and depth (the renderers' id buffers; the bench
+  compares colour only, compare mode's difference view compares coverage and depth in game).
 - [ ] **A3** — Marched terrain at every distance: the generated GPU state table; brick jobs in the
   workers for chunks and LOD sections (palette bricks with column max-heights); the pool, allocator
   and clipmap levels; the CPU reference marcher; the primary march at full resolution with the
@@ -2630,7 +2636,10 @@ Deliverables
 Exit criteria
 - [ ] A1: bench before/after; raster screenshots match today's, or the owner approves the
   difference.
-- [ ] A2: compare mode runs with raster on both sides and reports zero difference.
+- [x] A2: compare mode runs with raster on both sides and reports zero difference (2026-10-15, Mac,
+  Chrome on the GPU: `?local=1&seed=7&renderer=compare&compare=raster`, difference view at the
+  settled spawn: 0 of 921 600 px in every class over five reads; raster against the placeholder
+  marcher differs as expected; `bench --compare idle-spawn` ran, march configurations skipped).
 - [ ] A3: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces);
   the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near and
   distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison

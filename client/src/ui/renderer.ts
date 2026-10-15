@@ -30,7 +30,12 @@ export function rendererParams(
 ): { renderer?: string; compare?: string } {
   if (!enabled) return {};
   const p = new URLSearchParams(search);
-  return { renderer: p.get('renderer') ?? undefined, compare: p.get('compare') ?? undefined };
+  const out: { renderer?: string; compare?: string } = {};
+  const renderer = p.get('renderer');
+  const compare = p.get('compare');
+  if (renderer !== null) out.renderer = renderer;
+  if (compare !== null) out.compare = compare;
+  return out;
 }
 
 /** The choice matching the client's label (`raster`, `march`, `compare raster | march`). */

@@ -1860,13 +1860,17 @@ body:has(#main-menu) #build-info {
 }
 .compare-label {
   position: absolute;
-  bottom: 64px;
+  bottom: 104px;
   max-width: 46%;
   padding: 4px 8px;
   border-radius: 6px;
   background: rgb(0 0 0 / 0.6);
   color: #fff;
-  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 .compare-left {
   left: 12px;
