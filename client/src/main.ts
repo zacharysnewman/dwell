@@ -432,15 +432,33 @@ async function start(): Promise<App | null> {
   forwardInput(app);
   // Sound (docs/AUDIO.md): started by the first gesture; menus sound by delegation.
   const sfx = installPageSounds();
-  const sounds = new EventPlayer(SOUND_DATA, (sound, o) => {
-    sfx.play(sound, {
-      bus: 'effects',
-      intensity: o.intensity,
-      at: o.at,
-      gain: o.gain,
-      ...(o.pan !== undefined ? { pan: o.pan } : {}),
-    });
-  });
+  const sounds = new EventPlayer(
+    SOUND_DATA,
+    (sound, o) => {
+      sfx.play(sound, {
+        bus: 'effects',
+        intensity: o.intensity,
+        at: o.at,
+        gain: o.gain,
+        ...(o.pan !== undefined ? { pan: o.pan } : {}),
+      });
+    },
+    {
+      start: (voice, sound, o) =>
+        sfx.startLoop(voice, sound, {
+          bus: 'effects',
+          intensity: o.intensity,
+          at: o.at,
+          gain: o.gain,
+        }),
+      update: (voice, intensity, at) => {
+        sfx.updateLoop(voice, intensity, at);
+      },
+      stop: (voice) => {
+        sfx.stopLoop(voice);
+      },
+    },
+  );
   // The game menu (top left, or Esc): settings applied as the sliders move.
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     sfx.setVolumes(s.audio);

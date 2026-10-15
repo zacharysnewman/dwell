@@ -812,6 +812,7 @@ impl<S: Scene> Game<S> {
         crouched: bool,
         face: f64,
         submerged: Option<f64>,
+        dt: f64,
     ) -> MoverSample {
         let at = |dy: f64| {
             [
@@ -835,6 +836,7 @@ impl<S: Scene> Game<S> {
             submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
             ground,
             body,
+            dt,
         }
     }
 
@@ -902,6 +904,7 @@ impl<S: Scene> Game<S> {
             c.controller_flags & controller_flags::CROUCHING != 0,
             face,
             Some(c.submerged),
+            1.0 / SIM_HZ as f64,
         );
         self.mover_sounds.update(&sample, None, &mut self.sounds);
         // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
@@ -919,10 +922,8 @@ impl<S: Scene> Game<S> {
     fn draw(&mut self, now_ms: f64, input: &KeyboardMouseInput, now: &mut dyn FnMut() -> f64) {
         let c = self.current;
         let face = c.face;
-        let flip = self.flip.draw(
-            face,
-            self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0),
-        );
+        let frame_dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
+        let flip = self.flip.draw(face, frame_dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;
@@ -961,12 +962,12 @@ impl<S: Scene> Game<S> {
                     v.is_crouched(),
                     face,
                     None,
+                    frame_dt,
                 );
-                self.remote_sounds.entry(v.player_id).or_default().update(
-                    &sample,
-                    Some(v.feet),
-                    &mut self.sounds,
-                );
+                self.remote_sounds
+                    .entry(v.player_id)
+                    .or_insert_with(|| MoverSounds::with_voice(v.player_id))
+                    .update(&sample, Some(v.feet), &mut self.sounds);
             }
             let view = self.player_view(
                 v.player_id,
@@ -985,7 +986,15 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
-        self.remote_sounds.retain(|id, _| drawn.contains(id));
+        // A player gone from view (or dead) stops sounding: its slide's voice ends.
+        let sounds = &mut self.sounds;
+        self.remote_sounds.retain(|id, m| {
+            let keep = drawn.contains(id);
+            if !keep {
+                m.finish(None, sounds);
+            }
+            keep
+        });
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
         let camera_eye;
@@ -1235,13 +1244,7 @@ impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
 }
 
 fn sound_event(kind: SoundKind) -> SoundEvent {
-    SoundEvent {
-        kind,
-        block: 0,
-        intensity: 1.0,
-        at: None,
-        gait: None,
-    }
+    SoundEvent::new(kind, 0, 1.0, None)
 }
 
 /// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.

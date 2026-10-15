@@ -18,13 +18,15 @@ pub enum SoundKind {
     CrouchOff = 11,
     Sprint = 12,
     Slide = 13,
-    Rise = 14,
-    Dive = 15,
-    Deny = 16,
+    SlideSpeed = 14,
+    SlideEnd = 15,
+    Rise = 16,
+    Dive = 17,
+    Deny = 18,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 17] = [
+    pub const ALL: [SoundKind; 19] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -39,6 +41,8 @@ impl SoundKind {
         SoundKind::CrouchOff,
         SoundKind::Sprint,
         SoundKind::Slide,
+        SoundKind::SlideSpeed,
+        SoundKind::SlideEnd,
         SoundKind::Rise,
         SoundKind::Dive,
         SoundKind::Deny,
@@ -61,6 +65,8 @@ impl SoundKind {
             SoundKind::CrouchOff => "crouch_off",
             SoundKind::Sprint => "sprint",
             SoundKind::Slide => "slide",
+            SoundKind::SlideSpeed => "slide_speed",
+            SoundKind::SlideEnd => "slide_end",
             SoundKind::Rise => "rise",
             SoundKind::Dive => "dive",
             SoundKind::Deny => "deny",
@@ -83,7 +89,9 @@ impl SoundKind {
             SoundKind::CrouchOn => None,
             SoundKind::CrouchOff => None,
             SoundKind::Sprint => None,
-            SoundKind::Slide => None,
+            SoundKind::Slide => Some((0.5, 14.0)),
+            SoundKind::SlideSpeed => Some((0.5, 14.0)),
+            SoundKind::SlideEnd => Some((0.5, 14.0)),
             SoundKind::Rise => Some((2.0, 30.0)),
             SoundKind::Dive => Some((2.0, 30.0)),
             SoundKind::Deny => None,
