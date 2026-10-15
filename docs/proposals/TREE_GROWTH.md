@@ -1,6 +1,6 @@
 # Proposal: growing and varying hand-built trees
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions answered except grafting (§7). Builds on the adopted
+**Status:** investigated 2026-10-14, not adopted. Owner questions answered (§7); ready for an ADR. Builds on the adopted
 structure system ([`docs/STRUCTURES.md`](../STRUCTURES.md), ADR 0031, Phase 27).
 
 The ask: take a custom-built tree model and extrapolate from it so it "grows" over time, and produce
@@ -55,8 +55,6 @@ stop — the closest match; Vintage Story's trees are fully parametric JSON; Vel
 - Leaf thinning by a seeded hash; leaf colour by weighted `choices`.
 - Scale the skeleton (lengths × s, radii by the pipe model, one-voxel minimum) — naive voxel scaling
   turns twigs into slabs and breaks diagonal joins.
-- Later: graft a crown from model B onto a trunk from model A at marked attach points; space
-  colonization in a jittered envelope for "same species, different tree".
 
 ## 5. Growth in the multiplayer world
 
@@ -125,9 +123,9 @@ format and protocol changes — a new compatibility line, as is procedural place
     { "op": "rotate", "angles": [0, 90, 180, 270] },
     { "op": "branch_jitter", "angle_deg": 12, "length": 0.15, "droop": 0.1, "drop_chance": 0.1 },
     { "op": "leaf_thin", "density": [0.8, 1.0] } ],
-  "growth": { "engine": "skeleton_reveal", "stages": 8, "stage_ticks": [72000, 0.25],
+  "growth": { "engine": "skeleton_reveal", "trunk_days_per_m": 30, "branch_rate": 0.333, "jitter_days": 0.25,
     "thickness": { "op": "pipe_model", "tapering": 0.3, "min": 1 },
-    "leaves": { "op": "around_tips", "radius_by_stage": [1, 1, 2, 2, 3, 3, 3, 3] },
+    "leaves": { "op": "around_tips", "radius": 3 },
     "blocked": "prune_subtree" } }
 ```
 
@@ -151,12 +149,12 @@ a stage; world format and protocol both change at G3.
 
 | # | Question | Answer |
 |---|---|---|
-| 1 | How fast, in stages or block by block? | **1 m every 30 in-game days**, in 1 m (one-voxel) steps. In-game days aren't specced yet; assume a 30-minute day (20 min day, 10 min night), so a step every **15 real hours** and a 10 m tree in about 6 real days of world time. The rate is defined in in-game days so it follows whatever day length is chosen. One step extends every growing tip by one voxel along the skeleton (geodesic distance from the root), thickening and leaves following the pipe model and the tips |
+| 1 | How fast, in stages or block by block? | **The trunk grows 1 m every 30 in-game days**, in 1 m (one-voxel) steps; **branches lengthen at 1/3 of that speed** (1 m per 90 days), or the tree ends up wonky. In-game days aren't specced yet; assume a 30-minute day (20 min day, 10 min night), so a trunk step every **15 real hours** and a branch step every 45. Rates are in in-game days, so they follow whatever day length is chosen, and the branch ratio is a growth parameter in the structure data (default 1/3). A node appears at `t = trunk distance to its fork / trunk rate + distance along branches / branch rate`, so the final stage is still exactly the model. This needs the trunk told apart from branches: inferred as the thickest path from the root, overridable by a `trunk` palette role |
 | 2 | Hand-approved or computed stages? | **Computed** (the skeleton reveal) |
 | 3 | Obstacles: stop or grow around? | **Stop**: a blocked node prunes its subtree |
 | 4 | Cut trunk, leaf decay? | **Phase 20's plan**: the cut-off part becomes its own physics body, settles and re-bakes into the ground (ARCHITECTURE §7.1–7.3); leaf decay not asked for |
 | 5 | Kind of variation? | **Branches placed differently, longer or shorter** (and their leaves with them): skeleton jitter (§4). Space colonization isn't needed |
-| 6 | Grafting parts between models? | Open: explained again to the owner (a trunk from one model with the crown of another, to multiply variety) |
+| 6 | Grafting parts between models? | **No** |
 | 7 | Per-world growth speed? | **Yes**: a per-world growth-speed multiplier, stored with the world's settings and applied by the server |
 | — | Procedural or planted trees? | **Both**, from the owner's persistence model (§5a) |
 
