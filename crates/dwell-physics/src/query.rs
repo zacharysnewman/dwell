@@ -62,6 +62,9 @@ pub struct Capsule {
 pub struct VoxelQuery<'a> {
     world: RefCell<&'a mut VoxelWorld>,
     physics: &'a Physics,
+    /// Shapes derived during this query (the world does not change while it lives): a ring of
+    /// probes reads the same few cells, and an adaptive block's shape reads 18 voxels.
+    shapes: RefCell<dwell_world::hash::HashMap<[i32; 3], &'static ShapeInfo>>,
 }
 
 const STEP: [[i32; 3]; 6] = [
@@ -78,6 +81,7 @@ impl<'a> VoxelQuery<'a> {
         Self {
             world: RefCell::new(world),
             physics,
+            shapes: RefCell::new(dwell_world::hash::HashMap::default()),
         }
     }
 
@@ -94,7 +98,12 @@ impl<'a> VoxelQuery<'a> {
 
     /// The shape of a voxel as it collides: an adaptive top block's derived shape, or its own.
     pub fn shape(&self, x: i32, y: i32, z: i32) -> &'static ShapeInfo {
-        self.world.borrow_mut().shape_at(x, y, z)
+        if let Some(&s) = self.shapes.borrow().get(&[x, y, z]) {
+            return s;
+        }
+        let s = self.world.borrow_mut().shape_at(x, y, z);
+        self.shapes.borrow_mut().insert([x, y, z], s);
+        s
     }
 
     fn pipeline<'q>(&'q self, filter: QueryFilter<'q>) -> QueryPipeline<'q> {

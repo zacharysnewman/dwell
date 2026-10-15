@@ -52,8 +52,17 @@ pub fn index(codes: [usize; 8]) -> usize {
 /// the cell at that offset; `up` is +1 where up is +y (face A, or a face-B chunk meshed as its
 /// mirror image) and −1 for face B's cells read in the world, whose shapes then hang.
 pub fn derive(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> Option<u16> {
-    if !row(get(0, 0, 0)).is_some_and(|s| s.adaptive) || row(get(0, up, 0)).is_some_and(|s| s.solid)
-    {
+    let own = get(0, 0, 0);
+    derive_around(own, get, up)
+}
+
+/// [`derive`] for a cell whose own state `own` the caller has already read.
+pub fn derive_around(
+    own: StateId,
+    mut get: impl FnMut(i32, i32, i32) -> StateId,
+    up: i32,
+) -> Option<u16> {
+    if !row(own).is_some_and(|s| s.adaptive) || row(get(0, up, 0)).is_some_and(|s| s.solid) {
         return None;
     }
     let mut codes = [SAME; 8];
@@ -76,9 +85,10 @@ pub fn derive(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> Option<
 
 /// The shape a cell is drawn, collided and targeted as: its derived shape, or its own.
 pub fn shape_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> &'static ShapeInfo {
-    match derive(&mut get, up) {
+    let own = get(0, 0, 0);
+    match derive_around(own, &mut get, up) {
         Some(i) => &SHAPES[usize::from(i)],
-        None => shape_of(get(0, 0, 0)),
+        None => shape_of(own),
     }
 }
 
@@ -86,10 +96,11 @@ pub fn shape_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> &'sta
 /// a liquid above it or beside it in its row (a shore's shaped bank), unless it derives a full
 /// cube.
 pub fn flooded_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> bool {
-    if row(get(0, 0, 0)).is_some_and(|s| s.flooded) {
+    let own = get(0, 0, 0);
+    if row(own).is_some_and(|s| s.flooded) {
         return true;
     }
-    let Some(i) = derive(&mut get, up) else {
+    let Some(i) = derive_around(own, &mut get, up) else {
         return false;
     };
     if is_cube(&SHAPES[usize::from(i)]) {
