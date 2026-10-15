@@ -1,6 +1,6 @@
 # Proposal: water rendering — surface, reflections, refraction, underwater
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions open (§7).
+**Status:** investigated 2026-10-14, not adopted. Owner questions 1–4 answered; 5 open (§7).
 
 ## 1. Water today
 
@@ -119,8 +119,10 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
 
 ## 7. Questions for the owner
 
-1. Are fluids **per build** (registry data, recommended) or **per world**?
-2. Do you want an editor page for fluid parameters, like `docs/prototypes/`?
+1. Are fluids **per build** (registry data, recommended) or **per world**? *Owner, 2026-10-14: per
+   build, in the block registry.*
+2. Do you want an editor page for fluid parameters, like `docs/prototypes/`? *Owner, 2026-10-14: no;
+   the values are edited in the data file (a page can be added later without changing the format).*
 3. Which tier is the target look on desktop, and is Low acceptable on phones? *Owner, 2026-10-14:
    Low on phones, tentatively; revisit once it's measured and seen on the two target phones.*
 4. Are more fluids expected (lava, oil), and do they need different behaviour than looks (glow,
