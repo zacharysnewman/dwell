@@ -1,6 +1,8 @@
-# Proposal: water rendering — surface, reflections, refraction, underwater
+# Water rendering — surface, reflections, refraction, underwater
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions answered (§7); ready for an ADR.
+**Status:** Adopted ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)), 2026-10-14. Built as Phase 26
+of the [implementation plan](./IMPLEMENTATION_PLAN.md) (steps W1–W6; W1 split into W1a, the fluid data,
+and W1b, the water shader). Owner answers in §7.
 
 ## 1. Water today
 
@@ -16,7 +18,7 @@
   Fresnel, specular, reflection or refraction.
 - **Why reflections and refraction can't be added today.** The frame renders with 4× MSAA straight
   into the canvas, and depth is render-attachment only with `StoreOp::Discard`. No scene colour or
-  depth can be sampled. This is the main structural change (`RAY_MARCHING.md` step A1).
+  depth can be sampled. This is the main structural change ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) step A1).
 - **Submersion.** Only physics knows (`submerged_fraction`, `crates/dwell-physics/src/query.rs`),
   and it counts the whole cell as wet while the drawn surface is at 0.875. An eye test needs the
   cell at `floor(eye)` to be liquid **and**, when the cell above isn't water, `frac(eye.y) < 0.875`
@@ -65,7 +67,7 @@ or write linear depth to a colour target that resolves.
 analytic sky (`dwell_sky(reflect(v, n))`, already available and free). Planar reflection doubles
 opaque draws and only suits one plane (sea level), so it's an Ultra-tier extra at most. Ray marched:
 one reflection ray through the GPU voxel structure — exact, and the recommended path once
-`RAY_MARCHING.md` A3 exists.
+[`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) A3 exists.
 
 **Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id).
 Per-pixel split where the near plane crosses the surface (Crest's "water line"). Per-channel
@@ -97,14 +99,15 @@ Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-re
 | Step | Work | Exit check |
 |---|---|---|
 | **W1** | Fluid data in the registry (§2), a dedicated `water_fs` (normal maps, Fresnel, GGX, sky reflection), the eye-submerged uniform with the 0.875 rule. No new passes | Fixture-fluid test; **regression test for the cell-vs-surface mismatch, seen failing first**; owner look |
-| **W2** | The frame restructure — `RAY_MARCHING.md` A1 (built once, shared) | As A1 |
+| **W2** | The frame restructure — [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) A1 (built once, shared) | As A1 |
 | **W3** | Refraction with the depth check, Beer–Lambert absorption, shoreline foam | Screenshots of shore views; bench |
 | **W4** | Underwater: fog, the split line, Snell's window and TIR, caustics, distortion | Named views underwater and half in; owner look |
 | **W5** | SSR and the quality tiers, phone defaults | Bench on desktop and a phone |
 | **W6** | Under ray marching (after A3, if marching is kept): reflection and refraction rays replace SSR and the copy on high tiers | Parity against W5's views |
 
-Each step updates `ARCHITECTURE.md` (render, `dwell-look`, `dwell-mesh`) and gets a phase in the
-implementation plan — most naturally in Phase 19 (looks and textures as data). None of it changes
+Each step updates `ARCHITECTURE.md` (render, `dwell-look`, `dwell-mesh`); the steps are Phase 26's
+deliverables in the implementation plan, with W1 split into W1a (the fluid data, the mesher reading it
+and the eye-submerged rule) and W1b (the water shader, after A1). None of it changes
 public API: fluids are rendering data, and the 0.875 surface stays where it is.
 
 ## 6. Risks

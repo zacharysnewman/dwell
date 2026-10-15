@@ -1,6 +1,8 @@
-# Proposal: a structure sandbox and a data-driven structure system
+# A structure sandbox and a data-driven structure system
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions answered (§7); ready for an ADR (S0).
+**Status:** Adopted ([ADR 0031](./adr/0031-data-driven-structures.md)), 2026-10-14. Built as Phase 27 of the
+[implementation plan](./IMPLEMENTATION_PLAN.md) (steps S0–S4; S2 split into S2a, the floor and the world
+type, and S2b, the structures store; S4, worldgen placement, deferred). Owner answers in §7.
 
 The ask: a tool with a simple flat white terrain sandbox where you build things (trees, rocks,
 etc.), saved locally, that can easily be added to a custom shapes/structures system.

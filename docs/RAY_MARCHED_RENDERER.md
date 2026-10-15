@@ -1,6 +1,7 @@
-# Proposal: a ray-marched renderer as an alternative, compared side by side
+# A ray-marched renderer as an alternative, compared side by side
 
-**Status:** investigated 2026-10-14, not adopted. Owner direction (2026-10-14):
+**Status:** Adopted ([ADR 0029](./adr/0029-ray-marched-renderer.md)), 2026-10-14. Built as Phase 25 of the
+[implementation plan](./IMPLEMENTATION_PLAN.md) (steps A0–A7). Owner direction (2026-10-14):
 
 - **Plan ray marching as an alternative rendering method and compare it side by side with the
   raster renderer.**
@@ -290,7 +291,7 @@ with one is also the owner's call at A7.
   Teardown's box-rasterized marching is the middle option. A0's ADR records the dependency, and
   the implementation plan's Phase 20 then waits for A7.
 - **Water** stays a raster pass over both renderers at first; under the marcher it later becomes a
-  hit type with reflection and refraction rays (`WATER.md` W6).
+  hit type with reflection and refraction rays ([`WATER_RENDERING.md`](./WATER_RENDERING.md) W6).
 - **Raster under both**: players, held items, particles, debris, outline, debug lines. The UI is DOM.
 
 ## 7. Plan
@@ -300,7 +301,7 @@ Raster stays the default throughout; every step leaves the game shippable.
 | Step | Work | Exit check |
 |---|---|---|
 | **A0** | ADR: a second renderer behind a runtime switch (amends ADR 0028's renderer description and ARCHITECTURE §5); owner answers §9 | ADR accepted |
-| **A1** | **Shared frame + GPU timing** (also `WATER.md` W2): offscreen `rgba16float` target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved to a composite pass; timestamp queries in the telemetry; `bench.ts` passes `--enable-webgpu-developer-features` | Bench before/after; raster screenshots match today (or the owner approves the difference) |
+| **A1** | **Shared frame + GPU timing** (also [`WATER_RENDERING.md`](./WATER_RENDERING.md) W2): offscreen `rgba16float` target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved to a composite pass; timestamp queries in the telemetry; `bench.ts` passes `--enable-webgpu-developer-features` | Bench before/after; raster screenshots match today (or the owner approves the difference) |
 | **A2** | **The seam and compare mode**: payload-generic terrain calls, the `?renderer=` switch and setting, compare mode's split/blink/difference with an empty "march" side; `bench --compare` with the configs table and report | Compare mode runs with raster on both sides and reports zero difference |
 | **A3** | **Marched terrain at every distance**: the generated GPU state table; brick jobs in the workers for full-detail chunks and for LOD sections (palette bricks with column max-heights); the pool, allocator and clipmap levels; the CPU reference marcher; primary march at full resolution with the hierarchy's masks and cone LOD; overlays via the frag_depth pass; steps-per-ray telemetry. `march` mode draws all terrain with no meshes | Reference-marcher tests; GPU-vs-reference per-pixel test in CI; named views (near and distant) agree with the mesher; first comparison report (desktop) |
 | **A4** | **Empty-space skipping** (§4.3): column min-max heights, brick distances, beam prepass, temporal start, fog and step-cap exits | Steps-per-ray p99 down on `look-horizon` and `fly-high`; comparison report on desktop and a phone |
@@ -308,10 +309,11 @@ Raster stays the default throughout; every step leaves the game shippable.
 | **A6** | **Lighting under both**: half-res sun-shadow and AO rays from the G-buffer (march) or from raster's depth (hybrid), bilateral upsample, temporal accumulation; a quality setting | Comparison with lighting on and off; owner look |
 | **A7** | **Decision** by the criteria in §5; update ARCHITECTURE.md and the plan for whichever path is chosen | Owner decision recorded in the ADR |
 
-Moving bodies in the marcher (§6) and water rays (`WATER.md` W6) follow A7 if marching is kept.
+Moving bodies in the marcher (§6) and water rays ([`WATER_RENDERING.md`](./WATER_RENDERING.md) W6) follow A7 if marching is kept.
 
-Each step updates `docs/ARCHITECTURE.md` and gets deliverables in `docs/IMPLEMENTATION_PLAN.md` when
-adopted; likely alongside Phase 19 (looks and textures), which the shared frame (A1) also serves.
+Each step updates `docs/ARCHITECTURE.md`; the steps are Phase 25's deliverables in
+`docs/IMPLEMENTATION_PLAN.md`. The shared frame (A1) also serves Phase 19 (looks and textures) and
+Phase 26 (water).
 Nothing here changes public API (world files, seeds' terrain, protocols), so no new compatibility line.
 
 ## 8. Risks

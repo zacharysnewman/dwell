@@ -33,7 +33,10 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0025](0025-baseline-world.md) | The baseline world: a 50 km bifacial disc, a 10-layer core, a spherical build volume, six blocks | Accepted |
 | [0026](0026-terrain-definitions.md) | Terrain definitions: terrain as data, evaluated by a fixed vocabulary of node kinds | Accepted |
 | [0027](0027-webgpu-renderer.md) | WebGPU renderer: Three's `WebGPURenderer` with TSL materials, a WebGL2 fallback, and a look registry | Superseded by 0028 |
-| [0028](0028-rust-port.md) | One Rust codebase: server, sim core and client, with Rapier physics and a wgpu renderer (WebGPU only) | Accepted |
+| [0028](0028-rust-port.md) | One Rust codebase: server, sim core and client, with Rapier physics and a wgpu renderer (WebGPU only) | Accepted (renderer amended by 0029) |
+| [0029](0029-ray-marched-renderer.md) | A ray-marched terrain renderer, built complete beside the mesher and compared side by side | Accepted |
+| [0030](0030-fluid-looks-and-water-rendering.md) | Fluid looks as registry data, and a water shader with refraction, underwater and reflections in quality tiers | Accepted |
+| [0031](0031-data-driven-structures.md) | Data-driven structures, built in an in-game sandbox world | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
