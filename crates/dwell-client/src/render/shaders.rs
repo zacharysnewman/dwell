@@ -408,6 +408,14 @@ fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     return vec4f(mix(back, shown, min(c.a, 1.0)), 1.0);
 }
 
+// How many metres the pixel at `p` covers on a surface at view depth `depth` along `ray`, facing
+// it obliquely as the floor does (the slant from how far the ray dips).
+fn pixel_m(p: vec2i, ray: vec3f, depth: f32) -> f32 {
+    let h = f32(textureDimensions(scene_color).y);
+    let across = depth * length(ray) * 2.0 * frame.tan.y / h;
+    return across / max(abs(normalize(ray).y), 0.15);
+}
+
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
@@ -431,7 +439,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let under = (frame.water.z - (frame.eye.x + rel.y)) * frame.eye.y;
         // Lit by light that came down through the fluid, focused into caustics.
         lit *= exp(-f.absorption.rgb * max(under, 0.0))
-            * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, f);
+            * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), f);
     }
     let shown = display(underwater(lit, min(dist, to_surface), f));
     return mix(back, shown, min(c.a, 1.0));
@@ -720,7 +728,9 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     var floor = s.body;
     if (scene.a > 0.0 && d_b > 0.0) {
         floor = scene.rgb / scene.a;
-        floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, f);
+        // The floor's pixel footprint: the surface's, scaled out to the floor's distance.
+        let floor_fp = footprint * d_b / d_w;
+        floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, floor_fp, f);
     }
     let t = exp(-(f.absorption.rgb + f.extra.w) * length_in);
     let down = exp(-f.absorption.rgb * min(under, DEEP_M));
@@ -768,8 +778,10 @@ const FOAM_LAP_SPEED: f32 = 0.12;
 // The pattern is shifted back along the refracted sun (or moon, much dimmer), animated with the
 // ripples' flow, and fades with depth over the fluid's caustic depth (render/water.rs
 // `caustic_fade`). Focused, not added: dimmer between the lines, brighter on them.
-fn caustic_light(xz: vec2f, under: f32, frag_y: f32, f: Fluid) -> f32 {
-    if (under <= 0.0 || f.extra.y <= 0.0) {
+fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, f: Fluid) -> f32 {
+    // Faded out where a pixel covers a good part of a cell (they would alias into noise).
+    let sharp = 1.0 - smoothstep(0.08, 0.3, footprint / max(f.optics.y, 1e-3));
+    if (under <= 0.0 || f.extra.y <= 0.0 || sharp <= 0.0) {
         return 1.0;
     }
     let up = select(-1.0, 1.0, frag_y >= MIDPLANE_Y);
@@ -787,7 +799,7 @@ fn caustic_light(xz: vec2f, under: f32, frag_y: f32, f: Fluid) -> f32 {
     let back = select(vec2f(0.0), l.xz / max(h, 1e-4) * (under * tan_t), h > 1e-4);
     let c = caustic_pattern(xz + back, f);
     let fade = exp(-under / max(f.optics.z, 1e-3)) * smoothstep(0.0, 0.35, under);
-    let strength = f.extra.y * k * fade;
+    let strength = f.extra.y * k * fade * sharp;
     return max(1.0 + strength * (c * CAUSTIC_GAIN - CAUSTIC_MEAN), 0.0);
 }
 

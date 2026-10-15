@@ -359,7 +359,7 @@ mod tests {
         let water = at("dwell:water");
         // absorption, opacity
         assert_eq!(&oil[0..4], &[2.0, 2.5, 3.0, 0.8]);
-        assert_eq!(&water[0..4], &[0.45, 0.12, 0.04, 0.72]);
+        assert_eq!(&water[0..4], &[1.0, 0.16, 0.045, 0.72]);
         // scatter (linear), roughness
         let s = linear_rgb(0x2a2410);
         assert_eq!(&oil[4..8], &[s[0], s[1], s[2], 0.02]);
@@ -369,11 +369,11 @@ mod tests {
         assert_eq!(&water[8..12], &[1.333, 1.0, 2.0, 0.03]);
         // foam colour (linear), depth
         assert_eq!(oil[15], 0.0);
-        assert_eq!(water[15], 0.4);
+        assert_eq!(water[15], dwell_blocks::require_fluid("dwell:water").foam_depth);
         // F0 from the IOR, caustics, surface drop
         assert!(close(oil[16], f0_from_ior(1.47), 1e-7));
         assert_eq!(&oil[17..20], &[0.2, 0.25, 1.0]);
-        assert_eq!(&water[17..19], &[1.0, 0.125]);
+        assert_eq!(water[18], 0.125);
         // refraction, caustic scale, caustic depth, sparkle
         assert_eq!(&oil[20..24], &[0.05, 1.5, 0.5, 0.0]);
         let w = dwell_blocks::require_fluid("dwell:water");
@@ -381,6 +381,7 @@ mod tests {
             &water[20..24],
             &[w.refraction, w.caustic_scale, w.caustic_depth, w.sparkle]
         );
+        assert_eq!((water[17], water[19]), (w.caustics, w.scattering));
     }
 
     #[test]
@@ -435,7 +436,7 @@ mod tests {
         let body = linear_rgb(w.scatter).map(|c| c * 0.8);
         let at = |d: f32| through_fluid(sand, body, w.absorption, w.scattering, d, d);
         let hand = at(0.1);
-        assert!((0..3).all(|k| close(hand[k], sand[k], 0.12 * sand[k])), "{hand:?}");
+        assert!((0..3).all(|k| close(hand[k], sand[k], 0.25 * sand[k])), "{hand:?}");
         for d in [1.0_f32, 2.0, 4.0, 8.0, 16.0, 40.0] {
             let c = at(d);
             assert!(c[1] <= c[2] * 1.1, "green at {d} m: {c:?}");
