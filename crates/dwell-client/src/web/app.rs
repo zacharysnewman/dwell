@@ -20,12 +20,15 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use super::jobs::WebJobs;
 use super::transport::{TransportEvent, WebRtcConn, WebTransportConn};
+use crate::game::Scene;
 use crate::game::{Game, LodSettings, Send};
 use crate::net::netsim::{Direction, NetConditions, parse_net_conditions};
 use crate::net::sdp::WebRtcInvite;
 use crate::net::session::{Out, Session, SessionState};
 use crate::pool::Pool;
 use crate::render::Renderer;
+use crate::render::compare::CompareView;
+use crate::render::seam::{Selection, TerrainKind};
 use crate::telemetry;
 
 type Events = Rc<RefCell<VecDeque<TransportEvent>>>;
@@ -182,6 +185,9 @@ struct Options {
     full_chunks: bool,
     netsim: Option<NetConditions>,
     sky: SkySwitches,
+    /// The renderer switch (`?renderer=`, compare mode): local builds only (the shell's build-time
+    /// flag, RAY_MARCHED_RENDERER.md §3); deployed builds keep the mesher.
+    renderer_switch: bool,
 }
 
 struct Inner {
@@ -226,7 +232,8 @@ pub struct Client {
 impl Client {
     /// Starts WebGPU on the canvas. Rejects when WebGPU is unavailable (the shell shows its
     /// "unsupported" screen). `options`: `{ displayName, clientVersion, makeWorker() → Worker,
-    /// workers, lod, lodColors, fullChunks, netsim, search }`.
+    /// workers, lod, lodColors, fullChunks, netsim, search, rendererSwitch, renderer, compare }`
+    /// (`renderer`, `compare`: `?renderer=` and `?compare=`, taken only with `rendererSwitch`).
     pub async fn create(
         canvas: web_sys::HtmlCanvasElement,
         options: JsValue,
@@ -248,7 +255,16 @@ impl Client {
             full_chunks: get("fullChunks").as_bool().unwrap_or(false),
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
             sky: sky_switches(&get("search").as_string().unwrap_or_default()),
+            renderer_switch: get("rendererSwitch").as_bool().unwrap_or(false),
         };
+        let selection = options
+            .renderer_switch
+            .then(|| {
+                let renderer = get("renderer").as_string()?;
+                Selection::parse(&renderer, get("compare").as_string().as_deref())
+            })
+            .flatten()
+            .unwrap_or_default();
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = wgpu::Backends::BROWSER_WEBGPU;
@@ -295,6 +311,7 @@ impl Client {
         );
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
+        renderer.select(selection);
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,
@@ -585,6 +602,20 @@ impl Client {
         time_stamp_ms: f64,
     ) -> bool {
         let mut s = self.inner.borrow_mut();
+        // Compare mode's keys (controls.ts): F7 the next view, F8 blink.
+        if matches!(code, "F7" | "F8") && s.renderer.borrow().selection().compare() {
+            if !repeat {
+                let mut r = s.renderer.borrow_mut();
+                let mut c = r.compare();
+                if code == "F7" {
+                    c.cycle();
+                } else {
+                    c.blink();
+                }
+                r.set_compare(c);
+            }
+            return true;
+        }
         let k = s.input.key_down(code, repeat, ctrl, meta, time_stamp_ms);
         for e in k.events {
             s.on_input_event(e);
@@ -847,6 +878,107 @@ impl Client {
             lod.set_quality(pixel_error, (memory_mb * 1_048_576.0) as usize);
         }
     }
+    // ----- The renderer seam and compare mode (docs/RAY_MARCHED_RENDERER.md §3, §5) -----
+
+    /// The terrain renderers this build offers for `?renderer=` (`bench --compare` reads it):
+    /// `raster` everywhere; `march` with the renderer switch once the marcher draws terrain.
+    pub fn renderers(&self) -> Array {
+        let s = self.inner.borrow();
+        let mut names = vec![TerrainKind::Raster.name()];
+        if s.options.renderer_switch && crate::render::march::BUILT {
+            names.push(TerrainKind::March.name());
+        }
+        names.into_iter().map(JsValue::from).collect()
+    }
+    /// The upscalers it offers: none yet beyond the browser's own stretch (A5).
+    pub fn upscalers(&self) -> Array {
+        ["none", "bilinear"]
+            .into_iter()
+            .map(JsValue::from)
+            .collect()
+    }
+    /// What draws the terrain: `raster`, `march` or `compare raster | march`.
+    pub fn renderer(&self) -> String {
+        self.inner.borrow().renderer.borrow().selection().label()
+    }
+    /// Whether the renderer can be switched (a local build).
+    #[wasm_bindgen(js_name = rendererSwitch)]
+    pub fn renderer_switch(&self) -> bool {
+        self.inner.borrow().options.renderer_switch
+    }
+    /// Switches renderer at runtime (`raster`, `march`, `compare`; `compare` names compare mode's
+    /// right side, default `march`): the terrain is rebuilt from the client's data, no reload.
+    /// False without the switch or for an unknown name.
+    #[wasm_bindgen(js_name = setRenderer)]
+    pub fn set_renderer(&self, name: &str, compare: Option<String>) -> bool {
+        let mut s = self.inner.borrow_mut();
+        if !s.options.renderer_switch {
+            return false;
+        }
+        let Some(selection) = Selection::parse(name, compare.as_deref()) else {
+            return false;
+        };
+        match &mut s.game {
+            Some(g) => g.set_renderer(selection),
+            None => {
+                s.renderer.borrow_mut().select(selection);
+            }
+        }
+        true
+    }
+    /// Compare mode's state: `{ renderer, view, divider, blinkRight, overlay: [left, right],
+    /// difference: { pixels, coverage, depth, colour } | null }`, or null outside compare mode.
+    #[wasm_bindgen(js_name = compareState)]
+    pub fn compare_state(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let r = s.renderer.borrow();
+        let Some(overlay) = r.compare_overlay() else {
+            return JsValue::NULL;
+        };
+        let c = r.compare();
+        let o = Object::new();
+        set(&o, "renderer", r.selection().label());
+        set(&o, "view", c.view.name());
+        set(&o, "divider", c.divider);
+        set(&o, "blinkRight", c.blink_right);
+        set(
+            &o,
+            "overlay",
+            overlay
+                .iter()
+                .map(|l| JsValue::from(l.as_str()))
+                .collect::<Array>(),
+        );
+        set(
+            &o,
+            "difference",
+            r.difference_counts().map_or(JsValue::NULL, |d| {
+                let v = Object::new();
+                set(&v, "pixels", d.pixels);
+                set(&v, "coverage", d.coverage);
+                set(&v, "depth", d.depth);
+                set(&v, "colour", d.colour);
+                v.into()
+            }),
+        );
+        o.into()
+    }
+    /// Sets compare mode's view (`split`, `blink`, `difference`; unchanged if unknown) and the
+    /// divider (a share of the width; unchanged if not a number).
+    #[wasm_bindgen(js_name = setCompare)]
+    pub fn set_compare(&self, view: Option<String>, divider: Option<f64>) {
+        let s = self.inner.borrow();
+        let mut r = s.renderer.borrow_mut();
+        let mut c = r.compare();
+        if let Some(v) = view.as_deref().and_then(CompareView::parse) {
+            c.view = v;
+        }
+        if let Some(d) = divider {
+            c.set_divider(d);
+        }
+        r.set_compare(c);
+    }
+
     #[wasm_bindgen(js_name = setDebugVisible)]
     pub fn set_debug_visible(&self, visible: bool) {
         let mut s = self.inner.borrow_mut();
