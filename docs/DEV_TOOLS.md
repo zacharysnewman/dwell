@@ -51,7 +51,7 @@ Output per scenario, in `OUT/<scenario>/`:
   "steps": [ { "do": "settle", "maxS": 120 }, { "do": "fly", "on": true }, … ] }
 ```
 
-`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views),
+`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views: `fog`, `detail`, `exposure`, `skyRotation` — 180 is night — and `clouds`),
 `debug` (`?debug=1`) and `scale` are optional. Steps (`scripts/scenarios.ts`, checked: unknown
 fields, ranges and names fail with the entry named):
 
