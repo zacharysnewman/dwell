@@ -311,7 +311,7 @@ impl RayMath {
 }
 
 /// Margin (cells) by which a ray must clear a column region's occupied rows to skip it.
-const COLUMN_EPS: f32 = 1e-4;
+pub const COLUMN_EPS: f32 = 1e-4;
 
 fn box_of(cell: [i32; 3], shift: u32) -> ([i32; 3], [i32; 3]) {
     (cell.map(|c| c << shift), cell.map(|c| (c + 1) << shift))

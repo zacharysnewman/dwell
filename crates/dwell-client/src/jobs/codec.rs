@@ -218,6 +218,14 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u16s(cells);
             w.opt_f32s(surface);
         }
+        Job::BrickChunk { voxels } => {
+            w.u8(6);
+            w.u16s(voxels);
+        }
+        Job::BrickSection { cells } => {
+            w.u8(7);
+            w.u16s(cells);
+        }
     }
     w.0
 }
@@ -265,6 +273,8 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 surface: r.opt_f32s()?,
             }
         }
+        6 => Job::BrickChunk { voxels: r.u16s()? },
+        7 => Job::BrickSection { cells: r.u16s()? },
         _ => return Err(DecodeError),
     };
     Ok((id, job))
@@ -321,6 +331,10 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             w.u8(6);
             w.str(e);
         }
+        Output::Bricks(b) => {
+            w.u8(7);
+            w.u32s(&b.to_words());
+        }
     }
     w.0
 }
@@ -371,6 +385,9 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
             }))
         }
         6 => Output::Failed(String::from_utf8_lossy(&r.bytes()?).into_owned()),
+        7 => Output::Bricks(Box::new(
+            dwell_march::NodeBuild::from_words(&r.u32s()?).ok_or(DecodeError)?,
+        )),
         _ => return Err(DecodeError),
     };
     Ok((id, out))
@@ -413,6 +430,16 @@ mod tests {
                 surface: None,
                 water_drop: 0.125,
                 mirror: false,
+            },
+            Job::BrickChunk {
+                voxels: (0..dwell_world::CHUNK_VOLUME)
+                    .map(|i| u16::from(i % 7 == 0))
+                    .collect(),
+            },
+            Job::BrickSection {
+                cells: (0..dwell_world::lod::VOLUME)
+                    .map(|i| u16::from(i % 5 < 2) * 2)
+                    .collect(),
             },
         ];
         for (n, job) in jobs.into_iter().enumerate() {

@@ -15,9 +15,6 @@ pub const FRAME: &str = "gpu.frame";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.
 pub const RING: usize = 3;
 
-const QUERIES: u32 = 2 * PASSES.len() as u32;
-const BYTES: u64 = QUERIES as u64 * wgpu::QUERY_SIZE as u64;
-
 /// Which readback buffers are in use (from the frame that writes one until its values are read).
 #[derive(Debug, Default)]
 pub struct Ring {
@@ -45,16 +42,26 @@ impl Ring {
 /// `period_ns`): each pass that ran forward, and the whole frame. A pass whose end is not after its
 /// begin (unwritten, or a counter reset between them) is left out.
 pub fn samples(raw: &[u64], period_ns: f64) -> Vec<(&'static str, f64)> {
+    samples_of(raw, period_ns, &PASSES, FRAME)
+}
+
+/// [`samples`] for any list of pass names and the whole frame's name.
+pub fn samples_of(
+    raw: &[u64],
+    period_ns: f64,
+    passes: &[&'static str],
+    frame: &'static str,
+) -> Vec<(&'static str, f64)> {
     let ms = |a: u64, b: u64| (b > a).then(|| (b - a) as f64 * period_ns / 1e6);
-    let mut out: Vec<(&'static str, f64)> = PASSES
+    let mut out: Vec<(&'static str, f64)> = passes
         .iter()
         .zip(raw.chunks_exact(2))
         .filter_map(|(name, t)| ms(t[0], t[1]).map(|v| (*name, v)))
         .collect();
-    if out.len() == PASSES.len()
+    if out.len() == passes.len()
         && let Some(v) = ms(raw[0], raw[raw.len() - 1])
     {
-        out.push((FRAME, v));
+        out.push((frame, v));
     }
     out
 }
@@ -74,29 +81,44 @@ pub struct GpuTimer {
     /// The buffer this frame writes, between `begin` and `submitted`.
     current: Option<usize>,
     period_ns: f64,
+    passes: &'static [&'static str],
+    frame: &'static str,
 }
 
 impl GpuTimer {
-    /// A timer, when the device can take timestamps.
+    /// A timer of the renderer's passes ([`PASSES`]), when the device can take timestamps.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
+        Self::with_passes(device, queue, &PASSES, FRAME)
+    }
+
+    /// A timer of other passes (the marcher's harness: `gpu.march`, `gpu.composite`), and the
+    /// name of their whole frame.
+    pub fn with_passes(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        passes: &'static [&'static str],
+        frame: &'static str,
+    ) -> Option<Self> {
         if !device.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
             return None;
         }
+        let queries = 2 * passes.len() as u32;
+        let bytes = u64::from(queries) * u64::from(wgpu::QUERY_SIZE);
         let queries = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("pass timestamps"),
             ty: wgpu::QueryType::Timestamp,
-            count: QUERIES,
+            count: queries,
         });
         let resolve = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("timestamps"),
-            size: BYTES,
+            size: bytes,
             usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let readback = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("timestamps readback"),
-                size: BYTES,
+                size: bytes,
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             })
@@ -109,6 +131,8 @@ impl GpuTimer {
             ring: Ring::default(),
             current: None,
             period_ns: f64::from(queue.get_timestamp_period()),
+            passes,
+            frame,
         })
     }
 
@@ -127,7 +151,7 @@ impl GpuTimer {
                             .map(|b| u64::from_le_bytes(b.try_into().expect("8 bytes")))
                             .collect();
                         drop(view);
-                        out.extend(samples(&raw, self.period_ns));
+                        out.extend(samples_of(&raw, self.period_ns, self.passes, self.frame));
                     }
                     self.readback[i].unmap();
                 }
@@ -161,13 +185,25 @@ impl GpuTimer {
         })
     }
 
+    /// The timestamp writes of compute pass `pass` of a timed frame.
+    pub fn compute_writes(&self, pass: usize) -> Option<wgpu::ComputePassTimestampWrites<'_>> {
+        self.current?;
+        Some(wgpu::ComputePassTimestampWrites {
+            query_set: &self.queries,
+            beginning_of_pass_write_index: Some(2 * pass as u32),
+            end_of_pass_write_index: Some(2 * pass as u32 + 1),
+        })
+    }
+
     /// Records the copy of a timed frame's timestamps into its readback buffer (after the passes).
     pub fn resolve(&self, encoder: &mut wgpu::CommandEncoder) {
         let Some(i) = self.current else {
             return;
         };
-        encoder.resolve_query_set(&self.queries, 0..QUERIES, &self.resolve, 0);
-        encoder.copy_buffer_to_buffer(&self.resolve, 0, &self.readback[i], 0, BYTES);
+        let queries = 2 * self.passes.len() as u32;
+        encoder.resolve_query_set(&self.queries, 0..queries, &self.resolve, 0);
+        let bytes = u64::from(queries) * u64::from(wgpu::QUERY_SIZE);
+        encoder.copy_buffer_to_buffer(&self.resolve, 0, &self.readback[i], 0, bytes);
     }
 
     /// After the frame's submit: maps its readback buffer, to be read by `collect` once mapped.
@@ -232,6 +268,15 @@ mod tests {
         );
         // Ticks of another period scale.
         assert_eq!(samples(&raw, 2.0)[0], ("gpu.far", 2.0));
+        // Other passes: the marcher's harness.
+        assert_eq!(
+            samples_of(&raw[..4], 1.0, &["gpu.march", "gpu.composite"], "gpu.frame"),
+            vec![
+                ("gpu.march", 1.0),
+                ("gpu.composite", 0.5),
+                ("gpu.frame", 1.6)
+            ]
+        );
     }
 
     #[test]

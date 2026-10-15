@@ -11,6 +11,7 @@ pub mod camera;
 pub mod display;
 pub mod frame;
 pub mod geometry;
+pub mod march;
 pub mod shaders;
 pub mod timing;
 
@@ -686,7 +687,10 @@ impl Renderer {
 
     /// Block textures: the tiled-noise atlas, mipmapped (averaged in linear light), sampled crisp
     /// up close and filtered far away.
-    fn atlas(device: &wgpu::Device, queue: &wgpu::Queue) -> (wgpu::TextureView, wgpu::Sampler) {
+    pub(crate) fn atlas(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> (wgpu::TextureView, wgpu::Sampler) {
         let size = dwell_mesh::ATLAS_SIZE as u32;
         let levels = atlas_levels().len() as u32;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -929,6 +933,23 @@ impl Renderer {
             screen_bytes: pixels * frame::bytes_per_pixel(self.samples),
             pixel_ratio: self.pixel_ratio,
             ..self.stats
+        }
+    }
+
+    /// The camera and frame uniforms as the marcher reads them (`march::Marcher::draw`): the same
+    /// lights, fog, sky and view as this renderer's frame.
+    pub fn march_frame(&self) -> march::MarchFrame {
+        let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
+        let tan_y = (vertical_fov(aspect).to_radians() / 2.0).tan();
+        let f3 = |v: V3| v.map(|x| x as f32);
+        march::MarchFrame {
+            uniforms: self.frame_uniforms(&basis, NEAR_PLANE, FAR_PLANE).to_vec(),
+            eye: self.eye,
+            forward: f3(basis.forward()),
+            right: f3(basis.right),
+            up: f3(basis.up),
+            tan: [(tan_y * aspect) as f32, tan_y as f32],
         }
     }
 
@@ -1487,7 +1508,7 @@ impl PassView {
 }
 
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 15 vec4s.
-const FRAME_FLOATS: usize = 16 + 15 * 4;
+pub(crate) const FRAME_FLOATS: usize = 16 + 15 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into

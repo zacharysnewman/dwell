@@ -94,10 +94,10 @@ pub enum Slot {
 }
 
 pub const SLOT_NONE: u32 = 0xFFFF_FFFF;
-const TAG_SHIFT: u32 = 30;
-const TAG_NODE: u32 = 0;
-const TAG_AIR: u32 = 1;
-const TAG_SOLID: u32 = 2;
+pub const TAG_SHIFT: u32 = 30;
+pub const TAG_NODE: u32 = 0;
+pub const TAG_AIR: u32 = 1;
+pub const TAG_SOLID: u32 = 2;
 /// Node indices fit below the tag.
 pub const MAX_NODES: u32 = 1 << TAG_SHIFT;
 
