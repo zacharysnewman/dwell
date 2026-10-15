@@ -97,9 +97,9 @@ struct GpuMesh {
 
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts).
 const STRIDES: [u64; 3] = [
-    4 * (3 + 3 + 3 + 2 + 4 + 2), // Terrain: position, normal, colour, uv, tile, grid
-    4 * (3 + 3 + 3),             // Flat: position, normal, colour
-    4 * (3 + 3),                 // Line: position, colour
+    4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
+    4 * (3 + 3 + 3),         // Flat: position, normal, colour
+    4 * (3 + 3),             // Line: position, colour
 ];
 
 fn floats(v: &[f32]) -> &[u8] {
@@ -185,7 +185,6 @@ impl GpuMesh {
             (&m.colors, 3),
             (&m.uvs, 2),
             (&m.tiles, 4),
-            (&m.grids, 2),
         ]);
         Some(Self::upload(
             arena,
@@ -448,6 +447,17 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // Each atlas tile's grid lines (dwell_mesh::tile_grids), written once.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -490,7 +500,7 @@ impl Renderer {
                 .collect();
             (offset, attributes)
         };
-        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 2)]);
+        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
         let mut pipelines = HashMap::default();
@@ -592,6 +602,14 @@ impl Renderer {
             cache: None,
         });
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
+        let tile_grids: Vec<f32> = dwell_mesh::tile_grids().into_iter().flatten().collect();
+        let tile_grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("tile grids"),
+            size: tile_grids.len() as u64 * 4,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&tile_grid_buffer, 0, floats(&tile_grids));
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -616,6 +634,10 @@ impl Renderer {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: tile_grid_buffer.as_entire_binding(),
                     },
                 ],
             })

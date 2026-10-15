@@ -33,6 +33,9 @@ struct Frame {
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+// Per atlas tile (index cx + cy × ATLAS_CELLS): its grid lines (x every, y strength; 0 for none),
+// from the registry's `grid` look option of the blocks that use the tile (dwell-mesh tile_grids).
+@group(0) @binding(3) var<uniform> tile_grids: array<vec4f, ATLAS_TILES>;
 
 // Per draw (group 1, a storage array indexed by the draw's instance: draw k is drawn as instance k,
 // so a draw needs no bind call of its own): the mesh's origin relative to the eye (xyz) and its scale (w),
@@ -134,7 +137,6 @@ struct TerrainIn {
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
-    @location(5) grid: vec2f,
 };
 struct TerrainOut {
     @builtin(position) clip: vec4f,
@@ -144,7 +146,6 @@ struct TerrainOut {
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
     @location(5) @interpolate(flat) draw: u32,
-    @location(6) @interpolate(flat) grid: vec2f,
 };
 
 @vertex
@@ -158,8 +159,14 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
-    o.grid = v.grid;
     return o;
+}
+
+// The grid of the atlas tile whose rectangle starts at `tile_origin` (its cell: the tile's origin
+// lies inside its cell, past the gutter).
+fn tile_grid(tile_origin: vec2f) -> vec2f {
+    let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
+    return tile_grids[cell.x + cell.y * ATLAS_CELLS].xy;
 }
 
 // World-space grid lines (the registry's `grid` look option): a line GRID_WIDTH blocks wide every
@@ -189,7 +196,7 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> @location(0)
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let n = select(-i.normal, i.normal, front);
-    let shade = grid_shade(i.uv, i.grid);
+    let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
     return vec4f(finish(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel), draw.tint.a * texel.a);
 }
 
@@ -289,9 +296,11 @@ fn sky_fs(i: SkyOut) -> @location(0) vec4f {
 /// The whole shader module: constants, uniforms, the sky, the shading and every entry point.
 pub fn source() -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\n{FRAME}\n{}\n{COMMON}\n{TERRAIN}",
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{FRAME}\n{}\n{COMMON}\n{TERRAIN}",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
+        dwell_mesh::ATLAS_CELLS,
+        dwell_mesh::ATLAS_TILES,
         dwell_look::sky_wgsl()
     )
 }

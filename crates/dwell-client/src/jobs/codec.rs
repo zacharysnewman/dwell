@@ -63,7 +63,6 @@ impl W {
         self.f32s(&m.colors);
         self.f32s(&m.uvs);
         self.f32s(&m.tiles);
-        self.f32s(&m.grids);
         self.u32s(&m.indices);
     }
     fn flat(&mut self, m: &FlatMesh) {
@@ -158,7 +157,6 @@ impl R<'_> {
             colors: self.f32s()?,
             uvs: self.f32s()?,
             tiles: self.f32s()?,
-            grids: self.f32s()?,
             indices: self.u32s()?,
         })
     }

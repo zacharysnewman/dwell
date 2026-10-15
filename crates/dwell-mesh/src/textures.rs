@@ -14,6 +14,8 @@ pub const GUTTER: usize = 16;
 pub const CELL: usize = TILE + 2 * GUTTER;
 pub const ATLAS_CELLS: usize = 8;
 pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
+/// Tile slots in the atlas (cells × cells), the length of [`tile_grids`].
+pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
 pub const TILE_ORDER: [&str; 9] = [
@@ -212,6 +214,27 @@ fn ladder(x: i64, y: i64) -> Rgb {
     scale(RAIL, 0.3 + 0.08 * tiled_fbm(x as f64, y as f64, 162))
 }
 
+/// The grid lines of each atlas tile slot (index cx + cy × `ATLAS_CELLS`, `TILE_ORDER` order):
+/// `[every, strength, 0, 0]`, all zero for none. A tile's grid is the registry's `grid` look
+/// option of the states drawn with it (an untextured state with the `plain` tile); `gen.mjs`
+/// rejects a tile whose states disagree, so the terrain shader can find a face's grid from its
+/// tile rectangle with nothing added to the vertex.
+pub fn tile_grids() -> [[f32; 4]; ATLAS_TILES] {
+    let mut out = [[0.0; 4]; ATLAS_TILES];
+    for s in &dwell_blocks::STATES {
+        let Some(g) = s.grid else { continue };
+        let names = s
+            .textures
+            .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
+        for name in names {
+            if let Some(i) = TILE_ORDER.iter().position(|t| *t == name) {
+                out[i] = [f32::from(g.every), g.strength, 0.0, 0.0];
+            }
+        }
+    }
+    out
+}
+
 /// How much darker a `grid` tile's edge texels are than its white face.
 pub const GRID_LINE: f64 = 0.88;
 
@@ -358,6 +381,35 @@ mod tests {
         let avg = average_tile_color("grid");
         assert!(avg >> 16 > 0xf0 && avg >> 16 < 0xff, "{avg:06x}");
         assert!(tile_rect("grid").u1 <= 1.0 && tile_rect("grid").v1 <= 1.0);
+    }
+
+    #[test]
+    fn the_tile_grid_table_comes_from_the_registrys_grid_look_option() {
+        let table = tile_grids();
+        // Every state's tiles carry its grid (or none), so a face finds it from its tile alone.
+        for s in &dwell_blocks::STATES {
+            let names = s
+                .textures
+                .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
+            let want = s
+                .grid
+                .map_or([0.0; 4], |g| [f32::from(g.every), g.strength, 0.0, 0.0]);
+            for name in names {
+                let i = TILE_ORDER
+                    .iter()
+                    .position(|t| *t == name)
+                    .expect("a known tile");
+                assert_eq!(table[i], want, "{} on {name}", s.name);
+            }
+        }
+        // The sandbox floor's tile has its grid; the shader indexes cells as the atlas lays them out.
+        let floor = dwell_blocks::info(dwell_blocks::require("dwell:sandbox_floor"));
+        let g = floor.grid.expect("the floor's data has a grid");
+        let r = tile_rect("grid");
+        let cell = (r.u0 * ATLAS_CELLS as f64).floor() as usize
+            + (r.v0 * ATLAS_CELLS as f64).floor() as usize * ATLAS_CELLS;
+        assert_eq!(table[cell], [f32::from(g.every), g.strength, 0.0, 0.0]);
+        assert_eq!(table[0], [0.0; 4], "plain: no grid");
     }
 }
 

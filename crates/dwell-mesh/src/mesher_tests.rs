@@ -237,37 +237,9 @@ fn rejects_a_wrong_voxel_count_and_accounts_bytes() {
         })
     );
     let m = mesh(&[(1, 1, 1, dirt())], false);
-    // 24 vertices × (3 + 3 + 3 + 2 + 4 + 2) floats + 36 indices, 4 bytes each.
-    assert_eq!(m.opaque.byte_len(), 4 * (24 * 17 + 36));
+    // 24 vertices × (3 + 3 + 3 + 2 + 4) floats + 36 indices, 4 bytes each.
+    assert_eq!(m.opaque.byte_len(), 4 * (24 * 15 + 36));
     assert_eq!(m.transparent.byte_len(), 0);
-}
-
-#[test]
-fn faces_carry_their_blocks_grid_look_option_and_the_grid_tile() {
-    // The registry's `grid` option per vertex (every, strength): the sandbox floor's from its data,
-    // none for other blocks; its faces take the `grid` texture tile.
-    let floor = require("dwell:sandbox_floor");
-    let g = dwell_blocks::info(floor)
-        .grid
-        .expect("the floor's data has a grid");
-    let m = mesh(&[(1, 1, 1, floor), (5, 1, 1, stone())], false).opaque;
-    let n = m.positions.len() / 3;
-    assert_eq!(m.grids.len(), 2 * n);
-    let grid_tile = crate::textures::tile_rect("grid");
-    let (mut on, mut off) = (0, 0);
-    for v in 0..n {
-        let x = m.positions[3 * v];
-        let grid = [m.grids[2 * v], m.grids[2 * v + 1]];
-        if x <= 2.0 {
-            assert_eq!(grid, [f32::from(g.every), g.strength]);
-            assert_eq!(m.tiles[4 * v], grid_tile.u0 as f32);
-            on += 1;
-        } else {
-            assert_eq!(grid, [0.0, 0.0]);
-            off += 1;
-        }
-    }
-    assert_eq!((on, off), (24, 24));
 }
 
 // --- world/shapes.test.ts -------------------------------------------------------------------

@@ -138,6 +138,23 @@ for (const ns of namespaces) {
   }
 }
 if (states[0]?.string !== 'dwell:air') fail('dwell:air must be state 0');
+// The terrain shader finds a face's grid from its texture tile (dwell-mesh tile_grids), so every
+// block drawn with a tile (an untextured one with `plain`) must want the same grid, or none.
+{
+  const gridOfTile = new Map();
+  for (const b of blocks) {
+    const t = b.def.textures;
+    const tiles = t ? (typeof t === 'string' ? [t] : [t.top, t.side, t.bottom]) : ['plain'];
+    const want = b.def.grid ? `every ${b.def.grid.every}, strength ${b.def.grid.strength}` : 'no grid';
+    for (const tile of tiles) {
+      const seen = gridOfTile.get(tile);
+      if (seen && seen.want !== want) {
+        fail(`${b.id}: texture tile ${tile} is drawn with ${seen.want} by ${seen.id} but ${want} here (a tile has one grid: give the block its own tile)`);
+      }
+      gridOfTile.set(tile, seen ?? { id: b.id, want });
+    }
+  }
+}
 if (states.length > 0xffff) fail('too many states');
 
 // Shapes (shapes.mjs): one baked geometry per distinct (corners, inversion, diagonal); index 0 is
