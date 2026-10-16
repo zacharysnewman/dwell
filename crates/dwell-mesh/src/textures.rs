@@ -251,7 +251,7 @@ const BLADES: [(f64, f64, f64, f64); 18] = [
 /// How fast a blade's alpha falls off across its edge, per texel: the alpha is a distance field
 /// (0.5 on the edge), so the cutout shader's bilinear alpha up close traces each blade's true
 /// outline — thin, pointed blades from a 32-texel tile.
-const BLADE_FALLOFF: f64 = 0.35;
+const BLADE_FALLOFF: f64 = 0.5;
 
 /// The blade nearest to covering texel (x, y) of the `tallGrass` tile (y = 0 at its foot): its
 /// index, how far up it the texel is (0–1) and the texel's alpha (0–1, a distance field: above

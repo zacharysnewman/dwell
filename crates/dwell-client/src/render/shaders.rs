@@ -344,13 +344,18 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     let alpha = mix(texel.a, smooth_a, clamp(2.0 - 2.0 * texels, 0.0, 1.0));
     let edge = max(fwidth(alpha), 1e-3);
     var cover = clamp((alpha - 0.5) / edge + 0.5, 0.0, 1.0);
+    var fade = 1.0;
     if (i.fade.y > 0.0) {
-        cover *= 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        cover *= fade;
     }
     let noise = pixel_noise(i.clip.xy);
     var mask = 0xffffffffu;
     if (SCENE_SAMPLES > 1) {
-        let n = u32(floor(cover * f32(SCENE_SAMPLES) + noise));
+        // Edges round to the nearest sample count; only a fading plant is dithered (rounding
+        // edges by noise would scatter single samples of a blade's faint margin across the view).
+        let round = select(0.5, noise, fade < 1.0);
+        let n = u32(floor(cover * f32(SCENE_SAMPLES) + round));
         let full = (1u << u32(SCENE_SAMPLES)) - 1u;
         let first = u32(noise * f32(SCENE_SAMPLES)) % u32(SCENE_SAMPLES);
         let run = (1u << n) - 1u;
