@@ -3,6 +3,8 @@
 // client's (dwell-game input.rs, touch.rs) and the shell's (main.ts: Esc, − and = while flying);
 // this table describes them, one entry per action, so a new binding is a new entry here.
 
+import { BRUSH_PRESETS } from './brushes.gen';
+
 export interface Control {
   /** What it does, as the player would say it. */
   action: string;
@@ -61,10 +63,44 @@ export const KEYBOARD: ControlGroup[] = [
     ],
   },
   {
+    // The brush tool (dwell-game brush_tool.rs `brush_key`; BRUSHES.md), in sandbox worlds.
+    title: 'Brushes',
+    controls: [
+      { action: 'Brush tool on or off', keys: ['V'], when: 'in sandbox worlds' },
+      { action: 'Paint at the targeted block', keys: ['Left click'], when: 'up to 128 m away' },
+      { action: 'Paint in front of it', keys: ['Right click'] },
+      { action: 'Pick the block to replace', keys: ['Middle click', '⌥+Click', 'Alt+Click'] },
+      { action: 'Previous / next preset', keys: ['Q', 'E'] },
+      { action: 'Next / previous brush shape', keys: ['Z', 'Shift+Z'] },
+      { action: 'Next / previous performer', keys: ['P', 'Shift+P'] },
+      { action: 'Smaller / bigger brush', keys: ['[', ']', 'Alt+Wheel'] },
+      {
+        action: 'Pick a preset by its key',
+        keys: BRUSH_PRESETS.flatMap((p) => (p.key ? [`${keyLabel(p.key)} ${p.label}`] : [])),
+        when: 'the keys are the presets’ (shared/brushes/brushes.json)',
+      },
+      { action: 'Undo / redo a stroke', keys: ['Ctrl+Z', '⌘+Z'], when: 'as the region tools' },
+    ],
+  },
+  {
     title: 'Game',
     controls: [{ action: 'Menu and settings', keys: ['Esc'] }],
   },
 ];
+
+/** A `KeyboardEvent.code` as the key's label (`KeyU` → U, `Semicolon` → ;). */
+export function keyLabel(code: string): string {
+  const named: Record<string, string> = {
+    Semicolon: ';',
+    Quote: "'",
+    Comma: ',',
+    Period: '.',
+    Slash: '/',
+    BracketLeft: '[',
+    BracketRight: ']',
+  };
+  return named[code] ?? code.replace(/^Key|^Digit/, '');
+}
 
 /** Debug tools: also buttons in the game menu's Debug page. */
 export const DEBUG_KEYS: Control[] = [

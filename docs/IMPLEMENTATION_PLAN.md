@@ -51,6 +51,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.19, a patch release of the 0.11 line |
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data (opaque, cutout, translucent) and cutout (see-through) ladders shipped on the 0.11 line (ADR 0036, `TRANSPARENT_BLOCKS.md`; no registry-hash change); the cross look, placement rules and `dwell:tall_grass` are on `claude/transparent-blocks` for the 0.12.0 line; `package.json` raised to 0.11.18, a patch release of the 0.11 line |
+| 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3155,6 +3156,45 @@ Exit criteria
 - [ ] CI green, and the frame time on a phone.
 
 ---
+
+## Phase 34 — Brushes
+
+**Goal:** VoxelSniper-style painting and sculpting tools in the sandbox world, as an extendable
+system: a fixed vocabulary of brushes and performers, named presets as data
+([ADR 0037](./adr/0037-brushes.md), [`BRUSHES.md`](./BRUSHES.md); the owner's brief, 2026-10-15:
+"painting tooling … like Voxel Sniper").
+
+**Status:** In progress — B1 built and tested; outstanding: the owner's try-out and answers to
+`BRUSHES.md` §5, CI. Needs Phase 27's sandbox world type and region edits (S2a, S3a).
+
+Deliverables
+- [x] **B1** — Brushes (ball, disc, cylinder, cube, ellipsoid, seeded splatter, line), performers
+  (set, replace, overlay, erase; masks) and sculpt (smooth, erode/fill, flatten, raise, lower) in
+  `dwell-world` `brush.rs`; presets and the per-world-type policy as data
+  (`shared/brushes/brushes.json`, `gen.mjs`, CI stale check); strokes as `KEEP` pastes of ≤ 32³
+  behind a `brushes` Welcome flag with the sandbox's 128 m reach (server-validated as region edits);
+  the brush tool (`dwell-game` `brush_tool.rs`: keys, ranged aim, wireframe outline,
+  arrow/gunpowder, pick, one undo step per stroke, rate-paced sending, the region `tool` sound);
+  the HUD panel and the controls table.
+
+Exit criteria
+- [x] Each brush's cells (counts, symmetry, seeded splatter, lines), each performer and sculpt on
+  fixtures, splitting into ≤ 32³ edits, and every preset stroke (`dwell-world` `brush.rs` tests); a
+  preset added by data alone and bad entries failing with a message (`brushesGen.test.ts`,
+  `brush.rs` `a_preset_added_by_data_alone_works`); ranged region edits accepted in the sandbox only
+  and `KEEP` cells kept (`dwell-sim` `tests/region_edits.rs`); a stroke as one undo step, round trip
+  (`dwell-game` `brush_tool.rs`, `dwell-client` `game_local`
+  `a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_step`).
+- [x] In the browser (2026-10-15, and again on 0.11.17 after the merge, 2026-10-16; Chrome on the GPU, a sandbox world, driven through
+  `__dwell.brush`): a mound built from two balls 26 m away, a dirt disc beside it, then smooth,
+  erode, a sand splatter and grass surface paint, each screenshotted with the wireframe and the HUD
+  panel; undo took the paint off in one step and redo put it back.
+- [ ] The owner tries the brushes and answers `BRUSHES.md` §5.
+
+Deviations: built without the "ask before designing" questions (the coordinator's defaults, recorded
+with open questions in `BRUSHES.md` §5). The S3 paste could not leave cells alone (and a paste over
+the unbreakable floor is rejected), so strokes use a `KEEP` paste cell behind a new `brushes`
+Welcome flag rather than no protocol change at all; still protocol v12 and the 0.11 line.
 
 ## Phase 28 — Sound Effects
 

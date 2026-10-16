@@ -36,6 +36,7 @@ import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './
 import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar } from './ui/hotbar';
+import type { BrushPanelState } from './ui/brushPanel';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
@@ -103,6 +104,11 @@ interface DwellDebug {
   edit(action: 'break' | 'place'): boolean;
   /** Runs a region tool by name (`fill`, `copy`, `undo`, … — `Client.tool`), as its key does. */
   tool(name: string): boolean;
+  /**
+   * Drives the brush tool (`toggle`, `preset:<name>`, `size:<n>`, `nextBrush`, `nextPerformer`,
+   * `apply`, `gunpowder`, `pick` — `Client.brush`, BRUSHES.md), as its keys and clicks do.
+   */
+  brush(command: string): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
@@ -326,7 +332,7 @@ function forwardInput(app: App): void {
     client.setPointerLocked(document.pointerLockElement === canvas);
   });
   canvas.addEventListener('mousedown', (e) => {
-    client.mouseDown(e.button, performance.now());
+    client.mouseDown(e.button, performance.now(), e.altKey);
   });
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -337,7 +343,7 @@ function forwardInput(app: App): void {
   window.addEventListener(
     'wheel',
     (e) => {
-      client.wheel(e.deltaY);
+      client.wheel(e.deltaY, e.altKey);
     },
     { passive: true },
   );
@@ -391,6 +397,7 @@ function showHud(app: App, now: number): void {
     debug?: string | null;
     damaged?: boolean;
     region?: string;
+    brush?: BrushPanelState | null;
   };
   if (h.message === undefined) return;
   if (h.damaged) app.hud.flashDamage(now);
@@ -398,6 +405,7 @@ function showHud(app: App, now: number): void {
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.region ?? '');
+  app.hotbar?.setBrush(h.brush ?? null);
   if (h.debug) app.hud.setDebug(h.debug);
   app.compare?.show(app.client.compareState() as CompareState | null);
 }
@@ -597,6 +605,7 @@ async function start(): Promise<App | null> {
     },
     edit: (action) => client.edit(action, performance.now()),
     tool: (name) => client.tool(name, performance.now()),
+    brush: (command) => client.brush(command, performance.now()),
     select: (slot) => {
       client.select(slot);
     },
