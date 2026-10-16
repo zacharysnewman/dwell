@@ -59,7 +59,7 @@ describe('controls', () => {
     const keys = brushes.flatMap((c) => c.keys);
     for (const k of ['V', 'Q', 'E', 'Z', 'P', '[', ']', 'Middle click']) expect(keys).toContain(k);
     for (const p of BRUSH_PRESETS.filter((q) => q.key !== undefined)) {
-      expect(keys).toContain(keyLabel(p.key ?? ''));
+      expect(keys).toContain(`${keyLabel(p.key ?? '')} ${p.label}`);
     }
     expect(keyLabel('KeyU')).toBe('U');
     expect(keyLabel('Semicolon')).toBe(';');

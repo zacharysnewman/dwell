@@ -74,10 +74,11 @@ export const KEYBOARD: ControlGroup[] = [
       { action: 'Next / previous brush shape', keys: ['Z', 'Shift+Z'] },
       { action: 'Next / previous performer', keys: ['P', 'Shift+P'] },
       { action: 'Smaller / bigger brush', keys: ['[', ']', 'Alt+Wheel'] },
-      ...BRUSH_PRESETS.filter((p) => p.key !== undefined).map((p) => ({
-        action: `Preset: ${p.label}`,
-        keys: [keyLabel(p.key ?? '')],
-      })),
+      {
+        action: 'Pick a preset by its key',
+        keys: BRUSH_PRESETS.flatMap((p) => (p.key ? [`${keyLabel(p.key)} ${p.label}`] : [])),
+        when: 'the keys are the presets’ (shared/brushes/brushes.json)',
+      },
       { action: 'Undo / redo a stroke', keys: ['Ctrl+Z', '⌘+Z'], when: 'as the region tools' },
     ],
   },

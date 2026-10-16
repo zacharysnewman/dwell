@@ -941,6 +941,8 @@ impl<S: Scene> Game<S> {
 
     /// A brush tool key (BRUSHES.md).
     pub fn brush_key(&mut self, action: BrushAction) {
+        // The region tools' click, as for their keys (AUDIO.md).
+        self.sounds.push(sound_event(SoundKind::Tool));
         self.brush.key(action);
         if !self.brush.active() {
             self.scene.borrow_mut().set_brush_outline(None);
@@ -953,6 +955,7 @@ impl<S: Scene> Game<S> {
             return false;
         }
         self.brush.resize(-step);
+        self.sounds.push(sound_event(SoundKind::Tool));
         true
     }
 
@@ -967,6 +970,7 @@ impl<S: Scene> Game<S> {
                 .get_voxel(t.cell[0], t.cell[1], t.cell[2])
         });
         self.brush.pick(state);
+        self.sounds.push(sound_event(SoundKind::Tool));
         true
     }
 
