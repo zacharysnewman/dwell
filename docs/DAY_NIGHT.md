@@ -18,7 +18,8 @@ Known decisions (owner):
   shared data value** both use.
 - Fog matters: it must look right at every time of day.
 
-Defaults taken where the owner had not decided (open questions in §8):
+Defaults taken where the owner had not decided (open questions in §8); the owner accepted them as
+proposed on 2026-10-16 (§8):
 
 | Question | Default |
 | --- | --- |
@@ -167,6 +168,12 @@ directly: each keyframe is one flat object, and the solar angle maps to face A's
 `elevation = asin(sin(sun) · sin(noonElevation))`.
 
 ## 8. Open questions for the owner
+
+**Decided (owner, 2026-10-16), as proposed:** face B shares the sky with face A's time + 12 hours
+(10 minutes of day, 20 of night); the moon stays opposite the sun; day length per world is fine
+as a later addition (not built); the keyframe colours, the sun's size and the star density stand;
+the time controls stay as proposed (the dev switches of §6, no player controls yet). Seasons (6)
+remain open. The questions as they were put:
 
 1. **Face B's day.** With one shared sky, face B gets the complement of face A's day: 10 minutes
    of daylight and 20 of night. Is that right, or should face B have its own sun?

@@ -1,7 +1,8 @@
 # 0035. The day/night cycle: world time drives a keyframed sky, light and fog, as data
 
-- Status: Proposed (built; the owner's review of the look and of the defaults in `DAY_NIGHT.md` §1
-  is outstanding)
+- Status: Accepted (2026-10-16: the owner accepted the defaults in `DAY_NIGHT.md` §1 and the
+  answers to its §8 as proposed — face B shares the sky at +12 h, the moon opposite the sun, day
+  length per world later, the look and the time controls as built)
 - Date: 2026-10-15
 - Builds on: [0023](0023-bifacial-world.md) (one sky sphere, per-face light),
   [0029](0029-ray-marched-renderer.md) step A1 (the composite pass draws the sky and the fog),
