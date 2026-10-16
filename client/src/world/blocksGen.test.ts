@@ -8,16 +8,24 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const blocksDir = fileURLToPath(new URL('../../../shared/blocks/', import.meta.url));
+const soundsDir = fileURLToPath(new URL('../../../shared/sounds/', import.meta.url));
 let root = '';
 
 /** Runs the generator over `blocks` (the `dwell` namespace): its exit status, output and the Rust table. */
 function generate(blocks: object[]): { status: number | null; output: string; rust: string } {
   root = mkdtempSync(join(tmpdir(), 'dwell-blocks-'));
   const here = join(root, 'shared/blocks');
-  mkdirSync(here, { recursive: true });
+  // The fixture run (`gen.mjs --fixture`) reads fixtures/; none here.
+  mkdirSync(join(here, 'fixtures'), { recursive: true });
   mkdirSync(join(root, 'client/src/world'), { recursive: true });
   mkdirSync(join(root, 'crates/dwell-blocks/src'), { recursive: true });
-  for (const f of ['gen.mjs', 'shapes.mjs']) copyFileSync(join(blocksDir, f), join(here, f));
+  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs'])
+    copyFileSync(join(blocksDir, f), join(here, f));
+  // The sound data the generator checks blocks' `sound` against (shared/sounds).
+  const sounds = join(root, 'shared/sounds');
+  mkdirSync(sounds, { recursive: true });
+  for (const f of ['load.mjs', 'validate.mjs', 'dwell.json'])
+    copyFileSync(join(soundsDir, f), join(sounds, f));
   const air = { name: 'air', density: 0, shape: 'empty', color: '#000000', opacity: 0 };
   writeFileSync(
     join(here, 'dwell.json'),

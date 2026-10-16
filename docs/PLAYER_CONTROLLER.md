@@ -398,8 +398,8 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 A flight mode for the player's own body — server-authoritative and predicted like every other
 layer — so a player can rise from the ground to see the whole world (ARCHITECTURE §6.6).
 - **Input.** `fly` is a *mode* bit held in every input frame while flight is on (`input_buttons::FLY`);
-  the client toggles it (`dwell-game`'s `FlightToggle`: double-tap Space or the touch Jump button
-  within 300 ms, or the touch Fly button). The server clears the bit for players its flight policy
+  the client toggles it (`dwell-game`'s `FlightToggle`: the F key, `input::FLY_KEY`, or the touch
+  Fly button; Jump pressed twice is two jumps — owner, 2026-10-15). The server clears the bit for players its flight policy
   excludes (`dwell-server --flight everyone|ops|nobody`, default everyone; `Welcome` says whether
   this player may fly), so a client that sends it anyway just walks.
 - **Layer.** `step_fly` runs before crouch, so flying cancels climbing and swimming and stands a
@@ -592,11 +592,20 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
 
 - **Camera** (`dwell-client`'s `game.rs`, eye height in `dwell-game`'s `eye.rs`): first-person at
   the smoothed render position (interpolated between the last two ticks plus the correction
-  offset). **Field of view** (`dwell-client`'s `render/camera.rs`): 75° vertical, but never more
-  than 100° horizontal — wider screens (16:9 desktop, landscape phones) get a narrower vertical
-  field of view. An uncapped wide view made forward and backward walking look faster than strafing
+  offset). **Field of view** (`dwell-lod`'s `base_fov`, re-exported by `dwell-client`'s
+  `render/camera.rs`): the player's Field of view setting (default 75° vertical, 60–100°); screens
+  wider than ≈ 1.55 get a narrower vertical one so the horizontal stays what the setting gives at
+  that aspect (100° at the default). An uncapped wide view made forward and backward walking look faster than strafing
   at the same speed (playtest); the sim itself moves at the same speed in every direction
-  (`every_direction_moves_at_the_same_speed`).
+  (`every_direction_moves_at_the_same_speed`). **Motion effects** (Phase 29,
+  [`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)): the vertical FOV widens with the camera's speed
+  (the predicted velocity, so falls and knockback count; scaled by the controller state's gain) —
+  eased from 0 at `walk_speed` to the sprint boost at `run_speed`, then log-scaled up to the flight
+  boost, as a zoom-out percentage of the base (+10 % / +20 %, `2·atan(tan(base/2)·(1 + boost))`) —
+  smoothed by a critically damped spring and clamped to 120°; wind
+  streaks blow past the screen's edges. They read the controller's state and never write it, so
+  prediction stays deterministic; they reset on a teleport, respawn and the turn-over across the
+  midplane, and hold while the menu is open.
   The eye height is computed once per tick from the feet (never the capsule centre, whose height
   changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
   camera must not show, and each is folded into an offset that decays:

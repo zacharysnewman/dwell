@@ -16,7 +16,7 @@ use dwell_world::lod::{PAD as LOD_PAD, SECTION_CELLS, VOLUME as LOD_VOLUME, cell
 
 use crate::LengthError;
 use crate::js_round;
-use crate::style::{Look, material_style};
+use crate::style::{Look, fluid_value, material_style};
 use crate::textures::{average_tile_color, srgb_to_linear};
 use dwell_look::face_tint;
 
@@ -31,13 +31,20 @@ pub struct FlatMesh {
     pub normals: Vec<f32>,
     /// Shading × flat material colour, linear light.
     pub colors: Vec<f32>,
+    /// A section's `water` mesh: the fluid id per vertex (`crate::NO_FLUID` for a see-through
+    /// face that is no fluid's); empty in every other mesh.
+    pub fluids: Vec<f32>,
     pub indices: Vec<u32>,
 }
 
 impl FlatMesh {
     /// Bytes of all streams.
     pub fn byte_len(&self) -> usize {
-        4 * (self.positions.len() + self.normals.len() + self.colors.len() + self.indices.len())
+        4 * (self.positions.len()
+            + self.normals.len()
+            + self.colors.len()
+            + self.fluids.len()
+            + self.indices.len())
     }
 }
 
@@ -68,7 +75,7 @@ fn is_liquid(m: StateId) -> bool {
     static LIQUID: OnceLock<Vec<bool>> = OnceLock::new();
     let table = LIQUID.get_or_init(|| {
         (0..STATES.len())
-            .map(|i| material_style(i as StateId).look == Look::Water)
+            .map(|i| material_style(i as StateId).look == Look::Fluid)
             .collect()
     });
     table.get(usize::from(m)).copied().unwrap_or(false)
@@ -140,6 +147,14 @@ struct Builder {
 }
 
 impl Builder {
+    /// Tags the vertices added since the last tag with material `m`'s fluid (the water mesh).
+    fn tag_fluid(&mut self, m: StateId) {
+        let n = self.m.positions.len() / 3;
+        self.m
+            .fluids
+            .resize(n, fluid_value(material_style(m).fluid));
+    }
+
     fn push_indices(&mut self, base: u32, sign: i32) {
         if sign > 0 {
             self.m
@@ -388,6 +403,7 @@ fn mesh_section_above(
                         } else {
                             water_mesh.quad(2, sign, plane, (fi, fi + 1.0), (fy, lid), color);
                         }
+                        water_mesh.tag_fluid(m);
                         continue;
                     }
                     // An exposed top takes its column's tint (tint_slopes).
@@ -431,9 +447,10 @@ fn mesh_section_above(
                     let tint = (key >> 1) % (TINT_STEPS + 1);
                     let m = ((key >> 1) / (TINT_STEPS + 1) - 1) as StateId;
                     let skirt = key & 1 == 1;
+                    let water = !skirt && is_liquid(m);
                     let target = if skirt {
                         &mut skirts[face]
-                    } else if is_liquid(m) {
+                    } else if water {
                         &mut water_mesh
                     } else {
                         &mut opaque
@@ -457,6 +474,9 @@ fn mesh_section_above(
                         (j as f64, (j + h) as f64),
                         color,
                     );
+                    if water {
+                        target.tag_fluid(m);
+                    }
                     i += w;
                 }
             }
@@ -854,6 +874,7 @@ fn emit_surfaces(
                     (x as f64, (x + d) as f64),
                     lod_color((key - 1.0) as StateId, 0),
                 );
+                water_mesh.tag_fluid((key - 1.0) as StateId);
                 z += w;
             }
         }

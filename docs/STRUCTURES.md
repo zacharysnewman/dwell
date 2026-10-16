@@ -110,13 +110,39 @@ e.g. `shared/structures/x.json: palette."s": unknown block "dwell:nope"`):
 
 ## 4. Saving
 
+**Built (S2b, 2026-10-14).**
+
 - The sandbox world persists in its own `.dwellworld` file.
-- Saved structures go in a **separate store**: OPFS `dwell/structures/<name>.json`, one file each,
-  in the exact format above, so the library outlives the sandbox world and every version can read
-  it. It is a shared browser store, so append-only rules apply (optional new fields, unknown fields
-  kept on rewrite, unreadable files left alone), pinned by a test.
-- **Export / import JSON** (file download, clipboard) is the path into the repo: commit
-  `shared/structures/x.json`, CI validates it, a definition references it by name.
+- Saved structures go in a **separate store**: OPFS `dwell/structures/<name>.json` (the name's part
+  after the namespace), one file each, in the exact format above, so the library outlives the
+  sandbox world and every version can read it (`client/src/local/structureStore.ts`). It is a
+  shared browser store, so append-only rules apply: new fields are optional; a rewrite (saving over
+  a structure, renaming it) keeps the fields this build doesn't know; a file it can't read (broken
+  JSON, a newer `format`, a block or rule this build lacks) is listed as kept and is never
+  rewritten or deleted. `structureStore.test.ts` pins it.
+- **One set of rules.** The format's rules are `shared/structures/format.mjs` (no Node built-ins):
+  `gen.mjs` runs it in CI and the client runs it over its own registry (`BLOCK_DEFS`; a test checks
+  it equals the one `gen.mjs` reads from `shared/blocks/vectors.txt`). The client ignores top-level
+  fields a newer build added; `gen.mjs` still rejects unknown fields, since the repository has one
+  version.
+- **Save** (the game menu's Structures page, `ui/structuresPanel.ts`): the box is the region tools'
+  selection (B, N, §5) when there is one; else everything built near the player — any state but air
+  and the sandbox floor, from 48 m either way across and 8 m below to 48 m above the feet, read a
+  chunk tile at a time — or two typed corners (each can be filled from the aimed-at block). It needs
+  a name (`dwell:` unless a namespace is typed; `test:` is refused) and takes an anchor, the bottom
+  centre by default. The states are read from the client's world (`Client.voxels`, refused where a
+  chunk isn't loaded); air and the floor become kept cells (`null`, written `.`), every other state
+  gets a palette character (its block's initial where free). Over 32 a side, or with a name taken
+  (asks to replace), it says so.
+- **Load** puts the structure on the region tools' clipboard in paste mode (`Client.loadStructure`):
+  the ghost box follows the crosshair, R and M turn and mirror it, and a right click pastes it as one
+  `RegionEdit`, validated by the server like any paste, with undo. Kept cells take what the world
+  holds there when the paste is sent (a paste sets every cell of its box). Like a copy, it stands on
+  its bottom centre: the anchor is not used by the paste yet (S3b).
+- **Export / import JSON** (file download, clipboard copy; import a file or pasted JSON) is the path
+  into the repo: an exported file is the stored file, which dropped into `shared/structures/` passes
+  `gen.mjs` unchanged (`structures.test.ts` validates an export with the generator's `loadDir`);
+  commit it, CI validates it, a definition references it by name.
 
 ## 5. Editing tools
 
@@ -143,8 +169,10 @@ line (the next minor, 0.11), with goldens regenerated; the owner raises `package
 including structure hashes in the terrain definition's hash (ADR 0026 §4), and keep sandbox-only
 structures out of every definition until promoted. S4 belongs after Phase 17: bolting it onto the
 hardcoded `terrain.rs` would be work the baseline rework replaces. S3's `RegionEdit` is an additive
-protocol change (a patch can carry it if old clients ignore it — to be checked against the protocol
-rules).
+protocol change. *Checked (S3):* a server rejects an unknown message type as `Malformed` and closes
+the session, and a `protocolVersion` bump would split the 0.10 line, but every decoder ignores
+unknown `Welcome` flag bits — so it ships within the line behind a `regionEdits` Welcome flag that
+newer servers set and clients wait for (ARCHITECTURE.md §10.5).
 
 **Risks**: structures across chunk borders and LOD agreement; generation cost (each chunk scans
 nearby cells); rotating facing states; adaptive blocks (Phase 18) reshaping authored blocks;

@@ -41,6 +41,15 @@ const parsed: Version = parsedVersion;
 
 // A release build is served from its own directory (`/dwell/v/<version>/`, RELEASES.md §3); a
 // local build, the preview and the e2e suite from `/dwell/`.
+/**
+ * The renderer switch (RAY_MARCHED_RENDERER.md §3): on in local builds, off in the release
+ * workflow's (DWELL_VERSION set) until the owner's decision (A7). DWELL_RENDERER_SWITCH=0/1 forces it.
+ */
+const rendererSwitch =
+  process.env.DWELL_RENDERER_SWITCH !== undefined
+    ? process.env.DWELL_RENDERER_SWITCH === '1'
+    : process.env.DWELL_VERSION === undefined;
+
 const base =
   process.env.DWELL_BASE ??
   (process.env.DWELL_VERSION ? `/dwell/v/${withoutBuild(parsed)}/` : '/dwell/');
@@ -86,6 +95,7 @@ export default defineConfig({
     __BUILD_SHA__: JSON.stringify(sha),
     __BUILD_TIME__: JSON.stringify(buildTime),
     __APP_VERSION__: JSON.stringify(version),
+    __RENDERER_SWITCH__: JSON.stringify(rendererSwitch),
   },
   plugins: [releaseFiles()],
   // Module workers: the job and local-mode workers load the Rust client's WASM module.

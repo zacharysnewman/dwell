@@ -67,6 +67,14 @@ pub mod limits {
     pub const MAX_LOD_INDEX_ENTRIES: usize = 16384;
 }
 
+pub mod region_edit {
+    pub const MAX_SIDE: usize = 32;
+    pub const CELLS_PER_SECOND: usize = 65536;
+    pub const BURST_CELLS: usize = 131072;
+    pub const REACH: f32 = 64.0;
+    pub const MAX_QUEUED: usize = 4;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Channel {
@@ -117,6 +125,7 @@ pub enum MessageType {
     LodRequest = 76,
     ChunkRequest = 77,
     HostStatus = 78,
+    RegionEdit = 79,
 }
 
 impl MessageType {
@@ -150,6 +159,7 @@ impl MessageType {
             76 => Some(Self::LodRequest),
             77 => Some(Self::ChunkRequest),
             78 => Some(Self::HostStatus),
+            79 => Some(Self::RegionEdit),
             _ => None,
         }
     }
@@ -372,6 +382,29 @@ impl BlockEditAction {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
+pub enum RegionEditOp {
+    Fill = 1,
+    Replace = 2,
+    Hollow = 3,
+    Paste = 4,
+}
+
+impl RegionEditOp {
+    pub const MAX: u8 = 4;
+
+    pub const fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            1 => Some(Self::Fill),
+            2 => Some(Self::Replace),
+            3 => Some(Self::Hollow),
+            4 => Some(Self::Paste),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum VoxelModificationReason {
     Edit = 1,
     Explosion = 2,
@@ -446,5 +479,6 @@ pub mod controller_flags {
 
 pub mod welcome_flags {
     pub const FLIGHT: u8 = 1;
-    pub const ALL: u8 = 1;
+    pub const REGION_EDITS: u8 = 2;
+    pub const ALL: u8 = 3;
 }

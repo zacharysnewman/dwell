@@ -39,6 +39,17 @@ import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import { StructuresPanel } from './ui/structuresPanel';
+import { opfsStructureDir, StructureStore } from './local/structureStore';
+import { clipboardOf, type Vec3 as Cell } from './local/structures';
+import { waterQualityLevel } from './ui/waterSettings';
+import {
+  CompareOverlay,
+  RENDERER_CHOICES,
+  choiceOf,
+  rendererParams,
+  type CompareState,
+} from './ui/renderer';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -47,6 +58,10 @@ import { FpsMeter } from './ui/fps';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
+import { audio } from './audio/engine';
+import { decodeSounds, EventPlayer } from './audio/events';
+import { installPageSounds } from './audio/page';
+import { SOUND_DATA } from './audio/sounds.gen';
 
 type Vec3 = [number, number, number];
 
@@ -82,13 +97,16 @@ interface DwellDebug {
   view(): { yaw: number; pitch: number };
   /** Breaks or places at the crosshair, as a click does (§6.5). */
   edit(action: 'break' | 'place'): boolean;
+  /** Runs a region tool by name (`fill`, `copy`, `undo`, … — `Client.tool`), as its key does. */
+  tool(name: string): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
-  /** Turns creative flight on or off, as double-tapping Space does (if the server allows it). */
+  /** Turns creative flight on or off by pressing F, the fly key, if it isn't already (and the
+   * server allows it). */
   fly(on: boolean): void;
   /** Sets the flight speed level, as the slider does. */
   flySpeed(level: number): void;
@@ -105,12 +123,28 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /**
+   * The terrain renderers `?renderer=` can pick in this build (docs/DEV_TOOLS.md: `bench
+   * --compare` skips the others), and the upscalers.
+   */
+  renderers(): string[];
+  upscalers(): string[];
+  /** What draws the terrain: `raster`, `march` or `compare raster | march`. */
+  renderer(): string;
+  /** Switches renderer at runtime (local builds; false otherwise): see `?renderer=`. */
+  setRenderer(name: string, compare?: string): boolean;
+  /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
+  compare(): CompareState | null;
+  /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
+  setCompare(view?: string, divider?: number): void;
   /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
   telemetryFrames(): { names: string[]; frames: number[][] };
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
+  /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
+  sounds(): string[];
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
 }
@@ -204,6 +238,8 @@ interface App {
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
+  /** Compare mode's labels and divider (the renderer switch, local builds). */
+  compare: CompareOverlay | null;
 }
 
 /** The ?scale= drawing-buffer scale (comparing performance on a device). */
@@ -233,12 +269,38 @@ function displayName(): string {
 function toggleDebug(app: App): void {
   app.hud.toggleDebug();
   app.client.setDebugVisible(app.hud.debugVisible);
+  audio().action(app.hud.debugVisible ? 'overlay_on' : 'overlay_off');
+}
+
+/** The F4 map on or off, with its sound. */
+function toggleMap(app: App): void {
+  app.map.toggle();
+  audio().action(app.map.visible ? 'map_open' : 'map_close');
+}
+
+/** The F4 map's zoom (− and =), with its sound while the map shows. */
+function zoomMap(app: App, delta: number): void {
+  if (app.map.zoomBy(delta) && app.map.visible) audio().action('map_zoom');
+}
+
+/** The game's sound events since the last frame, and the listener at the camera (docs/AUDIO.md). */
+function playSounds(app: App, player: EventPlayer): void {
+  player.playAll(decodeSounds(app.client.takeSounds()));
+  const l = app.client.listener();
+  if (l.length === 9) {
+    const v = (i: number): [number, number, number] => [l[i] ?? 0, l[i + 1] ?? 0, l[i + 2] ?? 0];
+    audio().setListener(v(0), v(3), v(6));
+  }
 }
 
 /** Keyboard and mouse: the DOM's events, forwarded to the client's input (dwell-game input.rs). */
 function forwardInput(app: App): void {
   const { canvas, client } = app;
   window.addEventListener('keydown', (e) => {
+    // Typing in a field of the menu (a structure's name, pasted JSON) is not playing.
+    const t = e.target;
+    if (t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.type !== 'range'))
+      return;
     if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
@@ -280,24 +342,33 @@ function forwardInput(app: App): void {
   });
 }
 
+/** The hotbar slot last shown (null before the game selects its first). */
+let shownSlot: number | null = null;
+
 /** What the client's input asked of the shell since the last frame. */
 function handleEvents(app: App): void {
   for (const e of app.client.takeEvents() as { t: string; value: unknown }[]) {
     if (e.t === 'toggle') {
       if (e.value === 'F3') toggleDebug(app);
       if (e.value === 'F6') copyBlockDump(app);
-      if (e.value === 'F4') app.map.toggle();
-      if (e.value === 'Minus') app.map.zoomBy(1);
-      if (e.value === 'Equal') app.map.zoomBy(-1);
+      if (e.value === 'F4') toggleMap(app);
+      if (e.value === 'Minus') zoomMap(app, 1);
+      if (e.value === 'Equal') zoomMap(app, -1);
     } else if (e.t === 'slot') {
-      app.hotbar?.setSelected(e.value as number);
+      const slot = e.value as number;
+      app.hotbar?.setSelected(slot);
+      // A change of slot sounds; the first selection, when the game starts, does not.
+      if (shownSlot !== null && shownSlot !== slot) audio().action('hotbar');
+      shownSlot = slot;
     } else if (e.t === 'flight' || e.t === 'flightAllowed') {
       const flying = app.client.flying();
       app.touch?.setFlight(app.client.flightAllowed(), flying);
       app.flightSpeed.visible = flying;
+      if (e.t === 'flight') audio().action(flying ? 'fly_on' : 'fly_off');
     } else if (e.t === 'flySpeed') {
       app.flightSpeed.show(e.value as number);
       saveFlySpeedLevel(e.value as number);
+      audio().action('fly_speed');
     }
   }
 }
@@ -310,13 +381,16 @@ function showHud(app: App, now: number): void {
     health?: number;
     debug?: string | null;
     damaged?: boolean;
+    region?: string;
   };
   if (h.message === undefined) return;
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
+  app.hotbar?.setRegion(h.region ?? '');
   if (h.debug) app.hud.setDebug(h.debug);
+  app.compare?.show(app.client.compareState() as CompareState | null);
 }
 
 async function start(): Promise<App | null> {
@@ -340,6 +414,9 @@ async function start(): Promise<App | null> {
       fullChunks: params.get('chunks') === 'full',
       netsim: params.get('netsim') ?? undefined,
       search: location.search,
+      // ?renderer= and compare mode: local builds only (vite.config.ts, RAY_MARCHED_RENDERER.md §3).
+      rendererSwitch: __RENDERER_SWITCH__,
+      ...rendererParams(location.search, __RENDERER_SWITCH__),
     });
   } catch (err) {
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -372,6 +449,12 @@ async function start(): Promise<App | null> {
     loopback: null,
     world: null,
     playing: false,
+    compare: __RENDERER_SWITCH__
+      ? new CompareOverlay(document.body, canvas, (share) => {
+          client.setCompare(undefined, share);
+          installPageSounds().ui('slider');
+        })
+      : null,
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -387,19 +470,52 @@ async function start(): Promise<App | null> {
     { once: true, passive: true },
   );
   forwardInput(app);
+  // Sound (docs/AUDIO.md): started by the first gesture; menus sound by delegation.
+  const sfx = installPageSounds();
+  const sounds = new EventPlayer(SOUND_DATA, (sound, o) => {
+    sfx.play(sound, {
+      bus: 'effects',
+      intensity: o.intensity,
+      at: o.at,
+      gain: o.gain,
+      ...(o.pan !== undefined ? { pan: o.pan } : {}),
+    });
+  });
   // The game menu (top left, or Esc): settings applied as the sliders move.
   const settings = new SettingsMenu(document.body, mobile, (s) => {
+    sfx.setVolumes(s.audio);
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
+    client.setWaterQuality(waterQualityLevel(s.water.quality));
     client.setSkyRotation(s.skyRotation);
+    client.setClouds(s.clouds);
+    client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;
   // While the menu is open the touch controls step aside: they would take its taps.
   settings.onOpenChange = (open) => {
     touch.visible = touchWanted && !open;
+    sfx.action(open ? 'menu_open' : 'menu_close');
+    // The speed effects hold still while the menu is open.
+    client.setMenuOpen(open);
   };
   settings.setFootnote(formatBuildInfo(buildInfo));
+  const showRenderer = (): void => {
+    const label = client.renderer();
+    settings.setRenderer(
+      label,
+      client.rendererSwitch() ? RENDERER_CHOICES : null,
+      choiceOf(label)?.id,
+      (id) => {
+        const c = RENDERER_CHOICES.find((r) => r.id === id);
+        if (c) client.setRenderer(c.renderer, c.compare);
+        showRenderer();
+      },
+    );
+  };
+  showRenderer();
   settings.addDebugTools([
     {
       key: 'F3',
@@ -411,7 +527,7 @@ async function start(): Promise<App | null> {
     {
       key: 'F4',
       run: () => {
-        app.map.toggle();
+        toggleMap(app);
       },
       on: () => app.map.visible,
     },
@@ -422,8 +538,32 @@ async function start(): Promise<App | null> {
       },
     },
   ]);
+  // The Structures page (STRUCTURES.md §4): the browser's structures store, saved from and
+  // loaded into this world through the region tools.
+  const structures = new StructuresPanel({
+    store: new StructureStore(opfsStructureDir()),
+    selection: () => {
+      const s = client.selection();
+      return s.length === 6
+        ? { min: [s[0], s[1], s[2]] as Cell, size: [s[3], s[4], s[5]] as Cell }
+        : null;
+    },
+    read: (min, size) => client.voxels(...min, ...size),
+    feet: () => (client.debugState() as GameDebugState | null)?.feet ?? null,
+    target: () => (client.debugState() as GameDebugState | null)?.target?.cell ?? null,
+    load: (s) => {
+      const { cells, keep } = clipboardOf(s);
+      return client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+    },
+    close: () => {
+      settings.setOpen(false);
+    },
+  });
+  settings.addStructuresPanel(structures.element, () => {
+    void structures.refresh();
+  });
   app.hud.onToggleMap = () => {
-    app.map.toggle();
+    toggleMap(app);
   };
   app.hud.onCloseDebug = () => {
     toggleDebug(app);
@@ -448,6 +588,7 @@ async function start(): Promise<App | null> {
       return { yaw, pitch };
     },
     edit: (action) => client.edit(action, performance.now()),
+    tool: (name) => client.tool(name, performance.now()),
     select: (slot) => {
       client.select(slot);
     },
@@ -465,6 +606,18 @@ async function start(): Promise<App | null> {
       client.releaseCamera();
     },
     renderStats: () => client.renderStats() as RenderStats,
+    renderers: () => client.renderers() as string[],
+    upscalers: () => client.upscalers() as string[],
+    renderer: () => client.renderer(),
+    setRenderer: (name, compare) => {
+      const ok = client.setRenderer(name, compare);
+      showRenderer();
+      return ok;
+    },
+    compare: () => client.compareState() as CompareState | null,
+    setCompare: (view, divider) => {
+      client.setCompare(view, divider);
+    },
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,
@@ -473,12 +626,14 @@ async function start(): Promise<App | null> {
     telemetryReset: () => {
       client.telemetryReset();
     },
+    sounds: () => [...sfx.recent],
   };
 
   const frame = (now: number): void => {
     app.fps.frame(now);
     client.frame(now);
     handleEvents(app);
+    playSounds(app, sounds);
     showHud(app, now);
     requestAnimationFrame(frame);
   };
@@ -577,6 +732,7 @@ function copyBlockDump(app: App): void {
   const dump = blockDumpOf(app);
   if (!dump) {
     app.hud.flash('No world to dump yet');
+    audio().ui('error');
     return;
   }
   const text = formatBlockDump(dump);
@@ -586,6 +742,7 @@ function copyBlockDump(app: App): void {
   try {
     navigator.clipboard.writeText(text).then(() => {
       app.hud.flash('Block info copied');
+      audio().action('copy');
     }, shown);
   } catch {
     shown(); // no clipboard (an insecure context)

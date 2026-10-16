@@ -24,6 +24,7 @@ use dwell_protocol::{
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
 use dwell_world::edit::{DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit};
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
+use dwell_world::region::{DEFAULT_REGION_REACH, RegionCheck, check_region_edit};
 use dwell_world::{
     AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y,
     SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
@@ -59,12 +60,57 @@ const MAX_QUEUED_EDITS: usize = 8; // per session per tick; more are dropped
 /// small burst so edits bunched by the network are not rejected.
 const EDITS_PER_TICK: f64 = 1000.0 / (pc::BLOCK_EDIT_INTERVAL_MS as f64 * SIM_HZ as f64);
 const EDIT_BURST: f64 = 3.0;
+/// Region edits (§6.5): a token bucket of cells, each request costing its box's volume.
+const REGION_CELLS_PER_TICK: f64 = region_edit::CELLS_PER_SECOND as f64 / SIM_HZ as f64;
+const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
 const MAX_SAVED_LOADS_PER_TICK: i32 = 16; // saved chunks read from the world file per tick
 const INDEX_UPDATE_EVERY_TICKS: u32 = (lod::INDEX_UPDATE_MS as u32) * SIM_HZ / 1000;
 const MAX_QUEUED_LOD_REQUESTS: usize = 256; // per session; more are dropped
 const LOD_REQUESTS_PER_TICK: f64 = lod::REQUESTS_PER_SECOND as f64 / SIM_HZ as f64;
 const MAX_QUEUED_CHUNK_REQUESTS: usize = 1024;
 const CHUNK_REQUESTS_PER_TICK: f64 = wc::CHUNK_REQUESTS_PER_SECOND as f64 / SIM_HZ as f64;
+
+/// One tick's voxel changes per chunk (the next VoxelModification), in the order chunks and cells
+/// were first touched; a cell changed twice keeps its last state.
+#[derive(Default)]
+struct TickChanges {
+    chunks: Vec<ChunkChanges>,
+    /// Chunk → (its index in `chunks`, local index → its index in that chunk's changes).
+    index: HashMap<ChunkCoord, (usize, HashMap<u16, usize>)>,
+}
+
+impl TickChanges {
+    /// Sets the cell in the world and records the change.
+    fn set(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
+        let coord = chunk_of(cell[0], cell[1], cell[2]);
+        let local = local_index(
+            cell[0] - coord.x * CHUNK_SIZE,
+            cell[1] - coord.y * CHUNK_SIZE,
+            cell[2] - coord.z * CHUNK_SIZE,
+        );
+        world.get_or_create(coord).set_at(local, material);
+        let chunks = &mut self.chunks;
+        let (at, cells) = self.index.entry(coord).or_insert_with(|| {
+            chunks.push(ChunkChanges {
+                coord: coord.to_array(),
+                revision: 0,
+                changes: Vec::new(),
+            });
+            (chunks.len() - 1, HashMap::default())
+        });
+        let list = &mut chunks[*at].changes;
+        match cells.get(&(local as u16)) {
+            Some(&i) => list[i].material = material,
+            None => {
+                cells.insert(local as u16, list.len());
+                list.push(VoxelChange {
+                    index: local as u16,
+                    material,
+                });
+            }
+        }
+    }
+}
 
 /// Who may break and place blocks (§6.5, §11), and who may fly (creative flight, §8.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -214,6 +260,12 @@ pub struct SessionStats {
     /// Failed validation, cooldown, or permission.
     pub edits_rejected: u32,
     pub last_edit_check: EditCheck,
+    pub region_edits_applied: u32,
+    /// Failed validation, over the cell rate, too many queued, or no permission.
+    pub region_edits_rejected: u32,
+    pub last_region_check: RegionCheck,
+    /// Cells region edits changed.
+    pub region_cells_changed: u64,
     /// Chunks re-sent on the client's request (§6.3).
     pub resyncs: u32,
 }
@@ -229,6 +281,10 @@ impl Default for SessionStats {
             edits_applied: 0,
             edits_rejected: 0,
             last_edit_check: EditCheck::Ok,
+            region_edits_applied: 0,
+            region_edits_rejected: 0,
+            last_region_check: RegionCheck::Ok,
+            region_cells_changed: 0,
             resyncs: 0,
         }
     }
@@ -291,6 +347,9 @@ struct Session {
     rate_window_count: u32,
     edits: Vec<BlockEditRequest>, // applied at the start of the next step
     edit_credit: f64,
+    region_edits: Vec<RegionEdit>, // applied after the block edits, in order
+    region_credit: f64,            // cells
+
     stats: SessionStats,
     // Terrain streaming.
     chunk_mode: ChunkMode,
@@ -337,6 +396,8 @@ impl Session {
             rate_window_count: 0,
             edits: Vec::new(),
             edit_credit: 0.0,
+            region_edits: Vec::new(),
+            region_credit: 0.0,
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
             streamed: HashSet::default(),
@@ -762,6 +823,7 @@ impl Server {
         s.player_id = player_id;
         s.phase = Phase::Joined;
         s.edit_credit = EDIT_BURST;
+        s.region_credit = REGION_BURST_CELLS;
         let flight = self.may_fly(&self.sessions[&id]);
         let welcome = Welcome {
             player_id,
@@ -769,7 +831,9 @@ impl Server {
             generator_version: self.config.generator_version,
             server_tick: self.tick,
             verification_chunk: self.verification_chunk.to_array(),
-            flags: if flight { welcome_flags::FLIGHT } else { 0 },
+            // REGION_EDITS: this server understands RegionEdit (older builds of the line reject an
+            // unknown message, so clients send one only when this is set).
+            flags: welcome_flags::REGION_EDITS | if flight { welcome_flags::FLIGHT } else { 0 },
             registry_hash: REGISTRY_HASH,
         };
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
@@ -808,6 +872,13 @@ impl Server {
                     s.edits.push(edit);
                 } else {
                     s.stats.edits_rejected += 1;
+                }
+            }
+            Message::RegionEdit(edit) => {
+                if s.region_edits.len() < region_edit::MAX_QUEUED {
+                    s.region_edits.push(edit);
+                } else {
+                    s.stats.region_edits_rejected += 1;
                 }
             }
             Message::ChunkResync(coords) => self.resync(id, &coords),
@@ -1422,8 +1493,7 @@ impl Server {
             })
             .collect();
         // Changes of this tick per chunk, in the order chunks were first touched.
-        let mut changed: Vec<ChunkChanges> = Vec::new();
-        let mut index: HashMap<ChunkCoord, usize> = HashMap::default();
+        let mut changes = TickChanges::default();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -1448,38 +1518,43 @@ impl Server {
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
-                let cell = outcome.cell;
-                let coord = chunk_of(cell[0], cell[1], cell[2]);
-                let local = local_index(
-                    cell[0] - coord.x * CHUNK_SIZE,
-                    cell[1] - coord.y * CHUNK_SIZE,
-                    cell[2] - coord.z * CHUNK_SIZE,
-                );
-                self.world
-                    .get_or_create(coord)
-                    .set_at(local, outcome.material);
-                self.dirty.insert(coord);
-                self.lod.mark_chunk(coord);
-                let at = *index.entry(coord).or_insert_with(|| {
-                    changed.push(ChunkChanges {
-                        coord: coord.to_array(),
-                        revision: 0,
-                        changes: Vec::new(),
-                    });
-                    changed.len() - 1
-                });
-                let changes = &mut changed[at].changes;
-                match changes.iter_mut().find(|v| usize::from(v.index) == local) {
-                    Some(v) => v.material = outcome.material,
-                    None => changes.push(VoxelChange {
-                        index: local as u16,
-                        material: outcome.material,
-                    }),
+                changes.set(&mut self.world, outcome.cell, outcome.material);
+            }
+            // Region edits (§6.5), after the block edits, in the order they arrived; each costs
+            // its box's volume in cells, valid or not (validation reads the whole box).
+            s.region_credit = (s.region_credit + REGION_CELLS_PER_TICK).min(REGION_BURST_CELLS);
+            for edit in std::mem::take(&mut s.region_edits) {
+                let cost = edit.volume() as f64;
+                let Some(eye) = eye.filter(|_| may_edit && s.region_credit >= cost) else {
+                    s.stats.region_edits_rejected += 1;
+                    continue;
+                };
+                s.region_credit -= cost;
+                let outcome =
+                    check_region_edit(&mut self.world, &edit, eye, &capsules, DEFAULT_REGION_REACH);
+                s.stats.last_region_check = outcome.check;
+                if outcome.check != RegionCheck::Ok {
+                    s.stats.region_edits_rejected += 1;
+                    continue;
+                }
+                s.stats.region_edits_applied += 1;
+                s.stats.region_cells_changed += outcome.changes.len() as u64;
+                for (cell, m) in outcome.changes {
+                    changes.set(&mut self.world, cell, m);
                 }
             }
         }
+        let TickChanges {
+            chunks: mut changed,
+            ..
+        } = changes;
         if changed.is_empty() {
             return;
+        }
+        for c in &changed {
+            let coord = ChunkCoord::from_array(c.coord);
+            self.dirty.insert(coord);
+            self.lod.mark_chunk(coord);
         }
         // One revision per chunk per modification, then each client gets the chunks it streams.
         for c in &mut changed {
