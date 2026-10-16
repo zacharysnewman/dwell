@@ -27,6 +27,7 @@ import { LAUNCHER_PATH } from './launcherPath';
 import { PROTOCOL_VERSION } from './protocol/constants.gen';
 import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
+import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
 import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
@@ -947,6 +948,9 @@ async function connect(app: App): Promise<void> {
     const key = await identify(client);
     let local: LocalSession | null = null;
     let onJoined: (() => void) | undefined;
+    // "Don't ask again" for this server's blocks (ADR 0038), keyed by how it was reached.
+    const serverKey = code ? `code:${code}` : invite ? `invite:${target}` : `local:${target}`;
+    client.trustRegistry(trustedHash(storage(), serverKey) ?? undefined);
     if (code) {
       const base = configuredMasterUrl();
       if (!base) throw new Error('this build has no master server configured');
@@ -962,6 +966,7 @@ async function connect(app: App): Promise<void> {
     // A local world can be opened to friends (Host…, Phase 5c).
     if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;
+    let asking = false;
     const showStatus = () => {
       const s = client.sessionState() as SessionReport;
       const stats = s.stats ?? {
@@ -971,6 +976,15 @@ async function connect(app: App): Promise<void> {
         hostPaused: false,
       };
       status.textContent = formatStatus(target, s.transport, s, stats, app.fps.fps);
+      if (s.phase === 'confirming' && !asking) {
+        asking = true;
+        console.info('Dwell: this server’s blocks differ', s.registry);
+        void showRegistryPrompt(document, target, s.registry).then((answer) => {
+          if (answer.dontAsk) rememberTrust(storage(), serverKey, s.registry.hash, Date.now());
+          client.answerRegistry(answer.proceed);
+          if (!answer.proceed) go({});
+        });
+      }
       if (s.phase === 'joined' && !started) {
         started = true;
         const joinedInvite = invite ? pastedInvite(location.search) : null;
