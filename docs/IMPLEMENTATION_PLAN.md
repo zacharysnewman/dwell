@@ -3155,6 +3155,10 @@ Deviations
 
 ## Phase 32 — Sliding on Steep Ground
 
+> **Numbering note (for the integrator):** 32 was the next phase number free on `main` when this
+> was written (2026-10-15; 29–31 are taken there). Another branch may claim 32 too: if so,
+> renumber this phase (its heading and its Progress row) to the next free number when merging.
+
 **Status:** Built and tested natively, in Vitest and in a browser (2026-10-15). Outstanding: CI (the
 `wasm32-wasip1` divergence run and the e2e suite were not run on the branch), the owner's review of
 the feel in game and of the slide WAV renders. Stacks on Phase 18 (the adaptive shapes' 45° faces)
