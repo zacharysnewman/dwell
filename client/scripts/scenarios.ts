@@ -20,8 +20,12 @@ export type Step =
   /** Creative flight on or off; its speed level. */
   | { do: 'fly'; on: boolean }
   | { do: 'flySpeed'; level: number }
-  /** Places the camera (the player stays), or returns it to the player. */
-  | { do: 'camera'; position: Vec3; yaw: number; pitch: number }
+  /**
+   * Places the camera (the player stays), or returns it to the player. With `aroundPlayer`, the
+   * position's x and z are offsets from the player's feet (y stays absolute): a view near wherever
+   * a flight ended, where the chunks are streamed (e.g. the eye just under the sea's surface).
+   */
+  | { do: 'camera'; position: Vec3; yaw: number; pitch: number; aroundPlayer?: boolean }
   | { do: 'releaseCamera' }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
@@ -37,6 +41,16 @@ export type Step =
   /** Starts or stops a Chrome performance trace (`<name>.trace.json`, open in DevTools). */
   | { do: 'traceStart' }
   | { do: 'traceStop'; name: string }
+  /**
+   * Shows the time of day `t` (0–1, 0 midnight, 0.5 noon on face A) and, if given, the moon's
+   * phase (0 new, 0.5 full), on this client only (docs/DAY_NIGHT.md).
+   */
+  | { do: 'time'; t: number; moon?: number }
+  /**
+   * A timelapse: `frames` screenshots `<name>-00.png`… from time of day `from` to `to` (wrapping
+   * past midnight when `to` < `from`), waiting `waitS` after each change.
+   */
+  | { do: 'timelapse'; name: string; frames: number; from: number; to: number; waitS: number }
   /** Runs `steps` `times` times (e.g. a burst of edits); no `mark`, `record`, `shot` or traces inside. */
   | { do: 'repeat'; times: number; steps: Step[] };
 
@@ -113,7 +127,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   look: ['yaw', 'pitch'],
   fly: ['on'],
   flySpeed: ['level'],
-  camera: ['position', 'yaw', 'pitch'],
+  camera: ['position', 'yaw', 'pitch', 'aroundPlayer'],
   releaseCamera: [],
   edit: ['action'],
   select: ['slot'],
@@ -123,11 +137,20 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   shot: ['name'],
   traceStart: [],
   traceStop: ['name'],
+  time: ['t', 'moon'],
+  timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
   repeat: ['times', 'steps'],
 };
 
 /** Steps that name an output or change the run's state, so can't run more than once in a row. */
-const NOT_REPEATED: readonly Step['do'][] = ['mark', 'record', 'shot', 'traceStart', 'traceStop'];
+const NOT_REPEATED: readonly Step['do'][] = [
+  'mark',
+  'record',
+  'shot',
+  'traceStart',
+  'traceStop',
+  'timelapse',
+];
 
 export function parseStep(where: string, v: unknown): Step {
   const kind = (v as Obj | null)?.do;
@@ -162,6 +185,9 @@ export function parseStep(where: string, v: unknown): Step {
         position: vec3(at('position'), o.position),
         yaw: num(at('yaw'), o.yaw, -360, 360),
         pitch: num(at('pitch'), o.pitch, -90, 90),
+        ...(o.aroundPlayer === undefined
+          ? {}
+          : { aroundPlayer: bool(at('aroundPlayer'), o.aroundPlayer) }),
       };
     case 'edit':
       if (o.action !== 'break' && o.action !== 'place') {
@@ -196,6 +222,21 @@ export function parseStep(where: string, v: unknown): Step {
     case 'mark':
     case 'traceStart':
       return { do: d };
+    case 'time': {
+      const t = num(at('t'), o.t, 0, 1);
+      return o.moon === undefined
+        ? { do: d, t }
+        : { do: d, t, moon: num(at('moon'), o.moon, 0, 1) };
+    }
+    case 'timelapse':
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        frames: Math.round(num(at('frames'), o.frames, 2, 1000)),
+        from: num(at('from'), o.from, 0, 1, 0),
+        to: num(at('to'), o.to, 0, 1, 1),
+        waitS: num(at('waitS'), o.waitS, 0, 60, 0.3),
+      };
   }
 }
 
@@ -223,7 +264,15 @@ function parseScenario(where: string, v: unknown): Scenario {
   const settings = (
     o.settings === undefined
       ? {}
-      : obj(`${where}.settings`, o.settings, ['fog', 'detail', 'exposure'])
+      : obj(`${where}.settings`, o.settings, [
+          'fog',
+          'detail',
+          'exposure',
+          'clouds',
+          'motion',
+          'water',
+          'timeOfDay',
+        ])
   ) as View['settings'];
   if (!Array.isArray(o.steps) || o.steps.length === 0) {
     throw new ViewError(`${where}.steps: expected a non-empty list`);
@@ -267,6 +316,12 @@ export function parseScenarios(json: unknown): Scenario[] {
     seen.add(s.name);
   }
   return list;
+}
+
+/** The times of day a timelapse shows, `frames` of them from `from` toward `to` (not reaching it). */
+export function timelapseTimes(s: { from: number; to: number; frames: number }): number[] {
+  const span = s.to > s.from ? s.to - s.from : s.to + 1 - s.from;
+  return Array.from({ length: s.frames }, (_, i) => (s.from + (span * i) / s.frames) % 1);
 }
 
 /**

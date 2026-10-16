@@ -16,10 +16,13 @@ use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
+use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
+use dwell_game::sound::{CellChange, EditSounds, MoverSample, MoverSounds, SoundEvent, SoundKind};
 use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
-use dwell_mesh::{ChunkMeshes, SectionMeshes};
+use dwell_look::daynight::{DAY_NIGHT, DayState};
+use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
 use dwell_physics::predictor::{Predictor, PredictorStats};
@@ -33,7 +36,8 @@ use dwell_world::{ChunkCoord, VoxelWorld};
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
-use crate::render::{Line, PlayerView, StandIn};
+use crate::render::seam::{ChunkTerrain, SectionTerrain, Selection, TerrainRenderer};
+use crate::render::{Line, PlayerView, RegionBox, StandIn, WindView};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
@@ -48,27 +52,83 @@ const MESH_BUDGET_MS: f64 = 4.0;
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
 const RATE_NUDGE: f64 = 0.02;
+/// The region tools' outlines: the selection, and where a paste would go.
+const REGION_SELECTION_COLOR: u32 = 0xffffff;
+const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 const PLAYER_COLORS: [u32; 7] = [
     0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
 ];
 
-/// What the game draws through (the wgpu renderer, or a recorder in tests).
-pub trait Scene {
-    fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>);
-    fn set_lod_section(
-        &mut self,
-        id: i64,
-        origin: [f64; 3],
-        cell_size: f64,
-        meshes: Option<&SectionMeshes>,
-    );
-    fn show_lod_sections(&mut self, visible: &[(i64, u8)]);
-    fn show_lod_stand_ins(&mut self, stand_ins: &[StandIn]);
+/// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
+/// the renderer seam's ([`TerrainRenderer`], RAY_MARCHED_RENDERER.md §3): each chunk's and
+/// section's payloads, routed to the terrain renderers the [`Selection`] draws; the rest (camera,
+/// players, outline, lines, stats) is shared by every renderer.
+pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain> {
+    /// What draws the terrain (its payloads are what the meshing jobs make).
+    fn selection(&self) -> Selection;
+    /// Switches renderer; true when the payloads change (the game then rebuilds the terrain).
+    fn select(&mut self, selection: Selection) -> bool;
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
+    /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
+    fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    /// The frame's vertical FOV (degrees; the speed boost, docs/MOTION_EFFECTS.md): the same value
+    /// the LOD selection uses. `None`: the screen's own.
+    fn set_fov(&mut self, fov_y_deg: Option<f64>);
+    /// The wind streaks to draw this frame.
+    fn set_wind(&mut self, wind: WindView);
+    fn set_region_boxes(&mut self, boxes: &[RegionBox]);
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
+    /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
+    fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
+}
+
+/// Dev switches over the day/night cycle (`?time=`, `?moon=`, `?timespeed=`, the bench's `time`
+/// step): they change this client's view only, never the world's time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DayOverride {
+    /// The time of day (0–1, 0 midnight) instead of the world's.
+    pub time: Option<f64>,
+    /// The moon's phase (0 new, 0.5 full) instead of the day count's.
+    pub moon: Option<f64>,
+    /// World time runs this many times faster here (1 = as the server's).
+    pub speed: f64,
+}
+
+impl Default for DayOverride {
+    fn default() -> Self {
+        Self {
+            time: None,
+            moon: None,
+            speed: 1.0,
+        }
+    }
+}
+
+impl DayOverride {
+    /// Reads `?time=`, `?moon=` and `?timespeed=` from a query string; anything missing, not a
+    /// number or out of range is left alone.
+    pub fn from_query(search: &str) -> Self {
+        let read = |key: &str| {
+            search
+                .trim_start_matches('?')
+                .split('&')
+                .filter_map(|kv| kv.split_once('='))
+                .find(|(k, _)| *k == key)
+                .and_then(|(_, v)| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite())
+        };
+        let unit = |v: Option<f64>| v.filter(|v| (0.0..=1.0).contains(v));
+        Self {
+            time: unit(read("time")),
+            moon: unit(read("moon")),
+            speed: read("timespeed")
+                .filter(|v| *v > 0.0 && *v <= 10_000.0)
+                .unwrap_or(1.0),
+        }
+    }
 }
 
 pub type SceneRef<S> = Rc<RefCell<S>>;
@@ -76,28 +136,28 @@ pub type SceneRef<S> = Rc<RefCell<S>>;
 /// The streamer's and the LOD system's view of the scene.
 pub struct View<S>(pub SceneRef<S>);
 
-impl<S: Scene> TerrainView<ChunkMeshes> for View<S> {
-    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkMeshes>) {
+impl<S: Scene> TerrainView<ChunkTerrain> for View<S> {
+    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkTerrain>) {
         self.0
             .borrow_mut()
-            .set_terrain_chunk(ChunkCoord::from_array(coord), meshes.as_ref());
+            .set_chunk(ChunkCoord::from_array(coord), meshes.as_ref());
     }
 }
 
-impl<S: Scene> LodView for View<S> {
+impl<S: Scene> LodView<SectionTerrain> for View<S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionMeshes>,
+        meshes: Option<SectionTerrain>,
     ) {
         self.0
             .borrow_mut()
-            .set_lod_section(id, origin, cell_size, meshes.as_ref());
+            .set_section(id, origin, cell_size, meshes.as_ref());
     }
     fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
-        self.0.borrow_mut().show_lod_sections(visible);
+        self.0.borrow_mut().show_sections(visible);
     }
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandInBox]) {
         let boxes: Vec<StandIn> = stand_ins
@@ -108,7 +168,7 @@ impl<S: Scene> LodView for View<S> {
                 hi: b.hi,
             })
             .collect();
-        self.0.borrow_mut().show_lod_stand_ins(&boxes);
+        self.0.borrow_mut().show_stand_ins(&boxes);
     }
 }
 
@@ -324,6 +384,9 @@ pub struct Game<S: Scene> {
     accumulator: f64,
     last_frame_ms: Option<f64>,
     last_snapshot_tick: u32,
+    /// The server's clock, from its snapshots: world time for the day/night cycle and the clouds'
+    /// drift.
+    pub clock: crate::world_clock::WorldClock,
     input_buffer: u8,
     tick_rate: f64,
     health: u8,
@@ -335,6 +398,10 @@ pub struct Game<S: Scene> {
     last_draw_ms: Option<f64>,
     eye: EyeCamera,
     pub interaction: BlockInteraction,
+    /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
+    pub region: RegionTools,
+    /// The eye the crosshair targets from (None while not playing).
+    target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -352,6 +419,35 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
+    /// Sound events since the shell last took them (docs/AUDIO.md §5): a side channel.
+    sounds: Vec<SoundEvent>,
+    mover_sounds: MoverSounds,
+    remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
+    edit_sounds: EditSounds,
+    /// The camera at the last draw: eye, forward, up (the audio listener).
+    listener: [f64; 9],
+    /// The motion effects (docs/MOTION_EFFECTS.md): read the camera's state, never write it.
+    motion: MotionFx,
+    /// The player's choices for them (the settings menu).
+    pub motion_settings: MotionSettings,
+    /// The game menu is open: the effects hold still.
+    pub menu_open: bool,
+    /// The Field of view setting (degrees, vertical; `dwell_lod::base_fov` narrows it on wide
+    /// screens): the base of the projection, the LOD's pixel error and the culling.
+    pub fov_setting: f64,
+    /// The controller's walk and run speeds the effects scale to.
+    speeds: Speeds,
+    /// The face the last drawn frame's camera was on (a change is the turn-over).
+    motion_face: Option<i32>,
+    /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
+    frame_fov: f64,
+    /// The camera the LOD selection last used.
+    lod_camera: Option<LodCamera>,
+    /// The dev switches over the day/night cycle, and its state at the last frame (world time is
+    /// `clock`'s).
+    pub day_override: DayOverride,
+    day: DayState,
+    first_draw_ms: Option<f64>,
 }
 
 impl<S: Scene> Game<S> {
@@ -377,6 +473,11 @@ impl<S: Scene> Game<S> {
                     .push(Send::Control(Message::ChunkResync(coords.to_vec())));
             },
         );
+        pool.borrow_mut().payloads = scene.borrow().selection().payloads();
+        let speeds = Speeds {
+            walk: f64::from(config.movement.walk_speed),
+            run: f64::from(config.movement.run_speed),
+        };
         let predictor = Predictor::new(config);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
@@ -396,6 +497,7 @@ impl<S: Scene> Game<S> {
             accumulator: 0.0,
             last_frame_ms: None,
             last_snapshot_tick: 0,
+            clock: Default::default(),
             input_buffer: 0,
             tick_rate: 1.0,
             health: 0,
@@ -407,6 +509,8 @@ impl<S: Scene> Game<S> {
             last_draw_ms: None,
             eye,
             interaction: BlockInteraction::new(),
+            region: RegionTools::new(),
+            target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -418,6 +522,22 @@ impl<S: Scene> Game<S> {
             pending_lod: None,
             map: None,
             view: None,
+            sounds: Vec::new(),
+            mover_sounds: MoverSounds::new(),
+            remote_sounds: Default::default(),
+            edit_sounds: EditSounds::new(),
+            listener: [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+            motion: MotionFx::new(),
+            motion_settings: MotionSettings::default(),
+            menu_open: false,
+            fov_setting: dwell_lod::frustum::VERTICAL_FOV,
+            speeds,
+            motion_face: None,
+            frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
+            lod_camera: None,
+            day_override: DayOverride::default(),
+            day: DayState::default(),
+            first_draw_ms: None,
         };
         match verification {
             Some(c) => game
@@ -429,12 +549,34 @@ impl<S: Scene> Game<S> {
         game
     }
 
+    /// Switches the terrain renderer at runtime (the renderer seam, RAY_MARCHED_RENDERER.md §3):
+    /// when the payloads change, the meshing jobs make the new ones and every chunk and LOD section
+    /// is rebuilt from the voxels and cells the client holds, without a reload.
+    pub fn set_renderer(&mut self, selection: Selection) {
+        if !self.scene.borrow_mut().select(selection) {
+            return;
+        }
+        self.pool.borrow_mut().payloads = selection.payloads();
+        self.streamer.remesh_all();
+        if let Some(lod) = &mut self.lod {
+            lod.rebuild_all();
+        }
+    }
+
     /// Places the camera (None: back to the player's eyes).
     pub fn set_view(&mut self, view: Option<ViewOverride>) {
         self.view = view;
     }
     pub fn view(&self) -> Option<ViewOverride> {
         self.view
+    }
+    /// The vertical FOV the last frame drew with (and the LOD selected with).
+    pub fn frame_fov(&self) -> f64 {
+        self.frame_fov
+    }
+    /// The camera the LOD selection last used (tests: it has the frame's FOV).
+    pub fn lod_camera(&self) -> Option<LodCamera> {
+        self.lod_camera
     }
 
     /// Turns the whole-world view on once the verification is known (`?lod=0` leaves it off).
@@ -523,6 +665,14 @@ impl<S: Scene> Game<S> {
     pub fn voxel(&mut self, x: i32, y: i32, z: i32) -> u16 {
         self.streamer.store_mut().get_voxel(x, y, z)
     }
+    /// The client's states in a box, in layer order; empty where a chunk of it isn't loaded (Air
+    /// chunks are loaded; the streamer's `BoxSource`): saving a structure.
+    pub fn voxels(&mut self, min: [i32; 3], size: [u32; 3]) -> Vec<u16> {
+        use dwell_game::region_tools::BoxSource;
+        self.streamer
+            .read_box(min, size.map(|n| n as i32))
+            .unwrap_or_default()
+    }
     pub fn state(&self) -> &ClientState {
         &self.current
     }
@@ -541,7 +691,13 @@ impl<S: Scene> Game<S> {
         match m {
             Message::ChunkData(d) => self.streamer.on_chunk_data(ChunkMessage::from(d)),
             Message::ChunkUnload(u) => self.streamer.on_chunk_unload(&u.coords),
-            Message::VoxelModification(v) => self.streamer.on_voxel_modification(&v.chunks),
+            Message::VoxelModification(v) => {
+                if v.reason == dwell_protocol::VoxelModificationReason::Edit {
+                    let changes = self.cell_changes(&v.chunks);
+                    self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
+                }
+                self.streamer.on_voxel_modification(&v.chunks)
+            }
             Message::LodIndex(_) | Message::LodIndexUpdate(_) | Message::LodData(_) => {
                 if let Some(lod) = &mut self.lod {
                     lod.on_message(&m, byte_len, now_ms);
@@ -552,6 +708,7 @@ impl<S: Scene> Game<S> {
                     return; // reordered datagram
                 }
                 self.last_snapshot_tick = s.server_tick;
+                self.clock.observe(s.server_tick, now_ms);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
                 self.health = s.local.health;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
@@ -717,18 +874,176 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Breaks or places at the crosshair (§6.5): only while alive and playing.
+    /// Breaks or places at the crosshair (§6.5): only while alive and playing. Sounds at once
+    /// (the client does not predict edits); nothing targeted sounds a refusal.
     pub fn edit(&mut self, action: EditAction, now_ms: f64) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        // In paste mode the buttons paste (right) or leave paste mode (left).
+        if self.region.pasting() {
+            let tool = match action {
+                EditAction::Place => ToolAction::Paste,
+                EditAction::Break => ToolAction::PasteMode,
+            };
+            return self.tool(tool, now_ms);
+        }
+        let Some(target) = self.interaction.target() else {
+            self.sounds.push(sound_event(SoundKind::Deny));
+            return false;
+        };
+        let placement = self.interaction.placement();
         match self.interaction.act(action, now_ms) {
+            Some(m) => {
+                self.outbox.borrow_mut().push(Send::Control(m));
+                match (action, placement) {
+                    (EditAction::Break, _) => {
+                        let [x, y, z] = target.cell;
+                        let block = self.voxel(x, y, z);
+                        self.edit_sounds
+                            .local_break(target.cell, block, now_ms, &mut self.sounds);
+                    }
+                    (EditAction::Place, Some((cell, block))) => {
+                        self.edit_sounds
+                            .local_place(cell, block, now_ms, &mut self.sounds);
+                    }
+                    (EditAction::Place, None) => {}
+                }
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// A sound of the shell's or a debug tool's own (e.g. compare mode's keys), heard with the
+    /// game's events.
+    pub fn sound(&mut self, kind: SoundKind) {
+        self.sounds.push(sound_event(kind));
+    }
+
+    /// The sound events since the last call (docs/AUDIO.md §5).
+    pub fn take_sounds(&mut self) -> Vec<SoundEvent> {
+        std::mem::take(&mut self.sounds)
+    }
+
+    /// The camera at the last draw, for the audio listener: eye, forward, up.
+    pub fn listener(&self) -> [f64; 9] {
+        self.listener
+    }
+
+    /// A modification's changes with what each cell held before (read before it is applied).
+    fn cell_changes(&mut self, chunks: &[dwell_protocol::ChunkChanges]) -> Vec<CellChange> {
+        let n = dwell_world::CHUNK_SIZE;
+        let mut out = Vec::new();
+        for c in chunks {
+            let [cx, cy, cz] = c.coord;
+            for ch in &c.changes {
+                let i = i32::from(ch.index);
+                let cell = [
+                    cx * n + (i & 31),
+                    cy * n + ((i >> 5) & 31),
+                    cz * n + ((i >> 10) & 31),
+                ];
+                let old = self.voxel(cell[0], cell[1], cell[2]);
+                out.push(CellChange {
+                    cell,
+                    old,
+                    new: ch.material,
+                });
+            }
+        }
+        out
+    }
+
+    /// What the movement sounds read of a body with its feet at `feet`.
+    #[allow(clippy::too_many_arguments)]
+    fn mover_sample(
+        &mut self,
+        feet: [f64; 3],
+        velocity: [f64; 3],
+        state: PlayerState,
+        grounded: bool,
+        crouched: bool,
+        face: f64,
+        submerged: Option<f64>,
+    ) -> MoverSample {
+        let at = |dy: f64| {
+            [
+                feet[0].floor() as i32,
+                (feet[1] + face * dy).floor() as i32,
+                feet[2].floor() as i32,
+            ]
+        };
+        let [gx, gy, gz] = at(-0.2);
+        let [bx, by, bz] = at(0.5);
+        let ground = self.voxel(gx, gy, gz);
+        let body = self.voxel(bx, by, bz);
+        let liquid = |id: u16| id != 0 && dwell_blocks::info(id).liquid;
+        MoverSample {
+            feet,
+            velocity,
+            state,
+            grounded,
+            crouched,
+            face,
+            submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
+            ground,
+            body,
+        }
+    }
+
+    /// Runs a region tool (§6.5) on the crosshair's target and the hotbar's block: only while alive
+    /// and playing. True if it sent a region edit.
+    pub fn tool(&mut self, action: ToolAction, now_ms: f64) -> bool {
+        if self.dead || !self.terrain_ready() {
+            return false;
+        }
+        // A click as the tool takes the key; the blocks an edit changes sound as they arrive.
+        self.sounds.push(sound_event(SoundKind::Tool));
+        let target = self.interaction.target().map(|t| t.cell);
+        let target_state =
+            target.map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2]));
+        let material = self
+            .interaction
+            .palette()
+            .get(self.interaction.selected())
+            .map_or(0, |s| s.material);
+        let ctx = ToolContext {
+            target,
+            target_state,
+            placement: self.interaction.placement().map(|(c, _)| c),
+            material,
+            eye: self.target_eye,
+            now_ms,
+        };
+        // Through the streamer: it knows the Air chunks the client never stores.
+        let sent = match self.region.act(action, &ctx, &mut self.streamer) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
                 true
             }
             None => false,
-        }
+        };
+        self.show_region_boxes();
+        sent
+    }
+
+    /// The region tools' boxes to the renderer.
+    fn show_region_boxes(&self) {
+        let boxes: Vec<RegionBox> = self
+            .region
+            .boxes()
+            .iter()
+            .map(|b| RegionBox {
+                min: b.min.map(f64::from),
+                size: b.size.map(f64::from),
+                color: match b.kind {
+                    ToolBoxKind::Selection => REGION_SELECTION_COLOR,
+                    ToolBoxKind::Ghost => REGION_GHOST_COLOR,
+                },
+            })
+            .collect();
+        self.scene.borrow_mut().set_region_boxes(&boxes);
     }
 
     /// Prediction waits until the terrain around the player has arrived (collision needs it).
@@ -781,6 +1096,22 @@ impl<S: Scene> Game<S> {
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
         record_tick(&self.current, &frame);
+        let c = self.current;
+        let face = f64::from(c.face);
+        let sample = self.mover_sample(
+            [
+                c.position[0],
+                c.position[1] - face * c.half_height,
+                c.position[2],
+            ],
+            c.velocity,
+            c.state,
+            c.controller_flags & controller_flags::GROUNDED != 0,
+            c.controller_flags & controller_flags::CROUCHING != 0,
+            face,
+            Some(c.submerged),
+        );
+        self.mover_sounds.update(&sample, None, &mut self.sounds);
         // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
         let turn = self.flip.tick(self.current.face);
         if turn != 0.0 {
@@ -796,10 +1127,8 @@ impl<S: Scene> Game<S> {
     fn draw(&mut self, now_ms: f64, input: &KeyboardMouseInput, now: &mut dyn FnMut() -> f64) {
         let c = self.current;
         let face = c.face;
-        let flip = self.flip.draw(
-            face,
-            self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0),
-        );
+        let dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
+        let flip = self.flip.draw(face, dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;
@@ -820,6 +1149,31 @@ impl<S: Scene> Game<S> {
         let mut drawn = HashSet::default();
         for v in &views {
             drawn.insert(v.player_id);
+            if !v.is_dead() {
+                let grounded = matches!(
+                    v.state,
+                    PlayerState::Idle
+                        | PlayerState::Walking
+                        | PlayerState::Running
+                        | PlayerState::Crouching
+                        | PlayerState::Sliding
+                );
+                let face = if v.is_face_b() { -1.0 } else { 1.0 };
+                let sample = self.mover_sample(
+                    v.feet,
+                    v.velocity.map(f64::from),
+                    v.state,
+                    grounded,
+                    v.is_crouched(),
+                    face,
+                    None,
+                );
+                self.remote_sounds.entry(v.player_id).or_default().update(
+                    &sample,
+                    Some(v.feet),
+                    &mut self.sounds,
+                );
+            }
             let view = self.player_view(
                 v.player_id,
                 v.feet,
@@ -837,8 +1191,10 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
+        self.remote_sounds.retain(|id, _| drawn.contains(id));
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
+        let camera_eye;
         if self.dead {
             // Third person over the body.
             let view = self.player_view(
@@ -853,20 +1209,16 @@ impl<S: Scene> Game<S> {
             scene.set_player(u32::from(self.player_id), Some(view));
             let r = yaw.to_radians();
             let [x, y, z] = self.death_feet;
-            scene.set_camera(
-                [
-                    x - r.sin() * 4.0,
-                    y + f64::from(face) * 2.5,
-                    z - r.cos() * 4.0,
-                ],
-                yaw,
-                -25.0,
-                f64::from(face),
-                0.0,
-            );
+            camera_eye = [
+                x - r.sin() * 4.0,
+                y + f64::from(face) * 2.5,
+                z - r.cos() * 4.0,
+            ];
+            scene.set_camera(camera_eye, yaw, -25.0, f64::from(face), 0.0);
             drop(scene);
             self.show_hud_text();
             self.target(None, input);
+            self.update_motion(c.position, dt);
         } else {
             self.scene
                 .borrow_mut()
@@ -874,19 +1226,31 @@ impl<S: Scene> Game<S> {
             self.show_hud_text();
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
+            camera_eye = eye;
             self.scene
                 .borrow_mut()
                 .set_camera(eye, yaw, pitch, f64::from(face), flip);
+            self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input);
+            self.update_motion(eye, dt);
         }
-        if let Some(v) = self.view {
-            self.scene
-                .borrow_mut()
-                .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
-            self.scene.borrow_mut().set_block_outline(None, 1.0);
-        }
+        let camera_eye = match self.view {
+            Some(v) => {
+                self.scene
+                    .borrow_mut()
+                    .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
+                self.scene.borrow_mut().set_block_outline(None, 1.0);
+                v.eye
+            }
+            None => camera_eye,
+        };
+        let store = self.streamer.store_mut();
+        let eye_fluid =
+            dwell_world::fluid::eye_fluid(camera_eye, |x, y, z| store.get_voxel(x, y, z));
+        self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
+        self.update_day(now_ms);
 
         self.hud.health = self.health;
         if self.debug_visible {
@@ -901,7 +1265,14 @@ impl<S: Scene> Game<S> {
             if let Some(lod) = &self.lod {
                 lines.push(format_lod_stats(&lod.debug_stats()));
             }
-            lines.push(format_render_stats(&self.scene.borrow().stats()));
+            let scene = self.scene.borrow();
+            lines.push(format!(
+                "{} · {}",
+                scene.selection().status(),
+                format_render_stats(&scene.stats())
+            ));
+            drop(scene);
+            lines.push(self.day.debug_line());
             if !self.memory_note.is_empty() {
                 lines.push(self.memory_note.clone());
             }
@@ -917,6 +1288,24 @@ impl<S: Scene> Game<S> {
         }
     }
 
+    /// The day/night cycle at `now_ms`: world time from the server (none before the first
+    /// snapshot: the world's start), sped up or replaced by the dev switches.
+    fn update_day(&mut self, now_ms: f64) {
+        let first = *self.first_draw_ms.get_or_insert(now_ms);
+        let o = self.day_override;
+        let world_s =
+            self.clock.seconds(now_ms).unwrap_or(0.0) + (o.speed - 1.0) * (now_ms - first) / 1000.0;
+        self.day = DAY_NIGHT.state(world_s, o.time, o.moon);
+        self.scene
+            .borrow_mut()
+            .set_day(&self.day, (now_ms - first) / 1000.0);
+    }
+
+    /// The day/night cycle's state at the last frame.
+    pub fn day(&self) -> &DayState {
+        &self.day
+    }
+
     fn show_hud_text(&mut self) {
         let text = hud_text(&HudTextInput {
             dead: self.dead,
@@ -928,12 +1317,51 @@ impl<S: Scene> Game<S> {
         self.hud.status = text.status;
     }
 
+    /// The motion effects for this frame (docs/MOTION_EFFECTS.md): the FOV boost from the camera's
+    /// velocity and state, and the wind. They only read the predicted state. The frame's FOV goes to
+    /// the renderer and, in `update_lod`, to the LOD selection.
+    fn update_motion(&mut self, eye: [f64; 3], dt: f64) {
+        let c = &self.current;
+        let turned_over = self.motion_face.is_some_and(|f| f != c.face);
+        self.motion_face = Some(c.face);
+        let out = self.motion.frame(
+            &MotionInput {
+                eye,
+                velocity: c.velocity,
+                state: c.state,
+                dt,
+                first_person: c.active && !self.dead && self.view.is_none(),
+                turned_over,
+                paused: self.menu_open,
+            },
+            self.motion_settings,
+            self.speeds,
+            &MOTION,
+        );
+        let viewport = self.viewport();
+        self.frame_fov = effective_fov(viewport.fov_y_deg, out.fov_boost_pct);
+        let mut scene = self.scene.borrow_mut();
+        scene.set_fov(Some(self.frame_fov));
+        scene.set_wind(WindView {
+            intensity: out.wind,
+            flight: out.flight,
+            direction: out.direction,
+            time: out.time,
+        });
+    }
+
+    /// The drawing's viewport at the player's Field of view setting (its base FOV, before the
+    /// speed boost).
+    fn viewport(&self) -> dwell_lod::LodViewport {
+        dwell_lod::lod_viewport(self.fov_setting, self.viewport_css.0, self.viewport_css.1)
+    }
+
     /// The whole-world view around the camera.
     fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
         if !c.active || self.lod.is_none() {
             return;
         }
-        let viewport = dwell_lod::lod_viewport(self.viewport_css.0, self.viewport_css.1);
+        let viewport = self.viewport();
         let (position, yaw_deg, pitch_deg) = match self.view {
             Some(v) => (v.eye, v.yaw_deg, v.face() * v.pitch_deg),
             None => (
@@ -951,10 +1379,12 @@ impl<S: Scene> Game<S> {
             position,
             yaw_deg,
             pitch_deg,
-            fov_y_deg: viewport.fov_y_deg,
+            // The frame's FOV, speed boost included: what the renderer draws with.
+            fov_y_deg: self.frame_fov,
             aspect: viewport.aspect,
             height_px: viewport.height_px,
         };
+        self.lod_camera = Some(camera);
         let mut host = LodHost {
             pool_gen: ChunkJobs(self.pool.clone()),
             pool_mesh: MeshJobs(self.pool.clone()),
@@ -977,6 +1407,10 @@ impl<S: Scene> Game<S> {
             input.look.pitch,
             face,
         );
+        self.target_eye = eye;
+        self.region
+            .aim(self.interaction.placement().map(|(c, _)| c));
+        self.show_region_boxes();
         let Some(t) = t else {
             self.scene.borrow_mut().set_block_outline(None, 1.0);
             return;
@@ -1041,13 +1475,13 @@ impl<S: Scene> dwell_lod::SectionMesher for LodHost<'_, S> {
         self.pool_mesh.mesh_section(job, token);
     }
 }
-impl<S: Scene> LodView for LodHost<'_, S> {
+impl<S: Scene> LodView<SectionTerrain> for LodHost<'_, S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionMeshes>,
+        meshes: Option<SectionTerrain>,
     ) {
         self.view.set_lod_section(id, origin, cell_size, meshes);
     }
@@ -1077,6 +1511,43 @@ impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
             .borrow_mut()
             .push(Send::Control(Message::ChunkRequest(coords)));
     }
+}
+
+fn sound_event(kind: SoundKind) -> SoundEvent {
+    SoundEvent {
+        kind,
+        block: 0,
+        intensity: 1.0,
+        at: None,
+        gait: None,
+    }
+}
+
+/// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.
+fn listener(eye: [f64; 3], yaw: f64, pitch: f64, face: i32) -> [f64; 9] {
+    let f = dwell_game::block_interaction::view_direction(yaw, pitch, face);
+    // Up: perpendicular to forward, toward the face's up.
+    let world_up = [0.0, f64::from(face), 0.0];
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let norm = |v: [f64; 3]| {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if l < 1e-9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            v.map(|x| x / l)
+        }
+    };
+    let right = norm(cross(f, world_up));
+    let up = norm(cross(right, f));
+    [
+        eye[0], eye[1], eye[2], f[0], f[1], f[2], up[0], up[1], up[2],
+    ]
 }
 
 fn js_round(v: f64) -> i64 {

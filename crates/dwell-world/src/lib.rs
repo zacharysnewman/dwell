@@ -4,8 +4,10 @@
 
 pub mod bounds;
 pub mod edit;
+pub mod fluid;
 pub mod hash;
 pub mod lod;
+pub mod region;
 pub mod structure;
 mod voxel;
 

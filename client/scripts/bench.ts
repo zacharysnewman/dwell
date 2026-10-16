@@ -26,6 +26,7 @@ import {
   parseScenarios,
   scenarioUrl,
   scenarioView,
+  timelapseTimes,
   type Scenario,
   type Step,
 } from './scenarios.ts';
@@ -291,13 +292,15 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'flySpeed':
       await call(page, `d.flySpeed(${String(s.level)})`);
       return;
-    case 'camera':
-      await until(
-        page,
-        `d.placeCamera(${JSON.stringify(s.position)}, ${String(s.yaw)}, ${String(s.pitch)})`,
-        30_000,
-      );
+    case 'camera': {
+      // aroundPlayer: x and z from the player's feet, y absolute.
+      const [x, y, z] = s.position;
+      const at = s.aroundPlayer
+        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${String(y)}, f[2] + ${String(z)}]; })()`
+        : JSON.stringify(s.position);
+      await until(page, `d.placeCamera(${at}, ${String(s.yaw)}, ${String(s.pitch)})`, 30_000);
       return;
+    }
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
@@ -334,6 +337,23 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'shot':
       await page.screenshot({ path: join(run.dir, `${s.name}.png`) });
       return;
+    case 'time':
+      await call(
+        page,
+        `d.setTime(${String(s.t)}${s.moon === undefined ? '' : `, ${String(s.moon)}`})`,
+      );
+      return;
+    case 'timelapse': {
+      const times = timelapseTimes(s);
+      const width = String(times.length - 1).length;
+      for (const [i, t] of times.entries()) {
+        await call(page, `d.setTime(${String(t)})`);
+        await sleep(page, s.waitS);
+        const n = String(i).padStart(Math.max(2, width), '0');
+        await page.screenshot({ path: join(run.dir, `${s.name}-${n}.png`) });
+      }
+      return;
+    }
     case 'traceStart':
       await run.browser.startTracing(page, {
         screenshots: true,

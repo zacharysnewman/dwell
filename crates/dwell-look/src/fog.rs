@@ -68,7 +68,6 @@ pub fn sanitize_fog(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dwell_protocol::players;
 
     const EYE: f64 = 1.6;
     const FOG: FogSettings = FogSettings {
@@ -77,7 +76,8 @@ mod tests {
         height_m: 1500.0,
     };
     const RADIUS: f64 = world::WORLD_RADIUS as f64;
-    const TOP: f64 = players::FLIGHT_CEILING as f64;
+    /// High above the world: flight has no ceiling (ADR 0025 D3).
+    const TOP: f64 = 200_000.0;
 
     #[test]
     fn hazes_the_horizon_lightly_never_past_the_density() {
@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_haze_the_ground_within_kilometres_and_clear_from_the_ceiling() {
+    fn defaults_haze_the_ground_within_kilometres_and_clear_from_high_above() {
         assert_eq!(
             DEFAULT_FOG,
             FogSettings {

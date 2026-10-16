@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-25
+- Amended by: [0028](0028-rust-port.md) (the crate is now `dwell-net` in the Rust workspace, called directly by `dwell-sim` and `dwell-server`; the C ABI, cbindgen, Corrosion and the C++ server are gone)
 - Resolves: ARCHITECTURE.md Open Decisions #1
 
 ## Context

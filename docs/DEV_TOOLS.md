@@ -53,7 +53,10 @@ Output per scenario, in `OUT/<scenario>/`:
   "steps": [ { "do": "settle", "maxS": 120 }, { "do": "fly", "on": true }, … ] }
 ```
 
-`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views),
+`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
+`fog`, `detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`) —
+`{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
+build),
 `debug` (`?debug=1`), `scale`, `renderer` (`?renderer=`: a renderer by name; a build without the
 renderer switch ignores it) and `split` (`near` or `far`: which part of the view it measures, for
 `--compare`'s split) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
@@ -65,14 +68,16 @@ fields, ranges and names fail with the entry named):
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
 | `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
-| `camera {position, yaw, pitch}`, `releaseCamera` | places the camera (the player stays), or returns it |
+| `camera {position, yaw, pitch, aroundPlayer?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute): a view wherever a flight ended, where the chunks are streamed |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name}` | saves everything above under `name` |
 | `shot {name}` | screenshot |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
-| `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot` or trace steps inside |
+| `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
+| `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
+| `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
 Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
 §5), besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and `jump-onto-block`: `look-horizon`
@@ -104,7 +109,8 @@ and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last on
 **Support:** the first run (the baseline's) asks the page what it offers — `__dwell.renderers()` and
 `__dwell.upscalers()`, each a list of names; a build without them offers `raster` and the browser's
 stretch only. Configurations the build can't run are **skipped with the reason** in the printed
-report and `compare.json` (today: every `march` entry, until the ray-marched renderer exists), not
+report and `compare.json` (today: every `march` entry — `renderers()` lists `march` only once
+`render/march.rs`'s `BUILT` is true, not while the placeholder fills its side magenta), not
 failed. A new configuration is one entry in the file; `baseline` names the one the others are
 compared with and `deltaE` the colour threshold (CIE76, default 2.3, about just noticeable).
 
@@ -147,8 +153,44 @@ worker, and the upload is counted per frame), so it isn't measured yet. It needs
 number carried through the remesh and a telemetry sample (`edit.visible`, ms from the request to the
 first frame drawn with its mesh), which the renderers record the same way.
 
-Not image agreement by cell id, face or depth yet: those need the renderers to expose an id/depth
-buffer (A2's compare mode); the bench compares colour only.
+Not image agreement by cell id, face or depth in the bench yet: the bench compares screenshots'
+colour only. In-game compare mode's difference view (below) compares coverage, view depth and
+colour on the GPU; cell id and face wait for the marcher to write ids (A3).
+
+## Renderer switch and compare mode (local builds)
+
+The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, §5; ARCHITECTURE.md
+§5 `render/`). **Local builds only** (dev server, `vite preview`, the bench): `__RENDERER_SWITCH__`
+(vite.config.ts) is off in the release workflow's builds (`DWELL_VERSION` set; force it with
+`DWELL_RENDERER_SWITCH=0|1`), where `?renderer=` is ignored and the mesher draws.
+
+- `?renderer=raster|march|compare` picks the terrain renderer; compare mode puts raster on the left
+  and, by default, the marcher on the right — `?compare=raster` puts raster on **both** sides (the
+  check that compare mode itself adds no difference). The marcher is a placeholder until A3: its
+  side is magenta and its labels say "not built".
+- The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
+  the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
+  render stats.
+- Keys (controls.ts): **F7** cycles split → blink → difference; **F8** blinks (swaps the side
+  shown); in split view drag the divider. A label per side shows its renderer, CPU time, GPU time
+  (`gpu.far`+`gpu.near`, `gpu.right.far`+`.near` for a raster right side, `gpu.march`), GPU memory,
+  scale and upscaler. Compare mode's timings carry both renderers' cost: use the bench for decisions.
+- Difference view: red where one side covers the pixel and the other doesn't, orange where view
+  depth differs by more than 1e-3 relative, yellow where the composited colours differ by ΔE > 2.3,
+  grey (the left side, dimmed) where they agree. The counts are read back:
+  `__dwell.compare().difference` is `{ pixels, coverage, depth, colour }` (a frame or two late).
+- Hooks: `__dwell.renderers()` and `upscalers()` (what the build offers, for `bench --compare`),
+  `renderer()`, `setRenderer(name, compare?)`, `compare()` (view, divider, overlay lines, the
+  difference counts; null outside compare mode), `setCompare(view?, divider?)`.
+
+Zero-difference check (Phase 25's A2 exit): open `?renderer=compare&compare=raster`, then
+`__dwell.setCompare('difference')`; after a frame or two `__dwell.compare().difference` reads 0 in
+every class.
+
+Kept scenarios include `idle-spawn`, `fly-low-fast`, `fly-low-faster`, `jump-onto-block`,
+`jump-in-place`, and the motion effects' `sprint-straight` (shots standing, mid-sprint and after) and
+`fly-fast-turn` (shots in fast flight, turning and diving: the wind's vanishing point following the
+travel).
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 
@@ -178,7 +220,7 @@ What is recorded now:
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result was polled (the worker's run, the transfers and the wait for the next frame) |
-| `gpu.far`, `gpu.near`, `gpu.composite`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes, the composite with the lines over it) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
+| `gpu.far`, `gpu.near`, `gpu.far.water`, `gpu.near.water`, `gpu.composite`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes — on Medium and High water, their opaque halves, with their water halves as `gpu.*.water`, WATER_RENDERING.md §8 W3 — the composite with the lines over it) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
 
 Timer resolution: without cross-origin isolation the browser's clock is coarsened to 0.1 ms, so
 sub-0.1 ms phases read 0 or 0.1. Chrome rounds GPU timestamps to 65.536 µs unless it runs with

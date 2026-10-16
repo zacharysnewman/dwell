@@ -150,6 +150,45 @@ fn draws_water_in_the_transparent_pass_with_its_surface_lowered_and_hides_it_aga
 }
 
 #[test]
+fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity() {
+    // shared/blocks/fixtures/test.json adds `test:oil` (surfaceDrop 0.25, opacity 0.8) and nothing
+    // else: the mesher draws it from its data, beside water at water's own height.
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let (oil, water) = (id("test:oil"), id("dwell:water"));
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
+    assert_eq!(kinds.of(oil).style.opacity, 0.8);
+    assert_eq!(kinds.of(oil).style.surface_drop, 0.25);
+    let cells = voxels(&[(0, 0, 0, oil), (4, 0, 0, water)]);
+    let ChunkMeshes {
+        opaque,
+        transparent,
+    } = mesh_chunk_with(&kinds, &cells, false).expect("padded volume");
+    assert_eq!(quads(&opaque), 0);
+    let mut tops: Vec<(f32, f32)> = (0..quads(&transparent))
+        .filter(|q| transparent.normals[q * 12 + 1] == 1.0)
+        .map(|q| {
+            let (lo, hi) = bounds(&transparent, q);
+            (lo[0], hi[1])
+        })
+        .collect();
+    tops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(tops, [(0.0, 0.75), (4.0, 0.875)]);
+    // Each vertex carries its fluid's id (the water shader's parameters, WATER_RENDERING.md W1b):
+    // oil's faces (x < 1) its own, water's water's.
+    assert_eq!(transparent.fluids.len(), transparent.positions.len() / 3);
+    for (v, &f) in transparent.fluids.iter().enumerate() {
+        let want = if transparent.positions[v * 3] <= 1.0 {
+            "test:oil"
+        } else {
+            "dwell:water"
+        };
+        assert_eq!(FLUIDS[f as usize].name, want, "vertex {v}");
+    }
+    assert!(opaque.fluids.is_empty());
+}
+
+#[test]
 fn draws_a_ladder_as_one_plate_near_the_back_of_its_cell() {
     // A north ladder faces −Z (face 5): the plate is at z = 1 − 0.05.
     let ladder = require("dwell:ladder[facing=north,flooded=false]");

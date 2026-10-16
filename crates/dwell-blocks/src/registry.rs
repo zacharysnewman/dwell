@@ -102,6 +102,27 @@ pub fn with_property(state: StateId, name: &str, value: &str) -> Option<StateId>
     Some(state_of(block, &idx))
 }
 
+/// The same block facing `facing` (its `facingProperty`, BLOCK_REGISTRY.md), every other property
+/// kept; `state` itself if the block has no facing or no state facing that way.
+pub fn with_facing(state: StateId, facing: crate::Facing) -> StateId {
+    if usize::from(state) >= STATES.len() || STATES[usize::from(state)].facing == facing {
+        return state;
+    }
+    let block = block_of(state);
+    let have = indices(block, state);
+    (block.first_state..block.first_state + block.state_count)
+        .find(|&s| {
+            STATES[usize::from(s)].facing == facing
+                && indices(block, s)
+                    .iter()
+                    .zip(&have)
+                    .filter(|(a, b)| a != b)
+                    .count()
+                    == 1
+        })
+        .unwrap_or(state)
+}
+
 /// The state a block takes turned upside down (vertical mirror): `half` swapped; every other state
 /// is its own mirror. Face B's chunks are face-local ones flipped with this.
 pub fn mirror(state: StateId) -> StateId {
@@ -148,5 +169,18 @@ mod tests {
         assert_eq!(state_property(l, "half"), None);
         assert_eq!(with_property(l, "facing", "sideways"), None);
         assert_eq!(mirror(l), l);
+    }
+
+    #[test]
+    fn turns_a_facing_keeping_the_other_properties() {
+        use crate::Facing;
+        let l = parse_state("dwell:ladder[facing=north,flooded=true]").expect("ladder");
+        assert_eq!(
+            STATES[usize::from(with_facing(l, Facing::West))].name,
+            "dwell:ladder[facing=west,flooded=true]"
+        );
+        assert_eq!(with_facing(l, Facing::North), l);
+        let stone = parse_state("dwell:stone").expect("stone");
+        assert_eq!(with_facing(stone, Facing::East), stone);
     }
 }

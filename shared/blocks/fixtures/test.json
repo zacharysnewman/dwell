@@ -1,0 +1,19 @@
+{
+  "$comment": "Test-only content (in no build): node shared/blocks/gen.mjs writes it, with the build's namespaces, to crates/dwell-blocks/src/fixture.gen.rs (the `fixture` feature), so tests can show a new entry working by data alone.",
+  "namespace": "test",
+  "fluids": {
+    "test:oil": {
+      "opacity": 0.8, "surfaceDrop": 0.25,
+      "absorption": [2.0, 2.5, 3.0], "scatter": "#2a2410", "roughness": 0.02, "ior": 1.47,
+      "normalScale": 0.4, "waveScale": 4.0, "flowSpeed": 0.005,
+      "foam": { "depth": 0.0, "color": "#c8b070" },
+      "caustics": { "strength": 0.2, "scale": 1.5, "depth": 0.5 }, "scattering": 1.0, "refraction": 0.05, "sparkle": 0.0
+    }
+  },
+  "blocks": [
+    {
+      "name": "oil", "density": 900, "shape": "empty", "look": "fluid", "fluid": "test:oil",
+      "liquid": true, "color": "#3a3016"
+    }
+  ]
+}

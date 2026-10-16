@@ -70,6 +70,14 @@ export const Limits = {
   maxLodIndexEntries: 16384,
 } as const;
 
+export const RegionEdit = {
+  maxSide: 32,
+  cellsPerSecond: 65536,
+  burstCells: 131072,
+  reach: 64,
+  maxQueued: 4,
+} as const;
+
 export const Channel = {
   control: 0,
   world: 1,
@@ -104,6 +112,7 @@ export const MessageType = {
   LodRequest: 76,
   ChunkRequest: 77,
   HostStatus: 78,
+  RegionEdit: 79,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -183,6 +192,14 @@ export const BlockEditAction = {
 } as const;
 export type BlockEditAction = (typeof BlockEditAction)[keyof typeof BlockEditAction];
 
+export const RegionEditOp = {
+  Fill: 1,
+  Replace: 2,
+  Hollow: 3,
+  Paste: 4,
+} as const;
+export type RegionEditOp = (typeof RegionEditOp)[keyof typeof RegionEditOp];
+
 export const VoxelModificationReason = {
   Edit: 1,
   Explosion: 2,
@@ -229,4 +246,5 @@ export const ControllerFlags = {
 
 export const WelcomeFlags = {
   flight: 1,
+  regionEdits: 2,
 } as const;
