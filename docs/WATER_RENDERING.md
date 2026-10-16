@@ -352,11 +352,16 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
   | Tier | March steps | Refine | Reach | Cloud octaves | Cloud self-shadow |
   |---|---|---|---|---|---|
   | Low | 0 (must be: no copy) | 0 | — | 0 (the sky alone) | no |
-  | Medium | 12 | 4 | 600 m | 3 | no |
-  | High | 28 | 6 | 1,500 m | 5 | yes (with the Clouds setting's) |
+  | Medium | 12 | 4 | 2 km | 3 | no |
+  | High | 28 | 6 | 4 km | 5 | yes (with the Clouds setting's) |
 
   The values reach the shader in the frame uniform's `reflect` and `reflect_sky` (dwell-look
-  `reflection_uniforms`). The thickness, edge fade and distance fade are shared by the tiers.
+  `reflection_uniforms`). The thickness, edge fade, distance fade and `rippleScale` are shared by the tiers.
+  - **`rippleScale` (0.3):** the land's ray is steered by a third of the ripples' slope. With the full
+    slope, rays scattered from pixel to pixel and broke the treeline's reflection into dark speckle
+    across the near water (seen in Chrome). The sky and clouds take the full ripple.
+  - **The reach** was 600 m and 1.5 km at first. That missed the treeline across the lagoon, seen
+    near the horizon. The reach costs nothing: the steps are spread over the ray's length on screen.
 - **Cost switches:** `?waterdbg=ssr` and `?waterdbg=clouds` turn each part off (render/water.rs
   `DEBUG_SWITCHES`).
 - **Tests:** `render::reflection`:
@@ -368,6 +373,11 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
   - `shaders::tests::the_water_reflects_land_from_the_scene_and_the_sky_with_its_clouds`, and naga
     validation.
   - `shared/look/reflections.test.mjs`.
+- **Bench:** the `water-reflections` scenario (Medium) flies to the `water-views` coast. From 1.5 m
+  over a lagoon it shoots a sand bank and the treeline behind it at a low angle (recorded, for the
+  cost), turned and steeper. Then the beach across open water at several pitches and from the side
+  (the edge fades), the clouds in the sea, and the bank at dusk and at night with the low sun over the
+  water.
 - **Cost:** COST_TBD
 - **Limits** (screen-space): what is off screen, or hidden behind something nearer on screen, isn't
   reflected (it fades to the sky). Ray-marched reflections (W6) would remove both.

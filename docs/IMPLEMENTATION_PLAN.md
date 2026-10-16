@@ -43,7 +43,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.11.17, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.11.17, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
@@ -2754,7 +2754,10 @@ water shader, `water_fs`, with the fluid id per vertex, the fluid buffer, the un
 the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look; W3 built (the water
 reads the scene on Medium and High: refraction, depth absorption, foam, sparkle, and caustics brought
 forward from W4, also under the surface; checked in Chrome on an M1 with `water-shore`), outstanding:
-the owner's look and the per-tier cost on an unloaded machine. Next: W4; W3–W5 build on the shared
+the owner's look and the per-tier cost on an unloaded machine; W5a built (the water reflects land
+by screen-space reflection and the clouds along the reflected ray, on Medium and High, tunables as data;
+WATER_RENDERING.md §8; checked in Chrome on an M1 with `water-reflections`), outstanding: the owner's
+look and the cost on an unloaded machine. Next: W4; W3–W5 build on the shared
 frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
@@ -2775,8 +2778,11 @@ Deliverables
   shoreline foam; caustics, brought forward from W4 (WATER_RENDERING.md §8, W3).
 - [ ] **W4** — Underwater: absorption fog, the water line, Snell's window and total internal
   reflection, distortion (god rays with W5's High tier). Caustics moved to W3.
-- [ ] **W5** — Screen-space reflections and the quality tiers (Low, Medium, High, Ultra) in the
-  settings menu; Low the phone default, tentatively (owner).
+- [x] **W5a** — Screen-space reflections of land and the clouds in reflections (brought forward from
+  W5, the owner's report of 2026-10-16), per water quality as data (`shared/look/reflections.json`;
+  WATER_RENDERING.md §8, W5a).
+- [ ] **W5b** — The rest of W5: half-res copies, the Ultra tier (full-res SSR), the phone defaults
+  confirmed; Low the phone default, tentatively (owner).
 - [ ] **W6** — Under ray marching (after A3, and only if marching is kept at A7): reflection and
   refraction rays replace SSR and the copy on the high tiers.
 
@@ -2790,6 +2796,16 @@ Exit criteria
   parameters (`render::water` `packs_each_fluid_at_its_id_…`); the shader validates (naga) and draws
   in Chrome on the GPU (`npm run bench -- water-views`).
 - [ ] W1b: the owner's look (`water-views` screenshots in the PR).
+
+Deviations (W5a):
+- Brought forward from W5, ahead of W4, at the owner's report ("water doesn't reflect land and
+  clouds"). W5 is split: W5a (screen-space reflections, the reflected clouds) and W5b (the rest).
+- The SSR is full resolution with few steps (Medium 12 + 4 refine, High 28 + 6), not half resolution
+  as §4 planned for High: no extra target or pass, and the cost scales with the steps. Ultra is still W5b.
+- The clouds in reflections are beyond the plan's SSR: they came with the same report.
+- The land's ray is steered by a third of the ripples' slope (`rippleScale`, data): the full slope
+  broke the treeline's reflection into speckle in the browser.
+- New data file `shared/look/reflections.json` (not in the plan), with its generator and CI check.
 
 Deviations (W3):
 - Caustics came forward from W4 (the owner asked for them, under the surface most of all): on the
@@ -2839,6 +2855,12 @@ Deviations (W1a):
   `the_builds_water_grades_from_clear_through_turquoise_to_blue_never_green`).
 - [ ] W3: the owner's look, and the per-tier cost measured on an unloaded machine.
 - [ ] W4: named views underwater and half in; the owner's look.
+- [x] W5a: the regression test seen failing first (`render::reflection`
+  `a_reflected_ray_over_terrain_shows_the_scene_not_the_sky`, red against the sky-only reflection);
+  naga validation; screenshots in Chrome on an M1 (`npm run bench -- water-reflections`, Low, Medium
+  and High: a sand bank and the treeline at a low angle, the clouds in the sea, dusk and night; in
+  the PR); the cost on a loaded M1 (WATER_RENDERING.md §8, W5a).
+- [ ] W5a: the owner's look, and the cost measured on an unloaded machine.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
   it on the two target phones.
 - [ ] W6: parity against W5's views.
