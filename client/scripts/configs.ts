@@ -22,6 +22,8 @@ export interface Config {
   /** `?scale=`, 0.25–2. */
   scale: number;
   upscaler: Upscaler;
+  /** More page parameters (e.g. `{ "waterdbg": "caustics" }`, a dev switch), added as given. */
+  params: Record<string, string>;
 }
 
 export interface ConfigsFile {
@@ -79,7 +81,7 @@ function num(where: string, v: unknown, min: number, max: number, fallback: numb
 function parseConfig(index: string, raw: unknown): Config {
   const named = typeof (raw as Obj | null)?.name === 'string';
   const where = named ? `configs["${String((raw as Obj).name)}"]` : index;
-  const o = obj(where, raw, ['name', 'notes', 'renderer', 'scale', 'upscaler']);
+  const o = obj(where, raw, ['name', 'notes', 'renderer', 'scale', 'upscaler', 'params']);
   const n = name(`${where}.name`, o.name);
   if (o.notes !== undefined && typeof o.notes !== 'string') {
     throw new ViewError(`${where}.notes: expected text`);
@@ -95,9 +97,19 @@ function parseConfig(index: string, raw: unknown): Config {
   if (scale === 1 && up !== 'none') {
     throw new ViewError(`${where}.upscaler: "${up}" needs a scale below or above 1`);
   }
+  const params = o.params ?? {};
+  if (
+    typeof params !== 'object' ||
+    params === null ||
+    Array.isArray(params) ||
+    !Object.values(params).every((v) => typeof v === 'string')
+  ) {
+    throw new ViewError(`${where}.params: expected an object of text values`);
+  }
   return {
     name: n,
     notes: o.notes ?? '',
+    params: params as Record<string, string>,
     renderer: name(`${where}.renderer`, o.renderer),
     scale,
     upscaler: up,
@@ -180,7 +192,11 @@ export function supportOf(raw: unknown): Support {
 
 /** The page parameters for `c` (scenarios.ts `scenarioUrl`). */
 export function configParams(c: Config): Record<string, string> {
-  const p: Record<string, string> = { renderer: c.renderer, scale: String(c.scale) };
+  const p: Record<string, string> = {
+    ...c.params,
+    renderer: c.renderer,
+    scale: String(c.scale),
+  };
   if (!BUILT_IN_UPSCALERS.includes(c.upscaler)) p.upscaler = c.upscaler;
   return p;
 }

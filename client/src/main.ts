@@ -487,6 +487,9 @@ async function start(): Promise<App | null> {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
+    // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
+    const waterDebug = new URLSearchParams(location.search).get('waterdbg');
+    if (waterDebug) client.setWaterDebug(waterDebug);
     client.setSkyRotation(s.skyRotation);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);

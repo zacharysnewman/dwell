@@ -44,6 +44,21 @@ describe('bench --compare configurations', () => {
     );
   });
 
+  it('a configuration adds its own page parameters', () => {
+    const file = parseConfigs({
+      configs: [
+        raster,
+        { name: 'no-caustics', renderer: 'raster', params: { waterdbg: 'caustics' } },
+      ],
+    });
+    expect(configParams(file.configs[1])).toEqual({
+      waterdbg: 'caustics',
+      renderer: 'raster',
+      scale: '1',
+    });
+    expect(() => parseConfigs({ configs: [{ ...raster, params: { a: 1 } }] })).toThrow(/params/);
+  });
+
   it('a build that offers a renderer and an upscaler runs their configurations', () => {
     const file = parseConfigs({
       configs: [
