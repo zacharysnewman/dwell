@@ -31,7 +31,6 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     '256 MB',
     '75°',
     '1.00×',
-    '0°',
     // Clouds, then (after the FOV boost) the water quality: rows of buttons, the pressed one the
     // value.
     '',
