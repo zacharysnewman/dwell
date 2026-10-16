@@ -85,7 +85,9 @@ Part of the shared frame's composite pass (Phase 25 A1; `render/shaders.rs` `MOT
 - A subtle edge vignette scaled by the intensity.
 - A **radial blur** of the composited scene toward the vanishing point at the edges (`wind.blur` ×
   intensity², so it is a flight effect): four taps jittered per pixel (smooth rather than ghosted
-  copies), sharing the pixel's view ray and sky colour (the sky is the composite's costly part).
+  copies), sharing the pixel's view ray and its sky with the clouds (the sky is the composite's
+  costly part; over a cloudless sky of their own, the clouds faded past the blur's inner radius at
+  a hard circular edge: the owner's 2026-10-16 report).
 
 **Cost** (this Mac's GPU, `fly-low-fast --unthrottled`, effects off against on in one build): the
 composite pass's GPU time p50 1.13 → 1.37 ms (mean 1.39 → 1.60 ms); frame interval unchanged
