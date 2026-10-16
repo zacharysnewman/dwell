@@ -1,7 +1,9 @@
 # 0036. Block registry sync: the server sends its registry at join, the client maps ids at the boundary
 
 - Status: Proposed (the owner's decision of 2026-10-16 — "we need registry sync; have it go out at
-  the same time with 0.12.0" — with the defaults below; open questions at the end)
+  the same time with 0.12.0" — with the defaults below; amended the same day by the owner: **never
+  refuse a join over registry differences** — the server wins and the player is asked; open
+  questions at the end)
 - Date: 2026-10-16
 - Builds on: [0015](0015-block-registry.md) (namespaced states, runtime ids, string palettes on
   disk), [0014](0014-versioned-releases.md) (compatibility lines)
@@ -61,16 +63,19 @@ lacks. (ii) JSON: self-describing but heavy, and needs a JSON parser in the WASM
 message. (iii) **Tagged fields** (chosen): each state's definition is a list of `(tag, length,
 bytes)` fields; a tag's top bit says whether a client may ignore it (looks) or must understand it
 (shape and rules). New fields are new tags, defaults are implied by absence, and a client meeting a
-must-understand tag it does not know refuses the join naming it.
+must-understand tag it does not know names it in the join prompt (it cannot honour it).
 
 **Where the registry travels.** Inside `Welcome` (grows the one message every client parses first;
 the 1 MiB reliable limit caps the registry) or as **its own message before `Welcome`** (chosen),
 split into parts, on the control stream: everything before `Welcome` is ordered on that stream as
 today, so no chunk or edit can arrive before the mapping exists, and `Welcome` stays the join point.
 
-**Known names whose definitions differ.** Use the server's definition (server wins) or refuse.
-The client's own worldgen, adaptive shape rules and looks are compiled against its definitions, so
-silently taking the server's would mispredict; **refuse, naming the state and the field**.
+**Known names whose definitions differ.** Refuse the join, or use the server's definition. The
+first draft refused; the owner chose (2026-10-16) **the server wins**: the server is authoritative
+and the client only views and predicts against it, so a difference cannot harm other players, and
+refusing would split players over content the server decides. The client adopts the server's
+shape, rules and collision for the session (prediction stays exact, because the server is what it
+predicts) and **asks the player** before entering, listing what differs.
 
 ## Decision
 
@@ -110,21 +115,34 @@ silently taking the server's would mispredict; **refuse, naming the state and th
    | 0x87–0x8a | reserved for #95: render mode, cross geometry, wind, fade | look |
 
    An absent field takes the generator's default. Unknown must-understand tags, or a set flag bit
-   the client does not know, refuse the join with the field's tag in the message.
-3. **The client's check** (replaces "the registry hash must match"). On `Welcome`, with the
-   registry complete, the client maps every server state:
-   - **Known by name** (the build has the canonical string): its must-understand fields must equal
-     the build's, byte for byte, or the join is refused: *"dwell:sand differs from this build
-     (shape)"*. The client draws it with its own look.
-   - **Unknown**: its shape must equal one of the build's shapes (shapes are a fixed vocabulary of
-     the engine, `CLAUDE.md`; a mod that needs a new shape is refused, *"test:wedge uses a shape
-     this build lacks"*), and every must-understand field must be known. It becomes a **synced
-     state**: appended to the client's table with the received definition (found again by name and
-     definition on a later join, so reconnecting does not grow the table).
-   - State 0 must be `dwell:air`, and the table may not exceed `u16`.
-   Refusals are a client-side `Rejected` with the new reason `Registry` and a message naming the
-   state; nothing about the server's registry is trusted beyond the session.
-4. **Mapping at the boundary.** The session holds `to_client: Vec<u16>` (server id → client id) and
+   the client does not know, are ignored and listed in the join prompt (decision 4).
+3. **The client's check: adopt, never refuse** (replaces "the registry hash must match"). On
+   `Welcome`, with the registry complete, the client maps every server state and records each
+   difference, in three groups:
+   - **Different on this server** — the build has the canonical string but a must-understand field
+     differs (shape, rule flags, density, facing, climb speed, …): the client registers a **synced
+     copy** of the state with the server's shape and rules and its **own look**, and maps the
+     server id to it. Its build id stays as it was (its own worldgen still makes it), so locally
+     generated terrain would hold the build's rules: while any state differs the client sends a
+     `WorldgenCheck` of 0, and the server sends every chunk explicitly (mapped to the copies).
+   - **New on this server** — the build lacks the name: a synced state with the received
+     definition and the received look if the build has that look and its textures, otherwise the
+     fallback look (decision 7).
+   - **Only in your version** — build states the server does not list: harmless (the server never
+     sends them); listed for information, and the session never sends them in edits.
+   Cases the client cannot represent **degrade instead of refusing**, and are listed with the
+   state: a shape outside the build's shape vocabulary becomes the full cube (or empty, for an
+   empty occupancy) — collision then differs from the server's for that state, which the list says;
+   an unknown must-understand field or flag bit is ignored and named. The only refusals left are a
+   malformed payload (a protocol error) and a table that would pass `u16`.
+4. **The join prompt.** When any group is non-empty, the session waits in a `Confirming` state and
+   the shell shows a dialog before entering the world (the menu's theme and sounds): the three
+   groups, each item the state's name and the fields that differ, **Continue** and **Cancel**, and
+   "Don't ask again for this server", remembered in the append-only browser settings store keyed by
+   the server's identity and the definitions hash, so a changed server asks again. Identical
+   registries show nothing. Cancel closes the connection and returns to the menu. The differences
+   are also logged to the console and summarised in the F3 overlay.
+5. **Mapping at the boundary.** The session holds `to_client: Vec<u16>` (server id → client id) and
    `to_server: Vec<u16>` (client id → server id, `NONE` for client-only states). It translates
    in place: incoming `ChunkData` (explicit voxels), `VoxelModification`, `LodData` cells; outgoing
    `BlockEditRequest.material`, `RegionEdit` (material, from, paste cells — brushes are pastes). An
@@ -134,42 +152,46 @@ silently taking the server's would mispredict; **refuse, naming the state and th
    pass. Hot paths — meshing, the controller, edit prediction — keep reading one table by id: the
    build's generated array for build ids, and a lock-free append-only extension for synced ones
    (`dwell_blocks::info` adds one comparison).
-5. **`WorldgenCheck`.** The client generates the verification chunk in its own ids, translates it to
+6. **`WorldgenCheck`.** The client generates the verification chunk in its own ids, translates it to
    server ids and hashes that, so a server whose ids differ (blocks inserted or appended) still
-   matches when the terrain is the same; a cell the server cannot name sends hash 0 (every chunk
-   explicit), as a failed check does today. Generated chunks and LOD sections are produced and kept
+   matches when the terrain is the same; a cell the server cannot name, or any state "different on
+   this server", sends hash 0 (every chunk explicit), as a failed check does today. Generated chunks and LOD sections are produced and kept
    in client ids, never translated.
-6. **Unknown looks.** A synced state whose look or textures the client lacks is drawn with a
+7. **Unknown looks.** A synced state whose look or textures the client lacks is drawn with a
    **fallback look**: a magenta/black checker tile on its shape (a texture tile of its own, so it
    cannot be mistaken for content). Its shape, collision and rules always come from the received
    definition, so prediction stays exact. A synced state whose look and textures the build has (a
    mod block reusing `stone`) draws with them; server-sent textures (resource packs) wait for
    Phase 19's textures-as-data.
-7. **Server-side states.** The server's registry is the build's states plus states registered at
+8. **Server-side states.** The server's registry is the build's states plus states registered at
    run time from data (`dwell_blocks::runtime::register`: mods, and the test fixture), appended in
    the same table. A world file naming a state the server does not have registers a
    **placeholder** under that exact string (a full, solid, indestructible cube with the fallback
    look), so the world plays, syncs it to clients like any other state, and saves the string back
    unchanged.
-8. **Local mode and the sandbox** go through the same messages and session: the in-process server
+9. **Local mode and the sandbox** go through the same messages and session: the in-process server
    sends its registry, the session maps it (the identity), and the client checks the definitions
    hash against its own build's.
-9. **Compatibility.** The new message and the changed check are a protocol change: protocol 13 for
+10. **Compatibility.** The new message and the changed check are a protocol change: protocol 13 for
    the whole 0.12 bundle (#82 already raised 12 → 13; whichever of the 0.12 PRs merges first keeps
    13 and the others do not bump again). From 0.12 on:
    - **non-breaking**: adding blocks or states anywhere in the data (ids may shift — they are
      mapped), adding a value to an existing property, changing looks (colour, textures, sound
      sets, fluid looks, grid);
-   - **still breaking**: removing or renaming a state (including adding or removing a property,
-     which renames every state of the block), changing an existing state's shape or rules (the
-     must-understand fields), changing the shapes themselves or the adaptive shape rules (code that
-     both sides run), changing the terrain a seed generates, and changing the registry payload's
+   - **no longer refused, but asked**: changing an existing state's shape or rules — a client of
+     another build joins after the prompt, with the server's rules; worlds are unaffected (they
+     store names);
+   - **still breaking**: removing or renaming a state (worlds and the build's worldgen name it;
+     adding or removing a property renames every state of the block), changing the shapes
+     themselves or the adaptive shape rules (code that both sides run: a client cannot adopt them
+     from the server), changing the terrain a seed generates, and changing the registry payload's
      format.
 
 ## Consequences
 
 - Server mods can add blocks from data without a client build, and content changes stop forcing
-  compatibility lines. The `fixture` registry gains a server-only block, and a native
+  compatibility lines. No registry difference refuses a join; the player sees what differs.
+  The `fixture` registry gains a server-only block, and a native
   client–server test proves it arrives by sync, draws with the fallback look, collides exactly,
   can be targeted and broken, and reaches other clients.
 - Every client-bound id passes through the session's maps: chunk messages cost one table lookup per
@@ -189,7 +211,8 @@ silently taking the server's would mispredict; **refuse, naming the state and th
 
 1. Placeholder states for unknown names in world files: **indestructible** (protects a mod's blocks
    while the mod is missing) rather than breakable.
-2. A known name with a different definition: **refuse** rather than take the server's.
+2. A known name with a different definition: ~~refuse~~ — **decided by the owner (2026-10-16):
+   the server wins**, with the join prompt (decisions 3–4).
 3. Synced placeable states are **not** added to the client's block palette yet (the palette is
    built from the build's blocks): players can break a mod's blocks but not yet place them. A
    palette fed by the synced registry is follow-up work.
