@@ -17,6 +17,7 @@ pub mod hud_text;
 pub mod input;
 pub mod region_tools;
 pub mod remotes;
+pub mod sound;
 pub mod touch;
 
 /// The face as a sign: +1 face A (head up), −1 face B (head down) (BIFACIAL_WORLD.md §6).

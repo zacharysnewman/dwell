@@ -1,7 +1,7 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
 // with pages — Settings (the height fog, render/fog.ts; the detail settings, lod/detail.ts; the
-// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts;
-// ARCHITECTURE.md §5, §6.6), Controls (every key
+// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts; the
+// volumes, audio/settings.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
@@ -11,6 +11,9 @@ import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSetti
 import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
 import { DEFAULT_FOV, FOV_LIMITS, VIEW_KEY, sanitizeFovSetting, viewRecord } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
+import { audio } from '../audio/engine';
+import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
+import { loadVolumes, saveVolumes } from '../audio/settings';
 import {
   defaultWater,
   sanitizeWater,
@@ -60,6 +63,8 @@ export interface Settings {
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
+  /** Master, effects and interface volumes, 0–1 (audio/settings.ts; this browser only). */
+  audio: Volumes;
   /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
   clouds: CloudQuality;
   /** The water quality (ui/waterSettings.ts). */
@@ -76,6 +81,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
+    audio: { ...DEFAULT_VOLUMES },
     clouds: defaultClouds(mobile),
     water: defaultWater(mobile),
     motion: defaultMotion(reducedMotion),
@@ -98,6 +104,11 @@ export function settingsJson(s: Settings): string {
     },
     exposure: Math.round(s.exposure * 100) / 100,
     skyRotation: Math.round(s.skyRotation),
+    audio: {
+      master: Math.round(s.audio.master * 100) / 100,
+      effects: Math.round(s.audio.effects * 100) / 100,
+      ui: Math.round(s.audio.ui * 100) / 100,
+    },
     clouds: s.clouds,
     water: { quality: s.water.quality },
     motion: {
@@ -143,6 +154,7 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
+    audio: loadVolumes(),
     clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
@@ -164,6 +176,7 @@ export function saveSettings(s: Settings): void {
   } catch {
     // Not kept: the settings still apply for this visit.
   }
+  saveVolumes(s.audio);
 }
 
 interface SliderSpec {
@@ -206,7 +219,25 @@ function sections(
   mobile: boolean,
 ): { title: string; sliders: SliderSpec[]; toggles?: ToggleSpec[] }[] {
   const DETAIL_LIMITS = detailLimits(mobile);
+  const volume = (label: string, hint: string, key: keyof Volumes): SliderSpec => ({
+    label,
+    hint,
+    min: 0,
+    max: 1,
+    log: false,
+    format: (v) => `${String(Math.round(v * 100))}%`,
+    get: (s) => s.audio[key],
+    with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
+  });
   return [
+    {
+      title: 'Sound',
+      sliders: [
+        volume('Master', 'Everything Dwell plays', 'master'),
+        volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
+        volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
+      ],
+    },
     {
       title: 'Fog',
       sliders: [
@@ -439,6 +470,8 @@ export class SettingsMenu {
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', 'settings-menu');
     button.title = 'Menu and settings (Esc)';
+    // Opening and closing have their own sounds (main.ts), not a click.
+    button.dataset.sound = 'none';
     button.append(el('span', 'menu-glyph'));
 
     this.panel = document.createElement('div');
@@ -457,6 +490,7 @@ export class SettingsMenu {
     close.type = 'button';
     close.setAttribute('aria-label', 'Close menu');
     close.title = 'Close (Esc)';
+    close.dataset.sound = 'none';
     close.addEventListener('click', () => {
       this.setOpen(false);
     });
@@ -512,6 +546,7 @@ export class SettingsMenu {
     const resume = el('button', 'block-button', 'Resume');
     resume.type = 'button';
     resume.id = 'menu-resume';
+    resume.dataset.sound = 'none';
     resume.addEventListener('click', () => {
       this.setOpen(false);
       onResume();
@@ -569,6 +604,8 @@ export class SettingsMenu {
       const c = DEBUG_KEYS.find((d) => d.keys.includes(tool.key));
       const b = el('button', 'debug-tool');
       b.type = 'button';
+      // Each tool sounds as its key does (main.ts).
+      b.dataset.sound = 'none';
       b.append(el('span', 'debug-tool-name', c?.action ?? tool.key), ...keycaps(tool.key));
       if (c?.when) b.append(el('span', 'debug-tool-when', c.when));
       b.addEventListener('click', () => {
@@ -830,12 +867,14 @@ export class SettingsMenu {
       await navigator.clipboard.writeText(json);
       this.fallback.hidden = true;
       button.textContent = 'Copied';
+      audio().ui('success');
     } catch {
       // No clipboard (an insecure page, or permission denied): select the JSON to copy by hand.
       this.fallback.value = json;
       this.fallback.hidden = false;
       this.fallback.select();
       button.textContent = 'Select and copy';
+      audio().ui('error');
     }
     setTimeout(() => {
       button.textContent = 'Copy JSON';

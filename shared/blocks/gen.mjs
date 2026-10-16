@@ -7,6 +7,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
 import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, slabShape, slopeShape } from './shapes.mjs';
+import { loadSounds } from '../sounds/load.mjs';
+import { checkBlockSounds } from '../sounds/validate.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -168,6 +170,8 @@ if (states[0]?.string !== 'dwell:air') fail('dwell:air must be state 0');
     }
   }
 }
+// Sound sets (docs/AUDIO.md): a block's optional `sound` names a set in shared/sounds/*.json.
+checkBlockSounds(blocks.map((b) => ({ id: b.id, sound: b.def.sound })), loadSounds());
 if (states.length > 0xffff) fail('too many states');
 
 // Shapes (shapes.mjs): one baked geometry per distinct (corners, inversion, diagonal); index 0 is
@@ -269,6 +273,8 @@ ts.push('  id: string;');
 ts.push('  first: number;');
 ts.push('  count: number;');
 ts.push('  properties: readonly BlockProperty[];');
+ts.push('  /** Its sound set (shared/sounds, docs/AUDIO.md); none: the sounds\' fallback set. */');
+ts.push('  sound?: string;');
 ts.push('}');
 ts.push('');
 ts.push('/** One block state with how it is drawn (the physics side lives in the C++ core). */');
@@ -323,7 +329,8 @@ ts.push('');
 ts.push('export const BLOCK_DEFS: readonly BlockDef[] = [');
 for (const b of blocks) {
   const props = b.props.map((p) => `{ name: '${p.name}', values: [${p.values.map((v) => `'${v}'`).join(', ')}] }`);
-  ts.push(`  { id: '${b.id}', first: ${b.first}, count: ${b.count}, properties: [${props.join(', ')}] },`);
+  const sound = b.def.sound ? `, sound: '${b.def.sound}'` : '';
+  ts.push(`  { id: '${b.id}', first: ${b.first}, count: ${b.count}, properties: [${props.join(', ')}]${sound} },`);
 }
 ts.push('];');
 ts.push('');

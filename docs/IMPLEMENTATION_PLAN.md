@@ -45,6 +45,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
+| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
@@ -91,6 +92,9 @@ On 2026-10-15 the owner asked for procedural clouds in the sky ("in the skybox, 
 builds on Phase 25's A1 (the shared frame's composite pass draws the sky) and changes no world file,
 protocol or terrain. Phases 28 and 29 are taken by work on other branches (sound effects, motion
 effects).
+On 2026-10-14 the owner asked for sound effects (procedural, data-driven, every game and menu
+action): **Phase 28** ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)); it needs Phase 24
+only.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -3014,6 +3018,60 @@ Exit criteria
 - [x] GPU cost measured against Off (`gpu.composite`, `--unthrottled`, `CLOUDS.md` §4).
 - [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
 - [ ] CI green, and the frame time on a phone with the default (Low).
+
+---
+
+## Phase 28 — Sound Effects
+
+**Goal:** Procedural, data-driven sound effects for every game and menu action: block sound sets
+(footsteps, landing, break, place, a refused hit), the player's movement and water, flight, the
+hotbar and the menus, with per-play variation for game sounds and none for UI sounds, spatialised
+for other players ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)).
+
+**Status:** In progress — F0–F6 built; every automated exit criterion verified (Vitest, Rust tests,
+`npm run sfx:render`) and the sounds checked playing in the built game and the main menu in Chromium
+(a local world: footsteps, jump, landing, place, break, refusal, hotbar, game menu and its tabs; the
+menu's hover, click and error). Outstanding: the owner's listening review of the WAV renders and the
+open questions (`AUDIO.md` §9). Needs Phase 24 only. Defaults chosen without the owner's
+answers (the owner gave the brief directly); open questions in `AUDIO.md` §9.
+
+Deliverables
+- [x] **F0** — `AUDIO.md` and ADR 0032 (procedural, plain Web Audio, no library; data format;
+  events from the Rust game; UI sounds without variation; volumes).
+- [x] **F1** — The sound data (`shared/sounds/dwell.json`) and `shared/sounds/gen.mjs`: validation
+  with messages, generated TS and Rust, the registry's `sound` field checked by
+  `shared/blocks/gen.mjs`, CI stale check.
+- [x] **F2** — Rust sound events (`dwell-game` `sound.rs`): footsteps by gait stride, climbing,
+  swimming, landing, jump, water enter/exit, crouch, sprint, slide, flight rise/dive, local and
+  remote edits, refused edits; `takeSounds` and `listener` on the JS API.
+- [x] **F3** — The synth, variation and mixer (`client/src/audio/`): the vocabulary, seeded
+  variation, buses, room reverb, limiter, spatial playback, autoplay unlock, mute when hidden.
+- [x] **F4** — Game actions and menus: event playback in the game page; action sounds (hotbar,
+  flight, game menu, F3/F4/F6, touch mode); delegated UI sounds on the main menu (launcher too) and
+  the game menu; the controls coverage test.
+- [x] **F5** — Master, Effects and Interface volume sliders (append-only `dwell.audio` store).
+- [x] **F6** — Offline renders (`npm run sfx:render`): every sound rendered in Chromium, checked
+  (non-silent, peak < 1.0, sensible length) and written to WAV, with footstep sequences and
+  break/place variations.
+
+Exit criteria
+- [x] A new sound set and block mapping work by data alone (Vitest); bad entries fail naming the
+  entry.
+- [x] Rust tests: footstep cadence from distance, landing intensity from impact speed, edit events
+  (echo suppressed, remote spatial, refused hit).
+- [x] Every controls-table action has a sound mapping (Vitest); a new button gets the UI click
+  without wiring (Vitest).
+- [x] Every render is non-silent, peaks below 1.0 and has a sensible length.
+- [ ] The owner listens to the WAV renders and approves them.
+
+Deviations
+- The levels of the sounds were set by measuring the renders (A-weighted loudness per category:
+  footsteps, landings, breaks, places, hits, player and UI sounds) rather than by ear; the owner's
+  listening review may retune them in the data.
+- Chat and screenshots do not exist yet, so they have no sounds; the coverage test asks for them
+  when they join the controls table.
+- The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
+  its own make-up gain, which pushed sequences past full scale in the renders.
 
 ---
 

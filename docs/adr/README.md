@@ -37,6 +37,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0029](0029-ray-marched-renderer.md) | A ray-marched terrain renderer, built complete beside the mesher and compared side by side | Accepted |
 | [0030](0030-fluid-looks-and-water-rendering.md) | Fluid looks as registry data, and a water shader with refraction, underwater and reflections in quality tiers | Accepted |
 | [0031](0031-data-driven-structures.md) | Data-driven structures, built in an in-game sandbox world | Accepted |
+| [0032](0032-audio.md) | Procedural, data-driven sound effects in plain Web Audio, with events from the Rust game | Accepted |
 | [0033](0033-tree-growth.md) | Tree growth: hand-built trees revealed along their skeleton, as a layer composed at load | Accepted |
 | [0034](0034-sky-clouds.md) | Sky clouds: a 2D cloud deck drawn in the sky, its tunables as data | Proposed |
 

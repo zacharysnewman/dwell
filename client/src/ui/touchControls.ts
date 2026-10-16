@@ -2,6 +2,7 @@
 // left half of the screen, drag-to-look on the right half, and Break/Place, Fly, Run, Crouch and
 // Jump buttons. The DOM is here; what the pointers mean (stick deflection, taps, latched buttons)
 // is the Rust client's (dwell-game's touch.rs), which these elements forward their events to.
+import { audio } from '../audio/engine';
 import type { Client } from '../engine/wasm';
 
 /** The on-screen buttons (touch.rs `TouchButton`), left to right; `debug` sits top right. */
@@ -118,10 +119,15 @@ export class TouchControls {
     b.type = 'button';
     b.id = id;
     b.textContent = label;
+    // The game's own sounds answer these (a jump, a crouch), not a click.
+    b.dataset.sound = 'none';
     const apply = (down: boolean) => {
       const on = this.client.touchButton(name, down, performance.now());
       b.classList.toggle('pressed', on);
-      if (name === 'edit') b.textContent = on ? 'Place' : 'Break';
+      if (name === 'edit') {
+        if (down) audio().action('touch_mode');
+        b.textContent = on ? 'Place' : 'Break';
+      }
     };
     b.addEventListener('pointerdown', (e) => {
       b.setPointerCapture(e.pointerId);
