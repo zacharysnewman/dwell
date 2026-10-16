@@ -34,10 +34,11 @@ struct Frame {
     forward: vec4f,
     tan: vec4f,
     // The sky's clouds (dwell-look's cloud_uniforms): the noise point under the eye and the warp
-    // field's offset (cells), and coverage, octaves (0: off), self-shadow, the deck's height above
-    // the eye.
+    // field's offset (cells); coverage, octaves (0: off), self-shadow, the deck's height above the
+    // eye (negative above it); how much the eye is in cloud.
     clouds: vec4f,
     cloud_cfg: vec4f,
+    cloud_inside: vec4f,
     // The eye under a fluid's drawn surface: x 1 (else 0), y fluid id, z the surface's world y;
     // w the water quality (0 Low, 1 Medium, 2 High).
     water: vec4f,
@@ -629,9 +630,11 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 
 // The composite: the scene's colour tone-mapped and encoded, fogged by its depth toward the sky
 // of the pixel's view direction (already sRGB; no tone mapping), and over that sky by its coverage
-// — so the haze terrain fades into is the colour behind it.
-// The clouds (dwell-look's clouds.rs) are drawn over the sky only where the sky shows: the haze the
-// terrain fades into is the clear sky behind it, so distant ground never takes a cloud's colour.
+// — so the haze terrain fades into is the colour behind it (the clear sky: distant ground never
+// takes a cloud's colour).
+// The clouds (dwell-look's clouds.rs) go over the sky, and over the scene where the deck is in front
+// of it (its hit nearer than the stored view depth: clouds below an eye above the deck, or before a
+// peak seen through the deck). Last, inside the cloud, the whole view fogs toward the cloud.
 // The sky behind is the clear sky with the sun, moon and stars (`dwell_sky_bodies`) under the
 // clouds; the time of day sets the scene's saturation (lower by moonlight); dithered last.
 // The composite of one pixel (`color`: the scene tone-mapped, encoded, fogged and over the sky)
@@ -654,13 +657,24 @@ fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
     let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
     let fw = max(fwidth(deck.x), fwidth(deck.y));
     let clear = sky(dir);
+    let lights = cloud_lighting();
     let c = textureLoad(scene_color, p, 0);
     var back = clear;
     if (c.a < 1.0 || taps) {
         let behind = dwell_sky_bodies(dir, face, frame.day, clear);
-        back = dwell_clouds(behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
+        back = dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
-    return Composited(composited_of(c, scene_depth_at(p).x, ray, clear, back), ray, clear, back);
+    var color = back;
+    if (c.a > 0.0) {
+        let depth = scene_depth_at(p).x;
+        var shown = mix(scene_display(c), clear, fog_amount(ray * depth));
+        if (dwell_cloud_in_front(deck.z, length(ray), depth)) {
+            shown = dwell_clouds(shown, clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
+        }
+        color = mix(back, shown, min(c.a, 1.0));
+    }
+    color = dwell_cloud_fog(color, frame.cloud_inside.x, face, lights);
+    return Composited(color, ray, clear, back);
 }
 
 // The scene at pixel `p` composited along another pixel's ray and over its sky (`s`: the edge
@@ -1091,7 +1105,7 @@ fn reflected_env(r: vec3f, rel: vec3f, fw: f32) -> vec3f {
         let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
         let deck = dwell_cloud_deck(r, face, offsets, height);
         let cfg = vec4f(frame.cloud_cfg.x, octaves, frame.reflect_sky.y, height);
-        c = dwell_clouds(clear, r, face, deck, fw, offsets, cfg, cloud_lighting());
+        c = dwell_clouds(clear, clear, r, face, deck, fw, offsets, cfg, cloud_lighting());
     }
     return inverse_display(c);
 }
@@ -1663,6 +1677,16 @@ mod tests {
         assert_eq!(of.matches("fog_amount(").count(), 1);
         assert!(of.contains(", clear, fog_amount("));
         assert!(of.contains("mix(back, shown,"));
+        let frame = body("composited");
+        assert_eq!(frame.matches("fog_amount(").count(), 1);
+        assert!(frame.contains(", clear, fog_amount("));
+        // Over the scene only where the deck is in front of it, by the stored view depth.
+        let front = frame
+            .find("dwell_cloud_in_front(deck.z, length(ray), depth)")
+            .expect("test");
+        assert!(frame[front..].contains("shown = dwell_clouds(shown, clear,"));
+        assert!(frame.contains("color = mix(back, shown, min(c.a, 1.0))"));
+        assert!(frame.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
         // The deck's footprint is taken before any branch (derivatives need uniform control flow).
         let c = body("composited");
         let deck = c.find("dwell_cloud_deck(").expect("deck");

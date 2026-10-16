@@ -48,7 +48,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
-| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.19, a patch release of the 0.11 line |
+| 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing); outstanding: CI, a phone's frame time; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7); `package.json` raised to 0.13.1, a patch release of the 0.11 line |
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
@@ -3151,9 +3151,10 @@ light from the sky frame's sun and moon. It is an extendable system: tunables as
 run-time parameter for a future weather system, and a quality setting
 ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)).
 
-**Status:** In progress. C0–C4 are built and tested, natively, in Node and in a browser on the
-GPU. Outstanding: the owner's look and answers to `CLOUDS.md` §6 (the defaults were taken without
-asking: clouds are new), CI, and a phone's frame time. Built on Phase 25's A1 (branch
+**Status:** In progress. C0–C5 are built and tested, natively, in Node and in a browser on the
+GPU. The owner approved the look and answered `CLOUDS.md` §6 (2026-10-15); C5 (clouds from above)
+is built. Outstanding: CI and a phone's frame time. Future, not started: C6 (weather-driven
+coverage) and C7 (cloud shadows on the terrain). Built on Phase 25's A1 (branch
 `claude/a1-shared-frame`).
 
 Deliverables
@@ -3184,8 +3185,26 @@ Exit criteria
   low sun, while flying fast (parallax and drift), fading near the deck, and over face B by day and
   night, from screenshots.
 - [x] GPU cost measured against Off (`gpu.composite`, `--unthrottled`, `CLOUDS.md` §4).
-- [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
+- [x] The owner's look at the clouds, and answers to `CLOUDS.md` §6 (2026-10-15: the look is
+  right; clouds visible from above; weather and terrain shadows later; questions 5 and 6 stay open).
 - [ ] CI green, and the frame time on a phone with the default (Low).
+
+Follow-up (owner, 2026-10-15)
+- [x] **C5** — Clouds from above (`CLOUDS.md` §7):
+  - the deck's top drawn below an eye above it;
+  - over the terrain where the deck is nearer than the stored view depth (`dwell_cloud_in_front`);
+  - sunlit tops (`topLight`), and a cloud sea to the deck's horizon from high up (`deck_fade`);
+  - a cross-fade through the layer with an in-cloud fog (`crossFadeM`, `insideFog`), with no pop;
+  - face B on its own deck;
+  - tests from below, above and inside, and the depth comparison at chunk and LOD distances;
+  - bench scenarios `clouds-above`, `-through`, `-level` and `-above-night`.
+- [ ] **C6** — Weather-driven coverage (not started): a weather system sets the clouds' coverage
+  (`set_cloud_coverage`), with how it is synchronised between players decided with it
+  (`CLOUDS.md` §6, questions 3 and 5).
+- [ ] **C7** — Cloud shadows on the terrain (not started): the lit scene darkened where the deck is
+  between it and the light (`CLOUDS.md` §6, question 4).
+
+---
 
 ## Phase 32 — The Day/Night Cycle
 

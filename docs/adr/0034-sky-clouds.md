@@ -1,7 +1,7 @@
 # 0034. Sky clouds: a 2D cloud deck drawn in the sky, its tunables as data
 
-- Status: Proposed (built; the owner's review of the look and of the defaults in `CLOUDS.md` §1 is
-  outstanding)
+- Status: Accepted (the owner, 2026-10-15: the look is right; clouds visible from above, built as
+  Phase 31 C5; weather-driven coverage and terrain shadows later)
 - Date: 2026-10-15
 - Builds on: [0029](0029-ray-marched-renderer.md) step A1 (the shared frame: the sky is drawn in the
   composite pass), [0023](0023-bifacial-world.md) (one sky sphere, per-face horizons)
@@ -47,7 +47,7 @@ recorded in `CLOUDS.md` §1 with the open questions.
 
 - One more WGSL module in the renderer and about 0.7–0.9 ms of GPU time on an Apple GPU at 720p
   (less where terrain covers the sky). It can be turned off.
-- Clouds aren't visible from above the deck. Clouds from above, cloud shadows and weather are
-  follow-ups for the owner to decide (`CLOUDS.md` §6).
+- From above, the deck's top is drawn over the terrain by the stored view depth (C5). Cloud shadows
+  and weather-driven coverage come later (C6, C7).
 - Reversing it means removing `clouds.rs`, the call in `composite_fs`, two frame uniforms and the
   setting. The setting's stored key is then ignored (the store is append-only).

@@ -1581,6 +1581,7 @@ impl Renderer {
         );
         put(&clouds[0]);
         put(&clouds[1]);
+        put(&clouds[2]);
         put(&water_uniform(self.eye_fluid, self.water()));
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
@@ -2600,10 +2601,10 @@ pub(crate) fn frame_extras(
 /// position is passed modulo it.
 const WIND_PERIOD: f64 = 1024.0;
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 18 vec4s (after `tan` the
-/// clouds' two, then the water's, the wind's six, the wrap and the reflections' two) and the
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 19 vec4s (after `tan` the
+/// clouds' three, then the water's, the wind's six, the wrap and the reflections' two) and the
 /// day/night cycle's block.
-pub(crate) const FRAME_FLOATS: usize = 16 + 18 * 4 + DAY_SKY_FLOATS;
+pub(crate) const FRAME_FLOATS: usize = 16 + 19 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2894,8 +2895,8 @@ mod tests {
         r.set_clouds(CloudQuality::High);
         let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
         // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
-        // (Then the wind's six, the wrap and the reflections' two.)
-        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 4;
+        // (Then the clouds' third, the water's, the wind's six, the wrap and the reflections' two.)
+        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 4 - 4;
         assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
         let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
@@ -3461,9 +3462,9 @@ mod tests {
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
-        // `tan` is the vec4 before the clouds' two, the water's, the wind's six, the wrap and the
+        // `tan` is the vec4 before the clouds' three, the water's, the wind's six, the wrap and the
         // reflections' two (then the day's block).
-        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 12 * 4 - 3]);
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 13 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;

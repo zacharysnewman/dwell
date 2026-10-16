@@ -1590,9 +1590,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   moon). Measured GPU cost: see §7.4.
 - **Clouds [built, Phase 31]** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)): a
   2D cloud layer drawn as part of the sky in the composite pass (not volumetric, no geometry). A thin
-  deck lies `altitudeM` above the viewer's own face's sea level, on a sphere of radius `curvatureM`
-  centred that far below the eye, so the deck meets the horizon about 21 km away. Each sky pixel's
-  view ray meets it (`dwell_cloud_deck`, a closed form that doesn't cancel; `deck_distance` is its
+  deck lies `altitudeM` above the viewer's own face's sea level, on a sphere about a centre
+  `curvatureM` below sea level, under the eye, so from the ground the deck meets the horizon about
+  38 km away. Each pixel's view ray meets it (`dwell_cloud_deck`, a closed form that doesn't cancel; `deck_distance` is its
   tested f64 twin), and the hit's horizontal world position drives a domain-warped fBm of value
   noise. Clouds have true perspective: large overhead, compressed toward the horizon, and the eye
   moves under them as it flies. The noise lattice repeats every `wrapM` (128 km, a whole number of
@@ -1606,7 +1606,15 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   sun's height. The data's
   colours tint the lights' hues. High adds a self-shadow sample a step toward the light. There is a
   silver lining near the light, a warm tint from a low sun, and a mix toward the clear sky with
-  distance. Clouds are hidden below the horizon and fade out as the eye rises to the deck. The
+  distance. From below, clouds are hidden below the horizon. **From above** (Phase 31 C5,
+  `CLOUDS.md` §7), rays aimed down past the deck's own horizon meet its top. The top is lit
+  brighter (`topLight`), and the distance fade reaches out to the deck's own horizon (`deck_fade`),
+  so from high up it reads as a cloud sea. The composite draws the clouds over the sky, and over the
+  scene where the deck's hit is nearer than the stored view depth (`dwell_cloud_in_front`: the hit's
+  view depth is `t / |ray|`, compared with A1's `r32float` target, so chunks and LOD sections alike
+  are tested). The deck fades out over `crossFadeM` either side of the eye. An in-cloud fog fades in
+  instead: the whole view mixes toward the cloud colour by the cloud's density at the eye, which the
+  CPU computes once a frame with the noise's twin. So passing through the deck has no pop. The
   terrain's fog still mixes toward the clear sky, so distant ground never takes a cloud's colour.
   The wind drifts the pattern, and the warp field drifts on its own, so the shapes change slowly.
   Their clock is the server's tick (`world_clock.rs`, from snapshots, so clients roughly agree),
@@ -1859,7 +1867,7 @@ in the code yet.
 | Water ripples (client, `render/water.rs` `LAYERS`, `FADE_LO`/`FADE_HI`, `WRAP_M`, `MIN_ALPHA`) | 3 layers at 1, 0.43, 0.17 × the fluid's wave scale; fade over ⅛–½ wavelength per pixel; wrap 1,024 m; glint α ≥ 0.05 | The water shader's normal detail (Phase 26 W1b); per-fluid values are registry data |
 | Water quality (client, `ui/waterSettings.ts`) | High on desktops, Low on phones | Settings menu; W1b: Low one ripple layer, Medium and High three |
 | Water reflections (client, `shared/look/reflections.json` → `dwell-look` `reflections.gen.rs`) | Low: sky only; Medium: 12 march + 4 refine steps, 2 km, 3 cloud octaves; High: 28 + 6, 4 km, 5 octaves with self-shadow; thickness 1.5 m + 3 %, edge fade 12 % of the screen height, distance fade 30 %, the land's ray steered by 0.3 of the ripples' slope | Screen-space reflections of land and the clouds in the water (Phase 26 W5a, `WATER_RENDERING.md` §8) |
-| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 120 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); High costs about 0.9 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, Low about 0.7 ms |
+| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); High costs about 0.9 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, Low about 0.7 ms; from above with the deck over most of the screen about 0.9 ms |
 | Height fog (client, `dwell-look` `fog.rs` `DEFAULT_FOG`) | distance 4 km, density 50%, height 1.5 km | Defaults of the settings menu's sliders (§6.6, from playtesting); players tune them per browser |
 | Footstep strides (client, `shared/sounds` `gaits`) | walk 2.0 m, run 2.7 m, crouch 1.1 m, climb 0.75 m, swim 2.4 m | Distance between footsteps, climbing and swim strokes (§5.2), with each gait's loudness |
 | Sound speed ranges (client, `shared/sounds` `events.*.speed`) | land 3.5–16 m/s, enter 1.5–12, exit 1–6, rise/dive 2–30 | Speed at which an event starts sounding and at which its intensity reaches 1 |
