@@ -1,11 +1,12 @@
 //! How block states are drawn (`client/src/world/materials.ts`): each state's look, colour,
-//! opacity, textures, ladder face, shape, flooding and fluid, read from the generated registry
+//! opacity, render mode, textures, ladder face, shape, flooding and fluid, read from the generated registry
 //! (`dwell-blocks`), with the TS fallback for ids the registry does not know (a magenta cube).
 
 use std::sync::OnceLock;
 
 use dwell_blocks::{
-    FLUIDS, Facing, FluidInfo, SHAPES, STATES, ShapeInfo, StateId, StateInfo, Textures,
+    FLUIDS, Facing, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo, StateId, StateInfo,
+    Textures,
 };
 
 /// The look a state is drawn with (the registry's `look` name).
@@ -23,7 +24,8 @@ pub(crate) struct MaterialStyle {
     pub look: Look,
     /// sRGB `0xRRGGBB`.
     pub color: u32,
-    pub opacity: f32,
+    /// How its pixels are drawn: which of the chunk's meshes it goes in.
+    pub render: RenderMode,
     pub textures: Option<Textures>,
     /// Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z).
     pub ladder_face: Option<usize>,
@@ -32,6 +34,14 @@ pub(crate) struct MaterialStyle {
     pub flooded: bool,
     /// Fluids: how far below the cell's top its surface is drawn, in cells (0 otherwise).
     pub surface_drop: f64,
+    /// The fluid whose look it is drawn with (an index into the registry's fluid table).
+    pub fluid: Option<FluidId>,
+}
+
+/// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
+/// a fluid's id, as the meshes' `fluids` stream holds it.
+pub(crate) fn fluid_value(fluid: Option<FluidId>) -> f32 {
+    fluid.map_or(crate::NO_FLUID, f32::from)
 }
 
 /// The full cube's shape: what a full face is tested against.
@@ -67,7 +77,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     MaterialStyle {
         look,
         color: s.color,
-        opacity: s.opacity,
+        render: s.render,
         textures: s.textures,
         ladder_face: if look == Look::Ladder {
             ladder_face
@@ -80,6 +90,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             .fluid
             .and_then(|f| fluids.get(usize::from(f)))
             .map_or(0.0, |f| f.surface_drop),
+        fluid: s.fluid,
     }
 }
 
@@ -95,12 +106,13 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
         .unwrap_or_else(|| MaterialStyle {
             look: Look::Cube,
             color: UNKNOWN_COLOR,
-            opacity: 1.0,
+            render: RenderMode::Opaque,
             textures: None,
             ladder_face: None,
             shape: cube_index(),
             flooded: false,
             surface_drop: 0.0,
+            fluid: None,
         })
 }
 

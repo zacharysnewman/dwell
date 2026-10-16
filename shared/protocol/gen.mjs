@@ -42,6 +42,10 @@ ts.push('');
 ts.push('export const Limits = {');
 for (const [k, v] of enumEntries(c.limits)) ts.push(`  ${k}: ${v},`);
 ts.push('} as const;');
+ts.push('');
+ts.push('export const RegionEdit = {');
+for (const [k, v] of enumEntries(c.regionEdit)) ts.push(`  ${k}: ${v},`);
+ts.push('} as const;');
 const tsEnum = (name, obj) => {
   ts.push('');
   ts.push(`export const ${name} = {`);
@@ -62,6 +66,7 @@ tsEnum('DamageCause', c.damageCauses);
 tsEnum('ChunkForm', c.chunkForms);
 tsEnum('LodForm', c.lodForms);
 tsEnum('BlockEditAction', c.blockEditActions);
+tsEnum('RegionEditOp', c.regionEditOps);
 tsEnum('VoxelModificationReason', c.voxelModificationReasons);
 tsEnum('HostState', c.hostStates);
 const tsFlags = (name, obj) => {
@@ -107,6 +112,8 @@ rsGroup('players', c.players, (k) => (/Distance|Radius/.test(k) ? 'f32' : 'i64')
 rsGroup('world', c.world, () => 'i64');
 rsGroup('lod', c.lod, () => 'i64');
 rsGroup('limits', c.limits, () => 'usize');
+// Region edits (§6.5): sizes and rates in cells, reach in metres.
+rsGroup('region_edit', c.regionEdit, (k) => (k === 'reach' ? 'f32' : 'usize'));
 const rsEnum = (name, obj) => {
   rs.push('');
   rs.push('#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]');
@@ -137,6 +144,7 @@ rsEnum('DamageCause', c.damageCauses);
 rsEnum('ChunkForm', c.chunkForms);
 rsEnum('LodForm', c.lodForms);
 rsEnum('BlockEditAction', c.blockEditActions);
+rsEnum('RegionEditOp', c.regionEditOps);
 rsEnum('VoxelModificationReason', c.voxelModificationReasons);
 rsEnum('HostState', c.hostStates);
 const rsFlags = (mod, type, obj) => {

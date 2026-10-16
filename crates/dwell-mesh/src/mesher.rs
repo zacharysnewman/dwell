@@ -9,11 +9,15 @@
 
 use std::sync::OnceLock;
 
-use dwell_blocks::{FLUIDS, FluidInfo, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of};
+use dwell_blocks::{
+    FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of,
+};
 use dwell_protocol::CHUNK_SIZE;
 
 use crate::LengthError;
-use crate::style::{Look, MaterialStyle, cube, material_style, mirror_material, style_of};
+use crate::style::{
+    Look, MaterialStyle, cube, fluid_value, material_style, mirror_material, style_of,
+};
 use crate::textures::{TileRect, tile_rect};
 use dwell_look::{face_tint, normal_tint};
 
@@ -42,6 +46,13 @@ pub struct MeshArrays {
     pub uvs: Vec<f32>,
     /// Atlas rectangle per vertex: u0, v0, width, height.
     pub tiles: Vec<f32>,
+    /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
+    /// is no fluid's); empty in the opaque mesh.
+    pub fluids: Vec<f32>,
+    /// The cutout mesh only (empty in the others): per vertex, how far wind sways it (m; 0 at a
+    /// plant's base and on ladders), the wind's speed, and the distance fade's start and end (m;
+    /// end 0: no fade).
+    pub plants: Vec<f32>,
     /// Triangles, counter-clockwise seen from outside.
     pub indices: Vec<u32>,
 }
@@ -54,16 +65,21 @@ impl MeshArrays {
             + self.colors.len()
             + self.uvs.len()
             + self.tiles.len()
+            + self.fluids.len()
+            + self.plants.len()
             + self.indices.len())
     }
 }
 
-/// A chunk's meshes.
+/// A chunk's meshes, one per render mode (the block data's `render`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ChunkMeshes {
     pub opaque: MeshArrays,
-    /// Water and other see-through materials, drawn after the opaque pass.
+    /// Translucent materials (water), blended after the opaque and cutout draws, far to near.
     pub transparent: MeshArrays,
+    /// Cutout materials (ladders, plants): alpha-tested, depth-writing, drawn from both sides,
+    /// with the `plants` stream.
+    pub cutout: MeshArrays,
 }
 
 /// Face index → (axis, sign): 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -92,6 +108,8 @@ struct Kind {
     flooded: bool,
     /// Ladders: the one face drawn.
     ladder_face: Option<usize>,
+    /// Hides the faces of neighbours it covers (opaque solids; see-through ones never do).
+    occludes: bool,
     style: MaterialStyle,
 }
 
@@ -114,7 +132,9 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
             Some(cube())
         },
         liquid: style.look == Look::Fluid,
-        flooded: shaped && style.flooded,
+        // Shaped blocks and ladders hold water in a flooded cell.
+        flooded: (shaped || style.look == Look::Ladder) && style.flooded,
+        occludes: !empty && style.render == RenderMode::Opaque,
         ladder_face: if style.look == Look::Ladder {
             Some(style.ladder_face.unwrap_or(4))
         } else {
@@ -193,13 +213,22 @@ pub fn face_covered(shape: &ShapeInfo, face: usize, neighbour: Option<&ShapeInfo
     theirs == [4; 3]
 }
 
+/// The geometry a neighbour covers faces with: none if it is see-through (cutout, translucent).
+fn cover(k: &Kind) -> Option<&'static ShapeInfo> {
+    if k.occludes { k.def } else { None }
+}
+
 /// Is the full-cube face `face` of a cube or water voxel `m` (kind `km`) hidden by neighbour `n`
 /// (kind `kn`)?
 fn hidden(km: &Kind, kn: &Kind, m: StateId, n: StateId, face: usize) -> bool {
     if km.liquid && (n == m || kn.flooded) {
         return true;
     }
-    face_covered(cube(), face, kn.def)
+    // Between two cells of one see-through block (panes of glass, leaves) no face is drawn.
+    if n == m && !km.occludes {
+        return true;
+    }
+    face_covered(cube(), face, cover(&kn))
 }
 
 /// The cells' kinds where adaptive blocks change them (docs/ADAPTIVE_BLOCKS.md): an adaptive top
@@ -296,6 +325,12 @@ struct Builder {
 impl Builder {
     fn vertex_count(&self) -> u32 {
         (self.m.positions.len() / 3) as u32
+    }
+
+    /// Tags the vertices added since the last tag with `fluid` (the transparent mesh's `fluids`).
+    fn tag_fluid(&mut self, fluid: Option<dwell_blocks::FluidId>) {
+        let n = self.vertex_count() as usize;
+        self.m.fluids.resize(n, fluid_value(fluid));
     }
 
     fn push_tile(&mut self, tile: &TileRect) {
@@ -582,7 +617,7 @@ fn shaped_voxel(
         if tag < 6 {
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            if face_covered(def, tag, cells.kind(nx, ny, nz).def) {
+            if face_covered(def, tag, cover(&cells.kind(nx, ny, nz))) {
                 continue;
             }
         }
@@ -618,7 +653,7 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
         let kn = cells.kind(nx, ny, nz);
-        if kn.liquid || kn.flooded || face_covered(cube(), face, kn.def) {
+        if kn.liquid || kn.flooded || face_covered(cube(), face, cover(&kn)) {
             continue;
         }
         let u = (axis + 1) % 3;
@@ -643,6 +678,7 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
             color,
             &tile,
         );
+        b.tag_fluid(water.style.fluid);
     }
 }
 
@@ -700,11 +736,13 @@ pub(crate) fn mesh_chunk_with(
         return Ok(ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
+            cutout: flip_arrays_y(m.cutout),
         });
     }
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
     let cells = Cells::new(kinds, padded);
+    let mut cutout = Builder::default();
     let n = N as usize;
     // Merge mask for one slice: material + 1 of a visible mergeable face, 0 for none.
     let mut mask = vec![0i32; n * n];
@@ -729,7 +767,12 @@ pub(crate) fn mesh_chunk_with(
                     let k = cells.kind(cx, cy, cz);
                     if let Some(lf) = k.ladder_face {
                         if lf == face {
-                            ladder_face(&mut opaque, &k.style, face, cx, cy, cz);
+                            let target = match k.style.render {
+                                RenderMode::Opaque => &mut opaque,
+                                RenderMode::Cutout => &mut cutout,
+                                RenderMode::Translucent => &mut transparent,
+                            };
+                            ladder_face(target, &k.style, face, cx, cy, cz);
                         }
                         continue;
                     }
@@ -780,10 +823,11 @@ pub(crate) fn mesh_chunk_with(
                         plane = fluid_top(d, &style);
                     }
                     let (color, tile) = surface(&style, axis, sign);
-                    let target = if style.opacity < 1.0 {
-                        &mut transparent
-                    } else {
-                        &mut opaque
+                    let see_through = style.render == RenderMode::Translucent;
+                    let target = match style.render {
+                        RenderMode::Opaque => &mut opaque,
+                        RenderMode::Cutout => &mut cutout,
+                        RenderMode::Translucent => &mut transparent,
                     };
                     target.quad(
                         axis,
@@ -794,6 +838,9 @@ pub(crate) fn mesh_chunk_with(
                         color,
                         &tile,
                     );
+                    if see_through {
+                        target.tag_fluid(style.fluid);
+                    }
                     i += w;
                 }
             }
@@ -811,15 +858,14 @@ pub(crate) fn mesh_chunk_with(
                     continue;
                 }
                 let k = cells.kind(cx, cy, cz);
-                if k.shape != Shape::Shaped {
-                    continue;
+                if k.shape == Shape::Shaped {
+                    let flat = k.def.is_some_and(is_half_slab);
+                    if flat {
+                        mask[cx as usize + n * cz as usize] = i32::from(m) + 1;
+                        any = true;
+                    }
+                    shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz, flat);
                 }
-                let flat = k.def.is_some_and(is_half_slab);
-                if flat {
-                    mask[cx as usize + n * cz as usize] = i32::from(m) + 1;
-                    any = true;
-                }
-                shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz, flat);
                 if k.flooded {
                     flooded_water(&mut transparent, &cells, cx, cy, cz);
                 }
@@ -829,9 +875,13 @@ pub(crate) fn mesh_chunk_with(
             flat_tops(&mut opaque, kinds, &mut mask, cy);
         }
     }
+    // Ladders carry no sway or fade.
+    let vertices = cutout.m.positions.len() / 3;
+    cutout.m.plants.resize(vertices * 4, 0.0);
     Ok(ChunkMeshes {
         opaque: opaque.m,
         transparent: transparent.m,
+        cutout: cutout.m,
     })
 }
 

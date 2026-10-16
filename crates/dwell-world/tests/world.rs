@@ -1,12 +1,11 @@
-//! The voxel grid, structure files and block edits (ported from the C++ core, structure and
-//! block-edit tests).
+//! The voxel grid and block edits (ported from the C++ core and block-edit tests); structures are
+//! in `structures.rs`.
 
 use std::sync::Arc;
 
 use dwell_blocks::{StateId, require};
 use dwell_protocol::{BlockEditAction, BlockEditRequest};
 use dwell_world::edit::*;
-use dwell_world::structure::*;
 use dwell_world::*;
 
 /// ~8,000 km out (tests/test_origin.h): everything must work there as at the origin.
@@ -235,6 +234,71 @@ fn validation_of_reach_sight_materials_and_occupancy() {
 }
 
 #[test]
+fn cutout_blocks_without_a_solid_are_air_at_lod() {
+    // Ladders (and plants) are thin and see-through: the LOD doesn't draw them as cubes.
+    let ladder = s("dwell:ladder[facing=north,flooded=false]");
+    let stone = s("dwell:stone");
+    assert!(!lod::lod_drawn(ladder));
+    assert!(lod::lod_drawn(stone) && lod::lod_drawn(s("dwell:water")));
+    // Four ladders and four air: air (before, four filled cells made a ladder-coloured cube).
+    let half: [StateId; 8] = std::array::from_fn(|i| if i & 2 == 0 { ladder } else { 0 });
+    assert_eq!(lod::downsample_block(&half), 0);
+    // Ladders beside stone neither fill the cell nor give it their material.
+    let mixed: [StateId; 8] = std::array::from_fn(|i| match i {
+        0..=2 => stone,
+        3 => ladder,
+        _ => 0,
+    });
+    assert_eq!(lod::downsample_block(&mixed), 0);
+    // A ladder on top of stone: the stone is what shows.
+    let on_top: [StateId; 8] = std::array::from_fn(|i| if i & 2 == 0 { stone } else { ladder });
+    assert_eq!(lod::downsample_block(&on_top), stone);
+}
+
+#[test]
+fn the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on() {
+    let floor = s("dwell:sandbox_floor");
+    assert!(
+        dwell_blocks::info(floor).indestructible,
+        "the block data marks it"
+    );
+    let mut world = ground();
+    let eye = [0.5, 1.62, 0.5];
+    world.set_voxel(0, -1, 2, floor);
+    assert_eq!(
+        check(&mut world, brk([0, -1, 2], 2), eye, &[]).check,
+        EditCheck::Unbreakable
+    );
+    // Built on: a block placed against it lands next to it and leaves it be.
+    let on = check(&mut world, place([0, -1, 2], 2, s("dwell:stone")), eye, &[]);
+    assert_eq!((on.check, on.cell), (EditCheck::Ok, [0, 0, 2]));
+    // Never replaced by a placement into its cell.
+    world.set_voxel(0, 0, 3, s("dwell:stone"));
+    world.set_voxel(0, 0, 2, floor);
+    let into = check(&mut world, place([0, 0, 3], 5, s("dwell:stone")), eye, &[]);
+    assert_ne!(into.check, EditCheck::Ok);
+    // Every indestructible state in the data is refused the same way.
+    for m in
+        (0..dwell_blocks::STATES.len() as StateId).filter(|&m| dwell_blocks::info(m).indestructible)
+    {
+        let mut world = ground();
+        world.set_voxel(0, -1, 2, m);
+        if targetable(m) {
+            assert_eq!(
+                check(&mut world, brk([0, -1, 2], 2), eye, &[]).check,
+                EditCheck::Unbreakable
+            );
+        }
+    }
+    // Breakable blocks still break.
+    let mut world = ground();
+    assert_eq!(
+        check(&mut world, brk([0, -1, 2], 2), eye, &[]).check,
+        EditCheck::Ok
+    );
+}
+
+#[test]
 fn placing_into_water_is_allowed_into_players_rejected() {
     let mut world = ground();
     let eye = [0.5, 1.62, 0.5];
@@ -341,68 +405,45 @@ fn a_block_placed_into_a_chunk_read_as_sky_is_seen() {
 }
 
 #[test]
-fn structures_name_blocks_by_string_and_later_fills_win() {
-    let st = Structure::parse(
-        "# a pillar with a ladder\n\
-         fill 0 0 0  0 3 0  dwell:stone\n\
-         fill 1 3 1  1 0 1  dwell:ladder[facing=east]   # corners in any order\n\
-         \n\
-         fill 0 3 0  0 3 0  dwell:sand\n",
-    )
-    .expect("parses");
-    assert_eq!(st.fills.len(), 3);
-    assert_eq!(st.at([0, 0, 0]), Some(s("dwell:stone")));
-    assert_eq!(st.at([0, 3, 0]), Some(s("dwell:sand")));
-    assert_eq!(st.at([1, 2, 1]), Some(s("dwell:ladder[facing=east]")));
-    assert_eq!(st.at([2, 0, 0]), None);
-}
-
-#[test]
-fn a_bad_structure_line_fails_with_its_number_and_reason() {
-    let e = Structure::parse("fill 0 0 0 1 1 1 dwell:stone\nfill 0 0 0 1 1 dwell:stone\n")
-        .expect_err("bad");
-    assert!(e.contains("line 2"), "{e}");
-    assert!(
-        Structure::parse("fill 0 0 0 1 1 1 dwell:bedrock\n")
-            .expect_err("bad")
-            .contains("dwell:bedrock")
+fn a_box_reads_in_a_structures_layer_order_across_chunk_borders() {
+    // Saving a structure reads the client's world through `region::read_box` (STRUCTURES.md §4):
+    // its order is a structure file's layers (y-slices, z-rows, x fastest).
+    let mut world = VoxelWorld::streamed();
+    // The box straddles chunk borders on every axis (chunks are 32 cells), at negative coordinates.
+    let min = [-2, 30, -1];
+    let size = [4, 3, 2];
+    for (x, y, z) in [
+        (-2, 30, -1),
+        (1, 33, 1),
+        (-2, 30, 1),
+        (1, 30, -1),
+        (-2, 33, -1),
+        (1, 33, -1),
+        (-2, 33, 1),
+        (1, 30, 1),
+    ] {
+        // Every chunk the box covers is held (a missing one reads as None, not air).
+        world.set_voxel(x, y, z, s("dwell:air"));
+    }
+    world.set_voxel(-2, 30, -1, s("dwell:stone")); // (0, 0, 0)
+    world.set_voxel(1, 30, -1, s("dwell:dirt")); // (3, 0, 0): x is fastest
+    world.set_voxel(-2, 30, 0, s("dwell:sand")); // (0, 0, 1): then z
+    world.set_voxel(-1, 32, 0, s("dwell:grass")); // (1, 2, 1): y slowest
+    world.set_voxel(2, 30, -1, s("dwell:stone")); // just outside the box
+    let cells = dwell_world::region::read_box(&mut world, min, size).expect("loaded");
+    assert_eq!(cells.len(), 4 * 3 * 2);
+    let at = |x: usize, y: usize, z: usize| cells[(y * 2 + z) * 4 + x];
+    assert_eq!(at(0, 0, 0), s("dwell:stone"));
+    assert_eq!(at(3, 0, 0), s("dwell:dirt"));
+    assert_eq!(at(0, 0, 1), s("dwell:sand"));
+    assert_eq!(at(1, 2, 1), s("dwell:grass"));
+    let filled = cells.iter().filter(|&&c| c != s("dwell:air")).count();
+    assert_eq!(filled, 4, "the cell outside the box is not read");
+    // A box reaching into a chunk the client doesn't hold is not read as air.
+    assert_eq!(
+        dwell_world::region::read_box(&mut world, min, [4, 3, 40]),
+        None
     );
-    assert!(
-        Structure::parse("box 0 0 0 1 1 1 dwell:stone\n")
-            .expect_err("bad")
-            .contains("unknown command")
-    );
-    assert!(
-        Structure::parse("fill 0 0 x 1 1 1 dwell:stone\n")
-            .expect_err("bad")
-            .contains("bad coordinate")
-    );
-}
-
-#[test]
-fn structures_stamp_over_a_base_generator_only_inside_their_boxes() {
-    let st = Arc::new(Structure::parse("fill -1 0 -1  1 1 1  dwell:stone\n").expect("parses"));
-    let mut world = VoxelWorld::new(with_structure(flat_generator(), st.clone()), None);
-    assert_eq!(world.get_voxel(0, 1, 0), s("dwell:stone"));
-    assert_eq!(world.get_voxel(-1, 0, 1), s("dwell:stone"));
-    assert_eq!(world.get_voxel(2, 0, 0), s("dwell:air"));
-    assert_eq!(world.get_voxel(5, -1, 5), s("dwell:grass"));
-    let air = with_structure_air(Arc::new(flat_is_air), st);
-    assert!(!air(ChunkCoord::new(0, 0, 0)));
-    assert!(!air(ChunkCoord::new(-1, 0, -1)));
-    assert!(air(ChunkCoord::new(3, 0, 3)));
-}
-
-#[test]
-fn the_movement_playground_loads() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../shared/structures/playground.structure"
-    );
-    let p = Structure::load(std::path::Path::new(path)).expect("loads");
-    assert_eq!(p.at([9, 0, 9]), Some(s("dwell:ladder[facing=north]")));
-    assert_eq!(p.at([0, 0, 12]), Some(s("dwell:air")));
-    assert_eq!(p.at([13, -1, 7]), Some(s("dwell:water")));
 }
 
 #[test]

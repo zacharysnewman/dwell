@@ -166,6 +166,36 @@ VOXEL_MOD = voxel_modification(VR["Edit"], 4242, [
     ((5, -64, -3), 1, [(1 | (2 << 5) | (3 << 10), 16)]),
 ])
 
+RO = c["regionEditOps"]
+
+
+def region_head(op, lo, size):
+    return struct.pack("<BBiiiBBB", T["RegionEdit"], op, *lo, *size)
+
+
+def region_cells(cells):
+    """Palette + RLE of a box's states, already in layer order (x fastest, then z, then y)."""
+    palette = list(dict.fromkeys(cells))
+    out = struct.pack("<H", len(palette)) + b"".join(struct.pack("<H", m) for m in palette)
+    i = 0
+    while i < len(cells):
+        j = i
+        while j < len(cells) and cells[j] == cells[i]:
+            j += 1
+        out += varint(j - i) + bytes([palette.index(cells[i])])
+        i = j
+    return out
+
+
+# A 2 × 3 × 2 paste (x, y, z): a stone floor, a ladder (state 4) on one wall, air above.
+PASTE_SIZE = (2, 3, 2)
+PASTE_CELLS = [1, 1, 1, 1, 4, 0, 4, 0, 0, 0, 0, 0]
+REGION_PASTE = region_head(RO["Paste"], (-3, 70, 8191990), PASTE_SIZE) + region_cells(PASTE_CELLS)
+# A brush stroke's paste (BRUSHES.md): cells it leaves alone are `keep` (0xFFFF), a palette entry
+# like any state; only servers that announce the `brushes` Welcome flag take it.
+KEEP = c["regionEdit"]["keep"]
+REGION_PASTE_KEEP = region_head(RO["Paste"], (4, 1, -2), (3, 1, 1)) + region_cells([KEEP, 2, KEEP])
+
 LF = c["lodForms"]
 LOD_PAD = c["lod"]["sectionCells"] + 2
 
@@ -262,6 +292,13 @@ vectors = {
     + struct.pack("<iiiiii", 1, 2, 3, -4, -5, 2000000),
     "block_edit_break": block_edit(BA["Break"], (8191999, -2048, -12), 3),
     "block_edit_place": block_edit(BA["Place"], (-7, 64, 3), 4, 16),
+    "region_edit_fill": region_head(RO["Fill"], (-8191999, -2048, 12), (32, 1, 7))
+    + struct.pack("<H", 3),
+    "region_edit_hollow": region_head(RO["Hollow"], (0, 5, -1), (3, 4, 5)) + struct.pack("<H", 0),
+    "region_edit_replace": region_head(RO["Replace"], (10, -20, 30), (1, 32, 2))
+    + struct.pack("<HH", 2, 6),
+    "region_edit_paste": REGION_PASTE,
+    "region_edit_paste_keep": REGION_PASTE_KEEP,
     "voxel_modification": VOXEL_MOD,
     "chunk_resync": struct.pack("<BH", T["ChunkResync"], 2)
     + struct.pack("<iiiiii", 0, -1, 2, 256000, 191, -256000),
@@ -317,6 +354,18 @@ malformed = {
     "!block_edit_bad_face": block_edit(BA["Break"], (0, 0, 0), 6),
     "!block_edit_break_material": block_edit(BA["Break"], (0, 0, 0), 0, 2),
     "!block_edit_place_no_material": block_edit(BA["Place"], (0, 0, 0), 0),
+    "!region_edit_bad_op": region_head(0, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
+    "!region_edit_unknown_op": region_head(5, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
+    "!region_edit_empty_side": region_head(RO["Fill"], (0, 0, 0), (1, 0, 1)) + struct.pack("<H", 1),
+    "!region_edit_side_too_long": region_head(RO["Fill"], (0, 0, 0), (1, c["regionEdit"]["maxSide"] + 1, 1))
+    + struct.pack("<H", 1),
+    "!region_edit_no_material": region_head(RO["Fill"], (0, 0, 0), (1, 1, 1)),
+    "!region_edit_replace_one_state": region_head(RO["Replace"], (0, 0, 0), (1, 1, 1))
+    + struct.pack("<H", 1),
+    "!region_edit_paste_truncated": REGION_PASTE[:-1],
+    "!region_edit_paste_short": region_head(RO["Paste"], (0, 0, 0), (2, 1, 1)) + region_cells([1]),
+    "!region_edit_paste_long": region_head(RO["Paste"], (0, 0, 0), (1, 1, 1)) + region_cells([1, 2]),
+    "!region_edit_trailing": region_head(RO["Fill"], (0, 0, 0), (1, 1, 1)) + struct.pack("<HB", 1, 0),
     "!voxel_mod_bad_reason": voxel_modification(0, 1, [((0, 0, 0), 1, [(0, 1)])]),
     "!voxel_mod_no_chunks": voxel_modification(VR["Edit"], 1, []),
     "!voxel_mod_no_changes": voxel_modification(VR["Edit"], 1, [((0, 0, 0), 1, [])]),

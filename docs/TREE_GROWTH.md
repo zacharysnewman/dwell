@@ -1,7 +1,8 @@
-# Proposal: growing and varying hand-built trees
+# Growing and varying hand-built trees
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions answered (§7); ready for an ADR. Builds on the adopted
-structure system ([`docs/STRUCTURES.md`](../STRUCTURES.md), ADR 0031, Phase 27).
+**Status:** Adopted (ADR 0033), 2026-10-14 ([ADR 0033](./adr/0033-tree-growth.md)). Built as Phase 30 of the
+[implementation plan](./IMPLEMENTATION_PLAN.md) (steps G-ADR, G0–G4). Owner answers in §7. Builds on the
+structure system ([`STRUCTURES.md`](./STRUCTURES.md), ADR 0031, Phase 27).
 
 The ask: take a custom-built tree model and extrapolate from it so it "grows" over time, and produce
 variation from it.
@@ -138,8 +139,8 @@ prototype content. The 32³ cap and JSON fields must match what S1 actually buil
 | **G0** | A prototype page (`docs/prototypes/tree-growth.html`): load an exported structure, show the skeleton, scrub age, roll variant seeds. No protocol or release impact; shows whether inferred stages look right |
 | **G1** | Roles and `growth` in the format; skeleton extraction in `gen.mjs`; Rust `stage_voxels(structure, seed, age)`; tests: final stage equals the model, a fixture tree by data alone |
 | **G2** | Sandbox "preview growth" command (after S2a/S3) |
-| **G3** | Planting in the world: the `growers` table (new compatibility line), scheduled catch-up, the `Growth` reason, pruning on obstacles and cuts |
-| **G4** | Jitter variants; space colonization as a second engine if wanted |
+| **G3** | Growth in the world (§5a): the tree layer composed at chunk load, tombstones, the `growers` table, scheduled catch-up from world time, the `Growth` reason, pruning on obstacles and cuts, the per-world speed setting (a new compatibility line; the owner decides the bump) |
+| **G4** | Jitter variants (space colonization not needed for now, owner §7 #5; a second engine would need an ADR) |
 
 **Risks**: ambiguous skeletons on chunky hand-sculpted trunks (author marks fix it); adaptive blocks
 (Phase 18) reshaping wood or leaves; trees across chunk borders need all their chunks loaded to grow
@@ -159,11 +160,65 @@ a stage; world format and protocol both change at G3.
 | — | Procedural or planted trees? | **Both**, from the owner's persistence model (§5a) |
 
 Notes:
-- The day/night cycle isn't designed yet; the world file already keeps a world time (`meta`), which
-  `stage(t)` reads. Growth catch-up uses world time, not wall-clock time, so a world that isn't
+- The day length now lives in the day/night cycle's data (Phase 32, [`DAY_NIGHT.md`](./DAY_NIGHT.md)):
+  `clock` in `shared/look/daynight.json` (`dayS` 1200 + `nightS` 600 = a 30-minute day), generated
+  into `dwell_look::daynight::DAY_NIGHT`; `DAY_NIGHT.days(world_s)` is the in-game day count from
+  world time (the server's tick, saved in `meta` as `world_tick`), which `stage(t)` reads. Growth catch-up uses world time, not wall-clock time, so a world that isn't
   running doesn't grow.
 - With a step every 15 real hours, the sandbox needs a way to preview growth (G2: a "preview growth"
   command or slider) — nobody will wait for it.
+
+## 8. Findings from the G0 prototype (2026-10-15)
+
+The prototype page ([`prototypes/tree-growth.html`](./prototypes/tree-growth.html)) builds the
+skeleton reveal on three hand-built samples (oak-like 23 × 22 × 23, conifer-like 15 × 25 × 15,
+spreading 25 × 14 × 25). On all three the mature stage equals the model voxel for voxel, and the
+intermediate stages read as a sapling, a young tree and a mature one. What it took, for G1:
+
+- **Skeleton inference held up on the samples.** BFS levels through 26-connected wood, grouped into
+  connected components per level, gave 49–84 nodes; the trunk as the heaviest path (by subtree wood
+  volume) found the right stem on the oak and the conifer without marks. Where it struggles:
+  - **Forks merge.** Where limbs leave a thick trunk, they share one level set for a few levels, so
+    that node's centroid sits between them and its radius covers all of them. Thickening by "distance
+    from the node's own centre" bulked young limbs out at the fork. Fixed by measuring each voxel's
+    radial distance from the **nearest core line** (its node's, or a child's passing through), and
+    letting it thicken with that line's node.
+  - **Loops** (two branches touching) give a node two parents; it keeps the one it touches most.
+  - **An even split** (a spreading tree whose trunk becomes five equal limbs) has no heaviest path
+    worth the name; the sample marks its trunk with the `trunk` role, which the page honours.
+- **Connectivity by construction.** Each node has a core path (shortest wood path from its medial
+  voxel to its parent's), revealed as soon as the node grows, so every stage is one connected piece.
+  Radial voxels are revealed by geodesic distance from the core, so a threshold never strands one.
+- **Thickness.** The pipe model ratio `P_now / P_full` (exponent 2, tips 1) scales each node's
+  authored radius, plus ½ voxel of rounding while still growing; without the rounding a trunk of
+  authored radius 1 stayed one voxel wide until the very last day.
+- **Roots** at the branch rate (a deviation): a one-voxel sapling stood on full-size root flares. The
+  page grows roots from 40 % of maturity to 100 %, with their depth. G1 should decide this as a
+  growth parameter.
+- **Leaves.** Authored leaves are owned by the nearest wood voxel (geodesic through leaves) and
+  appear once that voxel shows, within a reach that widens with the tree's age, so every leaf is in
+  place at maturity. Without extra leaves, a sapling is a bare stick: the **tip tuft**
+  (`around_tips`) adds leaves only at the growing end of each axis (on the trunk, only its leader,
+  not buds waiting for a side branch), sized by the leaves the model has within four nodes beyond
+  (minimum 1.2). Tufts disappear at maturity, so the last stage is still exact.
+- **Timing consequence** of the owner's rates: with branches at a third of the trunk's speed, the
+  conifer's lower whorls are the fullest part mid-growth while its leader is still a bare pole; the
+  oak reaches its fork height (10 m, day 300) with one-voxel limbs. Both look like young trees; if
+  the owner wants fuller young crowns, the tip-leaf radius is the knob, not the rates.
+- **Variants.** Branch jitter as similarity transforms per node (rotation about the parent's axis
+  and a half-size tilt at each branch start, a length scale, droop as a small bend at every branch
+  node), composed down the tree; voxels forward-mapped with 2 × 2 × 2 supersampling (no holes) and
+  core lines redrawn between mapped medial voxels (connected). Trunk, roots and any branch holding a
+  `core` voxel stay rigid. A variant at any age is the authored stage mapped through the same
+  transforms, so variants grow too. Droop reads better in degrees per metre (`droop_deg_per_m`,
+  default 1.5) than the sketch's unitless 0.1.
+- **Obstacles.** A node is pruned when its mapped core cells hit an obstacle (or its parent is
+  pruned); a radial or leaf voxel is skipped when it, or the voxel it grew out from, is blocked.
+  Pruning depends only on the obstacle set, so it is deterministic.
+- **Format.** §6's sketch writes `variants` as a list; S1 built it as an object of named operations,
+  so the page exports `variants.branch_jitter` beside S1's `rotate` / `mirror` / `choices`, and the
+  `growth` block as sketched (with `thickness.exponent` instead of `tapering`). The per-world growth
+  speed is exported beside them as `$world_settings`, not structure data.
 
 ## Sources
 

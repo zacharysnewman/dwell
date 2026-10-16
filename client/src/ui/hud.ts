@@ -52,6 +52,8 @@ export class Hud {
       if (id) b.id = id;
       b.className = 'debug-button';
       b.title = title;
+      // Each tool sounds as its key does (main.ts), not a click.
+      b.dataset.sound = 'none';
       const k = document.createElement('kbd');
       k.textContent = key;
       b.append(label, k);

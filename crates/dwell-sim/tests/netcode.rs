@@ -19,7 +19,7 @@ use dwell_protocol::*;
 use dwell_sim::entropy::SeededEntropy;
 use dwell_sim::server::{EditPolicy, OutKind, Server, ServerConfig, SessionId};
 use dwell_world::edit::apply_chunk_changes;
-use dwell_world::structure::{Structure, with_structure};
+use dwell_world::structure::{Placed, load, with_structure};
 use dwell_world::{
     CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, GENERATOR_FLAT, VoxelWorld, chunk_hash,
     flat_generator,
@@ -55,10 +55,11 @@ fn shifted(g: ChunkGenerator) -> ChunkGenerator {
     Arc::new(move |c, chunk| g(ChunkCoord::new(c.x - cx, c.y, c.z), chunk))
 }
 
-static PLAYGROUND: LazyLock<Arc<Structure>> = LazyLock::new(|| {
-    // The movement playground (PLAYER_CONTROLLER.md §9), shared with the C++ suites until the cutover.
-    let text = include_str!("../../../shared/structures/playground.structure");
-    Arc::new(Structure::parse(text).expect("the playground structure"))
+static PLAYGROUND: LazyLock<Arc<Placed>> = LazyLock::new(|| {
+    // The movement playground (PLAYER_CONTROLLER.md §9, shared/structures/playground.json), its
+    // anchor at the origin; it has no variants, so the seed changes nothing.
+    let playground = load("dwell:playground").expect("the playground structure");
+    Arc::new(playground.place([0, 0, 0], 0))
 });
 
 /// The flat world with the playground stamped over it.

@@ -1,0 +1,55 @@
+{
+  "$comment": "Renderer configurations for `npm run bench -- --compare` (docs/DEV_TOOLS.md; scripts/configs.ts describes the fields). Each scenario runs once per configuration and is compared with the baseline. A configuration whose renderer or upscaler the build doesn't offer (`__dwell.renderers()`, `__dwell.upscalers()`; without them, only `raster`) is skipped with a note. The full-resolution march runs since A3b, the FSR 1 and bilateral upscaled ones since A4; TAA-U waits for A5 (docs/RAY_MARCHED_RENDERER.md).",
+  "baseline": "raster",
+  "deltaE": 2.3,
+  "configs": [
+    { "name": "raster", "notes": "The mesher at full resolution.", "renderer": "raster" },
+    {
+      "name": "raster-half",
+      "notes": "The mesher at half resolution, stretched by the browser (today's ?scale=).",
+      "renderer": "raster",
+      "scale": 0.5,
+      "upscaler": "bilinear"
+    },
+    {
+      "name": "march",
+      "notes": "Ray-marched terrain at full resolution.",
+      "renderer": "march"
+    },
+    {
+      "name": "march-half-fsr",
+      "notes": "Ray-marched at half resolution, FSR 1 upscaling (A4).",
+      "renderer": "march",
+      "scale": 0.5,
+      "upscaler": "fsr1"
+    },
+    {
+      "name": "march-075-fsr",
+      "notes": "Ray-marched at three-quarter resolution, FSR 1 upscaling (A4).",
+      "renderer": "march",
+      "scale": 0.75,
+      "upscaler": "fsr1"
+    },
+    {
+      "name": "march-half-bilateral",
+      "notes": "Ray-marched at half resolution, depth- and normal-aware bilateral upscaling (A4).",
+      "renderer": "march",
+      "scale": 0.5,
+      "upscaler": "bilateral"
+    },
+    {
+      "name": "march-half-taa",
+      "notes": "Ray-marched at half resolution, TAA-U upscaling (A5).",
+      "renderer": "march",
+      "scale": 0.5,
+      "upscaler": "taa-u"
+    },
+    {
+      "name": "march-075-taa",
+      "notes": "Ray-marched at three-quarter resolution, TAA-U upscaling (A5).",
+      "renderer": "march",
+      "scale": 0.75,
+      "upscaler": "taa-u"
+    }
+  ]
+}

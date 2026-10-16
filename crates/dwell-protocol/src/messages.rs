@@ -4,8 +4,8 @@
 use crate::bytes::{ByteReader, ByteWriter, clamp_str};
 use crate::{
     AUTH_DOMAIN_TAG, BlockEditAction, ChunkForm, DamageCause, GroundKind, HostState,
-    MAX_INPUTS_PER_DATAGRAM, MessageType, PlayerEventKind, PlayerState, RejectReason,
-    controller_flags, input_buttons, limits, lod, player_flags, world,
+    MAX_INPUTS_PER_DATAGRAM, MessageType, PlayerEventKind, PlayerState, RegionEditOp, RejectReason,
+    controller_flags, input_buttons, limits, lod, player_flags, region_edit, world,
 };
 
 pub type PublicKey = [u8; 32];
@@ -109,6 +109,35 @@ pub struct BlockEditRequest {
     pub cell: [i32; 3],
     pub face: u8,
     pub material: u16,
+}
+
+/// C→S: one edit of a box of cells (§6.5) — `size` cells from the `min` corner, each side
+/// 1..=`region_edit::MAX_SIDE`. Fill and Hollow set `material` (Hollow: the box's shell, air
+/// inside); Replace turns cells holding `from` into `material`; Paste sets the box to `cells`.
+/// Sent only to a server that announced `welcome_flags::REGION_EDITS`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegionEdit {
+    pub op: RegionEditOp,
+    pub min: [i32; 3],
+    pub size: [u8; 3],
+    /// Fill, Hollow, Replace.
+    pub material: u16,
+    /// Replace.
+    pub from: u16,
+    /// Paste: `volume()` states in layer order, x fastest, then z, then y
+    /// (`x + size.x · (z + size.z · y)`).
+    pub cells: Vec<u16>,
+}
+
+impl RegionEdit {
+    pub fn volume(&self) -> usize {
+        self.size.iter().map(|&s| usize::from(s)).product()
+    }
+
+    /// The index into `cells` of box-local (x, y, z).
+    pub fn cell_index(size: [u8; 3], x: usize, y: usize, z: usize) -> usize {
+        x + usize::from(size[0]) * (z + usize::from(size[2]) * y)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -332,6 +361,8 @@ pub enum Message {
     /// Chunks beyond the view to draw at full detail, 1..`MAX_RESYNC_CHUNKS`.
     ChunkRequest(Vec<ChunkCoordNet>),
     HostStatus(HostState),
+    /// C→S, only to a server whose Welcome has `welcome_flags::REGION_EDITS`.
+    RegionEdit(RegionEdit),
 }
 
 impl Message {
@@ -364,6 +395,7 @@ impl Message {
             M::LodData(_) => MessageType::LodData,
             M::ChunkRequest(_) => MessageType::ChunkRequest,
             M::HostStatus(_) => MessageType::HostStatus,
+            M::RegionEdit(_) => MessageType::RegionEdit,
         }
     }
 
@@ -877,6 +909,23 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         }
         M::HostStatus(s) => w.u8(*s as u8),
+        M::RegionEdit(m) => {
+            w.u8(m.op as u8);
+            write_coord(w, &m.min);
+            for &s in &m.size {
+                w.u8(s);
+            }
+            match m.op {
+                RegionEditOp::Fill | RegionEditOp::Hollow => w.u16(m.material),
+                RegionEditOp::Replace => {
+                    w.u16(m.from);
+                    w.u16(m.material);
+                }
+                RegionEditOp::Paste => {
+                    write_cells(w, m.volume(), |i| m.cells.get(i).copied().unwrap_or(0));
+                }
+            }
+        }
     }
 }
 
@@ -1069,6 +1118,40 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             })
         }
         T::HostStatus => M::HostStatus(HostState::from_u8(r.u8())?),
+        T::RegionEdit => {
+            let op = RegionEditOp::from_u8(r.u8())?;
+            let min = read_coord(r);
+            let size = [r.u8(), r.u8(), r.u8()];
+            r.check(
+                size.iter()
+                    .all(|&s| s >= 1 && usize::from(s) <= region_edit::MAX_SIDE),
+            );
+            let mut m = RegionEdit {
+                op,
+                min,
+                size,
+                material: 0,
+                from: 0,
+                cells: Vec::new(),
+            };
+            if !r.ok() {
+                return None;
+            }
+            match op {
+                RegionEditOp::Fill | RegionEditOp::Hollow => m.material = r.u16(),
+                RegionEditOp::Replace => {
+                    m.from = r.u16();
+                    m.material = r.u16();
+                }
+                RegionEditOp::Paste => {
+                    let volume = m.volume();
+                    let mut cells = vec![0u16; volume];
+                    read_cells(r, volume, |i, v| cells[i] = v);
+                    m.cells = cells;
+                }
+            }
+            M::RegionEdit(m)
+        }
         T::ChunkUnload => M::ChunkUnload(ChunkUnload {
             coords: read_coords(r, 0xFFFF),
         }),

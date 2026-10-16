@@ -18,30 +18,39 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   await expect(menu).toBeHidden();
   await button.click();
   await expect(menu).toBeVisible();
+  // Sound's three volumes first, then the fog's three sliders and the detail's three.
   await expect(menu.locator('.settings-value')).toHaveText([
+    '80%',
+    '100%',
+    '60%',
     '4.0 km',
     '50%',
     '1.5 km',
     '256 m',
     '4.0 px',
     '256 MB',
+    '75°',
     '1.00×',
-    '0°',
+    // Clouds, then (after the FOV boost) the water quality: rows of buttons, the pressed one the
+    // value.
+    '',
+    '100%',
+    '',
   ]);
 
   // Density to zero (no fog), as a drag would.
-  await menu.locator('input').nth(1).fill('0');
-  await expect(menu.locator('.settings-value').nth(1)).toHaveText('0%');
+  await menu.locator('input').nth(4).fill('0');
+  await expect(menu.locator('.settings-value').nth(4)).toHaveText('0%');
   // The distant view's memory to the most.
-  await menu.locator('input').nth(5).fill('1000');
-  await expect(menu.locator('.settings-value').nth(5)).toHaveText('1024 MB');
+  await menu.locator('input').nth(8).fill('1000');
+  await expect(menu.locator('.settings-value').nth(8)).toHaveText('1024 MB');
   await page.reload();
   await page.locator('#menu-button').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(1)).toHaveText('0%');
-  await expect(page.locator('#settings-menu .settings-value').nth(5)).toHaveText('1024 MB');
+  await expect(page.locator('#settings-menu .settings-value').nth(4)).toHaveText('0%');
+  await expect(page.locator('#settings-menu .settings-value').nth(8)).toHaveText('1024 MB');
   await page.locator('#settings-menu .settings-reset').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(1)).toHaveText('50%');
-  await expect(page.locator('#settings-menu .settings-value').nth(5)).toHaveText('256 MB');
+  await expect(page.locator('#settings-menu .settings-value').nth(4)).toHaveText('50%');
+  await expect(page.locator('#settings-menu .settings-value').nth(8)).toHaveText('256 MB');
 
   // Copy JSON puts the settings on the clipboard, to paste elsewhere.
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -52,6 +61,10 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     fog: { distanceM: 4000, density: 0.5, heightM: 1500 },
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
     exposure: 1,
-    skyRotation: 0,
+    audio: { master: 0.8, effects: 1, ui: 0.6 },
+    clouds: 'high',
+    water: { quality: 'high' },
+    motion: { speedEffects: true, fovBoost: 1 },
+    fovDeg: 75,
   });
 });

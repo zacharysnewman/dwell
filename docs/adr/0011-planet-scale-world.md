@@ -2,6 +2,7 @@
 
 - Status: Accepted; decision 1 (the 8,192 km disc) superseded by [0025](0025-baseline-world.md) (a 50 km disc); the precision decisions 2–6 stand
 - Date: 2026-09-29
+- Amended by: [0028](0028-rust-port.md) (double-precision physics is Rapier's f64 build, `rapier3d-f64`, instead of Jolt `JPH_DOUBLE_PRECISION`; the precision decisions stand)
 - Resolves: ARCHITECTURE.md Open Decisions #7
 
 ## Context

@@ -2,10 +2,12 @@
 //! two faces, LOD sections, structure files and block edits. Blocks are referred to by name
 //! (`dwell-blocks`); built-in ones the engine needs are resolved once into [`M`].
 
+pub mod brush;
 pub mod edit;
 pub mod fluid;
 pub mod hash;
 pub mod lod;
+pub mod region;
 pub mod structure;
 mod voxel;
 

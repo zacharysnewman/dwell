@@ -82,6 +82,24 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     expect(withProperty(stateId('dwell:stone'), 'facing', 'east')).toBeUndefined();
   });
 
+  it('has the sandbox floor: white with grid lines, indestructible, not in the palette', () => {
+    const data = JSON.parse(
+      readFileSync(new URL('../../../shared/blocks/dwell.json', import.meta.url), 'utf8'),
+    ) as {
+      blocks: { name: string; indestructible?: boolean; adaptive?: boolean; grid?: unknown }[];
+    };
+    const def = data.blocks.find((b) => b.name === 'sandbox_floor');
+    // Indestructible (the server refuses to break or replace it), and never adaptive: flat cubes.
+    // Minor lines from its `grid` tile, majors every 8 blocks from the `grid` look option.
+    expect(def).toMatchObject({ indestructible: true, grid: { every: 8 } });
+    expect(def?.adaptive).toBeUndefined();
+    // Appended: the blocks before it keep their ids.
+    expect(data.blocks.at(-1)?.name).toBe('sandbox_floor');
+    const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
+    expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
+    expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });
+  });
+
   it('is the registry the determinism goldens were generated with (regenerate them when ids move)', () => {
     for (const name of ['chunk-hashes', 'lod-hashes']) {
       const text = readFileSync(

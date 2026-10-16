@@ -12,6 +12,7 @@ pub mod render;
 pub mod telemetry;
 #[cfg(target_arch = "wasm32")]
 mod web;
+pub mod world_clock;
 
 /// Side of the probe's square render target, in pixels.
 pub const PROBE_SIZE: u32 = 64;
@@ -35,8 +36,12 @@ pub async fn request_device(
         })
         .await
         .map_err(|e| format!("no WebGPU adapter: {e}"))?;
+    // Timestamp queries where the adapter has them: the renderer's GPU pass timing (DEV_TOOLS.md).
     let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
+        .request_device(&wgpu::DeviceDescriptor {
+            required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
+            ..Default::default()
+        })
         .await
         .map_err(|e| format!("no WebGPU device: {e}"))?;
     Ok((adapter, device, queue))

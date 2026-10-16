@@ -7,7 +7,7 @@ type, and S2b, the structures store; S4, worldgen placement, deferred). Owner an
 The ask: a tool with a simple flat white terrain sandbox where you build things (trees, rocks,
 etc.), saved locally, that can easily be added to a custom shapes/structures system.
 
-## 1. What exists
+## 1. What existed (2026-10-14, before S1)
 
 - **Structure files, as test fixtures only.** `crates/dwell-world/src/structure.rs` parses a text
   format with one command, `fill x0 y0 z0 x1 y1 z1 <block state>`, blocks by state name, errors with
@@ -41,22 +41,49 @@ in this week.
 
 ## 3. Structure format
 
-JSON in `shared/structures/<name>.json`, named like blocks:
+**Built (S1, 2026-10-14).** JSON in `shared/structures/<name>.json` (test fixtures in
+`shared/structures/test/`), named like blocks:
 
 ```json
-{ "name": "dwell:boulder_a", "size": [5, 4, 5], "anchor": [2, 0, 2],
+{ "format": 1, "name": "dwell:boulder_a", "kind": "voxels", "size": [5, 4, 5], "anchor": [2, 0, 2],
   "palette": { ".": null, "s": "dwell:stone", "d": "dwell:dirt", "_": "dwell:air" },
   "layers": [["sssss", "sssss", "..."], ["..."]],
   "variants": { "rotate": [0, 90, 180, 270], "mirror": ["x"],
                 "choices": { "s": [["dwell:stone", 3], ["dwell:sand", 1]] } } }
 ```
 
-- **Palette by block name**; `null` keeps what's there (the mask), explicit `dwell:air` carves.
-- **Layers**: y-slices of z-rows of palette characters (diffable in git); RLE for large builds.
-- **Anchor**: the voxel that sits on the ground.
-- **Variants**, a small fixed vocabulary: 90° rotations, mirroring, weighted block choices. Rotated
-  states with a facing property use the registry's `facingProperty`. No scaling (it destroys voxel
-  detail; author separate sizes).
+The schema, as `shared/structures/gen.mjs` validates it (every error names the file and the entry,
+e.g. `shared/structures/x.json: palette."s": unknown block "dwell:nope"`):
+
+| Field | Rule |
+|---|---|
+| `$comment` | Optional, ignored. Any other unknown field is an error. |
+| `format` | `1`. A later format is a new number the generator reads. |
+| `name` | `namespace:name`, `[a-z0-9_]`; the name part matches the file name; unique. `test:` is for `test/` only. |
+| `kind` | An open list; only `"voxels"` (hand-built cells) exists. The fields below are the `voxels` body. |
+| `size` | `[x, y, z]`, each 1–32 (owner: hand-built up to about 32³; larger features are generator nodes). |
+| `anchor` | `[x, y, z]` inside `size`: the cell `place` puts at the given position — for ground features, the lowest cell, which sits on the first air above the ground. |
+| `palette` | Single printable ASCII characters (not space) → a block state name in any form `parse_state` takes, or `null` (keep what is there; the mask). Explicit `dwell:air` carves. Names are stored canonicalised. |
+| `layers` | `size[1]` y-slices, bottom up; each `size[2]` z-rows (north to south); each a string of `size[0]` characters (west to east), all in the palette. |
+| `variants` | Optional; named operations, an open list, applied in this order: |
+| `variants.rotate` | Distinct values of 0, 90, 180, 270: quarter turns clockwise seen from above (north → east) about the anchor; one is picked. |
+| `variants.mirror` | Distinct axes of `x`, `z`: one of "none" and these is picked; mirroring is applied before rotating. |
+| `variants.choices` | Palette character (not a `null` one) → non-empty `[[state, weight], …]`, positive integer weights: each voxel with that character draws its block independently (per voxel, not per structure; a structure-wide pick would be a new operation). |
+
+- **Canonical form and hash.** The generator writes each structure as a canonical text (palette
+  sorted by character, canonical state strings, variant values sorted) and its FNV-1a 64 hash into
+  Rust tables (`crates/dwell-world/src/structures.gen.rs`, fixtures in
+  `crates/dwell-world/tests/fixtures/structures.gen.rs`); the Rust loader rebuilds the text and
+  refuses a table whose hash disagrees. Key order and whitespace in the file don't change the hash.
+- **Placement and variants** (`dwell-world` `structure.rs`): `load(name)`, then `place(at, seed)`.
+  The orientation and the choices come from the seed by integer hashing (splitmix64; choices hash
+  the unturned cell, so a cell draws the same block in every orientation). States with a facing
+  property (the registry's `facingProperty`, read through its `facing` column) turn and mirror with
+  the geometry. No scaling (it destroys voxel detail; author separate sizes).
+- **Not yet:** run-length encoding (not needed at 32³; it would be a new layer encoding), shaped
+  states (slope corners) under rotation — no shaped block exists since Phase 15 — and placement.
+- **The playground** is `shared/structures/playground.json` (22 × 6 × 14, within the cap), placed
+  with its anchor at the origin; a test pins it against the old `fill` boxes cell for cell.
 - **Placement rules live in the terrain definition, not the structure**, so one structure serves
   several definitions:
 
@@ -68,12 +95,13 @@ JSON in `shared/structures/<name>.json`, named like blocks:
   Jittered-grid spacing (`cell`, `jitter`; minimum spacing for free), `chance`, surface block,
   slope, height band, a named mask — conditions ADR 0026 already lists for surface layers.
 
-- **One generator** (`shared/structures/gen.mjs`, or folded into `shared/worldgen/gen.mjs`):
-  validates names against the registry, palette characters, layer dimensions against `size`, the
-  anchor, variant values and weights; emits a canonical form and a hash; CI fails on stale output.
-  The Rust loader replaces `Structure::parse` (the playground file is converted).
-- **Tests**: a fixture structure plus a fixture definition stamps by data alone; bad entries fail
-  naming the entry; chunks generated in random order hash the same.
+- **One generator** (`shared/structures/gen.mjs`, built in S1): validates names against the
+  registry, palette characters, layer dimensions against `size`, the anchor, the cap, variant names,
+  values and weights; emits a canonical form and a hash; CI fails on stale output and runs
+  `gen.test.mjs`. The Rust loader replaced `Structure::parse` (the playground file is converted).
+- **Tests**: a fixture structure stamps by data alone, bad entries fail naming the entry, variants
+  are deterministic and turn a ladder with the geometry (S1); with placement (S4), a fixture
+  definition, and chunks generated in random order hash the same.
 - **Determinism**: position, variant and choices from a hash of seed, feature index and cell
   (integer maths, ADR 0010). Each chunk visits the cells within the feature's maximum extent, so a
   tree across a chunk border agrees in any order; ground height from the height field, never from
@@ -82,13 +110,39 @@ JSON in `shared/structures/<name>.json`, named like blocks:
 
 ## 4. Saving
 
+**Built (S2b, 2026-10-14).**
+
 - The sandbox world persists in its own `.dwellworld` file.
-- Saved structures go in a **separate store**: OPFS `dwell/structures/<name>.json`, one file each,
-  in the exact format above, so the library outlives the sandbox world and every version can read
-  it. It is a shared browser store, so append-only rules apply (optional new fields, unknown fields
-  kept on rewrite, unreadable files left alone), pinned by a test.
-- **Export / import JSON** (file download, clipboard) is the path into the repo: commit
-  `shared/structures/x.json`, CI validates it, a definition references it by name.
+- Saved structures go in a **separate store**: OPFS `dwell/structures/<name>.json` (the name's part
+  after the namespace), one file each, in the exact format above, so the library outlives the
+  sandbox world and every version can read it (`client/src/local/structureStore.ts`). It is a
+  shared browser store, so append-only rules apply: new fields are optional; a rewrite (saving over
+  a structure, renaming it) keeps the fields this build doesn't know; a file it can't read (broken
+  JSON, a newer `format`, a block or rule this build lacks) is listed as kept and is never
+  rewritten or deleted. `structureStore.test.ts` pins it.
+- **One set of rules.** The format's rules are `shared/structures/format.mjs` (no Node built-ins):
+  `gen.mjs` runs it in CI and the client runs it over its own registry (`BLOCK_DEFS`; a test checks
+  it equals the one `gen.mjs` reads from `shared/blocks/vectors.txt`). The client ignores top-level
+  fields a newer build added; `gen.mjs` still rejects unknown fields, since the repository has one
+  version.
+- **Save** (the game menu's Structures page, `ui/structuresPanel.ts`): the box is the region tools'
+  selection (B, N, §5) when there is one; else everything built near the player — any state but air
+  and the sandbox floor, from 48 m either way across and 8 m below to 48 m above the feet, read a
+  chunk tile at a time — or two typed corners (each can be filled from the aimed-at block). It needs
+  a name (`dwell:` unless a namespace is typed; `test:` is refused) and takes an anchor, the bottom
+  centre by default. The states are read from the client's world (`Client.voxels`, refused where a
+  chunk isn't loaded); air and the floor become kept cells (`null`, written `.`), every other state
+  gets a palette character (its block's initial where free). Over 32 a side, or with a name taken
+  (asks to replace), it says so.
+- **Load** puts the structure on the region tools' clipboard in paste mode (`Client.loadStructure`):
+  the ghost box follows the crosshair, R and M turn and mirror it, and a right click pastes it as one
+  `RegionEdit`, validated by the server like any paste, with undo. Kept cells take what the world
+  holds there when the paste is sent (a paste sets every cell of its box). Like a copy, it stands on
+  its bottom centre: the anchor is not used by the paste yet (S3b).
+- **Export / import JSON** (file download, clipboard copy; import a file or pasted JSON) is the path
+  into the repo: an exported file is the stored file, which dropped into `shared/structures/` passes
+  `gen.mjs` unchanged (`structures.test.ts` validates an export with the generator's `loadDir`);
+  commit it, CI validates it, a definition references it by name.
 
 ## 5. Editing tools
 
@@ -97,6 +151,23 @@ outline) and its size shown; set anchor; fill, hollow, replace; copy, paste with
 rotate and mirror on paste; undo/redo (a client-side stack of region diffs); eyedropper; brush size
 for organic shapes; save, load, export, import. In the game these need a server-side region edit
 capped at about 32³ per request.
+
+*Built:*
+
+- **S3a:** box select, fill, hollow, replace, copy and paste with rotate and mirror, and undo/redo
+  (ARCHITECTURE.md §6.5).
+- **Phase 34:** VoxelSniper-style **brushes** for organic shapes, in [`BRUSHES.md`](./BRUSHES.md):
+  - brushes: ball, disc, cylinder, cube, ellipsoid, splatter, line;
+  - painting: set, replace, paint surface, erase, with masks;
+  - sculpting: smooth, erode, melt, fill/inflate, flatten, raise, lower.
+
+  They aim up to 128 m along the view and show a wireframe preview. A brush's size runs from 1 to 16.
+  Presets are data, in `shared/brushes/brushes.json`. A stroke goes as region-edit pastes whose
+  untouched cells are `KEEP`, and is one undo step.
+
+- **S2b:** save, load, export and import (`IMPLEMENTATION_PLAN.md` Phase 27).
+
+Still to build: the anchor, and the eyedropper (the brushes' replace pick covers part of it).
 
 ## 6. Plan and compatibility
 
@@ -115,8 +186,10 @@ line (the next minor, 0.11), with goldens regenerated; the owner raises `package
 including structure hashes in the terrain definition's hash (ADR 0026 §4), and keep sandbox-only
 structures out of every definition until promoted. S4 belongs after Phase 17: bolting it onto the
 hardcoded `terrain.rs` would be work the baseline rework replaces. S3's `RegionEdit` is an additive
-protocol change (a patch can carry it if old clients ignore it — to be checked against the protocol
-rules).
+protocol change. *Checked (S3):* a server rejects an unknown message type as `Malformed` and closes
+the session, and a `protocolVersion` bump would split the 0.10 line, but every decoder ignores
+unknown `Welcome` flag bits — so it ships within the line behind a `regionEdits` Welcome flag that
+newer servers set and clients wait for (ARCHITECTURE.md §10.5).
 
 **Risks**: structures across chunk borders and LOD agreement; generation cost (each chunk scans
 nearby cells); rotating facing states; adaptive blocks (Phase 18) reshaping authored blocks;
@@ -150,9 +223,10 @@ game; bulk edits stressing streaming and save size.
 6. What is "white": a new prototype block (`dwell:white`), or a sandbox-only look? *Owner,
    2026-10-14: a solid, unbreakable surface that can be built on; a block is fine if that's easier
    than hardcoding something.* So: a registry block (e.g. `dwell:sandbox_floor`: white, full,
-   not placeable) and a new registry flag, `"breakable": false`, that the server's edit validation
-   checks — data, not a sandbox special case, and usable later for other unbreakable ground. It is
-   appended to the registry, so existing ids are kept.
+   not placeable) marked with the registry's existing `"indestructible": true` (S2a reuses it rather
+   than adding a `breakable` flag; it was unused since bedrock went), which the server's edit
+   validation checks — data, not a sandbox special case, and usable later for other unbreakable
+   ground. It is appended to the registry, so existing ids are kept.
 7. Which editing tools are needed first (box select, fill, copy/paste, mirror, undo, brush)?
    *Owner, 2026-10-14: box select, fill, copy/paste with rotate and mirror, and undo; the brush
    later.*

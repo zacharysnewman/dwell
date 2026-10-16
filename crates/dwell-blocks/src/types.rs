@@ -44,6 +44,63 @@ pub struct Textures {
     pub bottom: &'static str,
 }
 
+/// World-space grid lines the terrain shader draws on a state's faces (block data `grid`, a look
+/// option): a line every `every` blocks (a divisor of the chunk size), darkening by `strength`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grid {
+    pub every: u8,
+    pub strength: f32,
+}
+
+/// How a state's pixels are drawn (block data `render`, docs/TRANSPARENT_BLOCKS.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderMode {
+    /// Covers every pixel it draws (cubes).
+    Opaque,
+    /// Alpha-tested (alpha-to-coverage under MSAA), depth-writing, order-independent: foliage,
+    /// ladders.
+    Cutout,
+    /// Alpha-blended, no depth writes, sorted far to near: water, later glass and ice.
+    Translucent,
+}
+
+/// The `cross` look's geometry (block data `cross`): `quads` vertical quads through the cell's
+/// centre, evenly turned, `height` tall, each cell's copy jittered from its world position by up
+/// to `offset` (m, in x and z), `rotation_deg` (about y) and a height scale in
+/// [`height_min`, `height_max`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cross {
+    pub height: f32,
+    pub quads: u8,
+    pub offset: f32,
+    pub rotation_deg: f32,
+    pub height_min: f32,
+    pub height_max: f32,
+}
+
+/// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`
+/// (1 = the default gust field's pace).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Wind {
+    pub strength: f32,
+    pub speed: f32,
+}
+
+/// Distance fade of a cross (block data `fade`, metres): fully drawn to `start`, gone at `end`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fade {
+    pub start: f32,
+    pub end: f32,
+}
+
+/// Which neighbour a block needs to stay (block data `needsSupport`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Support {
+    None,
+    /// The cell below it, toward its face's ground (−y on face A, +y on face B).
+    Below,
+}
+
 /// One block state.
 #[derive(Clone, Copy, Debug)]
 pub struct StateInfo {
@@ -74,6 +131,20 @@ pub struct StateInfo {
     pub color: u32,
     pub opacity: f32,
     pub textures: Option<Textures>,
+    pub grid: Option<Grid>,
+    pub render: RenderMode,
+    /// The `cross` look's geometry (other looks: none).
+    pub cross: Option<Cross>,
+    pub wind: Option<Wind>,
+    pub fade: Option<Fade>,
+    /// A smaller box (min x, y, z, max x, y, z in the cell) for targeting, line of sight and the
+    /// outline; none: its shape, or the whole cell for a block without one.
+    pub selection: Option<[f32; 6]>,
+    /// Block ids it may be placed on (the cell below it); empty: anywhere.
+    pub place_on: &'static [&'static str],
+    pub needs_support: Support,
+    /// Placing a block into its cell (or against it) replaces it.
+    pub replaceable: bool,
 }
 
 /// A fluid's index in `FLUIDS`, valid for this build's registry.
@@ -85,7 +156,7 @@ pub type FluidId = u8;
 pub struct FluidInfo {
     /// Namespaced name, e.g. `dwell:water`.
     pub name: &'static str,
-    /// The fixed alpha its blocks are drawn with (until absorption replaces it).
+    /// The fixed alpha its blocks are drawn with on the Low water tier (no scene copies).
     pub opacity: f32,
     /// How far below its cell's top the surface is drawn, in cells (when the cell above is not
     /// the same fluid); on face B, above its cell's bottom.
@@ -101,7 +172,18 @@ pub struct FluidInfo {
     pub flow_speed: f32,
     pub foam_depth: f32,
     pub foam_color: u32,
+    /// The caustics' brightness (0: none), their cell size (m), and the depth (m) over which
+    /// they fade to 1/e.
     pub caustics: f32,
+    pub caustic_scale: f32,
+    pub caustic_depth: f32,
+    /// σ per metre of the light the fluid scatters toward the eye: over a ray's length its lit
+    /// body (the scatter colour) replaces what is behind, at the rate of absorption + scattering.
+    pub scattering: f32,
+    /// How far (m) the scene behind shifts per unit of ripple slope (refraction).
+    pub refraction: f32,
+    /// The sun's glitter off the ripples' facets.
+    pub sparkle: f32,
 }
 
 /// One polygon of a baked shape: `count` points of `v` (metres within the cell).

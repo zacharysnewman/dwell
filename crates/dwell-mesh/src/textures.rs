@@ -14,9 +14,11 @@ pub const GUTTER: usize = 16;
 pub const CELL: usize = TILE + 2 * GUTTER;
 pub const ATLAS_CELLS: usize = 8;
 pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
+/// Tile slots in the atlas (cells × cells), the length of [`tile_grids`].
+pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 8] = [
+pub const TILE_ORDER: [&str; 9] = [
     "plain",
     "grass",
     "grassSide",
@@ -25,6 +27,7 @@ pub const TILE_ORDER: [&str; 8] = [
     "sand",
     "water",
     "ladder",
+    "grid",
 ];
 
 /// A tile's rectangle in the atlas, in 0–1 texture coordinates (v = 0 is the atlas's row 0).
@@ -129,7 +132,7 @@ const STONE: Rgb = rgb(0xbbafa6);
 const STONE_COOL: Rgb = rgb(0x9c95a8);
 const STONE_FLECK: Rgb = rgb(0xd6c6b4);
 const SAND: Rgb = rgb(0xeed9a4);
-const WATER: Rgb = rgb(0x3fb2d6);
+const WATER: Rgb = rgb(0x2f86e0);
 const RAIL: Rgb = rgb(0xa0703a);
 
 fn grass(x: i64, y: i64) -> Rgb {
@@ -198,17 +201,59 @@ fn water(x: i64, y: i64) -> Rgb {
     scale(WATER, 0.85 + 0.15 * ripple + 0.12 * fine)
 }
 
+/// The ladder's rails (two columns) and rungs (every 8 texels).
+fn ladder_wood(x: i64, y: i64) -> bool {
+    let rail = (3..=6).contains(&x) || (25..=28).contains(&x);
+    let rung = (2..=4).contains(&y.rem_euclid(8));
+    rail || rung
+}
+
+/// Rails and rungs; the gaps between them are transparent (`ladder_alpha`: the ladder draws
+/// cutout) and keep the wood's colour, so filtering at a gap's edge never darkens the wood.
 fn ladder(x: i64, y: i64) -> Rgb {
     let grain = 0.8 + 0.3 * tiled_noise(x as f64, y as f64 * 0.25, 16, 6, 161);
     let rail = (3..=6).contains(&x) || (25..=28).contains(&x);
-    let rung = (2..=4).contains(&(y % 8));
     if rail {
         return scale(RAIL, grain);
     }
-    if rung {
-        return scale(RAIL, grain * 0.9);
+    scale(RAIL, grain * 0.9)
+}
+
+fn ladder_alpha(x: i64, y: i64) -> f64 {
+    if ladder_wood(x, y) { 255.0 } else { 0.0 }
+}
+
+/// The grid lines of each atlas tile slot (index cx + cy × `ATLAS_CELLS`, `TILE_ORDER` order):
+/// `[every, strength, 0, 0]`, all zero for none. A tile's grid is the registry's `grid` look
+/// option of the states drawn with it (an untextured state with the `plain` tile); `gen.mjs`
+/// rejects a tile whose states disagree, so the terrain shader can find a face's grid from its
+/// tile rectangle with nothing added to the vertex.
+pub fn tile_grids() -> [[f32; 4]; ATLAS_TILES] {
+    let mut out = [[0.0; 4]; ATLAS_TILES];
+    for s in &dwell_blocks::STATES {
+        let Some(g) = s.grid else { continue };
+        let names = s
+            .textures
+            .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
+        for name in names {
+            if let Some(i) = TILE_ORDER.iter().position(|t| *t == name) {
+                out[i] = [f32::from(g.every), g.strength, 0.0, 0.0];
+            }
+        }
     }
-    scale(RAIL, 0.3 + 0.08 * tiled_fbm(x as f64, y as f64, 162))
+    out
+}
+
+/// How much darker a `grid` tile's edge texels are than its white face.
+pub const GRID_LINE: f64 = 0.88;
+
+/// White with a faint line along every block edge: the first texel row and column, so each edge
+/// gets one texel (1/32 block) of line, from the block on its positive side. Mipmapping averages
+/// the line into the face with distance, so it fades out without shimmering.
+fn grid(x: i64, y: i64) -> Rgb {
+    let edge = x == 0 || y == 0;
+    let v = if edge { 255.0 * GRID_LINE } else { 255.0 };
+    [v, v, v]
 }
 
 /// The painter of tile `name`; an unknown name paints plain white (the TS has no painter for it).
@@ -221,8 +266,23 @@ fn painter(name: &str) -> fn(i64, i64) -> Rgb {
         "sand" => sand,
         "water" => water,
         "ladder" => ladder,
+        "grid" => grid,
         _ => |_, _| [255.0, 255.0, 255.0],
     }
+}
+
+/// The alpha (0–255) of tile `name` at texel (x, y): opaque but where a cutout tile is
+/// see-through.
+fn alpha(name: &str, x: i64, y: i64) -> f64 {
+    match name {
+        "ladder" => ladder_alpha(x, y),
+        _ => 255.0,
+    }
+}
+
+/// Whether tile `name` has transparent texels (it is drawn cutout or translucent).
+pub fn tile_has_alpha(name: &str) -> bool {
+    (0..TILE as i64).any(|y| (0..TILE as i64).any(|x| alpha(name, x, y) < 255.0))
 }
 
 fn byte(v: f64) -> u8 {
@@ -245,7 +305,7 @@ pub fn build_atlas() -> Vec<u8> {
                 data[o] = byte(r);
                 data[o + 1] = byte(g);
                 data[o + 2] = byte(b);
-                data[o + 3] = 255;
+                data[o + 3] = byte(alpha(name, tx, ty));
             }
         }
     }
@@ -274,22 +334,25 @@ pub fn linear_to_srgb_byte(v: f64) -> u8 {
 
 fn compute_average(name: &str) -> u32 {
     let paint = painter(name);
-    let (mut r, mut g, mut b) = (0.0, 0.0, 0.0);
+    let (mut r, mut g, mut b, mut n) = (0.0, 0.0, 0.0, 0.0);
+    // Weighted by coverage: a cutout tile's transparent texels don't count.
     for y in 0..TILE as i64 {
         for x in 0..TILE as i64 {
             let [pr, pg, pb] = paint(x, y);
-            r += srgb_to_linear(byte(pr));
-            g += srgb_to_linear(byte(pg));
-            b += srgb_to_linear(byte(pb));
+            let a = f64::from(byte(alpha(name, x, y))) / 255.0;
+            r += srgb_to_linear(byte(pr)) * a;
+            g += srgb_to_linear(byte(pg)) * a;
+            b += srgb_to_linear(byte(pb)) * a;
+            n += a;
         }
     }
-    let n = (TILE * TILE) as f64;
+    let n = if n > 0.0 { n } else { 1.0 };
     (u32::from(linear_to_srgb_byte(r / n)) << 16)
         | (u32::from(linear_to_srgb_byte(g / n)) << 8)
         | u32::from(linear_to_srgb_byte(b / n))
 }
 
-/// A tile's average colour (`0xRRGGBB`, sRGB): the mean of its texels in linear light, as a
+/// A tile's average colour (`0xRRGGBB`, sRGB): the mean of its covered texels in linear light, as a
 /// mipmapped sRGB texture averages from afar — the flat colour of LOD faces. Computed from the
 /// painters once per tile.
 pub fn average_tile_color(name: &str) -> u32 {
@@ -325,6 +388,78 @@ mod tests {
         assert_eq!(r.u0, (CELL + GUTTER) as f64 / ATLAS_SIZE as f64);
         assert_eq!(r.v0, GUTTER as f64 / ATLAS_SIZE as f64);
         assert_eq!(build_atlas().len(), ATLAS_SIZE * ATLAS_SIZE * 4);
+    }
+
+    #[test]
+    fn the_grid_tile_is_white_with_a_faint_line_at_its_edges() {
+        let last = TILE as i64 - 1;
+        let line = 255.0 * GRID_LINE;
+        for i in 0..TILE as i64 {
+            for p in [(0, i), (i, 0)] {
+                assert_eq!(grid(p.0, p.1), [line; 3], "{p:?}");
+            }
+        }
+        // One texel per edge: the far side is face, as is the interior.
+        assert_eq!(grid(last, 5), [255.0; 3]);
+        assert_eq!(grid(1, 1), [255.0; 3]);
+        assert_eq!(grid(16, 30), [255.0; 3]);
+        // From afar (the average, the LOD colour) it is still nearly white.
+        let avg = average_tile_color("grid");
+        assert!(avg >> 16 > 0xf0 && avg >> 16 < 0xff, "{avg:06x}");
+        assert!(tile_rect("grid").u1 <= 1.0 && tile_rect("grid").v1 <= 1.0);
+    }
+
+    #[test]
+    fn the_ladder_tile_is_see_through_between_its_rails_and_rungs() {
+        // Rails and rungs are opaque; the gaps are transparent, not painted dark.
+        assert_eq!(alpha("ladder", 4, 0), 255.0, "a rail");
+        assert_eq!(alpha("ladder", 15, 3), 255.0, "a rung");
+        assert_eq!(alpha("ladder", 15, 6), 0.0, "a gap");
+        assert!(tile_has_alpha("ladder"));
+        assert!(!tile_has_alpha("stone") && !tile_has_alpha("grass"));
+        let atlas = build_atlas();
+        let r = tile_rect("ladder");
+        let (x0, y0) = (
+            (r.u0 * ATLAS_SIZE as f64).round() as usize,
+            (r.v0 * ATLAS_SIZE as f64).round() as usize,
+        );
+        let texel = |x: usize, y: usize| &atlas[((y0 + y) * ATLAS_SIZE + x0 + x) * 4..][..4];
+        assert_eq!(texel(15, 6)[3], 0, "transparent in the atlas");
+        assert_eq!(texel(4, 6)[3], 255);
+        // The gap keeps the wood's colour (no dark fringe when filtered).
+        assert!(texel(15, 6)[0] > 0x60, "{:?}", texel(15, 6));
+        // The flat (LOD) colour is the wood's, not darkened by the gaps.
+        let avg = average_tile_color("ladder");
+        assert!(avg >> 16 > 0x80, "{avg:06x}");
+    }
+
+    #[test]
+    fn the_tile_grid_table_comes_from_the_registrys_grid_look_option() {
+        let table = tile_grids();
+        // Every state's tiles carry its grid (or none), so a face finds it from its tile alone.
+        for s in &dwell_blocks::STATES {
+            let names = s
+                .textures
+                .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
+            let want = s
+                .grid
+                .map_or([0.0; 4], |g| [f32::from(g.every), g.strength, 0.0, 0.0]);
+            for name in names {
+                let i = TILE_ORDER
+                    .iter()
+                    .position(|t| *t == name)
+                    .expect("a known tile");
+                assert_eq!(table[i], want, "{} on {name}", s.name);
+            }
+        }
+        // The sandbox floor's tile has its grid; the shader indexes cells as the atlas lays them out.
+        let floor = dwell_blocks::info(dwell_blocks::require("dwell:sandbox_floor"));
+        let g = floor.grid.expect("the floor's data has a grid");
+        let r = tile_rect("grid");
+        let cell = (r.u0 * ATLAS_CELLS as f64).floor() as usize
+            + (r.v0 * ATLAS_CELLS as f64).floor() as usize * ATLAS_CELLS;
+        assert_eq!(table[cell], [f32::from(g.every), g.strength, 0.0, 0.0]);
+        assert_eq!(table[0], [0.0; 4], "plain: no grid");
     }
 }
 

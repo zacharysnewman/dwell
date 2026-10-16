@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
 import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, namedShape, slabShape, slopeShape } from './shapes.mjs';
 import { NEIGHBOURHOODS, aroundOf, buildTable, describe, summary } from './adaptive.mjs';
+import { loadSounds } from '../sounds/load.mjs';
+import { checkBlockSounds } from '../sounds/validate.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -37,7 +39,23 @@ const SHAPES = { empty: 'kEmpty', full: 'kFull', shaped: 'kShaped' };
 const FACINGS = ['north', 'east', 'south', 'west'];
 // The face (mesher axis·2 + sign) a ladder's plate sits against, per facing (0 +X, 1 −X, 4 +Z, 5 −Z).
 const LADDER_FACE = { east: 0, west: 1, south: 4, north: 5 };
-const LOOKS = ['cube', 'shaped', 'ladder', 'fluid'];
+const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross'];
+// Render modes (docs/TRANSPARENT_BLOCKS.md): how a look's pixels are drawn. `opaque` covers every
+// pixel it draws; `cutout` is alpha-tested (alpha-to-coverage under MSAA), writes depth and needs
+// no sorting; `translucent` is alpha-blended without depth writes, sorted far to near.
+const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
+// Which neighbour a `needsSupport` block stands on ("below": toward its face's ground).
+const SUPPORTS = ['below'];
+// The cross geometry's fade must end inside the nearest full-detail distance (the streamed view,
+// VIEW_RADIUS_CHUNKS × 32 m, the settings' minimum), so plants are gone before chunks meet the LOD.
+const MIN_DETAIL_M = 96;
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const inRange = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
+const onlyKeys = (id, what, o, keys) => {
+  if (o === null || typeof o !== 'object' || Array.isArray(o)) fail(`${id}: ${what} must be an object`);
+  const extra = Object.keys(o).filter((k) => !keys.includes(k));
+  if (extra.length) fail(`${id}: ${what}: unknown ${extra.join(', ')}`);
+};
 
 const pascal = (s) => s.replace(/(^|_)([a-z0-9])/g, (_, __, c) => c.toUpperCase());
 const fail = (m) => {
@@ -97,6 +115,65 @@ for (const ns of namespaces) {
   ns.blocks = [...ns.blocks, ...generated];
 }
 
+// Render mode, cross geometry, wind and the placement rules (docs/TRANSPARENT_BLOCKS.md).
+function validateRender(id, def, look, isAir) {
+  const render = def.render ?? 'opaque';
+  if (!RENDER_MODES.includes(render)) fail(`${id}: render must be one of ${RENDER_MODES.join(', ')} (got ${render})`);
+  const opacity = def.opacity ?? fluids.find((f) => f.name === def.fluid)?.opacity ?? 1;
+  if (!inRange(opacity, 0, 1)) fail(`${id}: opacity must be in [0, 1]`);
+  if (!isAir && opacity < 1 && render !== 'translucent') fail(`${id}: opacity ${opacity} needs "render": "translucent"`);
+  if (render === 'cutout' && !def.textures) fail(`${id}: render cutout needs textures (a tile with transparent texels)`);
+  if (look === 'cross') {
+    if (render === 'opaque') fail(`${id}: look cross has gaps: render must be cutout or translucent`);
+    if (def.shape !== 'empty') fail(`${id}: look cross needs shape empty (crosses have no collision geometry)`);
+  }
+  if (def.cross !== undefined) {
+    if (look !== 'cross') fail(`${id}: cross options need look cross`);
+    onlyKeys(id, 'cross', def.cross, ['height', 'quads', 'jitter']);
+    const { height = 1, quads = 2, jitter } = def.cross;
+    if (!(isNum(height) && height > 0 && height <= 1)) fail(`${id}: cross.height must be in (0, 1]`);
+    if (![2, 3, 4].includes(quads)) fail(`${id}: cross.quads must be 2, 3 or 4`);
+    if (jitter !== undefined) {
+      onlyKeys(id, 'cross.jitter', jitter, ['offset', 'rotation', 'height']);
+      const { offset = 0, rotation = 0, height: h = [1, 1] } = jitter;
+      if (!(isNum(offset) && offset >= 0 && offset < 0.5)) fail(`${id}: cross.jitter.offset must be in [0, 0.5)`);
+      if (!inRange(rotation, 0, 90)) fail(`${id}: cross.jitter.rotation must be in [0, 90] degrees`);
+      if (!(Array.isArray(h) && h.length === 2 && isNum(h[0]) && isNum(h[1]) && h[0] > 0 && h[0] <= h[1] && h[1] <= 1)) {
+        fail(`${id}: cross.jitter.height must be [min, max] with 0 < min <= max <= 1`);
+      }
+    }
+  }
+  if (def.wind !== undefined) {
+    if (look !== 'cross') fail(`${id}: wind needs look cross (it sways a cross's top)`);
+    onlyKeys(id, 'wind', def.wind, ['strength', 'speed']);
+    if (!inRange(def.wind.strength, 0, 0.5)) fail(`${id}: wind.strength must be in [0, 0.5] (metres at the top)`);
+    if (!(isNum(def.wind.speed) && def.wind.speed > 0 && def.wind.speed <= 10)) fail(`${id}: wind.speed must be in (0, 10]`);
+  }
+  if (def.fade !== undefined) {
+    if (look !== 'cross') fail(`${id}: fade needs look cross`);
+    onlyKeys(id, 'fade', def.fade, ['start', 'end']);
+    const { start, end } = def.fade;
+    if (!(isNum(start) && isNum(end) && start > 0 && start < end && end <= MIN_DETAIL_M)) {
+      fail(`${id}: fade must have 0 < start < end <= ${MIN_DETAIL_M} (metres; inside the full-detail distance)`);
+    }
+  }
+  if (def.selectionBox !== undefined) {
+    const b = def.selectionBox;
+    if (!(Array.isArray(b) && b.length === 6 && b.every((v) => inRange(v, 0, 1)) && b[0] < b[3] && b[1] < b[4] && b[2] < b[5])) {
+      fail(`${id}: selectionBox must be [x0, y0, z0, x1, y1, z1] in the cell (0..1, min < max)`);
+    }
+  }
+  if (def.placeOn !== undefined) {
+    if (!(Array.isArray(def.placeOn) && def.placeOn.length && def.placeOn.every((n) => typeof n === 'string'))) {
+      fail(`${id}: placeOn must be a non-empty list of block ids`);
+    }
+  }
+  if (def.needsSupport !== undefined && !SUPPORTS.includes(def.needsSupport)) {
+    fail(`${id}: needsSupport must be one of ${SUPPORTS.join(', ')}`);
+  }
+  if (def.replaceable !== undefined && typeof def.replaceable !== 'boolean') fail(`${id}: replaceable must be true or false`);
+}
+
 const fluids = readFluids(namespaces); // fluids.mjs
 const opacityOf = (block) => block.def.opacity ?? fluids[block.fluid]?.opacity ?? 1;
 const blocks = []; // { id, def, props: [{name, values}], first, count, look, fluid }
@@ -119,8 +196,17 @@ for (const ns of namespaces) {
     if (!(def.shape in SHAPES)) fail(`${id}: shape ${def.shape}`);
     if (def.tint !== undefined) fail(`${id}: tint is no longer supported (biome tints were removed)`);
     if (def.launchSpeed !== undefined) fail(`${id}: launchSpeed is no longer supported`);
+    // `grid` (a look option): lines the terrain shader draws every `every` blocks in world space,
+    // darkening by `strength`. `every` divides the chunk size (32), so chunk-local uvs line up.
+    if (def.grid !== undefined) {
+      const { every, strength, ...rest } = def.grid ?? {};
+      if (Object.keys(rest).length) fail(`${id}: grid: unknown ${Object.keys(rest).join(', ')}`);
+      if (![1, 2, 4, 8, 16, 32].includes(every)) fail(`${id}: grid.every must divide 32 (1, 2, 4, 8, 16 or 32)`);
+      if (!(typeof strength === 'number' && strength > 0 && strength <= 1)) fail(`${id}: grid.strength must be in (0, 1]`);
+    }
     const look = def.look ?? 'cube';
     if (!LOOKS.includes(look)) fail(`${id}: look ${look}`);
+    validateRender(id, def, look, states.length === 0);
     if (def.facingProperty) {
       const p = props.find((q) => q.name === def.facingProperty);
       if (!p || p.values.some((v) => !FACINGS.includes(v))) fail(`${id}: facingProperty`);
@@ -150,6 +236,30 @@ for (const ns of namespaces) {
   }
 }
 if (states[0]?.string !== 'dwell:air') fail('dwell:air must be state 0');
+for (const b of blocks) {
+  for (const name of b.def.placeOn ?? []) {
+    if (!blocks.some((o) => o.id === name)) fail(`${b.id}: placeOn names unknown block ${name}`);
+  }
+}
+// The terrain shader finds a face's grid from its texture tile (dwell-mesh tile_grids), so every
+// block drawn with a tile (an untextured one with `plain`) must want the same grid, or none.
+{
+  const gridOfTile = new Map();
+  for (const b of blocks) {
+    const t = b.def.textures;
+    const tiles = t ? (typeof t === 'string' ? [t] : [t.top, t.side, t.bottom]) : ['plain'];
+    const want = b.def.grid ? `every ${b.def.grid.every}, strength ${b.def.grid.strength}` : 'no grid';
+    for (const tile of tiles) {
+      const seen = gridOfTile.get(tile);
+      if (seen && seen.want !== want) {
+        fail(`${b.id}: texture tile ${tile} is drawn with ${seen.want} by ${seen.id} but ${want} here (a tile has one grid: give the block its own tile)`);
+      }
+      gridOfTile.set(tile, seen ?? { id: b.id, want });
+    }
+  }
+}
+// Sound sets (docs/AUDIO.md): a block's optional `sound` names a set in shared/sounds/*.json.
+checkBlockSounds(blocks.map((b) => ({ id: b.id, sound: b.def.sound })), loadSounds());
 if (states.length > 0xffff) fail('too many states');
 
 // Shapes (shapes.mjs): one baked geometry per distinct (corners, inversion, diagonal); index 0 is
@@ -239,7 +349,8 @@ const num = (v) => (Number.isInteger(v) ? `${v}.0f` : `${v}f`);
 // ---- TypeScript --------------------------------------------------------------------------------
 const ts = [];
 ts.push(`// ${header}`);
-ts.push("export type MaterialLook = 'cube' | 'shaped' | 'ladder' | 'fluid';");
+ts.push("export type MaterialLook = 'cube' | 'shaped' | 'ladder' | 'fluid' | 'cross';");
+ts.push("export type RenderMode = 'opaque' | 'cutout' | 'translucent';");
 ts.push('');
 ts.push('/** Texture tiles (dwell-mesh textures.rs) per face group; untextured materials use `color`. */');
 ts.push('export interface MaterialTextures {');
@@ -259,6 +370,8 @@ ts.push('  id: string;');
 ts.push('  first: number;');
 ts.push('  count: number;');
 ts.push('  properties: readonly BlockProperty[];');
+ts.push('  /** Its sound set (shared/sounds, docs/AUDIO.md); none: the sounds\' fallback set. */');
+ts.push('  sound?: string;');
 ts.push('}');
 ts.push('');
 ts.push('/** One block state with how it is drawn (the physics side lives in the C++ core). */');
@@ -270,6 +383,8 @@ ts.push('  state: string;');
 ts.push('  block: number;');
 ts.push('  values: Readonly<Record<string, string>>;');
 ts.push('  look: MaterialLook;');
+ts.push('  /** How its pixels are drawn (docs/TRANSPARENT_BLOCKS.md). */');
+ts.push('  render: RenderMode;');
 ts.push('  color: number;');
 ts.push('  opacity: number;');
 ts.push('  textures?: MaterialTextures;');
@@ -313,7 +428,8 @@ ts.push('');
 ts.push('export const BLOCK_DEFS: readonly BlockDef[] = [');
 for (const b of blocks) {
   const props = b.props.map((p) => `{ name: '${p.name}', values: [${p.values.map((v) => `'${v}'`).join(', ')}] }`);
-  ts.push(`  { id: '${b.id}', first: ${b.first}, count: ${b.count}, properties: [${props.join(', ')}] },`);
+  const sound = b.def.sound ? `, sound: '${b.def.sound}'` : '';
+  ts.push(`  { id: '${b.id}', first: ${b.first}, count: ${b.count}, properties: [${props.join(', ')}]${sound} },`);
 }
 ts.push('];');
 ts.push('');
@@ -347,6 +463,7 @@ for (let first = 0; first < states.length; first += CHUNK) {
     `block: ${blocks.indexOf(s.block)}`,
     `values: { ${s.block.props.map((p) => `${p.name}: '${s.values[p.name]}'`).join(', ')} }`,
     `look: '${s.block.look}'`,
+    `render: '${d.render ?? 'opaque'}'`,
     `color: ${colorNum(d.color)}`,
     `opacity: ${opacityOf(s.block)}`,
   ];
@@ -429,6 +546,13 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   rs.push('];');
   rs.push('');
   const RS_SHAPES = { empty: 'Empty', full: 'Full', shaped: 'Shaped' };
+  const crossRs = (d) => {
+    if (d.look !== 'cross') return 'None';
+    const c = d.cross ?? {};
+    const j = c.jitter ?? {};
+    const [lo, hi] = j.height ?? [1, 1];
+    return `Some(Cross { height: ${rf(c.height ?? 1)}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)} })`;
+  };
   rs.push(`pub static STATES: [StateInfo; ${states.length}] = [`);
   for (const st of states) {
     const d = st.block.def;
@@ -454,6 +578,15 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `color: 0x${d.color.replace('#', '').toLowerCase()}`,
       `opacity: ${rf(opacityOf(st.block))}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
+      `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
+      `render: RenderMode::${pascal(d.render ?? 'opaque')}`,
+      `cross: ${crossRs(d)}`,
+      `wind: ${d.wind ? `Some(Wind { strength: ${rf(d.wind.strength)}, speed: ${rf(d.wind.speed)} })` : 'None'}`,
+      `fade: ${d.fade ? `Some(Fade { start: ${rf(d.fade.start)}, end: ${rf(d.fade.end)} })` : 'None'}`,
+      `selection: ${d.selectionBox ? `Some([${d.selectionBox.map(rf).join(', ')}])` : 'None'}`,
+      `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
+      `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
+      `replaceable: ${!!d.replaceable}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }
