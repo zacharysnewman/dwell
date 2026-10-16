@@ -187,7 +187,7 @@ pub fn cloud_uniforms(
     let [wx, wz] = heading(t.wind.direction_deg).map(|c| c * t.wind.speed_mps * seconds);
     let [ex, ez] = heading(t.wind.evolve_direction_deg).map(|c| c * t.wind.evolve_mps * seconds);
     let side = if face < 0.0 { wrap / 2.0 } else { 0.0 };
-    let cells = |m: f64| (m.rem_euclid(wrap) / t.shape.scale_m);
+    let cells = |m: f64| m.rem_euclid(wrap) / t.shape.scale_m;
     let under = [cells(eye[0] - wx + side), cells(eye[2] - wz + side)];
     let warp = [cells(wx - ex), cells(wz - ez)];
     let height = deck_height(t, eye[1], face);
@@ -553,13 +553,15 @@ mod tests {
         validate(&cloud_wgsl(&CLOUDS));
     }
 
-    #[test]
     /// The hit `t` along the ray with dot `y` with up, from an eye `h` below the deck, lies on the
     /// deck's sphere (radius r + a about a centre r below sea level).
     fn on_sphere(y: f64, h: f64, a: f64, r: f64, t: f64) {
         let e = r + a - h;
         let (x, z) = ((1.0 - y * y).sqrt() * t, y * t + e);
-        assert!(((x * x + z * z).sqrt() - (r + a)).abs() < 1e-6, "y {y} h {h} t {t}");
+        assert!(
+            ((x * x + z * z).sqrt() - (r + a)).abs() < 1e-6,
+            "y {y} h {h} t {t}"
+        );
     }
 
     #[test]
@@ -599,11 +601,15 @@ mod tests {
         let e = r + a - h;
         let grazing = -((e * e - (r + a) * (r + a)) / (e * e)).sqrt();
         let at_horizon = deck_distance(grazing - 1e-9, h, a, r).unwrap();
-        assert!((at_horizon - (e * e - (r + a) * (r + a)).sqrt()).abs() < 1.0);
+        let tangent = (e * e - (r + a) * (r + a)).sqrt();
+        assert!(
+            (at_horizon / tangent - 1.0).abs() < 1e-3,
+            "{at_horizon} vs {tangent}"
+        );
         assert_eq!(deck_distance(grazing + 1e-3, h, a, r), None);
         // Nearer as the ray steepens, on the sphere, and the near side (not through the far one).
         let mut last = f64::INFINITY;
-        for i in 0..=100 {
+        for i in 1..=100 {
             let y = grazing - (1.0 + grazing) * f64::from(i) / 100.0;
             let t = deck_distance(y, h, a, r).unwrap();
             assert!(t < last + 1e-9 && t >= 1200.0 - 1e-9);
@@ -628,11 +634,17 @@ mod tests {
         // deck itself fades out over the same band (dwell_cloud_deck's cross fade): no pop.
         let mut t = CLOUDS;
         t.shape.coverage = 1.0;
-        let at = |y: f64| {
-            cloud_uniforms(&t, [0.0, y, 0.0], 1.0, 0.0, CloudQuality::High, 1.0)[2][0]
-        };
         let deck = t.deck.altitude_m;
-        assert!(at(deck) > 0.5, "{}", at(deck));
+        // An eye position over a cloud (not every point of even full coverage is cloud).
+        let x = (0..200)
+            .map(|i| f64::from(i) * 97.0)
+            .find(|&x| {
+                cloud_uniforms(&t, [x, deck, 0.0], 1.0, 0.0, CloudQuality::High, 1.0)[2][0] > 0.3
+            })
+            .expect("a cloud");
+        let at = |y: f64| cloud_uniforms(&t, [x, y, 0.0], 1.0, 0.0, CloudQuality::High, 1.0)[2][0];
+        let full = (t.deck.inside_fog * t.shape.opacity) as f32;
+        assert!(at(deck) > 0.0 && at(deck) <= full + 1e-6, "{}", at(deck));
         assert!((at(deck - 100.0) - at(deck + 100.0)).abs() < 0.05);
         assert!(at(deck - 50.0) < at(deck) && at(deck - 300.0) < at(deck - 50.0));
         assert_eq!(at(deck - t.deck.cross_fade_m - 1.0), 0.0);

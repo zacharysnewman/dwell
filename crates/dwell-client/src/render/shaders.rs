@@ -465,7 +465,9 @@ mod tests {
             assert!(line.contains(", clear, fog_amount("), "{line}");
         }
         // Over the scene only where the deck is in front of it, by the stored view depth.
-        let front = body.find("dwell_cloud_in_front(deck.z, length(ray), depth)").expect("test");
+        let front = body
+            .find("dwell_cloud_in_front(deck.z, length(ray), depth)")
+            .expect("test");
         assert!(body[front..].contains("shown = dwell_clouds(shown, clear,"));
         assert!(body.contains("out = mix(out, shown, min(c.a, 1.0))"));
         assert!(body.contains("dwell_cloud_fog(out, frame.cloud_inside.x"));
