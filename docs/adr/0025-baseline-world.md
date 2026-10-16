@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-12
+- Amended by: [0028](0028-rust-port.md) (decision 8's double-precision physics is Rapier's f64 build instead of Jolt; the playground generator went with `voxel.cpp`)
 - Resolves: Phase 14 of the implementation plan (the baseline's decisions D1–D3, D5–D9,
   [`BASELINE_EVALUATION.md`](../BASELINE_EVALUATION.md) §7)
 - Supersedes: [0011](0011-planet-scale-world.md) decision 1 (the 8,192 km disc and its vertical

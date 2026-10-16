@@ -360,6 +360,38 @@ Nothing here changes public API (world files, seeds' terrain, protocols), so no 
 - **Timestamps:** Chrome rounds them to 65.536 µs unless started with
   `--enable-webgpu-developer-features` (`--enable-features=WebGPUDeveloperFeatures` does not lift it).
 
+### A2 as built (2026-10-15)
+
+- **The seam** (`crates/dwell-client/src/render/seam.rs`): `Scene` is a `TerrainRenderer` over
+  `Terrain { raster, march }` payloads plus the shared calls. Each renderer implements
+  `TerrainRenderer` for its own payloads (`set_chunk`, `set_section`, `None` removes,
+  `show_sections`, `show_stand_ins`, `clear`, `gpu_bytes`); `Routed` hands each part to its
+  renderer while the `Selection` draws it. One meshing job per chunk or section carries a
+  `Payloads` mask (mesh, bricks or both) rather than two jobs, so compare mode costs one worker trip.
+  The streamer and the LOD system pass any payload through. A switch clears the renderers no longer
+  drawn and, when the payloads change, rebuilds every chunk (`ChunkStreamer::remesh_all`) and every
+  drawn LOD section (`LodSystem::rebuild_all`, regenerating cells dropped after meshing).
+- **The marcher's interface** (`render/march.rs`, a placeholder until A3): payloads `ChunkBricks` and
+  `SectionBricks` built in the workers by `build_chunk_bricks(padded, mirror)` and
+  `build_section_bricks(cells, mirror)` (the mesher's inputs) and carried by the jobs codec;
+  `MarchRenderer::draw(encoder, targets, timestamp_writes)` fills one side's frame targets (linear
+  colour premultiplied by coverage, view depth; 0 = miss), timed as `gpu.march`. The placeholder
+  fills its side magenta; `march::BUILT` stays false (so `__dwell.renderers()` omits `march` and the
+  bench skips its configurations) until the marcher draws terrain.
+- **Compare mode**: a set of frame targets per side, each side's passes scissored to its part
+  (split) or not drawn (blink's hidden side); the composite assembles the sides with their lines.
+  The difference view composites both sides and classes each pixel: coverage differs (red; it stands
+  in for cell id and face until the marcher writes ids), relative view depth > 1e-3 (orange),
+  composited colour ΔE > 2.3 (yellow); counted with atomics in the fragment shader and read back a
+  frame or two late. `?compare=raster` puts raster on both sides: the exit check read 0 of 921 600
+  px in every class (Mac, Chrome on the GPU, seed 7's spawn).
+- **Local builds only**: the shell's build-time `__RENDERER_SWITCH__` (vite.config.ts; off when the
+  release workflow sets `DWELL_VERSION`). The WASM module carries the seam and placeholder in every
+  build; deployed pages can't select them.
+- Not yet: edit-to-visible latency and the bench's id/depth agreement (moved to A3, they need the
+  marcher's output). The placeholder's clear-only pass reports no GPU time (its timestamps don't
+  advance), so its overlay shows "–".
+
 ## 8. Risks
 
 - Full-resolution marching may be slower than raster on mobile and iOS (expected, §1); the

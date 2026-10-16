@@ -50,14 +50,22 @@ describe('settings JSON', () => {
       fog: { distanceM: 11313.708, density: 0.6049, heightM: 1499.6 },
       detail: { distanceM: 200.4, pixelError: 2.46, memoryMb: 511.7 },
       exposure: 1.2345,
+      audio: { master: 0.8049, effects: 1, ui: 0.333 },
       clouds: 'low',
+      water: { quality: 'medium' },
+      motion: { speedEffects: false, fovBoost: 0.456 },
+      fovDeg: 82.4,
     });
     const parsed = JSON.parse(json) as { fog: unknown; detail: unknown };
     expect(parsed).toEqual({
       fog: { distanceM: 11314, density: 0.6, heightM: 1500 },
       detail: { distanceM: 200, pixelError: 2.5, memoryMb: 512 },
       exposure: 1.23,
+      audio: { master: 0.8, effects: 1, ui: 0.33 },
       clouds: 'low',
+      water: { quality: 'medium' },
+      motion: { speedEffects: false, fovBoost: 0.46 },
+      fovDeg: 82,
     });
     expect(sanitizeFog(parsed.fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({

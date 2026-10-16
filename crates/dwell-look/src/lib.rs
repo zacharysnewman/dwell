@@ -9,6 +9,7 @@ pub mod clouds;
 mod clouds_gen;
 pub mod daynight;
 pub mod fog;
+pub mod motion;
 
 use daynight::{DAY_NIGHT, DayState, Sample};
 

@@ -292,13 +292,15 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'flySpeed':
       await call(page, `d.flySpeed(${String(s.level)})`);
       return;
-    case 'camera':
-      await until(
-        page,
-        `d.placeCamera(${JSON.stringify(s.position)}, ${String(s.yaw)}, ${String(s.pitch)})`,
-        30_000,
-      );
+    case 'camera': {
+      // aroundPlayer: x and z from the player's feet, y absolute.
+      const [x, y, z] = s.position;
+      const at = s.aroundPlayer
+        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${String(y)}, f[2] + ${String(z)}]; })()`
+        : JSON.stringify(s.position);
+      await until(page, `d.placeCamera(${at}, ${String(s.yaw)}, ${String(s.pitch)})`, 30_000);
       return;
+    }
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;

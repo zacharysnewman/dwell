@@ -2,6 +2,7 @@
 
 - Status: Accepted (2026-10-12, amended: the table as data with overrides)
 - Date: 2026-10-08
+- Amended by: [0028](0028-rust-port.md) (the table is read by the Rust crates, `dwell-blocks`, shared by server and client, instead of C++ and TypeScript readers)
 - Amended: 2026-10-12, by the baseline rework ([0025](0025-baseline-world.md),
   [`BASELINE_EVALUATION.md`](../BASELINE_EVALUATION.md) §3.7): the rule table is data, with
   per-neighbourhood overrides the Shape Playground exports; every solid block in the baseline is

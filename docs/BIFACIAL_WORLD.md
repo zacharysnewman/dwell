@@ -63,7 +63,8 @@ B's dome hang below the disc with their tops facing −y.
   midplane in the open settles there instead of oscillating between the faces forever. A player in
   the band moves as when swimming (PLAYER_CONTROLLER.md §6.4's swim layer, without buoyancy).
 - Where the midplane is solid (almost everywhere inside the disc), the band is never reached.
-- **Jolt:** the world keeps one gravity vector; each body's gravity factor is set by its side of
+- **Physics** (Jolt when designed; Rapier since Phase 24, `dwell-physics` `physics.rs`): the world
+  keeps one gravity vector; each body's gravity scale is set by its side of
   the midplane (−1 on face B) and scaled inside the flip band, updated when a body crosses it. The
   player controller applies its own gravity (it is a custom rigid-body controller) through the
   face sign below.
@@ -104,8 +105,8 @@ Spawn is always on face A (owner, 2026-10-05).
 ## 6. Players, camera and rendering
 
 - **The controller in face-local frame.** The controller assumes +y is up in its probes, step-up,
-  jumping, crouch, ladders, swimming and ground snapping (about 45 places in `controller.cpp`,
-  more in `voxel_query.cpp`). Rather than general gravity directions, it gains a **face sign**
+  jumping, crouch, ladders, swimming and ground snapping (about 45 places in the C++ build's `controller.cpp`,
+  more in `voxel_query.cpp`; now `dwell-physics` `controller.rs` and `query.rs`). Rather than general gravity directions, it gains a **face sign**
   (±1) threaded through every vertical quantity and probe direction; the voxel queries mirror
   lookups for face B. A **mirror-equivalence suite** proves it: every controller scenario run on
   face A and its mirror image on face B gives mirrored traces bit for bit, natively and in WASM.
@@ -150,7 +151,7 @@ the zone still holds both faces; bodies that fall off the rim settle in the flip
 - Controller: the mirror-equivalence suite (all scenarios, both origins, native and WASM); walking,
   jumping, swimming and climbing on face B; crossing by a dug shaft through the core and by going
   over the rim, with the face sign and camera turning over once.
-- Gravity: a body falling off the rim is accelerated across the midplane by the flip band; Jolt bodies
+- Gravity: a body falling off the rim is accelerated across the midplane by the flip band; rigid bodies
   on face B fall toward the midplane.
 - Bounds: nothing generated outside the two domes and bands; streaming and LOD reach both domes;
   posfix round-trips positions at both extremes.
@@ -184,15 +185,18 @@ character of its own.
   body that crosses falls back: it swings across the midplane rather than hovering in the band.
   Players and Tier 1 bodies alike.
 - **The controller** runs in a face-local mirror frame rather than threading a sign through 45
-  places (PLAYER_CONTROLLER.md §11); the mirror-equivalence suite is `--dwell-face=b`, equal in every
+  places (PLAYER_CONTROLLER.md §11); the mirror-equivalence suite is `--dwell-face=b` (in Rust,
+  `DWELL_FACE=b cargo nextest run -p dwell-physics`), equal in every
   decision and to contact-solver precision in positions (not bit for bit).
 - **Rendering.** Face-B chunks and LOD sections are meshed as their mirror image and turned back, so
   the face toward the player's up takes the top texture and shading. Lights are picked per fragment
-  by its side of the midplane (`three/heightFog.ts`); the sky and haze are evaluated in the viewer's
+  by its side of the midplane (`three/heightFog.ts` then; `own` in the WGSL of `dwell-client`
+  `render/shaders.rs` since Phase 24); the sky and haze are evaluated in the viewer's
   face-local frame with a night gradient and the moon's glow. Straddling LOD sections (levels ≥ 7) mesh
   both faces from one grid: face B's part is at cell resolution, shaded as undersides.
   The LOD does not load or draw the other face (beyond 512 m, except near the rim), and a straddling
   section is meshed for the viewer's face alone (the other face's rows become stone, the tints are the
   viewer's face's).
-- **Not done here:** Tier 1 bodies' Jolt factors are built and tested, but clusters arrive in Phase 20;
+- **Not done here:** Tier 1 bodies' gravity scales are built and tested (`dwell-physics`
+  `tests/tier1_bifacial.rs`), but clusters arrive in Phase 20;
   the F4 terrain map and the debug overlays show face A.

@@ -2,6 +2,7 @@
 
 - Status: Accepted (extended by [0011](0011-planet-scale-world.md): noise coordinates at planet scale; amended by [0017](0017-continents-from-voronoi-plates.md): a correctly rounded `sqrt` is allowed)
 - Date: 2026-09-25
+- Amended by: [0028](0028-rust-port.md) (the generator is the Rust crate `dwell-worldgen`, native and WASM; Rust never contracts `+ − × /` into fused multiply-adds, which replaces `-ffp-contract=off`; the numeric rules stand)
 - Resolves: ARCHITECTURE.md Open Decisions #8
 
 ## Context

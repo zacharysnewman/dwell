@@ -13,5 +13,8 @@ dwell-look = { path = "../dwell-look" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-world = { path = "../dwell-world" }
 
+[dev-dependencies]
+dwell-blocks = { path = "../dwell-blocks", features = ["fixture"] }
+
 [lints]
 workspace = true

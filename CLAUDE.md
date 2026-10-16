@@ -69,11 +69,13 @@ because earlier features were hardcoded; don't add more work of that kind.
 An extendable system has:
 
 - **A data source of truth** for the things it holds (blocks, shapes, terrain layers, looks, …), in
-  a file a tool could edit — not constants and branches in C++ or TypeScript.
-- **One generator or loader** that turns the data into what the server, WASM core and client use, so
-  they agree, with CI failing on stale output (as `shared/blocks/gen.mjs` and
-  `shared/protocol/gen.mjs` do).
-- **References by name, not by code constant** (`"dwell:sand"`, not `Materials::kSand`).
+  a file a tool could edit — not constants and branches in Rust or TypeScript.
+- **One generator or loader** that turns the data into what the Rust crates (server, sim core and
+  client) and the TypeScript shell use, so they agree, with CI failing on stale output (as
+  `shared/blocks/gen.mjs` and `shared/protocol/gen.mjs` do, emitting Rust for `dwell-blocks` and
+  `dwell-protocol` and TS for the shell).
+- **References by name, not by code constant** (`"dwell:sand"`, looked up with `dwell_blocks::find_block` or `parse_state`, not a code constant
+  such as `const SAND: StateId = 13`).
 - **Validation and tests over the data**: a bad entry fails with a message, and a test adds a
   fixture entry by data alone and sees it work.
 
