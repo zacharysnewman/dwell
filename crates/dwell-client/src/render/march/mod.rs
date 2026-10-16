@@ -175,6 +175,8 @@ pub struct Marcher {
     /// The last histogram read back.
     pub last_steps: Option<StepSummary>,
     _atlas: (wgpu::TextureView, wgpu::Sampler),
+    /// The frame group's tile grids and fluid looks (`render::frame_extras`).
+    extras: (wgpu::Buffer, wgpu::Buffer),
 }
 
 fn storage(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -262,6 +264,8 @@ impl Marcher {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                super::frame_extra_entries(vis)[0],
+                super::frame_extra_entries(vis)[1],
             ],
         });
         let mut data_entries = vec![wgpu::BindGroupLayoutEntry {
@@ -361,6 +365,7 @@ impl Marcher {
             cache: None,
         });
         let atlas = super::Renderer::atlas(&device, &queue);
+        let extras = super::frame_extras(&device, &queue);
         let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("march frame"),
             size: super::FRAME_FLOATS as u64 * 4,
@@ -382,6 +387,14 @@ impl Marcher {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&atlas.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: extras.0.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: extras.1.as_entire_binding(),
                 },
             ],
         });
@@ -431,6 +444,7 @@ impl Marcher {
             frames: 0,
             last_steps: None,
             _atlas: atlas,
+            extras,
         }
     }
 
@@ -847,6 +861,8 @@ impl Drop for Marcher {
         self.frame_buffer.destroy();
         self.uniforms.destroy();
         self.stats.destroy();
+        self.extras.0.destroy();
+        self.extras.1.destroy();
         for b in &self.readback {
             b.destroy();
         }

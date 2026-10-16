@@ -10,6 +10,13 @@
 > build on. Decisions: [ADR 0016](./adr/0016-slope-blocks.md) (amended by ADR 0025). The built
 > mechanisms live in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 and
 > [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md) §6.2.
+>
+> **Since Phase 24** ([ADR 0028](./adr/0028-rust-port.md)) the mechanism is Rust: `shared/blocks/shapes.mjs`
+> bakes the shapes into `dwell-blocks` (`shape.rs`: point queries, `ray_enter_shape`,
+> `surface_height_at`), the chunk mesher is `dwell-mesh` `mesher.rs`, and terrain collision is one
+> Rapier voxel collider (`dwell-physics` `terrain.rs`) that treats every solid as a full cell until
+> Phase 18. The C++ files, Jolt shapes and TypeScript modules named below (e.g. §4's
+> `terrain_collision.h` and `MeshShape`) are those of the build the design was made for.
 
 
 ## 1. The geometry

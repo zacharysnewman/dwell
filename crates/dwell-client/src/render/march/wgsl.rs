@@ -99,7 +99,6 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("BIG", F32(BIG)),
         ("MIDPLANE_GRID", I32(midplane_grid as i32)),
         ("ATLAS_SIZE", F32(dwell_mesh::ATLAS_SIZE as f32)),
-        ("ATLAS_CELLS", U32(dwell_mesh::ATLAS_CELLS as u32)),
         ("ATLAS_CELL", F32(dwell_mesh::CELL as f32)),
         ("ATLAS_GUTTER", F32(dwell_mesh::GUTTER as f32)),
         ("TILE_TEXELS", F32(dwell_mesh::TILE as f32)),

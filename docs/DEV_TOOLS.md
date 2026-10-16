@@ -53,7 +53,10 @@ Output per scenario, in `OUT/<scenario>/`:
   "steps": [ { "do": "settle", "maxS": 120 }, { "do": "fly", "on": true }, … ] }
 ```
 
-`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views),
+`seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
+`fog`, `detail`, `exposure`, `skyRotation` — 180 is night — `clouds`, `water`, and `motion` —
+`{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
+build),
 `debug` (`?debug=1`), `scale`, `renderer` (`?renderer=`: a renderer by name; a build without the
 renderer switch ignores it) and `split` (`near` or `far`: which part of the view it measures, for
 `--compare`'s split) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
@@ -65,7 +68,7 @@ fields, ranges and names fail with the entry named):
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
 | `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
-| `camera {position, yaw, pitch}`, `releaseCamera` | places the camera (the player stays), or returns it |
+| `camera {position, yaw, pitch, aroundPlayer?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute): a view wherever a flight ended, where the chunks are streamed |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
@@ -182,6 +185,11 @@ The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, �
 Zero-difference check (Phase 25's A2 exit): open `?renderer=compare&compare=raster`, then
 `__dwell.setCompare('difference')`; after a frame or two `__dwell.compare().difference` reads 0 in
 every class.
+
+Kept scenarios include `idle-spawn`, `fly-low-fast`, `fly-low-faster`, `jump-onto-block`,
+`jump-in-place`, and the motion effects' `sprint-straight` (shots standing, mid-sprint and after) and
+`fly-fast-turn` (shots in fast flight, turning and diving: the wind's vanishing point following the
+travel).
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 

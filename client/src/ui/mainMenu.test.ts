@@ -30,6 +30,9 @@ describe('main menu text', () => {
     expect(worldDetails({ ...world, appVersion: '0.1.0' }, 1)).toBe(
       'Terrain · seed 42 · never played · v0.1.0',
     );
+    expect(worldDetails({ ...world, type: 'sandbox', generatorVersion: 100 }, 1)).toBe(
+      'Sandbox · seed 42 · never played',
+    );
   });
 });
 

@@ -4,6 +4,11 @@
 > `0.8.0 · 3361024`). This document tells an implementer exactly what to change. The diagnosis
 > behind each fix is summarised in its section; do not re-litigate it, but do run every "red first"
 > test against the unfixed code before fixing, as CLAUDE.md requires.
+>
+> **History:** the files named here (`client/src/lod/`, `render/three/`, `ThreeRenderer.ts`, …) are the
+> TypeScript/Three.js client of the time. Phase 24 ported the fixes to Rust ([ADR 0028](./adr/0028-rust-port.md)):
+> the LOD is `dwell-lod`, the face flip `dwell-game` `face_flip.rs`, the sky frame `dwell-look`
+> `sky_frame.rs`, the renderer `dwell-client` `render/`.
 
 There are four independent work items. Do them as **four separate commits (or PRs), in this order**:
 

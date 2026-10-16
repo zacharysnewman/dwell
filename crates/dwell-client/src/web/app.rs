@@ -7,8 +7,9 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use dwell_game::input::{EditAction, InputEvent, KeyboardMouseInput};
+use dwell_game::input::{EditAction, FLY_KEY, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
+use dwell_look::clouds::CloudQuality;
 use dwell_look::fog::FogSettings;
 use dwell_look::sky_frame::{SkySwitches, sky_angle, sky_frame, sky_switches};
 use dwell_physics::config::PlayerControllerConfig;
@@ -30,6 +31,9 @@ use crate::render::Renderer;
 use crate::render::compare::CompareView;
 use crate::render::seam::{Selection, TerrainKind};
 use crate::telemetry;
+
+/// The most cells `Client::voxels` reads at once (about 2 M: a 128³ box).
+const MAX_VOXEL_READ: u64 = 128 * 128 * 128;
 
 type Events = Rc<RefCell<VecDeque<TransportEvent>>>;
 /// The device key's signature of the join transcript, once the shell's promise settles.
@@ -217,6 +221,11 @@ struct Inner {
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
     debug_visible: bool,
+    /// The motion effects' settings and whether the game menu is open (docs/MOTION_EFFECTS.md).
+    motion: dwell_look::motion::MotionSettings,
+    menu_open: bool,
+    /// The Field of view setting (degrees, vertical).
+    fov_setting: f64,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -349,6 +358,9 @@ impl Client {
             started_ms: None,
             shell_events: Vec::new(),
             debug_visible: false,
+            motion: Default::default(),
+            menu_open: false,
+            fov_setting: dwell_lod::frustum::VERTICAL_FOV,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -460,6 +472,9 @@ impl Client {
             }
             let stats = session.stats();
             game.rtt_ms = stats.datagram_rtt_ms.or(stats.rtt_ms);
+            game.motion_settings = s.motion;
+            game.menu_open = s.menu_open;
+            game.fov_setting = s.fov_setting;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -478,6 +493,11 @@ impl Client {
             s.options.sky,
             (now_ms - start) / 1000.0,
         )));
+        // The clouds drift by the world's clock once the server's ticks have arrived.
+        let world = s.game.as_ref().and_then(|g| g.clock.seconds(now_ms));
+        s.renderer
+            .borrow_mut()
+            .set_cloud_time(world.unwrap_or((now_ms - start) / 1000.0));
         s.draw();
         telemetry::add("frame.cpu", telemetry::now_ms() - t0);
     }
@@ -624,12 +644,16 @@ impl Client {
                     c.blink();
                 }
                 r.set_compare(c);
+                drop(r);
+                if let Some(g) = s.game.as_mut() {
+                    g.sound(dwell_game::sound::SoundKind::Tool);
+                }
             }
             return true;
         }
-        let k = s.input.key_down(code, repeat, ctrl, meta, time_stamp_ms);
+        let k = s.input.key_down(code, repeat, ctrl, meta);
         for e in k.events {
-            s.on_input_event(e);
+            s.on_input_event(e, time_stamp_ms);
         }
         k.prevent_default
     }
@@ -761,9 +785,9 @@ impl Client {
         let mut s = self.inner.borrow_mut();
         s.touch_used = true;
         let e = if down {
-            s.touch.button_down(button, now_ms)
+            s.touch.button_down(button)
         } else {
-            s.touch.button_up(button, now_ms)
+            s.touch.button_up(button)
         };
         if let Some(e) = e {
             s.on_touch_event(e, now_ms);
@@ -777,6 +801,26 @@ impl Client {
         self.inner.borrow_mut().shell_events.drain(..).collect()
     }
 
+    /// The game's sound events since the last call (docs/AUDIO.md §5): 7 numbers each (kind,
+    /// block state, intensity, x, y, z, flags), for the shell's audio (`client/src/audio`).
+    #[wasm_bindgen(js_name = takeSounds)]
+    pub fn take_sounds(&self) -> Vec<f64> {
+        let mut s = self.inner.borrow_mut();
+        s.game
+            .as_mut()
+            .map_or_else(Vec::new, |g| dwell_game::sound::encode(&g.take_sounds()))
+    }
+
+    /// The audio listener (the camera at the last frame): eye, forward and up, 9 numbers; empty
+    /// before playing.
+    pub fn listener(&self) -> Vec<f64> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(Vec::new, |g| g.listener().to_vec())
+    }
+
     // ----- Game actions (the debug hooks use these too) -----
 
     /// Breaks (`"break"`) or places (`"place"`) at the crosshair.
@@ -787,6 +831,34 @@ impl Client {
             EditAction::Break
         };
         self.inner.borrow_mut().edit(action, now_ms)
+    }
+    /// Runs a region tool by name (`cornerA`, `cornerB`, `deselect`, `fill`, `hollow`, `replace`,
+    /// `clear`, `copy`, `pasteMode`, `rotate`, `mirror`, `paste`, `undo`, `redo`) as its key would;
+    /// true if it sent a region edit. For tools and tests (keys need the pointer locked).
+    pub fn tool(&self, name: &str, now_ms: f64) -> bool {
+        use dwell_game::region_tools::ToolAction as T;
+        let tool = match name {
+            "cornerA" => T::CornerA,
+            "cornerB" => T::CornerB,
+            "deselect" => T::Deselect,
+            "fill" => T::Fill,
+            "hollow" => T::Hollow,
+            "replace" => T::Replace,
+            "clear" => T::Clear,
+            "copy" => T::Copy,
+            "pasteMode" => T::PasteMode,
+            "rotate" => T::Rotate,
+            "mirror" => T::Mirror,
+            "paste" => T::Paste,
+            "undo" => T::Undo,
+            "redo" => T::Redo,
+            _ => return false,
+        };
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .is_some_and(|g| g.tool(tool, now_ms))
     }
     pub fn select(&self, slot: i32) {
         let mut s = self.inner.borrow_mut();
@@ -824,11 +896,63 @@ impl Client {
             .as_mut()
             .map_or(0, |g| g.voxel(x, y, z))
     }
-    pub fn fly(&self, on: bool) {
-        let mut s = self.inner.borrow_mut();
-        if let Some(v) = s.input.flight.set(on) {
-            s.shell_events.push(shell_event("flight", v));
+    /// The client's states in the box of `sx × sy × sz` cells from its lowest corner, in a
+    /// structure's layer order (y-slices, z-rows, x fastest; `region::read_box`): saving a
+    /// structure (STRUCTURES.md §4). Empty before playing, where a chunk of the box isn't loaded,
+    /// or for a box over `MAX_VOXEL_READ`.
+    pub fn voxels(&self, x: i32, y: i32, z: i32, sx: u32, sy: u32, sz: u32) -> Vec<u16> {
+        let cells = u64::from(sx) * u64::from(sy) * u64::from(sz);
+        if cells == 0 || cells > MAX_VOXEL_READ {
+            return Vec::new();
         }
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .map_or_else(Vec::new, |g| g.voxels([x, y, z], [sx, sy, sz]))
+    }
+    /// The box selected with the region tools (B, N): `[x, y, z, sx, sy, sz]` (its lowest corner
+    /// and size); empty with none. Saving a structure saves it when there is one.
+    pub fn selection(&self) -> Vec<i32> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .and_then(|g| g.region.selection())
+            .map_or_else(Vec::new, |(min, size)| [min, size].concat())
+    }
+    /// Loads a structure into the region tools' clipboard and turns paste mode on: the ghost box
+    /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
+    /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
+    /// error message, or empty when loaded.
+    #[wasm_bindgen(js_name = loadStructure)]
+    pub fn load_structure(
+        &self,
+        sx: i32,
+        sy: i32,
+        sz: i32,
+        cells: Vec<u16>,
+        keep: Vec<u8>,
+        label: &str,
+    ) -> String {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = s.game.as_mut() else {
+            return "Not playing".into();
+        };
+        let keep: Vec<bool> = keep.iter().map(|&k| k != 0).collect();
+        match g.region.load_clipboard([sx, sy, sz], cells, keep, label) {
+            Ok(()) => String::new(),
+            Err(e) => e,
+        }
+    }
+    /// Turns flight on or off (automation: the bench's `fly` step, e2e) by pressing the fly key, as a
+    /// player would, if it isn't already in that state; the server's flight policy still applies.
+    pub fn fly(&self, on: bool) {
+        if self.flying() == on {
+            return;
+        }
+        self.key_down(FLY_KEY, false, false, false, perf_now());
+        self.key_up(FLY_KEY);
     }
     #[wasm_bindgen(js_name = flySpeed)]
     pub fn fly_speed(&self, level: f64) {
@@ -870,6 +994,55 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_exposure(exposure);
+    }
+    /// The Clouds setting: `off`, `low` or `high` (anything else: high).
+    #[wasm_bindgen(js_name = setClouds)]
+    pub fn set_clouds(&self, quality: &str) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_clouds(CloudQuality::from_name(quality).unwrap_or(CloudQuality::High));
+    }
+    /// The clouds' coverage, 0 (clear) to 1 (overcast): for a weather system, or by hand.
+    #[wasm_bindgen(js_name = setCloudCoverage)]
+    pub fn set_cloud_coverage(&self, coverage: f64) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cloud_coverage(coverage);
+    }
+    /// The water quality (0 Low, 1 Medium, 2 High; WATER_RENDERING.md §4).
+    #[wasm_bindgen(js_name = setWaterQuality)]
+    pub fn set_water_quality(&self, level: u32) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_water_quality(crate::render::water::WaterQuality::from_level(level));
+    }
+    /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
+    #[wasm_bindgen(js_name = setMotion)]
+    pub fn set_motion(&self, enabled: bool, fov_strength: f64) {
+        self.inner.borrow_mut().motion = dwell_look::motion::MotionSettings {
+            enabled,
+            fov_strength: if fov_strength.is_finite() {
+                fov_strength.clamp(0.0, 1.0)
+            } else {
+                1.0
+            },
+        };
+    }
+    /// The Field of view setting: the vertical FOV in degrees (60–100, `dwell_lod::base_fov`).
+    #[wasm_bindgen(js_name = setFov)]
+    pub fn set_fov(&self, degrees: f64) {
+        self.inner.borrow_mut().fov_setting = dwell_lod::sanitize_fov_setting(degrees);
+    }
+    /// The game menu opened or closed: the motion effects hold still while it is open.
+    #[wasm_bindgen(js_name = setMenuOpen)]
+    pub fn set_menu_open(&self, open: bool) {
+        self.inner.borrow_mut().menu_open = open;
     }
     #[wasm_bindgen(js_name = setSkyRotation)]
     pub fn set_sky_rotation(&self, degrees: f64) {
@@ -1082,6 +1255,7 @@ impl Client {
                 g.hud.debug.as_deref().map_or(JsValue::NULL, JsValue::from),
             );
             set(&o, "damaged", std::mem::take(&mut g.hud.damaged));
+            set(&o, "region", g.region.status().as_str());
         }
         o.into()
     }
@@ -1276,7 +1450,7 @@ impl Inner {
         self.game.as_mut().is_some_and(|g| g.edit(action, now_ms))
     }
 
-    fn on_input_event(&mut self, e: InputEvent) {
+    fn on_input_event(&mut self, e: InputEvent, now_ms: f64) {
         match e {
             InputEvent::Toggle(key) => self.shell_events.push(shell_event("toggle", key)),
             InputEvent::Digit(code) => {
@@ -1292,6 +1466,11 @@ impl Inner {
                 }
             }
             InputEvent::FlightChanged(on) => self.shell_events.push(shell_event("flight", on)),
+            InputEvent::Tool(tool) => {
+                if let Some(g) = &mut self.game {
+                    g.tool(tool, now_ms);
+                }
+            }
         }
     }
 
@@ -1319,11 +1498,6 @@ impl Inner {
                 }
             }
             TouchEvent::Debug => self.shell_events.push(shell_event("toggle", "F3")),
-            TouchEvent::JumpPress(t) => {
-                if let Some(v) = self.input.flight.jump_pressed(t) {
-                    self.shell_events.push(shell_event("flight", v));
-                }
-            }
         }
     }
 
@@ -1421,6 +1595,7 @@ impl Inner {
             generator_version,
             verification_chunk,
             may_fly,
+            region_edits,
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;
@@ -1452,6 +1627,7 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
+        game.region.enabled = region_edits;
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }
