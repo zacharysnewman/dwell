@@ -36,7 +36,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
-| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (built separately) |
+| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
 | 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) and for Phase 25's renderer decision (A7, 2026-10-14: cluster rendering is built once, for the chosen renderer) |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
@@ -52,6 +52,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data (opaque, cutout, translucent) and cutout (see-through) ladders shipped on the 0.11 line (ADR 0036, `TRANSPARENT_BLOCKS.md`; no registry-hash change); the cross look, placement rules and `dwell:tall_grass` are on `claude/transparent-blocks` for the 0.12.0 line; `package.json` raised to 0.11.18, a patch release of the 0.11 line |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
+| 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -2383,7 +2384,7 @@ Exit criteria
 ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)), simplified by the baseline (every solid block is
 natural) and with the rule table as data.
 
-**Status:** Built and tested natively, in WASM (wasm32-wasip1) and in Vitest (2026-10-15); every deliverable done. Outstanding: the two-client e2e (not run on the branch: the e2e port is shared by other agents), the LOD seam check against chunks, and the owner's walk. A new compatibility line is needed (0.11.0, the owner raises `client/package.json`): the saved voxels, state strings and generated voxels are unchanged, but collision, spawn height and what a seed's terrain is change; the protocol is raised to v13 so that builds which shape differently never connect. Replaces Phase 9e (its original plan stays under Phase 9 for the record). Owner decision (2026-10-15): faces steeper than 44° slide (45° ramps and ridge flanks, saddles); sliding is built separately (`claude/slope-slide`), which owns the tests of steep faces.
+**Status:** Built and tested natively, in WASM (wasm32-wasip1) and in Vitest (2026-10-15); every deliverable done. Outstanding: the two-client e2e (not run on the branch: the e2e port is shared by other agents), the LOD seam check against chunks, and the owner's walk. A new compatibility line is needed (0.11.0, the owner raises `client/package.json`): the saved voxels, state strings and generated voxels are unchanged, but collision, spawn height and what a seed's terrain is change; the protocol is raised to v13 so that builds which shape differently never connect. Replaces Phase 9e (its original plan stays under Phase 9 for the record). Owner decision (2026-10-15): faces steeper than 44° slide (45° ramps and ridge flanks, saddles); sliding is Phase 35, which owns the tests of steep faces.
 
 Dependencies (checked 2026-10-14): the rework's order puts Phase 18 after Phase 17 (terrain
 definitions, not started) and Phase 16 (not started). Neither blocks the adaptive blocks
@@ -3304,6 +3305,66 @@ Deviations
   when they join the controls table.
 - The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
   its own make-up gain, which pushed sequences past full scale in the renders.
+
+---
+
+## Phase 35 — Sliding on Steep Ground
+
+> **Numbering note (for the integrator):** 32 was the next phase number free on `main` when this
+> was written (2026-10-15; 29–31 are taken there). Another branch may claim 32 too: if so,
+> renumber this phase (its heading and its Progress row) to the next free number when merging.
+
+**Status:** Built and tested natively, in Vitest and in a browser (2026-10-15). Outstanding: CI (the
+`wasm32-wasip1` divergence run and the e2e suite were not run on the branch), the owner's review of
+the feel in game and of the slide WAV renders. Stacks on Phase 18 (the adaptive shapes' 45° faces)
+and uses Phase 28's sound system.
+
+Owner (2026-10-15): *"Make the player slide on steep >44° slopes, give the player some control, and
+make sure there are relevant sound effects."* and *"Stairs will be their own thing later on. Ramps
+steeper than 44° will slide."* The owner gave the design brief directly; the details below are
+defaults recorded in `PLAYER_CONTROLLER.md` §6.8 (all tunables are data in
+`PlayerControllerConfig::slide` and the sound data).
+
+Deliverables
+- [x] **The slide** (`PLAYER_CONTROLLER.md` §6.8): ground under the player steeper than
+  `slide.min_angle` (44°, tested `>`) slides — gravity less friction up to a terminal speed,
+  steering across the slope at reduced acceleration, braking that never stops or climbs, a faster
+  and lower crouched slide, momentum kept onto flat ground (then normal ground friction) and into a
+  jump, no step-up onto steep ground, ladders and water override it; `State::Sliding`; face B by
+  the face-local frame; no wire change.
+- [x] **The slope limit** back to 56° (the steepest ground; the adaptive saddle's 54.74° faces must
+  slide, not hold a player in the air).
+- [x] **Tests**: `tests/slide.rs` (13 scenarios), the adaptive playground tests (steep blocks slide,
+  gentle ones rest, none at rest on steep ground; a ridge stops a walker and is jumped), netcode
+  (two clients, one sliding: exact without latency, no snaps at 150 ms RTT).
+- [x] **Sound**: loop sounds and loop events in the sound data (validated), a scrape and a soft stop
+  per surface set (stone, dirt, grass, sand; others fall back to stone's), slide start / speed /
+  end events per mover's voice from `dwell-game` `sound.rs` (spatial for other players), the
+  engine's loop voices, WAV renders of each surface's slide slow to fast.
+- [x] **Bench**: `slide-off-a-steep-block` (a 45° face, braking into it, steering mid-slide).
+- [x] Docs: `PLAYER_CONTROLLER.md` §4, §6.2, §6.8, §7, §8.2, §10; `ARCHITECTURE.md` (the
+  controller, sound, §7.4); `AUDIO.md` §2, §5, §7; `ADAPTIVE_BLOCKS.md` (stairs slide).
+
+Exit criteria
+- [x] Standing on a 45° ramp slides the player down and it never rests there; walking or running up
+  a 45° ramp (and single-block stairs) fails; steering moves across; braking slows; no launch at
+  the bottom or at a crest; 27° slopes still walked and rested on; face B mirrors (local frame and
+  world frame) — `cargo test -p dwell-physics` at the origin, far out and with `DWELL_FACE=b`.
+- [x] The new controller tests failed against the controller before the change (12 of 13; the 27°
+  case is a guard).
+- [x] Netcode: prediction exact without latency, no snaps at 150 ms RTT, 20 ms jitter, 5 % loss.
+- [x] The golden trace unchanged (its scenario has no steep ground).
+- [x] The sound event mapping and the data rules tested (Rust and Vitest).
+- [x] Browser: the bench scenario slides and steers (controller trace).
+- [ ] CI green, including the `wasm32-wasip1` divergence run and the e2e suite.
+- [ ] Manual: the owner slides in game and listens to the slide renders.
+
+Deviations:
+- **The slide's ground is under the centre**, not the probe ring's highest hit: the ring's hit can
+  lie across a crest and push the player back onto it (players balanced on every ridge).
+- **The 44° threshold makes more than ramps slide**: the 45° flanks of the adaptive ridges and half
+  pyramids too, so a one-wide ridge or a lone natural block needs a jump to cross (the owner's
+  "steeper than 44°" taken as stated).
 
 ---
 

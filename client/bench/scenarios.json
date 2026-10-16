@@ -2047,6 +2047,31 @@
       ]
     },
     {
+      "name": "slide-off-a-steep-block",
+      "notes": "Slides on 45° ground (PLAYER_CONTROLLER.md §6.8, owner 2026-10-15): places a block in front of the spawn (natural ground shapes it into a half pyramid with 45° faces), walks up the 27° ground around it into its 45° face (walking up it fails: the player slides back, braking), steers right along the face mid-slide with forward still held, then lets go and slides off. The controller trace (records.slide.ticks) shows the Sliding state, the speeds and the steer; the sounds (window.__dwell.sounds) the slide's loop and stop.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "select", "slot": 0 },
+        { "do": "look", "yaw": 90, "pitch": -50 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "placed" },
+        { "do": "look", "yaw": 90, "pitch": -10 },
+        { "do": "mark" },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 0.8 },
+        { "do": "shot", "name": "on-the-slope" },
+        { "do": "key", "code": "KeyD", "down": true },
+        { "do": "wait", "s": 0.4 },
+        { "do": "key", "code": "KeyD", "down": false },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "wait", "s": 1.0 },
+        { "do": "record", "name": "slide" },
+        { "do": "shot", "name": "after" }
+      ]
+    },
+    {
       "name": "slopes-near-far",
       "notes": "Natural slopes from the player's eyes, looking down at the ground nearby and out to the horizon (Phase 18): screenshots of the adaptive shapes near (chunks) and far (the LOD's sloped tops), and the steady frame there.",
       "steps": [

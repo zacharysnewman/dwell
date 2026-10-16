@@ -44,16 +44,28 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
     - `grains: { count: [min, max], spread, gain: [min, max], pitch? }`: the layer repeated as a
       cloud of short bursts (crunch, rustle, sand hiss, rubble, bubbles);
     - `alts: [overrides…]`: round-robin alternatives for the layer's fields.
+    - `tremolo: { rate, depth }` (loop sounds only): the layer's level wavers at `rate` Hz by
+      ± `depth` / 2 (a scrape's grit).
+  - **`loop: true`**: a continuous sound (the slide's scrape), played on a voice until stopped:
+    noise and oscillator layers only, sustained (no `env`, `grains`, `at`, `chance` or sweeps).
+    Its `intensity` (0–1) moves while it plays: `gain`, filter `cutoff` and `pitch` (a factor on
+    every source's rate and tremolo; loop sounds only), each gliding with a 60 ms time constant;
+    below 0.05 the voice fades to silence.
   - **`variation`**: `{ pitch (± semitones), gain (± dB), cutoff (± fraction), time (± fraction) }`,
     or `"none"` (UI sounds: identical every time).
   - **`intensity`**: how the event's intensity (0–1: a landing's impact speed, a splash's speed)
     scales `gain`, filter `cutoff` and envelope `time`, each a `[at 0, at 1]` pair.
 - **`sets`** — a block's sound set (`"sound": "dwell:stone"` on the block): the sound per event
-  (`step`, `land`, `break`, `place`, `hit` required; `enter`, `exit`, `swim` for liquids). A set
-  missing an event falls back to the `fallback` set's.
+  (`step`, `land`, `break`, `place`, `hit` required; `enter`, `exit`, `swim` for liquids;
+  `slide` — a loop sound — and `slide_stop` for surfaces). A set missing an event falls back to
+  the `fallback` set's, which must have every loop event's sound.
 - **`events`** — the event kinds the Rust game emits, in id order: each plays its set's event
   (`set`) and/or a named sound (`sound`); `speed: [min, full]` gives the speed at which it starts and
-  at which its intensity reaches 1.
+  at which its intensity reaches 1. `loop: "start" | "update" | "stop"` makes it part of a
+  continuous sound on the mover's voice: `start` plays its (loop) sound on the voice, `update`
+  (playing nothing of its own) moves the voice's intensity and position, `stop` fades the voice
+  and plays its one-shot. Validated: a start's sounds are loop sounds, every other event's are
+  not.
 - **`gaits`** — `walk`, `run`, `crouch`, `climb`, `swim`: footstep `stride` (m between steps) and
   `gain`.
 - **`actions`** — sounds the TS shell plays for game actions it handles (hotbar, flight, the game
@@ -114,7 +126,9 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `enter` / `exit` | the body entering / leaving water | the water | from speed |
 | `crouch_on` / `crouch_off` | the crouch flag changes | — | 1 |
 | `sprint` | entering Running | — | 1 |
-| `slide` | entering Sliding | — | 1 |
+| `slide` | starts a slide's voice: Sliding at ≥ `speed[0]` (0.5 m/s), or onto another surface mid-slide | under the feet | from speed (full at 14 m/s) |
+| `slide_speed` | the slide's speed changed (at most every 50 ms, by ≥ 0.02); 0 while paused | — | from speed |
+| `slide_end` | not sliding for 0.15 s (`SLIDE_HOLD`: a flicker at a ramp's foot keeps the voice), a teleport, or the player gone from view | the slide's surface (`slide_stop`) | the speed it slid at |
 | `rise` / `dive` | flying, vertical speed passes `speed[0]` | — | from speed |
 | `break` / `place` | the local player's edit request (immediately), or another player's edit seen in a `VoxelModification` (spatial) | the broken / placed block | 1 |
 | `hit` | a break of an indestructible block (the server will refuse it) | the block | 1 |
@@ -123,7 +137,8 @@ tick and each remote player's interpolated state each frame, and turns changes i
 The local player's own edits sound at once, on the request (the client does not predict edits); the
 server's echo of them is recognised by cell and not played again. Events cross to JS as compact
 numbers: `takeSounds()` returns a `Float64Array` of 7 numbers per event (`kind, block state,
-intensity, x, y, z, flags`; flags bit 0 = spatial, bits 1–3 the gait). `listener()` returns the
+intensity, x, y, z, flags`; flags bit 0 = spatial, bits 1–3 the gait + 1, bits 4 and up the voice
++ 1 — 0 the local player, others their player id). `listener()` returns the
 camera's position, forward and up. Audio is a side channel: nothing read back affects the
 simulation, and it reads only the predicted state the game already has.
 
@@ -162,7 +177,9 @@ simulation, and it reads only the predicted state the game already has.
   non-silent, peak < 1.0 and a sensible length; written to WAV for listening (`set_<set>_<event>`,
   `event_*`, `action_*`, `ui_*`), with 10-step walk and run sequences per surface
   (`steps_<set>_<gait>_x10`), four break and four place variations per set (`break_<set>_x4`,
-  `place_<set>_x4`) and landings soft to hard (`land_<set>_soft_to_hard`), plus `summary.txt`.
+  `place_<set>_x4`), landings soft to hard (`land_<set>_soft_to_hard`) and each surface's slide
+  from slow to fast for 4 s ending in its stop (`slide_<set>_slow_to_fast`; the intensity moved
+  every 50 ms as the game does), plus `summary.txt`.
 - Debug hooks: `window.__dwell.sounds()` in a game and `window.__dwellSounds()` on any page with
   sound list the latest sounds played.
 

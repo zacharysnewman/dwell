@@ -1,11 +1,11 @@
 //! The controller on adaptive natural blocks (docs/ADAPTIVE_BLOCKS.md, Phase 18): grass shapes
 //! itself from its neighbours, and the player walks the result — the Shape Playground's 28
 //! situations (every shape the rules make: slopes, ridges, saddles, half-and-half corners, 45°
-//! ramps) built as terrain, a terrace's 1-block step, a field across chunk seams — with no
-//! launches or hops, and no sliding at rest on gentle (27°) ground. Faces steeper than 44° (45°
-//! ramps, ridge flanks, saddles) are slides by the owner's decision (2026-10-15): resting on or
-//! walking up them is tested with the slide, not here. Runs in the local frame like every suite
-//! (far from the origin and on face B too).
+//! ramps) built as terrain, a terrace's 1-block step, a ridge, a field across chunk seams — with no
+//! launches or hops. Gentle ground is rested on; ground steeper than the slide angle (the 45°
+//! pieces, saddles, dimples) slides (owner 2026-10-15; the slide itself, and single-block stairs,
+//! are in `slide.rs`). Runs in the local frame like every suite (far from the origin and on face B
+//! too).
 
 mod common;
 
@@ -14,6 +14,7 @@ use dwell_blocks::adaptive;
 use dwell_blocks::shape::solid_span_at;
 use dwell_blocks::{StateId, require};
 use dwell_physics::Vec3;
+use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::controller::events;
 
 fn grass() -> StateId {
@@ -58,33 +59,6 @@ fn surface(height: &dyn Fn(i32, i32) -> i32, x: f32, z: f32) -> f32 {
     };
     let s = adaptive::shape_at(at, 1);
     (h - 1) as f32 + solid_span_at(s, x - cx as f32, z - cz as f32).hi
-}
-
-/// The steepest face (degrees) of the top block's derived shape at column (x, z).
-fn steepest_at(height: &dyn Fn(i32, i32) -> i32, x: i32, z: i32) -> f32 {
-    let h = height(x, z);
-    let (g, cube) = (grass(), cube_block());
-    let at = |dx: i32, dy: i32, dz: i32| {
-        let y = h - 1 + dy;
-        if y < 0 {
-            cube
-        } else if y < height(x + dx, z + dz) {
-            g
-        } else {
-            0
-        }
-    };
-    let s = adaptive::shape_at(at, 1);
-    let mut steepest = 0.0f32;
-    for f in dwell_blocks::shape::faces_of(s) {
-        if f.tag != dwell_blocks::shape::SURFACE_TAG {
-            continue;
-        }
-        let (a, b, c) = (Vec3::from(f.v[0]), Vec3::from(f.v[1]), Vec3::from(f.v[2]));
-        let n = (b - a).cross(c - a).normalize();
-        steepest = steepest.max(n.y.clamp(-1.0, 1.0).acos().to_degrees());
-    }
-    steepest
 }
 
 /// What one walker saw.
@@ -192,40 +166,143 @@ fn the_game_world_shapes_the_playground_like_the_owner_did() {
     assert_eq!(n, 151);
 }
 
+/// The gentlest and the steepest surface faces (degrees) of the top shape of column (x, z) that
+/// contain the point (x + fx, z + fz) seen from above (local frame): more than one where the point
+/// is on an edge between faces.
+fn slope_under(height: &dyn Fn(i32, i32) -> i32, x: i32, z: i32, fx: f32, fz: f32) -> (f32, f32) {
+    let h = height(x, z);
+    let (g, cube) = (grass(), cube_block());
+    let at = |dx: i32, dy: i32, dz: i32| {
+        let y = h - 1 + dy;
+        if y < 0 {
+            cube
+        } else if y < height(x + dx, z + dz) {
+            g
+        } else {
+            0
+        }
+    };
+    let s = adaptive::shape_at(at, 1);
+    let (mut gentlest, mut steepest) = (90.0f32, 0.0f32);
+    for f in dwell_blocks::shape::faces_of(s) {
+        if f.tag != dwell_blocks::shape::SURFACE_TAG {
+            continue;
+        }
+        let v: Vec<Vec3> = f.v[..usize::from(f.count)]
+            .iter()
+            .map(|&p| Vec3::from(p))
+            .collect();
+        // Inside the convex polygon's projection (either winding), with a little tolerance.
+        let sides: Vec<f32> = (0..v.len())
+            .map(|i| {
+                let (a, b) = (v[i], v[(i + 1) % v.len()]);
+                (b.x - a.x) * (fz - a.z) - (b.z - a.z) * (fx - a.x)
+            })
+            .collect();
+        let inside = sides.iter().all(|&s| s >= -1e-4) || sides.iter().all(|&s| s <= 1e-4);
+        if !inside {
+            continue;
+        }
+        let n = (v[1] - v[0]).cross(v[2] - v[0]).normalize();
+        let angle = n.y.abs().clamp(-1.0, 1.0).acos().to_degrees();
+        gentlest = gentlest.min(angle);
+        steepest = steepest.max(angle);
+    }
+    (gentlest, steepest)
+}
+
 #[test]
-fn standing_still_on_every_playground_block_never_slides() {
+fn standing_on_every_playground_block_rests_unless_its_ground_slides() {
+    // Ground steeper than the slide angle (44°) slides (PLAYER_CONTROLLER.md §6.8, owner
+    // 2026-10-15: "Ramps steeper than 44° will slide"): the 45° ramps, ridges' and pyramids'
+    // flanks, saddles and dimples. A player on any other block stands still.
     let height = playground();
+    let min_angle = PlayerControllerConfig::default().slide.min_angle;
     let mut w = PlayerTestWorld::new();
     terrain(&mut w, (0, 0, 31, 31), &height);
-    // One player on the centre of every block's top whose slopes are gentle (they stand 1 m
-    // apart: no touching). Faces steeper than 44° — 45° ramps and ridge flanks, saddles —
-    // are slides, not ground (owner, 2026-10-15): their behaviour is the slide's to test.
+    // One player on the centre of every block's top (they stand 1 m apart: no touching).
     let mut players = Vec::new();
     for z in 0..32 {
         for x in 0..32 {
-            if height(x, z) == 0 || steepest_at(&height, x, z) > 30.0 {
+            if height(x, z) == 0 {
                 continue;
             }
             let (fx, fz) = (x as f32 + 0.5, z as f32 + 0.5);
             let feet = surface(&height, fx, fz) + 0.02;
-            players.push((x, z, w.spawn(Vec3::new(fx, feet, fz))));
+            // Steep, gentle, or (on an edge between a steep and a gentle face: a crest, an apex)
+            // either.
+            let (gentlest, steepest) = slope_under(&height, x, z, 0.5, 0.5);
+            let steep = if gentlest > min_angle {
+                Some(true)
+            } else if steepest <= min_angle {
+                Some(false)
+            } else {
+                None
+            };
+            players.push((x, z, steep, w.spawn(Vec3::new(fx, feet, fz))));
         }
     }
-    assert!(players.len() > 120, "{}", players.len());
+    assert!(players.len() > 240, "{}", players.len());
+    let steep_blocks = players.iter().filter(|p| p.2 == Some(true)).count();
+    assert!(steep_blocks > 20, "{steep_blocks}");
+    let spawned: Vec<Vec3> = players.iter().map(|&(_, _, _, e)| w.pos(e)).collect();
     w.step(ticks(1.0));
-    let start: Vec<Vec3> = players.iter().map(|&(_, _, e)| w.pos(e)).collect();
+    let start: Vec<Vec3> = players.iter().map(|&(_, _, _, e)| w.pos(e)).collect();
     w.step(ticks(2.0));
     let mut moved = Vec::new();
-    for (&(x, z, e), s) in players.iter().zip(&start) {
+    let mut stayed = Vec::new();
+    let mut resting_on_steep = Vec::new();
+    for ((&(x, z, steep, e), s), s0) in players.iter().zip(&start).zip(&spawned) {
+        let c = w.c(e);
+        // (A slider can come to rest against the player on the next block.)
+        let p = w.pos(e);
+        let against_a_player = players.iter().any(|&(.., o)| {
+            let d = w.pos(o) - p;
+            o != e && d.x.hypot(d.z) < 2.0 * 0.3 + 0.05 && d.y.abs() < 1.8
+        });
+        if c.ground.grounded
+            && c.ground.under_angle > min_angle
+            && w.vel(e).length() < 0.2
+            && !against_a_player
+        {
+            resting_on_steep.push(format!("({x},{z}) at {}", w.pos(e)));
+        }
+        match steep {
+            Some(true) => {
+                if (w.pos(e) - *s0).length() < 0.05 {
+                    stayed.push(format!(
+                        "({x},{z}) {:?} under {} slope {} grounded {} at {}",
+                        c.state,
+                        c.ground.under_angle,
+                        c.ground.slope_angle,
+                        c.ground.grounded,
+                        w.pos(e)
+                    ));
+                }
+                continue;
+            }
+            None => continue,
+            Some(false) => {}
+        }
         let d = w.pos(e) - *s;
-        if !w.c(e).ground.grounded || d.length() > 0.01 {
+        if !c.ground.grounded || d.length() > 0.01 {
             moved.push(format!(
                 "({x},{z}) moved {d} grounded {}",
-                w.c(e).ground.grounded
+                c.ground.grounded
             ));
         }
     }
     assert!(moved.is_empty(), "{} slid: {moved:?}", moved.len());
+    assert!(
+        stayed.is_empty(),
+        "{} stayed on steep ground: {stayed:?}",
+        stayed.len()
+    );
+    assert!(
+        resting_on_steep.is_empty(),
+        "{} at rest on steep ground: {resting_on_steep:?}",
+        resting_on_steep.len()
+    );
 }
 
 /// Walkers along every row (`along_x`, +x) or every column (+z) of the playground, from just
@@ -328,6 +405,50 @@ fn a_one_block_terrace_step_is_walked_up_and_down_without_jumping() {
 }
 
 #[test]
+fn a_one_wide_ridge_stops_a_walker_and_is_jumped_over_without_a_launch() {
+    // A row of blocks one higher than the field: a half-height ridge between two 27° slopes. Its
+    // flanks are 45°, which slide (PLAYER_CONTROLLER.md §6.8, owner 2026-10-15): walking stops at
+    // the foot of the flank; a jump clears it.
+    let height = |_: i32, z: i32| if z == 4 { 2 } else { 1 };
+    let mut w = PlayerTestWorld::new();
+    terrain(&mut w, (-8, -8, 8, 16), &height);
+    let walker = w.spawn(Vec3::new(-2.5, 0.52, 0.5));
+    let jumper = w.spawn(Vec3::new(3.5, 0.52, 0.5));
+    w.step(ticks(0.5));
+    let jump_at = w.tick + ticks(0.55);
+    w.set_input(move |t, h| {
+        input(
+            0.0,
+            1.0,
+            false,
+            h == jumper && t == jump_at,
+            false,
+            0.0,
+            0.0,
+        )
+    });
+    let mut walk = Walk::default();
+    let mut max_up = 0.0f32;
+    for _ in 0..ticks(2.5) {
+        w.step(1);
+        watch(&w, walker, &height, &mut walk);
+        max_up = max_up.max(w.vel(jumper).y);
+    }
+    let p = w.pos(walker);
+    assert!(p.z > 3.0 && p.z < 4.3, "the walker stops at the flank: {p}");
+    // (The capsule's round bottom on a 45° flank sits up to its radius, 0.3 m, above the surface
+    // under its centre: more is a hop.)
+    assert!(walk.max_gap < 0.4, "never far above the ground: {walk:?}");
+    assert!(walk.rising_airborne <= 3, "{walk:?}");
+    assert_eq!(w.count(walker, events::JUMPED), 0);
+    assert_eq!(w.count(jumper, events::JUMPED), 1);
+    assert!(w.pos(jumper).z > 8.0, "{}", w.pos(jumper));
+    assert!(approx(w.feet(jumper), 0.5, 0.01), "{}", w.feet(jumper));
+    let jump = w.config.jump_velocity();
+    assert!(max_up < jump + 0.5, "no launch beyond the jump: {max_up}");
+}
+
+#[test]
 fn walking_a_grass_field_across_chunk_seams_never_loses_the_ground() {
     // Shaped cells collide as one triangle mesh per chunk: crossing between meshes must not catch.
     let height = |_: i32, _: i32| 1;
@@ -383,4 +504,32 @@ fn a_block_placed_beside_a_standing_player_reshapes_the_ground_without_a_launch(
         "on the new surface: {} vs {ground}",
         w.feet(e)
     );
+}
+
+#[test]
+fn every_slope_the_adaptive_table_makes_is_ground_and_the_steep_ones_slide() {
+    // The steepest faces are the saddle's and the dimple's: from their crest (a raised diagonal)
+    // down to a floor corner, arctan(√2) ≈ 54.74°. They must be ground (which slides): a face
+    // steeper than the slope limit is a wall, and a player rested on a saddle, ungrounded, with
+    // the limit at 50°.
+    let mut steepest = 0.0f32;
+    for &i in dwell_blocks::ADAPTIVE_UP.iter() {
+        let s = &dwell_blocks::SHAPES[usize::from(i)];
+        for f in dwell_blocks::shape::faces_of(s) {
+            if f.tag != dwell_blocks::shape::SURFACE_TAG {
+                continue;
+            }
+            let (a, b, c) = (Vec3::from(f.v[0]), Vec3::from(f.v[1]), Vec3::from(f.v[2]));
+            let n = (b - a).cross(c - a).normalize();
+            steepest = steepest.max(n.y.clamp(-1.0, 1.0).acos().to_degrees());
+        }
+    }
+    assert!((steepest - 54.7356).abs() < 0.01, "{steepest}");
+    let config = PlayerControllerConfig::default();
+    let limit = config.probes.max_slope_angle;
+    assert!(
+        steepest < limit - 1.0,
+        "{steepest}° against a limit of {limit}°"
+    );
+    assert!(steepest > config.slide.min_angle);
 }

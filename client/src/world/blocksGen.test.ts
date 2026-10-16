@@ -19,7 +19,7 @@ function generate(blocks: object[]): { status: number | null; output: string; ru
   mkdirSync(join(here, 'fixtures'), { recursive: true });
   mkdirSync(join(root, 'client/src/world'), { recursive: true });
   mkdirSync(join(root, 'crates/dwell-blocks/src'), { recursive: true });
-  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs', 'adaptive.mjs'])
+  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs', 'adaptive.mjs', 'adaptive.json'])
     copyFileSync(join(blocksDir, f), join(here, f));
   // The sound data the generator checks blocks' `sound` against (shared/sounds).
   const sounds = join(root, 'shared/sounds');
@@ -54,7 +54,8 @@ afterEach(() => {
   root = '';
 });
 
-describe('block generator: the grid look option', () => {
+// Each case runs the whole generator, the adaptive rule table's 6,561 neighbourhoods included.
+describe('block generator: the grid look option', { timeout: 30_000 }, () => {
   it('emits a fixture block’s grid into the Rust table', () => {
     const r = generate([block('tiles', { textures: 'grid', grid: { every: 4, strength: 0.5 } })]);
     expect(r.status, r.output).toBe(0);

@@ -3,7 +3,7 @@
 // and its statistics.
 import { buildMixer, DEFAULT_VOLUMES, soundInput } from './mixer';
 import { SOUND_DATA } from './sounds.gen';
-import { makeNoise, playSound } from './synth';
+import { makeNoise, playSound, startLoop } from './synth';
 import { Variation } from './variation';
 import { encodeWav, renderStats, type RenderStats } from './wav';
 import type { RenderJob } from './renderPlan';
@@ -35,6 +35,17 @@ export async function renderJob(job: RenderJob): Promise<RenderResult> {
     if (!sound) throw new Error(`no sound ${p.sound}`);
     const input = soundInput(ctx, mixer, p.bus, sound.reverb ?? 0);
     const params = variation.draw(p.sound, sound, p.intensity ?? 1);
+    if (p.loop) {
+      // As the game drives it: an intensity update every 50 ms (sound.rs), then the stop.
+      const { seconds, from, to } = p.loop;
+      const voice = startLoop(ctx, noise, input, sound, params, p.at, from, {
+        ...(p.gain !== undefined ? { gain: p.gain } : {}),
+      });
+      for (let t = 0.05; t < seconds; t += 0.05)
+        voice.set(from + ((to - from) * t) / seconds, p.at + t);
+      voice.stop(p.at + seconds);
+      continue;
+    }
     playSound(ctx, noise, input, sound, params, p.at, {
       ...(p.pan !== undefined ? { pan: p.pan } : {}),
       ...(p.gain !== undefined ? { gain: p.gain } : {}),
