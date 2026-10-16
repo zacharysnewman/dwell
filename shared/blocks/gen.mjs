@@ -42,6 +42,9 @@ const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross'];
 const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
 // Which neighbour a `needsSupport` block stands on ("below": toward its face's ground).
 const SUPPORTS = ['below'];
+// What a block may stand in (`medium`): only air (put into water, refused), or only water (drawn
+// inside it, its `flooded` property true). Absent: anything.
+const MEDIUMS = ['air', 'water'];
 // The cross geometry's fade must end inside the nearest full-detail distance (the streamed view,
 // VIEW_RADIUS_CHUNKS × 32 m, the settings' minimum), so plants are gone before chunks meet the LOD.
 const MIN_DETAIL_M = 96;
@@ -171,6 +174,13 @@ function validateRender(id, def, look, isAir) {
     fail(`${id}: needsSupport must be one of ${SUPPORTS.join(', ')}`);
   }
   if (def.replaceable !== undefined && typeof def.replaceable !== 'boolean') fail(`${id}: replaceable must be true or false`);
+  if (def.medium !== undefined) {
+    if (!MEDIUMS.includes(def.medium)) fail(`${id}: medium must be one of ${MEDIUMS.join(', ')}`);
+    const f = def.properties?.flooded;
+    if (def.medium === 'water' && !(Array.isArray(f) && f.includes('true'))) {
+      fail(`${id}: medium water needs a flooded property (it holds the water it stands in)`);
+    }
+  }
 }
 
 const fluids = readFluids(namespaces); // fluids.mjs
@@ -573,6 +583,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
       `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
       `replaceable: ${!!d.replaceable}`,
+      `medium: Medium::${d.medium ? pascal(d.medium) : 'Any'}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

@@ -23,7 +23,8 @@ use dwell_protocol::{
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
 use dwell_world::edit::{
-    DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, supported_on, unsupported_after,
+    DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, medium_kept, supported_on,
+    unsupported_after,
 };
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{DEFAULT_REGION_REACH, RegionCheck, check_region_edit};
@@ -85,6 +86,8 @@ impl TickChanges {
     /// Sets the cell and records it, and then removes what that leaves unsupported (block data
     /// `needsSupport`: tall grass on a broken block goes with it), in the same modification.
     fn set_and_unsupport(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
+        // An air plant never stays flooded (block data `medium`).
+        let material = medium_kept(material);
         self.set(world, cell, material);
         for (above, left) in unsupported_after(world, cell, material) {
             self.set(world, above, left);

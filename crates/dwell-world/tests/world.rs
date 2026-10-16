@@ -439,6 +439,41 @@ fn the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on() {
 }
 
 #[test]
+fn plants_go_only_into_their_medium() {
+    // Tall grass is an air plant (block data `medium: air`): into water, refused.
+    let tall = s("dwell:tall_grass");
+    let mut world = ground();
+    let eye = [0.5, 1.62, 0.5];
+    world.set_voxel(-2, 0, 0, s("dwell:water"));
+    assert_eq!(
+        check(&mut world, place([-2, -1, 0], 2, tall), eye, &[]).check,
+        EditCheck::WrongMedium
+    );
+    // Blocks without the rule still go into water.
+    assert_eq!(
+        check(&mut world, place([-2, -1, 0], 2, s("dwell:dirt")), eye, &[]).check,
+        EditCheck::Ok
+    );
+    // A water plant added by data alone (shared/blocks/fixtures: `test:kelp`, `medium: water`)
+    // goes only into water, and holds it (its flooded state).
+    use dwell_blocks::fixture::STATES;
+    let row = |name: &str| STATES.iter().find(|r| r.name == name).expect(name);
+    let kelp = row("test:kelp[flooded=true]");
+    assert!(medium_allows(kelp, row("dwell:water")));
+    assert!(!medium_allows(kelp, row("dwell:air")));
+    let grass = row("dwell:tall_grass");
+    assert!(medium_allows(grass, row("dwell:air")));
+    assert!(!medium_allows(grass, row("dwell:water")));
+    assert!(medium_allows(row("dwell:stone"), row("dwell:water")));
+    // An air plant never stays flooded; anything else is kept as it is.
+    assert_eq!(medium_kept(tall), tall);
+    assert_eq!(
+        medium_kept(s("dwell:ladder[flooded=true]")),
+        s("dwell:ladder[flooded=true]")
+    );
+}
+
+#[test]
 fn placing_into_water_is_allowed_into_players_rejected() {
     let mut world = ground();
     let eye = [0.5, 1.62, 0.5];

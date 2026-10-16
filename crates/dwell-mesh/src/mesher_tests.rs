@@ -231,6 +231,15 @@ fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
         // the end faces, and the +x face of the one beside stone drawn only for the other.
         assert_eq!(see, 6, "{}", STATES[usize::from(b)].name);
     }
+    // A water plant (`test:kelp`, `medium: water`) in a pool: drawn inside the water, which shows
+    // no hole: its cell draws water like a flooded shape's, its neighbours' faces toward it hidden.
+    let kelp = id("test:kelp[flooded=true]");
+    let pool = mesh_of(&[(1, 1, 1, water), (2, 1, 1, kelp), (3, 1, 1, water)]);
+    assert_eq!(quads(&pool.cutout), 2, "the kelp's cross");
+    let tops = (0..quads(&pool.transparent))
+        .filter(|q| pool.transparent.normals[q * 12 + 1] == 1.0)
+        .count();
+    assert_eq!(tops, 3, "three cells of water surface");
     // The reed: its data's three quads, in the cutout mesh with its plants stream.
     let m = mesh_of(&[(1, 1, 1, reed)]);
     assert_eq!(quads(&m.cutout), 3);

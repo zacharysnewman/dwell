@@ -80,7 +80,9 @@ sandbox floor pairs it (every 8) with the `grid` texture tile (a faint line at e
 (default `opaque`) says how a block's pixels are drawn; `gen.mjs` rejects other values, an `opacity`
 below 1 without `translucent`, and `cutout` without textures, and emits `StateInfo::render`. Water is
 `translucent`, ladders `cutout`. Like `textures` and `grid` it is a look option, outside the registry
-hash.
+hash. The same phase adds the `cross` look's options (`cross`, `wind`, `fade`) and the placement
+rules `placeOn`, `replaceable`, `needsSupport`, `selectionBox` and `medium` (`air` | `water`: what a
+plant may stand in), all validated by `gen.mjs` (TRANSPARENT_BLOCKS.md §4–5).
 
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable

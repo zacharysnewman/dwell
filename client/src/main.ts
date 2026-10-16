@@ -492,6 +492,7 @@ async function start(): Promise<App | null> {
     client.setSkyRotation(s.skyRotation);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setPlants(s.motion.plantSway ? 1 : 0, true);
     client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });

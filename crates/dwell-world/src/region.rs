@@ -6,7 +6,9 @@
 use dwell_blocks::{Facing, STATES, StateId, info, with_facing};
 use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 
-use crate::edit::{EditCapsule, REACH_SLACK, flooded_for, overlaps_player, placeable, unbreakable};
+use crate::edit::{
+    EditCapsule, REACH_SLACK, flooded_for, medium_allows, overlaps_player, placeable, unbreakable,
+};
 use crate::{M, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, chunk_of, inside_world_disc};
 
 /// How far the server lets a region edit's nearest cell be from the eye (m).
@@ -179,6 +181,10 @@ fn check_region_edit_with(
                     }
                 };
                 if wanted == existing {
+                    continue;
+                }
+                // A plant goes only into its medium (block data `medium`).
+                if !medium_allows(info(wanted), info(existing)) {
                     continue;
                 }
                 if unbreakable(existing) {

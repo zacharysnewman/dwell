@@ -4,8 +4,8 @@
 
 use dwell_blocks::shape::{faces_of, ray_enter_shape, shape_of, vertical_segment_distance_sq};
 use dwell_blocks::{
-    ShapeFace, ShapeInfo, StateId, Support, VoxelShape, block_of, info, state_property,
-    with_property,
+    Medium, ShapeFace, ShapeInfo, StateId, StateInfo, Support, VoxelShape, block_of, info,
+    state_property, with_property,
 };
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
@@ -120,6 +120,27 @@ fn ray_enter_box(
         t_out = t_out.min(far);
     }
     (t_in <= t_out && t_in >= 0.0 && t_in <= max_t).then_some((t_in, normal))
+}
+
+/// Whether state `m` may be put into a cell holding `existing` (block data `medium`): an air plant
+/// not into a liquid, a water plant only into one.
+pub fn medium_allows(m: &StateInfo, existing: &StateInfo) -> bool {
+    match m.medium {
+        Medium::Any => true,
+        Medium::Air => !existing.liquid,
+        Medium::Water => existing.liquid,
+    }
+}
+
+/// The state that stays where `m` is put: an air plant that ends up flooded (a `flooded`
+/// variant) gives way to water.
+pub fn medium_kept(m: StateId) -> StateId {
+    let s = info(m);
+    if s.medium == Medium::Air && s.flooded {
+        M.water
+    } else {
+        m
+    }
 }
 
 /// The cell a block stands on: below it toward its face's ground (−y on face A, +y on face B).
@@ -275,6 +296,9 @@ pub enum EditCheck {
     /// Place: the block below isn't one the placed block may stand on (block data `placeOn`, or
     /// `needsSupport` without a solid block below).
     NoSupport,
+    /// Place: the cell's medium isn't the block's (block data `medium`: an air plant into water, a
+    /// water plant into air).
+    WrongMedium,
 }
 
 /// Extra reach the server allows over `REACH_DISTANCE`: its view of the player lags the client's.
@@ -443,6 +467,9 @@ pub fn check_block_edit(
     // Placing into a liquid replaces it: not one the data marks indestructible.
     if unbreakable(existing) {
         return EditOutcome::fail(EditCheck::Unbreakable);
+    }
+    if !medium_allows(info(request.material), info(existing)) {
+        return EditOutcome::fail(EditCheck::WrongMedium);
     }
     let material = flooded_for(request.material, existing);
     let under = below(cell);

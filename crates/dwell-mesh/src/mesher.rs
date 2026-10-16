@@ -135,8 +135,10 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
             Some(cube())
         },
         liquid: style.look == Look::Fluid,
-        // Shaped blocks and ladders hold water in a flooded cell.
-        flooded: (shaped || style.look == Look::Ladder) && style.flooded,
+        // Shaped blocks, ladders and plants hold water in a flooded cell (a water plant, block
+        // data `medium: water`, is drawn inside it).
+        flooded: (shaped || style.look == Look::Ladder || style.look == Look::Cross)
+            && style.flooded,
         occludes: !empty && style.render == RenderMode::Opaque,
         ladder_face: if style.look == Look::Ladder {
             Some(style.ladder_face.unwrap_or(4))

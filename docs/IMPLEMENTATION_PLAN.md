@@ -2325,6 +2325,9 @@ definitions; the baseline world is `dwell:baseline`.
 **Status:** Not started.
 
 Deliverables
+- [ ] **Decorations** (Phase 32 added them first, as an interim data file): take
+  `shared/worldgen/decorations.json`'s rules (block, ground blocks, density in patches, slope,
+  height) into the terrain definition, keeping their per-cell, order-independent placement.
 - [ ] **Format** (`shared/worldgen/*.json`, schema documented in `ARCHITECTURE.md` §6.3):
   - `layout` — `voronoiIsland`: site `cell`, `warp`, `land.radius` and `radiusNoise`,
     `rimClearance`, `coastDetail`; an extensible `kind`.
@@ -3158,6 +3161,22 @@ Deliverables
 - [x] **T5** — Browser check: a patch and a field of grass and ladders up close, at a low angle,
   from a distance and mid-sway, ladders against a wall, the sky, at a distance and flooded; the GPU
   and CPU cost of a field (`__dwell.plants` A/B: about +0.3 ms `gpu.near`, CPU unchanged).
+- [x] **T6** — World generation grows tall grass (owner, 2026-10-16; a partial reversal of B10 for
+  plants only): a decoration rule as data (`shared/worldgen/decorations.json`, `gen.mjs` and its
+  node tests, CI stale check), decided per cell from the seed and position (order-independent
+  across chunk borders), generator version 13, goldens regenerated (10 of 39 chunk hashes; LOD
+  unchanged).
+- [x] **T7** — `medium` (`air` | `water`) in the block data: tall grass refused into water and never
+  kept flooded, water plants placed only into water and drawn inside it (fixture `test:kelp`).
+- [x] **T8** — The Plant sway setting (Motion group; append-only motion record; off under
+  `prefers-reduced-motion`).
+- [ ] **T9** — Screenshots of a grassy hillside near and far (generated terrain).
+
+Follow-ups (owner, 2026-10-16; future work, not scheduled)
+- Leaves, glass and ice as `cutout` and `translucent` blocks (data entries on these systems).
+- An editor page for these blocks' data (cross options, jitter, wind, tiles), like
+  `docs/prototypes/`.
+- A first water plant (`medium: water`).
 
 Exit criteria
 - [x] Generator tests add a fixture block of each mode, a cross with its options and placement rules
@@ -3181,10 +3200,8 @@ Deviations
   both the coverage and the stored alpha, double-counting coverage in the premultiplied frame.
 - Wind respects a renderer scale (`set_plant_wind`), not an effects-quality setting: none exists yet
   (`TRANSPARENT_BLOCKS.md` §8).
-- Sounds: the sound-effects work (Phase 28) isn't on this base; tall grass gets the grass sound set
-  when it lands.
-- Ray marching (Phase 25's `dwell-march`) isn't on this base; when it lands its state classification
-  must count cutout states as not occluding primary rays.
+- The decoration rule's data lives in `shared/worldgen/decorations.json`, not in Phase 17's terrain
+  definitions (which don't exist yet): one entry for Phase 17 to take over.
 
 ---
 
