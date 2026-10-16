@@ -59,7 +59,7 @@ pub const NO_FLUID: f32 = 255.0;
 pub use textures::{
     ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, TILE, TILE_ORDER, TileRect,
     average_tile_color, build_atlas, linear_to_srgb_byte, srgb_to_linear, swatch, tile_grids,
-    tile_rect,
+    tile_has_alpha, tile_rect,
 };
 
 /// JavaScript's `Math.round`: the nearest integer, ties toward +∞ (Rust's `round` ties away from
