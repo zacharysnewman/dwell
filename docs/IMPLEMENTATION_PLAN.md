@@ -2699,10 +2699,24 @@ Deliverables
 - [ ] **A3c** — The rest of A3: overlays over marched terrain through the `frag_depth` pass
   (players, the outline, water); LOD column heights and side tints in the bricks; a raster id target
   so compare mode and the bench compare cell ids and faces; edit-to-visible latency (from A2).
-- [ ] **A4** — Empty-space skipping (design doc §4.3): column min-max heights, per-brick empty
-  distances, the beam prepass, the temporal start distance, fog and step-cap exits.
-- [ ] **A5** — Resolution and shapes: render scales 0.5 and 0.75 with FSR 1 and TAA-U; shaped cells
-  as analytic planes.
+- [x] **A4a** — Empty-space skipping and the per-step cost on the GPU (design doc "A4 as built"):
+  column min-max heights, per-brick empty distances, the fog distance and the step cap (on the GPU
+  since A3b); each level's occupied rows (a ray above or below everything its level holds leaves
+  the level's box in one skip, clipped to its cone-LOD band); the march's inner loop vectorised and
+  branch-light, the column search walking from a guess, shading in a pass of its own; the cone-LOD
+  switch waits while the coarser cell is occupied (the owner's concentric rings, a test that failed
+  first); `perf.rs`, a native profiling harness. Reference and WGSL together, the per-pixel check
+  exact.
+- [ ] **A4b** — The rest of A4's list: the beam prepass (a conservative start distance per 8×8
+  tile, with a test that it never passes the true hit) and the temporal start distance (invalidated
+  on edits and disocclusion). Moved out of A4a: after the level-rows skip the sky takes 15–20
+  steps and the ground 5–10, and the profile puts the cost in the per-step latency, not the count
+  (design doc "A4 as built").
+- [x] **A5a** — Render scales 0.5 and 0.75 for the marcher with FSR 1 (EASU + RCAS in WGSL) or a
+  depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
+  `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
+  and `march-half-bilateral` configurations.
+- [ ] **A5** — The rest of A5: TAA-U (reprojection), and shaped cells as analytic planes.
 - [ ] **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
   raster's depth (the hybrid), bilateral upsample, temporal accumulation; a quality setting.
 - [ ] **A7** — The decision: the owner decides from the full comparison ("measure all"; design doc
