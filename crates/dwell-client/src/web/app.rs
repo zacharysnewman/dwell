@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use dwell_game::input::{EditAction, InputEvent, KeyboardMouseInput};
+use dwell_game::input::{EditAction, FLY_KEY, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
 use dwell_look::clouds::CloudQuality;
 use dwell_look::fog::FogSettings;
@@ -640,7 +640,7 @@ impl Client {
             }
             return true;
         }
-        let k = s.input.key_down(code, repeat, ctrl, meta, time_stamp_ms);
+        let k = s.input.key_down(code, repeat, ctrl, meta);
         for e in k.events {
             s.on_input_event(e, time_stamp_ms);
         }
@@ -774,9 +774,9 @@ impl Client {
         let mut s = self.inner.borrow_mut();
         s.touch_used = true;
         let e = if down {
-            s.touch.button_down(button, now_ms)
+            s.touch.button_down(button)
         } else {
-            s.touch.button_up(button, now_ms)
+            s.touch.button_up(button)
         };
         if let Some(e) = e {
             s.on_touch_event(e, now_ms);
@@ -934,11 +934,14 @@ impl Client {
             Err(e) => e,
         }
     }
+    /// Turns flight on or off (automation: the bench's `fly` step, e2e) by pressing the fly key, as a
+    /// player would, if it isn't already in that state; the server's flight policy still applies.
     pub fn fly(&self, on: bool) {
-        let mut s = self.inner.borrow_mut();
-        if let Some(v) = s.input.flight.set(on) {
-            s.shell_events.push(shell_event("flight", v));
+        if self.flying() == on {
+            return;
         }
+        self.key_down(FLY_KEY, false, false, false, perf_now());
+        self.key_up(FLY_KEY);
     }
     #[wasm_bindgen(js_name = flySpeed)]
     pub fn fly_speed(&self, level: f64) {
@@ -1481,11 +1484,6 @@ impl Inner {
                 }
             }
             TouchEvent::Debug => self.shell_events.push(shell_event("toggle", "F3")),
-            TouchEvent::JumpPress(t) => {
-                if let Some(v) = self.input.flight.jump_pressed(t) {
-                    self.shell_events.push(shell_event("flight", v));
-                }
-            }
         }
     }
 

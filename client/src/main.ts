@@ -105,7 +105,8 @@ interface DwellDebug {
   placement(): { cell: [number, number, number]; material: number } | null;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
-  /** Turns creative flight on or off, as double-tapping Space does (if the server allows it). */
+  /** Turns creative flight on or off by pressing F, the fly key, if it isn't already (and the
+   * server allows it). */
   fly(on: boolean): void;
   /** Sets the flight speed level, as the slider does. */
   flySpeed(level: number): void;
