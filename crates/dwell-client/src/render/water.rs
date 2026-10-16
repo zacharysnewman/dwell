@@ -10,7 +10,7 @@ use dwell_blocks::FluidInfo;
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 5;
+pub const FLUID_VEC4S: usize = 6;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -100,6 +100,12 @@ impl WaterQuality {
             Self::High => 2.0,
         }
     }
+    /// Whether the water reads the scene behind it (W3: refraction, depth absorption, foam and
+    /// caustics, from a copy of the scene colour): Medium and High. Low keeps the W1b look, with
+    /// no copies.
+    pub fn reads_scene(self) -> bool {
+        self != Self::Low
+    }
     /// Layers of normal detail drawn.
     pub fn layers(self) -> usize {
         match self {
@@ -172,13 +178,72 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
         out.extend_from_slice(&[s[0], s[1], s[2], f.roughness]);
         out.extend_from_slice(&[f.ior, f.normal_scale, f.wave_scale, f.flow_speed]);
         out.extend_from_slice(&[foam[0], foam[1], foam[2], f.foam_depth]);
-        out.extend_from_slice(&[f0_from_ior(f.ior), f.caustics, f.surface_drop as f32, 0.0]);
+        out.extend_from_slice(&[
+            f0_from_ior(f.ior),
+            f.caustics,
+            f.surface_drop as f32,
+            f.scattering,
+        ]);
+        out.extend_from_slice(&[f.refraction, f.caustic_scale, f.caustic_depth, f.sparkle]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
         out.resize(FLUID_VEC4S * 4, 0.0);
     }
     out
+}
+
+/// The length of a view ray inside the water (m): from the surface, at view depth `d_water`, to
+/// the scene behind it at `d_behind` (0: nothing drawn there, so as deep as can matter), for a
+/// surface point `rel_len` metres from the eye. View depths scale along a ray with distance.
+pub fn ray_thickness(d_behind: f32, d_water: f32, rel_len: f32) -> f32 {
+    if d_behind <= 0.0 {
+        return DEEP_M;
+    }
+    ((d_behind - d_water).max(0.0) * rel_len / d_water.max(1e-4)).min(DEEP_M)
+}
+
+/// Deeper than any absorption can tell apart (m).
+pub const DEEP_M: f32 = 1e4;
+
+/// Refraction's foreground check: the offset sample shows the scene behind only when what it hits
+/// is behind the water (or nothing); otherwise (a bank, a post in front) the undistorted one.
+pub fn refracted_sample(offset_behind: f32, d_water: f32) -> bool {
+    offset_behind <= 0.0 || offset_behind > d_water
+}
+
+/// Beer–Lambert: what is seen through `length` metres of a fluid with absorption `sigma` and
+/// `scattering` (per metre). Along the ray the scene behind keeps exp(−(σ + s)·length) and the
+/// fluid's lit body (its in-scatter) fills the rest; the scene was lit by light that came `down`
+/// metres through the fluid, which keeps exp(−σ·down) of it.
+pub fn through_fluid(
+    behind: [f32; 3],
+    body: [f32; 3],
+    sigma: [f32; 3],
+    scattering: f32,
+    length: f32,
+    down: f32,
+) -> [f32; 3] {
+    std::array::from_fn(|k| {
+        let t = (-(sigma[k] + scattering) * length).exp();
+        behind[k] * t * (-sigma[k] * down).exp() + body[k] * (1.0 - t)
+    })
+}
+
+/// How strongly caustics show at `depth` metres under the surface: whole at the surface, 1/e at
+/// the fluid's caustic depth.
+pub fn caustic_fade(depth: f32, caustic_depth: f32) -> f32 {
+    if depth <= 0.0 {
+        return 0.0;
+    }
+    (-depth / caustic_depth.max(1e-3)).exp()
+}
+
+/// The caustic pattern's cell size for a fluid's `scale`, adjusted so a whole number of cells spans
+/// `WRAP_M` (it is evaluated on wrapped positions): (cells per wrap, cell size).
+pub fn caustic_period(scale: f32) -> (i32, f32) {
+    let n = ((WRAP_M as f32) / scale.max(1e-3)).round().max(1.0);
+    (n as i32, WRAP_M as f32 / n)
 }
 
 /// three's ACES filmic fit (shaders.rs `aces`): the input and output matrices, by columns.
@@ -299,7 +364,7 @@ mod tests {
         let water = at("dwell:water");
         // absorption, opacity
         assert_eq!(&oil[0..4], &[2.0, 2.5, 3.0, 0.8]);
-        assert_eq!(&water[0..4], &[0.45, 0.12, 0.04, 0.72]);
+        assert_eq!(&water[0..4], &[1.0, 0.16, 0.045, 0.72]);
         // scatter (linear), roughness
         let s = linear_rgb(0x2a2410);
         assert_eq!(&oil[4..8], &[s[0], s[1], s[2], 0.02]);
@@ -309,11 +374,108 @@ mod tests {
         assert_eq!(&water[8..12], &[1.333, 1.0, 2.0, 0.03]);
         // foam colour (linear), depth
         assert_eq!(oil[15], 0.0);
-        assert_eq!(water[15], 0.4);
+        assert_eq!(
+            water[15],
+            dwell_blocks::require_fluid("dwell:water").foam_depth
+        );
         // F0 from the IOR, caustics, surface drop
         assert!(close(oil[16], f0_from_ior(1.47), 1e-7));
-        assert_eq!(&oil[17..20], &[0.2, 0.25, 0.0]);
-        assert_eq!(&water[17..19], &[1.0, 0.125]);
+        assert_eq!(&oil[17..20], &[0.2, 0.25, 1.0]);
+        assert_eq!(water[18], 0.125);
+        // refraction, caustic scale, caustic depth, sparkle
+        assert_eq!(&oil[20..24], &[0.05, 1.5, 0.5, 0.0]);
+        let w = dwell_blocks::require_fluid("dwell:water");
+        assert_eq!(
+            &water[20..24],
+            &[w.refraction, w.caustic_scale, w.caustic_depth, w.sparkle]
+        );
+        assert_eq!((water[17], water[19]), (w.caustics, w.scattering));
+    }
+
+    #[test]
+    fn the_ray_in_the_water_runs_from_the_surface_to_the_scene_behind() {
+        // Looking straight along the view axis: the depths' difference.
+        assert!(close(ray_thickness(12.0, 10.0, 10.0), 2.0, 1e-6));
+        // Off-axis, a point 20 m away at view depth 10: the ray is twice its depth difference.
+        assert!(close(ray_thickness(12.0, 10.0, 20.0), 4.0, 1e-6));
+        // Nothing behind (the sky, past the far plane): as deep as matters.
+        assert_eq!(ray_thickness(0.0, 10.0, 10.0), DEEP_M);
+        // Never negative where the scene is in front by a hair (MSAA edges).
+        assert_eq!(ray_thickness(9.99, 10.0, 10.0), 0.0);
+    }
+
+    #[test]
+    fn refraction_falls_back_where_the_offset_sample_is_in_front_of_the_water() {
+        assert!(refracted_sample(15.0, 10.0), "the floor behind");
+        assert!(refracted_sample(0.0, 10.0), "nothing drawn there");
+        assert!(
+            !refracted_sample(4.0, 10.0),
+            "a bank in front: no foreground bleed"
+        );
+    }
+
+    #[test]
+    fn shallow_water_shows_the_floor_and_deep_water_its_body_graded_by_channel() {
+        let floor = [0.8, 0.7, 0.4];
+        let body = [0.0, 0.1, 0.4];
+        let sigma = [0.5, 0.1, 0.03];
+        assert_eq!(through_fluid(floor, body, sigma, 0.2, 0.0, 0.0), floor);
+        let deep = through_fluid(floor, body, sigma, 0.2, 500.0, 50.0);
+        for k in 0..3 {
+            assert!(close(deep[k], body[k], 1e-3), "{deep:?}");
+        }
+        // Red goes first: a metre in, the floor has lost more red than blue.
+        let m = through_fluid(floor, [0.0; 3], sigma, 0.0, 1.0, 0.0);
+        assert!(m[0] / floor[0] < m[2] / floor[2]);
+        // Light that came further down is dimmer.
+        let lit = through_fluid(floor, body, sigma, 0.2, 1.0, 0.0);
+        let dim = through_fluid(floor, body, sigma, 0.2, 1.0, 3.0);
+        assert!((0..3).all(|k| dim[k] < lit[k]));
+        // Scattering brings the body in sooner, without dimming the light on the way down.
+        let murky = through_fluid(floor, body, sigma, 1.0, 1.0, 0.0);
+        assert!(murky[2] > lit[2] && murky[0] < lit[0]);
+    }
+
+    #[test]
+    fn the_builds_water_grades_from_clear_through_turquoise_to_blue_never_green() {
+        // Tropical water over sand (the sand tile's colour, linear), seen straight down: a
+        // hand's depth is nearly the sand; once the red has gone (a metre or so) it reads
+        // turquoise to cyan, green no more than a little over blue; deep is a rich blue (blue
+        // well above green, red faint). Never green.
+        let w = dwell_blocks::require_fluid("dwell:water");
+        let sand = linear_rgb(0xeed9a4);
+        let body = linear_rgb(w.scatter).map(|c| c * 0.8);
+        let at = |d: f32| through_fluid(sand, body, w.absorption, w.scattering, d, d);
+        let hand = at(0.1);
+        assert!(
+            (0..3).all(|k| close(hand[k], sand[k], 0.25 * sand[k])),
+            "{hand:?}"
+        );
+        for d in [1.0_f32, 2.0, 4.0, 8.0, 16.0, 40.0] {
+            let c = at(d);
+            assert!(c[1] <= c[2] * 1.1, "green at {d} m: {c:?}");
+            assert!(c[0] < 0.6 * c[1], "red gone at {d} m: {c:?}");
+        }
+        let two = at(2.0);
+        assert!(two[1] > 0.6 * two[2], "turquoise to cyan at 2 m: {two:?}");
+        let deep = at(40.0);
+        assert!(
+            deep[2] > 2.0 * deep[1] && deep[0] < 0.05 * deep[2],
+            "blue when deep: {deep:?}"
+        );
+    }
+
+    #[test]
+    fn caustics_are_whole_at_the_surface_and_fade_with_depth_and_wrap() {
+        assert_eq!(caustic_fade(0.0, 8.0), 0.0, "nothing above the surface");
+        assert!(close(caustic_fade(1e-6, 8.0), 1.0, 1e-4));
+        assert!(close(caustic_fade(8.0, 8.0), (-1.0f32).exp(), 1e-6));
+        assert!(caustic_fade(30.0, 8.0) < 0.03);
+        for scale in [1.5, 2.5, 3.3] {
+            let (n, cell) = caustic_period(scale);
+            assert!(close(n as f32 * cell, WRAP_M as f32, 1e-3));
+            assert!(close(cell, scale, 0.01 * scale));
+        }
     }
 
     #[test]
@@ -424,5 +586,8 @@ mod tests {
         assert_eq!(WaterQuality::Low.layers(), 1);
         assert_eq!(WaterQuality::High.layers(), 3);
         assert_eq!(WaterQuality::default(), WaterQuality::High);
+        // W3: Medium and High read the scene behind; Low keeps W1b's look, with no copies.
+        assert!(!WaterQuality::Low.reads_scene());
+        assert!(WaterQuality::Medium.reads_scene() && WaterQuality::High.reads_scene());
     }
 }

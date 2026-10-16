@@ -41,6 +41,17 @@ describe('fluid looks', () => {
     expect(() => readFluids(withWater({ foam: { depth: -1, color: '#ffffff' } }))).toThrow(
       'foam.depth -1',
     );
+    expect(() =>
+      readFluids(withWater({ caustics: { strength: 1, scale: 0, depth: 8 } })),
+    ).toThrow('caustics.scale 0 is outside (0, 100]');
+    expect(() => readFluids(withWater({ caustics: 1 }))).toThrow(
+      'caustics must be { strength, scale, depth }',
+    );
+    expect(() =>
+      readFluids(withWater({ caustics: { strength: 1, scale: 2, depth: 8, hue: 1 } })),
+    ).toThrow('unknown field caustics.hue');
+    expect(() => readFluids(withWater({ refraction: -1 }))).toThrow('refraction -1 is outside [0, 4]');
+    expect(() => readFluids(withWater({ sparkle: undefined }))).toThrow('missing sparkle');
     expect(() => readFluids([{ namespace: 'test', fluids: { 'dwell:lava': water } }])).toThrow(
       'must be named test:',
     );
