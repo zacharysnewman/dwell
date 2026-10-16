@@ -17,6 +17,8 @@ pub struct SsrTunables {
     pub edge_fade: f64,
     /// Hits fade out over this last share of the tier's reach.
     pub distance_fade: f64,
+    /// How much of the ripples' slope steers the land's reflected ray (the sky takes all of it).
+    pub ripple_scale: f64,
 }
 
 /// One water quality's reflections.

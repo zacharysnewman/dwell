@@ -9,6 +9,7 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
         thickness_rel: 0.03,
         edge_fade: 0.12,
         distance_fade: 0.3,
+        ripple_scale: 0.3,
     },
     tiers: [
         // low
@@ -23,7 +24,7 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
         ReflectionTier {
             ssr_steps: 12,
             refine_steps: 4,
-            max_distance_m: 600.0,
+            max_distance_m: 2000.0,
             cloud_octaves: 3,
             cloud_shadow: false,
         },
@@ -31,7 +32,7 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
         ReflectionTier {
             ssr_steps: 28,
             refine_steps: 6,
-            max_distance_m: 1500.0,
+            max_distance_m: 4000.0,
             cloud_octaves: 5,
             cloud_shadow: true,
         },

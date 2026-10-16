@@ -25,6 +25,7 @@ const SSR = {
   thicknessRel: [0, 1],
   edgeFade: [0.001, 0.5],
   distanceFade: [0.001, 1],
+  rippleScale: [0, 1],
 };
 const TIER = {
   ssrSteps: ['count', 0, MAX_STEPS],

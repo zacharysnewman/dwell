@@ -1,16 +1,17 @@
 {
   "$comment": "The water's reflections per water quality (docs/WATER_RENDERING.md §8, W5's SSR brought forward): land by screen-space reflections, marched through the scene's view depth and sampled from the under-water copy, and the cloud deck along the reflected ray, over the analytic sky. Run `node shared/look/reflections.mjs` after editing; CI fails if crates/dwell-look/src/reflections.gen.rs is stale.",
   "ssr": {
-    "$comment": "thicknessM: how far behind the scene's surface a ray step may land and still count as hitting it (plus thicknessRel × its view depth). edgeFade: hits fade toward the sky within this share of the screen height from its edges. distanceFade: hits fade out over this last share of a tier's maxDistanceM.",
+    "$comment": "thicknessM: how far behind the scene's surface a ray step may land and still count as hitting it (plus thicknessRel × its view depth). edgeFade: hits fade toward the sky within this share of the screen height from its edges. distanceFade: hits fade out over this last share of a tier's maxDistanceM. rippleScale: how much of the ripples' slope steers the land's reflected ray (1: all of it; less keeps the reflection coherent instead of breaking it into speckle where the ripples change from pixel to pixel). The sky and clouds take the full ripple.",
     "thicknessM": 1.5,
     "thicknessRel": 0.03,
     "edgeFade": 0.12,
-    "distanceFade": 0.3
+    "distanceFade": 0.3,
+    "rippleScale": 0.3
   },
   "tiers": {
     "$comment": "Per water quality. ssrSteps: march steps along the reflected ray on screen (0: no land reflected; Low reads no copy of the scene, so it must be 0 there). refineSteps: binary steps that pin a hit between the last two. maxDistanceM: how far the ray reaches. cloudOctaves: the cloud deck's noise octaves in reflections (0: sky only; also capped by the Clouds setting). cloudShadow: the deck's self-shadow in reflections (while the Clouds setting draws it).",
     "low": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 0, "cloudShadow": false },
-    "medium": { "ssrSteps": 12, "refineSteps": 4, "maxDistanceM": 600, "cloudOctaves": 3, "cloudShadow": false },
-    "high": { "ssrSteps": 28, "refineSteps": 6, "maxDistanceM": 1500, "cloudOctaves": 5, "cloudShadow": true }
+    "medium": { "ssrSteps": 12, "refineSteps": 4, "maxDistanceM": 2000, "cloudOctaves": 3, "cloudShadow": false },
+    "high": { "ssrSteps": 28, "refineSteps": 6, "maxDistanceM": 4000, "cloudOctaves": 5, "cloudShadow": true }
   }
 }

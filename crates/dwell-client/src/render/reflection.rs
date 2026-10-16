@@ -178,8 +178,9 @@ pub fn reflected(
 /// uniform's `reflect` and `reflect_sky`).
 pub fn wgsl() -> String {
     format!(
-        "const SSR_THICKNESS_REL: f32 = {:?};\n",
-        dwell_look::reflections::REFLECTIONS.ssr.thickness_rel as f32
+        "const SSR_THICKNESS_REL: f32 = {:?};\nconst SSR_RIPPLE: f32 = {:?};\n",
+        dwell_look::reflections::REFLECTIONS.ssr.thickness_rel as f32,
+        dwell_look::reflections::REFLECTIONS.ssr.ripple_scale as f32
     )
 }
 

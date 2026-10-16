@@ -1204,8 +1204,12 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         through = floor * t * down + s.body * (1.0 - t);
     }
     // The reflection: land by screen-space reflection, else the sky and its clouds.
-    let r = reflected_dir(s);
-    let refl = ssr_reflected(reflected_env(r, i.rel, deck_fw), ssr_trace(i.rel, r, size), size);
+    // The land's ray is steered by a calmer surface (SSR_RIPPLE of the ripples' slope), so the
+    // reflection stays coherent where the ripples change from pixel to pixel.
+    var calm = s;
+    calm.n = normalize(mix(vec3f(0.0, sign(s.n.y), 0.0), s.n, SSR_RIPPLE));
+    let hit = ssr_trace(i.rel, reflected_dir(calm), size);
+    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw), hit, size);
     var color = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * through;
     // Shoreline foam where the water is thin.
     var foam = 0.0;
