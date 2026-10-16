@@ -3184,7 +3184,7 @@ Exit criteria
   and `KEEP` cells kept (`dwell-sim` `tests/region_edits.rs`); a stroke as one undo step, round trip
   (`dwell-game` `brush_tool.rs`, `dwell-client` `game_local`
   `a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_step`).
-- [x] In the browser (2026-10-15, Chrome on the GPU, a sandbox world, driven through
+- [x] In the browser (2026-10-15, and again on 0.11.17 after the merge, 2026-10-16; Chrome on the GPU, a sandbox world, driven through
   `__dwell.brush`): a mound built from two balls 26 m away, a dirt disc beside it, then smooth,
   erode, a sand splatter and grass surface paint, each screenshotted with the wireframe and the HUD
   panel; undo took the paint off in one step and redo put it back.
