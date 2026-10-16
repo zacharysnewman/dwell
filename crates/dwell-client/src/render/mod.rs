@@ -14,10 +14,12 @@ pub mod display;
 pub mod frame;
 pub mod geometry;
 pub mod march;
+pub mod pacing;
 pub mod seam;
 pub mod shaders;
 pub mod timing;
 pub mod water;
+pub mod water_tiles;
 
 use dwell_world::hash::HashMap;
 
@@ -39,6 +41,7 @@ use march::MarchRenderer;
 use seam::{ChunkTerrain, Routed, SectionTerrain, Selection, TerrainKind, TerrainRenderer};
 use timing::GpuTimer;
 use water::WaterQuality;
+use water_tiles::WaterTiles;
 
 /// Weight of the newest value in the compare overlay's recent means.
 const RECENT: f64 = 0.1;
@@ -688,6 +691,12 @@ pub struct Renderer {
     eye_fluid: Option<EyeFluid>,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
+    /// The water's cost-isolation switches (`water::debug_mask`, `?waterdbg=`; 0 in play).
+    water_debug: u32,
+    /// The water's noise and caustic tiles (water_tiles.rs).
+    water_tiles: WaterTiles,
+    /// Frames in flight on the GPU (pacing.rs).
+    pacer: pacing::FramePacer,
     /// When the renderer started (ms, telemetry's clock): the water's scroll time.
     start_ms: f64,
     exposure: f64,
@@ -743,58 +752,64 @@ impl Renderer {
             label: Some("dwell"),
             source: wgpu::ShaderSource::Wgsl(shaders::source(samples).into()),
         });
+        let frame_entries = [
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            // Each atlas tile's grid lines (dwell_mesh::tile_grids), written once.
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // The fluid looks (water.rs), indexed by fluid id.
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(water::FLUID_STRIDE),
+                },
+                count: None,
+            },
+        ];
+        // The water's tiles (water_tiles.rs), bindings 5–7.
+        let frame_entries: Vec<_> = frame_entries
+            .into_iter()
+            .chain(WaterTiles::layout_entries())
+            .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // Each atlas tile's grid lines (dwell_mesh::tile_grids), written once.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // The fluid looks (water.rs), indexed by fluid id.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(water::FLUID_STRIDE),
-                    },
-                    count: None,
-                },
-            ],
+            entries: &frame_entries,
         });
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("draw"),
@@ -1089,32 +1104,45 @@ impl Renderer {
                 mapped_at_creation: false,
             })
         });
+        // The tiles read the near pass's uniform (the time is the frame's).
+        let water_tiles = WaterTiles::new(
+            &device,
+            &module,
+            &frame_buffers[1],
+            &fluid_buffer,
+            &dwell_blocks::FLUIDS,
+        );
         let frame_groups = std::array::from_fn(|i| {
+            let entries = [
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: frame_buffers[i].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: tile_grid_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: fluid_buffer.as_entire_binding(),
+                },
+            ];
+            let entries: Vec<_> = entries
+                .into_iter()
+                .chain(water_tiles.group_entries())
+                .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
                 layout: &frame_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: frame_buffers[i].as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&atlas_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: tile_grid_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: fluid_buffer.as_entire_binding(),
-                    },
-                ],
+                entries: &entries,
             })
         });
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
@@ -1175,6 +1203,9 @@ impl Renderer {
             fog: DEFAULT_FOG,
             eye_fluid: None,
             water_quality: WaterQuality::default(),
+            water_debug: 0,
+            water_tiles,
+            pacer: pacing::FramePacer::default(),
             start_ms: crate::telemetry::now_ms(),
             exposure: DEFAULT_EXPOSURE,
             day: DayState::default(),
@@ -1366,6 +1397,15 @@ impl Renderer {
     /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
+    }
+    /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
+    /// frames are still on the GPU.
+    pub fn ready_to_draw(&mut self, now_ms: f64) -> bool {
+        self.pacer.ready(now_ms)
+    }
+    /// The water's cost-isolation switches (a dev tool: `water::debug_mask`).
+    pub fn set_water_debug(&mut self, mask: u32) {
+        self.water_debug = mask;
     }
     /// The water this adapter draws: the setting's, Low on a CPU adapter (`water_for`).
     fn water(&self) -> WaterQuality {
@@ -1560,7 +1600,7 @@ impl Renderer {
         }
         // The eye's x and z wrapped for the water's detail (the composite's caustics under it).
         let [wx, wz] = water::wrapped_origin(self.eye);
-        put(&[wx, wz, 0.0, 0.0]);
+        put(&[wx, wz, self.water_debug as f32, 0.0]);
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day = self.day.pack(weight_a, self.day_seconds, pixel_angle);
         if !stars_for(self.adapter) {
@@ -2032,6 +2072,21 @@ impl Renderer {
         ];
         let collect_ms = crate::telemetry::now_ms() - collect_start;
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        // The water's tiles first: the noise once, and this frame's caustics where the water reads
+        // the scene and some is drawn or the eye is under it.
+        let caustics = self.water().reads_scene()
+            && (self.eye_fluid.is_some() || draws.iter().flatten().any(|d| d.water));
+        if self.water_tiles.pending(caustics) {
+            let query = self
+                .timer
+                .as_mut()
+                .and_then(|t| t.pass(timing::WATER_TILES));
+            self.water_tiles.draw(
+                &mut encoder,
+                caustics,
+                self.timer.as_ref().and_then(|t| t.writes(query)),
+            );
+        }
         let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
         let mut cpu = [0.0f64; 2];
@@ -2204,6 +2259,7 @@ impl Renderer {
             timer.resolve(&mut encoder);
         }
         self.queue.submit([encoder.finish()]);
+        self.queue.on_submitted_work_done(self.pacer.submitted());
         if let Some(timer) = &mut self.timer {
             timer.submitted();
         }

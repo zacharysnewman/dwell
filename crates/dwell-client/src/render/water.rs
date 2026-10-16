@@ -78,8 +78,9 @@ pub const FADE_HI: f32 = 0.5;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WaterQuality {
     Low,
-    Medium,
+    /// The desktop default.
     #[default]
+    Medium,
     High,
 }
 
@@ -137,12 +138,32 @@ pub fn layer_fade(footprint: f32, wavelength: f32) -> f32 {
     1.0 - smoothstep(wavelength * FADE_LO, wavelength * FADE_HI, footprint)
 }
 
+/// The noise tile (render/water_tiles.rs): gradient noise over `NOISE_TILE` lattice cells, wrapping,
+/// at `NOISE_TEXELS` texels per cell, so `NOISE_RES` texels square.
+pub const NOISE_TILE: i32 = 32;
+pub const NOISE_TEXELS: u32 = 16;
+pub const NOISE_RES: u32 = NOISE_TILE as u32 * NOISE_TEXELS;
+
+/// The caustic tile: the cell-edge distances over `CAUSTIC_TILE` cells at `CAUSTIC_TEXELS` texels
+/// per cell, `CAUSTIC_RES` square, drawn each frame.
+pub const CAUSTIC_TILE: i32 = 16;
+pub const CAUSTIC_TEXELS: u32 = 32;
+pub const CAUSTIC_RES: u32 = CAUSTIC_TILE as u32 * CAUSTIC_TEXELS;
+
+/// How many cells of about `want` metres span `WRAP_M`, rounded to a whole number of `tile`s (a
+/// pattern sampled from a tile of `tile` cells then wraps with the position): (cells, cell size).
+pub fn tile_cells(want: f32, tile: i32) -> (i32, f32) {
+    let tiles = ((WRAP_M as f32) / (want.max(1e-3) * tile as f32))
+        .round()
+        .max(1.0);
+    let n = tiles as i32 * tile;
+    (n, WRAP_M as f32 / n as f32)
+}
+
 /// A layer's wavelength for a fluid's `wave_scale`, adjusted so a whole number of them spans
-/// `WRAP_M` (the noise's period in lattice cells, and the wavelength).
+/// `WRAP_M` in whole noise tiles (the noise's period in lattice cells, and the wavelength).
 pub fn layer_period(layer: &WaveLayer, wave_scale: f32) -> (i32, f32) {
-    let want = (wave_scale * layer.wavelength).max(1e-3);
-    let n = ((WRAP_M as f32) / want).round().max(1.0);
-    (n as i32, WRAP_M as f32 / n)
+    tile_cells(wave_scale * layer.wavelength, NOISE_TILE)
 }
 
 /// The surface's normal from the summed height slopes (dh/dx, dh/dz), toward `up` (±1: the face's
@@ -239,11 +260,35 @@ pub fn caustic_fade(depth: f32, caustic_depth: f32) -> f32 {
     (-depth / caustic_depth.max(1e-3)).exp()
 }
 
-/// The caustic pattern's cell size for a fluid's `scale`, adjusted so a whole number of cells spans
-/// `WRAP_M` (it is evaluated on wrapped positions): (cells per wrap, cell size).
+/// The shader's lattice wrap (`wrap_cell`): a cell coordinate in [0, period).
+pub fn wrap_cell(c: i32, period: i32) -> i32 {
+    ((c % period) + period) % period
+}
+
+/// The shader's neighbour step (`wrap_step`): a wrapped coordinate moved by −1, 0 or +1 without
+/// another modulo.
+pub fn wrap_step(w: i32, o: i32, period: i32) -> i32 {
+    let v = w + o;
+    if v < 0 {
+        v + period
+    } else if v >= period {
+        v - period
+    } else {
+        v
+    }
+}
+
+/// The shader's `hash_dir`: a unit vector from the low two bytes of a hash, without trig.
+pub fn hash_dir(h: u32) -> [f32; 2] {
+    let v = [(h & 0xff) as f32 - 127.5, ((h >> 8) & 0xff) as f32 - 127.5];
+    let len = (v[0] * v[0] + v[1] * v[1]).max(1.0).sqrt();
+    [v[0] / len, v[1] / len]
+}
+
+/// The caustic pattern's cell size for a fluid's `scale`, adjusted so a whole number of caustic
+/// tiles spans `WRAP_M` (it is evaluated on wrapped positions): (cells per wrap, cell size).
 pub fn caustic_period(scale: f32) -> (i32, f32) {
-    let n = ((WRAP_M as f32) / scale.max(1e-3)).round().max(1.0);
-    (n as i32, WRAP_M as f32 / n)
+    tile_cells(scale, CAUSTIC_TILE)
 }
 
 /// three's ACES filmic fit (shaders.rs `aces`): the input and output matrices, by columns.
@@ -302,6 +347,46 @@ pub fn inverse_aces(display: [f32; 3], exposure: f32) -> [f32; 3] {
     mat_mul(&mat_inverse(&ACES_INPUT), v).map(|x| (x * 0.6 / exposure).max(0.0))
 }
 
+/// The water's cost-isolation switches (a dev tool, `?waterdbg=`; docs/WATER_RENDERING.md §8): each
+/// name turns one piece of the water's shading off, so its GPU time (`gpu.*.water`) can be told
+/// apart. Carried to the shader as a bit mask in the frame uniform (`fog.w`); 0 draws everything.
+pub const DEBUG_SWITCHES: [(&str, u32); 12] = [
+    ("ripple0", 1),
+    ("ripple1", 2),
+    ("ripple2", 4),
+    ("glint", 8),
+    ("sky", 16),
+    ("refraction", 32),
+    ("absorption", 64),
+    ("caustics", 128),
+    ("foam", 256),
+    ("sparkle", 512),
+    ("under", 1024),
+    ("flat", 2048),
+];
+
+/// The mask for a `?waterdbg=` value: names (`DEBUG_SWITCHES`) separated by commas; `all` sets
+/// every switch but `flat`. Unknown names are ignored.
+pub fn debug_mask(names: &str) -> u32 {
+    names
+        .split(',')
+        .map(str::trim)
+        .map(|n| {
+            if n == "all" {
+                DEBUG_SWITCHES
+                    .iter()
+                    .filter(|(k, _)| *k != "flat")
+                    .fold(0, |m, (_, b)| m | b)
+            } else {
+                DEBUG_SWITCHES
+                    .iter()
+                    .find(|(k, _)| *k == n)
+                    .map_or(0, |(_, b)| *b)
+            }
+        })
+        .fold(0, |m, b| m | b)
+}
+
 /// The fit's output nears 1 as its input grows without bound: inverting stops short of it.
 const INVERSE_FIT_MAX: f32 = 0.995;
 
@@ -338,11 +423,68 @@ pub fn wgsl() -> String {
         MIN_ALPHA,
         LAYERS.len()
     ));
+    s.push_str(&format!(
+        "const NOISE_TILE: i32 = {NOISE_TILE};\nconst NOISE_TEXELS: f32 = {NOISE_TEXELS}.0;\nconst CAUSTIC_TILE: i32 = {CAUSTIC_TILE};\nconst CAUSTIC_TEXELS: f32 = {CAUSTIC_TEXELS}.0;\n"
+    ));
+    for (name, bit) in DEBUG_SWITCHES {
+        s.push_str(&format!(
+            "const DBG_{}: u32 = {bit}u;\n",
+            name.to_uppercase()
+        ));
+    }
     s
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn neighbours_wrap_without_a_modulo_as_the_modulo_would() {
+        use super::{wrap_cell, wrap_step};
+        for period in [1, 2, 7, 731] {
+            for c in [
+                -3 * period - 1,
+                -1,
+                0,
+                5,
+                period - 1,
+                period,
+                4 * period + 3,
+            ] {
+                let w = wrap_cell(c, period);
+                assert!((0..period).contains(&w));
+                for o in -1..=1 {
+                    assert_eq!(wrap_step(w, o, period), (c + o).rem_euclid(period));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn hashed_directions_are_unit_and_spread_round_the_circle() {
+        let mut quadrants = [0; 4];
+        for k in 0..4096u32 {
+            let h = k.wrapping_mul(0x9e37_79b9) ^ (k >> 3);
+            let [x, y] = super::hash_dir(h);
+            assert!(((x * x + y * y).sqrt() - 1.0).abs() < 1e-4);
+            quadrants[usize::from(x < 0.0) + 2 * usize::from(y < 0.0)] += 1;
+        }
+        assert!(quadrants.iter().all(|&q| q > 800), "{quadrants:?}");
+    }
+
+    #[test]
+    fn the_debug_switches_parse_by_name_and_are_distinct_bits() {
+        use super::{DEBUG_SWITCHES, debug_mask};
+        assert_eq!(debug_mask(""), 0);
+        assert_eq!(debug_mask("caustics"), 128);
+        assert_eq!(debug_mask("caustics, foam,nonsense"), 128 | 256);
+        let all = DEBUG_SWITCHES.iter().fold(0, |m, (_, b)| {
+            assert_eq!(m & b, 0, "bits overlap");
+            assert!(b.is_power_of_two());
+            m | b
+        });
+        assert_eq!(debug_mask("all"), all & !2048);
+    }
+
     use super::*;
 
     fn close(a: f32, b: f32, eps: f32) -> bool {
@@ -473,8 +615,13 @@ mod tests {
         assert!(caustic_fade(30.0, 8.0) < 0.03);
         for scale in [1.5, 2.5, 3.3] {
             let (n, cell) = caustic_period(scale);
+            assert_eq!(n % CAUSTIC_TILE, 0, "whole caustic tiles");
             assert!(close(n as f32 * cell, WRAP_M as f32, 1e-3));
-            assert!(close(cell, scale, 0.01 * scale));
+            assert!(close(
+                cell,
+                scale,
+                0.6 * scale * scale * CAUSTIC_TILE as f32 / WRAP_M as f32
+            ));
         }
     }
 
@@ -536,11 +683,14 @@ mod tests {
             for l in &LAYERS {
                 let (n, wavelength) = layer_period(l, scale);
                 assert!(n >= 1);
+                assert_eq!(n % NOISE_TILE, 0, "whole noise tiles");
                 assert!(close(n as f32 * wavelength, WRAP_M as f32, 1e-3));
+                // Within half a tile's rounding over the wrap.
+                let want = scale * l.wavelength;
                 assert!(close(
                     wavelength,
-                    scale * l.wavelength,
-                    0.01 * scale * l.wavelength + 1e-3
+                    want,
+                    0.6 * want * want * NOISE_TILE as f32 / WRAP_M as f32 + 1e-3
                 ));
             }
         }
@@ -585,7 +735,7 @@ mod tests {
         assert_eq!(WaterQuality::from_level(9), WaterQuality::High);
         assert_eq!(WaterQuality::Low.layers(), 1);
         assert_eq!(WaterQuality::High.layers(), 3);
-        assert_eq!(WaterQuality::default(), WaterQuality::High);
+        assert_eq!(WaterQuality::default(), WaterQuality::Medium, "the desktop default");
         // W3: Medium and High read the scene behind; Low keeps W1b's look, with no copies.
         assert!(!WaterQuality::Low.reads_scene());
         assert!(WaterQuality::Medium.reads_scene() && WaterQuality::High.reads_scene());

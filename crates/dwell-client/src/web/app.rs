@@ -497,6 +497,7 @@ impl Client {
                     set(&r, "p50", st.p50);
                     set(&r, "p95", st.p95);
                     set(&r, "p99", st.p99);
+                    set(&r, "min", st.min);
                     set(&r, "max", st.max);
                     set(&r, "sum", st.sum);
                     set(&o, name, r);
@@ -1005,6 +1006,16 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_water_quality(crate::render::water::WaterQuality::from_level(level));
+    }
+    /// The water's cost-isolation switches (`?waterdbg=`, a dev tool): names separated by commas,
+    /// each turning one piece of the water's shading off (render/water.rs `DEBUG_SWITCHES`).
+    #[wasm_bindgen(js_name = setWaterDebug)]
+    pub fn set_water_debug(&self, names: &str) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_water_debug(crate::render::water::debug_mask(names));
     }
     /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
     #[wasm_bindgen(js_name = setMotion)]
@@ -1643,6 +1654,16 @@ impl Inner {
     }
 
     fn draw(&mut self) {
+        // Not while the GPU is still behind on earlier frames (render/pacing.rs): recording now
+        // would block this thread until it caught up.
+        if !self
+            .renderer
+            .borrow_mut()
+            .ready_to_draw(telemetry::now_ms())
+        {
+            telemetry::count("draw.skipped", 1.0);
+            return;
+        }
         let acquire = telemetry::now_ms();
         let current = self.surface.get_current_texture();
         telemetry::add("draw.acquire", telemetry::now_ms() - acquire);
