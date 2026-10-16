@@ -143,7 +143,10 @@ struct Node {
    shape planes in shaped cells. Writes a G-buffer: albedo (atlas lookup with the hit's face UV and
    ray-cone mip level), normal, linear distance, cell id.
 3. **Upscale** to output resolution when the scale is under 1: depth- and normal-aware, then FSR 1
-   (EASU + RCAS) or TAA-U with reprojection. Both are compared (§5).
+   (EASU + RCAS) or TAA-U with reprojection. Both are compared (§5). Built in A4 (see "A4 as
+   built"): the march writes hit records and a separate pass shades them at the render scale; FSR 1
+   or a depth- and normal-aware bilateral upsample then fills the output, and the view depth takes
+   the nearest marched pixel. TAA-U is still to come.
 4. **Shading**: the shared `lambert`/`aces`/`fogged`/`sky` on the G-buffer, in the shared composite.
 5. **Depth for overlays**: the march writes linear distance to `r32float` (depth formats can't be
    storage textures or copied into from `r32float`); a full-screen pass writes
@@ -472,6 +475,152 @@ Nothing here changes public API (world files, seeds' terrain, protocols), so no 
   water), raster ids for an id-based difference view and bench agreement, edit-to-visible latency,
   LOD column heights in the bricks. Clipmap level boxes only grow (a long flight keeps every slot
   it ever reserved; recentring is A4's).
+
+### A4 as built (2026-10-15)
+
+**Where the time went.** A3b's march cost about 1 ms per mean step over 921,600 rays at 720p on
+an M1. That is roughly 1,000 lane-cycles per ray-step, so the march was latency-bound, not
+ALU-bound.
+
+The heatmap of steps per ray (`perf.rs`, `DWELL_PERF_IMAGES`) showed where the steps went:
+
+- **Sky rays dominated:** 60–90 steps each, against 5–15 on the ground. They crossed every level's
+  ALL_AIR nodes, about 6–7 per level, out to the coarsest level's box. With half the screen sky at
+  the spawn, that gave a mean of 38 steps.
+- **Divergence did not matter:** steps per 8×4 SIMD group, counted at its longest ray, were within
+  3 % of the mean, because neighbouring rays take near-identical paths.
+
+**Attribution.** Native Metal (`perf.rs`, seed 7's spawn, 1280×720): each variant turns off part of
+the per-step work and is interleaved with the others in rounds, because the GPU was shared with
+other agents. Each figure is the minimum of 20 frames:
+
+| Variant (on the vectorised march) | Spawn | Down | 540 m up |
+|---|---|---|---|
+| Everything | 11.4–17.8 ms | 2.6–2.9 ms | 16–20 ms |
+| Without the column search | 19.7 (steps ×3) | 2.1 | 18 (steps ×1.6) |
+| Without the level-rows skip | 24 (steps ×2.9) | 2.8 | 44 (steps ×3.6) |
+| Without the shade pass | −0.3 | −0.3 | −0.3 |
+| An empty march (stores only) | 0.3 | 0.3 | 0.3 |
+
+Workgroups of 8×8, 8×4, 16×8, 16×16 and 32×2 made no difference beyond the noise.
+
+**What helped, in order** (native Metal, minimum of 20 frames):
+
+1. **Vectorised, branch-light inner loop:** spawn 37 → 21 ms, down 4.9 → 2.4 ms, at the same steps.
+   - Plane distances, box exits, `cell_at` and the brick DDA became vec3 selects. Each component
+     keeps the reference's own arithmetic, so the per-pixel check stays exact.
+   - The column search walks from the last mip instead of from the coarsest. Clearing is
+     monotone in the mip: a finer region's span and exit lie inside the coarser one's.
+   - The occupancy word is cached across DDA steps, and uniform bricks are tested before the
+     columns.
+2. **Each level's occupied rows:** spawn mean steps 38 → 13 (p95 87 → 27, p99 96 → 39); 540 m up
+   39 → 11 (p99 89 → 29); time about 21 → 14 ms at the spawn.
+   - `Scene::rows` keeps, per level, the grid rows its occupied cells span, from each node's column
+     grid. The levels' words carry them (`occ_lo`, `occ_hi`).
+   - A ray above or below everything its level holds leaves the level's box in one skip. The box is
+     clipped per ray to `band_end × |d|` around the eye: the point where the cone LOD moves past the
+     level. That way the skip never hides a coarser level's data beyond the band (an earlier cube
+     clip, inscribed in the band's sphere, left 50–80 sky steps).
+   - The reference march (`march_steps`, 1080p): horizon p95 68 → 22, 3 km up median 44 → 9.
+3. **Shading in a pass of its own:** spawn about 16 → 12 ms, with noisy measurements. The march
+   writes a hit record (state, face, level, face-B bit); `shade_main` lights it, so the march
+   kernel carries fewer live values.
+4. **Render scale with an upscaler.** At 0.5 the march does a quarter of the rays, and its cone LOD
+   follows the coarser pixels.
+   - **FSR 1:** EASU then RCAS, ported to WGSL from `ffx_fsr1.h`'s float path. Both run on colour
+     tone-mapped into 0..1 by `c / (1 + max c)`, which is undone after RCAS.
+   - **Bilateral:** a joint upsample whose four bilinear taps are weighted by view depth and face.
+   - The view depth takes the nearest marched pixel; the colour stays premultiplied by coverage.
+   - Chosen with `?scale=0.5|0.75&upscaler=fsr1|bilateral` (local builds); the canvas stays at full
+     size.
+
+**What did not help.** The workgroup shape, as above. Computing the mip offset from a formula
+instead of a `switch` made no difference. Removing the per-pixel id store did not help either: the
+three stores and the empty dispatch cost 0.3 ms.
+
+**Not done (A4b).** These are the next levers. After the level-rows skip, the sky takes 15–20 steps
+and the ground 5–10, and the cost is in each step's chain of dependent loads (slot → node →
+columns → brick → state).
+
+- **The beam prepass:** a conservative start distance per 8×8 tile.
+  - It needs a cone-safe skip: a box is crossed only while the cone's cross-section stays inside it.
+  - Across levels, it must also stay safe where a pixel's coarser level is rounded up.
+- **The temporal start distance.**
+- **Clipmap recentring:** the level boxes still only grow (A3b's note). That costs slot memory on
+  long flights, not march time.
+
+**The cone-LOD rings** (the owner's concentric arcs, `march-far-down`):
+
+- **Cause:** where the cone LOD moved up a level, a ray in the finer level's air could find itself
+  inside an occupied coarser cell (LOD cells round heights up to their size). It hit that cell on
+  the plane it had last crossed, usually a vertical one. Every such hit drew a dark side face at the
+  switch distance: a ring around the eye.
+- **The rule now, in the reference and the WGSL together:** a switch to a coarser level waits while
+  the coarser cell at the ray is occupied and the level the ray marched at has data there. The ray
+  stays at the finer level and tries again at the next iteration. The coarser surface is then
+  entered through its own faces.
+- **The test:** `cone_lod_switches_leave_no_seam_on_flat_ground` (`tests/march.rs`) marches 600
+  rays along a radial line over flat ground. The levels' tops are at 5, 6 and 8 m, so they disagree,
+  as LOD rounding does. Every hit must be a top face at one of the levels' heights. On the old rule
+  it failed with about 60 side-face hits at 100–250 m, and it passes now. An aligned scene must also
+  show a smooth depth.
+- **What remains:** the levels' heights still disagree by up to a coarse cell, because the bricks
+  don't carry LOD column heights yet (A3c). A switch can still show as a step in depth (a terrace
+  edge), but no longer as a ring of side faces. The near field is unchanged: levels 0 and 1 meet
+  past 100 m.
+- **Screenshots:** before and after, in the PR.
+
+**Correctness.** The GPU-against-reference per-pixel check stays exact: on an M1's Metal, 12 views,
+ids differ 0, records differ 0, `t` within 2 ULP, depth error 2.9e-7. The reference's tests all pass,
+the new seam test among them.
+
+**Measured in Chrome** (`bench --compare idle-spawn look-horizon look-down fly-high --unthrottled`,
+M1, 1280×720). `gpu.march` is the march through to the copy into the shared frame, p50 ms.
+`gpu.frame` is raster's whole GPU frame. The machine was shared with other agents' benches, so each
+run's load average is given, and every row compares with raster measured in the same run:
+
+A4 build, one run with the load average rising from 4 to 44 (the later configurations ran under more load). `gpu.march` has few samples per run (3–10): its timer reads back only when a ring buffer is free.
+
+| Scenario | raster `gpu.frame` | `march` | `march-half-fsr` | `march-075-fsr` | `march-half-bilateral` |
+|---|---|---|---|---|---|
+| idle-spawn | 2.5 | **18.9** | 5.4 | 12.8 | 6.9 |
+| look-horizon | 2.8 | **23.6**¹ | 9.3 | 21.7 | 9.0 |
+| look-down | 1.7 | **4.9** | 2.4 | 11.4² | 3.7 |
+| fly-high | 4.0 | **21.4** | 10.3 | 28.4² | 10.6 |
+
+¹ From a second run of the same build at load 44–66 (the first run read no sample).
+² Under the run's highest load. The 0.75 runs came last in each scenario and are not comparable
+with the others.
+
+A3b build (before):
+
+- **Quiet machine** (A3b's own run): `gpu.march` 30.6 at idle-spawn, 30.0 at look-horizon, 8.9 p95
+  at look-down and 31.1 p95 at fly-high, against raster's 2.6–2.9.
+- **This session, at load 40–80, with raster 1.8–5.1 in the same runs:**
+  - idle-spawn: frame interval 36 ms (no `gpu.march` sample);
+  - look-horizon: 34.6;
+  - look-down: 6.0;
+  - fly-high: no number. Its screenshot timed out, in two runs, at the A3b marcher's 30–60 ms
+    frames.
+
+So, at full resolution, against raster's GPU frame measured in the same run, A4 compared with A3b:
+
+| Scenario | A4 | A3b |
+|---|---|---|
+| idle-spawn | ≈ 7.7× | ≈ 11× |
+| look-horizon | ≈ 8× | ≈ 18× |
+| look-down | ≈ 2.8× | ≈ 3.3× |
+| fly-high | ≈ 5.3× | ≈ 11× |
+
+At half resolution with FSR 1, the marcher is at 1.4–3.3× raster's frame.
+
+**Against the goal** (raster's ≈ 3 ms at 720p):
+
+- At full resolution the marcher is still about 7× raster's GPU frame at the spawn (≈ 19 against
+  2.5 ms), down from about 12× (A3b: 30 against 2.6–2.9 ms).
+- At half resolution with FSR 1 it is ≈ 5–10 ms, and ≈ 2.4 ms looking down.
+- The next levers are in "Not done" above, with lower per-step latency on Tint (Chrome's
+  compiler; Naga's Metal output is 1.3–1.6× faster on the same views).
 
 ## 8. Risks
 
