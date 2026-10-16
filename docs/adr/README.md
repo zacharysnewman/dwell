@@ -41,6 +41,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0033](0033-tree-growth.md) | Tree growth: hand-built trees revealed along their skeleton, as a layer composed at load | Accepted |
 | [0034](0034-sky-clouds.md) | Sky clouds: a 2D cloud deck drawn in the sky, its tunables as data | Proposed |
 | [0035](0035-day-night-cycle.md) | The day/night cycle: world time drives a keyframed sky, light and fog, as data | Accepted |
+| [0036](0036-block-registry-sync.md) | Block registry sync: the server sends its registry at join, the client maps ids at the boundary | Proposed |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
