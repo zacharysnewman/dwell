@@ -156,7 +156,7 @@ capped at about 32³ per request.
 
 - **S3a:** box select, fill, hollow, replace, copy and paste with rotate and mirror, and undo/redo
   (ARCHITECTURE.md §6.5).
-- **Phase 33:** VoxelSniper-style **brushes** for organic shapes, in [`BRUSHES.md`](./BRUSHES.md):
+- **Phase 34:** VoxelSniper-style **brushes** for organic shapes, in [`BRUSHES.md`](./BRUSHES.md):
   - brushes: ball, disc, cylinder, cube, ellipsoid, splatter, line;
   - painting: set, replace, paint surface, erase, with masks;
   - sculpting: smooth, erode, melt, fill/inflate, flatten, raise, lower.

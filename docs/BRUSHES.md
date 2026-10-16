@@ -1,6 +1,6 @@
 # Brushes: painting and sculpting in the sandbox
 
-Status: **built** (Phase 33, [ADR 0037](./adr/0037-brushes.md)). The owner hasn't tried it yet.
+Status: **built** (Phase 34, [ADR 0037](./adr/0037-brushes.md)). The owner hasn't tried it yet.
 Architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.5 (edits), §10.5 (additions within a line).
 
 The owner's brief (2026-10-15): *"add painting tooling to our playground like Voxel Sniper tools"*

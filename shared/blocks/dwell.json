@@ -36,11 +36,12 @@
       "palette": [
         { "facing": "north" }, { "facing": "east" }, { "facing": "south" }, { "facing": "west" }
       ],
-      "color": "#a0703a", "textures": "ladder"
+      "$comment": "Drawn cutout: the ladder tile's gaps between rails and rungs are transparent.",
+      "render": "cutout", "color": "#a0703a", "textures": "ladder"
     },
     {
       "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
-      "liquid": true, "color": "#2f86e0", "textures": "water"
+      "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water"
     },
     {
       "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true,
