@@ -13,7 +13,7 @@
   "blocks": [
     {
       "name": "oil", "density": 900, "shape": "empty", "look": "fluid", "fluid": "test:oil",
-      "liquid": true, "color": "#3a3016"
+      "liquid": true, "render": "translucent", "color": "#3a3016"
     }
   ]
 }

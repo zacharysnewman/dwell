@@ -21,22 +21,14 @@ use dwell_protocol::world;
 const FRAME: &str = r"
 struct Frame {
     view_proj: mat4x4f,
-    // x eye height (world y), y face (±1), z exposure, w fog density
+    // x eye height (world y), y face (±1), z exposure (× the time of day's), w fog density (× the
+    // time of day's)
     eye: vec4f,
-    // x fog sigma, y fog scale height, z seconds (the water's scroll), w the water's
-    // cost-isolation switches (render/water.rs `DEBUG_SWITCHES`; 0 in play)
+    // x fog sigma, y fog scale height, z seconds (the water's scroll, the plants' wind), w the
+    // plants' wind scale (0: still)
     fog: vec4f,
-    day_pole: vec4f,
-    sun: vec4f,
-    moon: vec4f,
-    // Linear colours × intensity.
-    sun_color: vec4f,
-    moon_color: vec4f,
-    day_sky: vec4f,
-    day_ground: vec4f,
-    night_sky: vec4f,
-    night_ground: vec4f,
-    // The sky's view rays: the camera's axes and the half-angle tangents (x, y).
+    // The sky's view rays: the camera's axes and the half-angle tangents (x, y); z, w the eye's
+    // world x and z modulo WIND_PERIOD (the gust field's place).
     right: vec4f,
     up: vec4f,
     forward: vec4f,
@@ -60,8 +52,12 @@ struct Frame {
     wind_streaks: vec4f,
     wind_shape: vec4f,
     wind_extra: vec4f,
-    // xy the eye's world x and z wrapped to [0, WRAP_M) (render/water.rs `wrapped_origin`).
+    // xy the eye's world x and z wrapped to [0, WRAP_M) (render/water.rs `wrapped_origin`); z the
+    // water's cost-isolation switches (render/water.rs `DEBUG_SWITCHES`; 0 in play).
     wrap: vec4f,
+    // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
+    // face's lights.
+    day: DaySky,
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
@@ -119,18 +115,20 @@ fn own(light_up: f32, frag_on_a: bool) -> f32 {
     return smoothstep(-0.1, 0.1, light_up * face_up);
 }
 
-// three's Lambert: (direct + hemisphere irradiance) × albedo / π, each light weighted to the
-// fragment's own face (BIFACIAL_WORLD.md §6).
+// three's Lambert: (direct + hemisphere irradiance) × albedo / π, with the lights of the fragment's
+// own face (BIFACIAL_WORLD.md §6): its time of day's sun, moon and sky, each direct light weighted
+// by its height over that face's horizon.
 fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
     let on_a = frag_y >= MIDPLANE_Y;
-    var irradiance = vec3f(0.0);
-    irradiance += max(dot(n, frame.sun.xyz), 0.0) * frame.sun_color.rgb * own(frame.sun.y, on_a);
-    irradiance += max(dot(n, frame.moon.xyz), 0.0) * frame.moon_color.rgb * own(frame.moon.y, on_a);
-    let day = frame.day_pole.xyz;
-    let hemi_day = mix(frame.day_ground.rgb, frame.day_sky.rgb, dot(n, day) * 0.5 + 0.5);
-    irradiance += hemi_day * own(day.y, on_a);
-    let hemi_night = mix(frame.night_ground.rgb, frame.night_sky.rgb, dot(n, -day) * 0.5 + 0.5);
-    irradiance += hemi_night * own(-day.y, on_a);
+    let d = frame.day;
+    let face_up = select(-1.0, 1.0, on_a);
+    let sun = select(d.sun_b.rgb, d.sun_a.rgb, on_a);
+    let moon = select(d.moon_b.rgb, d.moon_a.rgb, on_a);
+    let hemi_sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
+    let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
+    var irradiance = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.y, on_a);
+    irradiance += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.y, on_a);
+    irradiance += mix(hemi_ground, hemi_sky, n.y * face_up * 0.5 + 0.5);
     return irradiance * albedo / PI;
 }
 
@@ -182,8 +180,18 @@ fn view_ray(ndc: vec2f) -> vec3f {
     return frame.forward.xyz + ndc.x * frame.tan.x * frame.right.xyz + ndc.y * frame.tan.y * frame.up.xyz;
 }
 
+// The sky's colour toward `dir` (output colour): what far terrain fogs to and water reflects.
 fn sky(dir: vec3f) -> vec3f {
-    return dwell_sky(dir, frame.eye.y, frame.day_pole.xyz, frame.sun.xyz, frame.moon.xyz);
+    return dwell_sky(dir, frame.eye.y, frame.day);
+}
+
+// Half-a-step dither for the 8-bit canvas (interleaved gradient noise, triangular): smooth night
+// and twilight gradients without bands.
+fn dither(p: vec2i) -> f32 {
+    let q = vec2f(p);
+    let a = fract(52.9829189 * fract(dot(q, vec2f(0.06711056, 0.00583715))));
+    let b = fract(52.9829189 * fract(dot(q + vec2f(17.0, 59.0), vec2f(0.06711056, 0.00583715))));
+    return (a + b - 1.0) / 255.0;
 }
 
 // The sky's light along `dir`, in the scene's linear colour.
@@ -194,7 +202,7 @@ fn sky_radiance(dir: vec3f) -> vec3f {
 // A water cost-isolation switch (`?waterdbg=`, render/water.rs `DEBUG_SWITCHES`): true turns the
 // piece off. Uniform per frame, so its branches don't diverge.
 fn water_off(bit: u32) -> bool {
-    return (u32(frame.fog.w) & bit) != 0u;
+    return (u32(frame.wrap.z) & bit) != 0u;
 }
 
 // Schlick's Fresnel (render/water.rs `schlick`).
@@ -328,6 +336,147 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     return scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha);
 }
 
+// Cutout geometry (docs/TRANSPARENT_BLOCKS.md): the terrain vertex and a `plant` vec4 — how far
+// wind sways the vertex (m; 0 at a plant's base and on ladders), the wind's speed, and the distance
+// fade's start and end (m; end 0: no fade).
+struct CutoutIn {
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) color: vec3f,
+    @location(3) uv: vec2f,
+    @location(4) tile: vec4f,
+    @location(5) plant: vec4f,
+};
+struct CutoutOut {
+    @builtin(position) clip: vec4f,
+    @location(0) rel: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) color: vec3f,
+    @location(3) uv: vec2f,
+    @location(4) tile: vec4f,
+    @location(5) @interpolate(flat) draw: u32,
+    @location(6) fade: vec2f,
+};
+
+// The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
+// position modulo that period (the eye's, frame.tan.zw, plus the offset), so it is seamless and
+// stays put as the eye moves. In [0, 1].
+const WIND_PERIOD: f32 = 1024.0;
+fn gust(p: vec2f, t: f32) -> f32 {
+    let k = 2.0 * PI / WIND_PERIOD;
+    let a = sin(dot(p, vec2f(27.0, 11.0) * k) - 0.9 * t);
+    let b = sin(dot(p, vec2f(-13.0, 31.0) * k) - 0.6 * t + 1.7);
+    let c = sin(dot(p, vec2f(61.0, 47.0) * k) - 1.7 * t + 4.1);
+    return clamp(0.5 + 0.3 * a + 0.15 * b + 0.1 * c, 0.0, 1.0);
+}
+
+// The wind sways a vertex by its `plant.x` (m): leaning with the gusts, a faster flutter on top.
+// frame.fog.z is the time (s), frame.fog.w the wind's scale (0 when effects are off).
+fn sway(rel: vec3f, plant: vec4f) -> vec3f {
+    let amount = plant.x * frame.fog.w;
+    if (amount == 0.0) {
+        return rel;
+    }
+    let t = frame.fog.z * plant.y;
+    let p = frame.tan.zw + rel.xz;
+    let g = gust(p, t);
+    let flutter = sin(2.7 * t + dot(p, vec2f(0.73, 0.41))) * 0.25;
+    let dir = normalize(vec2f(1.0, 0.35));
+    let lean = amount * (0.25 + g + flutter * (0.4 + g));
+    // Swaying shortens the plant a little, as a bent blade does.
+    return rel + vec3f(dir.x * lean, -0.4 * lean * lean / max(plant.x, 1e-3), dir.y * lean);
+}
+
+@vertex
+fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
+    let draw = draws[k];
+    var o: CutoutOut;
+    o.draw = k;
+    o.rel = sway(draw.offset.xyz + v.position * draw.offset.w, v.plant);
+    o.clip = frame.view_proj * vec4f(o.rel, 1.0);
+    o.normal = v.normal;
+    o.color = v.color;
+    o.uv = v.uv;
+    o.tile = v.tile;
+    o.fade = v.plant.zw;
+    return o;
+}
+
+// What a cutout fragment writes: the scene's outputs and the samples it covers.
+struct CutoutSceneOut {
+    @location(0) color: vec4f,
+    @location(1) depth: f32,
+    @builtin(sample_mask) mask: u32,
+};
+
+// A per-pixel value in [0, 1) that varies from pixel to pixel (interleaved gradient noise).
+fn pixel_noise(p: vec2f) -> f32 {
+    return fract(52.9829189 * fract(dot(floor(p), vec2f(0.06711056, 0.00583715))));
+}
+
+// Alpha-tested texels (the atlas's alpha), with alpha-to-coverage done here: the texel's alpha is
+// sharpened to its edge over one pixel (so a blade's edge is antialiased whatever the mip), times
+// the distance fade, and covers that share of the pixel's samples, the samples picked per pixel so
+// overlapping blades add up. Covered samples write alpha 1 (the frame is premultiplied by
+// coverage). Without multisampling it is a plain test, dithered while fading. Drawn from both
+// sides: the back of a face takes the normal mirrored in the horizontal only, so a plant's
+// up-leaning normals stay lit from either side and a ladder's plate is lit as its own back.
+@fragment
+fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut {
+    let draw = draws[i.draw];
+    let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
+    // The mip from the gradients with their anisotropy capped at 2: a quad seen edge-on would
+    // otherwise sample a level so coarse its gaps are covered (coverage-preserving mips fill a
+    // tile's last levels), drawing slivers of solid quad across the view.
+    var gx = dpdx(i.uv) * i.tile.zw;
+    var gy = dpdy(i.uv) * i.tile.zw;
+    let cap = 2.0 * min(length(gx), length(gy));
+    gx *= min(1.0, cap / max(length(gx), 1e-12));
+    gy *= min(1.0, cap / max(length(gy), 1e-12));
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, gx, gy);
+    // Up close the atlas is sampled nearest (crisp texels), which would cut blade edges into
+    // stairs: there the alpha is filtered bilinearly by hand from the four texels around the
+    // sample (level 0), so edges are smooth curves; from afar (a texel under a pixel) the mips'.
+    let size = vec2f(textureDimensions(atlas));
+    let st = atlas_uv * size - 0.5;
+    let f = fract(st);
+    let g = textureGather(3, atlas, atlas_sampler, (floor(st) + 1.0) / size);
+    let smooth_a = mix(mix(g.w, g.z, f.x), mix(g.x, g.y, f.x), f.y);
+    let texels = max(length(dpdx(st)), length(dpdy(st)));
+    let alpha = mix(texel.a, smooth_a, clamp(2.0 - 2.0 * texels, 0.0, 1.0));
+    let edge = max(fwidth(alpha), 1e-3);
+    var cover = clamp((alpha - 0.5) / edge + 0.5, 0.0, 1.0);
+    var fade = 1.0;
+    if (i.fade.y > 0.0) {
+        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        cover *= fade;
+    }
+    let noise = pixel_noise(i.clip.xy);
+    var mask = 0xffffffffu;
+    if (SCENE_SAMPLES > 1) {
+        // Edges round to the nearest sample count; only a fading plant is dithered (rounding
+        // edges by noise would scatter single samples of a blade's faint margin across the view).
+        let round = select(0.5, noise, fade < 1.0);
+        let n = u32(floor(cover * f32(SCENE_SAMPLES) + round));
+        let full = (1u << u32(SCENE_SAMPLES)) - 1u;
+        let first = u32(noise * f32(SCENE_SAMPLES)) % u32(SCENE_SAMPLES);
+        let run = (1u << n) - 1u;
+        mask = ((run << first) | (run >> (u32(SCENE_SAMPLES) - first))) & full;
+        if (n == 0u) {
+            discard;
+        }
+    } else if (cover <= noise) {
+        discard;
+    }
+    let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
+    let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0);
+    var o: CutoutSceneOut;
+    o.color = lit.color;
+    o.depth = lit.depth;
+    o.mask = mask;
+    return o;
+}
+
 struct FlatIn {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
@@ -448,8 +597,21 @@ fn depth_of(d: array<f32, SAMPLE_SLOTS>) -> vec2f {
 }
 
 // The clouds' light, from the frame: the sky frame and the lights, as the terrain takes them.
+//
+// The day/night cycle's light for the viewer's face: its sun, moon and sky light; the day pole is
+// the sun (its height over the horizon sets day or night).
 fn cloud_lighting() -> CloudLighting {
-    return CloudLighting(frame.day_pole.xyz, frame.sun.xyz, frame.moon.xyz, frame.sun_color.rgb, frame.moon_color.rgb, frame.day_sky.rgb, frame.night_sky.rgb);
+    let d = frame.day;
+    let pole = d.sun.xyz;
+    let on_a = frame.eye.x >= MIDPLANE_Y;
+    let sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
+    return CloudLighting(pole, d.sun.xyz, d.moon.xyz, select(d.sun_b.rgb, d.sun_a.rgb, on_a), select(d.moon_b.rgb, d.moon_a.rgb, on_a), sky, sky);
+}
+
+// The scene's colour as the canvas shows it, at the time of day's saturation.
+fn scene_display(c: vec4f) -> vec3f {
+    let lit = display(c.rgb / c.a);
+    return mix(vec3f(dot(lit, vec3f(0.2126, 0.7152, 0.0722))), lit, frame.day.horizon.a);
 }
 
 fn scene_depth_at(p: vec2i) -> vec2f {
@@ -465,8 +627,21 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // — so the haze terrain fades into is the colour behind it.
 // The clouds (dwell-look's clouds.rs) are drawn over the sky only where the sky shows: the haze the
 // terrain fades into is the clear sky behind it, so distant ground never takes a cloud's colour.
-// The composite of one pixel: the scene tone-mapped, encoded, fogged and over the sky.
-fn composited(p: vec2i, ndc: vec2f) -> vec3f {
+// The sky behind is the clear sky with the sun, moon and stars (`dwell_sky_bodies`) under the
+// clouds; the time of day sets the scene's saturation (lower by moonlight); dithered last.
+// The composite of one pixel (`color`: the scene tone-mapped, encoded, fogged and over the sky)
+// with the pixel's view ray (view depth 1), clear sky and sky with its clouds, which the edge
+// blur's taps share.
+struct Composited {
+    color: vec3f,
+    ray: vec3f,
+    clear: vec3f,
+    back: vec3f,
+};
+
+// `taps`: the edge blur will composite other pixels over this one's sky, so its clouds are found
+// even where the pixel itself is covered.
+fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
     let face = frame.eye.y;
@@ -476,15 +651,17 @@ fn composited(p: vec2i, ndc: vec2f) -> vec3f {
     let clear = sky(dir);
     let c = textureLoad(scene_color, p, 0);
     var back = clear;
-    if (c.a < 1.0) {
-        back = dwell_clouds(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
+    if (c.a < 1.0 || taps) {
+        let behind = dwell_sky_bodies(dir, face, frame.day, clear);
+        back = dwell_clouds(behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
     }
-    return composited_of(c, scene_depth_at(p).x, ray, clear, back);
+    return Composited(composited_of(c, scene_depth_at(p).x, ray, clear, back), ray, clear, back);
 }
 
-// The scene at pixel `p` fogged along `ray` (view depth 1) and over the sky colour `back`.
-fn composited_over(p: vec2i, ray: vec3f, back: vec3f) -> vec3f {
-    return composited_of(textureLoad(scene_color, p, 0), scene_depth_at(p).x, ray, back, back);
+// The scene at pixel `p` composited along another pixel's ray and over its sky (`s`: the edge
+// blur's taps, which share the pixel's sky).
+fn composited_over(p: vec2i, s: Composited) -> vec3f {
+    return composited_of(textureLoad(scene_color, p, 0), scene_depth_at(p).x, s.ray, s.clear, s.back);
 }
 
 // A scene colour `c` (premultiplied by coverage) at view depth `depth` along `ray` (view depth 1),
@@ -494,7 +671,7 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
     if (c.a <= 0.0) {
         return back;
     }
-    let shown = mix(display(c.rgb / c.a), clear, fog_amount(ray * depth));
+    let shown = mix(scene_display(c), clear, fog_amount(ray * depth));
     return mix(back, shown, min(c.a, 1.0));
 }
 
@@ -505,11 +682,13 @@ fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     if (frame.water.x > 0.5) {
         return vec4f(composite_underwater(p, view_ray(i.ndc), textureLoad(scene_color, p, 0)), 1.0);
     }
-    var color = composited(p, i.ndc);
-    if (frame.wind_point.z > 1e-3) {
-        color = motion_composite(color, p, i.ndc);
+    let wind = frame.wind_point.z > 1e-3;
+    let s = composited(p, i.ndc, wind);
+    var color = s.color;
+    if (wind) {
+        color = motion_composite(s, p, i.ndc);
     }
-    return vec4f(color, 1.0);
+    return vec4f(color + dither(p), 1.0);
 }
 
 // Compare mode's second side (group 3): its scene targets and the difference counts.
@@ -671,24 +850,24 @@ fn motion_wind(ndc: vec2f) -> vec4f {
 }
 
 // The composited picture at pixel `px` blurred toward the vanishing point (the scene streaming
-// past), then the streaks and vignette over it. `color` is the pixel's own composite.
-// The taps share this pixel's view ray and sky (the sky is the composite's costly part; it barely
-// changes over a few pixels) and are jittered per pixel, so the blur is smooth rather than copies.
-fn motion_composite(color: vec3f, px: vec2i, ndc: vec2f) -> vec3f {
-    var out = color;
+// past), then the streaks and vignette over it. `s` is the pixel's own composite.
+// The taps share this pixel's view ray and sky with its clouds (the sky is the composite's costly
+// part; it barely changes over a few pixels) and are jittered per pixel, so the blur is smooth
+// rather than copies. Over a clear sky of their own instead, the clouds past the blur's inner
+// radius dropped to a fifth at a hard circular edge (the owner's report, 2026-10-16).
+fn motion_composite(s: Composited, px: vec2i, ndc: vec2f) -> vec3f {
+    var out = s.color;
     let blur = frame.wind_extra.x * frame.wind_point.z * frame.wind_point.z * motion_edge(ndc);
     if (blur > 1e-4) {
         let dims = vec2f(textureDimensions(scene_color));
         let here = vec2f(px) + 0.5;
         let vp = vec2f(frame.wind_point.x * 0.5 + 0.5, 0.5 - frame.wind_point.y * 0.5) * dims;
         let step = (vp - here) * blur / 4.0;
-        let ray = view_ray(ndc);
-        let back = sky(normalize(ray));
         let jitter = motion_hash(u32(px.x) * 1973u + u32(px.y) * 9277u);
-        var sum = color;
+        var sum = s.color;
         for (var k = 0; k < 4; k++) {
             let q = clamp(here + step * (f32(k) + jitter), vec2f(0.5), dims - 0.5);
-            sum += composited_over(vec2i(q), ray, back);
+            sum += composited_over(vec2i(q), s);
         }
         out = sum / 5.0;
     }
@@ -885,12 +1064,14 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32) -
     r = normalize(r - 2.0 * min(dot(r, seen_up), 0.0) * seen_up);
     let a = glint_alpha(f.scatter.a, s.w.z);
     let f0 = f.extra.x;
+    // The glint of the face's own sun and moon at the time of day (the day/night cycle).
+    let d = frame.day;
     var glint = vec3f(0.0);
     if (!water_off(DBG_GLINT)) {
-        glint = ggx_glint(s.n, s.v, frame.sun.xyz, a, f0) * frame.sun_color.rgb * own(frame.sun.y, s.on_a)
-            + ggx_glint(s.n, s.v, frame.moon.xyz, a, f0) * frame.moon_color.rgb * own(frame.moon.y, s.on_a);
+        glint = ggx_glint(s.n, s.v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, s.on_a) * own(d.sun.y, s.on_a)
+            + ggx_glint(s.n, s.v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, s.on_a) * own(d.moon.y, s.on_a);
     }
-    var sky_r = frame.day_sky.rgb;
+    var sky_r = vec3f(0.3, 0.5, 0.8);
     if (!water_off(DBG_SKY)) {
         sky_r = sky_radiance(r);
     }
@@ -917,8 +1098,9 @@ fn sparkle(i: FluidOut, s: Surface, f: Fluid, footprint: f32) -> vec3f {
     let d = noise_t(q);
     let n = normalize(s.n + vec3f(-d.y, 0.0, -d.z) * 0.35 * sign(s.n.y));
     let r = reflect(-s.v, n);
-    let lobe = pow(max(dot(r, frame.sun.xyz), 0.0), SPARKLE_POWER);
-    return frame.sun_color.rgb * own(frame.sun.y, s.on_a) * (k * fade * lobe * schlick(s.ndv, f.extra.x));
+    let day = frame.day;
+    let lobe = pow(max(dot(r, day.sun.xyz), 0.0), SPARKLE_POWER);
+    return select(day.sun_b.rgb, day.sun_a.rgb, s.on_a) * own(day.sun.y, s.on_a) * (k * fade * lobe * schlick(s.ndv, f.extra.x));
 }
 
 const SPARKLE_WAVELENGTH: f32 = 0.06;
@@ -1094,13 +1276,13 @@ fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, boost: f32,
         return 1.0;
     }
     let up = select(-1.0, 1.0, frag_y >= MIDPLANE_Y);
-    let sun_k = smoothstep(0.0, 0.25, frame.sun.y * up);
-    let moon_k = smoothstep(0.0, 0.25, frame.moon.y * up) * MOON_CAUSTICS;
+    let sun_k = smoothstep(0.0, 0.25, frame.day.sun.y * up);
+    let moon_k = smoothstep(0.0, 0.25, frame.day.moon.y * up) * MOON_CAUSTICS;
     let k = max(sun_k, moon_k);
     if (k <= 0.0) {
         return 1.0;
     }
-    let l = select(frame.moon.xyz, frame.sun.xyz, sun_k >= moon_k);
+    let l = select(frame.day.moon.xyz, frame.day.sun.xyz, sun_k >= moon_k);
     // Where the light reaching here crossed the surface: back along the refracted ray.
     let h = length(l.xz);
     let sin_t = h / f.wave.x;
@@ -1281,11 +1463,12 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{FRAME}\n{}\n{}\n{}\n{COMMON}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{FRAME}\n{}\n{}\n{}\n{COMMON}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
+        dwell_look::daynight::DAY_SKY_WGSL,
         super::water::wgsl(),
         scene_bindings(samples),
         dwell_look::sky_wgsl(),
@@ -1311,6 +1494,8 @@ mod tests {
             for entry in [
                 "terrain_vs",
                 "terrain_fs",
+                "cutout_vs",
+                "cutout_fs",
                 "flat_vs",
                 "flat_fs",
                 "line_vs",
@@ -1344,7 +1529,7 @@ mod tests {
             let rest = &src[at..];
             rest[..rest.find("\n}\n").expect("end")].to_string()
         };
-        for entry in ["terrain_fs", "flat_fs", "scene_out"] {
+        for entry in ["terrain_fs", "cutout_fs", "flat_fs", "scene_out"] {
             let b = body(entry);
             for f in ["aces(", "srgb_encode(", "display(", "fog_amount(", "sky("] {
                 assert!(!b.contains(f), "{entry} calls {f}");
@@ -1390,7 +1575,11 @@ mod tests {
         let src = super::source(4);
         let at = src.find("fn composite_fs(").expect("composite");
         let c = &src[at..at + src[at..].find("\n}\n").expect("end")];
-        assert!(c.contains("if (frame.wind_point.z > 1e-3)") && c.contains("motion_composite("));
+        assert!(
+            c.contains("let wind = frame.wind_point.z > 1e-3;")
+                && c.contains("if (wind)")
+                && c.contains("motion_composite(")
+        );
         // Procedural: no textures beyond the scene's own colour, which the edge blur samples.
         let m = &src[src.find("fn motion_hash(").expect("motion")..];
         assert!(!m.contains("textureSample("));
@@ -1398,5 +1587,35 @@ mod tests {
             m.contains("composited_over("),
             "the blur samples the composited scene"
         );
+    }
+
+    #[test]
+    fn the_edge_blur_taps_see_the_clouds_the_pixel_sees() {
+        // Owner's report (2026-10-16): the clouds tunnelled into a circle at speed. The blur's
+        // taps composited over the clear sky (`sky(ray)`, no clouds), so past the blur's inner
+        // radius every sky pixel was averaged with four cloudless taps: the clouds dropped to a
+        // fifth at a hard circular edge. The taps must composite over the pixel's own sky with its
+        // clouds (and fog toward its clear sky), as the pixel itself is.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let m = body("motion_composite");
+        assert!(
+            !m.contains("sky("),
+            "the blur must not composite over a cloudless sky of its own"
+        );
+        assert!(m.contains("composited_over(vec2i(q), s)"));
+        assert!(
+            body("composited_over").contains("s.ray, s.clear, s.back)"),
+            "the taps composite over the pixel's sky with its clouds"
+        );
+        // With the wind on, the clouds are found even where the pixel itself is covered, since
+        // its taps may land on sky.
+        let c = body("composited");
+        let clouds = c.find("dwell_clouds(").expect("clouds");
+        assert!(c[..clouds].contains("c.a < 1.0 || taps"));
+        assert!(body("composite_fs").contains("motion_composite(s,"));
     }
 }

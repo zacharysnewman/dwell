@@ -21,6 +21,18 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://localhost:4173/dwell/',
+    // No clouds: on the software adapter their per-pixel noise slows every frame (to about one a
+    // second with two players), and the suite's timings assume the frame rate it had without them.
+    // The clouds have their own checks (render tests, the bench's screenshots).
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'http://localhost:4173',
+          localStorage: [{ name: 'dwell.clouds', value: '"off"' }],
+        },
+      ],
+    },
     // Headed: see above. The software adapter (SwiftShader's Vulkan) draws WebGPU without a GPU.
     headless: false,
     launchOptions: {

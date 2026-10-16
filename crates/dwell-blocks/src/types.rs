@@ -52,6 +52,55 @@ pub struct Grid {
     pub strength: f32,
 }
 
+/// How a state's pixels are drawn (block data `render`, docs/TRANSPARENT_BLOCKS.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderMode {
+    /// Covers every pixel it draws (cubes).
+    Opaque,
+    /// Alpha-tested (alpha-to-coverage under MSAA), depth-writing, order-independent: foliage,
+    /// ladders.
+    Cutout,
+    /// Alpha-blended, no depth writes, sorted far to near: water, later glass and ice.
+    Translucent,
+}
+
+/// The `cross` look's geometry (block data `cross`): `quads` vertical quads through the cell's
+/// centre, evenly turned, `height` tall, each cell's copy jittered from its world position by up
+/// to `offset` (m, in x and z), `rotation_deg` (about y) and a height scale in
+/// [`height_min`, `height_max`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cross {
+    pub height: f32,
+    pub quads: u8,
+    pub offset: f32,
+    pub rotation_deg: f32,
+    pub height_min: f32,
+    pub height_max: f32,
+}
+
+/// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`
+/// (1 = the default gust field's pace).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Wind {
+    pub strength: f32,
+    pub speed: f32,
+}
+
+/// Distance fade of a cross (block data `fade`, metres): fully drawn to `start`, gone at `end`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fade {
+    pub start: f32,
+    pub end: f32,
+}
+
+/// Which neighbour a block needs to stay (block data `needsSupport`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Support {
+    None,
+    /// The cell below it, toward its face's ground (−y on face A, +y on face B).
+    Below,
+}
+
 /// One block state.
 #[derive(Clone, Copy, Debug)]
 pub struct StateInfo {
@@ -80,6 +129,19 @@ pub struct StateInfo {
     pub opacity: f32,
     pub textures: Option<Textures>,
     pub grid: Option<Grid>,
+    pub render: RenderMode,
+    /// The `cross` look's geometry (other looks: none).
+    pub cross: Option<Cross>,
+    pub wind: Option<Wind>,
+    pub fade: Option<Fade>,
+    /// A smaller box (min x, y, z, max x, y, z in the cell) for targeting, line of sight and the
+    /// outline; none: its shape, or the whole cell for a block without one.
+    pub selection: Option<[f32; 6]>,
+    /// Block ids it may be placed on (the cell below it); empty: anywhere.
+    pub place_on: &'static [&'static str],
+    pub needs_support: Support,
+    /// Placing a block into its cell (or against it) replaces it.
+    pub replaceable: bool,
 }
 
 /// A fluid's index in `FLUIDS`, valid for this build's registry.

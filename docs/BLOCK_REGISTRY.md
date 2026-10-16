@@ -75,6 +75,13 @@ with one tile but want different grids (an untextured block uses the `plain` til
 option like `textures`, so it does not enter the registry hash. The
 sandbox floor pairs it (every 8) with the `grid` texture tile (a faint line at every block edge).
 
+**Render modes** (**built, Phase 33**, [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md),
+[`TRANSPARENT_BLOCKS.md`](./TRANSPARENT_BLOCKS.md)): `"render": "opaque" | "cutout" | "translucent"`
+(default `opaque`) says how a block's pixels are drawn; `gen.mjs` rejects other values, an `opacity`
+below 1 without `translucent`, and `cutout` without textures, and emits `StateInfo::render`. Water is
+`translucent`, ladders `cutout`. Like `textures` and `grid` it is a look option, outside the registry
+hash.
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,

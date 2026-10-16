@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseScenarios, scenarioUrl, scenarioView } from './scenarios.ts';
+import { parseScenarios, scenarioUrl, scenarioView, timelapseTimes } from './scenarios.ts';
 import { viewUrl } from './views.ts';
 
 const file = (scenarios: unknown[]): unknown => ({ scenarios });
@@ -45,6 +45,8 @@ describe('scenarios', () => {
             { do: 'traceStart' },
             { do: 'traceStop', name: 'x' },
             { do: 'record', name: 'end' },
+            { do: 'time', t: 0.25, moon: 0.5 },
+            { do: 'timelapse', name: 'day', frames: 24 },
           ],
         },
       ]),
@@ -57,7 +59,33 @@ describe('scenarios', () => {
       'traceStart',
       'traceStop',
       'record',
+      'time',
+      'timelapse',
     ]);
+    expect(s.steps[7]).toEqual({ do: 'time', t: 0.25, moon: 0.5 });
+    expect(s.steps[8]).toEqual({
+      do: 'timelapse',
+      name: 'day',
+      frames: 24,
+      from: 0,
+      to: 1,
+      waitS: 0.3,
+    });
+  });
+
+  it('times of day and timelapse frames are checked', () => {
+    const bad =
+      (step: unknown): (() => unknown) =>
+      () =>
+        parseScenarios(file([{ name: 'a', steps: [step] }]));
+    expect(bad({ do: 'time', t: 1.5 })).toThrow(/outside 0–1/);
+    expect(bad({ do: 'time' })).toThrow(/expected a number/);
+    expect(bad({ do: 'timelapse', name: 'x', frames: 1 })).toThrow(/outside 2–1000/);
+  });
+
+  it('a timelapse walks the times of day, past midnight when it wraps', () => {
+    expect(timelapseTimes({ from: 0, to: 1, frames: 4 })).toEqual([0, 0.25, 0.5, 0.75]);
+    expect(timelapseTimes({ from: 0.75, to: 0.25, frames: 4 })).toEqual([0.75, 0.875, 0, 0.125]);
   });
 
   it('repeats steps, and takes a renderer and a near/far split', () => {
