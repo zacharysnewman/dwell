@@ -92,8 +92,9 @@ npm run bench -- --compare idle-spawn look-horizon [--configs raster-half] [--co
 Runs each scenario once per **configuration** (`client/bench/configs.json`, checked by
 `scripts/configs.ts`: unknown fields, ranges, upscaler names and duplicate names fail with the entry
 named), each in a fresh page on the same seed and inputs. A configuration is a renderer, a scale
-and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last only for `fsr1` and
-`taa-u`; `bilinear` is the browser stretching a scaled canvas, today's `?scale=`):
+and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last only for the
+marcher's `fsr1`, `bilateral` and `taa-u`, which keep the canvas at full size and render the march
+at the scale; `bilinear` is the browser stretching a scaled canvas, today's `?scale=`):
 
 | Config | Renderer | Scale | Upscaler |
 | --- | --- | --- | --- |
@@ -101,13 +102,15 @@ and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last on
 | `raster-half` | raster | 0.5 | bilinear |
 | `march` | march | 1 | none |
 | `march-half-fsr` | march | 0.5 | fsr1 |
+| `march-075-fsr` | march | 0.75 | fsr1 |
+| `march-half-bilateral` | march | 0.5 | bilateral |
 | `march-half-taa` | march | 0.5 | taa-u |
 | `march-075-taa` | march | 0.75 | taa-u |
 
 **Support:** the first run (the baseline's) asks the page what it offers — `__dwell.renderers()` and
 `__dwell.upscalers()`, each a list of names; a build without them offers `raster` and the browser's
 stretch only. Configurations the build can't run are **skipped with the reason** in the printed
-report and `compare.json` (today: the `march` entries with an upscaler, which A5 builds;
+report and `compare.json` (today: the `taa-u` entries, which A5 builds;
 `renderers()` lists `march` because `render/march`'s `BUILT` is true), not failed. A new configuration is one entry in the file; `baseline` names the one the others are
 compared with and `deltaE` the colour threshold (CIE76, default 2.3, about just noticeable).
 
@@ -247,6 +250,16 @@ From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.t
   `cargo test -p dwell-client the_gpu_marcher_matches` (on macOS on the Metal GPU; skipped where no
   GPU adapter is found), and in the browser `npm run build:probe && npm run e2e:webgpu`
   (`client/e2e-webgpu/march.spec.ts`, headless SwiftShader, port 4190; CI runs it).
+- **The marcher's native profile** (`render/march/perf.rs`, an ignored test): seed 7's spawn
+  generated (chunks and LOD sections as the game streams them), marched at 1280×720 from the
+  bench's views, timed with timestamp queries (march and shade passes), with the GPU's steps
+  histogram: `cargo test --release -p dwell-client march_perf -- --ignored --nocapture`.
+  `DWELL_PERF_VARIANTS='a=@file.wgsl;b=0'` times shader variants (a march module from a file,
+  `DWELL_PERF_DUMP=path` writes the current one to start from; a name starting `noshade` skips the
+  shade pass), `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
+  `DWELL_PERF_IMAGES=dir` writes a steps-per-ray heatmap (PGM) per view and prints steps per
+  8×4 SIMD group, `DWELL_PERF_SIZE=WxH`, `DWELL_PERF_SEED`. Naga's Metal output, not Chrome's
+  Tint: the bench is the measurement, this the quick loop.
 
 ## Interactive use
 
