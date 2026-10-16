@@ -36,20 +36,23 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
-| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 32) |
+| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
 | 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) and for Phase 25's renderer decision (A7, 2026-10-14: cluster rendering is built once, for the chosen renderer) |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix; ~19 ms at 720p on an M1 against raster's ~2.5) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale; ~5 ms at half scale) built; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids), A4b (beam prepass, temporal start); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.11.17, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
-| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
-| 32 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders |
+| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.19, a patch release of the 0.11 line |
+| 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
+| 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data (opaque, cutout, translucent) and cutout (see-through) ladders shipped on the 0.11 line (ADR 0036, `TRANSPARENT_BLOCKS.md`; no registry-hash change); the cross look, placement rules and `dwell:tall_grass` are on `claude/transparent-blocks` for the 0.12.0 line; `package.json` raised to 0.11.18, a patch release of the 0.11 line |
+| 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
+| 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -96,6 +99,11 @@ effects).
 On 2026-10-14 the owner asked for sound effects (procedural, data-driven, every game and menu
 action): **Phase 28** ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)); it needs Phase 24
 only.
+Also on 2026-10-15 the owner asked for a day/night cycle with good transitions, fog included, and a
+better sun and moon, added as **Phase 32 — the day/night cycle** ([ADR 0035](./adr/0035-day-night-cycle.md),
+[`DAY_NIGHT.md`](./DAY_NIGHT.md)). It builds on A1 and
+Phase 31 (the clouds take its light), changes no world file, protocol or terrain, and its clock is
+the one tree growth (Phase 30) counts days with.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -1980,7 +1988,7 @@ Exit criteria
 - [x] Native, WASM and Vitest suites pass with regenerated goldens.
 - [x] Chunk and LOD generation time measured against generator version 11 (`… bench`).
 - [x] e2e passes in CI (known failures in `CLAUDE.md` aside): green once the specs that named block
-  ids by number name them by state (`stateId`), and the settings spec counts the sky rotation slider.
+  ids by number name them by state (`stateId`), and the settings spec counts the sky rotation slider (removed by Phase 32).
 
 **Measured** (`dwell_worldgen_inspect <seed> bench`, Release, seeds 0 and 20260925): a chunk
 1.03–1.07 ms (version 11) → 0.07 ms (version 12); LOD sections 0.9–2.1 ms → 0.54–0.84 ms per
@@ -2376,7 +2384,7 @@ Exit criteria
 ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)), simplified by the baseline (every solid block is
 natural) and with the rule table as data.
 
-**Status:** Built and tested natively, in WASM (wasm32-wasip1) and in Vitest (2026-10-15); every deliverable done. Outstanding: the two-client e2e (not run on the branch: the e2e port is shared by other agents), the LOD seam check against chunks, and the owner's walk. A new compatibility line is needed (0.11.0, the owner raises `client/package.json`): the saved voxels, state strings and generated voxels are unchanged, but collision, spawn height and what a seed's terrain is change; the protocol is raised to v13 so that builds which shape differently never connect. Replaces Phase 9e (its original plan stays under Phase 9 for the record). Owner decision (2026-10-15): faces steeper than 44° slide (45° ramps and ridge flanks, saddles); sliding is Phase 32, which owns the tests of steep faces.
+**Status:** Built and tested natively, in WASM (wasm32-wasip1) and in Vitest (2026-10-15); every deliverable done. Outstanding: the two-client e2e (not run on the branch: the e2e port is shared by other agents), the LOD seam check against chunks, and the owner's walk. A new compatibility line is needed (0.11.0, the owner raises `client/package.json`): the saved voxels, state strings and generated voxels are unchanged, but collision, spawn height and what a seed's terrain is change; the protocol is raised to v13 so that builds which shape differently never connect. Replaces Phase 9e (its original plan stays under Phase 9 for the record). Owner decision (2026-10-15): faces steeper than 44° slide (45° ramps and ridge flanks, saddles); sliding is Phase 35, which owns the tests of steep faces.
 
 Dependencies (checked 2026-10-14): the rework's order puts Phase 18 after Phase 17 (terrain
 definitions, not started) and Phase 16 (not started). Neither blocks the adaptive blocks
@@ -2664,13 +2672,17 @@ the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
 **Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
-builders, pool, reference marcher) done; A2 (the renderer seam, compare mode with a placeholder
-marcher, bench `--compare`) built, its exit check done (compare mode with raster on both sides
-reports zero difference); A1 (the shared frame and GPU timing) built, its exit check done: the
-bench before/after (design doc §7, "A1 as built") and the picture differs slightly — antialiased
-edges, the sea's colour (water now blends in linear light), the outline no longer multisampled —
-which the owner approved (2026-10-14); the e2e suite passes on CI. Next: A3b, the GPU march, worker
-brick jobs, uploads, overlays and telemetry. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+builders, pool, reference marcher) done; A2 (the renderer seam, compare mode, bench `--compare`)
+built, its exit check done (compare mode with raster on both sides reports zero difference); A1
+(the shared frame and GPU timing) built, its exit check done: the bench before/after (design doc §7,
+"A1 as built") and the picture differs slightly — antialiased edges, the sea's colour (water now
+blends in linear light), the outline no longer multisampled — which the owner approved (2026-10-14);
+the e2e suite passes on CI. A3b (the GPU march, uploads, brick jobs, telemetry) built, its CI run of
+the per-pixel test outstanding. A4a (the march's speed: each level's occupied rows skipped, a
+vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
+concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
+exit check done, its phone report outstanding; next: A3c (overlays, LOD column heights, raster
+ids), A4b (the beam prepass, the temporal start). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2711,15 +2723,37 @@ Deliverables
   pool's size-class allocator and the clipmap levels (CPU side); the CPU reference marcher (integer
   + fraction ray state, cone LOD, masks, column and brick-distance skips, step cap) with a
   brute-force oracle; steps-per-ray statistics (`examples/march_steps.rs`).
-- [ ] **A3b** — Marched terrain at every distance on the GPU: the state table, pool and clipmap
-  uploaded (growth by `copy_buffer_to_buffer`); brick jobs in the workers for chunks and LOD
-  sections; the primary march at full resolution (a WGSL port of the reference marcher) with the
-  hierarchy's masks and cone LOD; overlays through the `frag_depth` pass; steps-per-ray telemetry.
-  `march` mode draws all terrain with no meshes.
-- [ ] **A4** — Empty-space skipping (design doc §4.3): column min-max heights, per-brick empty
-  distances, the beam prepass, the temporal start distance, fog and step-cap exits.
-- [ ] **A5** — Resolution and shapes: render scales 0.5 and 0.75 with FSR 1 and TAA-U; shaped cells
-  as analytic planes.
+- [x] **A3b** — Marched terrain at every distance on the GPU (`crates/dwell-client/src/render/march/`):
+  the state table, pool and clipmap uploaded incrementally (`Scene::take_dirty`, one `writeBuffer`
+  per changed range); bricks made in the workers for chunks and LOD sections (the masked meshing
+  jobs' `BRICKS` payload); the primary march at full resolution, a WGSL port of the reference
+  marcher with its constants generated from the Rust layout, with the hierarchy's masks, column
+  grids, brick distances and cone LOD; behind the seam (`MarchRenderer`, `BUILT`), copied into the
+  shared frame; steps-per-ray telemetry (`march.steps.*`, an atomic histogram) and `gpu.march`; the
+  GPU-against-reference per-pixel test (native and the WebGPU probe); `?marchtest=1`. `march` mode
+  draws all terrain with no meshes. Deviation: a buffer that fills is re-created at double size and
+  re-filled from the CPU copy (which holds every word), not grown by `copy_buffer_to_buffer`.
+- [ ] **A3c** — The rest of A3: overlays over marched terrain through the `frag_depth` pass
+  (players, the outline, water); LOD column heights and side tints in the bricks; a raster id target
+  so compare mode and the bench compare cell ids and faces; edit-to-visible latency (from A2).
+- [x] **A4a** — Empty-space skipping and the per-step cost on the GPU (design doc "A4 as built"):
+  column min-max heights, per-brick empty distances, the fog distance and the step cap (on the GPU
+  since A3b); each level's occupied rows (a ray above or below everything its level holds leaves
+  the level's box in one skip, clipped to its cone-LOD band); the march's inner loop vectorised and
+  branch-light, the column search walking from a guess, shading in a pass of its own; the cone-LOD
+  switch waits while the coarser cell is occupied (the owner's concentric rings, a test that failed
+  first); `perf.rs`, a native profiling harness. Reference and WGSL together, the per-pixel check
+  exact.
+- [ ] **A4b** — The rest of A4's list: the beam prepass (a conservative start distance per 8×8
+  tile, with a test that it never passes the true hit) and the temporal start distance (invalidated
+  on edits and disocclusion). Moved out of A4a: after the level-rows skip the sky takes 15–20
+  steps and the ground 5–10, and the profile puts the cost in the per-step latency, not the count
+  (design doc "A4 as built").
+- [x] **A5a** — Render scales 0.5 and 0.75 for the marcher with FSR 1 (EASU + RCAS in WGSL) or a
+  depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
+  `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
+  and `march-half-bilateral` configurations.
+- [ ] **A5** — The rest of A5: TAA-U (reprojection), and shaped cells as analytic planes.
 - [ ] **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
   raster's depth (the hybrid), bilateral upsample, temporal accumulation; a quality setting.
 - [ ] **A7** — The decision: the owner decides from the full comparison ("measure all"; design doc
@@ -2737,11 +2771,18 @@ Exit criteria
   pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
   without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
   origin (bit-identical), face B as face A mirrored, a state added by data alone.
-- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near
-  and distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
-  report on a desktop.
-- [ ] A4: steps-per-ray p99 down on `look-horizon` and `fly-high`; a comparison report on a desktop
-  and a phone.
+- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader). Passes locally on
+  SwiftShader (the same probe CI runs: every record bit-identical) and on an M1's Metal (ids exact,
+  `t` within 2 ULP, depth 2.6e-7); CI's run outstanding.
+- [x] A3b: a first comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn
+  look-horizon look-down fly-high`: design doc "A3b as built").
+- [ ] A3c: the named views, near and distant, agree with the mesher (over 99.5 % cell-id match where
+  both hit) — needs raster ids and LOD column heights in the bricks.
+- [x] A4 (desktop): steps-per-ray p99 down on `look-horizon` and `fly-high` (GPU histogram, seed 7, 1280×720:
+  the horizon view's p99 96 → 39, 540 m up 89 → 29; `march_steps`' horizon p95 68 → 22) and a
+  comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn look-horizon
+  look-down fly-high`: design doc "A4 as built").
+- [ ] A4 (phone): the comparison report on a phone (needs the bench to drive a device).
 - [ ] A5: the full comparison report on every device in the design doc (Mac, Windows integrated and
   discrete, an iPhone from the last three years, a recent Android flagship; SwiftShader for
   correctness only).
@@ -2770,8 +2811,11 @@ underwater rendering and reflections in quality tiers
 **Status:** In progress — W1a done (fluid looks in the registry, the surface drop and opacity read
 from them, the eye-under-fluid test in the frame uniform); W2 built (Phase 25's A1); W1b built (the
 water shader, `water_fs`, with the fluid id per vertex, the fluid buffer, the underwater fog stub and
-the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look. Next: W3; W3–W5
-build on the shared frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look; W3 built (the water
+reads the scene on Medium and High: refraction, depth absorption, foam, sparkle, and caustics brought
+forward from W4, also under the surface; checked in Chrome on an M1 with `water-shore`), outstanding:
+the owner's look and the per-tier cost on an unloaded machine. Next: W4; W3–W5 build on the shared
+frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
 Deliverables
@@ -2787,10 +2831,10 @@ Deliverables
   fluid's roughness and the sky reflection.
 - [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
-- [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
-  shoreline foam.
+- [x] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
+  shoreline foam; caustics, brought forward from W4 (WATER_RENDERING.md §8, W3).
 - [ ] **W4** — Underwater: absorption fog, the water line, Snell's window and total internal
-  reflection, caustics, distortion (god rays with W5's High tier).
+  reflection, distortion (god rays with W5's High tier). Caustics moved to W3.
 - [ ] **W5** — Screen-space reflections and the quality tiers (Low, Medium, High, Ultra) in the
   settings menu; Low the phone default, tentatively (owner).
 - [ ] **W6** — Under ray marching (after A3, and only if marching is kept at A7): reflection and
@@ -2806,6 +2850,20 @@ Exit criteria
   parameters (`render::water` `packs_each_fluid_at_its_id_…`); the shader validates (naga) and draws
   in Chrome on the GPU (`npm run bench -- water-views`).
 - [ ] W1b: the owner's look (`water-views` screenshots in the PR).
+
+Deviations (W3):
+- Caustics came forward from W4 (the owner asked for them, under the surface most of all): on the
+  floor seen through the surface, and in the composite on every opaque pixel under the surface
+  while the eye is submerged. God rays stay in W4.
+- The copy is full resolution on Medium and High in W3 (no half-res copy yet): Medium and High
+  look the same until W5. The copy is colour only; the water reads the view depth directly (the
+  water half doesn't attach it), so no depth copy.
+- New fluid data beyond the plan's: `scattering` (needed for turquoise shallows over yellow sand:
+  absorption alone turns them green), `refraction`, `sparkle`, and `caustics` as
+  `{ strength, scale, depth }`.
+- The sparkle (all tiers, Low too) is beyond the plan: the owner asked for a sparkly glint.
+- `dwell:water` retuned for the tropical look (owner): absorption [1.0, 0.16, 0.045], scatter
+  `#1496e0`, scattering 0.3, foam depth 0.5, caustics 1.3 / 1.4 m / 4 m (prototype content).
 
 Deviations (W1b):
 - Beyond the plan, from the brief: the underwater fog stub (the composite reads the `water` uniform:
@@ -2834,7 +2892,12 @@ Deviations (W1a):
   `dwell-mesh` `a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity`, and
   `dwell-world` `fluid::tests` (the regression: an eye 0.9 m up a water cell under air is not
   underwater; failed against the whole-cell rule, as physics counts it, then passed).
-- [ ] W3: screenshots of shore views; bench.
+- [x] W3: screenshots of shore views (`npm run bench -- water-shore`: the beach edge, straight down
+  into the shallows, the deep-to-shallow gradient, the floor and its caustics under the surface,
+  the far water; in the PR); bench per tier (WATER_RENDERING.md §8, W3: measured on a loaded M1,
+  noisy); the colour grading pinned over sand (`render::water`
+  `the_builds_water_grades_from_clear_through_turquoise_to_blue_never_green`).
+- [ ] W3: the owner's look, and the per-tier cost measured on an unloaded machine.
 - [ ] W4: named views underwater and half in; the owner's look.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
   it on the two target phones.
@@ -3084,7 +3147,9 @@ Deliverables
   desktops and Low on touch devices, kept under `dwell.clouds` (append-only store); the drift's
   clock is the server's tick (`world_clock.rs`).
 - [x] **C4** — Bench scenarios `clouds-high`, `-low`, `-off` (GPU cost), `-night`, `-dusk`, `-fly`
-  and `-altitude`; named views and scenarios take `settings.clouds` and `settings.skyRotation`.
+  and `-altitude`; named views and scenarios take `settings.clouds` and `settings.skyRotation`
+  (Phase 32 replaced the sky rotation with the time of day: `settings.timeOfDay`, and the clouds'
+  light now comes from the day/night cycle, day or night by the sun's height).
 
 Exit criteria
 - [x] The deck intersection, the wrap, coverage, the quality setting, the clock and a tunable changed
@@ -3097,7 +3162,97 @@ Exit criteria
 - [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
 - [ ] CI green, and the frame time on a phone with the default (Low).
 
+## Phase 32 — The Day/Night Cycle
+
+**Goal:** A day/night cycle with good-looking transitions of sky, light and fog, and a better sun
+and moon (owner, 2026-10-15): a 30-minute day (20 min day, 10 min night) whose length tree growth
+shares, driven by server-authoritative world time, as an extendable system — the clock and the
+look as data a tool can edit ([ADR 0035](./adr/0035-day-night-cycle.md), [`DAY_NIGHT.md`](./DAY_NIGHT.md)).
+
+**Status:** In progress. D0–D5 are built and tested natively, in Node and in a browser on the GPU.
+Outstanding: the owner's look and answers to `DAY_NIGHT.md` §8 (the defaults were taken without
+asking: the cycle is new), CI, and a phone's frame time.
+
+Compatibility: no protocol change. World time is the server's tick, already saved
+(`meta.world_tick`) and sent in `Welcome` and every snapshot on the 0.11 line; the clock in the data
+is public API from now on (`DAY_NIGHT.md` §2).
+
+Deliverables
+- [x] **D0** — ADR 0035 and `DAY_NIGHT.md` (defaults, model, open questions); ARCHITECTURE.md §5,
+  §6.3 (light and sky), §6.6 (the cycle) and §7.4; `TREE_GROWTH.md` points at the shared clock.
+- [x] **D1** — The data: `shared/look/daynight.json` (clock, sun path, sun/moon/star looks, 14
+  keyframes) → `crates/dwell-look/src/daynight.gen.rs` by `shared/look/daynight.mjs` (validated,
+  `daynight.test.mjs`; CI regenerates and fails on a diff).
+- [x] **D2** — The model (`dwell-look` `daynight.rs`): time of day and day number from world time,
+  the sun's uneven path (daylight for `dayS`), the moon opposite, the phase over 8 days, per-face
+  keyframe samples (a monotone cubic in Oklab), the `DaySky` uniform block.
+- [x] **D3** — Drawing: the sky with its horizon band and halos (`sky.wgsl`, also the fog's and
+  reflections' colour), the sun disc, the moon (phases, maria, earthshine) and stars behind the
+  world and the clouds; per-face lights; the keyframes' fog density, exposure and saturation; the
+  viewer's sky eased across the flip band; a dither in the composite. The clouds' light from the
+  block.
+- [x] **D4** — The clock on the client (the server's tick from snapshots, `world_clock.rs`, shared
+  with the clouds); the sky rotation setting, `?skyrot` and `?skyspin` removed (its storage key left
+  as it is).
+- [x] **D5** — Dev controls: `?time=`, `?moon=`, `?timespeed=`, the F3 line, `__dwell.setTime`, bench
+  steps `time` and `timelapse`, scenarios `day-night`, `day-timelapse`, `day-night-cost`; views and
+  scenarios take `settings.timeOfDay`.
+
+Exit criteria
+- [x] Keyframe interpolation (continuous through every keyframe and across midnight, no overshoot),
+  time of day from world time, the sun's path and daylight share, the moon's direction and phase,
+  fog tracking the horizon at every time, a readable night, face B's night under face A's day, and a
+  keyframe changed by data alone are pinned by tests; the WGSL validates with Naga (alone and in the
+  renderer's module).
+- [x] In a browser on the GPU: night, dawn, sunrise, golden hour, morning, noon, sunset, dusk and
+  midnight toward and away from the sun, the moon at three phases, face B's sky (night under face
+  A's noon, day under its midnight) and a 48-frame timelapse, from
+  screenshots.
+- [x] GPU cost measured at noon and midnight, looking at the horizon and up (`day-night-cost`,
+  `--unthrottled`).
+- [ ] The owner's look at the cycle, and answers to `DAY_NIGHT.md` §8.
+- [ ] CI green, and the frame time on a phone.
+
 ---
+
+## Phase 34 — Brushes
+
+**Goal:** VoxelSniper-style painting and sculpting tools in the sandbox world, as an extendable
+system: a fixed vocabulary of brushes and performers, named presets as data
+([ADR 0037](./adr/0037-brushes.md), [`BRUSHES.md`](./BRUSHES.md); the owner's brief, 2026-10-15:
+"painting tooling … like Voxel Sniper").
+
+**Status:** In progress — B1 built and tested; outstanding: the owner's try-out and answers to
+`BRUSHES.md` §5, CI. Needs Phase 27's sandbox world type and region edits (S2a, S3a).
+
+Deliverables
+- [x] **B1** — Brushes (ball, disc, cylinder, cube, ellipsoid, seeded splatter, line), performers
+  (set, replace, overlay, erase; masks) and sculpt (smooth, erode/fill, flatten, raise, lower) in
+  `dwell-world` `brush.rs`; presets and the per-world-type policy as data
+  (`shared/brushes/brushes.json`, `gen.mjs`, CI stale check); strokes as `KEEP` pastes of ≤ 32³
+  behind a `brushes` Welcome flag with the sandbox's 128 m reach (server-validated as region edits);
+  the brush tool (`dwell-game` `brush_tool.rs`: keys, ranged aim, wireframe outline,
+  arrow/gunpowder, pick, one undo step per stroke, rate-paced sending, the region `tool` sound);
+  the HUD panel and the controls table.
+
+Exit criteria
+- [x] Each brush's cells (counts, symmetry, seeded splatter, lines), each performer and sculpt on
+  fixtures, splitting into ≤ 32³ edits, and every preset stroke (`dwell-world` `brush.rs` tests); a
+  preset added by data alone and bad entries failing with a message (`brushesGen.test.ts`,
+  `brush.rs` `a_preset_added_by_data_alone_works`); ranged region edits accepted in the sandbox only
+  and `KEEP` cells kept (`dwell-sim` `tests/region_edits.rs`); a stroke as one undo step, round trip
+  (`dwell-game` `brush_tool.rs`, `dwell-client` `game_local`
+  `a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_step`).
+- [x] In the browser (2026-10-15, and again on 0.11.17 after the merge, 2026-10-16; Chrome on the GPU, a sandbox world, driven through
+  `__dwell.brush`): a mound built from two balls 26 m away, a dirt disc beside it, then smooth,
+  erode, a sand splatter and grass surface paint, each screenshotted with the wireframe and the HUD
+  panel; undo took the paint off in one step and redo put it back.
+- [ ] The owner tries the brushes and answers `BRUSHES.md` §5.
+
+Deviations: built without the "ask before designing" questions (the coordinator's defaults, recorded
+with open questions in `BRUSHES.md` §5). The S3 paste could not leave cells alone (and a paste over
+the unbreakable floor is rejected), so strokes use a `KEEP` paste cell behind a new `brushes`
+Welcome flag rather than no protocol change at all; still protocol v12 and the 0.11 line.
 
 ## Phase 28 — Sound Effects
 
@@ -3153,7 +3308,7 @@ Deviations
 
 ---
 
-## Phase 32 — Sliding on Steep Ground
+## Phase 35 — Sliding on Steep Ground
 
 > **Numbering note (for the integrator):** 32 was the next phase number free on `main` when this
 > was written (2026-10-15; 29–31 are taken there). Another branch may claim 32 too: if so,

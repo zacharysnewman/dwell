@@ -9,7 +9,9 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use dwell_game::block_interaction::{BlockInteraction, BlockTarget};
+use dwell_blocks::StateId;
+use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
+use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{ChunkMessage, ChunkStreamer, Coord, StreamStats, TerrainView};
 use dwell_game::eye::{EyeCamera, EyeState};
 use dwell_game::face_flip::FaceFlip;
@@ -21,6 +23,7 @@ use dwell_game::remotes::RemotePlayers;
 use dwell_game::sound::{CellChange, EditSounds, MoverSample, MoverSounds, SoundEvent, SoundKind};
 use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
+use dwell_look::daynight::{DAY_NIGHT, DayState};
 use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
@@ -78,8 +81,58 @@ pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain>
     /// The wind streaks to draw this frame.
     fn set_wind(&mut self, wind: WindView);
     fn set_region_boxes(&mut self, boxes: &[RegionBox]);
+    /// The brush tool's wireframe at its target (BRUSHES.md), or none.
+    fn set_brush_outline(&mut self, _outline: Option<&BrushOutline>) {}
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
+    /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
+    fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
+}
+
+/// Dev switches over the day/night cycle (`?time=`, `?moon=`, `?timespeed=`, the bench's `time`
+/// step): they change this client's view only, never the world's time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DayOverride {
+    /// The time of day (0–1, 0 midnight) instead of the world's.
+    pub time: Option<f64>,
+    /// The moon's phase (0 new, 0.5 full) instead of the day count's.
+    pub moon: Option<f64>,
+    /// World time runs this many times faster here (1 = as the server's).
+    pub speed: f64,
+}
+
+impl Default for DayOverride {
+    fn default() -> Self {
+        Self {
+            time: None,
+            moon: None,
+            speed: 1.0,
+        }
+    }
+}
+
+impl DayOverride {
+    /// Reads `?time=`, `?moon=` and `?timespeed=` from a query string; anything missing, not a
+    /// number or out of range is left alone.
+    pub fn from_query(search: &str) -> Self {
+        let read = |key: &str| {
+            search
+                .trim_start_matches('?')
+                .split('&')
+                .filter_map(|kv| kv.split_once('='))
+                .find(|(k, _)| *k == key)
+                .and_then(|(_, v)| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite())
+        };
+        let unit = |v: Option<f64>| v.filter(|v| (0.0..=1.0).contains(v));
+        Self {
+            time: unit(read("time")),
+            moon: unit(read("moon")),
+            speed: read("timespeed")
+                .filter(|v| *v > 0.0 && *v <= 10_000.0)
+                .unwrap_or(1.0),
+        }
+    }
 }
 
 pub type SceneRef<S> = Rc<RefCell<S>>;
@@ -335,7 +388,8 @@ pub struct Game<S: Scene> {
     accumulator: f64,
     last_frame_ms: Option<f64>,
     last_snapshot_tick: u32,
-    /// The server's clock, from its snapshots (client-side visuals: the clouds' drift).
+    /// The server's clock, from its snapshots: world time for the day/night cycle and the clouds'
+    /// drift.
     pub clock: crate::world_clock::WorldClock,
     input_buffer: u8,
     tick_rate: f64,
@@ -350,6 +404,8 @@ pub struct Game<S: Scene> {
     pub interaction: BlockInteraction,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
+    /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
+    pub brush: BrushTool,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
@@ -393,6 +449,11 @@ pub struct Game<S: Scene> {
     frame_fov: f64,
     /// The camera the LOD selection last used.
     lod_camera: Option<LodCamera>,
+    /// The dev switches over the day/night cycle, and its state at the last frame (world time is
+    /// `clock`'s).
+    pub day_override: DayOverride,
+    day: DayState,
+    first_draw_ms: Option<f64>,
 }
 
 impl<S: Scene> Game<S> {
@@ -455,6 +516,7 @@ impl<S: Scene> Game<S> {
             eye,
             interaction: BlockInteraction::new(),
             region: RegionTools::new(),
+            brush: BrushTool::new(),
             target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
@@ -480,6 +542,9 @@ impl<S: Scene> Game<S> {
             motion_face: None,
             frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
             lod_camera: None,
+            day_override: DayOverride::default(),
+            day: DayState::default(),
+            first_draw_ms: None,
         };
         match verification {
             Some(c) => game
@@ -822,6 +887,10 @@ impl<S: Scene> Game<S> {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        // The brush tool: left click its arrow, right click its gunpowder (BRUSHES.md).
+        if self.brush.active() {
+            return self.brush_apply(action == EditAction::Place, now_ms);
+        }
         // In paste mode the buttons paste (right) or leave paste mode (left).
         if self.region.pasting() {
             let tool = match action {
@@ -855,6 +924,100 @@ impl<S: Scene> Game<S> {
             }
             None => false,
         }
+    }
+
+    /// What the server announced it takes (Welcome flags) in a world of this generator: region
+    /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
+    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {
+        let policy = dwell_world::brush::brush_policy(generator_version).filter(|_| brushes);
+        self.region.enabled = region_edits;
+        self.region.keep = brushes;
+        self.region.reach = policy.map_or(dwell_protocol::region_edit::REACH, |p| {
+            p.reach.max(dwell_protocol::region_edit::REACH)
+        });
+        self.brush.available = region_edits && policy.is_some();
+        self.brush.reach = self.region.reach;
+    }
+
+    /// A brush tool key (BRUSHES.md).
+    pub fn brush_key(&mut self, action: BrushAction) {
+        // The region tools' click, as for their keys (AUDIO.md).
+        self.sounds.push(sound_event(SoundKind::Tool));
+        self.brush.key(action);
+        if !self.brush.active() {
+            self.scene.borrow_mut().set_brush_outline(None);
+        }
+    }
+
+    /// The wheel with Alt held while the brush tool is on: its size. True if it took the step.
+    pub fn brush_wheel(&mut self, step: i32) -> bool {
+        if !self.brush.active() {
+            return false;
+        }
+        self.brush.resize(-step);
+        self.sounds.push(sound_event(SoundKind::Tool));
+        true
+    }
+
+    /// Middle or Alt click with the brush tool on: the aimed-at block becomes the replace target.
+    pub fn brush_pick(&mut self) -> bool {
+        if !self.brush.active() {
+            return false;
+        }
+        let state = self.brush.target().map(|t| {
+            self.streamer
+                .store_mut()
+                .get_voxel(t.cell[0], t.cell[1], t.cell[2])
+        });
+        self.brush.pick(state);
+        self.sounds.push(sound_event(SoundKind::Tool));
+        true
+    }
+
+    /// Applies the brush at its target with the hotbar's block: arrow (the aimed-at block) or
+    /// gunpowder (the cell in front of it). True if it queued a stroke.
+    pub fn brush_apply(&mut self, gunpowder: bool, now_ms: f64) -> bool {
+        if self.dead || !self.terrain_ready() {
+            return false;
+        }
+        let target = self.brush.target().map(|t| t.cell);
+        let ctx = ToolContext {
+            target,
+            target_state: target
+                .map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2])),
+            placement: self.brush.center(true),
+            material: self.selected_material(),
+            eye: self.target_eye,
+            now_ms,
+        };
+        let sent = self
+            .brush
+            .apply(gunpowder, &ctx, &mut self.region, &mut self.streamer);
+        // The region tools' click as a stroke goes out; its blocks sound as they arrive.
+        if sent {
+            self.sounds.push(sound_event(SoundKind::Tool));
+        }
+        // The first edits go out now; the rest as the rate allows (each frame).
+        for m in self.region.pump(now_ms) {
+            self.outbox.borrow_mut().push(Send::Control(m));
+        }
+        sent
+    }
+
+    fn selected_material(&self) -> StateId {
+        self.interaction
+            .palette()
+            .get(self.interaction.selected())
+            .map_or(0, |s| s.material)
+    }
+
+    /// The brush tool's HUD panel (none while it is off); its note shows a stroke's progress.
+    pub fn brush_panel(&self) -> Option<BrushPanel> {
+        let mut p = self.brush.panel(self.selected_material())?;
+        if let Some((sent, all)) = self.region.progress() {
+            p.note = format!("Sending {sent} of {all} edits");
+        }
+        Some(p)
     }
 
     /// A sound of the shell's or a debug tool's own (e.g. compare mode's keys), heard with the
@@ -1003,6 +1166,12 @@ impl<S: Scene> Game<S> {
         touch: Option<&TouchState>,
         now: &mut dyn FnMut() -> f64,
     ) {
+        input.brushes = self.brush.available;
+        input.brush_active = self.brush.active();
+        // Queued region edits (a brush stroke) as the server's cell rate allows.
+        for m in self.region.pump(now_ms) {
+            self.outbox.borrow_mut().push(Send::Control(m));
+        }
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));
@@ -1203,6 +1372,7 @@ impl<S: Scene> Game<S> {
             dwell_world::fluid::eye_fluid(camera_eye, |x, y, z| store.get_voxel(x, y, z));
         self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
+        self.update_day(now_ms);
 
         self.hud.health = self.health;
         if self.debug_visible {
@@ -1224,6 +1394,7 @@ impl<S: Scene> Game<S> {
                 format_render_stats(&scene.stats())
             ));
             drop(scene);
+            lines.push(self.day.debug_line());
             if !self.memory_note.is_empty() {
                 lines.push(self.memory_note.clone());
             }
@@ -1237,6 +1408,24 @@ impl<S: Scene> Game<S> {
             self.hud.debug = None;
             self.scene.borrow_mut().set_debug_lines(None);
         }
+    }
+
+    /// The day/night cycle at `now_ms`: world time from the server (none before the first
+    /// snapshot: the world's start), sped up or replaced by the dev switches.
+    fn update_day(&mut self, now_ms: f64) {
+        let first = *self.first_draw_ms.get_or_insert(now_ms);
+        let o = self.day_override;
+        let world_s =
+            self.clock.seconds(now_ms).unwrap_or(0.0) + (o.speed - 1.0) * (now_ms - first) / 1000.0;
+        self.day = DAY_NIGHT.state(world_s, o.time, o.moon);
+        self.scene
+            .borrow_mut()
+            .set_day(&self.day, (now_ms - first) / 1000.0);
+    }
+
+    /// The day/night cycle's state at the last frame.
+    pub fn day(&self) -> &DayState {
+        &self.day
     }
 
     fn show_hud_text(&mut self) {
@@ -1344,6 +1533,18 @@ impl<S: Scene> Game<S> {
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
+        // The brush aims much further along the same ray (its world's brush reach).
+        let t = if self.brush.active() {
+            let dir = view_direction(input.look.yaw, input.look.pitch, face).map(|v| v as f32);
+            let far = eye.and_then(|e| self.streamer.store_mut().target(e, dir, self.brush.reach));
+            self.brush.aim(far);
+            far
+        } else {
+            t
+        };
+        self.scene
+            .borrow_mut()
+            .set_brush_outline(self.brush.outline().as_ref());
         let Some(t) = t else {
             self.scene.borrow_mut().set_block_outline(None, 1.0);
             return;

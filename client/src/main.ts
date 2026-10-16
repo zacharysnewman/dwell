@@ -36,6 +36,7 @@ import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './
 import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar } from './ui/hotbar';
+import type { BrushPanelState } from './ui/brushPanel';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
@@ -47,6 +48,7 @@ import {
   CompareOverlay,
   RENDERER_CHOICES,
   choiceOf,
+  displayScale,
   rendererParams,
   type CompareState,
 } from './ui/renderer';
@@ -79,6 +81,10 @@ export interface GameDebugState {
   target: BlockTarget | null;
   lod: Record<string, unknown> | null;
   flying: boolean;
+  /** The day/night cycle as this client shows it: 0 midnight, 0.5 noon; the day; 0 new, 0.5 full. */
+  timeOfDay: number;
+  day: number;
+  moonPhase: number;
 }
 
 interface RenderStats {
@@ -99,6 +105,11 @@ interface DwellDebug {
   edit(action: 'break' | 'place'): boolean;
   /** Runs a region tool by name (`fill`, `copy`, `undo`, … — `Client.tool`), as its key does. */
   tool(name: string): boolean;
+  /**
+   * Drives the brush tool (`toggle`, `preset:<name>`, `size:<n>`, `nextBrush`, `nextPerformer`,
+   * `apply`, `gunpowder`, `pick` — `Client.brush`, BRUSHES.md), as its keys and clicks do.
+   */
+  brush(command: string): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
@@ -147,6 +158,11 @@ interface DwellDebug {
   sounds(): string[];
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
+  /**
+   * Shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase (0 new, 0.5 full)
+   * on this client only, as `?time=` and `?moon=` do; null returns to the world's.
+   */
+  setTime(t: number | null, moon?: number | null): void;
 }
 
 /** A distribution's summary (telemetry.rs `Stats`). */
@@ -242,12 +258,6 @@ interface App {
   compare: CompareOverlay | null;
 }
 
-/** The ?scale= drawing-buffer scale (comparing performance on a device). */
-function displayScale(search: string): number {
-  const scale = Number(new URLSearchParams(search).get('scale') ?? 1);
-  return Number.isFinite(scale) ? Math.min(2, Math.max(0.25, scale)) : 1;
-}
-
 /** Workers per pool: generation and meshing each get this many (fewer on phones). */
 function defaultWorkerCount(mobile: boolean): number {
   const cores = navigator.hardwareConcurrency || 4;
@@ -317,7 +327,7 @@ function forwardInput(app: App): void {
     client.setPointerLocked(document.pointerLockElement === canvas);
   });
   canvas.addEventListener('mousedown', (e) => {
-    client.mouseDown(e.button, performance.now());
+    client.mouseDown(e.button, performance.now(), e.altKey);
   });
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -328,7 +338,7 @@ function forwardInput(app: App): void {
   window.addEventListener(
     'wheel',
     (e) => {
-      client.wheel(e.deltaY);
+      client.wheel(e.deltaY, e.altKey);
     },
     { passive: true },
   );
@@ -382,6 +392,7 @@ function showHud(app: App, now: number): void {
     debug?: string | null;
     damaged?: boolean;
     region?: string;
+    brush?: BrushPanelState | null;
   };
   if (h.message === undefined) return;
   if (h.damaged) app.hud.flashDamage(now);
@@ -389,6 +400,7 @@ function showHud(app: App, now: number): void {
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.region ?? '');
+  app.hotbar?.setBrush(h.brush ?? null);
   if (h.debug) app.hud.setDebug(h.debug);
   app.compare?.show(app.client.compareState() as CompareState | null);
 }
@@ -397,7 +409,8 @@ async function start(): Promise<App | null> {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   const canvas = element('view', HTMLCanvasElement);
   const params = new URLSearchParams(location.search);
-  const scale = displayScale(location.search);
+  // The ?scale= drawing-buffer scale; 1 when the marcher's upscaler takes the scale.
+  const scale = displayScale(location.search, __RENDERER_SWITCH__);
   const mobile = prefersTouch();
   let client: Client;
   try {
@@ -505,7 +518,6 @@ async function start(): Promise<App | null> {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
-    client.setSkyRotation(s.skyRotation);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setFov(s.fovDeg);
@@ -607,6 +619,7 @@ async function start(): Promise<App | null> {
     },
     edit: (action) => client.edit(action, performance.now()),
     tool: (name) => client.tool(name, performance.now()),
+    brush: (command) => client.brush(command, performance.now()),
     select: (slot) => {
       client.select(slot);
     },
@@ -645,6 +658,10 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    setTime: (t, moon) => {
+      client.setTimeOfDay(t ?? undefined);
+      if (moon !== undefined) client.setMoonPhase(moon ?? undefined);
+    },
   };
 
   const frame = (now: number): void => {
@@ -1022,7 +1039,15 @@ async function routeMadeWorld(): Promise<boolean> {
   return true;
 }
 
-if (launchOf(location.search).kind === 'menu') {
+if (__LOCAL_BUILD__ && new URLSearchParams(location.search).get('marchtest') === '1') {
+  // The ray marcher's dev page (local builds only): a generated world, the marcher alone.
+  void loadWasm()
+    .then(() => import('./debug/marchTest'))
+    .then((m) => m.startMarchTest(element('view', HTMLCanvasElement), location.search))
+    .catch((e: unknown) => {
+      showFatal(`March test: ${e instanceof Error ? e.message : String(e)}`);
+    });
+} else if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();

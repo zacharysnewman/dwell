@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEBUG_KEYS, KEYBOARD, START_HINT, TOUCH, keysLabel } from './controls';
+import { BRUSH_PRESETS } from './brushes.gen';
+import { DEBUG_KEYS, KEYBOARD, START_HINT, TOUCH, keyLabel, keysLabel } from './controls';
 
 describe('controls', () => {
   it('names every debug key the client handles (dwell-game input.rs toggles)', () => {
@@ -51,6 +52,23 @@ describe('controls', () => {
       'Ctrl+Z',
     ])
       expect(keys).toContain(k);
+  });
+
+  it('lists the brush tool and every preset key from the data (brush_tool.rs brush_key)', () => {
+    const brushes = KEYBOARD.find((g) => g.title === 'Brushes')?.controls ?? [];
+    const keys = brushes.flatMap((c) => c.keys);
+    for (const k of ['V', 'Q', 'E', 'Z', 'P', '[', ']', 'Middle click']) expect(keys).toContain(k);
+    for (const p of BRUSH_PRESETS.filter((q) => q.key !== undefined)) {
+      expect(keys).toContain(`${keyLabel(p.key ?? '')} ${p.label}`);
+    }
+    expect(keyLabel('KeyU')).toBe('U');
+    expect(keyLabel('Semicolon')).toBe(';');
+    // No brush key is a region-tools or movement key.
+    const others = KEYBOARD.filter((g) => g.title !== 'Brushes').flatMap((g) =>
+      g.controls.flatMap((c) => c.keys),
+    );
+    for (const k of ['V', 'Q', 'E', 'Z', 'P', '[', ']'])
+      expect(others.filter((o) => o === k)).toEqual([]);
   });
 
   it('joins alternatives', () => {

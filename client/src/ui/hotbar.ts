@@ -1,6 +1,8 @@
 // The block hotbar (ARCHITECTURE.md §6.5): the infinite palette with the selected block highlighted.
 // Number keys and the scroll wheel (desktop) or tapping a slot (touch) change the selection.
 
+import { BrushPanel, type BrushPanelState } from './brushPanel';
+
 /** A palette slot as the hotbar shows it: its name and picture (`Client.palette()`, `hotbarSwatch`). */
 export interface HotbarSlot {
   name: string;
@@ -28,6 +30,7 @@ export class Hotbar {
   private readonly label: HTMLDivElement;
   /** The region tools' line (selection size, paste mode, the last tool's message). */
   private readonly region: HTMLDivElement;
+  private readonly brush: BrushPanel;
   private selected = 0;
 
   constructor(
@@ -70,7 +73,14 @@ export class Hotbar {
     });
     this.root.append(this.region, this.label, row);
     parent.append(this.root);
+    this.brush = new BrushPanel(this.root);
+    this.root.prepend(this.root.lastChild as Node);
     this.refresh();
+  }
+
+  /** The brush tool's panel (`Client.hud().brush`); hidden while the tool is off. */
+  setBrush(state: BrushPanelState | null): void {
+    this.brush.set(state);
   }
 
   set visible(v: boolean) {

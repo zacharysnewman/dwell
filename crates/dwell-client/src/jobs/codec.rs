@@ -66,14 +66,15 @@ impl W {
         self.f32s(&m.uvs);
         self.f32s(&m.tiles);
         self.f32s(&m.fluids);
+        self.f32s(&m.plants);
         self.u32s(&m.indices);
     }
-    /// The placeholder's bricks (march.rs); the marcher replaces these two with its own layout.
+    /// The marcher's bricks: a node build as words (`dwell_march::NodeBuild::to_words`).
     fn chunk_bricks(&mut self, b: &ChunkBricks) {
-        self.u32(b.solid);
+        self.u32s(&b.0.to_words());
     }
     fn section_bricks(&mut self, b: &SectionBricks) {
-        self.u32(b.solid);
+        self.u32s(&b.0.to_words());
     }
     fn flat(&mut self, m: &FlatMesh) {
         self.f32s(&m.positions);
@@ -169,14 +170,19 @@ impl R<'_> {
             uvs: self.f32s()?,
             tiles: self.f32s()?,
             fluids: self.f32s()?,
+            plants: self.f32s()?,
             indices: self.u32s()?,
         })
     }
     fn chunk_bricks(&mut self) -> Res<ChunkBricks> {
-        Ok(ChunkBricks { solid: self.u32()? })
+        Ok(ChunkBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
     }
     fn section_bricks(&mut self) -> Res<SectionBricks> {
-        Ok(SectionBricks { solid: self.u32()? })
+        Ok(SectionBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
     }
     fn flat(&mut self) -> Res<FlatMesh> {
         Ok(FlatMesh {
@@ -342,6 +348,7 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             if let Some(m) = &t.raster {
                 w.arrays(&m.opaque);
                 w.arrays(&m.transparent);
+                w.arrays(&m.cutout);
             }
             if let Some(b) = &t.march {
                 w.chunk_bricks(b);
@@ -402,6 +409,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
                 Some(ChunkMeshes {
                     opaque: r.arrays()?,
                     transparent: r.arrays()?,
+                    cutout: r.arrays()?,
                 })
             } else {
                 None

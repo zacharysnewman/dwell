@@ -11,7 +11,6 @@ use dwell_game::input::{EditAction, FLY_KEY, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
 use dwell_look::clouds::CloudQuality;
 use dwell_look::fog::FogSettings;
-use dwell_look::sky_frame::{SkySwitches, sky_angle, sky_frame, sky_switches};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_protocol::{Channel, TransportKind};
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
@@ -22,7 +21,7 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 use super::jobs::WebJobs;
 use super::transport::{TransportEvent, WebRtcConn, WebTransportConn};
 use crate::game::Scene;
-use crate::game::{Game, LodSettings, Send};
+use crate::game::{DayOverride, Game, LodSettings, Send};
 use crate::net::netsim::{Direction, NetConditions, parse_net_conditions};
 use crate::net::sdp::WebRtcInvite;
 use crate::net::session::{Out, Session, SessionState};
@@ -188,10 +187,14 @@ struct Options {
     lod_colors: bool,
     full_chunks: bool,
     netsim: Option<NetConditions>,
-    sky: SkySwitches,
+    /// `?time=`, `?moon=`, `?timespeed=` (the day/night cycle's dev switches).
+    day: DayOverride,
     /// The renderer switch (`?renderer=`, compare mode): local builds only (the shell's build-time
     /// flag, RAY_MARCHED_RENDERER.md §3); deployed builds keep the mesher.
     renderer_switch: bool,
+    /// The marcher's render scale and upscaler (`marchScale`, `upscaler`: local builds).
+    march_scale: f32,
+    upscaler: crate::render::march::upscale::Upscaler,
 }
 
 struct Inner {
@@ -212,8 +215,6 @@ struct Inner {
     signature: SignatureSlot,
     game: Option<Game<Renderer>>,
     lod_settings: LodSettings,
-    sky_setting_deg: f64,
-    started_ms: Option<f64>,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -263,8 +264,13 @@ impl Client {
             lod_colors: get("lodColors").as_bool().unwrap_or(false),
             full_chunks: get("fullChunks").as_bool().unwrap_or(false),
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
-            sky: sky_switches(&get("search").as_string().unwrap_or_default()),
+            day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
             renderer_switch: get("rendererSwitch").as_bool().unwrap_or(false),
+            march_scale: get("marchScale").as_f64().unwrap_or(1.0) as f32,
+            upscaler: get("upscaler")
+                .as_string()
+                .and_then(|u| crate::render::march::upscale::Upscaler::parse(&u))
+                .unwrap_or_default(),
         };
         let selection = options
             .renderer_switch
@@ -312,15 +318,20 @@ impl Client {
                 &format!("Dwell: WebGPU device lost ({reason:?}): {message}").into(),
             );
         });
+        let device_type = adapter.get_info().device_type;
         let mut renderer = Renderer::with_samples(
             device,
             queue,
             format,
-            crate::render::samples_for(adapter.get_info().device_type),
+            crate::render::samples_for(device_type),
         );
+        renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
         renderer.select(selection);
+        if options.renderer_switch {
+            renderer.set_march_resolution(options.march_scale, options.upscaler);
+        }
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,
@@ -343,8 +354,6 @@ impl Client {
                 detail_distance_m: None,
                 full_mode: false,
             },
-            sky_setting_deg: 0.0,
-            started_ms: None,
             shell_events: Vec::new(),
             debug_visible: false,
             motion: Default::default(),
@@ -476,17 +485,11 @@ impl Client {
             }
         }
         telemetry::span("net", || s.pump_network(now_ms));
-        let start = *s.started_ms.get_or_insert(now_ms);
-        s.renderer.borrow_mut().set_sky_frame(sky_frame(sky_angle(
-            s.sky_setting_deg,
-            s.options.sky,
-            (now_ms - start) / 1000.0,
-        )));
         // The clouds drift by the world's clock once the server's ticks have arrived.
         let world = s.game.as_ref().and_then(|g| g.clock.seconds(now_ms));
         s.renderer
             .borrow_mut()
-            .set_cloud_time(world.unwrap_or((now_ms - start) / 1000.0));
+            .set_cloud_time(world.unwrap_or(now_ms / 1000.0));
         s.draw();
         telemetry::add("frame.cpu", telemetry::now_ms() - t0);
     }
@@ -590,9 +593,12 @@ impl Client {
         telemetry::with(telemetry::Telemetry::reset);
     }
 
-    /// The drawing buffer's size: CSS pixels × the pixel ratio.
+    /// The drawing buffer's size: CSS pixels × the pixel ratio (a share of it on a CPU adapter,
+    /// `render::pixel_ratio_for`).
     pub fn resize(&self, css_width: f64, css_height: f64, pixel_ratio: f64) {
         let mut s = self.inner.borrow_mut();
+        let adapter = s.renderer.borrow().adapter();
+        let pixel_ratio = crate::render::pixel_ratio_for(adapter, pixel_ratio);
         let (w, h) = (
             ((css_width * pixel_ratio).round() as u32).max(1),
             ((css_height * pixel_ratio).round() as u32).max(1),
@@ -665,15 +671,32 @@ impl Client {
     pub fn mouse_move(&self, dx: f64, dy: f64) {
         self.inner.borrow_mut().input.mouse_move(dx, dy);
     }
+    /// A `mousedown`: `alt` is Alt (⌥) held. With the brush tool on, a middle or Alt click picks
+    /// the replace target (BRUSHES.md).
     #[wasm_bindgen(js_name = mouseDown)]
-    pub fn mouse_down(&self, button: i16, now_ms: f64) {
+    pub fn mouse_down(&self, button: i16, now_ms: f64, alt: bool) {
         let mut s = self.inner.borrow_mut();
+        if s.input.pointer_locked
+            && (button == 1 || alt)
+            && let Some(g) = &mut s.game
+            && g.brush_pick()
+        {
+            return;
+        }
         if let Some(action) = s.input.mouse_down(button) {
             s.edit(action, now_ms);
         }
     }
-    pub fn wheel(&self, delta_y: f64) {
+    /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size.
+    pub fn wheel(&self, delta_y: f64, alt: bool) {
         let mut s = self.inner.borrow_mut();
+        if let Some(step) = s.input.wheel(delta_y)
+            && alt
+            && let Some(g) = &mut s.game
+            && g.brush_wheel(step)
+        {
+            return;
+        }
         if let Some(step) = s.input.wheel(delta_y)
             && let Some(g) = &mut s.game
             && let Some(slot) = g.interaction.scroll(step)
@@ -848,6 +871,43 @@ impl Client {
             .game
             .as_mut()
             .is_some_and(|g| g.tool(tool, now_ms))
+    }
+    /// Drives the brush tool (BRUSHES.md) as its keys and clicks would, for tools and tests:
+    /// `toggle`, `preset:<name>`, `size:<n>`, `nextBrush`, `nextPerformer`, `apply` (left click),
+    /// `gunpowder` (right click), `pick` (middle click). True if it did (for `apply` and
+    /// `gunpowder`: queued a stroke).
+    pub fn brush(&self, command: &str, now_ms: f64) -> bool {
+        use dwell_game::brush_tool::BrushAction as B;
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return false;
+        };
+        let (name, arg) = command.split_once(':').unwrap_or((command, ""));
+        match name {
+            "toggle" => g.brush_key(B::Toggle),
+            "nextBrush" => g.brush_key(B::NextBrush),
+            "nextPerformer" => g.brush_key(B::NextPerformer),
+            "preset" => {
+                let Some(i) = dwell_world::brush::PRESETS
+                    .iter()
+                    .position(|p| p.name == arg)
+                else {
+                    return false;
+                };
+                g.brush_key(B::Preset(i));
+            }
+            "size" => {
+                let Ok(n) = arg.parse::<i32>() else {
+                    return false;
+                };
+                g.brush.resize(n - i32::from(g.brush.spec().size));
+            }
+            "apply" => return g.brush_apply(false, now_ms),
+            "gunpowder" => return g.brush_apply(true, now_ms),
+            "pick" => return g.brush_pick(),
+            _ => return false,
+        }
+        true
     }
     pub fn select(&self, slot: i32) {
         let mut s = self.inner.borrow_mut();
@@ -1033,9 +1093,26 @@ impl Client {
     pub fn set_menu_open(&self, open: bool) {
         self.inner.borrow_mut().menu_open = open;
     }
-    #[wasm_bindgen(js_name = setSkyRotation)]
-    pub fn set_sky_rotation(&self, degrees: f64) {
-        self.inner.borrow_mut().sky_setting_deg = degrees;
+    /// Sets the time of day this client shows (0–1, 0 midnight), or returns to the world's with
+    /// `undefined` (a dev switch: the bench's `time` step; the world's time is the server's).
+    #[wasm_bindgen(js_name = setTimeOfDay)]
+    pub fn set_time_of_day(&self, t: Option<f64>) {
+        let mut s = self.inner.borrow_mut();
+        s.options.day.time = t.filter(|v| v.is_finite()).map(|v| v.rem_euclid(1.0));
+        let day = s.options.day;
+        if let Some(g) = &mut s.game {
+            g.day_override = day;
+        }
+    }
+    /// Sets the moon's phase this client shows (0 new, 0.5 full), or the world's with `undefined`.
+    #[wasm_bindgen(js_name = setMoonPhase)]
+    pub fn set_moon_phase(&self, phase: Option<f64>) {
+        let mut s = self.inner.borrow_mut();
+        s.options.day.moon = phase.filter(|v| v.is_finite()).map(|v| v.rem_euclid(1.0));
+        let day = s.options.day;
+        if let Some(g) = &mut s.game {
+            g.day_override = day;
+        }
     }
     /// The whole-world view's detail (§6.6): distance (m, or negative for none), pixel error and
     /// memory budget (MB).
@@ -1063,12 +1140,15 @@ impl Client {
         }
         names.into_iter().map(JsValue::from).collect()
     }
-    /// The upscalers it offers: none yet beyond the browser's own stretch (A5).
+    /// The upscalers it offers: the browser's own stretch, and with the marcher its upscalers
+    /// (`?upscaler=fsr1|bilateral` with `?scale=`; RAY_MARCHED_RENDERER.md §4.2).
     pub fn upscalers(&self) -> Array {
-        ["none", "bilinear"]
-            .into_iter()
-            .map(JsValue::from)
-            .collect()
+        let s = self.inner.borrow();
+        let mut names = vec!["none", "bilinear"];
+        if s.options.renderer_switch && crate::render::march::BUILT {
+            names.extend(crate::render::march::upscale::Upscaler::ALL.map(|u| u.name()));
+        }
+        names.into_iter().map(JsValue::from).collect()
     }
     /// What draws the terrain: `raster`, `march` or `compare raster | march`.
     pub fn renderer(&self) -> String {
@@ -1242,6 +1322,26 @@ impl Client {
             );
             set(&o, "damaged", std::mem::take(&mut g.hud.damaged));
             set(&o, "region", g.region.status().as_str());
+            // The brush panel (BRUSHES.md): null while the tool is off.
+            match g.brush_panel() {
+                Some(p) => {
+                    let b = Object::new();
+                    set(&b, "preset", p.preset);
+                    set(&b, "brush", p.brush);
+                    set(&b, "performer", p.performer);
+                    set(&b, "size", u32::from(p.size));
+                    set(&b, "material", p.material.as_str());
+                    set(
+                        &b,
+                        "replace",
+                        p.replace.as_deref().map_or(JsValue::NULL, JsValue::from),
+                    );
+                    set(&b, "note", p.note.as_str());
+                    set(&o, "brush", b);
+                }
+                None => set(&o, "brush", JsValue::NULL),
+            }
+            set(&o, "brushes", g.brush.available);
         }
         o.into()
     }
@@ -1261,6 +1361,10 @@ impl Client {
         set(&o, "feet", v3(d.feet));
         set(&o, "health", d.health);
         set(&o, "dead", d.dead);
+        let day = g.day();
+        set(&o, "timeOfDay", day.time_of_day);
+        set(&o, "day", day.day as f64);
+        set(&o, "moonPhase", day.moon_phase);
         let remotes: Array = d
             .remotes
             .iter()
@@ -1457,6 +1561,11 @@ impl Inner {
                     g.tool(tool, now_ms);
                 }
             }
+            InputEvent::Brush(action) => {
+                if let Some(g) = &mut self.game {
+                    g.brush_key(action);
+                }
+            }
         }
     }
 
@@ -1582,6 +1691,7 @@ impl Inner {
             verification_chunk,
             may_fly,
             region_edits,
+            brushes,
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;
@@ -1613,7 +1723,8 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
-        game.region.enabled = region_edits;
+        game.set_capabilities(region_edits, brushes, generator_version);
+        game.day_override = self.options.day;
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }

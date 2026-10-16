@@ -162,6 +162,16 @@ pub const GENERATOR_FLAT: u32 = 0;
 pub const GENERATOR_TERRAIN: u32 = 8;
 pub const GENERATOR_SANDBOX: u32 = 100;
 
+/// A world's type by its generator (the names `client/src/local/worldIndex.ts` and data files use,
+/// e.g. `shared/brushes/brushes.json`): unknown and retired versions load as the flat world.
+pub fn world_type(generator_version: u32) -> &'static str {
+    match generator_version {
+        GENERATOR_TERRAIN => "terrain",
+        GENERATOR_SANDBOX => "sandbox",
+        _ => "flat",
+    }
+}
+
 /// FNV-1a 64 over a chunk's ids (u16 little-endian, index order): goldens and `WorldgenCheck`.
 pub fn chunk_hash(chunk: &Chunk) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
