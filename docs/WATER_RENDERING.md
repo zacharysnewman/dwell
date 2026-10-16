@@ -88,9 +88,9 @@ rays: one bounce, a coarse level, a short max distance ending at the sky.
 
 | Tier | Contents |
 |---|---|
-| Low (phone default) | Normal maps, Fresnel, glint, sky-only reflection, absorption at constant depth; underwater fog only. No copies |
-| Medium | Colour copy (full-res in W3; half-res in W5): refraction, depth absorption, foam, caustics |
-| High | Plus half-res SSR and god rays |
+| Low (phone default) | Normal maps, Fresnel, glint, sky-only reflection (no clouds), absorption at constant depth; underwater fog only. No copies |
+| Medium | Colour copy (full-res in W3; half-res in W5): refraction, depth absorption, foam, caustics; a cheap SSR (12 steps) and the clouds reflected (W5a) |
+| High | Plus a finer, farther SSR (28 steps, W5a), the reflected clouds' self-shadow, and god rays |
 | Ultra (desktop) | Full-res SSR; ray-marched reflections when A3 exists |
 
 Copy cost at 1080p (*estimate*): about 25 MB per frame of colour and depth copies, plus the resolve.
@@ -104,7 +104,7 @@ Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-re
 | **W2** | The frame restructure — [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) A1 (built once, shared) | As A1 |
 | **W3** | Refraction with the depth check, Beer–Lambert absorption, shoreline foam; caustics (brought forward from W4) | Screenshots of shore views; bench |
 | **W4** | Underwater: fog, the split line, Snell's window and TIR, distortion, god rays | Named views underwater and half in; owner look |
-| **W5** | SSR and the quality tiers, phone defaults | Bench on desktop and a phone |
+| **W5** | SSR and the quality tiers, phone defaults (SSR and the reflected clouds came forward as W5a, §8) | Bench on desktop and a phone |
 | **W6** | Under ray marching (after A3, if marching is kept): reflection and refraction rays replace SSR and the copy on high tiers | Parity against W5's views |
 
 Each step updates `ARCHITECTURE.md` (render, `dwell-look`, `dwell-mesh`); the steps are Phase 26's
@@ -306,6 +306,71 @@ colour by depth, which is what makes the shallows work.
   - The surface from below is still the flat body colour.
   - No water line, no god rays (not brought forward: the caustics took the time).
   - Refraction to the scene above through Snell's window.
+
+### W5a, reflections of land and clouds (2026-10-16; brought forward from W5)
+
+The owner's report: "water doesn't reflect land and clouds." Until now the water reflected the analytic
+sky alone. W5's screen-space reflections came forward, and so did the cloud deck in reflections.
+
+- **Clouds in reflections** (`reflected_env`). The reflected ray is evaluated with the composite's
+  own `dwell_cloud_deck` and `dwell_clouds`, and the same light (`cloud_lighting`), so day, night and
+  dusk follow as they do in the sky.
+  - The deck is seen from the surface point, not the eye: its height above that point, and the
+    noise point under it.
+  - Its footprint (`fwidth` of the deck point, which fades the octaves) is taken off the calm
+    surface's mirror ray. Derivatives need uniform control flow, so it is computed at the top of
+    the fragment (`reflected_deck_fw`).
+  - The result goes through the inverse tone mapping, back into the scene's light, as the sky's
+    reflection did.
+  - The reflected deck never has more octaves than the sky's (the Clouds setting caps it), and none
+    with the clouds Off.
+- **Land: screen-space reflections** (`ssr_trace`). The tested twin is `render/reflection.rs`
+  `trace`.
+  - **The march.** The reflected ray is projected from the surface point to its reach (or to just in
+    front of the eye, if it turns back) and clipped to the screen. It is marched in even steps on
+    screen through the view depth (A1's `r32float`, sample 0), with 1/depth interpolated linearly
+    (perspective-correct).
+  - **A hit** is a step that lands behind the scene's surface where that surface lies within the
+    step, give or take a thickness (1.5 m + 3 % of its depth). A ray that passes behind something
+    much nearer keeps going.
+  - Binary refine steps pin the hit between the last two steps.
+  - **Water writes no depth**, so a ray over flat water can't hit the water or the floor seen
+    through it: the ray stays in front of both (a test pins it).
+  - **What it shows** (`ssr_reflected`): the under-water copy (W3's) at the hit, filtered, and fogged
+    by the composite's height fog over the hit's distance. It is mixed over the sky and clouds by
+    the hit's weight and coverage.
+  - **The fades.** The weight fades within 12 % of the screen height of any edge, so reflections
+    don't pop at the edge, and over the last 30 % of the reach. A miss is the sky and clouds.
+  - **Fresnel and the sun.** The reflection is Fresnel-weighted like the sky's (Schlick, F0 0.02), so
+    a grazing view shows the shore strongly and a steep one hardly at all. Where the scene hides the
+    sky, it hides the sun's and moon's glint and the sparkle too.
+  - **Far and near.** In the far pass, water reflects the far scene only. In the near pass, it
+    reflects both (the view depth and the copy hold both by then).
+- **Data** (`shared/look/reflections.json` → `reflections.mjs` → `dwell-look` `reflections.gen.rs`,
+  validated, with a CI stale check; prototype tuning):
+
+  | Tier | March steps | Refine | Reach | Cloud octaves | Cloud self-shadow |
+  |---|---|---|---|---|---|
+  | Low | 0 (must be: no copy) | 0 | — | 0 (the sky alone) | no |
+  | Medium | 12 | 4 | 600 m | 3 | no |
+  | High | 28 | 6 | 1,500 m | 5 | yes (with the Clouds setting's) |
+
+  The values reach the shader in the frame uniform's `reflect` and `reflect_sky` (dwell-look
+  `reflection_uniforms`). The thickness, edge fade and distance fade are shared by the tiers.
+- **Cost switches:** `?waterdbg=ssr` and `?waterdbg=clouds` turn each part off (render/water.rs
+  `DEBUG_SWITCHES`).
+- **Tests:** `render::reflection`:
+  - `a_reflected_ray_over_terrain_shows_the_scene_not_the_sky` (a bank across a lake is hit and its
+    colour reflected). It failed against the sky-only reflection, then passed.
+  - Misses reflect the sky, the water never reflects its own floor, rays toward the eye stay in
+    front of it, and hits fade at the edge.
+  - `render::tests::the_reflections_follow_the_water_quality_and_the_clouds_setting`.
+  - `shaders::tests::the_water_reflects_land_from_the_scene_and_the_sky_with_its_clouds`, and naga
+    validation.
+  - `shared/look/reflections.test.mjs`.
+- **Cost:** COST_TBD
+- **Limits** (screen-space): what is off screen, or hidden behind something nearer on screen, isn't
+  reflected (it fades to the sky). Ray-marched reflections (W6) would remove both.
 
 ## Sources
 
