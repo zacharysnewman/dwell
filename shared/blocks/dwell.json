@@ -51,6 +51,15 @@
       "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white with a faint line at every block edge (the `grid` tile) and a stronger one every 8 blocks (the `grid` look option), not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
       "name": "sandbox_floor", "sound": "dwell:stone", "density": 2400, "shape": "full", "indestructible": true,
       "color": "#ffffff", "textures": "grid", "grid": { "every": 8, "strength": 0.3 }
+    },
+    {
+      "name": "log", "sound": "dwell:wood", "density": 700, "shape": "full", "placeable": true,
+      "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
+    },
+    {
+      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves.",
+      "name": "leaves", "sound": "dwell:grass", "density": 200, "shape": "full", "placeable": true,
+      "render": "cutout", "color": "#6fa83a", "textures": "leaves"
     }
   ]
 }

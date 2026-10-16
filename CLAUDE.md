@@ -222,7 +222,7 @@ Check these before chasing an e2e failure:
   the drawing buffer), and shard 1 went from 8m43s failing to 3m58s passing. A new per-pixel
   visual needs its CPU-adapter tier too. If shard 1 slows again, compare its per-test times with
   that run before widening a timeout.
-- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (5); update it when the palette
+- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (7); update it when the palette
   changes.
 
 ## Running the browser in a sandbox

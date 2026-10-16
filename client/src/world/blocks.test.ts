@@ -94,7 +94,7 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     expect(def).toMatchObject({ indestructible: true, grid: { every: 8 } });
     expect(def?.adaptive).toBeUndefined();
     // Appended: the blocks before it keep their ids.
-    expect(data.blocks.at(-1)?.name).toBe('sandbox_floor');
+    expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });
