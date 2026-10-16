@@ -62,9 +62,22 @@ pub struct Welcome {
     pub verification_chunk: ChunkCoordNet,
     /// `welcome_flags`.
     pub flags: u8,
-    /// The block registry hash: runtime state ids mean the same blocks only if it matches.
+    /// The definitions hash: FNV-1a 64 of the registry payload the server sent in its
+    /// `BlockRegistry` parts (ADR 0036), for logs and the join prompt's "don't ask again".
     pub registry_hash: u64,
 }
+
+/// S→C reliable, control channel, before `Welcome` (ADR 0036): part `part` of `parts` of the
+/// server's registry payload (`dwell_blocks::sync`), each at most `MAX_REGISTRY_PART_BYTES`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BlockRegistry {
+    pub part: u16,
+    pub parts: u16,
+    pub data: Vec<u8>,
+}
+
+/// The largest `BlockRegistry` part.
+pub const MAX_REGISTRY_PART_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reject {
@@ -363,6 +376,7 @@ pub enum Message {
     HostStatus(HostState),
     /// C→S, only to a server whose Welcome has `welcome_flags::REGION_EDITS`.
     RegionEdit(RegionEdit),
+    BlockRegistry(BlockRegistry),
 }
 
 impl Message {
@@ -396,6 +410,7 @@ impl Message {
             M::ChunkRequest(_) => MessageType::ChunkRequest,
             M::HostStatus(_) => MessageType::HostStatus,
             M::RegionEdit(_) => MessageType::RegionEdit,
+            M::BlockRegistry(_) => MessageType::BlockRegistry,
         }
     }
 
@@ -909,6 +924,12 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         }
         M::HostStatus(s) => w.u8(*s as u8),
+        M::BlockRegistry(m) => {
+            w.u16(m.part);
+            w.u16(m.parts);
+            w.u32(m.data.len() as u32);
+            w.bytes(&m.data);
+        }
         M::RegionEdit(m) => {
             w.u8(m.op as u8);
             write_coord(w, &m.min);
@@ -1118,6 +1139,18 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             })
         }
         T::HostStatus => M::HostStatus(HostState::from_u8(r.u8())?),
+        T::BlockRegistry => {
+            let (part, parts, len) = (r.u16(), r.u16(), r.u32() as usize);
+            r.check(parts >= 1 && part < parts && len <= MAX_REGISTRY_PART_BYTES);
+            if !r.ok() {
+                return None;
+            }
+            M::BlockRegistry(BlockRegistry {
+                part,
+                parts,
+                data: r.bytes(len),
+            })
+        }
         T::RegionEdit => {
             let op = RegionEditOp::from_u8(r.u8())?;
             let min = read_coord(r);

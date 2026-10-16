@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dwell_blocks::REGISTRY_HASH;
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
@@ -498,6 +497,9 @@ pub struct Server {
     generator: ChunkGenerator,
     verification_chunk: ChunkCoord,
     verification_hash: u64,
+    /// The registry payload sent at join (ADR 0036) and its definitions hash, for the table size
+    /// it was made at (states registered later — placeholders, mods — remake it).
+    registry: (usize, std::sync::Arc<Vec<u8>>, u64),
     view_offsets: Vec<ChunkCoord>, // chunks in view relative to the center, nearest first
     prefetch_offsets: Vec<ChunkCoord>, // generated ahead around each player
     explicit_wanted: Vec<ChunkCoord>, // full-mode chunks to generate for streaming
@@ -562,6 +564,7 @@ impl Server {
             generator,
             verification_chunk: chunk_at(spawn[0], spawn[1] - 1.0, spawn[2]),
             verification_hash: 0,
+            registry: (0, Default::default(), 0),
             view_offsets: Vec::new(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),
             explicit_wanted: Vec::new(),
@@ -834,8 +837,19 @@ impl Server {
             // REGION_EDITS: this server understands RegionEdit (older builds of the line reject an
             // unknown message, so clients send one only when this is set).
             flags: welcome_flags::REGION_EDITS | if flight { welcome_flags::FLIGHT } else { 0 },
-            registry_hash: REGISTRY_HASH,
+            registry_hash: self.registry().1,
         };
+        // The registry first (ADR 0036): the client maps ids with it when Welcome arrives.
+        let (payload, _) = self.registry();
+        let parts = dwell_blocks::sync::parts(&payload);
+        for (i, part) in parts.iter().enumerate() {
+            let m = Message::BlockRegistry(BlockRegistry {
+                part: i as u16,
+                parts: parts.len() as u16,
+                data: part.to_vec(),
+            });
+            self.send_reliable(id, &m, Channel::Control);
+        }
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
         // A returning player continues where it left the world (§6.4), unless it was dead.
         let saved = self
@@ -850,6 +864,17 @@ impl Server {
             }
             _ => self.spawn_player(id, None),
         }
+    }
+
+    /// The registry payload this server sends at join and its definitions hash (ADR 0036).
+    pub fn registry(&mut self) -> (std::sync::Arc<Vec<u8>>, u64) {
+        let count = dwell_blocks::state_count();
+        if self.registry.0 != count || self.registry.1.is_empty() {
+            let bytes = dwell_blocks::sync::Payload::served().encode();
+            let hash = dwell_blocks::sync::definitions_hash(&bytes);
+            self.registry = (count, std::sync::Arc::new(bytes), hash);
+        }
+        (self.registry.1.clone(), self.registry.2)
     }
 
     /// Gameplay input comes as datagrams. On control: the one WorldgenCheck, which picks how the

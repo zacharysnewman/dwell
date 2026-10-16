@@ -98,9 +98,22 @@ impl Fixture {
         };
         let signature = who.sign(&auth_transcript(&nonce, &self.binding, &who.public_key));
         self.send(id, Message::ClientAuth(signature));
-        match self.take(id).remove(0).0 {
-            Message::Welcome(w) => w,
-            other => panic!("expected Welcome, got {other:?}"),
+        // The registry's parts come first (ADR 0036), then Welcome.
+        let mut out = self.take(id).into_iter().map(|(m, _)| m);
+        let mut registry = Vec::new();
+        loop {
+            match out.next() {
+                Some(Message::BlockRegistry(b)) => registry.extend_from_slice(&b.data),
+                Some(Message::Welcome(w)) => {
+                    assert_eq!(
+                        w.registry_hash,
+                        dwell_blocks::sync::definitions_hash(&registry),
+                        "Welcome carries the hash of the registry sent before it"
+                    );
+                    return w;
+                }
+                other => panic!("expected BlockRegistry or Welcome, got {other:?}"),
+            }
         }
     }
 

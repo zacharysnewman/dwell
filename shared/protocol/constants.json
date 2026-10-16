@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 12,
+  "protocolVersion": 13,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -101,7 +101,8 @@
     "LodRequest": 76,
     "ChunkRequest": 77,
     "HostStatus": 78,
-    "RegionEdit": 79
+    "RegionEdit": 79,
+    "BlockRegistry": 80
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

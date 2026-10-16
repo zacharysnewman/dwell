@@ -34,7 +34,12 @@ fn handshake(f: &mut Fixture, id: SessionId, who: &Client, kind: TransportKind) 
     };
     let signature = who.sign(&auth_transcript(&nonce, &f.binding, &who.public_key));
     f.send(id, Message::ClientAuth(signature));
-    f.take(id).remove(0).0
+    // The registry's parts precede Welcome (ADR 0036).
+    f.take(id)
+        .into_iter()
+        .map(|(m, _)| m)
+        .find(|m| !matches!(m, Message::BlockRegistry(_)))
+        .expect("a reply")
 }
 
 fn reason_of(m: &Message) -> RejectReason {

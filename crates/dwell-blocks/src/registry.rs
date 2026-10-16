@@ -1,39 +1,32 @@
-//! The string layer over the tables (docs/BLOCK_REGISTRY.md): canonical state strings, parsing
-//! with defaults, and reading or changing one property of a state.
+//! The string layer over the table (docs/BLOCK_REGISTRY.md): canonical state strings, parsing
+//! with defaults, and reading or changing one property of a state. Works on the build's states and
+//! on registered ones alike (`crate::table`).
 
-use crate::{BLOCKS, BlockDef, PROPERTIES, PROPERTY_VALUES, STATES, StateId, block_of};
-
-fn property(block: &BlockDef, k: usize) -> &'static crate::PropertyDef {
-    &PROPERTIES[block.first_property + k]
-}
-
-fn values(p: &crate::PropertyDef) -> &'static [&'static str] {
-    &PROPERTY_VALUES[p.first_value..p.first_value + p.value_count]
-}
+use crate::{Block, StateId, block_of, blocks, info, try_info};
 
 /// The value index of each of a block's properties in a state (mixed radix, last varies fastest).
-fn indices(block: &BlockDef, state: StateId) -> Vec<usize> {
-    let mut out = vec![0; block.property_count];
+fn indices(block: &Block, state: StateId) -> Vec<usize> {
+    let mut out = vec![0; block.properties.len()];
     let mut rest = usize::from(state - block.first_state);
-    for k in (0..block.property_count).rev() {
-        let n = property(block, k).value_count;
+    for k in (0..block.properties.len()).rev() {
+        let n = block.properties[k].values.len();
         out[k] = rest % n;
         rest /= n;
     }
     out
 }
 
-fn state_of(block: &BlockDef, indices: &[usize]) -> StateId {
+fn state_of(block: &Block, indices: &[usize]) -> StateId {
     let mut id = 0usize;
     for (k, &i) in indices.iter().enumerate() {
-        id = id * property(block, k).value_count + i;
+        id = id * block.properties[k].values.len() + i;
     }
     block.first_state + id as StateId
 }
 
-/// The block with a namespaced id.
-pub fn find_block(id: &str) -> Option<&'static BlockDef> {
-    BLOCKS.iter().find(|b| b.name == id)
+/// The block with a namespaced id: the build's, else the first registered one.
+pub fn find_block(id: &str) -> Option<&'static Block> {
+    blocks().find(|b| b.name == id)
 }
 
 /// Parses `ns:name` or `ns:name[k=v,…]`: any key order, missing properties take their defaults
@@ -50,8 +43,9 @@ pub fn parse_state(text: &str) -> Result<StateId, String> {
         None => (text, None),
     };
     let block = find_block(id).ok_or_else(|| format!("unknown block \"{id}\""))?;
-    let mut idx = vec![0usize; block.property_count];
-    let mut given = vec![false; block.property_count];
+    let n = block.properties.len();
+    let mut idx = vec![0usize; n];
+    let mut given = vec![false; n];
     if let Some(list) = list.filter(|l| !l.is_empty()) {
         if list.ends_with(',') {
             return Err(format!("trailing ',' in \"{text}\""));
@@ -60,14 +54,15 @@ pub fn parse_state(text: &str) -> Result<StateId, String> {
             let (key, value) = pair
                 .split_once('=')
                 .ok_or_else(|| format!("expected key=value: \"{pair}\""))?;
-            let k = (0..block.property_count)
-                .find(|&k| property(block, k).name == key)
+            let k = (0..n)
+                .find(|&k| block.properties[k].name == key)
                 .ok_or_else(|| format!("{id} has no property \"{key}\""))?;
             if given[k] {
                 return Err(format!("repeated property \"{key}\""));
             }
             given[k] = true;
-            idx[k] = values(property(block, k))
+            idx[k] = block.properties[k]
+                .values
                 .iter()
                 .position(|v| *v == value)
                 .ok_or_else(|| format!("{id}.{key} has no value \"{value}\""))?;
@@ -78,41 +73,35 @@ pub fn parse_state(text: &str) -> Result<StateId, String> {
 
 /// The value of a state's property, if its block has it.
 pub fn state_property(state: StateId, name: &str) -> Option<&'static str> {
-    if usize::from(state) >= STATES.len() {
-        return None;
-    }
+    try_info(state)?;
     let block = block_of(state);
     let idx = indices(block, state);
-    (0..block.property_count)
-        .find(|&k| property(block, k).name == name)
-        .map(|k| values(property(block, k))[idx[k]])
+    (0..block.properties.len())
+        .find(|&k| block.properties[k].name == name)
+        .map(|k| block.properties[k].values[idx[k]])
 }
 
 /// The same block with `name` set to `value`; `None` if the block has no such property or value.
 pub fn with_property(state: StateId, name: &str, value: &str) -> Option<StateId> {
-    if usize::from(state) >= STATES.len() {
-        return None;
-    }
+    try_info(state)?;
     let block = block_of(state);
     let mut idx = indices(block, state);
-    let k = (0..block.property_count).find(|&k| property(block, k).name == name)?;
-    idx[k] = values(property(block, k))
-        .iter()
-        .position(|v| *v == value)?;
+    let k = (0..block.properties.len()).find(|&k| block.properties[k].name == name)?;
+    idx[k] = block.properties[k].values.iter().position(|v| *v == value)?;
     Some(state_of(block, &idx))
 }
 
 /// The same block facing `facing` (its `facingProperty`, BLOCK_REGISTRY.md), every other property
 /// kept; `state` itself if the block has no facing or no state facing that way.
 pub fn with_facing(state: StateId, facing: crate::Facing) -> StateId {
-    if usize::from(state) >= STATES.len() || STATES[usize::from(state)].facing == facing {
+    if try_info(state).is_none_or(|s| s.facing == facing) {
         return state;
     }
     let block = block_of(state);
     let have = indices(block, state);
     (block.first_state..block.first_state + block.state_count)
         .find(|&s| {
-            STATES[usize::from(s)].facing == facing
+            info(s).facing == facing
                 && indices(block, s)
                     .iter()
                     .zip(&have)
@@ -140,6 +129,7 @@ pub fn mirror(state: StateId) -> StateId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::STATES;
 
     #[test]
     fn parses_with_defaults_and_rejects_bad_text() {

@@ -4,6 +4,8 @@
 
 mod registry;
 pub mod shape;
+pub mod sync;
+mod table;
 mod types;
 
 #[rustfmt::skip]
@@ -22,6 +24,10 @@ pub mod fixture {
 }
 
 pub use registry::*;
+pub use table::{
+    Block, NewBlock, Origin, Property, block, block_count, block_of, blocks, canonical, info,
+    intern, is_build_state, register, same_definition, state_count, try_info,
+};
 pub use tables::{
     BLOCKS, FLUIDS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SHAPE_FACES, SHAPES, STATES,
 };
@@ -35,7 +41,7 @@ pub const AIR: StateId = 0;
 
 /// The state named by `name`: a canonical string (`dwell:ladder[facing=east,flooded=false]`), or
 /// any form [`parse_state`] takes (properties in any order, missing ones at their defaults; a block
-/// id alone is its default state).
+/// id alone is its default state). The build's states first, then registered ones.
 pub fn state(name: &str) -> Option<StateId> {
     if let Some(i) = STATES.iter().position(|s| s.name == name) {
         return StateId::try_from(i).ok();
@@ -43,14 +49,17 @@ pub fn state(name: &str) -> Option<StateId> {
     parse_state(name).ok()
 }
 
+/// The build's own state with this exact canonical string (never a registered one).
+pub fn build_state(name: &str) -> Option<StateId> {
+    STATES
+        .iter()
+        .position(|s| s.name == name)
+        .and_then(|i| StateId::try_from(i).ok())
+}
+
 /// Like [`state`], for names that must exist (built-in content); panics with the name otherwise.
 pub fn require(name: &str) -> StateId {
     state(name).unwrap_or_else(|| panic!("unknown block state `{name}`"))
-}
-
-/// The state's table row.
-pub fn info(id: StateId) -> &'static StateInfo {
-    &STATES[usize::from(id)]
 }
 
 /// The fluid named `name` (`dwell:water`).
@@ -65,11 +74,6 @@ pub fn fluid(name: &str) -> Option<FluidId> {
 pub fn require_fluid(name: &str) -> &'static FluidInfo {
     let id = fluid(name).unwrap_or_else(|| panic!("unknown fluid `{name}`"));
     &FLUIDS[usize::from(id)]
-}
-
-/// The block a state belongs to.
-pub fn block_of(id: StateId) -> &'static BlockDef {
-    &BLOCKS[info(id).block]
 }
 
 /// FNV-1a 64 over the canonical strings (each followed by `\n`), in id order: what the generator

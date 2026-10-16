@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use dwell_blocks::REGISTRY_HASH;
+use dwell_blocks::sync::{Differences, Mapping, Payload, definitions_hash, map};
 use dwell_protocol::*;
 
 const RTT_SMOOTHING: f64 = 0.2;
@@ -17,6 +17,13 @@ fn smooth(prev: Option<f64>, sample: f64) -> Option<f64> {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SessionState {
     Handshaking,
+    /// The server's block registry differs from this build's (ADR 0036): waiting for the player to
+    /// continue ([`Session::accept_registry`]) or cancel ([`Session::cancel_registry`]).
+    Confirming {
+        differences: Differences,
+        /// The definitions hash ("don't ask again" is keyed by it).
+        hash: u64,
+    },
     Joined {
         player_id: u16,
         world_seed: u64,
@@ -76,6 +83,18 @@ pub struct Session {
     /// order: reliable ones wait here until the game drains them, so none is lost while it loads.
     game: VecDeque<(Message, Vec<u8>)>,
     changed: bool,
+    /// `BlockRegistry` parts received so far, and how many the server announced.
+    registry_parts: Vec<u8>,
+    registry_next: u16,
+    registry_parts_total: u16,
+    /// The complete payload, once every part arrived.
+    registry: Option<Vec<u8>>,
+    /// The server's ids ↔ this client's (ADR 0036), from Welcome on.
+    mapping: Option<Mapping>,
+    /// The Welcome waiting on the player's answer (Confirming).
+    pending: Option<Welcome>,
+    /// A definitions hash the player said not to ask about again for this server.
+    trusted_registry: Option<u64>,
 }
 
 impl Session {
@@ -99,6 +118,104 @@ impl Session {
             out: Vec::new(),
             game: VecDeque::new(),
             changed: true,
+            registry_parts: Vec::new(),
+            registry_next: 0,
+            registry_parts_total: 0,
+            registry: None,
+            mapping: None,
+            pending: None,
+            trusted_registry: None,
+        }
+    }
+
+    /// Joins without asking when the server's definitions hash is `hash` ("don't ask again for
+    /// this server", remembered by the shell per server and hash).
+    pub fn trust_registry(&mut self, hash: Option<u64>) {
+        self.trusted_registry = hash;
+    }
+
+    /// The id translation, once Welcome has arrived.
+    pub fn mapping(&self) -> Option<&Mapping> {
+        self.mapping.as_ref()
+    }
+
+    /// The player chose Continue in the join prompt.
+    pub fn accept_registry(&mut self) {
+        if matches!(self.state, SessionState::Confirming { .. })
+            && let Some(w) = self.pending.take()
+        {
+            self.join(w);
+        }
+    }
+
+    /// The player chose Cancel in the join prompt: the connection closes.
+    pub fn cancel_registry(&mut self) {
+        if matches!(self.state, SessionState::Confirming { .. }) {
+            self.pending = None;
+            self.set_state(SessionState::Closed {
+                message: "Cancelled: this server's blocks differ from this version's.".into(),
+            });
+            self.stop_pings();
+            self.close();
+        }
+    }
+
+    fn join(&mut self, w: Welcome) {
+        self.stats.server_tick = w.server_tick;
+        self.set_state(SessionState::Joined {
+            player_id: w.player_id,
+            world_seed: w.world_seed,
+            generator_version: w.generator_version,
+            verification_chunk: w.verification_chunk,
+            may_fly: w.flags & welcome_flags::FLIGHT != 0,
+            region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
+        });
+    }
+
+    fn fail(&mut self, message: String) {
+        self.set_state(SessionState::Closed { message });
+        self.stop_pings();
+        self.close();
+    }
+
+    /// A `BlockRegistry` part; parts arrive in order on the control stream.
+    fn on_registry_part(&mut self, b: BlockRegistry) {
+        if b.part != self.registry_next
+            || (b.part > 0 && b.parts != self.registry_parts_total)
+            || self.registry.is_some()
+        {
+            self.fail("The server sent its block registry out of order.".into());
+            return;
+        }
+        self.registry_parts_total = b.parts;
+        self.registry_parts.extend_from_slice(&b.data);
+        self.registry_next += 1;
+        if self.registry_next == b.parts {
+            self.registry = Some(std::mem::take(&mut self.registry_parts));
+        }
+    }
+
+    /// Welcome: map the server's registry, then join, or ask the player first.
+    fn on_welcome(&mut self, w: Welcome) {
+        let Some(bytes) = self.registry.take() else {
+            self.fail("The server sent no block registry.".into());
+            return;
+        };
+        let hash = definitions_hash(&bytes);
+        let mapping = match Payload::decode(&bytes).and_then(|p| map(&p, hash)) {
+            Ok(m) => m,
+            Err(e) => {
+                self.fail(format!("The server's block registry can't be used: {e}"));
+                return;
+            }
+        };
+        let differences = mapping.differences.clone();
+        self.mapping = Some(mapping);
+        if differences.is_empty() || self.trusted_registry == Some(hash) {
+            self.join(w);
+        } else {
+            self.pending = Some(w);
+            self.set_state(SessionState::Confirming { differences, hash });
         }
     }
 
@@ -231,7 +348,7 @@ impl Session {
                     | Message::LodIndex(_)
                     | Message::LodIndexUpdate(_)
                     | Message::LodData(_)
-            ) && self.joined()
+            ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
             {
                 self.game.push_back((m, bytes.to_vec()));
             }
@@ -245,28 +362,10 @@ impl Session {
                     &self.public_key,
                 )));
             }
-            Message::Welcome(w) => {
-                if w.registry_hash != REGISTRY_HASH {
-                    // Runtime state ids on the wire would name different blocks (BLOCK_REGISTRY.md).
-                    self.set_state(SessionState::Rejected {
-                        reason: RejectReason::ProtocolVersion,
-                        message: "The server runs a different block registry (another build)."
-                            .into(),
-                    });
-                    self.stop_pings();
-                    self.close();
-                    return;
-                }
-                self.stats.server_tick = w.server_tick;
-                self.set_state(SessionState::Joined {
-                    player_id: w.player_id,
-                    world_seed: w.world_seed,
-                    generator_version: w.generator_version,
-                    verification_chunk: w.verification_chunk,
-                    may_fly: w.flags & welcome_flags::FLIGHT != 0,
-                    region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
-                });
+            Message::BlockRegistry(b) if self.state == SessionState::Handshaking => {
+                self.on_registry_part(b);
             }
+            Message::Welcome(w) if self.state == SessionState::Handshaking => self.on_welcome(w),
             Message::Reject(r) => {
                 self.set_state(SessionState::Rejected {
                     reason: r.reason,
@@ -333,6 +432,39 @@ mod tests {
         })
     }
 
+    /// Sends a registry payload as `BlockRegistry` parts of at most `part` bytes.
+    fn send_registry(s: &mut Session, payload: &[u8], part: usize) {
+        let parts: Vec<&[u8]> = payload.chunks(part).collect();
+        for (i, data) in parts.iter().enumerate() {
+            let m = Message::BlockRegistry(BlockRegistry {
+                part: i as u16,
+                parts: parts.len() as u16,
+                data: data.to_vec(),
+            });
+            s.on_reliable(Channel::Control, &m.encode(), 1000.0);
+        }
+    }
+
+    fn build_registry() -> Vec<u8> {
+        Payload::served().encode()
+    }
+
+    /// This build's registry with sand's density changed and a new block.
+    fn modded_registry() -> Vec<u8> {
+        let mut p = Payload::served();
+        let sand = p.blocks.iter_mut().find(|b| b.name == "dwell:sand").unwrap();
+        for f in &mut sand.states[0] {
+            if f.0 == dwell_blocks::sync::tag::DENSITY {
+                f.1 = 5.0f32.to_le_bytes().to_vec();
+            }
+        }
+        let mut glow = p.blocks.iter().find(|b| b.name == "dwell:stone").unwrap().clone();
+        glow.name = "test:session_glow".into();
+        glow.first_state = p.id_end() as u16;
+        p.blocks.push(glow);
+        p.encode()
+    }
+
     fn setup() -> (SigningKey, Session) {
         let key = SigningKey::from_bytes(&[4; 32]);
         let mut s = Session::new(
@@ -377,7 +509,9 @@ mod tests {
                 .is_ok()
         );
 
-        s.on_reliable(Channel::Control, &welcome(REGISTRY_HASH).encode(), 1000.0);
+        send_registry(&mut s, &build_registry(), 100);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert!(s.mapping().is_some_and(|m| m.identity));
         assert_eq!(
             s.state(),
             &SessionState::Joined {
@@ -414,28 +548,72 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_server_whose_block_registry_differs() {
+    fn a_different_registry_asks_and_continue_joins_with_the_servers_rules() {
         let (_, mut s) = setup();
-        s.on_reliable(
-            Channel::Control,
-            &welcome(REGISTRY_HASH ^ 1).encode(),
-            1000.0,
-        );
-        assert!(matches!(
-            s.state(),
-            SessionState::Rejected {
-                reason: RejectReason::ProtocolVersion,
-                ..
-            }
-        ));
+        let payload = modded_registry();
+        send_registry(&mut s, &payload, 64);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        let SessionState::Confirming { differences, hash } = s.state().clone() else {
+            panic!("{:?}", s.state())
+        };
+        assert_eq!(hash, definitions_hash(&payload));
+        assert_eq!(differences.different[0].name, "dwell:sand");
+        assert_eq!(differences.added[0].name, "test:session_glow");
+        assert!(s.next_game().is_none(), "nothing reaches the game while asking");
+        s.accept_registry();
+        assert!(matches!(s.state(), SessionState::Joined { .. }));
+        let m = s.mapping().expect("mapping");
+        assert!(!m.generated_ok);
+    }
+
+    #[test]
+    fn cancel_closes_the_connection() {
+        let (_, mut s) = setup();
+        send_registry(&mut s, &modded_registry(), 1 << 16);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        s.take_out();
+        s.cancel_registry();
+        assert!(matches!(s.state(), SessionState::Closed { .. }));
         assert!(s.take_out().contains(&Out::Close));
+    }
+
+    #[test]
+    fn dont_ask_again_skips_the_prompt_only_for_the_same_hash() {
+        let payload = modded_registry();
+        for (trusted, asks) in [
+            (Some(definitions_hash(&payload)), false),
+            (Some(definitions_hash(&payload) ^ 1), true),
+            (None, true),
+        ] {
+            let (_, mut s) = setup();
+            s.trust_registry(trusted);
+            send_registry(&mut s, &payload, 1 << 16);
+            s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+            assert_eq!(
+                matches!(s.state(), SessionState::Confirming { .. }),
+                asks,
+                "{trusted:?}"
+            );
+            assert_eq!(!asks, matches!(s.state(), SessionState::Joined { .. }));
+        }
+    }
+
+    #[test]
+    fn a_missing_or_malformed_registry_closes() {
+        let (_, mut s) = setup();
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert!(matches!(s.state(), SessionState::Closed { .. }));
+        let (_, mut s) = setup();
+        send_registry(&mut s, &[1, 0, 0], 16);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert!(matches!(s.state(), SessionState::Closed { .. }));
     }
 
     /// Additions within a compatibility line are negotiated by Welcome flags (ARCHITECTURE.md
     /// §10.5): a flag this build doesn't know must not keep it from joining.
     #[test]
     fn reads_region_edits_from_the_welcome_and_ignores_unknown_flags() {
-        let Message::Welcome(w) = welcome(REGISTRY_HASH) else {
+        let Message::Welcome(w) = welcome(0) else {
             unreachable!()
         };
         for (flags, region_edits) in [
@@ -444,6 +622,7 @@ mod tests {
         ] {
             let (_, mut s) = setup();
             let m = Message::Welcome(Welcome { flags, ..w.clone() });
+            send_registry(&mut s, &build_registry(), 1 << 16);
             s.on_reliable(Channel::Control, &m.encode(), 1000.0);
             let SessionState::Joined {
                 region_edits: got, ..

@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use dwell_blocks::{
-    Facing, PROPERTIES, PROPERTY_VALUES, StateId, block_of, info, parse_state, state_property,
+    Facing, StateId, block_of, info, parse_state, state_property,
     with_property,
 };
 
@@ -231,12 +231,11 @@ fn facing_property(state: StateId) -> Option<&'static str> {
         Facing::West => "west",
     };
     let block = block_of(state);
-    (0..block.property_count)
-        .map(|k| &PROPERTIES[block.first_property + k])
+    block
+        .properties
+        .iter()
         .find(|p| {
-            PROPERTY_VALUES[p.first_value..p.first_value + p.value_count]
-                .iter()
-                .all(|v| FACINGS.contains(v))
+            p.values.iter().all(|v| FACINGS.contains(v))
                 && state_property(state, p.name) == Some(now)
         })
         .map(|p| p.name)
