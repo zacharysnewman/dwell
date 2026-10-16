@@ -47,7 +47,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
-| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
+| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2935,7 +2935,9 @@ computed reveal of their skeleton, vary by skeleton jitter, and persist as a lay
 load, for both procedural and planted trees
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)).
 
-**Status:** In progress — G-ADR (the ADR) done; next: G0, the prototype page. Depends on Phase 27
+**Status:** In progress — G-ADR (the ADR) done; G0's page built and verified in Playwright's
+Chromium (the three samples' mature stages equal their models; findings in `TREE_GROWTH.md` §8);
+outstanding: publishing it and the owner's review of its stages and variants; next: G1. Depends on Phase 27
 (the structure format, S1, for G1; the sandbox, S2a/S3, for G2), on Phase 20 (a cut tree's crown
 becoming a body that settles and re-bakes) for G3's cuts, and on the day/night cycle, which is not
 designed yet (rates are in in-game days; a 30-minute day is assumed until it is). G0–G2 change no
@@ -2949,9 +2951,14 @@ Deliverables
   and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
   colonization; the owner's persistence model; procedural and planted trees; compatibility); the
   owner's answers recorded (`TREE_GROWTH.md` §7).
-- [ ] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
-  show its extracted skeleton, scrub the age, roll variant seeds; published, its link in
-  `docs/prototypes/`. No protocol or release impact; shows whether inferred stages look right.
+- [x] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+  show its extracted skeleton, scrub the age, roll variant seeds, place obstacles, export the
+  `growth` and `variants` sections; three sample trees whose mature stages equal their models
+  (checked in the page); verified in Playwright's Chromium (samples, ages, variants, an obstacle,
+  JSON load and errors, a phone viewport; no console errors). No protocol or release impact.
+- [ ] **G0 review** — The page published (its link in `docs/prototypes/README.md`) and the owner's
+  review of whether the inferred stages and variants look right; the owner's choices exported for
+  G1.
 - [ ] **G1** — Roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and the `growth` block in the
   structure format; skeleton extraction in `shared/structures/gen.mjs` (emitted with the canonical
   output, stale-checked in CI; bad roles or growth parameters fail naming the entry); Rust
