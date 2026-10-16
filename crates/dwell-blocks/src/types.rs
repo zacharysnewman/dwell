@@ -44,6 +44,14 @@ pub struct Textures {
     pub bottom: &'static str,
 }
 
+/// World-space grid lines the terrain shader draws on a state's faces (block data `grid`, a look
+/// option): a line every `every` blocks (a divisor of the chunk size), darkening by `strength`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grid {
+    pub every: u8,
+    pub strength: f32,
+}
+
 /// One block state.
 #[derive(Clone, Copy, Debug)]
 pub struct StateInfo {
@@ -62,6 +70,8 @@ pub struct StateInfo {
     pub facing: Facing,
     pub climb_speed_scale: f32,
     pub liquid: bool,
+    /// Blocks with the `fluid` look: index into `FLUIDS` (their opacity is the fluid's).
+    pub fluid: Option<FluidId>,
     pub placeable: bool,
     /// The look (meshing and material) the client draws it with, by name.
     pub look: &'static str,
@@ -69,6 +79,35 @@ pub struct StateInfo {
     pub color: u32,
     pub opacity: f32,
     pub textures: Option<Textures>,
+    pub grid: Option<Grid>,
+}
+
+/// A fluid's index in `FLUIDS`, valid for this build's registry.
+pub type FluidId = u8;
+
+/// A named fluid look (`fluids` in `shared/blocks/*.json`; docs/BLOCK_REGISTRY.md, "Fluid looks"): looks only.
+/// Colours are sRGB `0xRRGGBB`; lengths in metres.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FluidInfo {
+    /// Namespaced name, e.g. `dwell:water`.
+    pub name: &'static str,
+    /// The fixed alpha its blocks are drawn with (until absorption replaces it).
+    pub opacity: f32,
+    /// How far below its cell's top the surface is drawn, in cells (when the cell above is not
+    /// the same fluid); on face B, above its cell's bottom.
+    pub surface_drop: f64,
+    /// Beer–Lambert σ per metre, linear red, green, blue.
+    pub absorption: [f32; 3],
+    pub scatter: u32,
+    pub roughness: f32,
+    pub ior: f32,
+    pub normal_scale: f32,
+    pub wave_scale: f32,
+    /// Metres per second.
+    pub flow_speed: f32,
+    pub foam_depth: f32,
+    pub foam_color: u32,
+    pub caustics: f32,
 }
 
 /// One polygon of a baked shape: `count` points of `v` (metres within the cell).

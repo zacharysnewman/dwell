@@ -6,6 +6,8 @@ and W1b, the water shader). Owner answers in §7.
 
 ## 1. Water today
 
+*As it was when this was written (2026-10-14). W1a, A1 (= W2) and W1b have since changed the drawing; see §8.*
+
 - **A block, no fluid simulation.** `dwell:water` is one state with `"look": "water"`,
   `"liquid": true`, colour `#3fb2d6`, opacity 0.55 (`shared/blocks/dwell.json`). Worldgen fills open
   space below sea level (0). Shaped blocks can be `flooded`.
@@ -134,6 +136,73 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
    the fixture test adds one by data alone. Behaviour (flow, viscosity, damage) stays out of scope.
 5. Should waves ever move geometry (open ocean), or stay normal-only? *Owner, 2026-10-14: water
    doesn't move for now* — the surface geometry stays still; ripples are only in the shading.
+
+## 8. As built
+
+### W1b, the water shader (2026-10-15)
+
+- **Fluid id per vertex.** The meshers write a `fluids` stream (one f32 per vertex) on the chunks'
+  transparent mesh and the sections' water mesh, and the renderer draws both with a fluid vertex
+  format: position, normal, colour, fluid id. That is 40 bytes, down from the 60-byte terrain format
+  chunk water used, because the procedural ripples need no uv or tile.
+  - *Rejected:* a fluid id per draw (in the draw uniforms). It needs the mesher to split a chunk's
+    transparent mesh by fluid, and a draw per fluid wherever several meet (flooded cells, oil beside
+    water).
+  - *Rejected:* packing the id into the terrain format's tile. That keeps 60 bytes and overloads a
+    field.
+  - A see-through face that is no fluid's gets `NO_FLUID` and draws its vertex colour at half
+    opacity. None exist yet.
+- **The fluid buffer** (`render/water.rs` `pack_fluids`): 5 vec4 per fluid, from the registry's
+  `FLUIDS`, bound with the frame uniform. Colours are linear and F0 is computed from the IOR. A
+  fixture test packs `test:oil` beside water, each with its own parameters.
+- **`water_fs`:**
+  - **Ripples:** three layers of quintic gradient noise with analytic derivatives, at 1, 0.43 and
+    0.17 × the fluid's `waveScale`, each on an integer-turned lattice. Each layer scrolls along its
+    own heading at `flowSpeed` × 1, 1.7 and 2.6. They are summed as height slopes, scaled by
+    `normalScale`.
+  - **Wrap:** each wavelength is rounded to divide 1,024 m. The vertex shader takes a per-draw
+    origin wrapped to that period, so the detail stays exact anywhere on the disc.
+  - **Anti-shimmer:** a layer fades out while a pixel covers ⅛ to ½ of its wavelength, measured with
+    `dpdx`/`dpdy` of the wrapped position. The slope variance it loses widens the GGX glint
+    (Toksvig). Far water is calm and keeps its colour, and the sun's highlight spreads into a broad
+    sheen instead of sparkling.
+  - **Lighting:** Schlick Fresnel, GGX (height-correlated Smith) for the sun and moon with α ≥ 0.05,
+    clamped. The sky's reflection is `dwell_sky(reflect(v, n))` taken back into the scene's linear
+    light through the inverse of the composite's ACES fit. The matrices and fit are emitted from Rust,
+    and a test round-trips them. Reflections below the surface's plane fold back up.
+  - **Body and alpha:** the body is the scatter colour lit from the face's up. The alpha is
+    `1 − (1 − F)(1 − opacity)`, so what is behind shows through the share neither reflected nor
+    hidden.
+  - **Face B:** the mirrored surface's normal points down, and so does the rippled one.
+  - **From below:** the body colour, with total internal reflection outside Snell's window.
+- **Underwater (the W4 stub):** while `water.x` is set, the composite replaces the height fog with
+  the fluid's Beer–Lambert absorption and in-scatter. It applies them over the distance in the fluid:
+  to what the pixel shows, or to the surface where the ray reaches it first.
+- **Quality:** Low, Medium and High in the settings menu (`ui/waterSettings.ts`, `dwell.water`, an
+  append-only record). In W1b, Low draws one layer of ripples, and Medium and High draw three. Phones
+  default to Low and desktops to High.
+- **Data tuning** (prototype content), from screenshots: `dwell:water`'s scatter changed from
+  `#1d6f8a` to `#2b9cc0`, because the old value read as black underwater and grey from above. Its
+  opacity changed from 0.55 to 0.65, so the shallows' sand doesn't wash the colour out.
+  Then, at the owner's request for **bluer** water (a clear, saturated blue, away from turquoise and
+  green): the block colour went from `#3fb2d6` to `#2f86e0` (it paints the `water` tile, so
+  `crates/dwell-mesh/src/textures.rs`'s `WATER` follows it; the LOD's flat colour is that tile's
+  average, and near and far water both shade with the fluid's scatter); scatter from `#2b9cc0` to
+  `#1c7ed8`; absorption from [0.45, 0.09, 0.06] to [0.7, 0.28, 0.06] (more red and green absorbed,
+  so the underwater fog reads blue rather than teal); opacity from 0.65 to 0.72, so the sand under
+  the shallows doesn't grey the blue. Glint, Fresnel and sky reflection are unchanged. Then, for a
+  **tropical** look (owner): scatter `#1a8ee0` and absorption [0.45, 0.12, 0.04], near clear
+  water's own (red absorbed first, green a little, blue least), so the underwater view reads a
+  clear cyan-blue and, once W3 grades the colour by depth, shallows read turquoise and deep water
+  blue.
+- **Bench:** the `water-views` scenario flies from the seed-7 spawn to the coast about 20 km
+  east-south-east, down into the sea, and shoots four views: across the sea, the shallows toward the
+  shore, 1 km up, and with the eye just under the surface. The `camera` step gained `aroundPlayer`
+  (x and z offsets from the player's feet), and views and scenarios gained `settings.water`.
+- **Cost** (Apple M1, 1280×720, 4× MSAA): measured while other agents' builds loaded the machine, so treat it as noisy. Over the sea (`water-views` `sea`, `--unthrottled`), GPU frame p50 was 2.06 → 2.76 ms (+0.7). The near pass, where the water draws, was 1.02 → 1.94 ms. Frame interval p50 was 9.7 → 10.2 ms (CPU-bound). On `fly-low-fast` (inland, no water) there was no change within noise: GPU frame p50 2.31 → 2.10 ms, interval 8.8 → 8.3 ms.
+- **Known, not W1b's:** vertical water faces at sea-floor steps show as faint dashed bands from
+  above (they were there before). The near shore is pale over bright sand until W3's depth
+  absorption.
 
 ## Sources
 

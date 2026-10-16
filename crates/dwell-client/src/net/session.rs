@@ -24,6 +24,9 @@ pub enum SessionState {
         verification_chunk: [i32; 3],
         /// The server lets this player use creative flight (§8.3).
         may_fly: bool,
+        /// The server takes `RegionEdit`s (`welcome_flags::REGION_EDITS`; builds before them
+        /// reject an unknown message, so the client sends none without it).
+        region_edits: bool,
     },
     Rejected {
         reason: RejectReason,
@@ -261,6 +264,7 @@ impl Session {
                     generator_version: w.generator_version,
                     verification_chunk: w.verification_chunk,
                     may_fly: w.flags & welcome_flags::FLIGHT != 0,
+                    region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
                 });
             }
             Message::Reject(r) => {
@@ -381,7 +385,8 @@ mod tests {
                 world_seed: 5,
                 generator_version: 0,
                 verification_chunk: [0, 2, 0],
-                may_fly: true
+                may_fly: true,
+                region_edits: false,
             }
         );
         // World messages wait for the game, in order.
@@ -424,6 +429,30 @@ mod tests {
             }
         ));
         assert!(s.take_out().contains(&Out::Close));
+    }
+
+    /// Additions within a compatibility line are negotiated by Welcome flags (ARCHITECTURE.md
+    /// §10.5): a flag this build doesn't know must not keep it from joining.
+    #[test]
+    fn reads_region_edits_from_the_welcome_and_ignores_unknown_flags() {
+        let Message::Welcome(w) = welcome(REGISTRY_HASH) else {
+            unreachable!()
+        };
+        for (flags, region_edits) in [
+            (welcome_flags::FLIGHT, false),
+            (welcome_flags::REGION_EDITS | 0x80, true),
+        ] {
+            let (_, mut s) = setup();
+            let m = Message::Welcome(Welcome { flags, ..w.clone() });
+            s.on_reliable(Channel::Control, &m.encode(), 1000.0);
+            let SessionState::Joined {
+                region_edits: got, ..
+            } = s.state()
+            else {
+                panic!("{:?}", s.state())
+            };
+            assert_eq!(*got, region_edits);
+        }
     }
 
     #[test]

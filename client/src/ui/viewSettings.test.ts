@@ -5,11 +5,15 @@ import {
   DEFAULT_FOG,
   EXPOSURE_LIMITS,
   FOG_LIMITS,
+  DEFAULT_FOV,
+  FOV_LIMITS,
   sanitizeExposure,
   sanitizeFog,
   CLOUD_QUALITIES,
   defaultClouds,
   sanitizeClouds,
+  sanitizeFovSetting,
+  viewRecord,
 } from './viewSettings';
 
 describe('fog settings', () => {
@@ -53,5 +57,21 @@ describe('clouds setting', () => {
       expect(sanitizeClouds(bad, true)).toBe('low');
     }
     expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'high']);
+  });
+});
+
+describe('field of view', () => {
+  it('defaults to 75°, clamps to 60–100° in whole degrees', () => {
+    expect(DEFAULT_FOV).toBe(75);
+    expect(sanitizeFovSetting(null)).toBe(DEFAULT_FOV);
+    expect(sanitizeFovSetting({ fovDeg: 'wide' })).toBe(75);
+    expect(sanitizeFovSetting({ fovDeg: 150 })).toBe(FOV_LIMITS.max);
+    expect(sanitizeFovSetting({ fovDeg: 10 })).toBe(FOV_LIMITS.min);
+    expect(sanitizeFovSetting({ fovDeg: 82.4 })).toBe(82);
+  });
+
+  it('is stored append-only: fields this build does not know are kept', () => {
+    expect(viewRecord({ fovDeg: 75, future: [1] }, 90)).toEqual({ fovDeg: 90, future: [1] });
+    expect(viewRecord('garbage', 80)).toEqual({ fovDeg: 80 });
   });
 });

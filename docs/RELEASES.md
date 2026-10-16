@@ -42,15 +42,18 @@ granted) and the Rust crate points `license-file` at `LICENSE`. Source-available
 still be adopted later.
 
 **Third-party notices.** Builds ship code under licenses that require their notices in copies
-(Jolt Physics, three.js, `wtransport` and the other Rust crates, zstd, the Emscripten runtime and
-others; SQLite is public domain). **Built:** `shared/licenses/gen.py` writes `THIRD_PARTY_NOTICES`
-at the root from `shared/licenses/third_party.json` (the CMake, npm and Emscripten components,
-with their license texts in `texts/`) and `cargo metadata` (every crate linked into the server,
-its license text read from the crate; for a choice of licenses the most permissive is used, and
-the few crates that publish no license file get the standard MIT text with their authors).
-**Also built:** the file ships in every build (`THIRD_PARTY_NOTICES.txt`, emitted by the Vite build
-and linked from the menu's About screen) and beside the native server (copied next to
-`dwell_server` after each build and installed with it), and CI runs `gen.py --check`.
+(Rapier, wgpu, `wtransport`, `redb`, `lz4_flex` and the other Rust crates, and the client shell's npm
+packages). **Built:** `shared/licenses/gen.py` writes `THIRD_PARTY_NOTICES` at the root from
+`shared/licenses/third_party.json` (the components that are not Rust crates, today the shell's npm
+packages, with their license texts in `texts/`) and `cargo metadata` (every crate linked into
+`dwell-server` natively and into `dwell-client` for wasm32, its license text read from the crate;
+for a choice of licenses the most permissive is used, and the few crates that publish no license
+file get the standard MIT text with their authors). (Before Phase 24 the list also held Jolt
+Physics, three.js, zstd, SQLite and the Emscripten runtime, removed with the C++ and Three.js
+code; ADR 0028.) **Also built:** the file ships in every build (`THIRD_PARTY_NOTICES.txt`, emitted
+by the Vite build and linked from the menu's About screen). Beside the native server it is
+**[planned, Phase 23]**: the C++ build copied it next to `dwell_server`, and `cargo build` does not
+(ARCHITECTURE.md §10). CI runs `gen.py --check`.
 
 ## 3. Builds, versions and tags
 
@@ -60,7 +63,10 @@ and linked from the menu's About screen) and beside the native server (copied ne
   - **The public API** — what compatibility means, as SemVer requires it to be declared: the saved
     world format, the terrain a seed generates, the network protocol (client ↔ server, and the
     master server's API), and the cross-version browser storage contract (§6). Changes that keep
-    all four compatible are compatible changes; anything else is a breaking change.
+    all four compatible are compatible changes; anything else is a breaking change. A new
+    client → server message is compatible only behind a `Welcome` flag (servers reject unknown
+    messages; clients ignore unknown flags), so builds of a line still play together
+    (ARCHITECTURE.md §10.5; the first is `RegionEdit`).
   - **From `1.0.0`** (launch): MAJOR for breaking changes, MINOR for compatible new features, PATCH
     for compatible fixes.
   - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention
@@ -164,7 +170,9 @@ key). Same-origin version directories satisfy all of that with no exceptions.
 the launcher, not with releases. Every choice is a route the launcher sends to the build it needs:
 playing (`?play=`), joining (`?join=`, `?code=`), and — carried out by the build that will own the
 world — creating (`?new=1&name=…&seed=…&type=…`, the latest build) and regenerating
-(`?regenerate=<id>`, offered only where that build is 0.10.3 or newer). A build opened with no
+(`?regenerate=<id>`, offered only where that build is 0.10.3 or newer). The build makes the
+world before its game client starts and replaces the route with `?play=<id>` at once, so a
+reload while the game loads continues the world rather than making another. A build opened with no
 route hands over to the launcher (`?say=` carries why). The version page's Play pins the menu to
 that build for the visit (`/dwell/?version=…`). The server browser pings with the latest build's
 networking, loaded from its fixed-name `tools.js`. Older builds (0.1.0, 0.10.0–0.10.2) already
