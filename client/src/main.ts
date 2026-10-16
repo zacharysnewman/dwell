@@ -243,7 +243,6 @@ interface App {
   compare: CompareOverlay | null;
 }
 
-
 /** Workers per pool: generation and meshing each get this many (fewer on phones). */
 function defaultWorkerCount(mobile: boolean): number {
   const cores = navigator.hardwareConcurrency || 4;

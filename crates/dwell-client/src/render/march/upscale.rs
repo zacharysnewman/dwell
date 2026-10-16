@@ -490,14 +490,20 @@ mod tests {
         .validate(&module)
         .expect("WGSL validates");
         for entry in ["easu_main", "rcas_main", "bilateral_main"] {
-            assert!(module.entry_points.iter().any(|e| e.name == entry), "{entry}");
+            assert!(
+                module.entry_points.iter().any(|e| e.name == entry),
+                "{entry}"
+            );
         }
     }
 
     #[test]
     fn render_sizes_follow_the_scale_only_with_an_upscaler() {
         assert_eq!(render_size((1280, 720), 0.5, Upscaler::Fsr1), (640, 360));
-        assert_eq!(render_size((1280, 720), 0.75, Upscaler::Bilateral), (960, 540));
+        assert_eq!(
+            render_size((1280, 720), 0.75, Upscaler::Bilateral),
+            (960, 540)
+        );
         assert_eq!(render_size((1280, 720), 0.5, Upscaler::None), (1280, 720));
         assert_eq!(render_size((1280, 720), 1.0, Upscaler::Fsr1), (1280, 720));
         assert_eq!(render_size((3, 1), 0.1, Upscaler::Fsr1), (1, 1));
