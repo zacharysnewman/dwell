@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-25
+- Amended by: [0028](0028-rust-port.md) (the sim is Rust on Rapier, not C++ on Jolt; a threaded web build would be Rust WASM with atomics instead of Emscripten pthreads; the single-threaded browser build and the reasons for it stand)
 - Resolves: ARCHITECTURE.md Open Decisions #4
 
 ## Context

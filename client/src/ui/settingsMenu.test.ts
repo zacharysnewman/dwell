@@ -52,6 +52,10 @@ describe('settings JSON', () => {
       exposure: 1.2345,
       skyRotation: 123.4,
       audio: { master: 0.8049, effects: 1, ui: 0.333 },
+      clouds: 'low',
+      water: { quality: 'medium' },
+      motion: { speedEffects: false, fovBoost: 0.456 },
+      fovDeg: 82.4,
     });
     const parsed = JSON.parse(json) as { fog: unknown; detail: unknown };
     expect(parsed).toEqual({
@@ -60,6 +64,10 @@ describe('settings JSON', () => {
       exposure: 1.23,
       skyRotation: 123,
       audio: { master: 0.8, effects: 1, ui: 0.33 },
+      clouds: 'low',
+      water: { quality: 'medium' },
+      motion: { speedEffects: false, fovBoost: 0.46 },
+      fovDeg: 82,
     });
     expect(sanitizeFog(parsed.fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({

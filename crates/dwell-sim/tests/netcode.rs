@@ -19,7 +19,7 @@ use dwell_protocol::*;
 use dwell_sim::entropy::SeededEntropy;
 use dwell_sim::server::{EditPolicy, OutKind, Server, ServerConfig, SessionId};
 use dwell_world::edit::apply_chunk_changes;
-use dwell_world::structure::{Structure, with_structure};
+use dwell_world::structure::{Placed, load, with_structure};
 use dwell_world::{
     CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, GENERATOR_FLAT, VoxelWorld, chunk_hash,
     flat_generator,
@@ -55,10 +55,11 @@ fn shifted(g: ChunkGenerator) -> ChunkGenerator {
     Arc::new(move |c, chunk| g(ChunkCoord::new(c.x - cx, c.y, c.z), chunk))
 }
 
-static PLAYGROUND: LazyLock<Arc<Structure>> = LazyLock::new(|| {
-    // The movement playground (PLAYER_CONTROLLER.md §9), shared with the C++ suites until the cutover.
-    let text = include_str!("../../../shared/structures/playground.structure");
-    Arc::new(Structure::parse(text).expect("the playground structure"))
+static PLAYGROUND: LazyLock<Arc<Placed>> = LazyLock::new(|| {
+    // The movement playground (PLAYER_CONTROLLER.md §9, shared/structures/playground.json), its
+    // anchor at the origin; it has no variants, so the seed changes nothing.
+    let playground = load("dwell:playground").expect("the playground structure");
+    Arc::new(playground.place([0, 0, 0], 0))
 });
 
 /// The flat world with the playground stamped over it.
@@ -881,12 +882,26 @@ fn predictor_remote_proxy_right_after_the_first_snapshot() {
 /// Single-block stone stairs 1–4 high along +z at x = 30 (z 30…33) on the flat world: 45° ramps,
 /// which slide.
 fn stairs_generator() -> ChunkGenerator {
-    let text = "fill 30 0 30  30 0 33  dwell:stone\n\
-                fill 30 1 31  30 1 33  dwell:stone\n\
-                fill 30 2 32  30 2 33  dwell:stone\n\
-                fill 30 3 33  30 3 33  dwell:stone\n";
-    let stairs = Arc::new(Structure::parse(text).expect("the stairs"));
-    with_structure(flat_generator(), stairs)
+    let base = flat_generator();
+    let stone = require("dwell:stone");
+    Arc::new(move |coord, chunk| {
+        base(coord, chunk);
+        let voxels = chunk.voxels_mut();
+        for k in 0..4 {
+            for y in 0..=k {
+                let (x, z) = (30, 30 + k);
+                let o = [
+                    coord.x * CHUNK_SIZE,
+                    coord.y * CHUNK_SIZE,
+                    coord.z * CHUNK_SIZE,
+                ];
+                let l = [x - o[0], y - o[1], z - o[2]];
+                if l.iter().all(|&v| (0..CHUNK_SIZE).contains(&v)) {
+                    voxels[dwell_world::local_index(l[0], l[1], l[2])] = stone;
+                }
+            }
+        }
+    })
 }
 
 /// A spawns on the third stair's ramp and slides off it, steers, then tries to walk up the stairs

@@ -423,8 +423,8 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 A flight mode for the player's own body — server-authoritative and predicted like every other
 layer — so a player can rise from the ground to see the whole world (ARCHITECTURE §6.6).
 - **Input.** `fly` is a *mode* bit held in every input frame while flight is on (`input_buttons::FLY`);
-  the client toggles it (`dwell-game`'s `FlightToggle`: double-tap Space or the touch Jump button
-  within 300 ms, or the touch Fly button). The server clears the bit for players its flight policy
+  the client toggles it (`dwell-game`'s `FlightToggle`: the F key, `input::FLY_KEY`, or the touch
+  Fly button; Jump pressed twice is two jumps — owner, 2026-10-15). The server clears the bit for players its flight policy
   excludes (`dwell-server --flight everyone|ops|nobody`, default everyone; `Welcome` says whether
   this player may fly), so a client that sends it anyway just walks.
 - **Layer.** `step_fly` runs before crouch, so flying cancels climbing and swimming and stands a
@@ -602,8 +602,12 @@ Owned by the `Predictor` (the same `Physics` settings as the server):
   a `PlayerInput` datagram carrying the newest 4 inputs (`MAX_INPUTS_PER_DATAGRAM`).
 - **Server** (`dwell-sim`): inputs queue per session ordered by `inputSeq` (§11 validation; see
   ARCHITECTURE §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it
-  runs dry the last input repeats and the buffer re-primes; beyond 6 queued inputs the oldest are
-  skipped. The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
+  runs dry the last input repeats and the buffer re-primes; when the queue stays above 6 inputs for
+  a whole 30-tick window (its low-water mark), the excess is skipped to bound input latency (a
+  slow client's frame of inputs arrives at once and is not skipped; at most 32 are queued). The
+  client catches up at most 15 ticks a frame (250 ms; `MAX_TICKS_PER_FRAME`), so a device drawing
+  4 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the
+  server simulates, the repeated inputs walking it further than the prediction. The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
   ±2 % to keep it between 1 and 4 (clock drift between client and server otherwise starves or
   floods it).
 - **Snapshot (20 Hz):** compared with the stored entry for `ack_input_seq`: position within 1 cm,
@@ -677,11 +681,20 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
 
 - **Camera** (`dwell-client`'s `game.rs`, eye height in `dwell-game`'s `eye.rs`): first-person at
   the smoothed render position (interpolated between the last two ticks plus the correction
-  offset). **Field of view** (`dwell-client`'s `render/camera.rs`): 75° vertical, but never more
-  than 100° horizontal — wider screens (16:9 desktop, landscape phones) get a narrower vertical
-  field of view. An uncapped wide view made forward and backward walking look faster than strafing
+  offset). **Field of view** (`dwell-lod`'s `base_fov`, re-exported by `dwell-client`'s
+  `render/camera.rs`): the player's Field of view setting (default 75° vertical, 60–100°); screens
+  wider than ≈ 1.55 get a narrower vertical one so the horizontal stays what the setting gives at
+  that aspect (100° at the default). An uncapped wide view made forward and backward walking look faster than strafing
   at the same speed (playtest); the sim itself moves at the same speed in every direction
-  (`every_direction_moves_at_the_same_speed`).
+  (`every_direction_moves_at_the_same_speed`). **Motion effects** (Phase 29,
+  [`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)): the vertical FOV widens with the camera's speed
+  (the predicted velocity, so falls and knockback count; scaled by the controller state's gain) —
+  eased from 0 at `walk_speed` to the sprint boost at `run_speed`, then log-scaled up to the flight
+  boost, as a zoom-out percentage of the base (+10 % / +20 %, `2·atan(tan(base/2)·(1 + boost))`) —
+  smoothed by a critically damped spring and clamped to 120°; wind
+  streaks blow past the screen's edges. They read the controller's state and never write it, so
+  prediction stays deterministic; they reset on a teleport, respawn and the turn-over across the
+  midplane, and hold while the menu is open.
   The eye height is computed once per tick from the feet (never the capsule centre, whose height
   changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
   camera must not show, and each is folded into an offset that decays:
@@ -721,7 +734,7 @@ water pools), Tier 1 boxes (static, kinematic or dynamic) as platforms and ramps
 and explosions, and per-player event counters. Expectations use Dwell's default config
 (recommended feel, voxel capsule). The **movement playground** — a block step, a doorway, a
 crawlspace, a ladder to a ledge and a pool near the spawn — is a structure file
-(`shared/structures/playground.structure`) stamped over the flat world by the netcode suite
+(`shared/structures/playground.json`) stamped over the flat world by the netcode suite
 (Phase 15; it was generator version 1 with slab stairs, slope features and a launch pad). The
 launch-pad knockback test is a server-issued knockback.
 

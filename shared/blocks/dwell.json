@@ -4,8 +4,8 @@
   "shapeFamilies": [],
   "fluids": {
     "dwell:water": {
-      "opacity": 0.55, "surfaceDrop": 0.125,
-      "absorption": [0.45, 0.09, 0.06], "scatter": "#1d6f8a", "roughness": 0.08, "ior": 1.333,
+      "opacity": 0.72, "surfaceDrop": 0.125,
+      "absorption": [0.45, 0.12, 0.04], "scatter": "#1a8ee0", "roughness": 0.08, "ior": 1.333,
       "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
       "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0
     }
@@ -39,16 +39,16 @@
     },
     {
       "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
-      "liquid": true, "color": "#3fb2d6", "textures": "water"
+      "liquid": true, "color": "#2f86e0", "textures": "water"
     },
     {
       "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#eed9a4", "textures": "sand"
     },
     {
-      "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white, untextured, not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
+      "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white with a faint line at every block edge (the `grid` tile) and a stronger one every 8 blocks (the `grid` look option), not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
       "name": "sandbox_floor", "sound": "dwell:stone", "density": 2400, "shape": "full", "indestructible": true,
-      "color": "#ffffff"
+      "color": "#ffffff", "textures": "grid", "grid": { "every": 8, "strength": 0.3 }
     }
   ]
 }

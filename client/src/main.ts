@@ -29,13 +29,7 @@ import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
-import {
-  cleanName,
-  parseSeed,
-  WORLD_TYPES,
-  WorldIndex,
-  type CreatableType,
-} from './local/worldIndex';
+import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
 import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './ui/launch';
@@ -45,6 +39,17 @@ import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import { StructuresPanel } from './ui/structuresPanel';
+import { opfsStructureDir, StructureStore } from './local/structureStore';
+import { clipboardOf, type Vec3 as Cell } from './local/structures';
+import { waterQualityLevel } from './ui/waterSettings';
+import {
+  CompareOverlay,
+  RENDERER_CHOICES,
+  choiceOf,
+  rendererParams,
+  type CompareState,
+} from './ui/renderer';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -92,13 +97,16 @@ interface DwellDebug {
   view(): { yaw: number; pitch: number };
   /** Breaks or places at the crosshair, as a click does (§6.5). */
   edit(action: 'break' | 'place'): boolean;
+  /** Runs a region tool by name (`fill`, `copy`, `undo`, … — `Client.tool`), as its key does. */
+  tool(name: string): boolean;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
-  /** Turns creative flight on or off, as double-tapping Space does (if the server allows it). */
+  /** Turns creative flight on or off by pressing F, the fly key, if it isn't already (and the
+   * server allows it). */
   fly(on: boolean): void;
   /** Sets the flight speed level, as the slider does. */
   flySpeed(level: number): void;
@@ -115,6 +123,20 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /**
+   * The terrain renderers `?renderer=` can pick in this build (docs/DEV_TOOLS.md: `bench
+   * --compare` skips the others), and the upscalers.
+   */
+  renderers(): string[];
+  upscalers(): string[];
+  /** What draws the terrain: `raster`, `march` or `compare raster | march`. */
+  renderer(): string;
+  /** Switches renderer at runtime (local builds; false otherwise): see `?renderer=`. */
+  setRenderer(name: string, compare?: string): boolean;
+  /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
+  compare(): CompareState | null;
+  /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
+  setCompare(view?: string, divider?: number): void;
   /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
@@ -216,6 +238,8 @@ interface App {
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
+  /** Compare mode's labels and divider (the renderer switch, local builds). */
+  compare: CompareOverlay | null;
 }
 
 /** The ?scale= drawing-buffer scale (comparing performance on a device). */
@@ -273,6 +297,10 @@ function playSounds(app: App, player: EventPlayer): void {
 function forwardInput(app: App): void {
   const { canvas, client } = app;
   window.addEventListener('keydown', (e) => {
+    // Typing in a field of the menu (a structure's name, pasted JSON) is not playing.
+    const t = e.target;
+    if (t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.type !== 'range'))
+      return;
     if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
@@ -353,13 +381,16 @@ function showHud(app: App, now: number): void {
     health?: number;
     debug?: string | null;
     damaged?: boolean;
+    region?: string;
   };
   if (h.message === undefined) return;
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
+  app.hotbar?.setRegion(h.region ?? '');
   if (h.debug) app.hud.setDebug(h.debug);
+  app.compare?.show(app.client.compareState() as CompareState | null);
 }
 
 async function start(): Promise<App | null> {
@@ -383,6 +414,9 @@ async function start(): Promise<App | null> {
       fullChunks: params.get('chunks') === 'full',
       netsim: params.get('netsim') ?? undefined,
       search: location.search,
+      // ?renderer= and compare mode: local builds only (vite.config.ts, RAY_MARCHED_RENDERER.md §3).
+      rendererSwitch: __RENDERER_SWITCH__,
+      ...rendererParams(location.search, __RENDERER_SWITCH__),
     });
   } catch (err) {
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -415,6 +449,12 @@ async function start(): Promise<App | null> {
     loopback: null,
     world: null,
     playing: false,
+    compare: __RENDERER_SWITCH__
+      ? new CompareOverlay(document.body, canvas, (share) => {
+          client.setCompare(undefined, share);
+          installPageSounds().ui('slider');
+        })
+      : null,
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -464,7 +504,11 @@ async function start(): Promise<App | null> {
     sfx.setVolumes(s.audio);
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
+    client.setWaterQuality(waterQualityLevel(s.water.quality));
     client.setSkyRotation(s.skyRotation);
+    client.setClouds(s.clouds);
+    client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;
@@ -472,8 +516,24 @@ async function start(): Promise<App | null> {
   settings.onOpenChange = (open) => {
     touch.visible = touchWanted && !open;
     sfx.action(open ? 'menu_open' : 'menu_close');
+    // The speed effects hold still while the menu is open.
+    client.setMenuOpen(open);
   };
   settings.setFootnote(formatBuildInfo(buildInfo));
+  const showRenderer = (): void => {
+    const label = client.renderer();
+    settings.setRenderer(
+      label,
+      client.rendererSwitch() ? RENDERER_CHOICES : null,
+      choiceOf(label)?.id,
+      (id) => {
+        const c = RENDERER_CHOICES.find((r) => r.id === id);
+        if (c) client.setRenderer(c.renderer, c.compare);
+        showRenderer();
+      },
+    );
+  };
+  showRenderer();
   settings.addDebugTools([
     {
       key: 'F3',
@@ -496,6 +556,30 @@ async function start(): Promise<App | null> {
       },
     },
   ]);
+  // The Structures page (STRUCTURES.md §4): the browser's structures store, saved from and
+  // loaded into this world through the region tools.
+  const structures = new StructuresPanel({
+    store: new StructureStore(opfsStructureDir()),
+    selection: () => {
+      const s = client.selection();
+      return s.length === 6
+        ? { min: [s[0], s[1], s[2]] as Cell, size: [s[3], s[4], s[5]] as Cell }
+        : null;
+    },
+    read: (min, size) => client.voxels(...min, ...size),
+    feet: () => (client.debugState() as GameDebugState | null)?.feet ?? null,
+    target: () => (client.debugState() as GameDebugState | null)?.target?.cell ?? null,
+    load: (s) => {
+      const { cells, keep } = clipboardOf(s);
+      return client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+    },
+    close: () => {
+      settings.setOpen(false);
+    },
+  });
+  settings.addStructuresPanel(structures.element, () => {
+    void structures.refresh();
+  });
   app.hud.onToggleMap = () => {
     toggleMap(app);
   };
@@ -522,6 +606,7 @@ async function start(): Promise<App | null> {
       return { yaw, pitch };
     },
     edit: (action) => client.edit(action, performance.now()),
+    tool: (name) => client.tool(name, performance.now()),
     select: (slot) => {
       client.select(slot);
     },
@@ -539,6 +624,18 @@ async function start(): Promise<App | null> {
       client.releaseCamera();
     },
     renderStats: () => client.renderStats() as RenderStats,
+    renderers: () => client.renderers() as string[],
+    upscalers: () => client.upscalers() as string[],
+    renderer: () => client.renderer(),
+    setRenderer: (name, compare) => {
+      const ok = client.setRenderer(name, compare);
+      showRenderer();
+      return ok;
+    },
+    compare: () => client.compareState() as CompareState | null,
+    setCompare: (view, divider) => {
+      client.setCompare(view, divider);
+    },
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,
@@ -691,9 +788,7 @@ async function makeWorld(
   launch: Extract<Launch, { kind: 'new' | 'regenerate' }>,
 ): Promise<string | { message: string }> {
   if (launch.kind === 'new') {
-    const type = (WORLD_TYPES as readonly string[]).includes(launch.type)
-      ? (launch.type as CreatableType)
-      : 'terrain';
+    const type = creatableType(launch.type);
     const world = index.create(
       { name: cleanName(launch.name, 'New world'), type, seed: parseSeed(launch.seed) },
       Date.now(),
@@ -782,24 +877,18 @@ function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
 async function connect(app: App): Promise<void> {
   const status = element('net-status', HTMLDivElement);
   const params = new URLSearchParams(location.search);
-  let launch = launchOf(location.search);
+  const launch = launchOf(location.search);
   if (launch.kind === 'menu') {
     openMainMenu(app, params.get('say') ?? undefined);
     return;
   }
 
-  // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1).
+  // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1). The menu's
+  // new and regenerated worlds were made before the client started (routeMadeWorld).
   const index = new WorldIndex(storage());
-  // The menu's new and regenerated worlds are this build's to make (RELEASES.md §5); then they are
-  // played as any world, the address saying so (a reload continues it rather than making another).
   if (launch.kind === 'new' || launch.kind === 'regenerate') {
-    const id = await makeWorld(index, launch);
-    if (typeof id !== 'string') {
-      openMainMenu(app, id.message);
-      return;
-    }
-    history.replaceState(null, '', withRoute(location.search, { play: id }));
-    launch = { kind: 'play', id };
+    openMainMenu(app);
+    return;
   }
   let localWorld: LocalWorld | null = null;
   let worldName = 'Local world';
@@ -915,12 +1004,32 @@ async function connect(app: App): Promise<void> {
 
 // The main menu needs no game client (nor WebGPU): it opens at once. Anything else starts the
 // client, and shows the unsupported screen where it cannot.
+/**
+ * The menu's new and regenerated worlds are this build's to make (RELEASES.md §5), before the
+ * client starts (they need no WASM or WebGPU): the address then says `?play=<id>` at once, so a
+ * reload while the game loads continues the world rather than making another. False: it could not
+ * be made, and the menu says why.
+ */
+async function routeMadeWorld(): Promise<boolean> {
+  const launch = launchOf(location.search);
+  if (launch.kind !== 'new' && launch.kind !== 'regenerate') return true;
+  const id = await makeWorld(new WorldIndex(storage()), launch);
+  if (typeof id !== 'string') {
+    openMainMenu(null, id.message);
+    return false;
+  }
+  history.replaceState(null, '', withRoute(location.search, { play: id }));
+  return true;
+}
+
 if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();
 } else {
-  void start().then((app) => {
+  void routeMadeWorld().then(async (ok) => {
+    if (!ok) return;
+    const app = await start();
     if (app) void connect(app);
   });
 }

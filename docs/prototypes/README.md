@@ -8,9 +8,11 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 |---|---|---|---|
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
+| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 
-Both feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
-[ADR 0024](../adr/0024-adaptive-natural-blocks.md).
+The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
+[ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
+[`TREE_GROWTH.md`](../TREE_GROWTH.md) and [ADR 0033](../adr/0033-tree-growth.md).
 
 ## Adaptive Block Lab
 
@@ -41,6 +43,27 @@ Both feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) 
   entries for `overrides` in `shared/blocks/adaptive.json` (`{ "around": "+==/=.-/===", "shape",
   "facing" }`); blocks with one neighbourhood and different shapes are reported as conflicts. Paste
   them in and run `node shared/blocks/gen.mjs`, which validates them and the adjacency test.
+
+## Tree Growth
+
+- **Load a tree**: three built-in samples (prototype content: an oak-like tree with marked roles and
+  root flares, a conifer-like one without roles, a wide spreading one with a marked `trunk` and a
+  `core` knot), or paste or import a structure JSON in S1's format (`STRUCTURES.md` §3). Palette
+  values may be `{"block": ..., "role": ...}` with `wood`, `leaf`, `root`, `trunk` or `core`;
+  without a role, names with log or wood are wood and names with leaves are leaves.
+- **Skeleton**: extracted as `TREE_GROWTH.md` §2 describes, shown as nodes and links (amber trunk,
+  teal branches, red pruned, grey not grown yet); notes under the tree say where inference had to
+  guess (loops, stray wood, floating leaves).
+- **Age**: a slider in in-game days, play/pause at 10–150 days a second, and Seed, Sapling, Young,
+  Mature stops; the trunk days per metre (30), branch ratio (1/3), world speed and tip-leaf radius
+  are editable, with the real time to maturity at a 30-minute day. A badge checks that the mature
+  stage equals the model voxel for voxel.
+- **Obstacles**: click a face or the ground to place a stone; a node whose core runs into one is
+  pruned with its subtree.
+- **Variation**: a seed with Roll, and branch angle, length, droop and drop chance; the variant row
+  shows the authored tree and five seeds at full age; "Grow the variant" grows the jittered tree.
+- **Export**: the `growth` and `variants` sections as JSON (with the world's growth speed beside
+  them), or the whole structure with them and the palette roles. The state is saved in the browser.
 
 ## Updating them
 

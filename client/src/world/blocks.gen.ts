@@ -102,9 +102,9 @@ const STATES_0: readonly StateDef[] = [
   { id: 9, state: 'dwell:ladder[facing=south,flooded=true]', block: 4, values: { facing: 'south', flooded: 'true' }, look: 'ladder', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 4, shape: 0, flooded: true, placeable: false },
   { id: 10, state: 'dwell:ladder[facing=west,flooded=false]', block: 4, values: { facing: 'west', flooded: 'false' }, look: 'ladder', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 1, shape: 0, flooded: false, placeable: true },
   { id: 11, state: 'dwell:ladder[facing=west,flooded=true]', block: 4, values: { facing: 'west', flooded: 'true' }, look: 'ladder', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 1, shape: 0, flooded: true, placeable: false },
-  { id: 12, state: 'dwell:water', block: 5, values: {  }, look: 'fluid', color: 0x3fb2d6, opacity: 0.55, textures: { top: 'water', side: 'water', bottom: 'water' }, shape: 0, flooded: false, placeable: false },
+  { id: 12, state: 'dwell:water', block: 5, values: {  }, look: 'fluid', color: 0x2f86e0, opacity: 0.72, textures: { top: 'water', side: 'water', bottom: 'water' }, shape: 0, flooded: false, placeable: false },
   { id: 13, state: 'dwell:sand', block: 6, values: {  }, look: 'cube', color: 0xeed9a4, opacity: 1, textures: { top: 'sand', side: 'sand', bottom: 'sand' }, shape: 1, flooded: false, placeable: true },
-  { id: 14, state: 'dwell:sandbox_floor', block: 7, values: {  }, look: 'cube', color: 0xffffff, opacity: 1, shape: 1, flooded: false, placeable: false },
+  { id: 14, state: 'dwell:sandbox_floor', block: 7, values: {  }, look: 'cube', color: 0xffffff, opacity: 1, textures: { top: 'grid', side: 'grid', bottom: 'grid' }, shape: 1, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

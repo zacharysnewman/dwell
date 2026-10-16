@@ -5,7 +5,7 @@
 use std::sync::OnceLock;
 
 use dwell_blocks::{
-    FLUIDS, Facing, FluidInfo, SHAPES, STATES, ShapeInfo, StateId, StateInfo, Textures,
+    FLUIDS, Facing, FluidId, FluidInfo, SHAPES, STATES, ShapeInfo, StateId, StateInfo, Textures,
 };
 
 /// The look a state is drawn with (the registry's `look` name).
@@ -32,6 +32,14 @@ pub(crate) struct MaterialStyle {
     pub flooded: bool,
     /// Fluids: how far below the cell's top its surface is drawn, in cells (0 otherwise).
     pub surface_drop: f64,
+    /// The fluid whose look it is drawn with (an index into the registry's fluid table).
+    pub fluid: Option<FluidId>,
+}
+
+/// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
+/// a fluid's id, as the meshes' `fluids` stream holds it.
+pub(crate) fn fluid_value(fluid: Option<FluidId>) -> f32 {
+    fluid.map_or(crate::NO_FLUID, f32::from)
 }
 
 /// The full cube's shape: what a full face is tested against.
@@ -80,6 +88,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             .fluid
             .and_then(|f| fluids.get(usize::from(f)))
             .map_or(0.0, |f| f.surface_drop),
+        fluid: s.fluid,
     }
 }
 
@@ -101,6 +110,7 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             shape: cube_index(),
             flooded: false,
             surface_drop: 0.0,
+            fluid: None,
         })
 }
 

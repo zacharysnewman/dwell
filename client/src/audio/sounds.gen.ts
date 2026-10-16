@@ -136,6 +136,10 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "deny",
       "sound": "dwell:deny"
+    },
+    {
+      "name": "tool",
+      "sound": "dwell:ui_click"
     }
   ],
   "sets": {
@@ -262,6 +266,58 @@ export const SOUND_DATA: SoundData = {
     "Choose block": [
       "action:hotbar"
     ],
+    "Select first corner": [
+      "event:tool"
+    ],
+    "Select second corner": [
+      "event:tool"
+    ],
+    "Clear the selection": [
+      "event:tool"
+    ],
+    "Fill with the chosen block": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Hollow box of the chosen block": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Replace the targeted kind of block": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Remove the blocks": [
+      "event:tool",
+      "event:break"
+    ],
+    "Copy": [
+      "event:tool"
+    ],
+    "Paste mode on or off": [
+      "event:tool"
+    ],
+    "Paste": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Rotate / mirror the paste": [
+      "event:tool"
+    ],
+    "Undo": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Redo": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
     "Menu and settings": [
       "action:menu_open",
       "action:menu_close"
@@ -279,6 +335,15 @@ export const SOUND_DATA: SoundData = {
     ],
     "Copy block info": [
       "action:copy"
+    ],
+    "Compare view: split, blink, difference": [
+      "event:tool"
+    ],
+    "Blink: swap the sides": [
+      "event:tool"
+    ],
+    "Move the split": [
+      "ui:slider"
     ],
     "Break or place": [
       "event:break",
