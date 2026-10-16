@@ -65,6 +65,7 @@ impl W {
         self.f32s(&m.colors);
         self.f32s(&m.uvs);
         self.f32s(&m.tiles);
+        self.f32s(&m.fluids);
         self.u32s(&m.indices);
     }
     /// The marcher's bricks: a node build as words (`dwell_march::NodeBuild::to_words`).
@@ -78,6 +79,7 @@ impl W {
         self.f32s(&m.positions);
         self.f32s(&m.normals);
         self.f32s(&m.colors);
+        self.f32s(&m.fluids);
         self.u32s(&m.indices);
     }
 }
@@ -166,6 +168,7 @@ impl R<'_> {
             colors: self.f32s()?,
             uvs: self.f32s()?,
             tiles: self.f32s()?,
+            fluids: self.f32s()?,
             indices: self.u32s()?,
         })
     }
@@ -184,6 +187,7 @@ impl R<'_> {
             positions: self.f32s()?,
             normals: self.f32s()?,
             colors: self.f32s()?,
+            fluids: self.f32s()?,
             indices: self.u32s()?,
         })
     }

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-12
+- Amended by: [0028](0028-rust-port.md) (the generator emits Rust tables for `dwell-worldgen` instead of C++, and the pipeline it replaces is `dwell-worldgen`'s `terrain.rs`)
 - Resolves: Phase 14 of the implementation plan (the baseline's decision D10,
   [`BASELINE_EVALUATION.md`](../BASELINE_EVALUATION.md) §7)
 - Replaces: the hardcoded generator pipeline (`terrain.cpp`) and the generator switch

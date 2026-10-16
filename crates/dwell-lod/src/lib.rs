@@ -12,5 +12,8 @@ pub mod frustum;
 pub mod grid;
 pub mod system;
 
-pub use frustum::{Frustum, LodCamera, LodViewport, lod_viewport, vertical_fov};
+pub use frustum::{
+    FOV_SETTING_RANGE, Frustum, LodCamera, LodViewport, base_fov, lod_viewport,
+    sanitize_fov_setting, vertical_fov,
+};
 pub use system::*;

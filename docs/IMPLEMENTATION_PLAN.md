@@ -21,7 +21,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 1 — Server core, protocol, transports, local mode | ✅ Complete |
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made) |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
-| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off, super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1); outstanding: the frame-rate check on a desktop and a mobile device |
+| 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off, super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1), flight toggled by a dedicated F key instead of a double-tapped Space or Jump (owner, 2026-10-15; the touch Fly button unchanged); outstanding: the frame-rate check on a desktop and a mobile device; `package.json` raised to 0.11.13, a patch release of the 0.11 line |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; outstanding: the phone-width check |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; follow-up built: one sky sphere that turns as a unit; the owner approved the before/after and the frame time (2026-10-06) |
@@ -33,7 +33,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD bounds cache keyed per column again (near chunks above the first column's height were hidden); the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser |
-| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate |
+| 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ⏳ Not started — built in Rust after Phase 24 |
@@ -42,10 +42,13 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing), A2 (the renderer seam, compare mode, bench `--compare`) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids), then A4 (speed: 30 ms at 720p on an M1); outstanding: for A1 the owner's approval of the image differences (edges, the sea's colour, the outline), the e2e suite on CI; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7) |
-| 26 — Water and fluid looks | 🚧 In progress — W2 built (it is Phase 25's A1, built once there; the owner's approval of its image differences outstanding); W1a needs Phase 24 only; W1b–W5 build on the shared frame; W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031) done; next: S1, the structure format and its generator; S4 (worldgen placement) deferred |
-| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids), then A4 (speed: 30 ms at 720p on an M1); outstanding: A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7) |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
+| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
+| 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
+| 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
+| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -84,8 +87,23 @@ are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
 Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
 existing phases; it builds on Phase 27's structures, and its deliverables are G-ADR and G0–G4.
+On 2026-10-15 the owner asked for procedural clouds in the sky ("in the skybox, not 3D"), added as
+**Phase 31 — sky clouds** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)). It
+builds on Phase 25's A1 (the shared frame's composite pass draws the sky) and changes no world file,
+protocol or terrain. Phases 28 and 29 are taken by work on other branches (sound effects, motion
+effects).
+On 2026-10-14 the owner asked for sound effects (procedural, data-driven, every game and menu
+action): **Phase 28** ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)); it needs Phase 24
+only.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
+
+**Code names in earlier phases.** Phases 0–15 were built on the C++ server and core (CMake,
+Emscripten, Jolt, SQLite, doctest), a TypeScript sim and the Three.js client; their deliverables,
+deviations and measurements keep the file, test and tool names of that code (`core/*.h`,
+`dwell_tests`, `dwell_worldgen_inspect`, `mesher.ts`, …) as the record of what was built. Phase 24
+ported it all to one Rust workspace (ADR 0028); `ARCHITECTURE.md` §3 maps today's crates. Phases
+16 onward name the Rust crates.
 
 ---
 
@@ -620,7 +638,8 @@ Deliverables
     border faces culled only against same-level neighbours.
   - [x] Two-pass depth split at `LOD_NEAR_SPLIT_M` (far LOD pass, depth clear, near pass).
   - [x] ~~`devcam/`: free-fly dev camera~~ → creative flight for the player's body (see
-    deviations): toggled by double-tapping Space / Jump or the touch Fly button, speed scaled with
+    deviations): toggled by the F key (double-tapping Space / Jump until 2026-10-15) or the touch
+    Fly button, speed scaled with
     altitude, able to rise until the whole disc is in view; server-authoritative and predicted,
     with a `--flight everyone|ops|nobody` policy (protocol v7).
   - [x] Debug: F3 overlay shows LOD node counts per level, pending jobs, cache use and LOD bytes/s;
@@ -738,6 +757,11 @@ Deviations and additions (4c):
   limit is raised for it. The client keeps predicting while flying even where streamed terrain has
   not arrived (it deadlocked otherwise: found in the browser, `gate.test.ts` failed before the
   fix). `devcam/`, F8 and `?devcam=1` are gone; the LOD camera is the eye.
+- **Flight has its own key** (owner, 2026-10-15: "remove double jump to fly, make it a dedicated
+  button for desktop as well"). F (`dwell-game` `input::FLY_KEY`, not with Ctrl/⌘, which is the
+  browser's find) toggles flight where the world allows it; a double-tapped Space or touch Jump is
+  now two jumps, and the 300 ms double-tap window is gone. The touch Fly button is unchanged.
+  Flight is still the input frame's `fly` bit, so the protocol is unchanged.
 - **Super tall mountains** (playtest request): generator version 4 adds massifs in the cores of
   the largest ranges, crests rising a further 3,600 m (peaks ~5.3–5.6 km, ~1 % of land above
   3 km), so the whole-world view has something tall to see. Prototype relief (§6.1); version 3 is
@@ -1687,8 +1711,8 @@ Exit criteria
 **Goal:** The world extends upward into a **full hemispherical dome over the disc** (radius
 8,192 km, the disc's radius; decided by the owner, 2026-10-05), and the sky inside it is sparsely
 populated with separate floating islands, after the Aether mod's sky-island terrain (landforms
-only — no dungeons or creatures; the owner's spec of it is kept in
-[`reference/aether-floating-islands.md`](./reference/aether-floating-islands.md)), using existing
+only — no dungeons or creatures; the owner's spec of it was kept in
+`docs/reference/aether-floating-islands.md`, removed in Phase 15), using existing
 blocks only. Design: [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4.
 
 **Status:** Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features;
@@ -1843,8 +1867,8 @@ is still prototype (`ARCHITECTURE.md` §6.1).
 - **Docs in the same change.** Each phase updates `ARCHITECTURE.md` (and its sub-specs) as it
   lands, removes descriptions of what it removes, and updates status tags (`CLAUDE.md`).
 - **Determinism stays.** ADR 0010's rules (integer-hashed noise, integer wavelengths, `+ − × /`,
-  strict IEEE) hold for everything the terrain definitions can express; goldens run natively, in
-  WASM and in the client's worldgen module.
+  strict IEEE) hold for everything the terrain definitions can express; goldens run natively and
+  in WASM (the client's workers run the same `dwell-worldgen` crate, ADR 0028).
 - **Tests with the change**; bug fixes found on the way get a red → green regression test.
 - **One compatibility line.** Phases 15–18 change the terrain a seed generates, the registry and protocol
   constants: together they are a new compatibility line (`0.9.0` under today's numbering). Pushes to
@@ -1979,7 +2003,8 @@ the origin.
 - **LOD slopes** (the mesher's slope pieces, `slopePieces.ts`, `PIECE_NEAREST`) and the shape
   placement preview were cut with the slope stage and shape picking.
 - `indestructible` stays a block property with no block using it (the structural anchor of Phase 20
-  may); the `kUnbreakable` check is untested meanwhile.
+  may); the `kUnbreakable` check is untested meanwhile. *(Phase 27 S2a: the sandbox floor uses
+  it, and the check is tested.)*
 - The LOD surface's per-column data shrank from 6 floats to 4 (tints removed) and the F4 map column
   from 4 bytes to 3 (height and flags).
 
@@ -2308,22 +2333,26 @@ Deliverables
     level, slope), `fill`, `seaLevel`, `liquid` — all blocks by name.
   - `spawn` — a rule (e.g. nearest dry, level land to the origin).
 - [ ] **Generator** `shared/worldgen/gen.mjs`: validates (block names against the registry, node
-  kinds, parameter ranges, integer wavelengths), emits C++ tables and TS for tools; CI fails on
-  stale output. A **definition hash** (FNV-1a 64, like the registry hash) identifies the generator:
+  kinds, parameter ranges, integer wavelengths), emits Rust tables for `dwell-worldgen` (and TS
+  only where a TS tool reads them); CI fails on stale output. A **definition hash** (FNV-1a 64, like the registry hash) identifies the generator:
   worlds record it beside the generator version; `Welcome` carries it.
-- [ ] **Evaluator** in `server/core/worldgen`: layout → height field (4-column lattice, bilinear) →
-  fill by layers; `GenerateLod` and point queries (`ColumnAt`, `GroundY`, spawn) from the same
-  fields. Reuses the Voronoi coast distance from `continents.cpp`, parameterised.
-- [ ] **Generators are definitions**: `GeneratorFor`'s switch replaced by a definition lookup; the
-  flat world is a definition with no noise.
+- [ ] **Evaluator** in `dwell-worldgen` (replacing `terrain.rs`'s `TerrainGenerator`): layout → height
+  field (4-column lattice, bilinear) → fill by layers; `generate_lod` and point queries
+  (`column_at`, `ground_y`, `spawn_point`) from the same fields. Reuses the Voronoi coast distance
+  from `island.rs` (`IslandLayout::coast_at`), parameterised.
+- [ ] **Generators are definitions**: the version branches of `generator_for`, `air_test_for`,
+  `spawn_point_for`, `lod_generator_for` and `lod_bounds_for` (`dwell-worldgen` `lib.rs`) replaced
+  by a definition lookup; the flat world (and the sandbox's floor) is a definition with no noise.
 - [ ] **Per-face definitions** (D5): each face names a definition and a seed stream.
 - [ ] **`dwell:baseline`**: one island (D8), the 10-layer core, stone under 3–4 layers of dirt and
   grass, sand at the coast and under water, sea level `h` = 32. Tuned with the inspect tool.
-- [ ] **Tools**: `dwell_worldgen_inspect` takes a definition file (`--def path`) for height maps,
-  disc images, `view` screenshots and `bench`. Stretch: a definition editor page with a live
-  preview in `docs/prototypes/`.
+- [ ] **Tools**: a worldgen inspect tool in Rust (the C++ `dwell_worldgen_inspect` went with the C++
+  tree and has no Rust counterpart yet; a `dwell-tools` binary, ARCHITECTURE.md §6.3) that takes a
+  definition file (`--def path`) for height maps, disc images, first-person views and `bench`.
+  Stretch: a definition editor page with a live preview in `docs/prototypes/`.
 - [ ] Goldens for `dwell:baseline` (surface, coast, sea, core rows on both faces, the rim, near the
-  sphere's edge); the old generator code deleted.
+  sphere's edge; `shared/worldgen/golden`, `dwell-worldgen` `tests/golden.rs`); the old generator
+  code deleted.
 - [ ] Docs: `ARCHITECTURE.md` §6.3 rewritten (pipeline, determinism, the format);
   `WORLD_GENERATION.md` becomes the definition guide (or is folded into §6.3).
 
@@ -2334,7 +2363,7 @@ Exit criteria
   generator with a message (tests).
 - [ ] Land never lies within `rimClearance` of the rim (sampled over seeds); the origin is land.
 - [ ] Every column has its core layers on both faces and no water voxel has air below it.
-- [ ] Goldens agree natively, in WASM and in the client module.
+- [ ] Goldens agree natively and in WASM (`wasm32-wasip1`; the client's workers run the same crate).
 - [ ] Generation time per chunk and per LOD section reported against Phase 15's.
 - [ ] Manual: the owner reviews whole-disc and first-person images of both faces.
 
@@ -2357,23 +2386,28 @@ Deliverables
   geometry tests (closure, winding, volume, coverage).
 - [ ] **The table as data** (`shared/blocks/adaptive.json`): generated from the five rules, plus
   per-neighbourhood **overrides**; the generator checks shape names and runs the exhaustive no-holes
-  adjacency test; C++ and TS readers from shared vectors.
+  adjacency test; it emits the table into `dwell-blocks` (`blocks.gen.rs`), checked against shared
+  vectors (`shared/blocks/vectors.txt`, `dwell-blocks` `tests/vectors.rs`).
 - [ ] **The Shape Playground** exports overrides in that format (republished to the same link,
   `docs/prototypes/README.md`).
 - [ ] `"adaptive": true` on grass, dirt, stone and sand (block data).
-- [ ] **Meshing, collision, targeting**: derived shapes in the chunk mesher, terrain collision,
-  `RayEnterShape`, `SurfaceHeightAt`; edits re-shape and re-mesh neighbours.
+- [ ] **Meshing, collision, targeting**: derived shapes in the chunk mesher (`dwell-mesh`
+  `mesher.rs`), terrain collision (`dwell-physics` `terrain.rs`, today a collider of whole voxels),
+  `ray_enter_shape` and `surface_height_at` (`dwell-blocks` `shape.rs`); edits re-shape and re-mesh
+  neighbours (`dwell-world` `edit.rs`, `dwell-game` `chunk_stream.rs`).
 - [ ] **Terrain and LOD**: point queries, spawn and water read the shaped surface; the rule applied
-  on LOD cells; flooded shaped blocks at shores.
+  on LOD cells (`dwell-mesh` `lod_mesher.rs`); flooded shaped blocks at shores.
 - [ ] Docs: `ARCHITECTURE.md` §6.1, §6.5, §6.6; `ADAPTIVE_BLOCKS.md` reduced to rationale and tables;
   ADR 0024 as built.
 
 Exit criteria
-- [ ] The table equals the five rules plus overrides for all 6,561 neighbourhoods, in C++ and TS,
-  and reproduces every block of the owner's playground export.
+- [ ] The table equals the five rules plus overrides for all 6,561 neighbourhoods, in the generator
+  and in `dwell-blocks` (native and WASM), and reproduces every block of the owner's playground
+  export.
 - [ ] No holes between any two neighbouring derived shapes at equal height (exhaustive test).
 - [ ] Controller scenarios on every new shape (ridges, saddles, half-and-half corners, 45° ramps; no
-  launches, hops or sliding at rest), native and WASM; the divergence check passes.
+  launches, hops or sliding at rest; `dwell-physics` tests), native and WASM; the divergence check
+  (the golden trace under `wasm32-wasip1`) passes.
 - [ ] e2e: placing and breaking natural blocks re-shapes neighbours identically on two clients.
 - [ ] LOD seams against chunks checked; generation and meshing times against Phase 17's.
 - [ ] Manual: the owner walks the terrain and builds with natural blocks, comparing with the
@@ -2386,43 +2420,63 @@ Exit criteria
 **Goal:** Render with WebGPU, and make how blocks look a system: looks registered by name and
 textures described by data.
 
-**Status:** Not started. Needs Phase 15 only.
+**Status:** Not started (the look registry and textures as data). Its WebGPU half is done by
+Phase 24. Needs Phase 24.
 
-**Re-scoped by ADR 0028 (2026-10-13):** the WebGPU backend, TSL materials, the WebGL2 fallback and
-the settings menu's renderer readout are replaced by Phase 24's wgpu client (WebGPU only, WGSL). What
-remains here, after Phase 24, is the look registry and textures as data, built on wgpu; the
-deliverables below are rewritten for that when the phase starts.
+**Re-scoped by ADR 0028 (2026-10-13), a deviation:** the plan was Three's `WebGPURenderer` with TSL
+materials, an automatic WebGL2 fallback and the active backend shown in the settings menu (D4, ADR
+0027). Phase 24 replaced that renderer with the wgpu client (`dwell-client` `render/`, WebGPU only,
+WGSL shaders), so those items are done by Phase 24 or removed, as marked below. What remains is the
+look registry and textures as data, built on the wgpu renderer and WGSL. It overlaps with the
+transparent-blocks work (render modes as block data: opaque, cutout, translucent; the `cross` look),
+built on its own branch (`claude/transparent-blocks`; its phase and ADR numbers are given when it
+merges — Phase 31 and ADR 0034 went to sky clouds): that work's modes and looks are the registry's
+first entries, and whichever lands second builds on the other.
 
 Deliverables
-- [ ] **CI first**: Playwright's Chromium runs WebGPU headless (flags and a software adapter) for
-  e2e and `client/scripts/shots.ts`; a smoke test proves a WebGPU frame renders in CI.
-- [ ] **`WebGPURenderer`** behind `client/render` (async init); the WebGL2 backend as automatic
-  fallback (D4); the active backend shown in the settings menu (owner, D4) and in F3.
-- [ ] **TSL ports**: height fog and per-face light (`heightFog.ts`), the sky (`sky.ts`), chunk and
-  LOD materials, tone mapping and exposure; no GLSL left.
-- [ ] **Look registry**: each look (`cube`, `shaped`, `water`, `ladder`, …) is a module registering a
-  TSL material and a meshing style by name; `mesher.ts`'s branches on look names replaced by the
-  registry; `gen.mjs` validates block looks against it.
+- [x] **CI first**: Playwright's Chromium runs WebGPU (SwiftShader's Vulkan, headed under Xvfb) for
+  e2e and `client/scripts/shots.ts`; a smoke test proves a WebGPU frame renders in CI. *Done by
+  Phase 24* (24a's probe, `client/e2e-webgpu/probe.spec.ts` and `renderer.spec.ts`; the e2e suite
+  on CI).
+- ~~**`WebGPURenderer`** behind `client/render` (async init); the WebGL2 backend as automatic
+  fallback (D4); the active backend shown in the settings menu (owner, D4) and in F3.~~ *Removed by
+  ADR 0028*: the wgpu renderer is WebGPU only, with an "unsupported" screen instead of a fallback
+  (`ui/startupError.ts`) and no backend readout.
+- [x] ~~**TSL ports**~~ **WGSL**: height fog and per-face light, the sky, chunk and LOD materials,
+  tone mapping and exposure, with no GLSL. *Done by Phase 24* (`dwell-client` `render/shaders.rs`,
+  the sky's generated WGSL in `dwell-look`).
+- [ ] **Look registry**: each look (`cube`, `shaped`, `water`, `ladder`, …) is registered by name
+  with its WGSL pipeline and its meshing style; the `match` on look names in `dwell-mesh`
+  `style.rs` and the meshers' branches on `Look` replaced by the registry; `shared/blocks/gen.mjs`
+  validates block looks against it (today against a fixed `LOOKS` list).
 - [ ] **Texture data**: tile recipes (parametric noise: palette, scales, features) or image files in
   `shared/blocks/` (or a sibling), named by block data; the atlas built from them and sized to fit;
-  `TileName` and the painter functions removed. Stretch: a recipe editor page in `docs/prototypes/`.
-- [ ] Re-verify batched terrain, the near/far depth passes and the LOD's draw path on WebGPU.
-- [ ] Docs: `ARCHITECTURE.md` §2.1, §5; `render` interface notes; ADR 0027 as built.
+  the hardcoded tile names (`tile_rect`) and painter functions (`painter`) in `dwell-mesh`
+  `textures.rs` removed. Stretch: a recipe editor page in `docs/prototypes/`.
+- [x] Re-verify the near/far depth passes and the LOD's draw path on WebGPU. *Done by Phase 24*
+  (the wgpu renderer draws them, `e2e/lod.spec.ts`, `e2e/terrainDraw.spec.ts`); batched terrain
+  (`?batch=1`) went with the Three.js build.
+- [ ] Docs: `ARCHITECTURE.md` §5 (`render/`, `dwell-mesh`), §6.1; `BLOCK_REGISTRY.md`. ADR 0027 is
+  superseded by ADR 0028, so the registry is recorded in `ARCHITECTURE.md` (and in an ADR if it
+  settles an open decision).
 
 Exit criteria
-- [ ] e2e suites pass on WebGPU in CI, and on the WebGL2 fallback; the settings menu names the
-  backend in use on each (e2e).
+- [x] e2e suites pass on WebGPU in CI. *Done by Phase 24.* ~~And on the WebGL2 fallback; the
+  settings menu names the backend in use on each (e2e).~~ *Removed by ADR 0028.*
 - [ ] A new texture or look is added by data plus (for a look) one module — a test adds a fixture
-  look and texture without touching the mesher.
-- [ ] Screenshots match the WebGL build's look (owner review of before/after).
-- [ ] Frame time on a desktop and a phone, WebGPU against the WebGL build.
+  look and texture without touching the mesher (`dwell-mesh` tests).
+- [ ] Screenshots match the look before the registry (`client/scripts/shots.ts` on the named
+  views; owner review of before/after).
+- [ ] Frame time on a desktop and a phone, against the build before the registry (the bench,
+  `npm run bench -- --compare`).
 - [ ] Manual: Safari (macOS, iOS) and an Android device render with WebGPU.
 
 ---
 
 ## Phase 20 — Voxel Awakening (Integrity + Flood-Fill → CompoundShapes)
 
-**Goal:** Spec Phase 4. Detached structures become single Jolt bodies (§7.1).
+**Goal:** Spec Phase 4. Detached structures become single rigid bodies (Rapier, behind `dwell-physics`;
+§7.1).
 
 **Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
 until Phase 5 (multiplayer ready) was complete (2026-09-30). **Waits for Phase 25's renderer decision
@@ -2443,7 +2497,8 @@ Deliverables
   whichever phase lands first.
 - [ ] Clustering of detached components; removal from grid in the same `VoxelModification`
   (reason `Collapse`).
-- [ ] Cluster → Jolt `StaticCompoundShape` of boxes; mass/COM/inertia from material density.
+- [ ] Cluster → a Rapier compound collider of cuboids (behind `dwell-physics`'s `Physics`, so game
+  code sees no Rapier types); mass/COM/inertia from material density.
 - [ ] `NetworkEntityID` allocation; reliable `EntitySpawn` (voxel layout) / `EntityDespawn`.
 - [ ] Tier 1 snapshot replication for all clusters (tiers are introduced in Phase 21); client
   interpolation and rendering of cluster meshes; kinematic proxies in client physics worlds.
@@ -2492,7 +2547,8 @@ Deliverables
 - [ ] **Threading checkpoint (ADR 0007):** profile a browser-hosted friend world at its host
   profile's caps; if simulation-bound, plan a hosting-only threaded web build behind
   `coi-serviceworker`.
-- [ ] Cosmetic death ragdoll (Jolt `Ragdoll`, Tier 2 rules) in the client debris world; player
+- [ ] Cosmetic death ragdoll (Rapier bodies and joints behind `dwell-physics`, Tier 2 rules) in the
+  client debris world; player
   models animated from `State` (both moved from Phase 2).
 - [ ] Performance instrumentation: server tick time, active body count, bytes/sec per client;
   client frame time and debris count, shown in a debug overlay.
@@ -2522,7 +2578,8 @@ Deliverables
 - [ ] Re-bake: destroy body → write grid → rebuild chunk collision → integrity check on placed
   voxels → reliable `VoxelModification(Rebake)` + `EntityDespawn` in one batch.
 - [ ] `MAX_TIER1_BODIES` enforcement (force re-bake of oldest/smallest).
-- [ ] Persist in-flight Tier 1 bodies in the `bodies` table (ADR 0006) so a world saved mid-collapse
+- [ ] Persist in-flight Tier 1 bodies in a `bodies` table of the world's redb file (ADR 0006, ADR
+  0028 §8) so a world saved mid-collapse
   resumes it on load.
 - [ ] Soak test harness: headless bots + scripted explosions for hours; tracks body count, memory,
   tick time.
@@ -2544,15 +2601,16 @@ Deliverables
 - [ ] **Dedicated server distribution:** CI builds native binaries (Windows/macOS/Linux) and a
   Docker image per release; settings and permissions in the world database edited via admin
   commands and a server CLI (ADR 0006); ops, kick, ban by key; allow-list/password;
-  UPnP/NAT-PMP with port-forward guidance; rotating SQLite online backups; host-configurable
+  UPnP/NAT-PMP with port-forward guidance; rotating backups of the world's redb file
+  (`dwell-storage`); host-configurable
   physics and view caps. Certificate rotation, publishing each new hash to the master (5d).
-- [ ] **World export/import** (`.dwellworld`) across dedicated servers, browsers, and apps; Capacitor
-  storage VFS verified per platform.
+- [ ] **World export/import** (`.dwellworld`) across dedicated servers, browsers, and apps; the
+  browser's world storage (redb over an OPFS sync access handle) verified per Capacitor platform.
 - [ ] Versioned builds for the Electron and Capacitor shells: whether they load versions from the
   site (store policies on downloaded code, iOS in particular) or bundle one version (the web
   launcher and versioned builds themselves are Phase 6).
 - [ ] **Electron:** packaging for Windows/macOS/Linux (electron-builder), custom protocol with
-  COOP/COEP and the multithreaded sim-core build (ADR 0007),
+  COOP/COEP and a multithreaded WASM build of the Rust client and sim (wasm32 atomics, ADR 0007),
   "Host world" launching the native server; local-network discovery.
 - [ ] **Capacitor:** Android and iOS projects; check `SharedArrayBuffer` availability on the app
   scheme (threaded build if available, ADR 0007); verify WebTransport per WebView (WebRTC
@@ -2583,11 +2641,11 @@ the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-
 **Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
 builders, pool, reference marcher) done; A2 (the renderer seam, compare mode, bench `--compare`)
 built, its exit check done (compare mode with raster on both sides reports zero difference); A1
-(the shared frame and GPU timing) built, its exit check outstanding: the bench before/after is done
-(design doc §7, "A1 as built") and the picture differs slightly — antialiased edges, the sea's
-colour (water now blends in linear light), the outline no longer multisampled — which needs the
-owner's approval; the e2e suite runs on CI. A3b (the GPU march, uploads, brick jobs, telemetry) built,
-its CI run of the per-pixel test outstanding; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+(the shared frame and GPU timing) built, its exit check done: the bench before/after (design doc §7,
+"A1 as built") and the picture differs slightly — antialiased edges, the sea's colour (water now
+blends in linear light), the outline no longer multisampled — which the owner approved (2026-10-14);
+the e2e suite passes on CI. A3b (the GPU march, uploads, brick jobs, telemetry) built, its CI run of
+the per-pixel test outstanding; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2652,8 +2710,8 @@ Deliverables
   Phase 20 unblocked).
 
 Exit criteria
-- [ ] A1: bench before/after; raster screenshots match today's, or the owner approves the
-  difference.
+- [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
+  difference. (The owner approved the differences — edges, the sea's colour, the outline — 2026-10-14.)
 - [x] A2: compare mode runs with raster on both sides and reports zero difference (2026-10-15, Mac,
   Chrome on the GPU: `?local=1&seed=7&renderer=compare&compare=raster`, difference view at the
   settled spawn: 0 of 921 600 px in every class over five reads; raster against the placeholder
@@ -2696,20 +2754,24 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** In progress — W2 built (Phase 25's A1). W1a needs Phase 24 only; W1b and W3–W5 build on the shared frame (A1); W6
-needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+**Status:** In progress — W1a done (fluid looks in the registry, the surface drop and opacity read
+from them, the eye-under-fluid test in the frame uniform); W2 built (Phase 25's A1); W1b built (the
+water shader, `water_fs`, with the fluid id per vertex, the fluid buffer, the underwater fog stub and
+the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look. Next: W3; W3–W5
+build on the shared frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
 Deliverables
-- [ ] **W1a** — Fluid data: a `fluids` table in `shared/blocks/` (absorption, scatter, roughness,
+- [x] **W1a** — Fluid data: a `fluids` table in `shared/blocks/` (absorption, scatter, roughness,
   IOR, normal and wave scales, flow speed, foam, caustics, surface drop), blocks referencing a fluid
   by name (`"look": "fluid", "fluid": "dwell:water"`), validated by `gen.mjs` and emitted as a fluid
-  table; the mesher writing the fluid id per vertex and taking the surface drop from the data
+  table; the mesher taking the surface drop from the data
   (`WATER_SURFACE`, `CHUNK_WATER_DROP_M` gone); `WATER_OPACITY` from the data; the eye-submerged test
   with the 0.875 rule (the cell at `floor(eye)` liquid and, under a non-fluid cell, `frac(eye.y)`
   below the surface; the face's up) into a frame uniform, with its regression test.
-- [ ] **W1b** — The water shader (after A1): a dedicated `water_fs` with scrolling normal maps,
-  Schlick Fresnel, a GGX glint by the fluid's roughness and the sky reflection.
+- [x] **W1b** — The water shader (after A1): the mesher writing the fluid id per vertex (moved from
+  W1a), a dedicated `water_fs` with scrolling normal maps, Schlick Fresnel, a GGX glint by the
+  fluid's roughness and the sky reflection.
 - [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
 - [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
@@ -2722,11 +2784,43 @@ Deliverables
   refraction rays replace SSR and the copy on the high tiers.
 
 Exit criteria
-- [ ] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
+- [x] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
   own parameters; a bad fluid entry fails `gen.mjs` naming it; the regression test for the
   cell-against-surface mismatch (the eye 0.9 into a water cell under air is not underwater), seen
   failing first.
-- [ ] W1b: the fixture fluid drawn with its own parameters; the owner's look.
+- [x] W1b: the fixture fluid drawn with its own parameters: `test:oil`'s vertices carry its own id
+  (`dwell-mesh` `a_fluid_added_by_data_alone_…`) and its row of the fluid buffer holds its own
+  parameters (`render::water` `packs_each_fluid_at_its_id_…`); the shader validates (naga) and draws
+  in Chrome on the GPU (`npm run bench -- water-views`).
+- [ ] W1b: the owner's look (`water-views` screenshots in the PR).
+
+Deviations (W1b):
+- Beyond the plan, from the brief: the underwater fog stub (the composite reads the `water` uniform:
+  the fluid's absorption and in-scatter replace the height fog while submerged; W4 builds the rest)
+  and the water quality setting (Low, Medium, High; only Low differs in W1b — one ripple layer —
+  W5 adds the tiers' real differences).
+- The normal "maps" are procedural (gradient noise with derivatives), not textures: no assets, and
+  each layer fades by its own wavelength against the pixel's footprint, which mipmaps would do less
+  well for a scrolling, wrapped pattern.
+- `dwell:water`'s data tuned from the screenshots (prototype content): scatter `#2b9cc0` (was
+  `#1d6f8a`), opacity 0.65 (was 0.55). Then, at the owner's request for bluer water: block colour
+  `#2f86e0` (was `#3fb2d6`), scatter `#1c7ed8`, absorption [0.7, 0.28, 0.06] (was [0.45, 0.09,
+  0.06]), opacity 0.72. Then tropical (owner): scatter `#1a8ee0`, absorption [0.45, 0.12, 0.04]
+  (clear water: red goes first, so shallows over sand read turquoise once W3 grades by depth).
+
+Deviations (W1a):
+- The per-vertex fluid id moved to W1b: it changes the terrain vertex format, which Phase 25's A1
+  is restructuring, and nothing reads it before the water shader. Until then a chunk's fluids share
+  one transparent draw at `dwell:water`'s opacity.
+- A fluid's `opacity` is a field of the fluid (the fixed alpha until W3's absorption replaces it);
+  fluid blocks take it from there instead of declaring their own.
+- The fixture fluid is a test registry generated alongside the build's
+  (`shared/blocks/fixtures/` → `crates/dwell-blocks/src/fixture.gen.rs`, feature `fixture`); the
+  chunk mesher takes a registry's kinds so the test meshes `test:oil` by data alone.
+- Checked by: `client/src/world/fluids.test.ts` (bad entries fail naming the fluid and field),
+  `dwell-mesh` `a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity`, and
+  `dwell-world` `fluid::tests` (the regression: an eye 0.9 m up a water cell under air is not
+  underwater; failed against the whole-cell rule, as physics counts it, then passed).
 - [ ] W3: screenshots of shore views; bench.
 - [ ] W4: named views underwater and half in; the owner's look.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
@@ -2741,43 +2835,150 @@ Exit criteria
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR) done; next: S1, the structure format and its generator.
+**Status:** In progress — S0 (the ADR), S1 (the structure format and its generator), S2a (the floor
+and the sandbox world type), S2b (the structures store) and S3a (region edits and the region tools)
+done; outstanding for S2a: its e2e exit check; outstanding for S3: S3b (anchor, touch) and the
+sandbox e2e.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
 
 Deliverables
 - [x] **S0** — ADR 0031 (the format with a `kind` and open vocabularies, the sandbox world type, the
-  `breakable` flag, the structures store, owner-only authoring, placement deferred); the owner's
+  unbreakable floor (S2a: the existing `indestructible` property), the structures store, owner-only authoring, placement deferred); the owner's
   answers recorded (`STRUCTURES.md` §7).
-- [ ] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
+- [x] **S1** — The structure format: JSON in `shared/structures/` (version, `kind: "voxels"`, size,
   anchor, palette by block name, layers, named variant operations; capped at 32³);
   `shared/structures/gen.mjs` validation, canonical output and hash, stale check in CI; a Rust loader
   replacing `Structure::parse`; the playground converted.
-- [ ] **S2a** — The floor and the world type: the registry's `breakable` flag (default true) checked
-  by the server's edit validation; an unbreakable white floor block (e.g. `dwell:sandbox_floor`,
-  full, not placeable) appended to the registry; a `sandbox` world type (flat floor, flight on) in
-  the main menu and the launcher's new-world route.
-- [ ] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
+- [x] **S2a** — The floor and the world type: the registry's existing `indestructible` property
+  (reused instead of a new `breakable` flag) checked by the server's edit validation on Break and,
+  newly, on Place into the cell; an indestructible white floor block (`dwell:sandbox_floor`, full,
+  untextured, not placeable, not adaptive) appended to the registry; a `sandbox` world type
+  (generator 100: the flat generator with a layers parameter, in the floor block; flight on, the
+  default policy) in the main menu and the launcher's new-world route (`?new=1&type=sandbox`).
+- [x] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
   (unknown fields kept, unreadable files left alone); save a selection as a structure; export and
-  import JSON (download, clipboard).
-- [ ] **S3** — Editing tools: box select with an outline and its size, set anchor, fill, copy and
-  paste with a ghost preview, rotate and mirror, undo/redo; the region edit message (about 32³ per
-  request) with server validation and golden tests; the DOM UI.
+  import JSON (download, clipboard). *(Built: `client/src/local/structureStore.ts`, `structures.ts`,
+  the game menu's Structures page `ui/structuresPanel.ts`; the format's rules shared with `gen.mjs`
+  as `shared/structures/format.mjs`; save from the B/N selection, everything built near the player
+  or two corners; load through the region tools' paste (`RegionTools::load_clipboard`).)*
+- [x] **S3a** — Editing tools: box select with an outline and its size, fill (also hollow, replace,
+  remove), copy and paste with a ghost preview, rotate and mirror, undo/redo (`dwell-game`
+  `region_tools.rs`); the `RegionEdit` message (≤ 32³ per request, negotiated within the 0.10 line
+  by a `regionEdits` Welcome flag, ARCHITECTURE.md §10.5) with server validation
+  (`dwell-world` `region.rs`) and golden tests; the DOM UI (a status line above the hotbar, the
+  controls table).
+- [ ] **S3b** — Set anchor (moved here from S3: it belongs with saving a selection as a structure,
+  S2b); touch controls for the region tools.
 - [ ] **S4** — *Deferred (owner: decided once structures exist).* Placement in worldgen, after Phase
   17: placement rules in the terrain definition, hashed jittered-grid placement, conditions, LOD
   handling, goldens; a new ADR revisiting B10, and a new compatibility line.
 
 Exit criteria
-- [ ] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
+- [x] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
   character, wrong layer size, unknown kind or variant operation, over 32³) fail naming the entry;
-  the playground's tests pass on the converted file.
-- [ ] S2a: breaking a `breakable: false` state is rejected by the server (test); a sandbox world
-  opens on the white floor with flight on (e2e).
-- [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
-  accepts; the store's append-only test.
-- [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e); region edits
-  over the cap or outside the build volume are rejected (test).
+  the playground's tests pass on the converted file. *(Verified: `dwell-world` `tests/structures.rs`
+  — `shared/structures/test/ladder_post.json` stamps by data alone, variants are deterministic, a
+  ladder turns and mirrors with its wall, the converted playground equals the old boxes cell for
+  cell (red on a one-cell change); `shared/structures/gen.test.mjs` covers every bad entry listed and
+  the 32³ cap; the netcode suite passes on `playground.json`.)*
+- [x] S2a: breaking or replacing an indestructible state (the sandbox floor) is rejected by the
+  server (`dwell-world` test `the_sandbox_floor_cannot_be_broken_or_replaced_but_can_be_built_on`).
+- [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
+  check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
+  (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor read light grey, close
+  to the sky's fog colour, so the horizon disappeared and only placed blocks gave depth; the owner
+  approved a grid, now built (a faint line at every block edge from the `grid` tile, a stronger one
+  every 8 blocks from the `grid` look option), checked near, far and from above: the lines stay
+  readable under tone mapping, fade without shimmer at a distance, and leave the block outline
+  clear.
+- [x] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
+  accepts; the store's append-only test. *(Verified: `structureStore.test.ts` (append-only: unknown
+  fields kept through rename and save-over, broken, newer-format and invalid files never rewritten or
+  deleted); `structures.test.ts` validates an export with `gen.mjs`'s `loadDir`; browser check
+  (2026-10-15, Chrome on the GPU, `?world=sandbox`): stones built, saved as `dwell:s2b_check`
+  (2 × 2 × 2), downloaded and passed `gen.mjs`, listed after a reload, deleted, imported from the
+  file, loaded and pasted — the stones doubled.)*
+- [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e; needs S2a's
+  world type — covered natively meanwhile by `dwell-client` `game_local` and `dwell-game`
+  `region_tools` tests).
+- [x] S3: region edits over the cap or outside the build volume are rejected (`dwell-sim`
+  `tests/region_edits.rs`, `dwell-world` `region.rs` tests).
+
+Deviations (S3a): region edits leave **indestructible** cells as they are — the registry's existing
+`indestructible` flag and the same check single breaks make, not a new `breakable` flag
+(coordinator, 2026-10-14). `RegionEdit` ships without a `protocolVersion` bump: an older server
+rejects unknown messages, so it is gated by the `regionEdits` Welcome flag instead (ARCHITECTURE.md
+§10.5); a new compatibility line was not needed.
+
+Deviations (S2b):
+- **Loading uses S3's region paste**, not edits stamped at the anchor: the structure goes on the
+  region tools' clipboard in paste mode, so it is placed like a copy (ghost box, rotate, mirror, a
+  right click, undo) and stands on its bottom centre; the anchor is not used until S3b's anchor work.
+  A structure's kept (`null`) cells take what the world holds when the paste is sent.
+- **Found and fixed:** the region tools refused boxes reaching into all-air chunks ("Not loaded
+  yet"), which the client never stores; the streamer now answers what is loaded (regression test
+  `a_box_over_an_air_chunk_reads_as_loaded_air`).
+- The store needs OPFS `createWritable` on the page (no fallback where it is missing).
+
+Deviations (S1):
+- Choices are **per voxel** (each cell draws independently, hashed from the seed and the unturned
+  cell); a structure-wide pick would be a new variant operation. Mirroring (`x` or `z`) is applied
+  before rotation, and one of "none" and the listed axes is picked.
+- The playground fits the 32³ cap (22 × 6 × 14), so no box or RLE encoding was needed; its box was
+  extended north to z = 0 (kept cells) so its anchor is the world origin. RLE is not built.
+- Test fixtures are generated into a separate table (`tests/fixtures/structures.gen.rs`), so they
+  are not in the build.
+
+## Phase 29 — Motion Effects (Speed FOV and Wind)
+
+**Goal:** A "fast moving" feel (owner, 2026-10-14: "sprint wind effects and dynamic FOV
+adjustment … using shaders for VFX"): the field of view widens with the camera's speed and wind
+streaks blow past the screen's edges, from data-driven tunables
+([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)).
+
+**Status:** In progress — built and tested; outstanding: the owner's look in a browser and approval
+(and the open questions in `MOTION_EFFECTS.md`), CI. Built on Phase 25's shared frame (A1): the
+wind is part of its composite pass.
+
+**Deviation:** the owner was not asked the "ask before designing" questions first; the defaults
+chosen are recorded in `MOTION_EFFECTS.md` with the open questions.
+
+**Deliverables:**
+
+- [x] Tunables as data: `shared/look/motion.json`, validated and generated into dwell-look's
+  `motion.gen.rs` by `shared/look/gen.mjs` (`node --test shared/look/gen.test.mjs`; CI fails on
+  stale output).
+- [x] dwell-look's `motion.rs`: speed → FOV boost and wind targets (eased walk→run, log-scaled to
+  flight), per-state gains, a critically damped spring, the FOV caps, the vanishing point, resets
+  on teleport, respawn, a tool camera and the face-B turn-over, held while the menu is open.
+- [x] The frame's FOV computed once by the game from the predicted velocity and state and used by
+  the renderer (projection, sky rays, pass culling) and the LOD selection.
+- [x] The wind in the composite: procedural streaks from the vanishing point, a flight layer, an
+  edge vignette and an edge radial blur of the scene (WGSL, naga-validated).
+- [x] Settings: Speed effects (off under `prefers-reduced-motion`) and FOV boost 0–100 %, stored
+  append-only under `dwell.motion`.
+- [x] Bench scenarios `sprint-straight` and `fly-fast-turn`; the cost measured on `fly-low-fast`.
+- [x] The owner's answers (2026-10-15): a Field of view setting (60–100°, default 75°, append-only
+  `dwell.view`) as the base for the projection, the LOD and culling, with the wide-screen rule
+  derived from it (`dwell_lod::base_fov`); the boost as a zoom-out percentage of the base (+10 %
+  sprinting, +20 % at top flight speed, clamped to 120°; the boosted caps removed); the open
+  questions decided (`MOTION_EFFECTS.md`).
+
+**Exit criteria:**
+
+- [x] Unit tests: speed → target FOV, the spring, the caps, resets, the menu hold, a tunable changed
+  by data changing the effect; the settings store's append-only test.
+- [x] A local world natively: sprinting widens the view for the renderer and the LOD alike, and
+  standing settles it back; the Field of view setting is the base for both (`tests/game_local.rs`).
+- [x] Setting → base FOV at 60/75/100° (wide screens included) and the boost → effective FOV at
+  0/10/20 % (unit tests).
+- [x] Cost: `fly-low-fast --unthrottled` on this Mac's GPU, effects on against off: the composite
+  +0.2 ms GPU (p50 1.13 → 1.37 ms), no change in frame interval.
+- [ ] The owner looks at it in a browser and approves (subtle at sprint, stronger in fast flight,
+  the crosshair area clear).
 
 ## Phase 30 — Tree Growth
 
@@ -2786,7 +2987,9 @@ computed reveal of their skeleton, vary by skeleton jitter, and persist as a lay
 load, for both procedural and planted trees
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)).
 
-**Status:** In progress — G-ADR (the ADR) done; next: G0, the prototype page. Depends on Phase 27
+**Status:** In progress — G-ADR (the ADR) done; G0's page built and verified in Playwright's
+Chromium (the three samples' mature stages equal their models; findings in `TREE_GROWTH.md` §8);
+outstanding: publishing it and the owner's review of its stages and variants; next: G1. Depends on Phase 27
 (the structure format, S1, for G1; the sandbox, S2a/S3, for G2), on Phase 20 (a cut tree's crown
 becoming a body that settles and re-bakes) for G3's cuts, and on the day/night cycle, which is not
 designed yet (rates are in in-game days; a 30-minute day is assumed until it is). G0–G2 change no
@@ -2800,9 +3003,14 @@ Deliverables
   and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
   colonization; the owner's persistence model; procedural and planted trees; compatibility); the
   owner's answers recorded (`TREE_GROWTH.md` §7).
-- [ ] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
-  show its extracted skeleton, scrub the age, roll variant seeds; published, its link in
-  `docs/prototypes/`. No protocol or release impact; shows whether inferred stages look right.
+- [x] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+  show its extracted skeleton, scrub the age, roll variant seeds, place obstacles, export the
+  `growth` and `variants` sections; three sample trees whose mature stages equal their models
+  (checked in the page); verified in Playwright's Chromium (samples, ages, variants, an obstacle,
+  JSON load and errors, a phone viewport; no console errors). No protocol or release impact.
+- [ ] **G0 review** — The page published (its link in `docs/prototypes/README.md`) and the owner's
+  review of whether the inferred stages and variants look right; the owner's choices exported for
+  G1.
 - [ ] **G1** — Roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and the `growth` block in the
   structure format; skeleton extraction in `shared/structures/gen.mjs` (emitted with the canonical
   output, stale-checked in CI; bad roles or growth parameters fail naming the entry); Rust
@@ -2834,6 +3042,104 @@ Exit criteria
 
 ---
 
+## Phase 31 — Sky Clouds
+
+**Goal:** Procedural clouds drawn as part of the sky, not 3D (owner, 2026-10-15). A thin cloud deck
+at a fixed altitude has true perspective and parallax, a domain-warped noise shape, wind drift, and
+light from the sky frame's sun and moon. It is an extendable system: tunables as data, coverage one
+run-time parameter for a future weather system, and a quality setting
+([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)).
+
+**Status:** In progress. C0–C4 are built and tested, natively, in Node and in a browser on the
+GPU. Outstanding: the owner's look and answers to `CLOUDS.md` §6 (the defaults were taken without
+asking: clouds are new), CI, and a phone's frame time. Built on Phase 25's A1 (branch
+`claude/a1-shared-frame`).
+
+Deliverables
+- [x] **C0** — ADR 0034 and `CLOUDS.md` (the defaults for CLAUDE.md's questions, the model, the open
+  questions); ARCHITECTURE.md §5, §6.6 (Clouds) and §7.4.
+- [x] **C1** — The cloud deck in the composite (`dwell-look` `clouds.rs`, `cloud_wgsl`): the ray's
+  hit on a sphere-curved deck (hidden below the horizon, faded with distance and near the deck);
+  periodic value-noise fBm with a domain warp and a lattice-preserving octave transform, offsets
+  wrapped in f64 (f32-safe anywhere); octaves faded by the pixel's footprint; light from the
+  frame's sky frame and lights (self-shadow on High, silver lining, low-sun warmth, night by
+  direction); the terrain's fog toward the clear sky; face B over its own horizon.
+- [x] **C2** — Tunables as data: `shared/look/clouds.json` → `clouds.gen.rs` by
+  `shared/look/clouds.mjs` (validated, with `clouds.test.mjs`; CI regenerates and fails on a diff);
+  coverage a frame uniform (`Renderer::set_cloud_coverage`, `Client.setCloudCoverage`).
+- [x] **C3** — The Clouds setting (Off / Low / High: fewer octaves and no self-shadow on Low), High on
+  desktops and Low on touch devices, kept under `dwell.clouds` (append-only store); the drift's
+  clock is the server's tick (`world_clock.rs`).
+- [x] **C4** — Bench scenarios `clouds-high`, `-low`, `-off` (GPU cost), `-night`, `-dusk`, `-fly`
+  and `-altitude`; named views and scenarios take `settings.clouds` and `settings.skyRotation`.
+
+Exit criteria
+- [x] The deck intersection, the wrap, coverage, the quality setting, the clock and a tunable changed
+  by data are pinned by tests; the WGSL validates with Naga (alone and in the renderer's module);
+  the generator's output matches the data (`node --test shared/look/clouds.test.mjs`).
+- [x] In a browser on the GPU: clouds looking up, at the horizon, toward the sun, at night, with a
+  low sun, while flying fast (parallax and drift), fading near the deck, and over face B by day and
+  night, from screenshots.
+- [x] GPU cost measured against Off (`gpu.composite`, `--unthrottled`, `CLOUDS.md` §4).
+- [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
+- [ ] CI green, and the frame time on a phone with the default (Low).
+
+---
+
+## Phase 28 — Sound Effects
+
+**Goal:** Procedural, data-driven sound effects for every game and menu action: block sound sets
+(footsteps, landing, break, place, a refused hit), the player's movement and water, flight, the
+hotbar and the menus, with per-play variation for game sounds and none for UI sounds, spatialised
+for other players ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)).
+
+**Status:** In progress — F0–F6 built; every automated exit criterion verified (Vitest, Rust tests,
+`npm run sfx:render`) and the sounds checked playing in the built game and the main menu in Chromium
+(a local world: footsteps, jump, landing, place, break, refusal, hotbar, game menu and its tabs; the
+menu's hover, click and error). Outstanding: the owner's listening review of the WAV renders and the
+open questions (`AUDIO.md` §9). Needs Phase 24 only. Defaults chosen without the owner's
+answers (the owner gave the brief directly); open questions in `AUDIO.md` §9.
+
+Deliverables
+- [x] **F0** — `AUDIO.md` and ADR 0032 (procedural, plain Web Audio, no library; data format;
+  events from the Rust game; UI sounds without variation; volumes).
+- [x] **F1** — The sound data (`shared/sounds/dwell.json`) and `shared/sounds/gen.mjs`: validation
+  with messages, generated TS and Rust, the registry's `sound` field checked by
+  `shared/blocks/gen.mjs`, CI stale check.
+- [x] **F2** — Rust sound events (`dwell-game` `sound.rs`): footsteps by gait stride, climbing,
+  swimming, landing, jump, water enter/exit, crouch, sprint, slide, flight rise/dive, local and
+  remote edits, refused edits; `takeSounds` and `listener` on the JS API.
+- [x] **F3** — The synth, variation and mixer (`client/src/audio/`): the vocabulary, seeded
+  variation, buses, room reverb, limiter, spatial playback, autoplay unlock, mute when hidden.
+- [x] **F4** — Game actions and menus: event playback in the game page; action sounds (hotbar,
+  flight, game menu, F3/F4/F6, touch mode); delegated UI sounds on the main menu (launcher too) and
+  the game menu; the controls coverage test.
+- [x] **F5** — Master, Effects and Interface volume sliders (append-only `dwell.audio` store).
+- [x] **F6** — Offline renders (`npm run sfx:render`): every sound rendered in Chromium, checked
+  (non-silent, peak < 1.0, sensible length) and written to WAV, with footstep sequences and
+  break/place variations.
+
+Exit criteria
+- [x] A new sound set and block mapping work by data alone (Vitest); bad entries fail naming the
+  entry.
+- [x] Rust tests: footstep cadence from distance, landing intensity from impact speed, edit events
+  (echo suppressed, remote spatial, refused hit).
+- [x] Every controls-table action has a sound mapping (Vitest); a new button gets the UI click
+  without wiring (Vitest).
+- [x] Every render is non-silent, peaks below 1.0 and has a sensible length.
+- [ ] The owner listens to the WAV renders and approves them.
+
+Deviations
+- The levels of the sounds were set by measuring the renders (A-weighted loudness per category:
+  footsteps, landings, breaks, places, hits, player and UI sounds) rather than by ear; the owner's
+  listening review may retune them in the data.
+- Chat and screenshots do not exist yet, so they have no sounds; the coverage test asks for them
+  when they join the controls table.
+- The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
+  its own make-up gain, which pushed sequences past full scale in the renders.
+
+---
+
 ## Cross-Cutting Work (every phase)
 
 - Materials and terrain style are prototype placeholders (ARCHITECTURE §6.1): phases build and
@@ -2841,5 +3147,6 @@ Exit criteria
 
 - Keep `docs/ARCHITECTURE.md` current (required by `CLAUDE.md`).
 - Record significant choices as ADRs in `docs/adr/`.
-- Every new message type gets golden-byte tests in both TS and C++.
+- Every new message type gets golden-byte tests in `dwell-protocol` (`tests/vectors.rs`) against
+  `shared/protocol/vectors.txt` from the independent Python encoder (`make_vectors.py`).
 - CI must stay green; the Pages deployment must stay playable in local mode.

@@ -441,13 +441,18 @@ pub fn flat_lod_bounds(level: i32, i: i32, k: i32) -> LodBounds {
 
 /// The flat test world's sections.
 pub fn generate_flat_lod(c: LodCoord, cells: &mut LodCells) -> LodKind {
+    generate_flat_lod_of(&FlatLayers::standard(), c, cells)
+}
+
+/// The sections of a flat world of `layers` (the voxels' [`generate_flat_chunk_of`]).
+pub fn generate_flat_lod_of(layers: &FlatLayers, c: LodCoord, cells: &mut LodCells) -> LodKind {
     cells.clear();
     cells.resize(VOLUME, M.air);
     let kind = kind_from_bounds(c, &flat_lod_bounds(c.level, c.i, c.k));
     match kind {
         LodKind::Empty => return kind,
         LodKind::Buried => {
-            cells.fill(M.stone);
+            cells.fill(layers.base);
             return kind;
         }
         LodKind::Content => {}
@@ -465,16 +470,9 @@ pub fn generate_flat_lod(c: LodCoord, cells: &mut LodCells) -> LodKind {
             for y in -1..=SECTION_CELLS {
                 let a = o.y + i64::from(y) * cell;
                 let m = if a < i64::from(MIDPLANE_Y) {
-                    M.stone // below the world: the apron reads solid, so the floor is not drawn
+                    layers.base // below the world: the apron reads solid, so the floor is not drawn
                 } else if a < 0 {
-                    let depth = -cell - a;
-                    if depth == 0 {
-                        M.grass
-                    } else if depth < 4 {
-                        M.dirt
-                    } else {
-                        M.stone
-                    }
+                    layers.at_depth(-cell - a)
                 } else {
                     M.air
                 };

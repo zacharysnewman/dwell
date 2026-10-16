@@ -10,7 +10,7 @@ import { GENERATORS, RETIRED_PLAYGROUND } from './world';
 export type CreatableType = keyof typeof GENERATORS;
 /** Types in the index: `playground` only on worlds of versions before 0.9 (append-only store). */
 export type WorldType = CreatableType | 'playground';
-export const WORLD_TYPES: readonly CreatableType[] = ['terrain', 'flat'];
+export const WORLD_TYPES: readonly CreatableType[] = ['terrain', 'flat', 'sandbox'];
 const STORED_TYPES: readonly WorldType[] = [...WORLD_TYPES, 'playground'];
 
 export interface WorldMeta {
@@ -48,12 +48,18 @@ const LEGACY_ID = /^local-g(\d+)-s(\d+)$/;
 /** The world type of a generator version (a retired version counts as its type's current one). */
 export function typeOfGenerator(generatorVersion: number): WorldType {
   if (generatorVersion === GENERATORS.flat) return 'flat';
+  if (generatorVersion === GENERATORS.sandbox) return 'sandbox';
   if (generatorVersion === RETIRED_PLAYGROUND) return 'playground';
   return 'terrain';
 }
 
 export function typeLabel(type: WorldType): string {
-  return { terrain: 'Terrain', playground: 'Playground', flat: 'Flat' }[type];
+  return { terrain: 'Terrain', playground: 'Playground', flat: 'Flat', sandbox: 'Sandbox' }[type];
+}
+
+/** The type a new world asked for by name (`?new=1&type=…`): one this build makes, else terrain. */
+export function creatableType(name: string): CreatableType {
+  return (WORLD_TYPES as readonly string[]).includes(name) ? (name as CreatableType) : 'terrain';
 }
 
 /** FNV-1a 32-bit hash of a string's UTF-16 code units: text seeds. */

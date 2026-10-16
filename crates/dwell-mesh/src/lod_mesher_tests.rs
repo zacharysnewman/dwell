@@ -244,6 +244,10 @@ fn draws_water_apart_hides_it_against_water_and_colours_faces_flat() {
     }
     let m = mesh(&cells);
     assert_eq!(quads(&m.water), 1); // only the surface: sides hidden by the apron's water
+    // Its vertices carry water's fluid id (the water shader's parameters); other meshes none.
+    let id = f32::from(dwell_blocks::fluid("dwell:water").expect("water"));
+    assert_eq!(m.water.fluids, [id; 4]);
+    assert!(m.opaque.fluids.is_empty());
     // The sand's sides are hidden by the apron's sand (skirts); water never gets skirts.
     for face in [0, 1, 4, 5] {
         assert_eq!(quads(&m.skirts[face]), 1);
@@ -353,8 +357,10 @@ fn draws_a_sea_floor_inside_a_water_cell_under_a_water_surface_at_the_chunks_wat
     let m = mesh_with(&cells, &surface, water_drop);
     assert_eq!(ys(&m.water, 1, 1.0), [1.0 - water_drop]);
     assert_eq!(ys(&m.opaque, 1, 1.0), [0.5]);
-    // One merged rectangle of water over the section.
+    // One merged rectangle of water over the section, tagged with water's fluid id.
     assert_eq!(quads(&m.water), 1);
+    let id = f32::from(dwell_blocks::fluid("dwell:water").expect("water"));
+    assert_eq!(m.water.fluids, [id; 4]);
 }
 
 mod water_above_sea_level {
