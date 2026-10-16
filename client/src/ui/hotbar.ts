@@ -26,6 +26,8 @@ export class Hotbar {
   private readonly root: HTMLDivElement;
   private readonly slots: HTMLButtonElement[] = [];
   private readonly label: HTMLDivElement;
+  /** The region tools' line (selection size, paste mode, the last tool's message). */
+  private readonly region: HTMLDivElement;
   private selected = 0;
 
   constructor(
@@ -37,6 +39,9 @@ export class Hotbar {
     this.root.id = 'hotbar';
     this.label = document.createElement('div');
     this.label.id = 'hotbar-label';
+    this.region = document.createElement('div');
+    this.region.id = 'hotbar-region';
+    this.region.hidden = true;
     const row = document.createElement('div');
     row.className = 'hotbar-slots';
     palette.forEach((slot, i) => {
@@ -63,7 +68,7 @@ export class Hotbar {
       this.slots.push(b);
       row.append(b);
     });
-    this.root.append(this.label, row);
+    this.root.append(this.region, this.label, row);
     parent.append(this.root);
     this.refresh();
   }
@@ -76,6 +81,13 @@ export class Hotbar {
     this.selected = slot;
     this.slots.forEach((b, i) => b.classList.toggle('selected', i === slot));
     this.refresh();
+  }
+
+  /** The region tools' status line (`Client.hud().region`); hidden when empty. */
+  setRegion(text: string): void {
+    if (this.region.textContent === text) return;
+    this.region.textContent = text;
+    this.region.hidden = text === '';
   }
 
   private refresh(): void {

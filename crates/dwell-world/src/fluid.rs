@@ -1,0 +1,162 @@
+//! Whether the camera's eye is under a fluid's drawn surface (docs/WATER_RENDERING.md §1, §3
+//! "Underwater"): what the renderer's underwater effects key on. Physics' `submerged_fraction`
+//! counts whole liquid cells as wet, but the chunk mesher draws a fluid's top `surfaceDrop` below
+//! its cell's top when the cell above is not the same fluid; going by the cell alone would put the
+//! view underwater that much early. On face B "up" is −y (BIFACIAL_WORLD.md §3), so the surface
+//! there lies `surfaceDrop` above the cell's bottom, as the mirrored chunk mesh draws it.
+
+use dwell_blocks::{FLUIDS, FluidId, StateId, info};
+
+use crate::{Face, face_of_y};
+
+/// The eye under a fluid's surface.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EyeFluid {
+    pub fluid: FluidId,
+    /// World y of the drawn surface above the eye (on face B, below it in world y), when it is
+    /// within [`SURFACE_SCAN`] cells; deeper, the top of the last cell scanned.
+    pub surface_y: f64,
+}
+
+/// How many cells above the eye's are searched for the surface.
+pub const SURFACE_SCAN: i32 = 64;
+
+/// The fluid a state holds: its own (the `fluid` look), or for a flooded shaped state the fluid
+/// of `dwell:water`, whose look the chunk mesher fills flooded cells with.
+pub fn fluid_of(id: StateId) -> Option<FluidId> {
+    let s = info(id);
+    if let Some(f) = s.fluid {
+        return Some(f);
+    }
+    if !s.flooded {
+        return None;
+    }
+    dwell_blocks::state("dwell:water").and_then(|w| info(w).fluid)
+}
+
+/// The fluid whose drawn surface the eye is under, if any. `voxel` reads the state at a cell.
+pub fn eye_fluid(
+    eye: [f64; 3],
+    mut voxel: impl FnMut(i32, i32, i32) -> StateId,
+) -> Option<EyeFluid> {
+    let [x, y, z] = eye.map(|v| v.floor() as i32);
+    let fluid = fluid_of(voxel(x, y, z))?;
+    let up = match face_of_y(i64::from(y)) {
+        Face::A => 1,
+        Face::B => -1,
+    };
+    // The topmost cell of this fluid in the eye's column (toward the face's up).
+    let mut top = y;
+    while (top - y).abs() < SURFACE_SCAN && fluid_of(voxel(x, top + up, z)) == Some(fluid) {
+        top += up;
+    }
+    let drop = FLUIDS[usize::from(fluid)].surface_drop;
+    let covered = fluid_of(voxel(x, top + up, z)) == Some(fluid);
+    let surface_y = match (up, covered) {
+        (1, false) => f64::from(top) + 1.0 - drop,
+        (1, true) => f64::from(top) + 1.0,
+        (_, false) => f64::from(top) + drop,
+        (_, true) => f64::from(top),
+    };
+    let under = if up > 0 {
+        eye[1] < surface_y
+    } else {
+        eye[1] > surface_y
+    };
+    under.then_some(EyeFluid { fluid, surface_y })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MIDPLANE_Y;
+    use dwell_blocks::{AIR, require};
+    use std::collections::HashMap;
+
+    struct Column(HashMap<(i32, i32, i32), StateId>);
+
+    impl Column {
+        fn new(cells: &[(i32, &str)]) -> Self {
+            Self(
+                cells
+                    .iter()
+                    .map(|&(y, s)| ((0, y, 0), require(s)))
+                    .collect(),
+            )
+        }
+        fn at(&self, eye: [f64; 3]) -> Option<EyeFluid> {
+            eye_fluid(eye, |x, y, z| *self.0.get(&(x, y, z)).unwrap_or(&AIR))
+        }
+    }
+
+    fn water() -> FluidId {
+        dwell_blocks::fluid("dwell:water").expect("dwell:water")
+    }
+
+    #[test]
+    fn an_eye_above_the_drawn_surface_of_a_water_cell_under_air_is_not_submerged() {
+        // Regression (WATER_RENDERING.md §1): physics counts the whole cell wet, but the surface is drawn
+        // 1/8 below its top; 0.9 m up the cell the eye is above the water.
+        let col = Column::new(&[(9, "dwell:stone"), (10, "dwell:water")]);
+        assert_eq!(col.at([0.5, 10.9, 0.5]), None);
+        assert_eq!(
+            col.at([0.5, 10.8, 0.5]),
+            Some(EyeFluid {
+                fluid: water(),
+                surface_y: 10.875
+            })
+        );
+    }
+
+    #[test]
+    fn water_above_keeps_the_whole_cell_wet_and_the_surface_is_found_above() {
+        let col = Column::new(&[
+            (10, "dwell:water"),
+            (11, "dwell:water"),
+            (12, "dwell:water"),
+        ]);
+        let at = col.at([0.5, 10.99, 0.5]).expect("under");
+        assert_eq!(at.surface_y, 12.875);
+        assert_eq!(col.at([0.5, 12.9, 0.5]), None);
+    }
+
+    #[test]
+    fn air_and_solids_are_dry_and_flooded_cells_are_water() {
+        let col = Column::new(&[
+            (10, "dwell:stone"),
+            (12, "dwell:ladder[facing=north,flooded=true]"),
+        ]);
+        assert_eq!(col.at([0.5, 10.5, 0.5]), None);
+        assert_eq!(col.at([0.5, 11.5, 0.5]), None);
+        assert_eq!(col.at([0.5, 12.5, 0.5]).map(|e| e.fluid), Some(water()));
+    }
+
+    #[test]
+    fn face_b_is_the_mirror_image_its_surface_above_the_cells_bottom() {
+        // Face B's up is −y: the cell "above" is y − 1 and the surface is 1/8 above the bottom.
+        let y = MIDPLANE_Y - 20;
+        let col = Column::new(&[(y + 1, "dwell:stone"), (y, "dwell:water")]);
+        let yf = f64::from(y);
+        assert_eq!(col.at([0.5, yf + 0.1, 0.5]), None);
+        assert_eq!(
+            col.at([0.5, yf + 0.2, 0.5]),
+            Some(EyeFluid {
+                fluid: water(),
+                surface_y: yf + 0.125
+            })
+        );
+        let deep = Column::new(&[(y, "dwell:water"), (y - 1, "dwell:water")]);
+        assert_eq!(
+            deep.at([0.5, yf + 0.01, 0.5]).map(|e| e.surface_y),
+            Some(yf - 1.0 + 0.125)
+        );
+    }
+
+    #[test]
+    fn deeper_than_the_scan_reports_the_last_cell_scanned() {
+        let cells: Vec<(i32, &str)> = (0..200).map(|y| (y, "dwell:water")).collect();
+        let col = Column::new(&cells);
+        let at = col.at([0.5, 0.5, 0.5]).expect("under");
+        assert_eq!(at.surface_y, f64::from(SURFACE_SCAN) + 1.0);
+    }
+}

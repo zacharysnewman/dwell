@@ -12,19 +12,32 @@ use std::sync::{Arc, Mutex};
 
 use dwell_world::lod::{self, LodBoundsFn, LodGenerator};
 use dwell_world::{
-    AirChunkTest, CHUNK_SIZE, ChunkCoord, ChunkGenerator, DiscOverlap, GENERATOR_TERRAIN,
-    SEA_LEVEL, WORLD_MAX_Y, chunk_disc_overlap, face_local_chunk, face_of_chunk_y, flat_generator,
-    flat_is_air,
+    AirChunkTest, CHUNK_SIZE, ChunkCoord, ChunkGenerator, DiscOverlap, FlatLayers,
+    GENERATOR_SANDBOX, GENERATOR_TERRAIN, SEA_LEVEL, WORLD_MAX_Y, chunk_disc_overlap,
+    face_local_chunk, face_of_chunk_y, flat_generator, flat_generator_of, flat_is_air,
 };
 
 pub use bifacial::BifacialTerrain;
 pub use terrain::TerrainGenerator;
 
-/// The chunk generator for a generator version; unknown versions fall back to the flat world.
+/// The block the structure sandbox (`GENERATOR_SANDBOX`) is made of, by name (block data
+/// `"indestructible": true`, so its ground stays to build on).
+pub const SANDBOX_FLOOR: &str = "dwell:sandbox_floor";
+
+/// The sandbox's layers: the flat world, all floor block.
+pub fn sandbox_layers() -> FlatLayers {
+    FlatLayers::of(dwell_blocks::require(SANDBOX_FLOOR))
+}
+
+/// The chunk generator for a generator version; unknown versions fall back to the flat world. The
+/// sandbox has the flat world's shape (its air test, spawn and LOD bounds) in its floor block.
 pub fn generator_for(version: u32, world_seed: u64) -> ChunkGenerator {
     if version == GENERATOR_TERRAIN {
         let terrain = Arc::new(BifacialTerrain::new(world_seed));
         return Arc::new(move |coord, chunk| terrain.generate(coord, chunk));
+    }
+    if version == GENERATOR_SANDBOX {
+        return flat_generator_of(sandbox_layers());
     }
     flat_generator()
 }
@@ -69,6 +82,10 @@ pub fn lod_generator_for(version: u32, world_seed: u64) -> LodGenerator {
     if version == GENERATOR_TERRAIN {
         let terrain = Arc::new(BifacialTerrain::new(world_seed));
         return Arc::new(move |c, cells| terrain.generate_lod(c, cells, None, None));
+    }
+    if version == GENERATOR_SANDBOX {
+        let layers = sandbox_layers();
+        return Arc::new(move |c, cells| lod::generate_flat_lod_of(&layers, c, cells));
     }
     Arc::new(lod::generate_flat_lod)
 }

@@ -74,6 +74,39 @@ fn decoded_fields_are_the_vectors_values() {
     };
     assert_eq!(c.voxels.len(), CHUNK_VOLUME);
     assert!(c.voxels.iter().all(|&m| m == c.voxels[0]));
+    let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_paste")) else {
+        panic!("region_edit_paste")
+    };
+    assert_eq!(r.op, RegionEditOp::Paste);
+    assert_eq!(r.min, [-3, 70, 8_191_990]);
+    assert_eq!(r.size, [2, 3, 2]);
+    assert_eq!(r.cells, [1, 1, 1, 1, 4, 0, 4, 0, 0, 0, 0, 0]);
+    // Layer order: x fastest, then z, then y.
+    assert_eq!(r.cells[RegionEdit::cell_index(r.size, 0, 1, 1)], 4);
+    let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_replace")) else {
+        panic!("region_edit_replace")
+    };
+    assert_eq!(
+        (r.op, r.from, r.material, r.size),
+        (RegionEditOp::Replace, 2, 6, [1, 32, 2])
+    );
+}
+
+#[test]
+fn region_edits_of_the_largest_box_round_trip() {
+    let side = region_edit::MAX_SIDE as u8;
+    let mut m = RegionEdit {
+        op: RegionEditOp::Paste,
+        min: [i32::MIN, 0, i32::MAX - 31],
+        size: [side; 3],
+        material: 0,
+        from: 0,
+        cells: Vec::new(),
+    };
+    m.cells = (0..m.volume()).map(|i| (i % 7 + i / 5000) as u16).collect();
+    let bytes = Message::RegionEdit(m.clone()).encode();
+    assert!(bytes.len() <= MAX_RELIABLE_MESSAGE_BYTES);
+    assert_eq!(Message::decode(&bytes), Some(Message::RegionEdit(m)));
 }
 
 #[test]

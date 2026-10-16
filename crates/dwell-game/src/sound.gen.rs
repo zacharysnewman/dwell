@@ -21,10 +21,11 @@ pub enum SoundKind {
     Rise = 14,
     Dive = 15,
     Deny = 16,
+    Tool = 17,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 17] = [
+    pub const ALL: [SoundKind; 18] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -42,6 +43,7 @@ impl SoundKind {
         SoundKind::Rise,
         SoundKind::Dive,
         SoundKind::Deny,
+        SoundKind::Tool,
     ];
 
     /// The event's name in the data.
@@ -64,6 +66,7 @@ impl SoundKind {
             SoundKind::Rise => "rise",
             SoundKind::Dive => "dive",
             SoundKind::Deny => "deny",
+            SoundKind::Tool => "tool",
         }
     }
 
@@ -87,6 +90,7 @@ impl SoundKind {
             SoundKind::Rise => Some((2.0, 30.0)),
             SoundKind::Dive => Some((2.0, 30.0)),
             SoundKind::Deny => None,
+            SoundKind::Tool => None,
         }
     }
 }

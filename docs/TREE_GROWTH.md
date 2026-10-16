@@ -1,7 +1,8 @@
-# Proposal: growing and varying hand-built trees
+# Growing and varying hand-built trees
 
-**Status:** investigated 2026-10-14, not adopted. Owner questions answered (§7); ready for an ADR. Builds on the adopted
-structure system ([`docs/STRUCTURES.md`](../STRUCTURES.md), ADR 0031, Phase 27).
+**Status:** Adopted (ADR 0033), 2026-10-14 ([ADR 0033](./adr/0033-tree-growth.md)). Built as Phase 30 of the
+[implementation plan](./IMPLEMENTATION_PLAN.md) (steps G-ADR, G0–G4). Owner answers in §7. Builds on the
+structure system ([`STRUCTURES.md`](./STRUCTURES.md), ADR 0031, Phase 27).
 
 The ask: take a custom-built tree model and extrapolate from it so it "grows" over time, and produce
 variation from it.
@@ -138,8 +139,8 @@ prototype content. The 32³ cap and JSON fields must match what S1 actually buil
 | **G0** | A prototype page (`docs/prototypes/tree-growth.html`): load an exported structure, show the skeleton, scrub age, roll variant seeds. No protocol or release impact; shows whether inferred stages look right |
 | **G1** | Roles and `growth` in the format; skeleton extraction in `gen.mjs`; Rust `stage_voxels(structure, seed, age)`; tests: final stage equals the model, a fixture tree by data alone |
 | **G2** | Sandbox "preview growth" command (after S2a/S3) |
-| **G3** | Planting in the world: the `growers` table (new compatibility line), scheduled catch-up, the `Growth` reason, pruning on obstacles and cuts |
-| **G4** | Jitter variants; space colonization as a second engine if wanted |
+| **G3** | Growth in the world (§5a): the tree layer composed at chunk load, tombstones, the `growers` table, scheduled catch-up from world time, the `Growth` reason, pruning on obstacles and cuts, the per-world speed setting (a new compatibility line; the owner decides the bump) |
+| **G4** | Jitter variants (space colonization not needed for now, owner §7 #5; a second engine would need an ADR) |
 
 **Risks**: ambiguous skeletons on chunky hand-sculpted trunks (author marks fix it); adaptive blocks
 (Phase 18) reshaping wood or leaves; trees across chunk borders need all their chunks loaded to grow
