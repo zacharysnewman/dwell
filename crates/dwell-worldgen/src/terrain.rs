@@ -1,6 +1,6 @@
 //! Procedural terrain, generator version 13 (ARCHITECTURE.md §6.3): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
-//! version 13 (Phase 32) the decorations of `shared/worldgen/decorations.json` one cell above the
+//! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
 //! ground (tall grass; `decorations.rs`). A chunk is a
 //! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
 //! natively or in WASM, bit-identically (noise.rs, ADR 0010).

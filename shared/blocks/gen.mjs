@@ -120,7 +120,7 @@ const renderOf = (def) => def.render ?? ((def.look ?? 'cube') === 'fluid' ? 'tra
 function validateRender(id, def, look, isAir) {
   const render = renderOf(def);
   if (!RENDER_MODES.includes(render)) fail(`${id}: render must be one of ${RENDER_MODES.join(', ')} (got ${render})`);
-  const opacity = def.opacity ?? 1;
+  const opacity = def.opacity ?? fluids.find((f) => f.name === def.fluid)?.opacity ?? 1;
   if (!inRange(opacity, 0, 1)) fail(`${id}: opacity must be in [0, 1]`);
   if (!isAir && opacity < 1 && render !== 'translucent') fail(`${id}: opacity ${opacity} needs "render": "translucent"`);
   if (render === 'cutout' && !def.textures) fail(`${id}: render cutout needs textures (a tile with transparent texels)`);

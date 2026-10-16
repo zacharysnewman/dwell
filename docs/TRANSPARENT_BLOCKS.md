@@ -1,8 +1,8 @@
 # Dwell — Transparent Blocks: Render Modes, Cross Geometry and Tall Grass
 
-> **Status: [built, Phase 32; the owner's look outstanding]** — built on `claude/transparent-blocks` with the defaults in
+> **Status: [built, Phase 33; the owner's look outstanding]** — built on `claude/transparent-blocks` with the defaults in
 > §2 (CLAUDE.md's design questions were not put to the owner first); the owner's answers, which
-> changed some defaults, are in §8. Decision record: [ADR 0035](./adr/0035-render-modes-and-cross-geometry.md).
+> changed some defaults, are in §8. Decision record: [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md).
 > The built mechanisms are described in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 (render modes,
 > the cross look, placement rules), §6.5 (edits) and §5 (`dwell-mesh`, `render/`).
 
@@ -134,7 +134,7 @@ set is the grass block's (`dwell:grass`).
 3. **Leaves, glass and ice** will use `cutout` and `translucent` — **future work**: not added now
    (a cutout cube and a translucent cube already work by data, shown by the test fixtures).
 4. **An editor page** for blocks like these (jitter, wind, tiles) is wanted later — **future work**
-   (in the plan, Phase 32's follow-ups).
+   (in the plan, Phase 33's follow-ups).
 5. **Wind sway setting**: yes — a **Plant sway** toggle in the settings menu's Motion group, kept in
    the motion record (append-only), off by default when the browser prefers reduced motion (§4).
 6. **Plants under water**: only plants made for it — block data **`medium`** (§5): tall grass is an
@@ -186,7 +186,7 @@ fails on a diff, and runs its node tests):
   rule lives in its own file beside the generator's goldens; it is one data entry the terrain
   definitions take over when they come.
 - **B10**: the owner's decision is a partial reversal of the baseline's "no special terrain
-  features" for plants only (ADR 0035).
+  features" for plants only (ADR 0036).
 
 Screenshots: a grassy hillside near and far (the PR).
 

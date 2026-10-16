@@ -31,7 +31,7 @@ simpler basis made of systems to build on. The **baseline** (owner, 2026-10-12):
 | B7 | Slopes connecting natural terrain, as in the Shape Playground |
 | B8 | WebGPU, not WebGL, for performance and future shaders |
 | B9 | No biomes |
-| B10 | No special terrain features: no trees, rocks, caves, rivers, etc. (**partly reversed for plants only**, owner 2026-10-16, [ADR 0035](./adr/0035-render-modes-and-cross-geometry.md): the terrain grows tall grass) |
+| B10 | No special terrain features: no trees, rocks, caves, rivers, etc. (**partly reversed for plants only**, owner 2026-10-16, [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md): the terrain grows tall grass) |
 | B11 | Blocks: grass, dirt, stone, sand, water, ladder — remove the rest |
 
 ### 1.1 What "aligned" means

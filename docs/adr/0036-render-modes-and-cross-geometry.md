@@ -1,4 +1,4 @@
-# 0035. Render modes as block data, a cross geometry, and placement rules as data
+# 0036. Render modes as block data, a cross geometry, and placement rules as data
 
 - Status: Accepted (the owner's answers, 2026-10-16: [`TRANSPARENT_BLOCKS.md`](../TRANSPARENT_BLOCKS.md) §8)
 - Revisits: [0025](0025-baseline-world.md)'s baseline decision **B10** (no special terrain

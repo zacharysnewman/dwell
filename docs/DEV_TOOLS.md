@@ -54,7 +54,7 @@ Output per scenario, in `OUT/<scenario>/`:
 ```
 
 `seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
-`fog`, `detail`, `exposure`, `skyRotation` — 180 is night — `clouds`, `water`, and `motion` —
+`fog`, `detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`) —
 `{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
 build),
 `debug` (`?debug=1`), `scale`, `renderer` (`?renderer=`: a renderer by name; a build without the
@@ -75,7 +75,9 @@ fields, ranges and names fail with the entry named):
 | `record {name}` | saves everything above under `name` |
 | `shot {name}` | screenshot |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
-| `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot` or trace steps inside |
+| `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
+| `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
+| `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
 Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
 §5), besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and `jump-onto-block`: `look-horizon`
@@ -218,7 +220,7 @@ What is recorded now:
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result was polled (the worker's run, the transfers and the wait for the next frame) |
-| `gpu.far`, `gpu.near`, `gpu.composite`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes, the composite with the lines over it) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
+| `gpu.far`, `gpu.near`, `gpu.far.water`, `gpu.near.water`, `gpu.composite`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes — on Medium and High water, their opaque halves, with their water halves as `gpu.*.water`, WATER_RENDERING.md §8 W3 — the composite with the lines over it) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
 
 Timer resolution: without cross-origin isolation the browser's clock is coarsened to 0.1 ms, so
 sub-0.1 ms phases read 0 or 0.1. Chrome rounds GPU timestamps to 65.536 µs unless it runs with

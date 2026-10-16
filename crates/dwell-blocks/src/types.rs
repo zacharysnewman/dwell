@@ -165,7 +165,7 @@ pub type FluidId = u8;
 pub struct FluidInfo {
     /// Namespaced name, e.g. `dwell:water`.
     pub name: &'static str,
-    /// The fixed alpha its blocks are drawn with (until absorption replaces it).
+    /// The fixed alpha its blocks are drawn with on the Low water tier (no scene copies).
     pub opacity: f32,
     /// How far below its cell's top the surface is drawn, in cells (when the cell above is not
     /// the same fluid); on face B, above its cell's bottom.
@@ -181,7 +181,18 @@ pub struct FluidInfo {
     pub flow_speed: f32,
     pub foam_depth: f32,
     pub foam_color: u32,
+    /// The caustics' brightness (0: none), their cell size (m), and the depth (m) over which
+    /// they fade to 1/e.
     pub caustics: f32,
+    pub caustic_scale: f32,
+    pub caustic_depth: f32,
+    /// σ per metre of the light the fluid scatters toward the eye: over a ray's length its lit
+    /// body (the scatter colour) replaces what is behind, at the rate of absorption + scattering.
+    pub scattering: f32,
+    /// How far (m) the scene behind shifts per unit of ripple slope (refraction).
+    pub refraction: f32,
+    /// The sun's glitter off the ripples' facets.
+    pub sparkle: f32,
 }
 
 /// One polygon of a baked shape: `count` points of `v` (metres within the cell).

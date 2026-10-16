@@ -1,5 +1,5 @@
 // The motion effects' settings (docs/MOTION_EFFECTS.md, Phase 29): speed effects on or off (the
-// FOV widening with speed and the wind streaks), the FOV boost's strength, and (Phase 32,
+// FOV widening with speed and the wind streaks), the FOV boost's strength, and (Phase 33,
 // docs/TRANSPARENT_BLOCKS.md) whether plants sway in the wind. Kept per browser under
 // their own key; the stored record is append-only (unknown fields kept on rewrite), like every
 // cross-version browser store (CLAUDE.md, RELEASES.md).

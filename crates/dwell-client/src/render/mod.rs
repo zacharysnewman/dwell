@@ -22,10 +22,10 @@ pub mod water;
 use dwell_world::hash::HashMap;
 
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
+use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
-use dwell_look::sky_frame::{SkyFrame, sky_rest};
-use dwell_look::{DEFAULT_EXPOSURE, LIGHT, hex, sanitize_exposure, srgb_to_linear};
+use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
@@ -581,6 +581,11 @@ pub struct Renderer {
     /// The scene targets as the composite and lines read them (`frame::scene_layout`).
     scene_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
+    /// The water that reads the scene (W3, Medium and High): its pipeline, drawn in each raster
+    /// scene pass's water half, and its view of the scene (`frame::under_layout`) with the sampler.
+    water_scene_pipeline: wgpu::RenderPipeline,
+    under_layout: wgpu::BindGroupLayout,
+    under_sampler: wgpu::Sampler,
     /// Compare mode's difference view: its pipeline, counts and group 3 (difference.rs).
     difference_pipeline: wgpu::RenderPipeline,
     difference_layout: wgpu::BindGroupLayout,
@@ -633,7 +638,9 @@ pub struct Renderer {
     /// When the renderer started (ms, telemetry's clock): the water's scroll time.
     start_ms: f64,
     exposure: f64,
-    sky: SkyFrame,
+    /// The day/night cycle's state (the game sets it each frame) and seconds for the stars' twinkle.
+    day: DayState,
+    day_seconds: f64,
     /// The sky's clouds: the setting, the coverage (the data's, or a weather system's) and their
     /// clock (s).
     clouds: CloudQuality,
@@ -760,6 +767,19 @@ impl Renderer {
             bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout), Some(&scene_layout)],
             immediate_size: 0,
         });
+        // The water that reads the scene behind it (W3): the under-water copy and the view depth.
+        let under_layout = frame::under_layout(&device, samples);
+        let water_scene_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("water (scene)"),
+            bind_group_layouts: &[Some(&frame_layout), Some(&draw_layout), Some(&under_layout)],
+            immediate_size: 0,
+        });
+        let under_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("under"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         // One interleaved buffer per mesh (`interleave`): (stride, attributes at their offsets).
         let attrs = |locations: &[(u32, u32)]| -> (u64, Vec<wgpu::VertexAttribute>) {
             let mut offset = 0u64;
@@ -883,6 +903,53 @@ impl Renderer {
             });
             pipelines.insert((kind, water, no_depth), pipeline);
         }
+        // The water that reads the scene: drawn in a pass's water half, which attaches the colour
+        // and the depth buffer only (the view depth is read, not written). Its output is the whole
+        // view through the surface (alpha 1, except seen from below).
+        let fluid_buffers = [Some(wgpu::VertexBufferLayout {
+            array_stride: fluid_attrs.0,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &fluid_attrs.1,
+        })];
+        let water_scene_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("water_scene_fs"),
+            layout: Some(&water_scene_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("fluid_vs"),
+                compilation_options: Default::default(),
+                buffers: &fluid_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("water_scene_fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: HDR,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
+            multiview_mask: None,
+            cache: None,
+        });
         // The composite: a full-screen triangle into the canvas.
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("composite"),
@@ -1011,6 +1078,9 @@ impl Renderer {
             pipelines,
             scene_layout,
             composite_pipeline,
+            water_scene_pipeline,
+            under_layout,
+            under_sampler,
             difference_pipeline,
             difference_layout,
             difference,
@@ -1052,7 +1122,8 @@ impl Renderer {
             water_quality: WaterQuality::default(),
             start_ms: crate::telemetry::now_ms(),
             exposure: DEFAULT_EXPOSURE,
-            sky: sky_rest(),
+            day: DayState::default(),
+            day_seconds: 0.0,
             clouds: CloudQuality::High,
             cloud_coverage: CLOUDS.shape.coverage,
             cloud_seconds: 0.0,
@@ -1182,8 +1253,18 @@ impl Renderer {
     pub fn set_lod_level_colors(&mut self, on: bool) {
         self.level_colors = on;
     }
-    pub fn set_sky_frame(&mut self, frame: SkyFrame) {
-        self.sky = frame;
+    /// The time of day: the sun, moon and stars, each face's sky and lights (`seconds` drives the
+    /// stars' twinkle).
+    pub fn set_day(&mut self, day: &DayState, seconds: f64) {
+        self.day = *day;
+        self.day_seconds = seconds;
+    }
+    /// How far the viewer is toward face A (1) from face B (0): eased across the flip band so the
+    /// sky's colours don't jump as the camera turns over at the midplane.
+    fn viewer_weight_a(&self) -> f64 {
+        let band = dwell_protocol::world::FLIP_BAND as f64;
+        let t = ((self.eye[1] - dwell_look::MIDPLANE_Y) / band * 0.5 + 0.5).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
     }
     /// The plants' wind scale (block data `wind`): 1 by default, 0 keeps them still (low effects).
     /// Draws the cutout meshes or not (dev tools: `__dwell.plants`, measuring what they cost).
@@ -1338,7 +1419,7 @@ impl Renderer {
         let pixels = u64::from(self.size.0) * u64::from(self.size.1);
         // Compare mode's second set of targets is all but the canvas's buffers again.
         let sides = self.targets.len().max(1) as u64;
-        let per_pixel = frame::bytes_per_pixel(self.samples);
+        let per_pixel = frame::bytes_per_pixel(self.samples, self.water_quality.reads_scene());
         RenderStats {
             mesh_bytes: self.terrain.gpu_bytes(),
             screen_bytes: pixels * (per_pixel + (sides - 1) * (per_pixel - 8)),
@@ -1368,11 +1449,13 @@ impl Renderer {
         for col in &vp {
             put(col);
         }
+        let weight_a = self.viewer_weight_a();
+        let viewer = self.day.viewer(weight_a);
         put(&[
             self.eye[1] as f32,
             self.face as f32,
-            self.exposure as f32,
-            self.fog.density as f32,
+            (self.exposure * viewer.exposure) as f32,
+            (self.fog.density * viewer.fog_density).min(1.0) as f32,
         ]);
         // The water's scroll time, seconds since the renderer started.
         let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
@@ -1383,22 +1466,6 @@ impl Renderer {
             self.plant_wind as f32,
         ]);
         let f3 = |v: [f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32];
-        put(&f3(self.sky.day_pole));
-        put(&f3(self.sky.sun));
-        put(&f3(self.sky.moon));
-        let lit = |c: u32, k: f64| linear(c).map(|v| v * k as f32);
-        put(&lit(LIGHT.sun, LIGHT.sun_intensity));
-        put(&lit(LIGHT.moon, LIGHT.moon_intensity));
-        put(&lit(LIGHT.hemisphere_sky, LIGHT.hemisphere_intensity));
-        put(&lit(LIGHT.hemisphere_ground, LIGHT.hemisphere_intensity));
-        put(&lit(
-            LIGHT.moon_hemisphere_sky,
-            LIGHT.moon_hemisphere_intensity,
-        ));
-        put(&lit(
-            LIGHT.moon_hemisphere_ground,
-            LIGHT.moon_hemisphere_intensity,
-        ));
         put(&f3(basis.right));
         put(&f3(basis.up));
         put(&f3(basis.forward()));
@@ -1423,6 +1490,11 @@ impl Renderer {
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
         }
+        // The eye's x and z wrapped for the water's detail (the composite's caustics under it).
+        let [wx, wz] = water::wrapped_origin(self.eye);
+        put(&[wx, wz, 0.0, 0.0]);
+        let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
+        put(&self.day.pack(weight_a, self.day_seconds, pixel_angle));
         u
     }
 
@@ -1770,12 +1842,24 @@ impl Renderer {
         } else {
             1
         };
-        if self.targets.len() == sides {
+        // The under-water copy only where the water reads the scene (Medium and High).
+        let under = self.water_quality.reads_scene();
+        if self.targets.len() == sides && self.targets.iter().all(|t| t.under.is_some() == under) {
             return;
         }
         self.difference_group = None;
+        // Dropped first: their textures are destroyed before the new ones are made.
+        self.targets = Vec::new();
         self.targets = (0..sides)
-            .map(|_| Targets::new(&self.device, self.size, self.samples, &self.scene_layout))
+            .map(|_| {
+                Targets::new(
+                    &self.device,
+                    self.size,
+                    self.samples,
+                    &self.scene_layout,
+                    under.then_some((&self.under_layout, &self.under_sampler)),
+                )
+            })
             .collect();
         if sides == 2 {
             self.difference_group = Some(self.difference.group(
@@ -1883,62 +1967,77 @@ impl Renderer {
                     } else {
                         [timing::RIGHT_FAR, timing::RIGHT_NEAR]
                     };
+                    let water_names = if side == 0 {
+                        [timing::FAR_WATER, timing::NEAR_WATER]
+                    } else {
+                        [timing::RIGHT_FAR_WATER, timing::RIGHT_NEAR_WATER]
+                    };
+                    // With water that reads the scene (W3), a pass with water is split: its opaque
+                    // half (colour resolved, depth kept), a copy of the colour, then its water half,
+                    // which samples the copy and the view depth.
+                    let reads_scene = self.water_quality.reads_scene();
                     for (i, pass_draws) in draws[..scene_passes].iter().enumerate() {
                         let query = self.timer.as_mut().and_then(|t| t.pass(names[i]));
                         let targets = &self.targets[side];
-                        let ops = frame::scene_pass_ops(i, scene_passes, self.samples);
-                        let clear_or_load = if ops.clear {
-                            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
-                        } else {
-                            wgpu::LoadOp::Load
+                        let split = reads_scene
+                            .then(|| pass_draws.iter().position(|d| d.water))
+                            .flatten();
+                        let (ops, water_ops) = match split {
+                            Some(_) => {
+                                let (o, w) = frame::split_pass_ops(i, scene_passes, self.samples);
+                                (o, Some(w))
+                            }
+                            None => (frame::scene_pass_ops(i, scene_passes, self.samples), None),
                         };
-                        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some(if i == 0 { "far" } else { "near" }),
-                            color_attachments: &[
-                                Some(wgpu::RenderPassColorAttachment {
-                                    view: targets.scene_colour(),
-                                    depth_slice: None,
-                                    resolve_target: ops.resolve.then_some(&targets.colour.1),
-                                    ops: wgpu::Operations {
-                                        load: clear_or_load,
-                                        store: if ops.store_colour {
-                                            wgpu::StoreOp::Store
-                                        } else {
-                                            wgpu::StoreOp::Discard
-                                        },
-                                    },
-                                }),
-                                Some(wgpu::RenderPassColorAttachment {
-                                    view: &targets.view_depth.1,
-                                    depth_slice: None,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: clear_or_load,
-                                        store: wgpu::StoreOp::Store,
-                                    },
-                                }),
-                            ],
-                            depth_stencil_attachment: Some(
-                                wgpu::RenderPassDepthStencilAttachment {
-                                    view: &targets.depth.1,
-                                    depth_ops: Some(wgpu::Operations {
-                                        load: wgpu::LoadOp::Clear(1.0),
-                                        store: wgpu::StoreOp::Discard,
-                                    }),
-                                    stencil_ops: None,
-                                },
-                            ),
-                            timestamp_writes: self.timer.as_ref().and_then(|t| t.writes(query)),
-                            ..Default::default()
-                        });
+                        let opaque = &pass_draws[..split.unwrap_or(pass_draws.len())];
+                        {
+                            let mut pass = Self::scene_pass(
+                                &mut encoder,
+                                targets,
+                                i,
+                                ops,
+                                split.is_some(),
+                                self.timer.as_ref().and_then(|t| t.writes(query)),
+                            );
+                            pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
+                            pass.set_bind_group(0, &self.frame_groups[i], &[]);
+                            pass.set_bind_group(1, &self.draw_group, &[]);
+                            self.record(
+                                &mut pass,
+                                opaque,
+                                first[i],
+                                &arena,
+                                false,
+                                &mut calls,
+                                &mut triangles,
+                            );
+                        }
+                        let (Some(at), Some(water_ops)) = (split, water_ops) else {
+                            continue;
+                        };
+                        let (copy, under) = targets.under.as_ref().expect("reads_scene targets");
+                        encoder.copy_texture_to_texture(
+                            targets.colour.0.as_image_copy(),
+                            copy.0.as_image_copy(),
+                            copy.0.size(),
+                        );
+                        let query = self.timer.as_mut().and_then(|t| t.pass(water_names[i]));
+                        let mut pass = Self::water_pass(
+                            &mut encoder,
+                            targets,
+                            water_ops,
+                            self.timer.as_ref().and_then(|t| t.writes(query)),
+                        );
                         pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
                         pass.set_bind_group(0, &self.frame_groups[i], &[]);
                         pass.set_bind_group(1, &self.draw_group, &[]);
+                        pass.set_bind_group(2, under, &[]);
                         self.record(
                             &mut pass,
-                            pass_draws,
-                            first[i],
+                            &pass_draws[at..],
+                            first[i] + at as u64,
                             &arena,
+                            true,
                             &mut calls,
                             &mut triangles,
                         );
@@ -1999,6 +2098,7 @@ impl Renderer {
                             &draws[scene_passes],
                             first[scene_passes],
                             &arena,
+                            false,
                             &mut calls,
                             &mut triangles,
                         );
@@ -2046,13 +2146,16 @@ impl Renderer {
         self.stats.triangles = triangles;
     }
 
-    /// Records `draws` (taking draw-buffer slots from `first_slot`) into a pass.
+    /// Records `draws` (taking draw-buffer slots from `first_slot`) into a pass; fluids with the
+    /// water that reads the scene when `water_scene` (a split pass's water half).
+    #[allow(clippy::too_many_arguments)]
     fn record(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         draws: &[DrawItem],
         first_slot: u64,
         arena: &Arena,
+        water_scene: bool,
         calls: &mut u32,
         triangles: &mut u64,
     ) {
@@ -2064,7 +2167,11 @@ impl Renderer {
             // Each WebGPU call crosses from WASM to JS: set only what changes.
             let key = (d.kind, d.water, d.no_depth);
             if bound != Some(key) {
-                pass.set_pipeline(&self.pipelines[&key]);
+                pass.set_pipeline(if water_scene && d.water {
+                    &self.water_scene_pipeline
+                } else {
+                    &self.pipelines[&key]
+                });
                 bound = Some(key);
             }
             // A page holds many meshes: bound once for the draws from it in a row.
@@ -2086,6 +2193,99 @@ impl Renderer {
                 *calls += 1;
             }
         }
+    }
+
+    /// A raster scene pass (or a split pass's opaque half, `keep_depth`) into a side's targets.
+    fn scene_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        targets: &'a Targets,
+        i: usize,
+        ops: frame::PassOps,
+        keep_depth: bool,
+        timestamp_writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
+    ) -> wgpu::RenderPass<'a> {
+        let clear_or_load = if ops.clear {
+            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
+        } else {
+            wgpu::LoadOp::Load
+        };
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(if i == 0 { "far" } else { "near" }),
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: targets.scene_colour(),
+                    depth_slice: None,
+                    resolve_target: ops.resolve.then_some(&targets.colour.1),
+                    ops: wgpu::Operations {
+                        load: clear_or_load,
+                        store: if ops.store_colour {
+                            wgpu::StoreOp::Store
+                        } else {
+                            wgpu::StoreOp::Discard
+                        },
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &targets.view_depth.1,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: clear_or_load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+            ],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &targets.depth.1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: if keep_depth {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes,
+            ..Default::default()
+        })
+    }
+
+    /// A split scene pass's water half (W3): over its opaque half's colour and depth, reading the
+    /// view depth (so not attaching it).
+    fn water_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        targets: &'a Targets,
+        ops: frame::PassOps,
+        timestamp_writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
+    ) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("water"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: targets.scene_colour(),
+                depth_slice: None,
+                resolve_target: ops.resolve.then_some(&targets.colour.1),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: if ops.store_colour {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &targets.depth.1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes,
+            ..Default::default()
+        })
     }
 
     /// Compare mode's state (split, blink, difference; the divider).
@@ -2196,9 +2396,9 @@ impl PassView {
 /// position is passed modulo it.
 const WIND_PERIOD: f64 = 1024.0;
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 24 vec4s (after `tan`
-/// the clouds' two, then the water's, then the wind's six).
-const FRAME_FLOATS: usize = 16 + 24 * 4;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 16 vec4s (after `tan` the
+/// clouds' two, then the water's, the wind's six and the wrap) and the day/night cycle's block.
+const FRAME_FLOATS: usize = 16 + 16 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2355,6 +2555,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         Renderer::set_eye_fluid(self, eye_fluid);
+    }
+    fn set_day(&mut self, day: &DayState, seconds: f64) {
+        Renderer::set_day(self, day, seconds);
     }
     fn set_block_outline(&mut self, cell: Option<V3>, bounds: ([f32; 3], [f32; 3])) {
         Renderer::set_block_outline(self, cell, bounds);
@@ -2827,7 +3030,7 @@ mod tests {
         };
         r.set_lod_section(7, [0.0; 3], 1.0, Some(&section));
         r.show_lod_sections(&[(7, 0)]);
-        r.set_block_outline(Some([16.0, 0.0, 16.0]), crate::game::FULL_CELL);
+        r.set_block_outline(Some([16.0, 0.0, 16.0]), ([0.0; 3], [1.0; 3]));
         r.set_debug_lines(Some(&[Line {
             from: [16.0, 1.0, 16.0],
             to: [20.0, 1.0, 20.0],
@@ -2964,8 +3167,9 @@ mod tests {
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
-        // `tan` is the vec4 before the clouds' two, the water's and the wind's six.
-        let tan_y = f64::from(u[FRAME_FLOATS - 9 * 4 - 3]);
+        // `tan` is the vec4 before the clouds' two, the water's, the wind's six and the wrap (then
+        // the day's block).
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 10 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
@@ -2979,8 +3183,11 @@ mod tests {
         let mut r = noop_renderer();
         r.resize(1600, 900, 2.0);
         let basis = aim(0.0, 0.0, 1.0, 0.0);
-        let wind =
-            |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - 24..].to_vec();
+        let wind = |r: &Renderer| {
+            r.frame_uniforms(&basis, 1.0, 100.0)
+                [FRAME_FLOATS - DAY_SKY_FLOATS - 28..FRAME_FLOATS - DAY_SKY_FLOATS - 4]
+                .to_vec()
+        };
         assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
         // Falling forward: the vanishing point drops below the centre, the intensity is passed.
         r.set_wind(WindView {
@@ -2997,7 +3204,7 @@ mod tests {
 
     #[test]
     fn the_frame_block_matches_the_shader_struct() {
-        // mat4x4f + 16 vec4f in `Frame`.
+        // mat4x4f + the vec4fs + the `DaySky` block in `Frame`.
         let fields = shaders::source(1)
             .split("struct Frame {")
             .nth(1)
@@ -3007,6 +3214,6 @@ mod tests {
             .unwrap()
             .matches("vec4f,")
             .count();
-        assert_eq!(16 + 4 * fields, FRAME_FLOATS);
+        assert_eq!(16 + 4 * fields + DAY_SKY_FLOATS, FRAME_FLOATS);
     }
 }

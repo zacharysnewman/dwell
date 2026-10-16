@@ -59,10 +59,9 @@ export function formatMetres(m: number): string {
 export interface Settings {
   fog: FogSettings;
   detail: DetailSettings;
-  /** Tone-mapping exposure (render/look.ts). */
+  /** Tone-mapping exposure (dwell-look; the time of day's exposure multiplies it). */
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
-  skyRotation: number;
   /** Master, effects and interface volumes, 0–1 (audio/settings.ts; this browser only). */
   audio: Volumes;
   /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
@@ -80,7 +79,6 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     fog: { ...DEFAULT_FOG },
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
-    skyRotation: 0,
     audio: { ...DEFAULT_VOLUMES },
     clouds: defaultClouds(mobile),
     water: defaultWater(mobile),
@@ -103,7 +101,6 @@ export function settingsJson(s: Settings): string {
       memoryMb: Math.round(s.detail.memoryMb),
     },
     exposure: Math.round(s.exposure * 100) / 100,
-    skyRotation: Math.round(s.skyRotation),
     audio: {
       master: Math.round(s.audio.master * 100) / 100,
       effects: Math.round(s.audio.effects * 100) / 100,
@@ -124,18 +121,12 @@ export function settingsJson(s: Settings): string {
 const FOG_KEY = 'dwell.fog';
 const DETAIL_KEY = 'dwell.detail';
 const EXPOSURE_KEY = 'dwell.exposure';
-const SKY_ROTATION_KEY = 'dwell.skyRotation';
+// `dwell.skyRotation` (the sky rotation slider before the day/night cycle) is no longer read or
+// written: the time of day is the world's. Builds before it still read it; it is left as it is.
 /** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
 const CLOUDS_KEY = 'dwell.clouds';
 /** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
 const WATER_KEY = 'dwell.water';
-
-/** A sky rotation in degrees from storage: 0–360, anything else 0. */
-export function sanitizeSkyRotation(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.min(360, Math.max(0, value))
-    : 0;
-}
 
 function load(key: string): unknown {
   try {
@@ -154,7 +145,6 @@ export function loadSettings(mobile: boolean): Settings {
     fog: fog ? sanitizeFog(fog) : defaults.fog,
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
-    skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
     audio: loadVolumes(),
     clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
@@ -168,7 +158,6 @@ export function saveSettings(s: Settings): void {
     localStorage.setItem(FOG_KEY, JSON.stringify(s.fog));
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
-    localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
     localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
     localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
     // Append-only: fields a newer build stored are kept.
@@ -323,16 +312,6 @@ function sections(
           format: (v) => `${v.toFixed(2)}×`,
           get: (s) => s.exposure,
           with: (s, v) => ({ ...s, exposure: v }),
-        },
-        {
-          label: 'Sky rotation',
-          hint: 'Turns the sky as a whole, day to night (this browser only)',
-          min: 0,
-          max: 360,
-          log: false,
-          format: (v) => `${String(Math.round(v))}°`,
-          get: (s) => s.skyRotation,
-          with: (s, v) => ({ ...s, skyRotation: v }),
         },
       ],
     },
