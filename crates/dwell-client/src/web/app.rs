@@ -1011,6 +1011,16 @@ impl Client {
             .borrow_mut()
             .set_water_quality(crate::render::water::WaterQuality::from_level(level));
     }
+    /// The water's cost-isolation switches (`?waterdbg=`, a dev tool): names separated by commas,
+    /// each turning one piece of the water's shading off (render/water.rs `DEBUG_SWITCHES`).
+    #[wasm_bindgen(js_name = setWaterDebug)]
+    pub fn set_water_debug(&self, names: &str) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_water_debug(crate::render::water::debug_mask(names));
+    }
     /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
     #[wasm_bindgen(js_name = setMotion)]
     pub fn set_motion(&self, enabled: bool, fov_strength: f64) {

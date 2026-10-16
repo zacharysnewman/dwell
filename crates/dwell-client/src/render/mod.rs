@@ -599,6 +599,8 @@ pub struct Renderer {
     eye_fluid: Option<EyeFluid>,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
+    /// The water's cost-isolation switches (`water::debug_mask`, `?waterdbg=`; 0 in play).
+    water_debug: u32,
     /// When the renderer started (ms, telemetry's clock): the water's scroll time.
     start_ms: f64,
     exposure: f64,
@@ -1080,6 +1082,7 @@ impl Renderer {
             fog: DEFAULT_FOG,
             eye_fluid: None,
             water_quality: WaterQuality::default(),
+            water_debug: 0,
             start_ms: crate::telemetry::now_ms(),
             exposure: DEFAULT_EXPOSURE,
             sky: sky_rest(),
@@ -1240,6 +1243,10 @@ impl Renderer {
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
     }
+    /// The water's cost-isolation switches (a dev tool: `water::debug_mask`).
+    pub fn set_water_debug(&mut self, mask: u32) {
+        self.water_debug = mask;
+    }
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
     }
@@ -1381,7 +1388,7 @@ impl Renderer {
             fog_sigma(self.fog.distance_m) as f32,
             self.fog.height_m as f32,
             seconds as f32,
-            0.0,
+            self.water_debug as f32,
         ]);
         let f3 = |v: [f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32];
         put(&f3(self.sky.day_pole));

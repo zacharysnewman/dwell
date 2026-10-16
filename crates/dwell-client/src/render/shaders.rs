@@ -23,7 +23,8 @@ struct Frame {
     view_proj: mat4x4f,
     // x eye height (world y), y face (±1), z exposure, w fog density
     eye: vec4f,
-    // x fog sigma, y fog scale height, z seconds (the water's scroll), w unused
+    // x fog sigma, y fog scale height, z seconds (the water's scroll), w the water's
+    // cost-isolation switches (render/water.rs `DEBUG_SWITCHES`; 0 in play)
     fog: vec4f,
     day_pole: vec4f,
     sun: vec4f,
@@ -182,6 +183,12 @@ fn sky(dir: vec3f) -> vec3f {
 // The sky's light along `dir`, in the scene's linear colour.
 fn sky_radiance(dir: vec3f) -> vec3f {
     return inverse_display(sky(dir));
+}
+
+// A water cost-isolation switch (`?waterdbg=`, render/water.rs `DEBUG_SWITCHES`): true turns the
+// piece off. Uniform per frame, so its branches don't diverge.
+fn water_off(bit: u32) -> bool {
+    return (u32(frame.fog.w) & bit) != 0u;
 }
 
 // Schlick's Fresnel (render/water.rs `schlick`).
@@ -576,7 +583,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     var lit = c.rgb / c.a;
     // Caustics on what the pixel shows under the surface (W3, Medium and High): the seabed, walls,
     // anything opaque, before the fog takes its share over the distance to it.
-    if (frame.water.w >= 0.5 && depth > 0.0) {
+    if (frame.water.w >= 0.5 && depth > 0.0 && !water_off(DBG_UNDER)) {
         let rel = ray * depth;
         let under = (frame.water.z - (frame.eye.x + rel.y)) * frame.eye.y;
         // Lit by light that came down through the fluid, focused into caustics.
@@ -855,9 +862,20 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32) -
     r = normalize(r - 2.0 * min(dot(r, seen_up), 0.0) * seen_up);
     let a = glint_alpha(f.scatter.a, s.w.z);
     let f0 = f.extra.x;
-    let glint = ggx_glint(s.n, s.v, frame.sun.xyz, a, f0) * frame.sun_color.rgb * own(frame.sun.y, s.on_a)
-        + ggx_glint(s.n, s.v, frame.moon.xyz, a, f0) * frame.moon_color.rgb * own(frame.moon.y, s.on_a);
-    return fres * sky_radiance(r) + glint + sparkle(i, s, f, footprint);
+    var glint = vec3f(0.0);
+    if (!water_off(DBG_GLINT)) {
+        glint = ggx_glint(s.n, s.v, frame.sun.xyz, a, f0) * frame.sun_color.rgb * own(frame.sun.y, s.on_a)
+            + ggx_glint(s.n, s.v, frame.moon.xyz, a, f0) * frame.moon_color.rgb * own(frame.moon.y, s.on_a);
+    }
+    var sky_r = frame.day_sky.rgb;
+    if (!water_off(DBG_SKY)) {
+        sky_r = sky_radiance(r);
+    }
+    var spark = vec3f(0.0);
+    if (!water_off(DBG_SPARKLE)) {
+        spark = sparkle(i, s, f, footprint);
+    }
+    return fres * sky_r + glint + spark;
 }
 
 // The sun's sparkle: a tight highlight off the facets of a fine, fast ripple layer, so the glint
@@ -947,6 +965,9 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         let n = normalize(i.normal);
         return vec4f(lambert(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y), 0.5);
     }
+    if (water_off(DBG_FLAT)) {
+        return vec4f(0.02, 0.1, 0.2, 1.0);
+    }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
     if (!front) {
@@ -966,8 +987,12 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let to_px = size.y / (2.0 * frame.tan.y * d_w);
     let shift = vec2f(dot(lean, frame.right.xyz), -dot(lean, frame.up.xyz)) * to_px;
     let q = clamp(px + shift, vec2f(0.5), size - 0.5);
-    let behind_q = textureLoad(scene_depth, vec2i(q), 0).r;
-    let use_q = behind_q <= 0.0 || behind_q > d_w;
+    var behind_q = behind0;
+    var use_q = false;
+    if (!water_off(DBG_REFRACTION)) {
+        behind_q = textureLoad(scene_depth, vec2i(q), 0).r;
+        use_q = behind_q <= 0.0 || behind_q > d_w;
+    }
     let uv = select(px, q, use_q) / size;
     let d_b = select(behind0, behind_q, use_q);
     let scene = textureSampleLevel(scene_color, scene_sampler, uv, 0.0);
@@ -978,16 +1003,24 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     var floor = s.body;
     if (scene.a > 0.0 && d_b > 0.0) {
         floor = scene.rgb / scene.a;
+    }
+    if (scene.a > 0.0 && d_b > 0.0 && !water_off(DBG_CAUSTICS)) {
         // The floor's pixel footprint: the surface's, scaled out to the floor's distance.
         let floor_fp = footprint * d_b / d_w;
         floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, floor_fp, 1.0, f);
     }
-    let t = exp(-(f.absorption.rgb + f.extra.w) * length_in);
-    let down = exp(-f.absorption.rgb * min(under, DEEP_M));
-    let through = floor * t * down + s.body * (1.0 - t);
+    var through = mix(floor, s.body, 0.5);
+    if (!water_off(DBG_ABSORPTION)) {
+        let t = exp(-(f.absorption.rgb + f.extra.w) * length_in);
+        let down = exp(-f.absorption.rgb * min(under, DEEP_M));
+        through = floor * t * down + s.body * (1.0 - t);
+    }
     var color = surface_light(i, s, f, fres, footprint) + (1.0 - fres) * through;
     // Shoreline foam where the water is thin.
-    let foam = foam_amount(i.wrapped, under, f);
+    var foam = 0.0;
+    if (!water_off(DBG_FOAM)) {
+        foam = foam_amount(i.wrapped, under, f);
+    }
     if (foam > 0.0) {
         let lit = lambert(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y);
         color = mix(color, lit, foam);
@@ -1119,7 +1152,7 @@ fn water_slope() -> String {
     );
     for (k, l) in super::water::LAYERS.iter().enumerate() {
         s.push_str(&format!(
-            "    if (layers > {k}) {{\n        sum += wave_layer(xz, f, footprint, {:?}, {:?}, {:?}, vec2f({:?}, {:?}), mat2x2f({:.1}, {:.1}, {:.1}, {:.1}));\n    }} else {{\n        sum.z += f.wave.y * f.wave.y * {:?};\n    }}\n",
+            "    if (layers > {k} && !water_off({bit}u)) {{\n        sum += wave_layer(xz, f, footprint, {:?}, {:?}, {:?}, vec2f({:?}, {:?}), mat2x2f({:.1}, {:.1}, {:.1}, {:.1}));\n    }} else {{\n        sum.z += f.wave.y * f.wave.y * {:?};\n    }}\n",
             l.wavelength,
             l.slope,
             l.speed,
@@ -1129,7 +1162,8 @@ fn water_slope() -> String {
             f64::from(l.turn[0][1]),
             f64::from(l.turn[1][0]),
             f64::from(l.turn[1][1]),
-            l.slope * l.slope
+            l.slope * l.slope,
+            bit = 1u32 << k
         ));
     }
     s.push_str("    return sum;\n}\n");

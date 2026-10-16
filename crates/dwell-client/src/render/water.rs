@@ -302,6 +302,46 @@ pub fn inverse_aces(display: [f32; 3], exposure: f32) -> [f32; 3] {
     mat_mul(&mat_inverse(&ACES_INPUT), v).map(|x| (x * 0.6 / exposure).max(0.0))
 }
 
+/// The water's cost-isolation switches (a dev tool, `?waterdbg=`; docs/WATER_RENDERING.md §8): each
+/// name turns one piece of the water's shading off, so its GPU time (`gpu.*.water`) can be told
+/// apart. Carried to the shader as a bit mask in the frame uniform (`fog.w`); 0 draws everything.
+pub const DEBUG_SWITCHES: [(&str, u32); 12] = [
+    ("ripple0", 1),
+    ("ripple1", 2),
+    ("ripple2", 4),
+    ("glint", 8),
+    ("sky", 16),
+    ("refraction", 32),
+    ("absorption", 64),
+    ("caustics", 128),
+    ("foam", 256),
+    ("sparkle", 512),
+    ("under", 1024),
+    ("flat", 2048),
+];
+
+/// The mask for a `?waterdbg=` value: names (`DEBUG_SWITCHES`) separated by commas; `all` sets
+/// every switch but `flat`. Unknown names are ignored.
+pub fn debug_mask(names: &str) -> u32 {
+    names
+        .split(',')
+        .map(str::trim)
+        .map(|n| {
+            if n == "all" {
+                DEBUG_SWITCHES
+                    .iter()
+                    .filter(|(k, _)| *k != "flat")
+                    .fold(0, |m, (_, b)| m | b)
+            } else {
+                DEBUG_SWITCHES
+                    .iter()
+                    .find(|(k, _)| *k == n)
+                    .map_or(0, |(_, b)| *b)
+            }
+        })
+        .fold(0, |m, b| m | b)
+}
+
 /// The fit's output nears 1 as its input grows without bound: inverting stops short of it.
 const INVERSE_FIT_MAX: f32 = 0.995;
 
@@ -338,11 +378,31 @@ pub fn wgsl() -> String {
         MIN_ALPHA,
         LAYERS.len()
     ));
+    for (name, bit) in DEBUG_SWITCHES {
+        s.push_str(&format!(
+            "const DBG_{}: u32 = {bit}u;\n",
+            name.to_uppercase()
+        ));
+    }
     s
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_debug_switches_parse_by_name_and_are_distinct_bits() {
+        use super::{DEBUG_SWITCHES, debug_mask};
+        assert_eq!(debug_mask(""), 0);
+        assert_eq!(debug_mask("caustics"), 128);
+        assert_eq!(debug_mask("caustics, foam,nonsense"), 128 | 256);
+        let all = DEBUG_SWITCHES.iter().fold(0, |m, (_, b)| {
+            assert_eq!(m & b, 0, "bits overlap");
+            assert!(b.is_power_of_two());
+            m | b
+        });
+        assert_eq!(debug_mask("all"), all & !2048);
+    }
+
     use super::*;
 
     fn close(a: f32, b: f32, eps: f32) -> bool {
