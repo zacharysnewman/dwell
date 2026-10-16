@@ -49,13 +49,66 @@ pub const NEAR_PLANE: f64 = 0.05;
 pub const FAR_PLANE: f64 = 5e7;
 pub const SAMPLES: u32 = 4;
 
-/// Multisampling for an adapter: 4× on a GPU; none on a CPU (software) adapter, where every sample
-/// is the main thread's own time (CI's SwiftShader drops to a few frames a second with 4×).
+// A CPU (software) adapter — SwiftShader: CI, machines without a GPU — draws the cheapest tier of
+// everything, whatever the settings: there every pixel and sample is the CPU's time, shared with
+// the game and its workers, and a frame of the full look takes whole seconds (CI's e2e suite timed
+// out). The functions below are that policy, one per cost; a GPU keeps the settings.
+
+fn is_cpu(device_type: wgpu::DeviceType) -> bool {
+    device_type == wgpu::DeviceType::Cpu
+}
+
+/// Multisampling for an adapter: 4× on a GPU; none on a CPU adapter.
 pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
-    if device_type == wgpu::DeviceType::Cpu {
-        1
+    if is_cpu(device_type) { 1 } else { SAMPLES }
+}
+
+/// The clouds a frame draws with the Clouds setting `quality`: none on a CPU adapter (the deck's
+/// per-pixel noise).
+pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> CloudQuality {
+    if is_cpu(device_type) {
+        CloudQuality::Off
     } else {
-        SAMPLES
+        quality
+    }
+}
+
+/// The water a frame draws with the Water setting `quality`: Low on a CPU adapter (one layer of
+/// ripples).
+pub fn water_for(device_type: wgpu::DeviceType, quality: WaterQuality) -> WaterQuality {
+    if is_cpu(device_type) {
+        WaterQuality::Low
+    } else {
+        quality
+    }
+}
+
+/// Whether the wind's edge blur draws (four more composites of the pixel): not on a CPU adapter.
+/// The streaks and vignette still do.
+pub fn motion_blur_for(device_type: wgpu::DeviceType) -> bool {
+    !is_cpu(device_type)
+}
+
+/// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
+pub fn stars_for(device_type: wgpu::DeviceType) -> bool {
+    !is_cpu(device_type)
+}
+
+/// The stars' visibility in the day sky block (`DaySky.stars.x`, dwell-look's `pack`: the ninth
+/// vec4).
+const DAY_STARS: usize = 8 * 4;
+
+/// The drawing buffer's share of the screen's pixels on a CPU adapter (each axis): the frame's
+/// cost there is per pixel (measured on SwiftShader: 0.75 frames/s at full size, 1.5 at half).
+pub const CPU_RESOLUTION: f64 = 0.5;
+
+/// The drawing buffer's pixels per CSS pixel on an adapter, for a screen of `pixel_ratio`
+/// (the device's, capped, times `?scale=`): that ratio on a GPU, `CPU_RESOLUTION` of it on a CPU.
+pub fn pixel_ratio_for(device_type: wgpu::DeviceType, pixel_ratio: f64) -> f64 {
+    if is_cpu(device_type) {
+        pixel_ratio * CPU_RESOLUTION
+    } else {
+        pixel_ratio
     }
 }
 
@@ -644,6 +697,8 @@ pub struct Renderer {
     /// The sky's clouds: the setting, the coverage (the data's, or a weather system's) and their
     /// clock (s).
     clouds: CloudQuality,
+    /// The adapter's kind (`clouds_for`): a CPU adapter draws no clouds.
+    adapter: wgpu::DeviceType,
     cloud_coverage: f64,
     cloud_seconds: f64,
     stats: RenderStats,
@@ -1125,6 +1180,7 @@ impl Renderer {
             day: DayState::default(),
             day_seconds: 0.0,
             clouds: CloudQuality::High,
+            adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
             cloud_seconds: 0.0,
             stats: RenderStats::default(),
@@ -1281,6 +1337,14 @@ impl Renderer {
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
     }
+    /// The adapter the frames draw on (its kind: a CPU adapter draws the cheapest tiers,
+    /// `clouds_for` and its neighbours).
+    pub fn set_adapter(&mut self, device_type: wgpu::DeviceType) {
+        self.adapter = device_type;
+    }
+    pub fn adapter(&self) -> wgpu::DeviceType {
+        self.adapter
+    }
     /// The Clouds setting (Off, Low, High).
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
@@ -1302,6 +1366,10 @@ impl Renderer {
     /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
+    }
+    /// The water this adapter draws: the setting's, Low on a CPU adapter (`water_for`).
+    fn water(&self) -> WaterQuality {
+        water_for(self.adapter, self.water_quality)
     }
     pub fn set_exposure(&mut self, exposure: f64) {
         self.exposure = sanitize_exposure(Some(exposure));
@@ -1419,7 +1487,7 @@ impl Renderer {
         let pixels = u64::from(self.size.0) * u64::from(self.size.1);
         // Compare mode's second set of targets is all but the canvas's buffers again.
         let sides = self.targets.len().max(1) as u64;
-        let per_pixel = frame::bytes_per_pixel(self.samples, self.water_quality.reads_scene());
+        let per_pixel = frame::bytes_per_pixel(self.samples, self.water().reads_scene());
         RenderStats {
             mesh_bytes: self.terrain.gpu_bytes(),
             screen_bytes: pixels * (per_pixel + (sides - 1) * (per_pixel - 8)),
@@ -1481,12 +1549,12 @@ impl Renderer {
             self.eye,
             self.face,
             self.cloud_seconds,
-            self.clouds,
+            clouds_for(self.adapter, self.clouds),
             self.cloud_coverage,
         );
         put(&clouds[0]);
         put(&clouds[1]);
-        put(&water_uniform(self.eye_fluid, self.water_quality));
+        put(&water_uniform(self.eye_fluid, self.water()));
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
         }
@@ -1494,7 +1562,11 @@ impl Renderer {
         let [wx, wz] = water::wrapped_origin(self.eye);
         put(&[wx, wz, 0.0, 0.0]);
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
-        put(&self.day.pack(weight_a, self.day_seconds, pixel_angle));
+        let mut day = self.day.pack(weight_a, self.day_seconds, pixel_angle);
+        if !stars_for(self.adapter) {
+            day[DAY_STARS] = 0.0;
+        }
+        put(&day);
         u
     }
 
@@ -1529,7 +1601,16 @@ impl Renderer {
                 f(t.vignette),
                 f(t.flow_speed),
             ],
-            [f(t.blur), 0.0, 0.0, 0.0],
+            [
+                if motion_blur_for(self.adapter) {
+                    f(t.blur)
+                } else {
+                    0.0
+                },
+                0.0,
+                0.0,
+                0.0,
+            ],
         ]
     }
 
@@ -1843,7 +1924,7 @@ impl Renderer {
             1
         };
         // The under-water copy only where the water reads the scene (Medium and High).
-        let under = self.water_quality.reads_scene();
+        let under = self.water().reads_scene();
         if self.targets.len() == sides && self.targets.iter().all(|t| t.under.is_some() == under) {
             return;
         }
@@ -1975,7 +2056,7 @@ impl Renderer {
                     // With water that reads the scene (W3), a pass with water is split: its opaque
                     // half (colour resolved, depth kept), a copy of the colour, then its water half,
                     // which samples the copy and the view depth.
-                    let reads_scene = self.water_quality.reads_scene();
+                    let reads_scene = self.water().reads_scene();
                     for (i, pass_draws) in draws[..scene_passes].iter().enumerate() {
                         let query = self.timer.as_mut().and_then(|t| t.pass(names[i]));
                         let targets = &self.targets[side];
@@ -2670,6 +2751,88 @@ mod tests {
         assert_eq!(samples_for(wgpu::DeviceType::Cpu), 1);
         assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu), SAMPLES);
         assert_eq!(samples_for(wgpu::DeviceType::IntegratedGpu), SAMPLES);
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_no_clouds() {
+        // Main's e2e suite (SwiftShader) slowed until two-client and walking tests timed out once
+        // the clouds landed (0.11.10): their noise ran per pixel on the CPU.
+        for q in [CloudQuality::Off, CloudQuality::Low, CloudQuality::High] {
+            assert_eq!(clouds_for(wgpu::DeviceType::Cpu, q), CloudQuality::Off);
+            assert_eq!(clouds_for(wgpu::DeviceType::DiscreteGpu, q), q);
+            assert_eq!(clouds_for(wgpu::DeviceType::IntegratedGpu, q), q);
+        }
+        // And the renderer on one sends the shader zero octaves (the deck off).
+        let mut r = noop_renderer();
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        r.set_clouds(CloudQuality::High);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
+        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 6 * 4 - 4 - 4;
+        assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
+        r.set_adapter(wgpu::DeviceType::DiscreteGpu);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        assert!(u[cfg + 1] > 0.0, "the setting's octaves on a GPU");
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_the_cheapest_water_and_no_motion_blur() {
+        // CI's SwiftShader: with clouds off the two-client and friend-world tests still timed out
+        // on slower runners; every per-pixel cost there is the main thread's time.
+        let mut r = noop_renderer();
+        r.set_water_quality(WaterQuality::High);
+        r.set_wind(WindView {
+            intensity: 1.0,
+            flight: 1.0,
+            direction: [0.0, 0.0, 1.0],
+            time: 1.0,
+        });
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        // After the water's vec4 (w: the quality) come the wind's six (the last's x: the blur),
+        // the wrapped eye and the day sky.
+        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 6 * 4 - 1;
+        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 4;
+        let u = r.frame_uniforms(&basis, 1.0, 100.0);
+        assert_eq!(u[water_w], 2.0, "the setting's water on a GPU");
+        assert!(u[blur] > 0.0, "the edge blur on a GPU");
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        let u = r.frame_uniforms(&basis, 1.0, 100.0);
+        assert_eq!(u[water_w], 0.0, "Low water on a CPU adapter");
+        assert_eq!(u[blur], 0.0, "no edge blur on a CPU adapter");
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_no_stars() {
+        let mut r = noop_renderer();
+        // Midnight: the stars show.
+        r.set_day(
+            &dwell_look::daynight::DAY_NIGHT.state(0.0, Some(0.0), None),
+            1.0,
+        );
+        let stars = FRAME_FLOATS - DAY_SKY_FLOATS + DAY_STARS;
+        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        assert!(u[stars] > 0.0, "stars at midnight on a GPU");
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        assert_eq!(u[stars], 0.0, "no stars on a CPU adapter");
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_a_smaller_buffer() {
+        assert_eq!(pixel_ratio_for(wgpu::DeviceType::DiscreteGpu, 2.0), 2.0);
+        assert_eq!(pixel_ratio_for(wgpu::DeviceType::Cpu, 1.0), CPU_RESOLUTION);
+        assert_eq!(
+            pixel_ratio_for(wgpu::DeviceType::Cpu, 2.0),
+            2.0 * CPU_RESOLUTION
+        );
+        assert_eq!(
+            water_for(wgpu::DeviceType::Cpu, WaterQuality::High),
+            WaterQuality::Low
+        );
+        assert_eq!(
+            water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::Medium),
+            WaterQuality::Medium
+        );
     }
 
     #[test]
