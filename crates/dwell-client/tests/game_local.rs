@@ -374,7 +374,9 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     };
     assert!(region_edits, "the local server announces region edits");
     rig.game.as_mut().unwrap().region.enabled = region_edits;
-    rig.input.look.pitch = -60.0;
+    // A cell clear of the player: natural ground rests at half height (ADAPTIVE_BLOCKS.md), so the
+    // top cell right under the feet holds part of the capsule, and filling it is refused.
+    rig.input.look.pitch = -40.0;
     assert!(rig.run_until(30, |r| {
         r.game.as_ref().unwrap().debug_state().target.is_some()
     }));
