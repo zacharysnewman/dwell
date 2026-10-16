@@ -27,6 +27,8 @@ jobs:
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs
+          node shared/look/daynight.mjs
+          node --test shared/look/daynight.test.mjs
           node shared/sounds/gen.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
