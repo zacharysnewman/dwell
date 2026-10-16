@@ -33,6 +33,8 @@ jobs:
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/sounds/gen.mjs
+          node shared/worldgen/gen.mjs
+          node --test shared/worldgen/gen.test.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
           git diff --exit-code

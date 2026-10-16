@@ -1093,6 +1093,15 @@ impl Client {
             },
         };
     }
+    /// The plants' wind scale (0 still, 1 the data's) and whether cutout meshes are drawn at all
+    /// (docs/TRANSPARENT_BLOCKS.md; dev tools: `__dwell.plants`).
+    #[wasm_bindgen(js_name = setPlants)]
+    pub fn set_plants(&self, wind: f64, shown: bool) {
+        let s = self.inner.borrow();
+        let mut r = s.renderer.borrow_mut();
+        r.set_plant_wind(wind);
+        r.set_cutout_shown(shown);
+    }
     /// The Field of view setting: the vertical FOV in degrees (60–100, `dwell_lod::base_fov`).
     #[wasm_bindgen(js_name = setFov)]
     pub fn set_fov(&self, degrees: f64) {

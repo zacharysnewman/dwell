@@ -46,13 +46,13 @@ pub struct MeshArrays {
     pub uvs: Vec<f32>,
     /// Atlas rectangle per vertex: u0, v0, width, height.
     pub tiles: Vec<f32>,
-    /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
-    /// is no fluid's); empty in the opaque mesh.
-    pub fluids: Vec<f32>,
     /// The cutout mesh only (empty in the others): per vertex, how far wind sways it (m; 0 at a
     /// plant's base and on ladders), the wind's speed, and the distance fade's start and end (m;
     /// end 0: no fade).
     pub plants: Vec<f32>,
+    /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
+    /// is no fluid's); empty in the opaque mesh.
+    pub fluids: Vec<f32>,
     /// Triangles, counter-clockwise seen from outside.
     pub indices: Vec<u32>,
 }
@@ -65,8 +65,8 @@ impl MeshArrays {
             + self.colors.len()
             + self.uvs.len()
             + self.tiles.len()
-            + self.fluids.len()
             + self.plants.len()
+            + self.fluids.len()
             + self.indices.len())
     }
 }
@@ -114,7 +114,10 @@ struct Kind {
 }
 
 fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
-    let empty = id == 0 || style.look == Look::Fluid || style.look == Look::Ladder;
+    let empty = id == 0
+        || style.look == Look::Fluid
+        || style.look == Look::Ladder
+        || style.look == Look::Cross;
     let shaped = !empty && style.look == Look::Shaped;
     Kind {
         shape: if empty {
@@ -132,8 +135,10 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
             Some(cube())
         },
         liquid: style.look == Look::Fluid,
-        // Shaped blocks and ladders hold water in a flooded cell.
-        flooded: (shaped || style.look == Look::Ladder) && style.flooded,
+        // Shaped blocks, ladders and plants hold water in a flooded cell (a water plant, block
+        // data `medium: water`, is drawn inside it).
+        flooded: (shaped || style.look == Look::Ladder || style.look == Look::Cross)
+            && style.flooded,
         occludes: !empty && style.render == RenderMode::Opaque,
         ladder_face: if style.look == Look::Ladder {
             Some(style.ladder_face.unwrap_or(4))
@@ -486,6 +491,90 @@ fn ladder_face(b: &mut Builder, style: &MaterialStyle, face: usize, x: i32, y: i
     );
 }
 
+/// A cell's jitter value in [0, 1) for `salt`, from its world position: every client and every
+/// re-mesh draws the same plant.
+fn cell_noise(cell: [i64; 3], salt: u64) -> f64 {
+    let mut h = (cell[0] as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (cell[1] as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f)
+        ^ (cell[2] as u64).wrapping_mul(0x1656_67b1_9e37_79f9)
+        ^ salt.wrapping_mul(0x27d4_eb2f_1656_67c5);
+    h ^= h >> 31;
+    h = h.wrapping_mul(0x7fb5_d329_728e_a185);
+    h ^= h >> 27;
+    h = h.wrapping_mul(0x81da_def4_bc2d_d44d);
+    h ^= h >> 33;
+    (h >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// Half the width of a cross's quad: corner to corner of the cell at 45° (√2 / 2).
+const CROSS_HALF_WIDTH: f64 = std::f64::consts::FRAC_1_SQRT_2;
+/// How much a cross's normals lean toward up (1: straight up, 0: the quad's own normal), so a
+/// plant is lit like the ground it stands on from every side instead of dark edge-on.
+const CROSS_UP: f64 = 0.8;
+
+/// A cross (plants): `quads` vertical quads through the cell's centre, evenly turned, jittered by
+/// the cell's world position (`world`), each vertex carrying its wind sway and the distance fade
+/// in `plants`. Drawn from both sides by the cutout pipeline: one face per quad.
+fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z]: [i32; 3]) {
+    let Some(c) = style.cross else { return };
+    let jitter = |salt| 2.0 * cell_noise(world, salt) - 1.0;
+    let cx = f64::from(x) + 0.5 + jitter(1) * f64::from(c.offset);
+    let cz = f64::from(z) + 0.5 + jitter(2) * f64::from(c.offset);
+    let turn = jitter(3) * f64::from(c.rotation_deg).to_radians();
+    let scale =
+        f64::from(c.height_min) + f64::from(c.height_max - c.height_min) * cell_noise(world, 4);
+    let height = f64::from(c.height) * scale;
+    let (y0, y1) = (f64::from(y), f64::from(y) + height);
+    let sway = style.wind.map_or(0.0, |w| f64::from(w.strength) * scale);
+    let speed = style.wind.map_or(0.0, |w| f64::from(w.speed));
+    let (fade0, fade1) = style
+        .fade
+        .map_or((0.0, 0.0), |f| (f64::from(f.start), f64::from(f.end)));
+    let tile = surface(style, 0, 1).1;
+    // Ladders before it carry no sway: line the plants stream up with the vertices.
+    b.m.plants.resize(b.vertex_count() as usize * 4, 0.0);
+    // Texture: across the quad and up it, just inside the tile (fract(1) would wrap to its foot).
+    const EDGE: f64 = 1e-3;
+    for q in 0..u32::from(c.quads) {
+        let angle = std::f64::consts::FRAC_PI_4
+            + turn
+            + f64::from(q) * std::f64::consts::PI / f64::from(c.quads);
+        let (dx, dz) = (angle.cos(), angle.sin());
+        // The quad's normal (e_along × e_up), leaned up.
+        let (qx, qz) = (-dz, dx);
+        let n = {
+            let v = [qx * (1.0 - CROSS_UP), CROSS_UP, qz * (1.0 - CROSS_UP)];
+            let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            [v[0] / l, v[1] / l, v[2] / l]
+        };
+        let tint = normal_tint(n[0], n[1], n[2]);
+        let (color, _) = surface(style, 1, 1);
+        let base = b.vertex_count();
+        let corners = [
+            (-CROSS_HALF_WIDTH, y0, EDGE, EDGE, 0.0),
+            (CROSS_HALF_WIDTH, y0, 1.0 - EDGE, EDGE, 0.0),
+            (CROSS_HALF_WIDTH, y1, 1.0 - EDGE, 1.0 - EDGE, sway),
+            (-CROSS_HALF_WIDTH, y1, EDGE, 1.0 - EDGE, sway),
+        ];
+        for (along, py, u, v, s) in corners {
+            let (px, pz) = (cx + dx * along, cz + dz * along);
+            b.m.positions.extend([px as f32, py as f32, pz as f32]);
+            b.m.normals.extend(n.map(|v| v as f32));
+            b.m.colors.extend([
+                (channel(color, 16) * tint[0]) as f32,
+                (channel(color, 8) * tint[1]) as f32,
+                (channel(color, 0) * tint[2]) as f32,
+            ]);
+            b.m.uvs.extend([u as f32, v as f32]);
+            b.push_tile(&tile);
+            b.m.plants
+                .extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
+        }
+        b.m.indices
+            .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
 /// The unit normal of a polygon (first three points, counter-clockwise).
 fn polygon_normal(pts: &[[f64; 3]]) -> [f64; 3] {
     let o = [0.0; 3];
@@ -714,16 +803,29 @@ fn flip_arrays_y(mut m: MeshArrays) -> MeshArrays {
 /// Meshes a chunk from its padded voxels (`PADDED_VOLUME` state ids, [`padded_index`] order).
 /// Positions are chunk-local. A chunk of face B (`mirror`; BIFACIAL_WORLD.md §6) is meshed as its
 /// mirror image and the geometry turned back: its faces toward the player's up take the top
-/// texture and shading, and its water surface lies 1/8 above the bottom of its cell.
+/// texture and shading, and its water surface lies 1/8 above the bottom of its cell. Plants'
+/// jitter is seeded as if the chunk's minimum corner were the world's origin ([`mesh_chunk_at`]).
 pub fn mesh_chunk(padded: &[u16], mirror: bool) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_with(Kinds::build(), padded, mirror)
+    mesh_chunk_at(padded, mirror, [0; 3])
 }
 
-/// [`mesh_chunk`] over the registry `kinds` describes.
+/// [`mesh_chunk`] for the chunk whose minimum corner is world cell `origin`: plants (the cross
+/// look) are jittered by their world position, so the same plant looks the same in every chunk
+/// mesh and on every client.
+pub fn mesh_chunk_at(
+    padded: &[u16],
+    mirror: bool,
+    origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_with(Kinds::build(), padded, mirror, origin)
+}
+
+/// [`mesh_chunk_at`] over the registry `kinds` describes.
 pub(crate) fn mesh_chunk_with(
     kinds: &Kinds,
     padded: &[u16],
     mirror: bool,
+    origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
     if padded.len() != PADDED_VOLUME {
         return Err(LengthError {
@@ -732,7 +834,7 @@ pub(crate) fn mesh_chunk_with(
         });
     }
     if mirror {
-        let m = mesh_chunk_with(kinds, &mirror_padded(padded), false)?;
+        let m = mesh_chunk_with(kinds, &mirror_padded(padded), false, origin)?;
         return Ok(ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -773,10 +875,13 @@ pub(crate) fn mesh_chunk_with(
                                 RenderMode::Translucent => &mut transparent,
                             };
                             ladder_face(target, &k.style, face, cx, cy, cz);
+                            if k.style.render == RenderMode::Translucent {
+                                target.tag_fluid(k.style.fluid);
+                            }
                         }
                         continue;
                     }
-                    if k.shape == Shape::Shaped {
+                    if k.shape == Shape::Shaped || k.style.look == Look::Cross {
                         continue; // drawn whole, below
                     }
                     let [nx, ny, nz] = neighbour_of(cx, cy, cz, axis, sign);
@@ -865,6 +970,21 @@ pub(crate) fn mesh_chunk_with(
                         any = true;
                     }
                     shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz, flat);
+                }
+                if k.style.look == Look::Cross {
+                    let target = match k.style.render {
+                        RenderMode::Translucent => &mut transparent,
+                        _ => &mut cutout,
+                    };
+                    let world = [
+                        i64::from(origin[0]) + i64::from(cx),
+                        i64::from(origin[1]) + i64::from(cy),
+                        i64::from(origin[2]) + i64::from(cz),
+                    ];
+                    cross_voxel(target, &k.style, world, [cx, cy, cz]);
+                    if k.style.render == RenderMode::Translucent {
+                        target.tag_fluid(k.style.fluid);
+                    }
                 }
                 if k.flooded {
                     flooded_water(&mut transparent, &cells, cx, cy, cz);

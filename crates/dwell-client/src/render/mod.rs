@@ -2764,9 +2764,8 @@ impl crate::game::Scene for Renderer {
     fn set_day(&mut self, day: &DayState, seconds: f64) {
         Renderer::set_day(self, day, seconds);
     }
-    fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
-        // The targeted block's height (a slab's top): the outline's box in the cell.
-        Renderer::set_block_outline(self, cell, ([0.0; 3], [1.0, height as f32, 1.0]));
+    fn set_block_outline(&mut self, cell: Option<V3>, bounds: ([f32; 3], [f32; 3])) {
+        Renderer::set_block_outline(self, cell, bounds);
     }
     fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
         Renderer::set_region_boxes(self, boxes);

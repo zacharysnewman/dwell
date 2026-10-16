@@ -128,6 +128,8 @@ interface DwellDebug {
   placeCamera(position: Vec3, yaw: number, pitch: number): boolean;
   /** Back to the player's eyes. */
   releaseCamera(): void;
+  /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
+  plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
   renderStats(): RenderStats;
   /** What the game knows it holds in memory (ui/memory.ts), once playing. */
@@ -525,6 +527,7 @@ async function start(): Promise<App | null> {
     if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setPlants(s.motion.plantSway ? 1 : 0, true);
     client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
@@ -640,6 +643,9 @@ async function start(): Promise<App | null> {
     placeCamera: ([x, y, z], yaw, pitch) => client.placeCamera(x, y, z, yaw, pitch),
     releaseCamera: () => {
       client.releaseCamera();
+    },
+    plants: (wind, shown) => {
+      client.setPlants(wind, shown);
     },
     renderStats: () => client.renderStats() as RenderStats,
     renderers: () => client.renderers() as string[],

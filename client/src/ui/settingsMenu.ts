@@ -111,6 +111,7 @@ export function settingsJson(s: Settings): string {
     motion: {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
+      plantSway: s.motion.plantSway,
     },
     fovDeg: Math.round(s.fovDeg),
   };
@@ -322,6 +323,12 @@ function sections(
           hint: 'The view widens and wind streaks past when moving fast',
           get: (s) => s.motion.speedEffects,
           with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
+        },
+        {
+          label: 'Plant sway',
+          hint: 'Tall grass sways in the wind',
+          get: (s) => s.motion.plantSway,
+          with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
         },
       ],
       sliders: [

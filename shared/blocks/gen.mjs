@@ -46,6 +46,9 @@ const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross'];
 const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
 // Which neighbour a `needsSupport` block stands on ("below": toward its face's ground).
 const SUPPORTS = ['below'];
+// What a block may stand in (`medium`): only air (put into water, refused), or only water (drawn
+// inside it, its `flooded` property true). Absent: anything.
+const MEDIUMS = ['air', 'water'];
 // The cross geometry's fade must end inside the nearest full-detail distance (the streamed view,
 // VIEW_RADIUS_CHUNKS × 32 m, the settings' minimum), so plants are gone before chunks meet the LOD.
 const MIN_DETAIL_M = 96;
@@ -116,13 +119,16 @@ for (const ns of namespaces) {
 }
 
 // Render mode, cross geometry, wind and the placement rules (docs/TRANSPARENT_BLOCKS.md).
+// A block's render mode: its data's, else translucent for fluids and opaque for the rest.
+const renderOf = (def) => def.render ?? ((def.look ?? 'cube') === 'fluid' ? 'translucent' : 'opaque');
 function validateRender(id, def, look, isAir) {
-  const render = def.render ?? 'opaque';
+  const render = renderOf(def);
   if (!RENDER_MODES.includes(render)) fail(`${id}: render must be one of ${RENDER_MODES.join(', ')} (got ${render})`);
   const opacity = def.opacity ?? fluids.find((f) => f.name === def.fluid)?.opacity ?? 1;
   if (!inRange(opacity, 0, 1)) fail(`${id}: opacity must be in [0, 1]`);
   if (!isAir && opacity < 1 && render !== 'translucent') fail(`${id}: opacity ${opacity} needs "render": "translucent"`);
   if (render === 'cutout' && !def.textures) fail(`${id}: render cutout needs textures (a tile with transparent texels)`);
+  if (look === 'fluid' && render !== 'translucent') fail(`${id}: look fluid is drawn translucent (got render ${render})`);
   if (look === 'cross') {
     if (render === 'opaque') fail(`${id}: look cross has gaps: render must be cutout or translucent`);
     if (def.shape !== 'empty') fail(`${id}: look cross needs shape empty (crosses have no collision geometry)`);
@@ -172,6 +178,13 @@ function validateRender(id, def, look, isAir) {
     fail(`${id}: needsSupport must be one of ${SUPPORTS.join(', ')}`);
   }
   if (def.replaceable !== undefined && typeof def.replaceable !== 'boolean') fail(`${id}: replaceable must be true or false`);
+  if (def.medium !== undefined) {
+    if (!MEDIUMS.includes(def.medium)) fail(`${id}: medium must be one of ${MEDIUMS.join(', ')}`);
+    const f = def.properties?.flooded;
+    if (def.medium === 'water' && !(Array.isArray(f) && f.includes('true'))) {
+      fail(`${id}: medium water needs a flooded property (it holds the water it stands in)`);
+    }
+  }
 }
 
 const fluids = readFluids(namespaces); // fluids.mjs
@@ -463,7 +476,7 @@ for (let first = 0; first < states.length; first += CHUNK) {
     `block: ${blocks.indexOf(s.block)}`,
     `values: { ${s.block.props.map((p) => `${p.name}: '${s.values[p.name]}'`).join(', ')} }`,
     `look: '${s.block.look}'`,
-    `render: '${d.render ?? 'opaque'}'`,
+    `render: '${renderOf(d)}'`,
     `color: ${colorNum(d.color)}`,
     `opacity: ${opacityOf(s.block)}`,
   ];
@@ -579,7 +592,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `opacity: ${rf(opacityOf(st.block))}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
       `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
-      `render: RenderMode::${pascal(d.render ?? 'opaque')}`,
+      `render: RenderMode::${pascal(renderOf(d))}`,
       `cross: ${crossRs(d)}`,
       `wind: ${d.wind ? `Some(Wind { strength: ${rf(d.wind.strength)}, speed: ${rf(d.wind.speed)} })` : 'None'}`,
       `fade: ${d.fade ? `Some(Fade { start: ${rf(d.fade.start)}, end: ${rf(d.fade.end)} })` : 'None'}`,
@@ -587,6 +600,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
       `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
       `replaceable: ${!!d.replaceable}`,
+      `medium: Medium::${d.medium ? pascal(d.medium) : 'Any'}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

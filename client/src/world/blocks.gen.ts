@@ -73,7 +73,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0xcbb4016d900958acn;
+export const REGISTRY_HASH = 0xbcda3473c2fa1fean;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -86,6 +86,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:sandbox_floor', first: 14, count: 1, properties: [], sound: 'dwell:stone' },
   { id: 'dwell:log', first: 15, count: 1, properties: [], sound: 'dwell:wood' },
   { id: 'dwell:leaves', first: 16, count: 1, properties: [], sound: 'dwell:grass' },
+  { id: 'dwell:tall_grass', first: 17, count: 1, properties: [], sound: 'dwell:grass' },
 ];
 
 /** The shapes block states use (the adaptive table's derived shapes are in the Rust tables only). */
@@ -112,6 +113,7 @@ const STATES_0: readonly StateDef[] = [
   { id: 14, state: 'dwell:sandbox_floor', block: 7, values: {  }, look: 'cube', render: 'opaque', color: 0xffffff, opacity: 1, textures: { top: 'grid', side: 'grid', bottom: 'grid' }, shape: 1, flooded: false, placeable: false },
   { id: 15, state: 'dwell:log', block: 8, values: {  }, look: 'cube', render: 'opaque', color: 0x7a5236, opacity: 1, textures: { top: 'logTop', side: 'logSide', bottom: 'logTop' }, shape: 1, flooded: false, placeable: true },
   { id: 16, state: 'dwell:leaves', block: 9, values: {  }, look: 'cube', render: 'cutout', color: 0x6fa83a, opacity: 1, textures: { top: 'leaves', side: 'leaves', bottom: 'leaves' }, shape: 1, flooded: false, placeable: true },
+  { id: 17, state: 'dwell:tall_grass', block: 10, values: {  }, look: 'cross', render: 'cutout', color: 0x8dbf3f, opacity: 1, textures: { top: 'tallGrass', side: 'tallGrass', bottom: 'tallGrass' }, shape: 0, flooded: false, placeable: true },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

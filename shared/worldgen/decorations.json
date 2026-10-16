@@ -1,0 +1,14 @@
+{
+  "$comment": "Terrain decorations (docs/TRANSPARENT_BLOCKS.md §10; ADR 0036): blocks the terrain generator puts on its surface, one cell above the ground. Each cell is decided on its own, from the world seed and its position, so chunks agree across their borders and generate in any order. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output. This file is the interim home of the rule: Phase 17's terrain definitions (ADR 0026) take it over.",
+  "decorations": [
+    {
+      "name": "meadow_grass",
+      "block": "dwell:tall_grass",
+      "on": ["dwell:grass"],
+      "density": 0.55,
+      "patches": { "wavelength": 40, "coverage": 0.45 },
+      "maxSlope": 1,
+      "height": [3, 400]
+    }
+  ]
+}

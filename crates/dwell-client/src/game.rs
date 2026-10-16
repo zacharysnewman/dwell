@@ -61,6 +61,9 @@ const PLAYER_COLORS: [u32; 7] = [
     0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
 ];
 
+/// The whole cell, as an outline box.
+pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
+
 /// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
 /// the renderer seam's ([`TerrainRenderer`], RAY_MARCHED_RENDERER.md §3): each chunk's and
 /// section's payloads, routed to the terrain renderers the [`Selection`] draws; the rest (camera,
@@ -74,7 +77,9 @@ pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain>
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
-    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
+    /// corner; `dwell_world::edit::target_box`), or none.
+    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, bounds: ([f32; 3], [f32; 3]));
     /// The frame's vertical FOV (degrees; the speed boost, docs/MOTION_EFFECTS.md): the same value
     /// the LOD selection uses. `None`: the screen's own.
     fn set_fov(&mut self, fov_y_deg: Option<f64>);
@@ -1362,7 +1367,7 @@ impl<S: Scene> Game<S> {
                 self.scene
                     .borrow_mut()
                     .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
-                self.scene.borrow_mut().set_block_outline(None, 1.0);
+                self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
                 v.eye
             }
             None => camera_eye,
@@ -1546,23 +1551,15 @@ impl<S: Scene> Game<S> {
             .borrow_mut()
             .set_brush_outline(self.brush.outline().as_ref());
         let Some(t) = t else {
-            self.scene.borrow_mut().set_block_outline(None, 1.0);
+            self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
             return;
         };
-        // The outline hugs the shape's top: an adaptive block's derived shape is often not a
-        // full cell tall.
-        let shape = self
-            .streamer
-            .store_mut()
-            .shape_at(t.cell[0], t.cell[1], t.cell[2]);
-        let height = if shape.inverted {
-            1.0
-        } else {
-            f64::from(shape.max_y)
-        };
+        // The outline is the box the block is aimed at: a plant's selection box, else its shape's
+        // extent (an adaptive block's derived shape is often not a full cell tall).
+        let bounds = dwell_world::edit::target_box(self.streamer.store_mut(), t.cell);
         self.scene
             .borrow_mut()
-            .set_block_outline(Some(t.cell.map(f64::from)), height);
+            .set_block_outline(Some(t.cell.map(f64::from)), bounds);
     }
 
     fn player_view(

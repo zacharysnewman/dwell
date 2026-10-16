@@ -234,6 +234,9 @@ sub-0.1 ms phases read 0 or 0.1. Chrome rounds GPU timestamps to 65.536 µs unle
 `--enable-webgpu-developer-features`, which the bench passes (`--enable-features=WebGPUDeveloperFeatures`
 does not lift the rounding).
 
+Plants (docs/TRANSPARENT_BLOCKS.md): `__dwell.plants(wind, shown)` scales their wind and hides or
+shows every cutout mesh, for an A/B of their cost at one camera pose.
+
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
 

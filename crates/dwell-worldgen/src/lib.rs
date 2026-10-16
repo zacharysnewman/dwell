@@ -3,6 +3,7 @@
 //! generator lookup by version that the server, the client and the tools share.
 
 pub mod bifacial;
+pub mod decorations;
 pub mod island;
 pub mod noise;
 pub mod terrain;

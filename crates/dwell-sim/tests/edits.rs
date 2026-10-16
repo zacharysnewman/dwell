@@ -119,6 +119,73 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
 }
 
 #[test]
+fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
+    let tall = dwell_blocks::require("dwell:tall_grass");
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let settle = |f: &mut Fixture| {
+        for _ in 0..12 {
+            f.server.step();
+        }
+        f.take_all()
+    };
+    // On the flat world's grass: placed. On a stone block: refused (its data's placeOn).
+    f.send(1, place([0, -1, 2], 2, tall));
+    f.send(1, place([-1, -1, 2], 2, M.stone));
+    f.server.step();
+    assert_eq!(f.server.world().get_voxel(0, 0, 2), tall);
+    settle(&mut f);
+    f.send(1, place([-1, 0, 2], 2, tall));
+    f.server.step();
+    assert_eq!(f.server.world().get_voxel(-1, 1, 2), M.air);
+    assert_eq!(
+        f.server.stats_of(1).unwrap().last_edit_check,
+        EditCheck::NoSupport
+    );
+    settle(&mut f);
+    // Clear the grass block under the plant (a one-cell region edit: adaptive ground takes shapes
+    // a side break would have to see past): the plant goes in the same modification.
+    f.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Fill,
+            min: [0, -1, 2],
+            size: [1, 1, 1],
+            material: M.air,
+            from: 0,
+            cells: Vec::new(),
+        }),
+    );
+    f.server.step();
+    assert_eq!(f.server.world().get_voxel(0, -1, 2), M.air);
+    assert_eq!(
+        f.server.world().get_voxel(0, 0, 2),
+        M.air,
+        "the plant went with it"
+    );
+    let out = f.take_all();
+    let mods = modifications(&out[&1]);
+    assert_eq!(mods.len(), 1);
+    let changes: Vec<VoxelChange> = mods[0]
+        .chunks
+        .iter()
+        .flat_map(|c| c.changes.clone())
+        .collect();
+    assert_eq!(changes.len(), 2, "{changes:?}");
+    assert!(changes.iter().all(|c| c.material == M.air));
+    // Placing into a plant replaces it.
+    f.send(1, place([1, -1, 2], 2, tall));
+    f.server.step();
+    settle(&mut f);
+    f.send(1, place([1, 0, 2], 2, M.sand));
+    f.server.step();
+    assert_eq!(f.server.world().get_voxel(1, 0, 2), M.sand);
+    assert_eq!(f.server.world().get_voxel(1, 1, 2), M.air);
+}
+
+#[test]
 fn rate_limited_a_burst_of_three_then_one_per_block_edit_interval() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);

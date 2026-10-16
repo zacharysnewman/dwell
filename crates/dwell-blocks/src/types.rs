@@ -101,6 +101,17 @@ pub enum Support {
     Below,
 }
 
+/// What a block may stand in (block data `medium`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Medium {
+    /// Anything (no rule).
+    Any,
+    /// Air only: placing it into a liquid is refused, and it never stays flooded.
+    Air,
+    /// Water only: placed into water cells, holding the water (its `flooded` property true).
+    Water,
+}
+
 /// One block state.
 #[derive(Clone, Copy, Debug)]
 pub struct StateInfo {
@@ -145,6 +156,7 @@ pub struct StateInfo {
     pub needs_support: Support,
     /// Placing a block into its cell (or against it) replaces it.
     pub replaceable: bool,
+    pub medium: Medium,
 }
 
 /// A fluid's index in `FLUIDS`, valid for this build's registry.

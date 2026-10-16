@@ -459,7 +459,13 @@ mod tests {
 
     #[test]
     fn chunks_round_trip() {
-        let t = StateTable::registry();
+        // The registry's ladders are cutout (a raster pass, not occupied); drawn opaque here they
+        // are the shape hook's case: a thin look without a shape.
+        let mut states = dwell_blocks::STATES.to_vec();
+        for st in states.iter_mut().filter(|st| st.look == "ladder") {
+            st.render = dwell_blocks::RenderMode::Opaque;
+        }
+        let t = StateTable::from_states(&states);
         let ids = [0u16, 1, 2, 3, 13, 4];
         let mut r = rng(7);
         let mut v = vec![0; CHUNK_VOLUME];
@@ -490,7 +496,7 @@ mod tests {
                 }
             }
         }
-        // The ladder (shaped) cells give their bricks a shape plane.
+        // The (opaque) ladder cells give their bricks a shape plane.
         let NodeBuild::Node(d) = &b else { panic!() };
         assert!(d.bricks.iter().any(|w| w.len() == SHAPED_BRICK_WORDS));
     }
@@ -503,6 +509,8 @@ mod tests {
             t_states.push(dwell_blocks::STATES[1]);
         }
         let t = StateTable::from_states(&t_states);
+        // The solid states drawn from: the copies (the registry's own may not all be solid).
+        let first = dwell_blocks::STATES.len() as u16;
         let mut r = rng(11);
         for distinct in [1usize, 2, 3, 4, 5, 16, 17, 40] {
             let mut cells = vec![0u16; lod::VOLUME];
@@ -510,7 +518,7 @@ mod tests {
                 for z in 0..32 {
                     for x in 0..32 {
                         cells[lod::cell_index(x, y, z)] = if y < 16 {
-                            14 + (r() % distinct as u64) as u16
+                            first + (r() % distinct as u64) as u16
                         } else {
                             0
                         };

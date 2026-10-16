@@ -173,6 +173,29 @@ fn a_removed_body_underfoot_starts_a_fall() {
 
 /// A 3 m ledge (x −2..2, z 2..12) with a ladder column (x = 0, z = 1, y 0..2) facing north,
 /// mounted on the ledge's face.
+#[test]
+fn players_walk_through_tall_grass() {
+    // A cross-look plant has shape empty in its data: no collider, nothing to stand on.
+    let grass = require("dwell:tall_grass");
+    assert!(!dwell_blocks::info(grass).solid);
+    let walk = |m| {
+        let mut w = PlayerTestWorld::new();
+        w.floor();
+        w.fill(-2, 0, 1, 2, 1, 3, m);
+        let e = w.spawn(v(0.5, 0.0, -0.5));
+        w.set_input(|_, _| mv(0.0, 1.0));
+        w.step(90);
+        (w.pos(e), w.c(e).climb.climbing)
+    };
+    let (through, climbing) = walk(grass);
+    assert!(through.z > 5.0, "walked through: {through:?}");
+    assert!(through.y < 1.5, "stayed on the floor: {through:?}");
+    assert!(!climbing);
+    // The same patch as stone stops the player.
+    let (stopped, _) = walk(cube_block());
+    assert!(stopped.z < 1.0, "{stopped:?}");
+}
+
 fn ladder_world() -> PlayerTestWorld {
     let mut w = PlayerTestWorld::new();
     w.floor();

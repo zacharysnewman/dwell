@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dwell_blocks::REGISTRY_HASH;
+use dwell_blocks::{REGISTRY_HASH, info};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
@@ -23,11 +23,14 @@ use dwell_protocol::{
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
 use dwell_world::brush::brush_policy;
-use dwell_world::edit::{DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit};
+use dwell_world::edit::{
+    DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, medium_kept, supported_on,
+    unsupported_after,
+};
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y,
+    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, MAX_CHUNK_Y, MIN_CHUNK_Y,
     SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
@@ -81,6 +84,17 @@ struct TickChanges {
 }
 
 impl TickChanges {
+    /// Sets the cell and records it, and then removes what that leaves unsupported (block data
+    /// `needsSupport`: tall grass on a broken block goes with it), in the same modification.
+    fn set_and_unsupport(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
+        // An air plant never stays flooded (block data `medium`).
+        let material = medium_kept(material);
+        self.set(world, cell, material);
+        for (above, left) in unsupported_after(world, cell, material) {
+            self.set(world, above, left);
+        }
+    }
+
     /// Sets the cell in the world and records the change.
     fn set(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
         let coord = chunk_of(cell[0], cell[1], cell[2]);
@@ -1528,7 +1542,7 @@ impl Server {
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
-                changes.set(&mut self.world, outcome.cell, outcome.material);
+                changes.set_and_unsupport(&mut self.world, outcome.cell, outcome.material);
             }
             // Region edits (§6.5), after the block edits, in the order they arrived; each costs
             // its box's volume in cells, valid or not (validation reads the whole box).
@@ -1548,8 +1562,20 @@ impl Server {
                 }
                 s.stats.region_edits_applied += 1;
                 s.stats.region_cells_changed += outcome.changes.len() as u64;
+                let cells: Vec<[i32; 3]> = outcome.changes.iter().map(|(c, _)| *c).collect();
                 for (cell, m) in outcome.changes {
-                    changes.set(&mut self.world, cell, m);
+                    changes.set_and_unsupport(&mut self.world, cell, m);
+                }
+                // A region may put blocks that need support where nothing holds them (tall grass
+                // filled into the air, or onto itself): those are not kept.
+                for cell in cells {
+                    let m = self.world.get_voxel(cell[0], cell[1], cell[2]);
+                    let under = below(cell);
+                    let ground = self.world.get_voxel(under[0], under[1], under[2]);
+                    if m != M.air && !supported_on(m, ground) {
+                        let left = if info(m).flooded { M.water } else { M.air };
+                        changes.set_and_unsupport(&mut self.world, cell, left);
+                    }
                 }
             }
         }

@@ -202,6 +202,7 @@ impl MarchTest {
                         padded,
                         mirror: false,
                         payloads: Payloads::BRICKS,
+                        origin: [c.x, c.y, c.z].map(|v| v * dwell_world::CHUNK_SIZE),
                     };
                     self.queue(job, For::ChunkBricks(c));
                 }

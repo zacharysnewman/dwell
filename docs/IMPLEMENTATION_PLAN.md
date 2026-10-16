@@ -50,7 +50,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.19, a patch release of the 0.11 line |
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
-| 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data (opaque, cutout, translucent) and cutout (see-through) ladders shipped on the 0.11 line (ADR 0036, `TRANSPARENT_BLOCKS.md`; no registry-hash change); the cross look, placement rules and `dwell:tall_grass` are on `claude/transparent-blocks` for the 0.12.0 line; `package.json` raised to 0.11.18, a patch release of the 0.11 line |
+| 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 
@@ -2333,6 +2333,9 @@ definitions; the baseline world is `dwell:baseline`.
 **Status:** Not started.
 
 Deliverables
+- [ ] **Decorations** (Phase 33 added them first, as an interim data file): take
+  `shared/worldgen/decorations.json`'s rules (block, ground blocks, density in patches, slope,
+  height) into the terrain definition, keeping their per-cell, order-independent placement.
 - [ ] **Format** (`shared/worldgen/*.json`, schema documented in `ARCHITECTURE.md` §6.3):
   - `layout` — `voronoiIsland`: site `cell`, `warp`, `land.radius` and `radiusNoise`,
     `rimClearance`, `coastDetail`; an extensible `kind`.
@@ -2462,8 +2465,8 @@ materials, an automatic WebGL2 fallback and the active backend shown in the sett
 WGSL shaders), so those items are done by Phase 24 or removed, as marked below. What remains is the
 look registry and textures as data, built on the wgpu renderer and WGSL. It overlaps with the
 transparent-blocks work (render modes as block data: opaque, cutout, translucent; the `cross` look),
-built on its own branch (`claude/transparent-blocks`; its phase and ADR numbers are given when it
-merges — Phase 31 and ADR 0034 went to sky clouds): that work's modes and looks are the registry's
+Phase 33
+([ADR 0036](./adr/0036-render-modes-and-cross-geometry.md), [`TRANSPARENT_BLOCKS.md`](./TRANSPARENT_BLOCKS.md)): that work's modes and looks are the registry's
 first entries, and whichever lands second builds on the other.
 
 Deliverables
@@ -3327,6 +3330,79 @@ Deviations
   when they join the controls table.
 - The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
   its own make-up gain, which pushed sequences past full scale in the renders.
+## Phase 33 — Transparent Blocks: Render Modes, Cross Geometry, Tall Grass
+
+**Goal:** Semitransparent block handling as data (owner, 2026-10-15), with billboarded blades of
+grass as the first block that uses it, and see-through ladders
+([ADR 0036](./adr/0036-render-modes-and-cross-geometry.md),
+[`TRANSPARENT_BLOCKS.md`](./TRANSPARENT_BLOCKS.md)).
+
+**Status:** In progress — T0–T5 built, tested and checked in Chrome on the GPU (Apple M-series;
+screenshots and the cost in the PR and `TRANSPARENT_BLOCKS.md` §9), with the coordinator's
+defaults: the design questions are not yet put to the owner (`TRANSPARENT_BLOCKS.md` §8). **Tall
+grass is part of the 0.13.0 bundle (with wood and leaves)** (a new compatibility line: it changes the registry hash; the
+owner raises `package.json`). The ladder change (T1) alone keeps the hash. Outstanding: the owner's
+look and answers, the e2e suite on CI (the hotbar now has six slots).
+
+Deliverables
+- [x] **T0** — ADR 0036 and `TRANSPARENT_BLOCKS.md` (defaults and open questions recorded).
+- [x] **T1** — Render modes as block data (`render`: opaque, cutout, translucent), validated by
+  `gen.mjs`; one chunk mesh per mode; the cutout pipeline (depth writes, both sides,
+  alpha-to-coverage through the sample mask, a plain test without MSAA); coverage-preserving mips
+  for cutout tiles; water `translucent`; ladders `cutout` with a transparent-gap tile, a flooded
+  ladder's water drawn in its cell; cutout states without a solid are air at LOD. Look-only: the
+  registry hash is unchanged.
+- [x] **T2** — The `cross` look (quads, height, world-seeded jitter), `wind` (sway in the vertex
+  shader over a seamless gust field, `Renderer::set_plant_wind`) and `fade` (inside the full-detail
+  distance), meshed in the workers (mesh jobs carry the chunk origin).
+- [x] **T3** — Placement rules as data: `placeOn`, `replaceable`, `needsSupport` (support removal
+  in the same `VoxelModification`), `selectionBox` (targeting, line of sight, the outline).
+- [x] **T4** — `dwell:tall_grass` (prototype content): the `tallGrass` tile, the data, the palette's
+  sixth slot; goldens' registry line regenerated (terrain hashes unchanged).
+- [x] **T5** — Browser check: a patch and a field of grass and ladders up close, at a low angle,
+  from a distance and mid-sway, ladders against a wall, the sky, at a distance and flooded; the GPU
+  and CPU cost of a field (`__dwell.plants` A/B: about +0.3 ms `gpu.near`, CPU unchanged).
+- [x] **T6** — World generation grows tall grass (owner, 2026-10-16; a partial reversal of B10 for
+  plants only): a decoration rule as data (`shared/worldgen/decorations.json`, `gen.mjs` and its
+  node tests, CI stale check), decided per cell from the seed and position (order-independent
+  across chunk borders), generator version 13, goldens regenerated (10 of 39 chunk hashes; LOD
+  unchanged).
+- [x] **T7** — `medium` (`air` | `water`) in the block data: tall grass refused into water and never
+  kept flooded, water plants placed only into water and drawn inside it (fixture `test:kelp`).
+- [x] **T8** — The Plant sway setting (Motion group; append-only motion record; off under
+  `prefers-reduced-motion`).
+- [ ] **T9** — Screenshots of a grassy hillside near and far (generated terrain).
+
+Follow-ups (owner, 2026-10-16; future work, not scheduled)
+- Leaves, glass and ice as `cutout` and `translucent` blocks (data entries on these systems).
+- An editor page for these blocks' data (cross options, jitter, wind, tiles), like
+  `docs/prototypes/`.
+- A first water plant (`medium: water`).
+
+Exit criteria
+- [x] Generator tests add a fixture block of each mode, a cross with its options and placement rules
+  by data alone, and reject bad values naming the block (`blocksGen.test.ts`).
+- [x] Mesher tests: a ladder in the cutout mesh hiding no neighbour face; a flooded ladder's water;
+  the cross's vertex count, upward normals, sway and fade streams; jitter deterministic by world
+  position; streams aligned with ladders and plants together, and on face B.
+- [x] Server and edit tests: placed on grass and dirt, refused on stone and sand (`NoSupport`);
+  removed with the block under it in the same modification; placing into it replaces it; aimed at
+  by its smaller box.
+- [x] Physics: a player walks through a patch of tall grass (and is stopped by the same patch of
+  stone).
+- [x] Shaders validate with naga (with and without MSAA), cutout tiles keep their coverage down the
+  mips, and the ladder tile is transparent between its rails and rungs.
+- [x] In a browser: soft blade edges, no shimmer, no dark sides, natural variation; ladders
+  see-through against the sky, a wall, at a distance and flooded (screenshots in the PR).
+
+Deviations
+- Alpha-to-coverage is done in the fragment shader through `@builtin(sample_mask)` rather than the
+  pipeline's `alpha_to_coverage_enabled`: with the hardware form the colour target's alpha would be
+  both the coverage and the stored alpha, double-counting coverage in the premultiplied frame.
+- Wind respects a renderer scale (`set_plant_wind`), not an effects-quality setting: none exists yet
+  (`TRANSPARENT_BLOCKS.md` §8).
+- The decoration rule's data lives in `shared/worldgen/decorations.json`, not in Phase 17's terrain
+  definitions (which don't exist yet): one entry for Phase 17 to take over.
 
 ---
 

@@ -60,6 +60,17 @@
       "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves.",
       "name": "leaves", "sound": "dwell:grass", "density": 200, "shape": "full", "placeable": true,
       "render": "cutout", "color": "#6fa83a", "textures": "leaves"
+    },
+    {
+      "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
+      "name": "tall_grass", "sound": "dwell:grass", "density": 200, "shape": "empty", "placeable": true,
+      "look": "cross", "render": "cutout",
+      "cross": { "height": 0.85, "quads": 2, "jitter": { "offset": 0.22, "rotation": 30, "height": [0.75, 1.0] } },
+      "wind": { "strength": 0.09, "speed": 1.0 },
+      "fade": { "start": 48, "end": 88 },
+      "selectionBox": [0.15, 0, 0.15, 0.85, 0.6, 0.85],
+      "placeOn": ["dwell:grass", "dwell:dirt"], "needsSupport": "below", "replaceable": true, "medium": "air",
+      "color": "#8dbf3f", "textures": "tallGrass"
     }
   ]
 }

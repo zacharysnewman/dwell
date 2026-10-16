@@ -245,6 +245,7 @@ impl Mesher for MeshJobs {
             Job::MeshChunk {
                 padded: job.padded,
                 mirror: job.mirror,
+                origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
                 payloads,
             },
         );
