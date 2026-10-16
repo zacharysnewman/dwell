@@ -14,6 +14,7 @@ pub mod display;
 pub mod frame;
 pub mod geometry;
 pub mod march;
+pub mod pacing;
 pub mod seam;
 pub mod shaders;
 pub mod timing;
@@ -605,6 +606,8 @@ pub struct Renderer {
     water_debug: u32,
     /// The water's noise and caustic tiles (water_tiles.rs).
     water_tiles: WaterTiles,
+    /// Frames in flight on the GPU (pacing.rs).
+    pacer: pacing::FramePacer,
     /// When the renderer started (ms, telemetry's clock): the water's scroll time.
     start_ms: f64,
     exposure: f64,
@@ -1107,6 +1110,7 @@ impl Renderer {
             water_quality: WaterQuality::default(),
             water_debug: 0,
             water_tiles,
+            pacer: pacing::FramePacer::default(),
             start_ms: crate::telemetry::now_ms(),
             exposure: DEFAULT_EXPOSURE,
             sky: sky_rest(),
@@ -1266,6 +1270,11 @@ impl Renderer {
     /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
+    }
+    /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
+    /// frames are still on the GPU.
+    pub fn ready_to_draw(&mut self, now_ms: f64) -> bool {
+        self.pacer.ready(now_ms)
     }
     /// The water's cost-isolation switches (a dev tool: `water::debug_mask`).
     pub fn set_water_debug(&mut self, mask: u32) {
@@ -2081,6 +2090,7 @@ impl Renderer {
             timer.resolve(&mut encoder);
         }
         self.queue.submit([encoder.finish()]);
+        self.queue.on_submitted_work_done(self.pacer.submitted());
         if let Some(timer) = &mut self.timer {
             timer.submitted();
         }
