@@ -1507,9 +1507,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   Distant memory up to 192 MB (`dwell-lod` `detail.rs`, `MOBILE_MEMORY_MAX_MB`). (The phone
   measurements of the Three.js build — ~237 MB counted after 3 minutes standing still in a local
   world — have not been repeated on the Rust client.)
-- **No batching:** the renderer draws each chunk and LOD section with its own draw (dynamic
-  uniform offsets into one buffer); the Three.js build's experimental `?batch=1` is
-  accepted and ignored. `?scale=0.5` (0.25–2) renders at a fraction of the resolution: a frame
+- **No batching:** the renderer draws each chunk and LOD section with its own draw (its uniforms
+  an element of one instance-indexed storage array, its geometry in an arena page, §5); the
+  Three.js build's experimental `?batch=1` went with it (the parameter is not read). `?scale=0.5` (0.25–2) renders at a fraction of the resolution: a frame
   rate that rises with it is bound by pixels rather than draws (`render/display.rs`).
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
