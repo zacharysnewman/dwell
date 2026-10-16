@@ -552,7 +552,7 @@ mod tests {
     #[test]
     fn looks_and_clicks_only_while_the_pointer_is_locked() {
         let mut input = KeyboardMouseInput::new();
-        input.mouse_move(100.0);
+        input.mouse_move(100.0, 0.0);
         assert_eq!(input.mouse_down(0), None);
         assert_eq!(input.wheel(3.0), None);
         input.pointer_locked = true;
