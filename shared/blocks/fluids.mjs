@@ -10,16 +10,24 @@ const COLOR = /^#[0-9a-fA-F]{6}$/;
 // Every field, required, with its range (inclusive unless `open`). Units: absorption per metre
 // (Beer–Lambert σ, linear RGB), lengths in metres, speed in metres per second.
 const NUMBERS = {
-  opacity: { min: 0, max: 1, open: 'min' }, // the fixed alpha until absorption replaces it
+  opacity: { min: 0, max: 1, open: 'min' }, // the fixed alpha of the Low tier (no scene copies)
   surfaceDrop: { min: 0, max: 1, open: 'max' }, // the drawn top below the cell's top, in cells
   roughness: { min: 0, max: 1 },
   ior: { min: 1, max: 3 },
   normalScale: { min: 0, max: 10 },
   waveScale: { min: 0, max: 1000, open: 'min' },
   flowSpeed: { min: 0, max: 10 },
-  caustics: { min: 0, max: 10 },
+  scattering: { min: 0, max: 100 }, // σ per metre of the light the fluid scatters toward the eye (its body)
+  refraction: { min: 0, max: 4 }, // how far (m) the scene behind shifts per unit of ripple slope
+  sparkle: { min: 0, max: 100 }, // the sun's glitter off the ripples' facets
 };
-const FIELDS = [...Object.keys(NUMBERS), 'absorption', 'scatter', 'foam'];
+const FIELDS = [...Object.keys(NUMBERS), 'absorption', 'scatter', 'foam', 'caustics'];
+// The caustics: light focused by the ripples onto what is under the surface.
+const CAUSTICS = {
+  strength: { min: 0, max: 10 }, // brightness of the lines (0: none)
+  scale: { min: 0, max: 100, open: 'min' }, // the pattern's cell size (m)
+  depth: { min: 0, max: 1000, open: 'min' }, // the depth (m) over which they fade to 1/e
+};
 
 const inRange = (v, { min, max, open }) =>
   typeof v === 'number' &&
@@ -53,6 +61,12 @@ export function checkFluid(name, f, namespace) {
   for (const k of Object.keys(foam)) if (k !== 'depth' && k !== 'color') fail(`unknown field foam.${k}`);
   if (!inRange(foam.depth, { min: 0, max: 16 })) fail(`foam.depth ${JSON.stringify(foam.depth)} is outside [0, 16]`);
   if (typeof foam.color !== 'string' || !COLOR.test(foam.color)) fail('foam.color must be #rrggbb');
+  const c = f.caustics;
+  if (typeof c !== 'object' || c === null || Array.isArray(c)) fail('caustics must be { strength, scale, depth }');
+  for (const k of Object.keys(c)) if (!(k in CAUSTICS)) fail(`unknown field caustics.${k}`);
+  for (const [k, r] of Object.entries(CAUSTICS)) {
+    if (!inRange(c[k], r)) fail(`caustics.${k} ${JSON.stringify(c[k])} is outside ${range(r)}`);
+  }
   return { name, ...f };
 }
 
@@ -94,7 +108,7 @@ const hexNum = (c) => `0x${c.replace('#', '').toLowerCase()}`;
 export function fluidsRust(fluids, rf) {
   const rows = fluids.map(
     (f) =>
-      `    FluidInfo { name: ${JSON.stringify(f.name)}, opacity: ${rf(f.opacity)}, surface_drop: ${rf(f.surfaceDrop)}, absorption: [${f.absorption.map(rf).join(', ')}], scatter: ${hexNum(f.scatter)}, roughness: ${rf(f.roughness)}, ior: ${rf(f.ior)}, normal_scale: ${rf(f.normalScale)}, wave_scale: ${rf(f.waveScale)}, flow_speed: ${rf(f.flowSpeed)}, foam_depth: ${rf(f.foam.depth)}, foam_color: ${hexNum(f.foam.color)}, caustics: ${rf(f.caustics)} },`,
+      `    FluidInfo { name: ${JSON.stringify(f.name)}, opacity: ${rf(f.opacity)}, surface_drop: ${rf(f.surfaceDrop)}, absorption: [${f.absorption.map(rf).join(', ')}], scatter: ${hexNum(f.scatter)}, roughness: ${rf(f.roughness)}, ior: ${rf(f.ior)}, normal_scale: ${rf(f.normalScale)}, wave_scale: ${rf(f.waveScale)}, flow_speed: ${rf(f.flowSpeed)}, foam_depth: ${rf(f.foam.depth)}, foam_color: ${hexNum(f.foam.color)}, caustics: ${rf(f.caustics.strength)}, caustic_scale: ${rf(f.caustics.scale)}, caustic_depth: ${rf(f.caustics.depth)}, scattering: ${rf(f.scattering)}, refraction: ${rf(f.refraction)}, sparkle: ${rf(f.sparkle)} },`,
   );
   return [`pub static FLUIDS: [FluidInfo; ${fluids.length}] = [`, ...rows, '];', ''];
 }

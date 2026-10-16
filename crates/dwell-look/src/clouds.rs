@@ -12,7 +12,12 @@
 //! coordinates stay small anywhere in the world. Client-side visuals only: no network, no
 //! simulation.
 
-use crate::{MOON_GLOW, Rgb, SUN_GLOW, TWILIGHT};
+use crate::Rgb;
+use crate::daynight::DAY_NIGHT;
+
+/// How far (in the sine of the sun's height) the clouds' twilight reaches either side of the
+/// horizon.
+const TWILIGHT: f64 = 0.1;
 
 /// Where the deck is and how it fades (`clouds.json`'s `deck`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -336,10 +341,11 @@ fn vec3(c: Rgb) -> String {
 ///   of the cloud there shows (w: 0 below the horizon, past the fade, or with the eye at the deck;
 ///   negative for the edge-on band within the layer, which takes the coverage as its density).
 ///   Call it in uniform control flow and take `fwidth` of its xy (the pixel's footprint in cells).
-/// - `fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offsets: vec4f,
+/// - `fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offsets: vec4f,
 ///   cfg: vec4f, lights: CloudLighting) -> vec3f`, with `CloudLighting` the sky frame and the
-///   lights' colours from the renderer's frame (the data's colours are tints of those): the sky colour `clear`
-///   (sRGB, from `dwell_sky`) with the clouds over it.
+///   lights' colours from the renderer's frame (the data's colours are tints of those): `under`
+///   (the sky, or the scene where the deck is in front of it) with the clouds over it, far cloud
+///   hazing toward the clear sky `clear` (sRGB, from `dwell_sky`).
 ///
 /// `offsets` and `cfg` are [`cloud_uniforms`]'s.
 pub fn cloud_wgsl(t: &CloudTunables) -> String {
@@ -369,8 +375,14 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_SUNSET: vec3f = {};", vec3(l.sunset)),
         format!("const CLOUD_NIGHT_LIT: vec3f = {};", vec3(l.night_lit)),
         format!("const CLOUD_NIGHT_SHADE: vec3f = {};", vec3(l.night_shade)),
-        format!("const CLOUD_SUN_GLOW: vec3f = {};", vec3(SUN_GLOW.color)),
-        format!("const CLOUD_MOON_GLOW: vec3f = {};", vec3(MOON_GLOW.color)),
+        format!(
+            "const CLOUD_SUN_GLOW: vec3f = {};",
+            vec3(DAY_NIGHT.brightest().glow)
+        ),
+        format!(
+            "const CLOUD_MOON_GLOW: vec3f = {};",
+            vec3(DAY_NIGHT.moon.glow_color)
+        ),
         format!("const CLOUD_ABSORPTION: f32 = {};", f(l.absorption)),
         format!(
             "const CLOUD_SHADOW_STEP: f32 = {};",
@@ -544,14 +556,9 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	}
 	// Seen from above, the deck's sunlit top: the light reaches it through less cloud.
 	let lit = exp(-CLOUD_ABSORPTION * occl * select(1.0, 1.0 - CLOUD_TOP_LIGHT, from_above && dot(light, up) > 0.0));
-	// Day or night as the sky behind is: the sphere's gradient runs by the direction's dot with the
-	// day zenith, so a turned sky can be night on one side and day on the other.
-	// Below the horizon (the deck from above) it is the sky's level direction, as dwell_sky takes it.
-	let rise = dot(dir, up);
-	let level = dir - min(rise, 0.0) * up;
-	let flat = select(dir, level / max(length(level), 1e-6), rise < 0.0);
-	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole))
-		* smoothstep(-0.3, 0.1, dot(flat, day_pole));
+	// Day or night as the viewer's sky is (the day/night cycle: the same time of day all round the
+	// sky), by the day pole's height: the sun's.
+	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole));
 	var day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
 	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
 	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);
