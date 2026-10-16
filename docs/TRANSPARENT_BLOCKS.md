@@ -1,6 +1,6 @@
 # Dwell — Transparent Blocks: Render Modes, Cross Geometry and Tall Grass
 
-> **Status: [in progress, Phase 32]** — built on `claude/transparent-blocks` with the defaults in
+> **Status: [built, Phase 32; the owner's look outstanding]** — built on `claude/transparent-blocks` with the defaults in
 > §2, recorded here because CLAUDE.md's design questions were not put to the owner first; the open
 > questions are in §8. Decision record: [ADR 0035](./adr/0035-render-modes-and-cross-geometry.md).
 > The built mechanisms are described in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 (render modes,
@@ -75,7 +75,7 @@ level covers the same share of the tile as the full-size tile (coverage-preservi
   (0 at the base, `strength` × the plant's height scale at the top) and the speed into the cutout
   vertex's `plants` stream; the vertex shader leans the top along a slow gust field (travelling
   waves whose wavelengths divide 1,024 m, sampled at the world position modulo that, so it's
-  seamless and stays put as the eye moves) plus a faster flutter. `Renderer::set_wind` scales it
+  seamless and stays put as the eye moves) plus a faster flutter. `Renderer::set_plant_wind` scales it (`__dwell.plants(wind, shown)` in the dev tools)
   (0 turns it off; the hook for an effects-quality setting, §8).
 - **Fade**: `"fade": { "start": 40, "end": 72 }` — plants fade out (fewer samples covered; dithered
   without MSAA) between those distances, which must end within the smallest full-detail distance
@@ -105,16 +105,18 @@ Prototype content (ARCHITECTURE.md §6.1), appended to the block list (earlier i
 hashes don't change). Shape empty; cross look, cutout; a procedural tile of several tapering blades
 in the grass block's top colours with transparent gaps (`tallGrass`); wind; fade; placeable only on
 grass or dirt; replaceable; needs support below; a smaller selection box. Sounds: the sound-effects
-work (Phase 28, ADR 0032) isn't on this branch's base; when it lands, tall grass takes the grass
-sound set in its data.
+set is the grass block's (`dwell:grass`).
 
 ## 7. Other systems
 
 - **Physics**: shape empty, `solid: false`: no collider; a test walks a player through.
 - **Targeting**: the selection box (above); breaking it is a normal break.
-- **Ray marching** (Phase 25, `dwell-march`): not on this branch's base. When it lands, its state
-  classification must count `cutout` states as not occluding primary rays (Transparent, or Shaped
-  for crosses drawn as geometry), not as solid bricks.
+- **Ray marching** (Phase 25, `dwell-march`): its state classes count every state whose `render`
+  isn't `opaque` (ladders, tall grass, future glass) as `Transparent`, like water: never occupied
+  for primary rays, drawn by a raster pass over either renderer (a test pins ladders and tall grass).
+- **Region edits** (Phase 27 S3): a fill's cells that need support but have none (tall grass filled
+  into the air, or stacked on itself) are not kept; clearing the ground takes the plants with it.
+- **Sounds** (Phase 28): tall grass uses the grass sound set (`"sound": "dwell:grass"`).
 
 ## 8. Open questions for the owner
 
@@ -130,3 +132,21 @@ sound set in its data.
    Effects setting (wind on or off, later more) to the settings menu?
 6. **Grass under water**: placing grass into water replaces the water (it has no `flooded`
    property). Should plants be placeable under water (a `flooded` property), or refused there?
+
+## 9. Browser check and cost (2026-10-15)
+
+Chrome on the GPU (Apple M-series, 1280 × 720, 4× MSAA), a local terrain world (seed 7), tall grass
+placed through the edits like a player (a field of about 150 plants), ladders on stone posts and in
+the sea. Blade edges are smooth curves up close (the hand-filtered alpha over the distance-field
+tile), thin and pointed; no dark sides from any direction; plants vary in offset, turn and height;
+they sway; from a distance the field reads as grass and fades out before 88 m; ladders show the
+sky, the wall and the water through their gaps, and a flooded ladder sits in unbroken water.
+Remaining nits for the owner's look: a few single samples of distant blade tips near the horizon,
+small notches where two leaning blades' tips meet, and the crossed quads' straight lines at the
+foot of a dense clump.
+
+**Cost** (`__dwell.plants(1, true|false)`, alternated three times at one camera pose, 5 s each,
+unthrottled; the machine was shared, so single runs varied by ±1 ms): `gpu.near` +0.33, +0.40 and
+−0.18 ms with the plants drawn (about +0.3 ms), frame CPU unchanged within noise, +4 draw calls,
++656 triangles. Memory: 656 bytes per plant (8 vertices of 76 bytes, 12 indices), in the cutout mesh
+of its chunk only.

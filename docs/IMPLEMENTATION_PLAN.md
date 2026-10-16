@@ -49,7 +49,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
-| 32 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — T0–T4 built and tested (render modes as data, cutout ladders, the cross look with wind and fade, placement rules, `dwell:tall_grass`); outstanding: T5 (browser check, GPU cost), the owner's look and design answers, the e2e suite on CI; **tall grass needs a new compatibility line (0.12)**, the owner's decision (the ladder change alone keeps the registry hash) |
+| 32 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — T0–T5 built, tested and checked in a browser (render modes as data, cutout ladders, the cross look with wind and fade, placement rules, `dwell:tall_grass`, the marcher's classes; about +0.3 ms GPU for a 150-plant field); outstanding: the owner's look and design answers, the e2e suite on CI; tall grass is part of the 0.12.0 bundle (a new compatibility line; the ladder change alone keeps the registry hash) |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3133,12 +3133,12 @@ grass as the first block that uses it, and see-through ladders
 ([ADR 0035](./adr/0035-render-modes-and-cross-geometry.md),
 [`TRANSPARENT_BLOCKS.md`](./TRANSPARENT_BLOCKS.md)).
 
-**Status:** In progress — built on `claude/transparent-blocks` (based on Phase 25's A1 branch with
-`main` merged in) with the coordinator's defaults, the design questions not yet put to the owner
-(`TRANSPARENT_BLOCKS.md` §8). **Tall grass is a new compatibility line (0.12)**: it changes the
-registry hash, the owner's decision; `package.json` is not raised. The ladder change (T1) alone
-keeps the hash. Outstanding: the browser check and the GPU cost (T5), the owner's look, the 0.12
-decision, the e2e suite on CI (the hotbar now has six slots).
+**Status:** In progress — T0–T5 built, tested and checked in Chrome on the GPU (Apple M-series;
+screenshots and the cost in the PR and `TRANSPARENT_BLOCKS.md` §9), with the coordinator's
+defaults: the design questions are not yet put to the owner (`TRANSPARENT_BLOCKS.md` §8). **Tall
+grass is part of the 0.12.0 bundle** (a new compatibility line: it changes the registry hash; the
+owner raises `package.json`). The ladder change (T1) alone keeps the hash. Outstanding: the owner's
+look and answers, the e2e suite on CI (the hotbar now has six slots).
 
 Deliverables
 - [x] **T0** — ADR 0035 and `TRANSPARENT_BLOCKS.md` (defaults and open questions recorded).
@@ -3149,14 +3149,15 @@ Deliverables
   ladder's water drawn in its cell; cutout states without a solid are air at LOD. Look-only: the
   registry hash is unchanged.
 - [x] **T2** — The `cross` look (quads, height, world-seeded jitter), `wind` (sway in the vertex
-  shader over a seamless gust field, `Renderer::set_wind`) and `fade` (inside the full-detail
+  shader over a seamless gust field, `Renderer::set_plant_wind`) and `fade` (inside the full-detail
   distance), meshed in the workers (mesh jobs carry the chunk origin).
 - [x] **T3** — Placement rules as data: `placeOn`, `replaceable`, `needsSupport` (support removal
   in the same `VoxelModification`), `selectionBox` (targeting, line of sight, the outline).
 - [x] **T4** — `dwell:tall_grass` (prototype content): the `tallGrass` tile, the data, the palette's
   sixth slot; goldens' registry line regenerated (terrain hashes unchanged).
-- [ ] **T5** — Browser check: a patch and a field of grass and ladders up close, at a low angle,
-  from a distance and mid-sway; the GPU and CPU cost of a dense field.
+- [x] **T5** — Browser check: a patch and a field of grass and ladders up close, at a low angle,
+  from a distance and mid-sway, ladders against a wall, the sky, at a distance and flooded; the GPU
+  and CPU cost of a field (`__dwell.plants` A/B: about +0.3 ms `gpu.near`, CPU unchanged).
 
 Exit criteria
 - [x] Generator tests add a fixture block of each mode, a cross with its options and placement rules
@@ -3171,14 +3172,14 @@ Exit criteria
   stone).
 - [x] Shaders validate with naga (with and without MSAA), cutout tiles keep their coverage down the
   mips, and the ladder tile is transparent between its rails and rungs.
-- [ ] In a browser: soft blade edges, no shimmer, no dark sides, natural variation; ladders
+- [x] In a browser: soft blade edges, no shimmer, no dark sides, natural variation; ladders
   see-through against the sky, a wall, at a distance and flooded (screenshots in the PR).
 
 Deviations
 - Alpha-to-coverage is done in the fragment shader through `@builtin(sample_mask)` rather than the
   pipeline's `alpha_to_coverage_enabled`: with the hardware form the colour target's alpha would be
   both the coverage and the stored alpha, double-counting coverage in the premultiplied frame.
-- Wind respects a renderer scale (`set_wind`), not an effects-quality setting: none exists yet
+- Wind respects a renderer scale (`set_plant_wind`), not an effects-quality setting: none exists yet
   (`TRANSPARENT_BLOCKS.md` §8).
 - Sounds: the sound-effects work (Phase 28) isn't on this base; tall grass gets the grass sound set
   when it lands.

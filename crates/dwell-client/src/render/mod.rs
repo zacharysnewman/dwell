@@ -618,6 +618,8 @@ pub struct Renderer {
     arena: ArenaRef,
     /// The plants' wind scale (block data `wind`; 1 by default, 0 keeps them still).
     plant_wind: f64,
+    /// Whether the cutout meshes (ladders, plants) are drawn (the bench's A/B of their cost).
+    cutout_shown: bool,
     eye: V3,
     yaw: f64,
     pitch: f64,
@@ -1039,6 +1041,7 @@ impl Renderer {
             region_boxes: Vec::new(),
             arena,
             plant_wind: 1.0,
+            cutout_shown: true,
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
             pitch: -20.0,
@@ -1183,6 +1186,10 @@ impl Renderer {
         self.sky = frame;
     }
     /// The plants' wind scale (block data `wind`): 1 by default, 0 keeps them still (low effects).
+    /// Draws the cutout meshes or not (dev tools: `__dwell.plants`, measuring what they cost).
+    pub fn set_cutout_shown(&mut self, shown: bool) {
+        self.cutout_shown = shown;
+    }
     pub fn set_plant_wind(&mut self, scale: f64) {
         self.plant_wind = if scale.is_finite() {
             scale.clamp(0.0, 4.0)
@@ -1543,7 +1550,7 @@ impl Renderer {
                     mesh: DrawMesh::Chunk(coord, Part::Opaque),
                 });
             }
-            if c.cutout.is_some() {
+            if c.cutout.is_some() && self.cutout_shown {
                 out.push(DrawItem {
                     kind: Kind::Cutout,
                     water: false,
