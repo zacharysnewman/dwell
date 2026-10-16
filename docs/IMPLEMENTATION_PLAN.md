@@ -42,10 +42,12 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029) done; next: A1, the shared frame and GPU timing; local builds only until the owner's decision (A7) |
-| 26 — Water and fluid looks | ⏳ Not started — W1a needs Phase 24 only; W1b–W5 need A1 (W2 is A1, built once); W6 only if marching is kept at A7 |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done; S2a's e2e check outstanding; S2a's registry change needs a new compatibility line (the owner decides the bump); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.5, a patch release of the 0.11 line |
+| 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
+| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -84,6 +86,11 @@ are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
 Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
 existing phases; it builds on Phase 27's structures, and its deliverables are G-ADR and G0–G4.
+On 2026-10-15 the owner asked for procedural clouds in the sky ("in the skybox, not 3D"), added as
+**Phase 31 — sky clouds** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)). It
+builds on Phase 25's A1 (the shared frame's composite pass draws the sky) and changes no world file,
+protocol or terrain. Phases 28 and 29 are taken by work on other branches (sound effects, motion
+effects).
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -2581,25 +2588,57 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) done; next: A1, the shared frame and GPU timing. Needs Phase
-24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+**Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
+builders, pool, reference marcher) done; A2 (the renderer seam, compare mode with a placeholder
+marcher, bench `--compare`) built, its exit check done (compare mode with raster on both sides
+reports zero difference); A1 (the shared frame and GPU timing) built, its exit check done: the
+bench before/after (design doc §7, "A1 as built") and the picture differs slightly — antialiased
+edges, the sea's colour (water now blends in linear light), the outline no longer multisampled —
+which the owner approved (2026-10-14); the e2e suite passes on CI. Next: A3b, the GPU march, worker
+brick jobs, uploads, overlays and telemetry. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
 Deliverables
 - [x] **A0** — ADR 0029 (a second renderer behind a runtime switch, amending ADR 0028's renderer);
   the owner's answers recorded (`RAY_MARCHED_RENDERER.md` §9).
-- [ ] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
+- [x] **A1** — The shared frame and GPU timing (also Phase 26's W2): an offscreen `rgba16float`
   target, stored sampleable depth (handling the far/near split and MSAA), fog and tone mapping moved
   to a composite pass; timestamp queries in the telemetry (`gpu.<pass>`); `bench.ts` passes
   `--enable-webgpu-developer-features`. 4× MSAA kept (owner).
-- [ ] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene`, the
-  `?renderer=raster|march|compare` switch (a build-time flag keeps it out of deployed builds) and the
-  active renderer in the settings menu and F3; compare mode's split, blink and difference views with
-  an empty "march" side; `npm run bench -- --compare` with the configurations table and report.
-- [ ] **A3** — Marched terrain at every distance: the generated GPU state table; brick jobs in the
-  workers for chunks and LOD sections (palette bricks with column max-heights); the pool, allocator
-  and clipmap levels; the CPU reference marcher; the primary march at full resolution with the
+- [x] **A2 bench --compare** — `npm run bench -- --compare <scenario…>` (`scripts/compare.ts`,
+  `configs.ts`, `compareReport.ts`): each scenario once per configuration of
+  `client/bench/configs.json` (renderer, scale, upscaler; checked, a test adds one by data) in fresh
+  pages; `OUT/compare.json`, a printed table, per shot a side-by-side image and a ΔE heatmap
+  (% over the threshold, mean and max), and `OUT/compare.html` (metrics tables, the screenshots side
+  by side, a blink toggle per pair, the heatmaps); configurations the build lacks (from `__dwell.renderers()` /
+  `upscalers()`; today every `march` one) skipped with a note; metrics: frame interval percentiles,
+  dropped frames at 60 Hz, CPU phases, `gpu.*` when present, memory, uploads, streaming, a near/far
+  split. Scenarios' `renderer` (`?renderer=`) and `split` fields, a `repeat` step, and the scenarios
+  `look-horizon`, `look-down`, `edit-burst`, `fly-high`, `thermal-10min` (each run once on a Mac).
+- [x] **A2** — The seam and compare mode: payload-generic terrain calls in `Scene` (`render/seam.rs`:
+  a `TerrainRenderer` per renderer's payloads, routed by the selection; the meshing jobs make the
+  payloads it needs; a runtime switch rebuilds every chunk and LOD section from the client's data),
+  the `?renderer=raster|march|compare` switch (and `?compare=raster`: raster on both sides) behind
+  the build-time `__RENDERER_SWITCH__` (off in the release workflow's builds) and the active
+  renderer in the settings menu (with a picker) and F3; `__dwell.renderers()` / `upscalers()` for
+  the bench; compare mode's split (scissored, a draggable divider), blink (F8) and difference (F7
+  cycles; coverage, view depth and colour ΔE, counted on the GPU) views and the per-side overlay
+  (CPU, GPU, memory, settings), with a placeholder "march" side (`render/march.rs`, magenta).
+- [ ] **A2 follow-ups, moved to A3** (they need the marcher's output): edit-to-visible latency (an
+  edit's sequence carried through the remesh to the frame that draws it; `DEV_TOOLS.md` TODO) and
+  the bench's image agreement by cell id, face and depth (the renderers' id buffers; the bench
+  compares colour only, compare mode's difference view compares coverage and depth in game).
+- [x] **A3a** — The CPU core (`crates/dwell-march`, pure Rust, native and `wasm32`): the GPU data
+  layout as `u32` words (clipmap levels and slots, 64-tree nodes, raw and 1/2/4-bit palette bricks,
+  column min-max grids, the state table from the registry's data); the builders (chunk → raw
+  bricks, LOD section → palette bricks, both with column grids and per-empty-brick distances); the
+  pool's size-class allocator and the clipmap levels (CPU side); the CPU reference marcher (integer
+  + fraction ray state, cone LOD, masks, column and brick-distance skips, step cap) with a
+  brute-force oracle; steps-per-ray statistics (`examples/march_steps.rs`).
+- [ ] **A3b** — Marched terrain at every distance on the GPU: the state table, pool and clipmap
+  uploaded (growth by `copy_buffer_to_buffer`); brick jobs in the workers for chunks and LOD
+  sections; the primary march at full resolution (a WGSL port of the reference marcher) with the
   hierarchy's masks and cone LOD; overlays through the `frag_depth` pass; steps-per-ray telemetry.
   `march` mode draws all terrain with no meshes.
 - [ ] **A4** — Empty-space skipping (design doc §4.3): column min-max heights, per-brick empty
@@ -2613,12 +2652,18 @@ Deliverables
   Phase 20 unblocked).
 
 Exit criteria
-- [ ] A1: bench before/after; raster screenshots match today's, or the owner approves the
-  difference.
-- [ ] A2: compare mode runs with raster on both sides and reports zero difference.
-- [ ] A3: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces);
-  the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near and
-  distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
+- [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
+  difference. (The owner approved the differences — edges, the sea's colour, the outline — 2026-10-14.)
+- [x] A2: compare mode runs with raster on both sides and reports zero difference (2026-10-15, Mac,
+  Chrome on the GPU: `?local=1&seed=7&renderer=compare&compare=raster`, difference view at the
+  settled spawn: 0 of 921 600 px in every class over five reads; raster against the placeholder
+  marcher differs as expected; `bench --compare idle-spawn` ran, march configurations skipped).
+- [x] A3a: the reference marcher's unit tests (first hit cell, face, distance, rebasing, both faces)
+  pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
+  without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
+  origin (bit-identical), face B as face A mirrored, a state added by data alone.
+- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near
+  and distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
   report on a desktop.
 - [ ] A4: steps-per-ray p99 down on `look-horizon` and `fly-high`; a comparison report on a desktop
   and a phone.
@@ -2628,6 +2673,16 @@ Exit criteria
 - [ ] A6: a comparison with lighting on and off; the owner's look.
 - [ ] A7: the owner's decision recorded in ADR 0029.
 
+
+Deviations
+- A3 is split into A3a (the CPU core) and A3b (the GPU side), so the finished part can be ticked.
+- Column min-max grids are built for chunks too, not only LOD sections (design doc §4.3 item 3):
+  on generated terrain they cut horizon rays' p99 from 455 to 83 steps for 2.7 KiB a node (the
+  measurements are in the design doc). The CPU reference also has A4's column and brick-distance
+  skips; A4 still needs them, and the rest of its list, on the GPU.
+- Water is its own `Transparent` march class: never occupied for primary rays (it stays a raster
+  pass, W6 later), its ids kept in mixed bricks. Level-0 bricks with shaped cells carry the optional
+  shape plane as a second fixed size class; the shape hook hits the cell's cube until A5.
 ---
 
 ## Phase 26 — Water and Fluid Looks
@@ -2637,21 +2692,25 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** Not started. W1a needs Phase 24 only; W1b and W3–W5 need A1 (Phase 25), which is W2; W6
-needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+**Status:** In progress — W1a done (fluid looks in the registry, the surface drop and opacity read
+from them, the eye-under-fluid test in the frame uniform); W2 built (Phase 25's A1); W1b built (the
+water shader, `water_fs`, with the fluid id per vertex, the fluid buffer, the underwater fog stub and
+the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look. Next: W3; W3–W5
+build on the shared frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
 Deliverables
-- [ ] **W1a** — Fluid data: a `fluids` table in `shared/blocks/` (absorption, scatter, roughness,
+- [x] **W1a** — Fluid data: a `fluids` table in `shared/blocks/` (absorption, scatter, roughness,
   IOR, normal and wave scales, flow speed, foam, caustics, surface drop), blocks referencing a fluid
   by name (`"look": "fluid", "fluid": "dwell:water"`), validated by `gen.mjs` and emitted as a fluid
-  table; the mesher writing the fluid id per vertex and taking the surface drop from the data
+  table; the mesher taking the surface drop from the data
   (`WATER_SURFACE`, `CHUNK_WATER_DROP_M` gone); `WATER_OPACITY` from the data; the eye-submerged test
   with the 0.875 rule (the cell at `floor(eye)` liquid and, under a non-fluid cell, `frac(eye.y)`
   below the surface; the face's up) into a frame uniform, with its regression test.
-- [ ] **W1b** — The water shader (after A1): a dedicated `water_fs` with scrolling normal maps,
-  Schlick Fresnel, a GGX glint by the fluid's roughness and the sky reflection.
-- [ ] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
+- [x] **W1b** — The water shader (after A1): the mesher writing the fluid id per vertex (moved from
+  W1a), a dedicated `water_fs` with scrolling normal maps, Schlick Fresnel, a GGX glint by the
+  fluid's roughness and the sky reflection.
+- [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
 - [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
   shoreline foam.
@@ -2663,11 +2722,43 @@ Deliverables
   refraction rays replace SSR and the copy on the high tiers.
 
 Exit criteria
-- [ ] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
+- [x] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
   own parameters; a bad fluid entry fails `gen.mjs` naming it; the regression test for the
   cell-against-surface mismatch (the eye 0.9 into a water cell under air is not underwater), seen
   failing first.
-- [ ] W1b: the fixture fluid drawn with its own parameters; the owner's look.
+- [x] W1b: the fixture fluid drawn with its own parameters: `test:oil`'s vertices carry its own id
+  (`dwell-mesh` `a_fluid_added_by_data_alone_…`) and its row of the fluid buffer holds its own
+  parameters (`render::water` `packs_each_fluid_at_its_id_…`); the shader validates (naga) and draws
+  in Chrome on the GPU (`npm run bench -- water-views`).
+- [ ] W1b: the owner's look (`water-views` screenshots in the PR).
+
+Deviations (W1b):
+- Beyond the plan, from the brief: the underwater fog stub (the composite reads the `water` uniform:
+  the fluid's absorption and in-scatter replace the height fog while submerged; W4 builds the rest)
+  and the water quality setting (Low, Medium, High; only Low differs in W1b — one ripple layer —
+  W5 adds the tiers' real differences).
+- The normal "maps" are procedural (gradient noise with derivatives), not textures: no assets, and
+  each layer fades by its own wavelength against the pixel's footprint, which mipmaps would do less
+  well for a scrolling, wrapped pattern.
+- `dwell:water`'s data tuned from the screenshots (prototype content): scatter `#2b9cc0` (was
+  `#1d6f8a`), opacity 0.65 (was 0.55). Then, at the owner's request for bluer water: block colour
+  `#2f86e0` (was `#3fb2d6`), scatter `#1c7ed8`, absorption [0.7, 0.28, 0.06] (was [0.45, 0.09,
+  0.06]), opacity 0.72. Then tropical (owner): scatter `#1a8ee0`, absorption [0.45, 0.12, 0.04]
+  (clear water: red goes first, so shallows over sand read turquoise once W3 grades by depth).
+
+Deviations (W1a):
+- The per-vertex fluid id moved to W1b: it changes the terrain vertex format, which Phase 25's A1
+  is restructuring, and nothing reads it before the water shader. Until then a chunk's fluids share
+  one transparent draw at `dwell:water`'s opacity.
+- A fluid's `opacity` is a field of the fluid (the fixed alpha until W3's absorption replaces it);
+  fluid blocks take it from there instead of declaring their own.
+- The fixture fluid is a test registry generated alongside the build's
+  (`shared/blocks/fixtures/` → `crates/dwell-blocks/src/fixture.gen.rs`, feature `fixture`); the
+  chunk mesher takes a registry's kinds so the test meshes `test:oil` by data alone.
+- Checked by: `client/src/world/fluids.test.ts` (bad entries fail naming the fluid and field),
+  `dwell-mesh` `a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity`, and
+  `dwell-world` `fluid::tests` (the regression: an eye 0.9 m up a water cell under air is not
+  underwater; failed against the whole-cell rule, as physics counts it, then passed).
 - [ ] W3: screenshots of shore views; bench.
 - [ ] W4: named views underwater and half in; the owner's look.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
@@ -2735,9 +2826,12 @@ Exit criteria
 - [ ] S2a: a sandbox world opens on the white floor with flight on (e2e). Not yet an e2e spec. Manual
   check (2026-10-14, Chrome on the GPU, `?new=1&type=sandbox`): the index records a `sandbox` world
   (generator 100); the ground is the floor block to depth; a Break on it leaves it; a stone placed on
-  it lands; flight turns on. Finding: lit and tone-mapped, the white floor reads light grey, close
-  to the sky's fog colour, so the horizon disappears and only placed blocks give depth — a grid or
-  faint texture on the floor may be wanted (owner's call).
+  it lands; flight turns on. Finding: lit and tone-mapped, the white floor read light grey, close
+  to the sky's fog colour, so the horizon disappeared and only placed blocks gave depth; the owner
+  approved a grid, now built (a faint line at every block edge from the `grid` tile, a stronger one
+  every 8 blocks from the `grid` look option), checked near, far and from above: the lines stay
+  readable under tone mapping, fade without shimmer at a distance, and leave the block outline
+  clear.
 - [x] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
   accepts; the store's append-only test. *(Verified: `structureStore.test.ts` (append-only: unknown
   fields kept through rename and save-over, broken, newer-format and invalid files never rewritten or
@@ -2775,6 +2869,54 @@ Deviations (S1):
   extended north to z = 0 (kept cells) so its anchor is the world origin. RLE is not built.
 - Test fixtures are generated into a separate table (`tests/fixtures/structures.gen.rs`), so they
   are not in the build.
+
+## Phase 29 — Motion Effects (Speed FOV and Wind)
+
+**Goal:** A "fast moving" feel (owner, 2026-10-14: "sprint wind effects and dynamic FOV
+adjustment … using shaders for VFX"): the field of view widens with the camera's speed and wind
+streaks blow past the screen's edges, from data-driven tunables
+([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)).
+
+**Status:** In progress — built and tested; outstanding: the owner's look in a browser and approval
+(and the open questions in `MOTION_EFFECTS.md`), CI. Built on Phase 25's shared frame (A1): the
+wind is part of its composite pass.
+
+**Deviation:** the owner was not asked the "ask before designing" questions first; the defaults
+chosen are recorded in `MOTION_EFFECTS.md` with the open questions.
+
+**Deliverables:**
+
+- [x] Tunables as data: `shared/look/motion.json`, validated and generated into dwell-look's
+  `motion.gen.rs` by `shared/look/gen.mjs` (`node --test shared/look/gen.test.mjs`; CI fails on
+  stale output).
+- [x] dwell-look's `motion.rs`: speed → FOV boost and wind targets (eased walk→run, log-scaled to
+  flight), per-state gains, a critically damped spring, the FOV caps, the vanishing point, resets
+  on teleport, respawn, a tool camera and the face-B turn-over, held while the menu is open.
+- [x] The frame's FOV computed once by the game from the predicted velocity and state and used by
+  the renderer (projection, sky rays, pass culling) and the LOD selection.
+- [x] The wind in the composite: procedural streaks from the vanishing point, a flight layer, an
+  edge vignette and an edge radial blur of the scene (WGSL, naga-validated).
+- [x] Settings: Speed effects (off under `prefers-reduced-motion`) and FOV boost 0–100 %, stored
+  append-only under `dwell.motion`.
+- [x] Bench scenarios `sprint-straight` and `fly-fast-turn`; the cost measured on `fly-low-fast`.
+- [x] The owner's answers (2026-10-15): a Field of view setting (60–100°, default 75°, append-only
+  `dwell.view`) as the base for the projection, the LOD and culling, with the wide-screen rule
+  derived from it (`dwell_lod::base_fov`); the boost as a zoom-out percentage of the base (+10 %
+  sprinting, +20 % at top flight speed, clamped to 120°; the boosted caps removed); the open
+  questions decided (`MOTION_EFFECTS.md`).
+
+**Exit criteria:**
+
+- [x] Unit tests: speed → target FOV, the spring, the caps, resets, the menu hold, a tunable changed
+  by data changing the effect; the settings store's append-only test.
+- [x] A local world natively: sprinting widens the view for the renderer and the LOD alike, and
+  standing settles it back; the Field of view setting is the base for both (`tests/game_local.rs`).
+- [x] Setting → base FOV at 60/75/100° (wide screens included) and the boost → effective FOV at
+  0/10/20 % (unit tests).
+- [x] Cost: `fly-low-fast --unthrottled` on this Mac's GPU, effects on against off: the composite
+  +0.2 ms GPU (p50 1.13 → 1.37 ms), no change in frame interval.
+- [ ] The owner looks at it in a browser and approves (subtle at sprint, stronger in fast flight,
+  the crosshair area clear).
 
 ## Phase 30 — Tree Growth
 
@@ -2828,6 +2970,50 @@ Exit criteria
   speed multiplier scales growth; protocol golden tests for the tree records and the `Growth` reason.
 - [ ] G4: two variant seeds give different trees from one model, each reproducible from its seed,
   and a variant's final stage equals its jittered model.
+
+---
+
+## Phase 31 — Sky Clouds
+
+**Goal:** Procedural clouds drawn as part of the sky, not 3D (owner, 2026-10-15). A thin cloud deck
+at a fixed altitude has true perspective and parallax, a domain-warped noise shape, wind drift, and
+light from the sky frame's sun and moon. It is an extendable system: tunables as data, coverage one
+run-time parameter for a future weather system, and a quality setting
+([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)).
+
+**Status:** In progress. C0–C4 are built and tested, natively, in Node and in a browser on the
+GPU. Outstanding: the owner's look and answers to `CLOUDS.md` §6 (the defaults were taken without
+asking: clouds are new), CI, and a phone's frame time. Built on Phase 25's A1 (branch
+`claude/a1-shared-frame`).
+
+Deliverables
+- [x] **C0** — ADR 0034 and `CLOUDS.md` (the defaults for CLAUDE.md's questions, the model, the open
+  questions); ARCHITECTURE.md §5, §6.6 (Clouds) and §7.4.
+- [x] **C1** — The cloud deck in the composite (`dwell-look` `clouds.rs`, `cloud_wgsl`): the ray's
+  hit on a sphere-curved deck (hidden below the horizon, faded with distance and near the deck);
+  periodic value-noise fBm with a domain warp and a lattice-preserving octave transform, offsets
+  wrapped in f64 (f32-safe anywhere); octaves faded by the pixel's footprint; light from the
+  frame's sky frame and lights (self-shadow on High, silver lining, low-sun warmth, night by
+  direction); the terrain's fog toward the clear sky; face B over its own horizon.
+- [x] **C2** — Tunables as data: `shared/look/clouds.json` → `clouds.gen.rs` by
+  `shared/look/clouds.mjs` (validated, with `clouds.test.mjs`; CI regenerates and fails on a diff);
+  coverage a frame uniform (`Renderer::set_cloud_coverage`, `Client.setCloudCoverage`).
+- [x] **C3** — The Clouds setting (Off / Low / High: fewer octaves and no self-shadow on Low), High on
+  desktops and Low on touch devices, kept under `dwell.clouds` (append-only store); the drift's
+  clock is the server's tick (`world_clock.rs`).
+- [x] **C4** — Bench scenarios `clouds-high`, `-low`, `-off` (GPU cost), `-night`, `-dusk`, `-fly`
+  and `-altitude`; named views and scenarios take `settings.clouds` and `settings.skyRotation`.
+
+Exit criteria
+- [x] The deck intersection, the wrap, coverage, the quality setting, the clock and a tunable changed
+  by data are pinned by tests; the WGSL validates with Naga (alone and in the renderer's module);
+  the generator's output matches the data (`node --test shared/look/clouds.test.mjs`).
+- [x] In a browser on the GPU: clouds looking up, at the horizon, toward the sun, at night, with a
+  low sun, while flying fast (parallax and drift), fading near the deck, and over face B by day and
+  night, from screenshots.
+- [x] GPU cost measured against Off (`gpu.composite`, `--unthrottled`, `CLOUDS.md` §4).
+- [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
+- [ ] CI green, and the frame time on a phone with the default (Low).
 
 ---
 

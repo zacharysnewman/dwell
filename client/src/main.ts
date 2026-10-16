@@ -42,6 +42,14 @@ import { SettingsMenu } from './ui/settingsMenu';
 import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
+import { waterQualityLevel } from './ui/waterSettings';
+import {
+  CompareOverlay,
+  RENDERER_CHOICES,
+  choiceOf,
+  rendererParams,
+  type CompareState,
+} from './ui/renderer';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -110,6 +118,20 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /**
+   * The terrain renderers `?renderer=` can pick in this build (docs/DEV_TOOLS.md: `bench
+   * --compare` skips the others), and the upscalers.
+   */
+  renderers(): string[];
+  upscalers(): string[];
+  /** What draws the terrain: `raster`, `march` or `compare raster | march`. */
+  renderer(): string;
+  /** Switches renderer at runtime (local builds; false otherwise): see `?renderer=`. */
+  setRenderer(name: string, compare?: string): boolean;
+  /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
+  compare(): CompareState | null;
+  /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
+  setCompare(view?: string, divider?: number): void;
   /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
@@ -209,6 +231,8 @@ interface App {
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
+  /** Compare mode's labels and divider (the renderer switch, local builds). */
+  compare: CompareOverlay | null;
 }
 
 /** The ?scale= drawing-buffer scale (comparing performance on a device). */
@@ -328,6 +352,7 @@ function showHud(app: App, now: number): void {
   app.hud.setStatus(h.status ?? '');
   app.hotbar?.setRegion(h.region ?? '');
   if (h.debug) app.hud.setDebug(h.debug);
+  app.compare?.show(app.client.compareState() as CompareState | null);
 }
 
 async function start(): Promise<App | null> {
@@ -351,6 +376,9 @@ async function start(): Promise<App | null> {
       fullChunks: params.get('chunks') === 'full',
       netsim: params.get('netsim') ?? undefined,
       search: location.search,
+      // ?renderer= and compare mode: local builds only (vite.config.ts, RAY_MARCHED_RENDERER.md §3).
+      rendererSwitch: __RENDERER_SWITCH__,
+      ...rendererParams(location.search, __RENDERER_SWITCH__),
     });
   } catch (err) {
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -383,6 +411,11 @@ async function start(): Promise<App | null> {
     loopback: null,
     world: null,
     playing: false,
+    compare: __RENDERER_SWITCH__
+      ? new CompareOverlay(document.body, canvas, (share) => {
+          client.setCompare(undefined, share);
+        })
+      : null,
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -402,15 +435,35 @@ async function start(): Promise<App | null> {
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
+    client.setWaterQuality(waterQualityLevel(s.water.quality));
     client.setSkyRotation(s.skyRotation);
+    client.setClouds(s.clouds);
+    client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;
   // While the menu is open the touch controls step aside: they would take its taps.
   settings.onOpenChange = (open) => {
     touch.visible = touchWanted && !open;
+    // The speed effects hold still while the menu is open.
+    client.setMenuOpen(open);
   };
   settings.setFootnote(formatBuildInfo(buildInfo));
+  const showRenderer = (): void => {
+    const label = client.renderer();
+    settings.setRenderer(
+      label,
+      client.rendererSwitch() ? RENDERER_CHOICES : null,
+      choiceOf(label)?.id,
+      (id) => {
+        const c = RENDERER_CHOICES.find((r) => r.id === id);
+        if (c) client.setRenderer(c.renderer, c.compare);
+        showRenderer();
+      },
+    );
+  };
+  showRenderer();
   settings.addDebugTools([
     {
       key: 'F3',
@@ -501,6 +554,18 @@ async function start(): Promise<App | null> {
       client.releaseCamera();
     },
     renderStats: () => client.renderStats() as RenderStats,
+    renderers: () => client.renderers() as string[],
+    upscalers: () => client.upscalers() as string[],
+    renderer: () => client.renderer(),
+    setRenderer: (name, compare) => {
+      const ok = client.setRenderer(name, compare);
+      showRenderer();
+      return ok;
+    },
+    compare: () => client.compareState() as CompareState | null,
+    setCompare: (view, divider) => {
+      client.setCompare(view, divider);
+    },
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,
@@ -738,24 +803,18 @@ function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
 async function connect(app: App): Promise<void> {
   const status = element('net-status', HTMLDivElement);
   const params = new URLSearchParams(location.search);
-  let launch = launchOf(location.search);
+  const launch = launchOf(location.search);
   if (launch.kind === 'menu') {
     openMainMenu(app, params.get('say') ?? undefined);
     return;
   }
 
-  // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1).
+  // A local world: from the menu (?play=<id>) or by link (?world=, ?seed=, ?local=1). The menu's
+  // new and regenerated worlds were made before the client started (routeMadeWorld).
   const index = new WorldIndex(storage());
-  // The menu's new and regenerated worlds are this build's to make (RELEASES.md §5); then they are
-  // played as any world, the address saying so (a reload continues it rather than making another).
   if (launch.kind === 'new' || launch.kind === 'regenerate') {
-    const id = await makeWorld(index, launch);
-    if (typeof id !== 'string') {
-      openMainMenu(app, id.message);
-      return;
-    }
-    history.replaceState(null, '', withRoute(location.search, { play: id }));
-    launch = { kind: 'play', id };
+    openMainMenu(app);
+    return;
   }
   let localWorld: LocalWorld | null = null;
   let worldName = 'Local world';
@@ -871,12 +930,32 @@ async function connect(app: App): Promise<void> {
 
 // The main menu needs no game client (nor WebGPU): it opens at once. Anything else starts the
 // client, and shows the unsupported screen where it cannot.
+/**
+ * The menu's new and regenerated worlds are this build's to make (RELEASES.md §5), before the
+ * client starts (they need no WASM or WebGPU): the address then says `?play=<id>` at once, so a
+ * reload while the game loads continues the world rather than making another. False: it could not
+ * be made, and the menu says why.
+ */
+async function routeMadeWorld(): Promise<boolean> {
+  const launch = launchOf(location.search);
+  if (launch.kind !== 'new' && launch.kind !== 'regenerate') return true;
+  const id = await makeWorld(new WorldIndex(storage()), launch);
+  if (typeof id !== 'string') {
+    openMainMenu(null, id.message);
+    return false;
+  }
+  history.replaceState(null, '', withRoute(location.search, { play: id }));
+  return true;
+}
+
 if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();
 } else {
-  void start().then((app) => {
+  void routeMadeWorld().then(async (ok) => {
+    if (!ok) return;
+    const app = await start();
     if (app) void connect(app);
   });
 }

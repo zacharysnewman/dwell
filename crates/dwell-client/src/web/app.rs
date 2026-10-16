@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use dwell_game::input::{EditAction, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
+use dwell_look::clouds::CloudQuality;
 use dwell_look::fog::FogSettings;
 use dwell_look::sky_frame::{SkySwitches, sky_angle, sky_frame, sky_switches};
 use dwell_physics::config::PlayerControllerConfig;
@@ -20,12 +21,15 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use super::jobs::WebJobs;
 use super::transport::{TransportEvent, WebRtcConn, WebTransportConn};
+use crate::game::Scene;
 use crate::game::{Game, LodSettings, Send};
 use crate::net::netsim::{Direction, NetConditions, parse_net_conditions};
 use crate::net::sdp::WebRtcInvite;
 use crate::net::session::{Out, Session, SessionState};
 use crate::pool::Pool;
 use crate::render::Renderer;
+use crate::render::compare::CompareView;
+use crate::render::seam::{Selection, TerrainKind};
 use crate::telemetry;
 
 /// The most cells `Client::voxels` reads at once (about 2 M: a 128³ box).
@@ -185,6 +189,9 @@ struct Options {
     full_chunks: bool,
     netsim: Option<NetConditions>,
     sky: SkySwitches,
+    /// The renderer switch (`?renderer=`, compare mode): local builds only (the shell's build-time
+    /// flag, RAY_MARCHED_RENDERER.md §3); deployed builds keep the mesher.
+    renderer_switch: bool,
 }
 
 struct Inner {
@@ -211,6 +218,11 @@ struct Inner {
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
     debug_visible: bool,
+    /// The motion effects' settings and whether the game menu is open (docs/MOTION_EFFECTS.md).
+    motion: dwell_look::motion::MotionSettings,
+    menu_open: bool,
+    /// The Field of view setting (degrees, vertical).
+    fov_setting: f64,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -229,7 +241,8 @@ pub struct Client {
 impl Client {
     /// Starts WebGPU on the canvas. Rejects when WebGPU is unavailable (the shell shows its
     /// "unsupported" screen). `options`: `{ displayName, clientVersion, makeWorker() → Worker,
-    /// workers, lod, lodColors, fullChunks, netsim, search }`.
+    /// workers, lod, lodColors, fullChunks, netsim, search, rendererSwitch, renderer, compare }`
+    /// (`renderer`, `compare`: `?renderer=` and `?compare=`, taken only with `rendererSwitch`).
     pub async fn create(
         canvas: web_sys::HtmlCanvasElement,
         options: JsValue,
@@ -251,7 +264,16 @@ impl Client {
             full_chunks: get("fullChunks").as_bool().unwrap_or(false),
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
             sky: sky_switches(&get("search").as_string().unwrap_or_default()),
+            renderer_switch: get("rendererSwitch").as_bool().unwrap_or(false),
         };
+        let selection = options
+            .renderer_switch
+            .then(|| {
+                let renderer = get("renderer").as_string()?;
+                Selection::parse(&renderer, get("compare").as_string().as_deref())
+            })
+            .flatten()
+            .unwrap_or_default();
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = wgpu::Backends::BROWSER_WEBGPU;
@@ -298,6 +320,7 @@ impl Client {
         );
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
+        renderer.select(selection);
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,
@@ -324,6 +347,9 @@ impl Client {
             started_ms: None,
             shell_events: Vec::new(),
             debug_visible: false,
+            motion: Default::default(),
+            menu_open: false,
+            fov_setting: dwell_lod::frustum::VERTICAL_FOV,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -435,6 +461,9 @@ impl Client {
             }
             let stats = session.stats();
             game.rtt_ms = stats.datagram_rtt_ms.or(stats.rtt_ms);
+            game.motion_settings = s.motion;
+            game.menu_open = s.menu_open;
+            game.fov_setting = s.fov_setting;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -453,6 +482,11 @@ impl Client {
             s.options.sky,
             (now_ms - start) / 1000.0,
         )));
+        // The clouds drift by the world's clock once the server's ticks have arrived.
+        let world = s.game.as_ref().and_then(|g| g.clock.seconds(now_ms));
+        s.renderer
+            .borrow_mut()
+            .set_cloud_time(world.unwrap_or((now_ms - start) / 1000.0));
         s.draw();
         telemetry::add("frame.cpu", telemetry::now_ms() - t0);
     }
@@ -588,6 +622,20 @@ impl Client {
         time_stamp_ms: f64,
     ) -> bool {
         let mut s = self.inner.borrow_mut();
+        // Compare mode's keys (controls.ts): F7 the next view, F8 blink.
+        if matches!(code, "F7" | "F8") && s.renderer.borrow().selection().compare() {
+            if !repeat {
+                let mut r = s.renderer.borrow_mut();
+                let mut c = r.compare();
+                if code == "F7" {
+                    c.cycle();
+                } else {
+                    c.blink();
+                }
+                r.set_compare(c);
+            }
+            return true;
+        }
         let k = s.input.key_down(code, repeat, ctrl, meta, time_stamp_ms);
         for e in k.events {
             s.on_input_event(e, time_stamp_ms);
@@ -909,6 +957,55 @@ impl Client {
             .borrow_mut()
             .set_exposure(exposure);
     }
+    /// The Clouds setting: `off`, `low` or `high` (anything else: high).
+    #[wasm_bindgen(js_name = setClouds)]
+    pub fn set_clouds(&self, quality: &str) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_clouds(CloudQuality::from_name(quality).unwrap_or(CloudQuality::High));
+    }
+    /// The clouds' coverage, 0 (clear) to 1 (overcast): for a weather system, or by hand.
+    #[wasm_bindgen(js_name = setCloudCoverage)]
+    pub fn set_cloud_coverage(&self, coverage: f64) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cloud_coverage(coverage);
+    }
+    /// The water quality (0 Low, 1 Medium, 2 High; WATER_RENDERING.md §4).
+    #[wasm_bindgen(js_name = setWaterQuality)]
+    pub fn set_water_quality(&self, level: u32) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_water_quality(crate::render::water::WaterQuality::from_level(level));
+    }
+    /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
+    #[wasm_bindgen(js_name = setMotion)]
+    pub fn set_motion(&self, enabled: bool, fov_strength: f64) {
+        self.inner.borrow_mut().motion = dwell_look::motion::MotionSettings {
+            enabled,
+            fov_strength: if fov_strength.is_finite() {
+                fov_strength.clamp(0.0, 1.0)
+            } else {
+                1.0
+            },
+        };
+    }
+    /// The Field of view setting: the vertical FOV in degrees (60–100, `dwell_lod::base_fov`).
+    #[wasm_bindgen(js_name = setFov)]
+    pub fn set_fov(&self, degrees: f64) {
+        self.inner.borrow_mut().fov_setting = dwell_lod::sanitize_fov_setting(degrees);
+    }
+    /// The game menu opened or closed: the motion effects hold still while it is open.
+    #[wasm_bindgen(js_name = setMenuOpen)]
+    pub fn set_menu_open(&self, open: bool) {
+        self.inner.borrow_mut().menu_open = open;
+    }
     #[wasm_bindgen(js_name = setSkyRotation)]
     pub fn set_sky_rotation(&self, degrees: f64) {
         self.inner.borrow_mut().sky_setting_deg = degrees;
@@ -927,6 +1024,107 @@ impl Client {
             lod.set_quality(pixel_error, (memory_mb * 1_048_576.0) as usize);
         }
     }
+    // ----- The renderer seam and compare mode (docs/RAY_MARCHED_RENDERER.md §3, §5) -----
+
+    /// The terrain renderers this build offers for `?renderer=` (`bench --compare` reads it):
+    /// `raster` everywhere; `march` with the renderer switch once the marcher draws terrain.
+    pub fn renderers(&self) -> Array {
+        let s = self.inner.borrow();
+        let mut names = vec![TerrainKind::Raster.name()];
+        if s.options.renderer_switch && crate::render::march::BUILT {
+            names.push(TerrainKind::March.name());
+        }
+        names.into_iter().map(JsValue::from).collect()
+    }
+    /// The upscalers it offers: none yet beyond the browser's own stretch (A5).
+    pub fn upscalers(&self) -> Array {
+        ["none", "bilinear"]
+            .into_iter()
+            .map(JsValue::from)
+            .collect()
+    }
+    /// What draws the terrain: `raster`, `march` or `compare raster | march`.
+    pub fn renderer(&self) -> String {
+        self.inner.borrow().renderer.borrow().selection().label()
+    }
+    /// Whether the renderer can be switched (a local build).
+    #[wasm_bindgen(js_name = rendererSwitch)]
+    pub fn renderer_switch(&self) -> bool {
+        self.inner.borrow().options.renderer_switch
+    }
+    /// Switches renderer at runtime (`raster`, `march`, `compare`; `compare` names compare mode's
+    /// right side, default `march`): the terrain is rebuilt from the client's data, no reload.
+    /// False without the switch or for an unknown name.
+    #[wasm_bindgen(js_name = setRenderer)]
+    pub fn set_renderer(&self, name: &str, compare: Option<String>) -> bool {
+        let mut s = self.inner.borrow_mut();
+        if !s.options.renderer_switch {
+            return false;
+        }
+        let Some(selection) = Selection::parse(name, compare.as_deref()) else {
+            return false;
+        };
+        match &mut s.game {
+            Some(g) => g.set_renderer(selection),
+            None => {
+                s.renderer.borrow_mut().select(selection);
+            }
+        }
+        true
+    }
+    /// Compare mode's state: `{ renderer, view, divider, blinkRight, overlay: [left, right],
+    /// difference: { pixels, coverage, depth, colour } | null }`, or null outside compare mode.
+    #[wasm_bindgen(js_name = compareState)]
+    pub fn compare_state(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let r = s.renderer.borrow();
+        let Some(overlay) = r.compare_overlay() else {
+            return JsValue::NULL;
+        };
+        let c = r.compare();
+        let o = Object::new();
+        set(&o, "renderer", r.selection().label());
+        set(&o, "view", c.view.name());
+        set(&o, "divider", c.divider);
+        set(&o, "blinkRight", c.blink_right);
+        set(
+            &o,
+            "overlay",
+            overlay
+                .iter()
+                .map(|l| JsValue::from(l.as_str()))
+                .collect::<Array>(),
+        );
+        set(
+            &o,
+            "difference",
+            r.difference_counts().map_or(JsValue::NULL, |d| {
+                let v = Object::new();
+                set(&v, "pixels", d.pixels);
+                set(&v, "coverage", d.coverage);
+                set(&v, "depth", d.depth);
+                set(&v, "colour", d.colour);
+                v.into()
+            }),
+        );
+        o.into()
+    }
+    /// Sets compare mode's view (`split`, `blink`, `difference`; unchanged if unknown) and the
+    /// divider (a share of the width; unchanged if not a number).
+    #[wasm_bindgen(js_name = setCompare)]
+    pub fn set_compare(&self, view: Option<String>, divider: Option<f64>) {
+        let s = self.inner.borrow();
+        let mut r = s.renderer.borrow_mut();
+        let mut c = r.compare();
+        if let Some(v) = view.as_deref().and_then(CompareView::parse) {
+            c.view = v;
+        }
+        if let Some(d) = divider {
+            c.set_divider(d);
+        }
+        r.set_compare(c);
+    }
+
     #[wasm_bindgen(js_name = setDebugVisible)]
     pub fn set_debug_visible(&self, visible: bool) {
         let mut s = self.inner.borrow_mut();

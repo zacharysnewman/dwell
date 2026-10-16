@@ -12,7 +12,11 @@ use dwell_client::local::{LOCAL_SESSION, LocalCore};
 use dwell_client::net::session::{Out, Session, SessionState};
 use dwell_client::pool::{InlineJobs, Pool};
 use dwell_client::render::display::RenderStats;
-use dwell_client::render::{Line, PlayerView, RegionBox, StandIn};
+use dwell_client::render::march::{ChunkBricks, SectionBricks};
+use dwell_client::render::seam::{
+    ChunkTerrain, Recording, Routed, SectionTerrain, Selection, TerrainKind, TerrainRenderer,
+};
+use dwell_client::render::{Line, PlayerView, RegionBox, StandIn, WindView};
 use dwell_game::input::{EditAction, KeyboardMouseInput};
 use dwell_game::region_tools::ToolAction;
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
@@ -24,8 +28,13 @@ use dwell_storage::StorageBackend;
 use dwell_world::{ChunkCoord, GENERATOR_TERRAIN};
 use ed25519_dalek::{Signer, SigningKey};
 
-#[derive(Default)]
+type Renderers =
+    Routed<Recording<ChunkMeshes, SectionMeshes>, Recording<ChunkBricks, SectionBricks>>;
+
+/// A recording scene: what reaches the scene, and (behind the renderer seam) what each terrain
+/// renderer holds.
 struct Recorder {
+    terrain: Renderers,
     chunks: std::collections::HashSet<ChunkCoord>,
     sections: usize,
     /// Each section held: its origin and cell size.
@@ -33,41 +42,90 @@ struct Recorder {
     shown: Vec<i64>,
     camera: Option<[f64; 3]>,
     outline: Option<[f64; 3]>,
+    fov: Option<f64>,
+    wind: WindView,
     region_boxes: Vec<RegionBox>,
 }
 
-impl Scene for Recorder {
-    fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
-        if meshes.is_some() {
+impl Default for Recorder {
+    fn default() -> Self {
+        Self {
+            terrain: Routed::new(
+                Recording::default(),
+                Recording::default(),
+                Selection::default(),
+            ),
+            chunks: Default::default(),
+            sections: 0,
+            held: Default::default(),
+            shown: Vec::new(),
+            camera: None,
+            outline: None,
+            region_boxes: Vec::new(),
+            fov: None,
+            wind: WindView::default(),
+        }
+    }
+}
+
+impl TerrainRenderer for Recorder {
+    type Chunk = ChunkTerrain;
+    type Section = SectionTerrain;
+    fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkTerrain>) {
+        self.terrain.set_chunk(coord, payload);
+        if payload.is_some() {
             self.chunks.insert(coord);
         } else {
             self.chunks.remove(&coord);
         }
     }
-    fn set_lod_section(
+    fn set_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell: f64,
-        meshes: Option<&SectionMeshes>,
+        payload: Option<&SectionTerrain>,
     ) {
-        self.sections += usize::from(meshes.is_some());
-        if meshes.is_some() {
+        self.terrain.set_section(id, origin, cell, payload);
+        self.sections += usize::from(payload.is_some());
+        if payload.is_some() {
             self.held.insert(id, (origin, cell));
         } else {
             self.held.remove(&id);
         }
     }
-    fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
+    fn show_sections(&mut self, visible: &[(i64, u8)]) {
+        self.terrain.show_sections(visible);
         self.shown = visible.iter().map(|&(id, _)| id).collect();
     }
-    fn show_lod_stand_ins(&mut self, _stand_ins: &[StandIn]) {}
+    fn show_stand_ins(&mut self, _stand_ins: &[StandIn]) {}
+    fn clear(&mut self) {
+        self.terrain.clear();
+    }
+    fn gpu_bytes(&self) -> u64 {
+        self.terrain.gpu_bytes()
+    }
+}
+
+impl Scene for Recorder {
+    fn selection(&self) -> Selection {
+        self.terrain.selection()
+    }
+    fn select(&mut self, selection: Selection) -> bool {
+        self.terrain.select(selection)
+    }
     fn set_player(&mut self, _id: u32, _view: Option<PlayerView>) {}
     fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
         self.camera = Some(eye);
     }
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _height: f64) {
         self.outline = cell;
+    }
+    fn set_fov(&mut self, fov_y_deg: Option<f64>) {
+        self.fov = fov_y_deg;
+    }
+    fn set_wind(&mut self, wind: WindView) {
+        self.wind = wind;
     }
     fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
         self.region_boxes = boxes.to_vec();
@@ -86,6 +144,11 @@ struct Rig {
     scene: Rc<RefCell<Recorder>>,
     input: KeyboardMouseInput,
     now: f64,
+    /// One-way delay of the link, in server ticks (0: none), and the messages on it.
+    latency_steps: u32,
+    step: u32,
+    up: std::collections::VecDeque<(u32, bool, Vec<u8>)>,
+    down: std::collections::VecDeque<(u32, Option<Channel>, Vec<u8>)>,
 }
 
 const SEED: u64 = 1;
@@ -111,30 +174,70 @@ impl Rig {
             scene: Rc::default(),
             input: KeyboardMouseInput::new(),
             now: 0.0,
+            latency_steps: 0,
+            step: 0,
+            up: std::collections::VecDeque::new(),
+            down: std::collections::VecDeque::new(),
         }
     }
 
     /// One 60 Hz frame: the server steps, messages flow both ways, the game runs a frame.
     fn frame(&mut self) {
+        self.server_step();
+        self.game_frame();
+    }
+
+    /// A frame that took `steps` server ticks (a slow device: `steps` / 60 s per frame).
+    fn slow_frame(&mut self, steps: usize) {
+        for _ in 0..steps {
+            self.server_step();
+        }
+        self.game_frame();
+    }
+
+    /// 1/60 s of the server's time: the client's messages reach it, it steps, its answers return.
+    fn server_step(&mut self) {
         self.now += 1000.0 / 60.0;
+        self.step += 1;
         let now = self.now;
+        let due = self.step + self.latency_steps;
         for out in self.session.take_out() {
             match out {
-                Out::Reliable(b) => self.core.reliable(LOCAL_SESSION, Channel::Control, &b),
-                Out::Datagram(b) => self.core.datagram(LOCAL_SESSION, &b),
+                Out::Reliable(b) => self.up.push_back((due, true, b)),
+                Out::Datagram(b) => self.up.push_back((due, false, b)),
                 Out::Sign(t) => self.session.signed(self.key.sign(&t).to_bytes()),
                 Out::Close => {}
+            }
+        }
+        while self.up.front().is_some_and(|m| m.0 <= self.step) {
+            let (_, reliable, b) = self.up.pop_front().unwrap();
+            if reliable {
+                self.core.reliable(LOCAL_SESSION, Channel::Control, &b);
+            } else {
+                self.core.datagram(LOCAL_SESSION, &b);
             }
         }
         self.core.advance(1.0 / 60.0);
         for o in self.core.take_outbox() {
             match o.kind {
-                OutKind::Reliable(channel) => self.session.on_reliable(channel, &o.bytes, now),
-                OutKind::Datagram => self.session.on_datagram(&o.bytes, now),
+                OutKind::Reliable(channel) => self.down.push_back((due, Some(channel), o.bytes)),
+                OutKind::Datagram => self.down.push_back((due, None, o.bytes)),
                 OutKind::Close => {}
             }
         }
+        while self.down.front().is_some_and(|m| m.0 <= self.step) {
+            let (_, channel, b) = self.down.pop_front().unwrap();
+            match channel {
+                Some(channel) => self.session.on_reliable(channel, &b, now),
+                None => self.session.on_datagram(&b, now),
+            }
+        }
         self.session.tick(now);
+    }
+
+    /// One frame of the game at the current time: it reads what arrived, ticks, draws and sends.
+    fn game_frame(&mut self) {
+        let now = self.now;
         if self.game.is_none()
             && let SessionState::Joined {
                 player_id,
@@ -382,4 +485,204 @@ fn a_placed_camera_views_the_world_from_there() {
     rig.run_until(2, |_| false);
     let camera = rig.scene.borrow().camera.unwrap();
     assert!((camera[0] - feet[0]).abs() < 2.0 && (camera[2] - feet[2]).abs() < 2.0);
+}
+
+#[test]
+fn switching_renderer_rebuilds_the_terrain_for_it_without_a_reload() {
+    // The renderer seam (RAY_MARCHED_RENDERER.md §3): the jobs make what the drawing renderers
+    // take, and a switch rebuilds every loaded chunk and LOD section from the client's own data.
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 2.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: None,
+            full_mode: false,
+        });
+    assert!(rig.run_until(60 * 20, |r| {
+        let s = r.scene.borrow();
+        s.terrain.raster.chunks.len() > 4 && !s.terrain.raster.sections.is_empty()
+    }));
+    assert!(
+        rig.scene.borrow().terrain.march.chunks.is_empty(),
+        "raster only: no bricks are made"
+    );
+    let loaded: Vec<ChunkCoord> = rig
+        .scene
+        .borrow()
+        .terrain
+        .raster
+        .chunks
+        .keys()
+        .copied()
+        .collect();
+
+    // Compare mode: bricks for every chunk already loaded (and the meshes kept meanwhile).
+    let compare = Selection::parse("compare", None).unwrap();
+    rig.game.as_mut().unwrap().set_renderer(compare);
+    assert!(
+        rig.scene.borrow().terrain.raster.chunks.len() >= loaded.len(),
+        "raster kept"
+    );
+    assert!(
+        rig.run_until(60 * 10, |r| {
+            let s = r.scene.borrow();
+            loaded
+                .iter()
+                .all(|c| s.terrain.march.chunks.contains_key(c))
+                && !s.terrain.march.sections.is_empty()
+        }),
+        "every loaded chunk and some sections rebuilt as bricks"
+    );
+
+    // March only: the meshes go (their GPU memory with them) and are not made again.
+    rig.game
+        .as_mut()
+        .unwrap()
+        .set_renderer(Selection::single(TerrainKind::March));
+    assert!(rig.scene.borrow().terrain.raster.chunks.is_empty());
+    assert!(rig.scene.borrow().terrain.raster.sections.is_empty());
+    rig.run_until(60, |_| false);
+    let s = rig.scene.borrow();
+    assert!(s.terrain.raster.chunks.is_empty() && s.terrain.raster.sections.is_empty());
+    assert!(
+        loaded
+            .iter()
+            .all(|c| s.terrain.march.chunks.contains_key(c))
+    );
+}
+
+#[test]
+fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
+    // Motion effects (Phase 29): the camera's velocity widens the FOV, and the frame's FOV is the
+    // one the LOD selects with; standing still settles it back, and the menu holds it.
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 2.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: None,
+            full_mode: false,
+        });
+    rig.run_until(60, |_| false);
+    let base = rig.scene.borrow().fov.expect("the game sets the FOV");
+    assert_eq!(
+        base,
+        dwell_lod::vertical_fov(1280.0 / 720.0),
+        "standing: no boost"
+    );
+    assert_eq!(rig.scene.borrow().wind.intensity, 0.0);
+
+    rig.input.set_key("ShiftLeft", true);
+    rig.input.set_key("KeyW", true);
+    rig.run_until(90, |_| false);
+    let fov = rig.scene.borrow().fov.unwrap();
+    let state = rig.game.as_ref().unwrap().state().state;
+    assert!(
+        fov > base + 3.0,
+        "sprinting widens the view: {fov} vs {base} ({state:?})"
+    );
+    assert!(
+        rig.scene.borrow().wind.intensity > 0.1,
+        "and the wind blows"
+    );
+    let lod = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .lod_camera()
+        .expect("the LOD ran");
+    assert_eq!(lod.fov_y_deg, fov, "the LOD selects with the frame's FOV");
+    assert_eq!(rig.game.as_ref().unwrap().frame_fov(), fov);
+
+    // The menu opens: nothing changes, even standing still.
+    rig.input.set_key("ShiftLeft", false);
+    rig.input.set_key("KeyW", false);
+    rig.game.as_mut().unwrap().menu_open = true;
+    rig.run_until(60, |_| false);
+    assert_eq!(rig.scene.borrow().fov.unwrap(), fov);
+    rig.game.as_mut().unwrap().menu_open = false;
+    rig.run_until(180, |_| false);
+    let settled = rig.scene.borrow().fov.unwrap();
+    assert!(settled < base + 0.5, "standing settles back: {settled}");
+
+    // The Field of view setting is the base for the renderer and the LOD alike.
+    rig.game.as_mut().unwrap().fov_setting = 90.0;
+    rig.run_until(240, |_| false);
+    let wider = dwell_lod::base_fov(90.0, 1280.0 / 720.0);
+    assert!((rig.scene.borrow().fov.unwrap() - wider).abs() < 1e-6);
+    assert!(wider > base + 10.0);
+    let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
+    assert!((lod.fov_y_deg - wider).abs() < 1e-6);
+}
+
+#[test]
+fn a_slow_device_walks_without_snapping() {
+    // A device drawing ~5.5 frames a second (CI's software renderer with two pages,
+    // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks. Its prediction must
+    // keep the server's time, or the server fills the missing ticks by repeating the last input
+    // (walking further than the player did) and the replays drag the player along, snapping it
+    // once a correction passes RECONCILE_SNAP_DISTANCE.
+    let mut rig = Rig::new();
+    assert!(
+        rig.run_until(60 * 30, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "the player is placed and the terrain around them arrives"
+    );
+    // Settle on the ground at full speed, then slow down, over a 150 ms round trip (as the e2e
+    // test's B page: `?netsim=150,…`).
+    rig.run_until(60, |_| false);
+    rig.latency_steps = 5;
+    let stats = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats;
+    let mut worst = 0.0f32;
+    let mut slow_frames = |rig: &mut Rig, n: usize| {
+        for _ in 0..n {
+            let replays = stats(rig).replays;
+            rig.slow_frame(11);
+            let s = stats(rig);
+            if s.replays > replays {
+                worst = worst.max(s.last_correction);
+            }
+        }
+    };
+    slow_frames(&mut rig, 10);
+    let before = stats(&rig);
+    let start = rig.game.as_ref().unwrap().debug_state().feet;
+    rig.input.set_key("KeyW", true);
+    slow_frames(&mut rig, 6);
+    rig.input.set_key("KeyW", false);
+    slow_frames(&mut rig, 10);
+    let after = stats(&rig);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let moved = ((feet[0] - start[0]).powi(2) + (feet[2] - start[2]).powi(2)).sqrt();
+    assert!(moved > 2.0, "walked {moved} m");
+    // The prediction matches the server: no correction to speak of, so no snap.
+    assert!(
+        worst < 0.2,
+        "a {worst} m correction: {before:?} -> {after:?}"
+    );
+    assert_eq!(after.snaps, before.snaps);
+    // Predicted ticks keep up with the server's (16 frames of 11 ticks).
+    let predicted = after.ticks - before.ticks;
+    assert!(
+        predicted >= 16 * 11 - 11,
+        "{predicted} ticks predicted for {} of the server's",
+        16 * 11
+    );
 }

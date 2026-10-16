@@ -21,6 +21,10 @@
 //! | `uvs`       | 2      | texture coordinates in blocks (the shader repeats the tile per unit) |
 //! | `tiles`     | 4      | atlas rectangle: u0, v0, width, height ([`tile_rect`])              |
 //!
+//! The transparent mesh adds `fluids` (1 per vertex): the id of the fluid whose look the face is
+//! drawn with (an index into the registry's fluid table, `dwell_blocks::FLUIDS`), or [`NO_FLUID`]
+//! for a see-through face that is no fluid's; the opaque mesh leaves it empty.
+//!
 //! `indices` (`u32`) are triangles, counter-clockwise seen from the side the normal points to.
 //! Merged faces are quads of 4 vertices and 6 indices (0 1 2, 0 2 3 for a +axis face, 0 2 1,
 //! 0 3 2 for −axis); shaped polygons are fans. The chunk shader samples
@@ -32,7 +36,7 @@
 //! optional per-column surface data ([`MeshSectionOptions`]). Output: [`SectionMeshes`], each a
 //! [`FlatMesh`] with `positions` (3), `normals` (3) and `colors` (3, **linear** light: face tint ×
 //! the material's average texture colour) per vertex and `u32` triangle indices, positions in
-//! cells (0..32). `skirts[f]` holds the border faces the apron hides on face `f` (0 +X, 1 −X, 2 +Y,
+//! cells (0..32); the `water` mesh adds `fluids` (1 per vertex, as the chunks' transparent mesh). `skirts[f]` holds the border faces the apron hides on face `f` (0 +X, 1 −X, 2 +Y,
 //! 3 −Y, 4 +Z, 5 −Z), shown when the neighbour there is not drawn at the same level.
 
 mod lod_mesher;
@@ -49,9 +53,13 @@ pub use mesher::{
     ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mirror_padded,
     padded_index,
 };
+/// The `fluids` stream's value for a see-through face that is not a fluid's.
+pub const NO_FLUID: f32 = 255.0;
+
 pub use textures::{
-    ATLAS_CELLS, ATLAS_SIZE, CELL, GUTTER, TILE, TILE_ORDER, TileRect, average_tile_color,
-    build_atlas, linear_to_srgb_byte, srgb_to_linear, swatch, tile_rect,
+    ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, TILE, TILE_ORDER, TileRect,
+    average_tile_color, build_atlas, linear_to_srgb_byte, srgb_to_linear, swatch, tile_grids,
+    tile_rect,
 };
 
 /// JavaScript's `Math.round`: the nearest integer, ties toward +∞ (Rust's `round` ties away from

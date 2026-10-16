@@ -304,6 +304,10 @@ pub fn check_block_edit(
     if targetable(existing) {
         return EditOutcome::fail(EditCheck::Occupied);
     }
+    // Placing into a liquid replaces it: not one the data marks indestructible.
+    if unbreakable(existing) {
+        return EditOutcome::fail(EditCheck::Unbreakable);
+    }
     let material = flooded_for(request.material, existing);
     if overlaps_player(material, cell, players) {
         return EditOutcome::fail(EditCheck::IntoPlayer);
