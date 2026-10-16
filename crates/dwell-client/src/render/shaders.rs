@@ -957,7 +957,8 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let px = i.clip.xy;
     let d_w = max(view_depth(i.rel), 1e-3);
     let rel_len = length(i.rel);
-    let behind0 = scene_depth_at(vec2i(px)).x;
+    // Sample 0 of the view depth: one load (the mean over samples costs four, for edges only).
+    let behind0 = textureLoad(scene_depth, vec2i(px), 0).r;
     // Refraction: the ripples' slope shifts what is seen, less where the water is thin (none at
     // the waterline, where a shifted sample would land on the bank).
     let thin = min(ray_thickness(behind0, d_w, rel_len), 1.0);
@@ -965,7 +966,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let to_px = size.y / (2.0 * frame.tan.y * d_w);
     let shift = vec2f(dot(lean, frame.right.xyz), -dot(lean, frame.up.xyz)) * to_px;
     let q = clamp(px + shift, vec2f(0.5), size - 0.5);
-    let behind_q = scene_depth_at(vec2i(q)).x;
+    let behind_q = textureLoad(scene_depth, vec2i(q), 0).r;
     let use_q = behind_q <= 0.0 || behind_q > d_w;
     let uv = select(px, q, use_q) / size;
     let d_b = select(behind0, behind_q, use_q);
