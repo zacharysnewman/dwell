@@ -1,4 +1,4 @@
-# 0036. The day/night cycle: world time drives a keyframed sky, light and fog, as data
+# 0035. The day/night cycle: world time drives a keyframed sky, light and fog, as data
 
 - Status: Proposed (built; the owner's review of the look and of the defaults in `DAY_NIGHT.md` §1
   is outstanding)

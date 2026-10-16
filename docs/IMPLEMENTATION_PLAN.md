@@ -49,7 +49,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
-| 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0036, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time |
+| 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -97,8 +97,8 @@ On 2026-10-14 the owner asked for sound effects (procedural, data-driven, every 
 action): **Phase 28** ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)); it needs Phase 24
 only.
 Also on 2026-10-15 the owner asked for a day/night cycle with good transitions, fog included, and a
-better sun and moon, added as **Phase 32 — the day/night cycle** ([ADR 0036](./adr/0036-day-night-cycle.md),
-[`DAY_NIGHT.md`](./DAY_NIGHT.md); ADR 0035 is taken by the brushes branch). It builds on A1 and
+better sun and moon, added as **Phase 32 — the day/night cycle** ([ADR 0035](./adr/0035-day-night-cycle.md),
+[`DAY_NIGHT.md`](./DAY_NIGHT.md)). It builds on A1 and
 Phase 31 (the clouds take its light), changes no world file, protocol or terrain, and its clock is
 the one tree growth (Phase 30) counts days with.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
@@ -3085,7 +3085,7 @@ Exit criteria
 **Goal:** A day/night cycle with good-looking transitions of sky, light and fog, and a better sun
 and moon (owner, 2026-10-15): a 30-minute day (20 min day, 10 min night) whose length tree growth
 shares, driven by server-authoritative world time, as an extendable system — the clock and the
-look as data a tool can edit ([ADR 0036](./adr/0036-day-night-cycle.md), [`DAY_NIGHT.md`](./DAY_NIGHT.md)).
+look as data a tool can edit ([ADR 0035](./adr/0035-day-night-cycle.md), [`DAY_NIGHT.md`](./DAY_NIGHT.md)).
 
 **Status:** In progress. D0–D5 are built and tested natively, in Node and in a browser on the GPU.
 Outstanding: the owner's look and answers to `DAY_NIGHT.md` §8 (the defaults were taken without
@@ -3096,7 +3096,7 @@ Compatibility: no protocol change. World time is the server's tick, already save
 is public API from now on (`DAY_NIGHT.md` §2).
 
 Deliverables
-- [x] **D0** — ADR 0036 and `DAY_NIGHT.md` (defaults, model, open questions); ARCHITECTURE.md §5,
+- [x] **D0** — ADR 0035 and `DAY_NIGHT.md` (defaults, model, open questions); ARCHITECTURE.md §5,
   §6.3 (light and sky), §6.6 (the cycle) and §7.4; `TREE_GROWTH.md` points at the shared clock.
 - [x] **D1** — The data: `shared/look/daynight.json` (clock, sun path, sun/moon/star looks, 14
   keyframes) → `crates/dwell-look/src/daynight.gen.rs` by `shared/look/daynight.mjs` (validated,

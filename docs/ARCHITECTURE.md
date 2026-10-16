@@ -1424,7 +1424,7 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   draws the sky, coloured per pixel by the generated `sky` function of the view direction, with the
   sun, moon, stars and clouds over it, behind whatever the scene covers; the haze is mixed in after
   tone mapping and the sRGB encoding, in output colour, as the sky is drawn.
-- **Day/night cycle [built, Phase 32]** ([ADR 0036](./adr/0036-day-night-cycle.md),
+- **Day/night cycle [built, Phase 32]** ([ADR 0035](./adr/0035-day-night-cycle.md),
   [`DAY_NIGHT.md`](./DAY_NIGHT.md)): world time is the server's tick (60 Hz; saved in the world
   file's `meta` as `world_tick` and resumed on load; sent in `Welcome` and every `PhysicsSnapshot`),
   so it needed no protocol change. The client's estimate between snapshots is `world_clock.rs`
