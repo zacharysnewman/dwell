@@ -250,13 +250,15 @@ impl Rig {
                 SEED,
             ))));
             let c = ChunkCoord::from_array(verification_chunk);
-            self.game = Some(Game::new(
+            let mut game = Game::new(
                 player_id,
                 pool,
                 self.scene.clone(),
                 Some(c),
                 PlayerControllerConfig::default(),
-            ));
+            );
+            game.set_registry(self.session.mapping().cloned());
+            self.game = Some(game);
         }
         let Some(game) = &mut self.game else { return };
         while let Some((m, bytes)) = self.session.next_game() {

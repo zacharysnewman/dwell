@@ -783,6 +783,169 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
     out
 }
 
+impl Mapping {
+    /// The `WorldgenCheck` hash of the verification chunk the client generated (`voxels`, its
+    /// own ids; `hash` the job's FNV-1a of them): the same FNV-1a over the server's ids, which is
+    /// what the server hashes (ADR 0036 decision 6). 0 — every chunk explicit — when a state
+    /// differs on the server (generated terrain would hold the build's rules) or a cell names a
+    /// state the server does not have.
+    pub fn verification_hash(&self, voxels: &[u16], hash: u64) -> u64 {
+        if !self.generated_ok {
+            return 0;
+        }
+        if self.identity {
+            return hash;
+        }
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &v in voxels {
+            let Some(s) = self.server(v) else { return 0 };
+            for b in s.to_le_bytes() {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        h
+    }
+}
+
+/// The states this process registered at run time, as a payload (build shape and fluid indices):
+/// what the main thread sends its job workers — separate WASM instances with tables of their own —
+/// so they read synced ids as it does ([`apply_extension`]).
+pub fn extension_payload() -> Vec<u8> {
+    Payload {
+        format: FORMAT,
+        shapes: Vec::new(),
+        fluids: Vec::new(),
+        blocks: blocks()
+            .filter(|b| b.origin != Origin::Build)
+            .map(|b| PayloadBlock {
+                name: b.name.to_owned(),
+                first_state: b.first_state,
+                properties: b
+                    .properties
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.name.to_owned(),
+                            p.values.iter().map(|v| (*v).to_owned()).collect(),
+                        )
+                    })
+                    .collect(),
+                states: b
+                    .states()
+                    .map(|id| state_fields(info(id as StateId)))
+                    .collect(),
+            })
+            .collect(),
+    }
+    .encode()
+}
+
+/// Registers an [`extension_payload`]'s blocks this table lacks, at the same ids: blocks already
+/// here (ids below the table's end) are skipped; a gap is an error.
+pub fn apply_extension(bytes: &[u8]) -> Result<(), String> {
+    let mut r = ByteReader::new(bytes);
+    // Not `Payload::decode`: an extension starts past air.
+    let _format = r.u16();
+    r.u16();
+    r.u16();
+    let count = r.u16();
+    let mut blocks = Vec::new();
+    for _ in 0..count {
+        let name = r.str(MAX_STR);
+        let first_state = r.u16();
+        let mut properties = Vec::new();
+        for _ in 0..r.u8() {
+            let p = r.str(MAX_STR);
+            let values: Vec<String> = (0..r.u8()).map(|_| r.str(MAX_STR)).collect();
+            properties.push((p, values));
+        }
+        let n: usize = properties.iter().map(|(_, v)| v.len()).product();
+        let mut states = Vec::new();
+        for _ in 0..n {
+            let mut fields = Vec::new();
+            for _ in 0..r.u8() {
+                let t = r.u8();
+                let len = usize::from(r.u16());
+                fields.push((t, r.bytes(len)));
+            }
+            states.push(fields);
+        }
+        if !r.ok() {
+            break;
+        }
+        blocks.push(PayloadBlock {
+            name,
+            first_state,
+            properties,
+            states,
+        });
+    }
+    if !r.at_end() {
+        return Err("malformed extension".into());
+    }
+    let fluids: Vec<String> = FLUIDS.iter().map(|f| f.name.to_owned()).collect();
+    for b in blocks {
+        let have = state_count();
+        if usize::from(b.first_state) < have {
+            continue;
+        }
+        if usize::from(b.first_state) > have {
+            return Err(format!("{}: ids {have}.. missing", b.name));
+        }
+        let rows = b
+            .states
+            .iter()
+            .enumerate()
+            .map(|(k, fields)| {
+                row_from_fields(
+                    &crate::canonical(&b.name, &b.properties, k),
+                    fields,
+                    &fluids,
+                )
+            })
+            .collect();
+        register(
+            Origin::Synced,
+            NewBlock {
+                name: b.name,
+                properties: b.properties,
+                states: rows,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// A state's row from its fields as this build wrote them (`state_fields`: build shape and fluid
+/// indices), `fluids` the names the fluid indices refer to.
+pub fn row_from_fields(name: &str, fields: &Fields, fluids: &[String]) -> StateInfo {
+    let d = decode_rules(fields);
+    let mut row = *info(AIR);
+    row.name = intern(name);
+    row.textures = None;
+    row.grid = None;
+    row.fluid = None;
+    read_look(fields, fluids, &mut row);
+    let has = |bit| d.flags & bit != 0;
+    row.solid = has(flag::SOLID);
+    row.indestructible = has(flag::INDESTRUCTIBLE);
+    row.flooded = has(flag::FLOODED);
+    row.climbable = has(flag::CLIMBABLE);
+    row.liquid = has(flag::LIQUID);
+    row.placeable = has(flag::PLACEABLE);
+    row.density_kg_m3 = d.density;
+    row.climb_speed_scale = d.climb;
+    row.facing = facing_of(d.facing).unwrap_or(Facing::None);
+    row.shape = match d.occupancy {
+        0 => VoxelShape::Empty,
+        1 => VoxelShape::Full,
+        _ => VoxelShape::Shaped,
+    };
+    row.shape_index = d.shape.unwrap_or(0);
+    row
+}
+
 /// Splits a payload into `BlockRegistry` parts.
 pub fn parts(payload: &[u8]) -> Vec<&[u8]> {
     if payload.is_empty() {
@@ -971,5 +1134,52 @@ mod tests {
         assert_eq!(info(ids[2]).name, "dwell:sand");
         let mut bad = vec![p.id_end() as u16];
         assert!(!m.to_client_ids(&mut bad));
+    }
+
+    #[test]
+    fn rows_survive_their_fields_and_the_extension_reapplies_as_a_no_op() {
+        let fluids: Vec<String> = FLUIDS.iter().map(|f| f.name.to_owned()).collect();
+        for s in &STATES {
+            let row = row_from_fields(s.name, &state_fields(s), &fluids);
+            assert!(crate::same_definition(s, &row), "{}", s.name);
+        }
+        let _ = map(&modded(), 0).expect("maps");
+        let before = state_count();
+        apply_extension(&extension_payload()).expect("applies");
+        assert_eq!(state_count(), before);
+    }
+
+    #[test]
+    fn the_verification_hash_is_over_server_ids() {
+        let p = modded();
+        let mut m = map(&p, 0).expect("maps");
+        let stone = require("dwell:stone");
+        let server_stone = server_id(&p, "dwell:stone");
+        assert_eq!(
+            server_stone, stone,
+            "ids before the removed ladder are kept"
+        );
+        let voxels = vec![0, stone, require("dwell:water")];
+        let server: Vec<u16> = voxels.iter().map(|&v| m.server(v).unwrap()).collect();
+        let mut want: u64 = 0xcbf2_9ce4_8422_2325;
+        for v in &server {
+            for b in v.to_le_bytes() {
+                want ^= u64::from(b);
+                want = want.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        assert_eq!(
+            m.verification_hash(&voxels, 1),
+            0,
+            "sand differs: explicit chunks"
+        );
+        m.generated_ok = true;
+        assert_eq!(m.verification_hash(&voxels, 1), want);
+        assert_ne!(server[2], voxels[2], "water's id shifted");
+        assert_eq!(
+            m.verification_hash(&[require("dwell:ladder")], 1),
+            0,
+            "client-only"
+        );
     }
 }

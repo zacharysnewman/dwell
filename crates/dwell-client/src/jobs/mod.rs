@@ -45,6 +45,10 @@ pub enum Job {
         mirror: bool,
         payloads: Payloads,
     },
+    /// The block states the main thread registered at run time (synced from a server, ADR 0036),
+    /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
+    /// jobs naming synced ids read the same rows. Sent to every worker ([`crate::pool::Jobs::broadcast`]).
+    Registry { payload: Vec<u8> },
 }
 
 impl Job {
@@ -75,6 +79,8 @@ pub enum Output {
     ChunkMesh(Box<ChunkTerrain>),
     SectionMesh(Box<SectionTerrain>),
     Failed(String),
+    /// A job without a result (`Registry`).
+    Done,
 }
 
 /// Runs jobs for one world (a worker's state).
@@ -115,6 +121,10 @@ impl Runner {
 
     pub fn run(&self, job: Job) -> Output {
         match job {
+            Job::Registry { payload } => match dwell_blocks::sync::apply_extension(&payload) {
+                Ok(()) => Output::Done,
+                Err(e) => Output::Failed(e),
+            },
             Job::Generate { coord } => {
                 let Some(g) = &self.chunks else {
                     return no_world();

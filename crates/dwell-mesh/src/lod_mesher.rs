@@ -78,7 +78,11 @@ fn is_liquid(m: StateId) -> bool {
             .map(|i| material_style(i as StateId).look == Look::Fluid)
             .collect()
     });
-    table.get(usize::from(m)).copied().unwrap_or(false)
+    match table.get(usize::from(m)) {
+        Some(&liquid) => liquid,
+        // A state registered at run time (a synced one, ADR 0036).
+        None => material_style(m).look == Look::Fluid,
+    }
 }
 
 fn compute_lod_color(m: StateId, group: usize) -> u32 {

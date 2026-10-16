@@ -38,6 +38,35 @@ type Events = Rc<RefCell<VecDeque<TransportEvent>>>;
 /// The device key's signature of the join transcript, once the shell's promise settles.
 type SignatureSlot = Rc<RefCell<Option<Result<[u8; 64], String>>>>;
 
+/// The join prompt's lists (ADR 0036): `{ hash, different, added, clientOnly }`, each item of the
+/// first two `{ name, fields }`.
+fn registry_object(d: &dwell_blocks::sync::Differences, hash: u64) -> Object {
+    let items = |list: &[dwell_blocks::sync::Difference]| {
+        let a = Array::new();
+        for item in list {
+            let o = Object::new();
+            set(&o, "name", item.name.as_str());
+            let fields = Array::new();
+            for f in &item.fields {
+                fields.push(&JsValue::from(f.as_str()));
+            }
+            set(&o, "fields", fields);
+            a.push(&o);
+        }
+        a
+    };
+    let r = Object::new();
+    set(&r, "hash", format!("{hash:016x}"));
+    set(&r, "different", items(&d.different));
+    set(&r, "added", items(&d.added));
+    let only = Array::new();
+    for n in &d.client_only {
+        only.push(&JsValue::from(n.as_str()));
+    }
+    set(&r, "clientOnly", only);
+    r
+}
+
 fn set(o: &Object, k: &str, v: impl Into<JsValue>) {
     let _ = Reflect::set(o, &k.into(), &v.into());
 }
@@ -208,6 +237,8 @@ struct Inner {
     link: Option<Link>,
     events: Events,
     session: Option<Session>,
+    /// A registry definitions hash the player said not to ask about for this server (ADR 0036).
+    trusted_registry: Option<u64>,
     netsim: Option<NetSim>,
     signature: SignatureSlot,
     game: Option<Game<Renderer>>,
@@ -332,6 +363,7 @@ impl Client {
             link: None,
             events: Rc::default(),
             session: None,
+            trusted_registry: None,
             netsim: None,
             signature: Rc::default(),
             game: None,
@@ -430,6 +462,7 @@ impl Client {
             &s.options.client_version,
             1000.0,
         );
+        session.trust_registry(s.trusted_registry);
         // The frame loop's clock (requestAnimationFrame's timestamps are performance.now()'s).
         session.start(perf_now());
         s.netsim = s.options.netsim.map(|c| NetSim {
@@ -1182,7 +1215,34 @@ impl Client {
 
     // ----- State for the shell -----
 
-    /// `{ phase: 'connecting' | 'handshaking' | 'joined' | 'rejected' | 'closed', … }`.
+    /// Joins without the registry prompt when the server's definitions hash is `hash` (16 hex
+    /// digits; "don't ask again for this server", ADR 0036). Call before `connect`.
+    #[wasm_bindgen(js_name = trustRegistry)]
+    pub fn trust_registry(&self, hash: Option<String>) {
+        let hash = hash.and_then(|h| u64::from_str_radix(&h, 16).ok());
+        let mut s = self.inner.borrow_mut();
+        s.trusted_registry = hash;
+        if let Some(session) = &mut s.session {
+            session.trust_registry(hash);
+        }
+    }
+
+    /// The player's answer to the registry prompt (`phase: 'confirming'`): Continue or Cancel.
+    #[wasm_bindgen(js_name = answerRegistry)]
+    pub fn answer_registry(&self, proceed: bool) {
+        let mut s = self.inner.borrow_mut();
+        let Some(session) = &mut s.session else {
+            return;
+        };
+        if proceed {
+            session.accept_registry();
+        } else {
+            session.cancel_registry();
+        }
+    }
+
+    /// `{ phase: 'connecting' | 'handshaking' | 'confirming' | 'joined' | 'rejected' | 'closed',
+    /// … }`; `confirming` carries `registry: { hash, different, added, clientOnly }` (ADR 0036).
     #[wasm_bindgen(js_name = sessionState)]
     pub fn session_state(&self) -> JsValue {
         let s = self.inner.borrow();
@@ -1190,6 +1250,10 @@ impl Client {
         match s.session.as_ref().map(Session::state) {
             None => set(&o, "phase", "connecting"),
             Some(SessionState::Handshaking) => set(&o, "phase", "handshaking"),
+            Some(SessionState::Confirming { differences, hash }) => {
+                set(&o, "phase", "confirming");
+                set(&o, "registry", registry_object(differences, *hash));
+            }
             Some(SessionState::Joined {
                 player_id,
                 world_seed,
@@ -1626,6 +1690,28 @@ impl Inner {
         game.debug_visible = self.debug_visible;
         game.region.enabled = region_edits;
         game.day_override = self.options.day;
+        let mapping = self.session.as_ref().and_then(|s| s.mapping().cloned());
+        if let Some(m) = mapping.as_ref().filter(|m| !m.differences.is_empty()) {
+            // The console keeps the full lists (the F3 overlay shows the summary).
+            let d = &m.differences;
+            let list = |v: &[dwell_blocks::sync::Difference]| {
+                v.iter()
+                    .map(|d| format!("{} ({})", d.name, d.fields.join(", ")))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            };
+            web_sys::console::info_1(
+                &format!(
+                    "Dwell: {}. Different on this server: {}. New on this server: {}. Only in this version: {}.",
+                    d.summary(),
+                    list(&d.different),
+                    list(&d.added),
+                    d.client_only.join(", ")
+                )
+                .into(),
+            );
+        }
+        game.set_registry(mapping);
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }

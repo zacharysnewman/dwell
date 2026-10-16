@@ -18,6 +18,9 @@ pub trait Jobs {
     /// Jobs of this kind (meshing or generation) that may be in flight at once.
     fn capacity(&self, mesh: bool) -> usize;
     fn submit(&mut self, id: u32, job: Job);
+    /// Runs `job` on every worker, before anything submitted after it (`Job::Registry`); its
+    /// results are dropped.
+    fn broadcast(&mut self, job: Job);
     /// Finished jobs.
     fn poll(&mut self) -> Vec<(u32, Output)>;
     /// Each worker's memory (bytes), where the jobs run in workers.
@@ -50,6 +53,9 @@ impl Jobs for InlineJobs {
     }
     fn submit(&mut self, id: u32, job: Job) {
         self.queue.push_back((id, job));
+    }
+    fn broadcast(&mut self, job: Job) {
+        self.runner.run(job);
     }
     fn poll(&mut self) -> Vec<(u32, Output)> {
         let n = self.per_poll.min(self.queue.len());
@@ -141,6 +147,11 @@ impl Pool {
         self.times.insert(id, (now, now));
         self.queued[usize::from(mesh)].push_back((id, job));
         self.pump();
+    }
+
+    /// Runs a job on every worker ahead of every job not yet started (`Job::Registry`).
+    pub fn broadcast(&mut self, job: Job) {
+        self.jobs.broadcast(job);
     }
 
     /// Drops a queued (not yet started) chunk generation; true if there was one.
@@ -292,6 +303,7 @@ mod tests {
         fn submit(&mut self, id: u32, _job: Job) {
             self.borrow_mut().started.push(id);
         }
+        fn broadcast(&mut self, _job: Job) {}
         fn poll(&mut self) -> Vec<(u32, Output)> {
             std::mem::take(&mut self.borrow_mut().done)
         }

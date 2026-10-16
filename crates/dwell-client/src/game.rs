@@ -414,6 +414,8 @@ pub struct Game<S: Scene> {
     pub rtt_ms: Option<f64>,
     /// The verification hash sent (None until the verification chunk is generated).
     verified: Option<u64>,
+    /// The session's id translation (ADR 0036): the worldgen check hashes server ids.
+    registry: Option<dwell_blocks::sync::Mapping>,
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
     map: Option<Vec<u8>>,
@@ -519,6 +521,7 @@ impl<S: Scene> Game<S> {
             debug_visible: false,
             rtt_ms: None,
             verified: None,
+            registry: None,
             pending_lod: None,
             map: None,
             view: None,
@@ -583,6 +586,28 @@ impl<S: Scene> Game<S> {
     pub fn enable_lod(&mut self, settings: LodSettings) {
         self.pending_lod = Some(settings);
         self.start_lod();
+    }
+
+    /// The session's registry mapping (ADR 0036), right after joining: the job workers learn the
+    /// states synced from the server (they are separate WASM instances with tables of their own),
+    /// and the worldgen check hashes the server's ids.
+    pub fn set_registry(&mut self, mapping: Option<dwell_blocks::sync::Mapping>) {
+        if dwell_blocks::state_count() > dwell_blocks::STATES.len() {
+            self.pool
+                .borrow_mut()
+                .broadcast(crate::jobs::Job::Registry {
+                    payload: dwell_blocks::sync::extension_payload(),
+                });
+        }
+        self.registry = mapping;
+    }
+
+    /// The registry differences the session found (the F3 overlay).
+    pub fn registry_summary(&self) -> Option<String> {
+        self.registry
+            .as_ref()
+            .filter(|m| !m.differences.is_empty())
+            .map(|m| m.differences.summary())
     }
 
     fn verify(&mut self, hash: u64) {
@@ -781,7 +806,13 @@ impl<S: Scene> Game<S> {
                 (Purpose::ChunkMesh(c, token), Output::ChunkMesh(m)) => {
                     self.streamer.on_meshed(c, token, *m)
                 }
-                (Purpose::Verify, Output::Chunk { hash, .. }) => self.verify(hash),
+                (Purpose::Verify, Output::Chunk { hash, voxels }) => {
+                    let hash = self
+                        .registry
+                        .as_ref()
+                        .map_or(hash, |m| m.verification_hash(&voxels, hash));
+                    self.verify(hash)
+                }
                 (Purpose::Map, Output::Map(bytes)) => self.map = Some(bytes.unwrap_or_default()),
                 (Purpose::Diff(c), Output::Chunk { voxels, .. }) => {
                     let revision = self.streamer.revision(c);
@@ -1273,6 +1304,9 @@ impl<S: Scene> Game<S> {
             ));
             drop(scene);
             lines.push(self.day.debug_line());
+            if let Some(r) = self.registry_summary() {
+                lines.push(r);
+            }
             if !self.memory_note.is_empty() {
                 lines.push(self.memory_note.clone());
             }

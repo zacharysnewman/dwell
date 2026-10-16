@@ -98,10 +98,15 @@ const UNKNOWN_COLOR: u32 = 0xff00ff;
 pub(crate) fn material_style(id: StateId) -> MaterialStyle {
     static STYLES: OnceLock<Vec<MaterialStyle>> = OnceLock::new();
     let styles = STYLES.get_or_init(|| STATES.iter().map(|s| style_of(s, &FLUIDS)).collect());
-    styles
-        .get(usize::from(id))
-        .copied()
-        .unwrap_or_else(|| MaterialStyle {
+    if let Some(s) = styles.get(usize::from(id)) {
+        return *s;
+    }
+    // A state registered at run time (synced from a server, ADR 0036): its own row.
+    if let Some(s) = dwell_blocks::try_info(id) {
+        return style_of(s, &FLUIDS);
+    }
+    {
+        MaterialStyle {
             look: Look::Cube,
             color: UNKNOWN_COLOR,
             opacity: 1.0,
@@ -111,7 +116,8 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             flooded: false,
             surface_drop: 0.0,
             fluid: None,
-        })
+        }
+    }
 }
 
 /// The state turned upside down (slabs and slopes swap `half`); ids the registry does not know
@@ -123,5 +129,8 @@ pub(crate) fn mirror_material(id: StateId) -> StateId {
             .map(|i| dwell_blocks::mirror(i as StateId))
             .collect()
     });
-    table.get(usize::from(id)).copied().unwrap_or(id)
+    table
+        .get(usize::from(id))
+        .copied()
+        .unwrap_or_else(|| dwell_blocks::mirror(id))
 }

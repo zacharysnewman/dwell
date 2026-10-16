@@ -54,6 +54,8 @@ pub struct SessionStats {
     pub server_tick: u32,
     /// A friend world's host has paused it (their page is hidden, HostStatus, §10.2).
     pub host_paused: bool,
+    /// Edits not sent because they named a state the server does not have (ADR 0036).
+    pub edits_unmapped: u32,
 }
 
 /// What the host must do for the session.
@@ -266,8 +268,70 @@ impl Session {
 
     /// Sends a reliable control message while joined (WorldgenCheck, edits, resyncs, LodRequest).
     pub fn send_control(&mut self, m: &Message) {
-        if self.joined() {
-            self.send(m);
+        if !self.joined() {
+            return;
+        }
+        match self.to_server(m) {
+            Some(m) => self.send(&m),
+            None => {
+                self.stats.edits_unmapped += 1;
+                self.changed = true;
+            }
+        }
+    }
+
+    /// An outgoing message with its state ids in the server's terms (ADR 0036); `None` if it
+    /// names a state the server does not have (a client-only block), which is not sent.
+    fn to_server(&self, m: &Message) -> Option<Message> {
+        let Some(map) = self.mapping.as_ref().filter(|m| !m.identity) else {
+            return Some(m.clone());
+        };
+        let id = |v: u16| map.server(v);
+        Some(match m {
+            Message::BlockEditRequest(e) if e.action == BlockEditAction::Place => {
+                Message::BlockEditRequest(BlockEditRequest {
+                    material: id(e.material)?,
+                    ..e.clone()
+                })
+            }
+            Message::RegionEdit(e) => {
+                let mut e = e.clone();
+                match e.op {
+                    RegionEditOp::Fill | RegionEditOp::Hollow => e.material = id(e.material)?,
+                    RegionEditOp::Replace => {
+                        e.material = id(e.material)?;
+                        e.from = id(e.from)?;
+                    }
+                    RegionEditOp::Paste => {
+                        for c in &mut e.cells {
+                            *c = id(*c)?;
+                        }
+                    }
+                }
+                Message::RegionEdit(e)
+            }
+            other => other.clone(),
+        })
+    }
+
+    /// An incoming message with its state ids in this client's terms; false if one is not in
+    /// the server's registry (a malformed message).
+    fn to_client(&self, m: &mut Message) -> bool {
+        let Some(map) = self.mapping.as_ref() else {
+            return true;
+        };
+        match m {
+            Message::ChunkData(c) => map.to_client_ids(&mut c.voxels),
+            Message::LodData(l) => map.to_client_ids(&mut l.cells),
+            Message::VoxelModification(v) => v.chunks.iter_mut().all(|c| {
+                c.changes.iter_mut().all(|ch| {
+                    let mut one = [ch.material];
+                    let ok = map.to_client_ids(&mut one);
+                    ch.material = one[0];
+                    ok
+                })
+            }),
+            _ => true,
         }
     }
     /// Sends a gameplay datagram (player input); dropped unless joined.
@@ -334,10 +398,14 @@ impl Session {
     }
 
     pub fn on_reliable(&mut self, channel: Channel, bytes: &[u8], now: f64) {
-        let Some(m) = Message::decode(bytes) else {
+        let Some(mut m) = Message::decode(bytes) else {
             self.malformed();
             return;
         };
+        if !self.to_client(&mut m) {
+            self.malformed();
+            return;
+        }
         if channel != Channel::Control {
             if matches!(
                 m,
@@ -608,6 +676,178 @@ mod tests {
             );
             assert_eq!(!asks, matches!(s.state(), SessionState::Joined { .. }));
         }
+    }
+
+    /// A server without `dwell:ladder` (its later ids shift down) whose sand differs.
+    fn ladderless_registry() -> (Vec<u8>, Payload) {
+        let mut p = Payload::served();
+        let at = p
+            .blocks
+            .iter()
+            .position(|b| b.name == "dwell:ladder")
+            .unwrap();
+        let removed = p.blocks.remove(at).states.len() as u16;
+        for b in &mut p.blocks[at..] {
+            b.first_state -= removed;
+        }
+        let sand = p
+            .blocks
+            .iter_mut()
+            .find(|b| b.name == "dwell:sand")
+            .unwrap();
+        for f in &mut sand.states[0] {
+            if f.0 == dwell_blocks::sync::tag::DENSITY {
+                f.1 = 5.0f32.to_le_bytes().to_vec();
+            }
+        }
+        (p.encode(), p)
+    }
+
+    fn server_id(p: &Payload, name: &str) -> u16 {
+        p.states().find(|(_, n, _)| n == name).unwrap().0
+    }
+
+    fn joined_with(payload: &[u8]) -> Session {
+        let (_, mut s) = setup();
+        send_registry(&mut s, payload, 1 << 16);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        s.accept_registry();
+        assert!(matches!(s.state(), SessionState::Joined { .. }));
+        s.take_out();
+        s
+    }
+
+    #[test]
+    fn incoming_ids_map_to_the_clients_in_chunks_lod_and_modifications() {
+        use dwell_blocks::{info, require};
+        let (payload, p) = ladderless_registry();
+        let mut s = joined_with(&payload);
+        let (water, sand) = (server_id(&p, "dwell:water"), server_id(&p, "dwell:sand"));
+        assert_ne!(water, require("dwell:water"), "shifted on the server");
+        let mut voxels = vec![0u16; CHUNK_VOLUME];
+        voxels[1] = water;
+        voxels[2] = sand;
+        let chunk = ChunkData {
+            form: ChunkForm::Explicit,
+            coord: [0, 0, 0],
+            revision: 1,
+            voxels,
+        };
+        s.on_reliable(Channel::World, &Message::ChunkData(chunk).encode(), 1000.0);
+        let modification = Message::VoxelModification(VoxelModification {
+            reason: VoxelModificationReason::Edit,
+            server_tick: 1,
+            chunks: vec![ChunkChanges {
+                coord: [0, 0, 0],
+                revision: 2,
+                changes: vec![VoxelChange {
+                    index: 5,
+                    material: water,
+                }],
+            }],
+        });
+        s.on_reliable(Channel::World, &modification.encode(), 1000.0);
+        let mut cells = vec![0u16; LOD_CELL_COUNT];
+        cells[7] = sand;
+        let lod = Message::LodData(LodData {
+            form: LodForm::Explicit,
+            level: 1,
+            section: [0, 0, 0],
+            revision: 1,
+            cells,
+        });
+        s.on_reliable(Channel::Lod, &lod.encode(), 1000.0);
+        let got: Vec<Message> = std::iter::from_fn(|| s.next_game())
+            .map(|(m, _)| m)
+            .collect();
+        let Message::ChunkData(c) = &got[0] else {
+            panic!()
+        };
+        assert_eq!(c.voxels[1], require("dwell:water"));
+        assert_eq!(info(c.voxels[2]).name, "dwell:sand");
+        assert_eq!(info(c.voxels[2]).density_kg_m3, 5.0, "the server's sand");
+        let Message::VoxelModification(v) = &got[1] else {
+            panic!()
+        };
+        assert_eq!(v.chunks[0].changes[0].material, require("dwell:water"));
+        let Message::LodData(l) = &got[2] else {
+            panic!()
+        };
+        assert_eq!(l.cells[7], c.voxels[2]);
+        // An id outside the server's registry is a malformed message.
+        let bad = ChunkData {
+            form: ChunkForm::Explicit,
+            coord: [0, 0, 0],
+            revision: 3,
+            voxels: vec![p.id_end() as u16; CHUNK_VOLUME],
+        };
+        s.on_reliable(Channel::World, &Message::ChunkData(bad).encode(), 1000.0);
+        assert!(matches!(s.state(), SessionState::Closed { .. }));
+    }
+
+    #[test]
+    fn outgoing_edits_map_to_the_servers_ids_and_client_only_states_are_not_sent() {
+        use dwell_blocks::require;
+        let (payload, p) = ladderless_registry();
+        let mut s = joined_with(&payload);
+        let (water, sand) = (server_id(&p, "dwell:water"), server_id(&p, "dwell:sand"));
+        let place = |material| {
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Place,
+                cell: [1, 2, 3],
+                face: 2,
+                material,
+            })
+        };
+        s.send_control(&place(require("dwell:sand")));
+        let Some(Message::BlockEditRequest(e)) = sent(&s.take_out()).pop() else {
+            panic!("sent")
+        };
+        assert_eq!(e.material, sand, "the palette's sand is the server's sand");
+        let synced_sand = s.mapping().unwrap().client(sand).unwrap();
+        s.send_control(&place(synced_sand));
+        let Some(Message::BlockEditRequest(e)) = sent(&s.take_out()).pop() else {
+            panic!("sent")
+        };
+        assert_eq!(e.material, sand);
+        let paste = Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Paste,
+            min: [0, 0, 0],
+            size: [2, 1, 1],
+            material: 0,
+            from: 0,
+            cells: vec![require("dwell:water"), require("dwell:sand")],
+        });
+        s.send_control(&paste);
+        let Some(Message::RegionEdit(r)) = sent(&s.take_out()).pop() else {
+            panic!("sent")
+        };
+        assert_eq!(r.cells, [water, sand]);
+        let replace = Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Replace,
+            min: [0, 0, 0],
+            size: [1, 1, 1],
+            material: require("dwell:water"),
+            from: require("dwell:stone"),
+            cells: Vec::new(),
+        });
+        s.send_control(&replace);
+        let Some(Message::RegionEdit(r)) = sent(&s.take_out()).pop() else {
+            panic!("sent")
+        };
+        assert_eq!((r.from, r.material), (require("dwell:stone"), water));
+        // A ladder: this client's only.
+        s.send_control(&place(require("dwell:ladder")));
+        assert!(sent(&s.take_out()).is_empty());
+        assert_eq!(s.stats().edits_unmapped, 1);
+        // A break names no state.
+        s.send_control(&Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [1, 2, 3],
+            face: 2,
+            material: 0,
+        }));
+        assert_eq!(sent(&s.take_out()).len(), 1);
     }
 
     #[test]

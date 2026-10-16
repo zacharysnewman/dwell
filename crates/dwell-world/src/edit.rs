@@ -25,7 +25,7 @@ pub fn targetable(m: StateId) -> bool {
 
 /// In the infinite creative palette (§6.5).
 pub fn placeable(m: StateId) -> bool {
-    usize::from(m) < dwell_blocks::STATES.len() && info(m).placeable
+    dwell_blocks::try_info(m).is_some_and(|s| s.placeable)
 }
 
 /// The cell face a surface normal points through: its dominant axis, ties to the vertical.

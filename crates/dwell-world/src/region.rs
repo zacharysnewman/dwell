@@ -3,7 +3,7 @@
 //! uses the same box arithmetic and the paste transform (rotate, mirror) for its tools. Pure
 //! functions of the voxel world and the players' capsules, like `edit`.
 
-use dwell_blocks::{Facing, STATES, StateId, info, with_facing};
+use dwell_blocks::{Facing, StateId, info, with_facing};
 use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 
 use crate::edit::{EditCapsule, REACH_SLACK, flooded_for, overlaps_player, placeable, unbreakable};
@@ -90,7 +90,7 @@ pub fn box_in_world(min: [i32; 3], size: [i32; 3]) -> bool {
 }
 
 fn known(m: StateId) -> bool {
-    usize::from(m) < STATES.len()
+    dwell_blocks::try_info(m).is_some()
 }
 
 /// What Fill, Hollow and Replace may put down: air, or a block of the creative palette.
@@ -308,7 +308,7 @@ impl PasteTransform {
 mod tests {
     use super::*;
     use crate::empty_generator;
-    use dwell_blocks::{parse_state, require};
+    use dwell_blocks::{STATES, parse_state, require};
 
     fn world() -> VoxelWorld {
         VoxelWorld::new(empty_generator(), None)
