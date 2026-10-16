@@ -25,8 +25,17 @@
 //!   voxels until a hit or it leaves the brick.
 //!
 //! Where the wanted level grows mid-node the ray carries on at the coarser level from where it
-//! is; if that coarser cell is occupied it is hit there, on the plane the ray last crossed (a LOD
-//! transition, like the raster LOD's).
+//! is — unless the coarser cell there is occupied while the level the ray marched at has data
+//! there: then it stays at that finer level (and tries again at the next iteration). Hitting the
+//! coarser cell on the plane the ray last crossed drew a side face at every switch distance, a
+//! ring around the eye; waiting puts the switch where the ray is in the coarser level's air, so
+//! the coarser surface is entered through its own faces. Where the levels' heights disagree (LOD
+//! cells are rounded to their size until the bricks carry column heights, A3c) the switch still
+//! shows as a step in depth, but not as a side face.
+//!
+//! A ray above (or below) every occupied row of its level ([`Scene::rows`]) leaves the level's
+//! box in one skip, clipped to the box around the eye that holds this ray until the cone LOD
+//! moves past the level ([`band_end`]), so coarser data beyond the band is still seen.
 //!
 //! After a skip the ray re-enters at the box's exit plane: that axis is the exact plane, the
 //! others the cell the ray is in at `t` (checked against the same plane distances the DDA uses,
