@@ -1,11 +1,12 @@
 //! How block states are drawn (`client/src/world/materials.ts`): each state's look, colour,
-//! opacity, textures, ladder face, shape, flooding and fluid, read from the generated registry
+//! opacity, render mode, textures, ladder face, shape, flooding and fluid, read from the generated registry
 //! (`dwell-blocks`), with the TS fallback for ids the registry does not know (a magenta cube).
 
 use std::sync::OnceLock;
 
 use dwell_blocks::{
-    FLUIDS, Facing, FluidId, FluidInfo, SHAPES, STATES, ShapeInfo, StateId, StateInfo, Textures,
+    FLUIDS, Facing, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo, StateId, StateInfo,
+    Textures,
 };
 
 /// The look a state is drawn with (the registry's `look` name).
@@ -24,6 +25,8 @@ pub(crate) struct MaterialStyle {
     /// sRGB `0xRRGGBB`.
     pub color: u32,
     pub opacity: f32,
+    /// How its pixels are drawn: which of the chunk's meshes it goes in.
+    pub render: RenderMode,
     pub textures: Option<Textures>,
     /// Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z).
     pub ladder_face: Option<usize>,
@@ -76,6 +79,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         look,
         color: s.color,
         opacity: s.opacity,
+        render: s.render,
         textures: s.textures,
         ladder_face: if look == Look::Ladder {
             ladder_face
@@ -105,6 +109,7 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             look: Look::Cube,
             color: UNKNOWN_COLOR,
             opacity: 1.0,
+            render: RenderMode::Opaque,
             textures: None,
             ladder_face: None,
             shape: cube_index(),

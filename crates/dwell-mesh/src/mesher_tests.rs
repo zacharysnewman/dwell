@@ -1,7 +1,7 @@
 //! `client/src/mesh/mesher.test.ts` and the logic cases of `client/src/world/shapes.test.ts`.
 
 use super::*;
-use dwell_blocks::{ShapeFace, require};
+use dwell_blocks::{RenderMode, ShapeFace, require};
 
 const UNKNOWN: u16 = 65_000;
 
@@ -76,6 +76,7 @@ fn draws_a_lone_cube_as_six_quads_wound_counter_clockwise_facing_out() {
     let ChunkMeshes {
         opaque,
         transparent,
+        ..
     } = mesh(&[(1, 1, 1, dirt())], false);
     assert_eq!(quads(&opaque), 6);
     assert_eq!(quads(&transparent), 0);
@@ -140,6 +141,7 @@ fn draws_water_in_the_transparent_pass_with_its_surface_lowered_and_hides_it_aga
     let ChunkMeshes {
         opaque,
         transparent,
+        ..
     } = mesh(&[(0, 0, 0, water()), (1, 0, 0, water())], false);
     assert_eq!(quads(&opaque), 0);
     assert_eq!(quads(&transparent), 6); // merged top, bottom, and sides of the 2×1 pool
@@ -163,6 +165,7 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
     let ChunkMeshes {
         opaque,
         transparent,
+        ..
     } = mesh_chunk_with(&kinds, &cells, false).expect("padded volume");
     assert_eq!(quads(&opaque), 0);
     let mut tops: Vec<(f32, f32)> = (0..quads(&transparent))
@@ -189,13 +192,58 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
 }
 
 #[test]
-fn draws_a_ladder_as_one_plate_near_the_back_of_its_cell() {
-    // A north ladder faces −Z (face 5): the plate is at z = 1 − 0.05.
+fn draws_a_ladder_as_one_cutout_plate_near_the_back_of_its_cell() {
+    // A north ladder faces −Z (face 5): the plate is at z = 1 − 0.05, in the cutout mesh (its data
+    // says `"render": "cutout"`: the gaps between rails and rungs are see-through).
     let ladder = require("dwell:ladder[facing=north,flooded=false]");
-    let opaque = mesh(&[(0, 0, 0, ladder)], false).opaque;
-    assert_eq!(quads(&opaque), 1);
-    assert!(close(f64::from(opaque.positions[2]), 0.95, 2));
-    assert_eq!(opaque.normals[2], -1.0);
+    assert_eq!(dwell_blocks::info(ladder).render, RenderMode::Cutout);
+    let m = mesh(&[(0, 0, 0, ladder)], false);
+    assert_eq!(quads(&m.opaque), 0);
+    let cutout = m.cutout;
+    assert_eq!(quads(&cutout), 1);
+    assert!(close(f64::from(cutout.positions[2]), 0.95, 2));
+    assert_eq!(cutout.normals[2], -1.0);
+    assert_eq!(cutout.plants, vec![0.0; 16], "no sway or fade");
+}
+
+#[test]
+fn a_ladder_hides_no_face_of_its_neighbours() {
+    // See-through: the stone behind it keeps the face the ladder stands against.
+    let ladder = require("dwell:ladder[facing=north,flooded=false]");
+    let alone = quads(&mesh(&[(0, 0, 1, stone())], false).opaque);
+    let behind = quads(&mesh(&[(0, 0, 0, ladder), (0, 0, 1, stone())], false).opaque);
+    assert_eq!(behind, alone);
+}
+
+#[test]
+fn a_flooded_ladder_draws_the_water_around_it() {
+    // In a pool, a flooded ladder's cell holds water: no hole in the water's surface or sides.
+    let ladder = require("dwell:ladder[facing=north,flooded=true]");
+    let pool = mesh(
+        &[(0, 0, 0, water()), (1, 0, 0, ladder), (2, 0, 0, water())],
+        false,
+    );
+    let dry = mesh(
+        &[(0, 0, 0, water()), (1, 0, 0, 0), (2, 0, 0, water())],
+        false,
+    );
+    // The water faces toward the ladder's cell are hidden, and the cell draws its own water.
+    let top = |m: &MeshArrays| {
+        (0..quads(m))
+            .filter(|q| m.normals[q * 12 + 1] == 1.0)
+            .map(|q| {
+                let (lo, hi) = bounds(m, q);
+                f64::from(hi[0] - lo[0]) * f64::from(hi[2] - lo[2])
+            })
+            .sum::<f64>()
+    };
+    assert!(
+        (top(&pool.transparent) - 3.0).abs() < 0.02,
+        "{}",
+        top(&pool.transparent)
+    );
+    assert!((top(&dry.transparent) - 2.0).abs() < 1e-6);
+    assert_eq!(quads(&pool.cutout), 1, "the plate");
 }
 
 #[test]
