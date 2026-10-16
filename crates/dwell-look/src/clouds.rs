@@ -564,6 +564,11 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);
 	let night = mix(CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5), CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color), lit);
 	var col = mix(night, day, dayness);
+	// From above the tops are white in full light: the light's tint shows half as much (a low or
+	// warm sun read as sand on the deck's top, where the eye sees only lit cloud).
+	if (from_above) {
+		col = mix(col, vec3f(dot(col, vec3f(0.2126, 0.7152, 0.0722))), 0.5 * dayness);
+	}
 	// The silver lining: thin cloud near the light glows.
 	let toward_light = max(dot(dir, light), 0.0);
 	let rim = CLOUD_SILVER * pow(toward_light, CLOUD_SILVER_POWER) * (1.0 - d) * (1.0 - d);

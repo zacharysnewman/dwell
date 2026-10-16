@@ -163,7 +163,8 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   a peak seen through it from below. The terrain still fogs toward the clear sky first, and the
   clouds go over that.
 - **Bright tops.** Seen from above with the light over the face, the light reaches the top through
-  less cloud: the self-shadow's absorption is cut by `topLight` (0.9). Day or night follows the sky
+  less cloud: the self-shadow's absorption is cut by `topLight` (0.9). By day the tops also take the
+  light's tint at half strength (a warm sun otherwise reads as sand on a deck seen only lit). Day or night follows the sky
   in the ray's level direction, as `dwell_sky` takes it below the horizon.
 - **The crossing.** The deck fades out over `crossFadeM` (400 m) either side of it, from below as
   before and now from above. As it does, an in-cloud fog fades in: the whole view mixes toward the
