@@ -192,14 +192,14 @@ fn players_walk_through_tall_grass() {
     assert!(through.y < 1.5, "stayed on the floor: {through:?}");
     assert!(!climbing);
     // The same patch as stone stops the player.
-    let (stopped, _) = walk(stone());
+    let (stopped, _) = walk(cube_block());
     assert!(stopped.z < 1.0, "{stopped:?}");
 }
 
 fn ladder_world() -> PlayerTestWorld {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.fill(-2, 0, 2, 2, 2, 12, stone());
+    w.fill(-2, 0, 2, 2, 2, 12, cube_block());
     w.fill(0, 0, 1, 0, 2, 1, require("dwell:ladder[facing=north]"));
     w
 }
@@ -338,7 +338,7 @@ fn walking_off_the_ledge_onto_the_ladder_climbs_down_it() {
 
 /// A 2 m deep pool (x −3..3, z 0..8) in a floor whose top is at y = 0.
 fn pool(w: &mut PlayerTestWorld) {
-    w.fill(-8, -3, -8, 8, -1, 12, stone());
+    w.fill(-8, -3, -8, 8, -1, 12, cube_block());
     w.fill(-3, -2, 0, 3, -1, 8, require("dwell:water"));
 }
 
@@ -401,7 +401,7 @@ fn jumping_at_the_edge_climbs_out_of_the_pool() {
 #[test]
 fn shallow_water_is_walked_through() {
     let mut w = PlayerTestWorld::new();
-    w.fill(-8, -2, -8, 8, -2, 12, stone());
+    w.fill(-8, -2, -8, 8, -2, 12, cube_block());
     w.fill(-8, -1, -8, 8, -1, 12, require("dwell:water"));
     let e = w.spawn(v(0.5, -1.0, 0.0));
     w.set_input(|_, _| mv(0.0, 1.0));

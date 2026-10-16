@@ -224,6 +224,41 @@ impl TerrainGenerator {
         (!col.outside).then(|| top_voxel(col.height).clamp(FACE_MIN_Y, WORLD_MAX_Y - 1))
     }
 
+    /// The state `generate` puts at (x, y, z) (face-local), from the column alone.
+    pub fn state_at(&self, x: i32, y: i32, z: i32) -> StateId {
+        Self::state_in(&self.column_at(x, z), y)
+    }
+
+    fn state_in(col: &Column, y: i32) -> StateId {
+        if col.outside || !(FACE_MIN_Y..WORLD_MAX_Y).contains(&y) {
+            return M.air;
+        }
+        let top = top_voxel(col.height);
+        if y <= top {
+            fill(top, i64::from(top - y))
+        } else if y < SEA_LEVEL {
+            M.water
+        } else {
+            M.air
+        }
+    }
+
+    /// The height of the ground's surface at (x, z) (face-local, inside the disc): the top voxel's
+    /// shape as the adaptive rules derive it (docs/ADAPTIVE_BLOCKS.md), at the column's centre — on
+    /// level ground half a block above the top voxel's floor.
+    pub fn surface_y_at(&self, x: i32, z: i32) -> Option<f64> {
+        let g = self.ground_y(x, z)?;
+        let mut cols = [[None; 3]; 3];
+        let mut get = |dx: i32, dy: i32, dz: i32| {
+            let c = cols[(dz + 1) as usize][(dx + 1) as usize]
+                .get_or_insert_with(|| self.column_at(x + dx, z + dz));
+            Self::state_in(c, g + dy)
+        };
+        let shape = dwell_blocks::adaptive::shape_at(&mut get, 1);
+        let top = dwell_blocks::shape::solid_span_at(shape, 0.5, 0.5).hi;
+        Some(f64::from(g) + f64::from(top))
+    }
+
     /// The island's coast distance at the point itself (no lattice).
     pub fn coast_at(&self, x: i32, z: i32) -> f32 {
         self.island.coast_at(i64::from(x), i64::from(z), None)
@@ -552,7 +587,9 @@ impl TerrainGenerator {
             if let Some(g) = self.ground_y(x, z)
                 && g >= SEA_LEVEL + SHORE_HEIGHT
             {
-                let point = [f64::from(x) + 0.5, f64::from(g) + 1.0, f64::from(z) + 0.5];
+                // On the shaped surface (a level patch's top blocks rest at half height).
+                let feet = self.surface_y_at(x, z).unwrap_or(f64::from(g) + 1.0);
+                let point = [f64::from(x) + 0.5, feet, f64::from(z) + 0.5];
                 fallback.get_or_insert(point);
                 let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
                     (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| self.ground_y(x + px, z + pz) == Some(g))

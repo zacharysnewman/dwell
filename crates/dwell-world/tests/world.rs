@@ -97,7 +97,8 @@ fn the_palette_is_the_registrys_placeable_states() {
 fn the_ray_finds_the_first_targetable_cell_and_its_face() {
     for ox in [0, FAR_X] {
         let mut world = empty();
-        world.set_voxel(ox, 0, 5, s("dwell:stone"));
+        // A non-adaptive cube (a lone stone block would be a half pyramid: its slopes count as tops).
+        world.set_voxel(ox, 0, 5, s("dwell:sandbox_floor"));
         world.set_voxel(ox, 0, 3, s("dwell:water")); // liquids are not targets
         let eye = [f64::from(ox) + 0.5, 0.5, 0.5];
         let hit = raycast_block(&mut world, eye, [0.0, 0.0, 1.0], 5.0).expect("hit");
@@ -105,7 +106,7 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         assert!((hit.distance - 4.5).abs() < 1e-5);
         assert!(raycast_block(&mut world, eye, [0.0, 0.0, 1.0], 4.4).is_none());
         // Looking down onto a floor: its top face.
-        world.set_voxel(ox + 2, -1, 0, s("dwell:grass"));
+        world.set_voxel(ox + 2, -1, 0, s("dwell:sandbox_floor"));
         let d = 0.5f32.sqrt();
         let hit = raycast_block(
             &mut world,
@@ -116,7 +117,7 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         .expect("hit");
         assert_eq!((hit.cell, hit.face), ([ox + 2, -1, 0], 2));
         // The cell containing the eye is not a target.
-        world.set_voxel(ox + 5, 0, 0, s("dwell:dirt"));
+        world.set_voxel(ox + 5, 0, 0, s("dwell:sandbox_floor")); // inside a solid cube
         assert!(
             raycast_block(
                 &mut world,
@@ -278,7 +279,8 @@ fn tall_grass_is_placed_only_on_grass_or_dirt() {
             "{m}"
         );
     }
-    world.set_voxel(0, 0, 3, s("dwell:grass"));
+    // Walls of a non-adaptive cube (the sandbox floor): adaptive blocks would take shapes.
+    world.set_voxel(0, 0, 3, s("dwell:sandbox_floor"));
     let side = check(&mut world, place([0, 0, 3], 5, grass), eye, &[]);
     assert_eq!(side.cell, [0, 0, 2]);
     assert_eq!(
@@ -286,7 +288,7 @@ fn tall_grass_is_placed_only_on_grass_or_dirt() {
         EditCheck::Ok,
         "against a side: there is grass below that cell"
     );
-    world.set_voxel(0, 1, 3, s("dwell:stone"));
+    world.set_voxel(0, 1, 3, s("dwell:sandbox_floor"));
     assert_eq!(
         check(&mut world, place([0, 1, 3], 5, grass), eye, &[]).check,
         EditCheck::NoSupport,
@@ -315,8 +317,8 @@ fn placing_into_tall_grass_replaces_it() {
     let into = check(&mut world, place([0, 0, 2], 2, s("dwell:stone")), eye, &[]);
     assert_eq!((into.check, into.cell), (EditCheck::Ok, [0, 0, 2]));
     // Aimed past it, at the block beside its cell: the grass's cell is not Occupied.
-    world.set_voxel(1, 0, 2, s("dwell:stone"));
-    world.set_voxel(1, 0, 3, s("dwell:stone"));
+    world.set_voxel(1, 0, 2, s("dwell:sandbox_floor"));
+    world.set_voxel(1, 0, 3, s("dwell:sandbox_floor"));
     world.set_voxel(0, 0, 3, grass);
     world.set_voxel(0, 0, 2, 0);
     // Seen past the grass's box (over its top) from beside it.
@@ -366,13 +368,13 @@ fn breaking_the_block_under_tall_grass_takes_the_grass_with_it() {
 #[test]
 fn tall_grass_is_aimed_at_by_its_smaller_box() {
     let grass = s("dwell:tall_grass");
-    let (lo, hi) = target_box(grass);
     let b = dwell_blocks::info(grass)
         .selection
         .expect("the data gives a box");
-    assert_eq!((lo, hi), ([b[0], b[1], b[2]], [b[3], b[4], b[5]]));
     let mut world = empty();
     world.set_voxel(0, 0, 3, grass);
+    let (lo, hi) = target_box(&mut world, [0, 0, 3]);
+    assert_eq!((lo, hi), ([b[0], b[1], b[2]], [b[3], b[4], b[5]]));
     // Through the box's middle: hit on its near face, inside the cell.
     let hit = raycast_block(&mut world, [0.5, 0.3, 0.5], [0.0, 0.0, 1.0], 5.0).expect("hit");
     assert_eq!((hit.cell, hit.face), ([0, 0, 3], 5));
@@ -385,7 +387,8 @@ fn tall_grass_is_aimed_at_by_its_smaller_box() {
     assert!(raycast_block(&mut world, [0.5, 0.9, 0.5], [0.0, 0.0, 1.0], 5.0).is_none());
     assert!(raycast_block(&mut world, [0.05, 0.3, 0.5], [0.0, 0.0, 1.0], 5.0).is_none());
     // Its box is what the server's line of sight and a full block's outline use.
-    assert_eq!(target_box(s("dwell:stone")), ([0.0; 3], [1.0; 3]));
+    world.set_voxel(4, 0, 3, s("dwell:sandbox_floor"));
+    assert_eq!(target_box(&mut world, [4, 0, 3]), ([0.0; 3], [1.0; 3]));
     let mut world = ground();
     world.set_voxel(0, 0, 2, grass);
     let eye = [0.5, 1.62, 0.5];
@@ -551,7 +554,7 @@ fn flooded_blocks_follow_their_cell_and_leave_water() {
 fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
     let mut world = empty();
     let top = WORLD_MAX_Y - 1;
-    world.set_voxel(0, top, 2, s("dwell:stone"));
+    world.set_voxel(0, top, 2, s("dwell:sandbox_floor")); // a cube: its −Z face is there to aim at
     let r = place([0, top, 2], 2, s("dwell:stone"));
     assert_eq!(
         check(&mut world, r, [0.5, f64::from(WORLD_MAX_Y) + 0.6, 2.5], &[]).check,
@@ -563,7 +566,7 @@ fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
         EditCheck::Ok
     );
     let rim = WORLD_RADIUS - 1;
-    world.set_voxel(rim, 0, 0, s("dwell:stone"));
+    world.set_voxel(rim, 0, 0, s("dwell:sandbox_floor"));
     let r = place([rim, 0, 0], 0, s("dwell:stone"));
     assert_eq!(
         check(&mut world, r, [f64::from(rim) + 1.5, 0.5, 0.5], &[]).check,

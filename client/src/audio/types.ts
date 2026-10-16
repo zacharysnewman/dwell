@@ -51,6 +51,8 @@ export interface LayerFields {
   pan?: number;
   chance?: number;
   grains?: GrainsDef;
+  /** Loop sounds: the layer's level wavers at `rate` Hz by ± `depth` / 2 (a scrape's grit). */
+  tremolo?: { rate: number; depth: number };
 }
 
 export interface LayerDef extends LayerFields {
@@ -75,6 +77,8 @@ export interface IntensityDef {
   gain?: [number, number];
   cutoff?: [number, number];
   time?: [number, number];
+  /** Loop sounds: a factor on every source's rate (and tremolo), as the intensity moves. */
+  pitch?: [number, number];
 }
 
 export interface SoundDef {
@@ -83,10 +87,15 @@ export interface SoundDef {
   reverb?: number;
   variation: VariationDef | 'none';
   intensity?: IntensityDef;
+  /** Sounds until stopped (a slide's scrape): sustained layers whose levels follow intensity. */
+  loop?: boolean;
   layers: LayerDef[];
 }
 
-export type SetEvent = 'step' | 'land' | 'break' | 'place' | 'hit' | 'enter' | 'exit' | 'swim';
+export type SetEvent =
+  'step' | 'land' | 'break' | 'place' | 'hit' | 'enter' | 'exit' | 'swim' | 'slide' | 'slide_stop';
+/** An event's part in a continuous sound: start the mover's voice, update it, stop it. */
+export type LoopPart = 'start' | 'update' | 'stop';
 export type Gait = 'walk' | 'run' | 'crouch' | 'climb' | 'swim';
 export type UiKind =
   'hover' | 'click' | 'back' | 'tab' | 'toggle_on' | 'toggle_off' | 'slider' | 'error' | 'success';
@@ -98,6 +107,7 @@ export interface EventDef {
   /** A sound played too (or instead). */
   sound?: string;
   speed?: [number, number];
+  loop?: LoopPart;
 }
 
 export type ControlSounds = string[] | { silent: string };

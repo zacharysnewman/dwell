@@ -145,12 +145,19 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
         EditCheck::NoSupport
     );
     settle(&mut f);
-    // Dig the ground in front, then break the grass block under the plant from that side: the
-    // plant goes in the same modification, in the same chunk's changes.
-    f.send(1, brk([0, -1, 1], 2));
-    f.server.step();
-    settle(&mut f);
-    f.send(1, brk([0, -1, 2], 5));
+    // Clear the grass block under the plant (a one-cell region edit: adaptive ground takes shapes
+    // a side break would have to see past): the plant goes in the same modification.
+    f.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Fill,
+            min: [0, -1, 2],
+            size: [1, 1, 1],
+            material: M.air,
+            from: 0,
+            cells: Vec::new(),
+        }),
+    );
     f.server.step();
     assert_eq!(f.server.world().get_voxel(0, -1, 2), M.air);
     assert_eq!(
@@ -270,8 +277,10 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
     let z = spawn.z.floor() as i32;
     let y = 4000; // open sky
     let sky = chunk_of(x, y, z + 2);
-    // A floating block (tests put it directly), then the player next to it breaks it.
+    // A floating block (tests put it directly), then the player next to it breaks it. Another on
+    // it keeps it a cube (alone, a natural block is a half pyramid, with no side to aim at).
     f.server.world().set_voxel(x, y, z + 2, M.stone);
+    f.server.world().set_voxel(x, y + 1, z + 2, M.stone);
     f.move_to(
         w.player_id,
         f64::from(x) + 0.5,
@@ -285,7 +294,7 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
         .find(|m| coord_of(m) == sky)
         .expect("the sky chunk streamed");
     assert_eq!(it.form, ChunkForm::Explicit);
-    assert_eq!(it.revision, 1);
+    assert_eq!(it.revision, 2); // the two blocks put
     assert!(chunks.iter().filter(|m| m.form == ChunkForm::Air).count() > 0);
 
     f.send(1, brk([x, y, z + 2], 5));
@@ -295,5 +304,5 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
         EditCheck::Ok
     );
     assert_eq!(f.server.world().get_voxel(x, y, z + 2), M.air);
-    assert_eq!(f.server.world().find(sky).unwrap().revision(), 2); // modified: kept, not read as air
+    assert_eq!(f.server.world().find(sky).unwrap().revision(), 3); // modified: kept, not read as air
 }

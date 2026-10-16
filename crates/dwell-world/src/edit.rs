@@ -33,10 +33,12 @@ pub fn placeable(m: StateId) -> bool {
     usize::from(m) < dwell_blocks::STATES.len() && info(m).placeable
 }
 
-/// The cell face a surface normal points through: its dominant axis, ties to the vertical.
+/// The cell face a surface normal points through: its dominant axis, ties to the vertical. A 45°
+/// slope (an adaptive ramp or ridge) is a tie whatever the rounding of its normal: within 1e-5.
 fn face_of_normal(n: [f32; 3]) -> u8 {
     let (ax, ay, az) = (n[0].abs(), n[1].abs(), n[2].abs());
-    if ay >= ax && ay >= az {
+    const TIE: f32 = 1e-5;
+    if ay + TIE >= ax && ay + TIE >= az {
         return if n[1] > 0.0 { 2 } else { 3 };
     }
     if ax >= az {
@@ -45,22 +47,25 @@ fn face_of_normal(n: [f32; 3]) -> u8 {
     if n[2] > 0.0 { 4 } else { 5 }
 }
 
-/// The shape a block is aimed at and seen by: its solid, or the whole cell (a ladder).
-fn target_shape(m: StateId) -> &'static ShapeInfo {
+/// The shape a block is aimed at and seen by: its solid — an adaptive block's derived shape — or
+/// the whole cell (a ladder).
+fn target_shape(world: &mut VoxelWorld, cell: [i32; 3]) -> &'static ShapeInfo {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
     if info(m).shape == VoxelShape::Empty {
         shape_of(M.stone)
     } else {
-        shape_of(m)
+        world.shape_at(cell[0], cell[1], cell[2])
     }
 }
 
 /// The box (min, max corner in the cell) a block is aimed at, seen by and outlined with: its data's
 /// `selectionBox`, else its shape's extent, else the whole cell.
-pub fn target_box(m: StateId) -> ([f32; 3], [f32; 3]) {
+pub fn target_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3]) {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
     if let Some(b) = info(m).selection {
         return ([b[0], b[1], b[2]], [b[3], b[4], b[5]]);
     }
-    let shape = target_shape(m);
+    let shape = target_shape(world, cell);
     let top = if shape.inverted { 1.0 } else { shape.max_y };
     ([0.0; 3], [1.0, top, 1.0])
 }
@@ -81,13 +86,14 @@ fn box_faces(lo: [f32; 3], hi: [f32; 3]) -> [ShapeFace; 6] {
 }
 
 /// The surfaces a block is seen by (line of sight): its selection box's, or its shape's.
-fn target_faces(m: StateId) -> Vec<ShapeFace> {
+fn target_faces(world: &mut VoxelWorld, cell: [i32; 3]) -> Vec<ShapeFace> {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
     match info(m).selection {
         Some(_) => {
-            let (lo, hi) = target_box(m);
+            let (lo, hi) = target_box(world, cell);
             box_faces(lo, hi).to_vec()
         }
-        None => faces_of(target_shape(m)).to_vec(),
+        None => faces_of(target_shape(world, cell)).to_vec(),
     }
 }
 
@@ -234,14 +240,23 @@ pub fn raycast_block(
     }
     let mut t_cell = 0.0f32;
     while t_cell <= max_distance {
-        let m = world.get_voxel(base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]);
+        let at: [i32; 3] = std::array::from_fn(|i| base[i] + cell[i]);
+        let m = world.get_voxel(at[0], at[1], at[2]);
         if targetable(m) {
             let corner = cell.map(|c| c as f32);
             let hit = if info(m).selection.is_some() {
-                ray_enter_box(target_box(m), corner, o, dir, max_distance)
+                ray_enter_box(target_box(world, at), corner, o, dir, max_distance)
             } else {
-                ray_enter_shape(target_shape(m), corner, o, dir, max_distance, None, 0.0)
-                    .map(|h| (h.t, h.normal))
+                ray_enter_shape(
+                    target_shape(world, at),
+                    corner,
+                    o,
+                    dir,
+                    max_distance,
+                    None,
+                    0.0,
+                )
+                .map(|h| (h.t, h.normal))
             };
             if let Some((t, normal)) = hit
                 && t <= max_distance
@@ -358,7 +373,7 @@ pub fn check_block_edit(
     // the requested face, and a ray from it reaches the target first at the polygon's centre or
     // near one of its corners.
     let mut visible = false;
-    for polygon in &target_faces(target) {
+    for polygon in &target_faces(world, c) {
         if visible {
             break;
         }

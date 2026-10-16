@@ -70,6 +70,81 @@ impl NodeBuild {
     }
 }
 
+const TAG_AIR: u32 = 0;
+const TAG_SOLID: u32 = 1;
+const TAG_NODE: u32 = 2;
+
+impl NodeBuild {
+    /// The build as one word stream, for carrying it from a worker (`postMessage`): a tag (0 air,
+    /// 1 solid + its state, 2 a node), then for a node its `NODE_WORDS`, the brick count, each
+    /// brick's length and words, and a column-grid flag with its `COLUMN_WORDS`.
+    pub fn to_words(&self) -> Vec<u32> {
+        match self {
+            NodeBuild::Air => vec![TAG_AIR],
+            NodeBuild::Solid(s) => vec![TAG_SOLID, u32::from(*s)],
+            NodeBuild::Node(d) => {
+                let mut w = vec![TAG_NODE];
+                w.extend(d.node.to_words());
+                w.push(d.bricks.len() as u32);
+                for b in &d.bricks {
+                    w.push(b.len() as u32);
+                    w.extend(b);
+                }
+                match &d.columns {
+                    Some(c) => {
+                        w.push(1);
+                        w.extend(c.to_words());
+                    }
+                    None => w.push(0),
+                }
+                w
+            }
+        }
+    }
+
+    /// Reads `to_words`'s stream back; `None` if it is malformed.
+    pub fn from_words(w: &[u32]) -> Option<Self> {
+        let mut at = 0usize;
+        let mut take = |n: usize| -> Option<&[u32]> {
+            let s = w.get(at..at.checked_add(n)?)?;
+            at += n;
+            Some(s)
+        };
+        let out = match take(1)?[0] {
+            TAG_AIR => NodeBuild::Air,
+            TAG_SOLID => NodeBuild::Solid(u16::try_from(take(1)?[0]).ok()?),
+            TAG_NODE => {
+                let node = Node::from_words(take(NODE_WORDS)?);
+                let n = take(1)?[0] as usize;
+                let mut bricks = Vec::with_capacity(n.min(BRICKS_PER_NODE));
+                for _ in 0..n {
+                    let len = take(1)?[0] as usize;
+                    bricks.push(take(len)?.to_vec());
+                }
+                let columns = match take(1)?[0] {
+                    0 => None,
+                    _ => Some(ColumnGrid::from_words(take(COLUMN_WORDS)?)?),
+                };
+                // Every mixed brick names a brick that came with it.
+                for b in 0..BRICKS_PER_NODE {
+                    if let BrickRef::Mixed(i) = node.get(b)
+                        && i as usize >= bricks.len()
+                    {
+                        return None;
+                    }
+                }
+                NodeBuild::Node(Box::new(NodeData {
+                    node,
+                    bricks,
+                    columns,
+                }))
+            }
+            _ => return None,
+        };
+        (at == w.len()).then_some(out)
+    }
+}
+
 /// A chunk's voxels (`local_index` order).
 pub fn build_chunk(voxels: &[StateId], table: &StateTable) -> NodeBuild {
     assert_eq!(voxels.len(), CHUNK_VOLUME);
@@ -314,6 +389,35 @@ mod tests {
             s ^= s >> 7;
             s ^= s << 17;
             s
+        }
+    }
+
+    #[test]
+    fn builds_round_trip_through_words() {
+        let t = StateTable::registry();
+        let mut r = rng(5);
+        let mut v = vec![0u16; CHUNK_VOLUME];
+        for x in v.iter_mut() {
+            if r().is_multiple_of(5) {
+                *x = (r() % 4 + 1) as u16;
+            }
+        }
+        let mut sec = vec![0u16; lod::VOLUME];
+        for x in sec.iter_mut() {
+            if r().is_multiple_of(3) {
+                *x = (r() % 3 + 1) as u16;
+            }
+        }
+        let builds = [
+            NodeBuild::Air,
+            NodeBuild::Solid(3),
+            build_chunk(&v, &t),
+            build_section(&sec, &t),
+        ];
+        for b in builds {
+            let w = b.to_words();
+            assert_eq!(NodeBuild::from_words(&w).as_ref(), Some(&b));
+            assert_eq!(NodeBuild::from_words(&w[..w.len() - 1]), None, "truncated");
         }
     }
 

@@ -127,7 +127,7 @@ set is the grass block's (`dwell:grass`).
 
 ## 8. The owner's answers (2026-10-16)
 
-1. **Compatibility**: tall grass ships in the 0.12.0 bundle (a new compatibility line). The ladder
+1. **Compatibility**: tall grass ships in the 0.13.0 bundle (with wood and leaves) (a new compatibility line). The ladder
    change ships on its own as a 0.11 patch (0.11.18).
 2. **World generation grows tall grass** (§10): a partial reversal of the baseline's B10 ("no
    special terrain features") **for plants only** — trees, rocks, caves and the rest stay cut.

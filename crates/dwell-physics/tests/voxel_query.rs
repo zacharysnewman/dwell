@@ -164,8 +164,8 @@ fn axis_aligned_rays_from_grid_points_answer_like_the_box_cast() {
         for y in -2..=2 {
             for x in -4..=4 {
                 match rng.next() % 6 {
-                    0 => w.set(x, y, z, stone()),
-                    1 => w.set(x, y, z, require("dwell:dirt")),
+                    0 => w.set(x, y, z, cube_block()),
+                    1 => w.set(x, y, z, cube_block()),
                     _ => {}
                 }
             }
@@ -244,9 +244,9 @@ fn the_exact_shape_ray_cast_answers_like_the_box_cast_on_cubes() {
         for y in -3..=3 {
             for x in -6..=6 {
                 match rng.next() % 8 {
-                    0 => w.set(x, y, z, stone()),
-                    1 => w.set(x, y, z, require("dwell:dirt")),
-                    2 => w.set(x, y, z, require("dwell:grass")),
+                    0 => w.set(x, y, z, cube_block()),
+                    1 => w.set(x, y, z, cube_block()),
+                    2 => w.set(x, y, z, cube_block()),
                     _ => {}
                 }
             }

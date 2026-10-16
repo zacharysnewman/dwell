@@ -3,6 +3,7 @@ import {
   RENDERER_CHOICES,
   choiceOf,
   dividerShare,
+  displayScale,
   formatDifference,
   rendererParams,
 } from './renderer';
@@ -15,6 +16,22 @@ describe('the renderer switch', () => {
     });
     expect(rendererParams('?renderer=march', false)).toEqual({});
     expect(rendererParams('', true)).toEqual({});
+  });
+
+  it('gives the marcher its scale and upscaler, and keeps the canvas at full size then', () => {
+    const fsr = '?renderer=march&scale=0.5&upscaler=fsr1';
+    expect(rendererParams(fsr, true)).toEqual({
+      renderer: 'march',
+      upscaler: 'fsr1',
+      marchScale: 0.5,
+    });
+    expect(displayScale(fsr, true)).toBe(1);
+    expect(rendererParams('?scale=0.75&upscaler=bilateral', true).marchScale).toBe(0.75);
+    // The browser's stretch, or a build without the switch: the drawing buffer scales.
+    expect(displayScale('?scale=0.5', true)).toBe(0.5);
+    expect(displayScale(fsr, false)).toBe(0.5);
+    expect(rendererParams('?scale=0.5&upscaler=taa-u', true)).toEqual({});
+    expect(displayScale('?scale=9', true)).toBe(2);
   });
 
   it('finds the settings choice for what the client says draws', () => {

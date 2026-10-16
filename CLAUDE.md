@@ -213,6 +213,15 @@ Check these before chasing an e2e failure:
   the native-server and friend tests (`edit` ×2, `friend`, `join:30`, `lobby`, `play` two-client)
   time out waiting for terrain or a join, and they pass on CI. To check those locally, run with
   the real GPU: a copy of `playwright.config.ts` without the four SwiftShader flags.
+- Main's e2e shard 1 (`edit.spec` two-client tests, `friend.spec`) timed out from 0.11.10 to
+  0.11.19, waiting for terrain or for the walker to move. The cause was not one change: the
+  suite is frame-bound on SwiftShader, every test there ran about 2x slower, and the same commit
+  passed on one runner and failed on another (bisect PRs #105–#107). Fixed 2026-10-16: a CPU
+  adapter now draws the cheapest tier of everything (`render/mod.rs`: `samples_for`,
+  `clouds_for`, `water_for`, `stars_for`, `motion_blur_for`, and `pixel_ratio_for`, which halves
+  the drawing buffer), and shard 1 went from 8m43s failing to 3m58s passing. A new per-pixel
+  visual needs its CPU-adapter tier too. If shard 1 slows again, compare its per-test times with
+  that run before widening a timeout.
 - The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (5); update it when the palette
   changes.
 

@@ -3,7 +3,7 @@
 //! for every player before the physics step. Transcendental functions come from `libm`, so native
 //! and WASM builds agree bit for bit.
 
-use dwell_blocks::{Facing, VoxelShape, info, shape::surface_height_at};
+use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
 use dwell_world::{
     MIDPLANE_Y, SEA_LEVEL, VoxelWorld, WORLD_MAX_Y, chunk_distance, chunk_of, mirror_y,
 };
@@ -95,6 +95,10 @@ pub struct GroundInfo {
     pub normal: Vec3,
     /// Degrees.
     pub slope_angle: f32,
+    /// The ground under the capsule's centre (the centre ray's hit, else `normal`) and its angle
+    /// (degrees): what slides (§6.8).
+    pub under_normal: Vec3,
+    pub under_angle: f32,
     /// Capsule bottom → ground.
     pub gap: f32,
     pub ground: GroundRef,
@@ -110,6 +114,8 @@ impl Default for GroundInfo {
             was_grounded: false,
             normal: Vec3::Y,
             slope_angle: 0.0,
+            under_normal: Vec3::Y,
+            under_angle: 0.0,
             gap: 0.0,
             ground: GroundRef::None,
             ceiling_blocked: false,
@@ -260,6 +266,16 @@ impl PlayerController {
     pub fn exclusive(&self) -> bool {
         self.climb.climbing || self.swim.swimming || self.fly.flying
     }
+    /// On ground steeper than `min_angle` (°), and not climbing, swimming or flying: the slide
+    /// layer moves the player (§6.8). Derived from this tick's probe and the resumable flags, so it
+    /// needs no state of its own on the wire. Another player's head (a capsule's round top) is not
+    /// a slope.
+    pub fn sliding(&self, min_angle: f32) -> bool {
+        !self.exclusive()
+            && self.ground.grounded
+            && self.ground.under_angle > min_angle
+            && !matches!(self.ground.ground, GroundRef::Player(_))
+    }
 }
 
 fn flat(v: Vec3) -> Vec3 {
@@ -273,6 +289,15 @@ fn move_towards(current: Vec3, target: Vec3, max_delta: f32) -> Vec3 {
         return target;
     }
     current + delta * (max_delta / length)
+}
+
+fn clamp_length(v: Vec3, max: f32) -> Vec3 {
+    let length = v.length();
+    if length > max && length > 0.0 {
+        v * (max / length)
+    } else {
+        v
+    }
 }
 
 fn safe_normalized(v: Vec3) -> Vec3 {
@@ -749,6 +774,24 @@ impl Players {
         radius: f32,
         closest: bool,
     ) -> Option<ProbeHit> {
+        Self::ring_cast_centre(
+            ring, q, me, center, dir, distance, radius, closest, &mut None,
+        )
+    }
+
+    /// `ring_cast`, also giving the centre ray's own hit in `centre`.
+    #[allow(clippy::too_many_arguments)]
+    fn ring_cast_centre(
+        ring: &[Vec3; RING_RAYS],
+        q: &FaceQuery,
+        me: BodyHandle,
+        center: DVec3,
+        dir: Vec3,
+        distance: f32,
+        radius: f32,
+        closest: bool,
+        centre: &mut Option<ProbeHit>,
+    ) -> Option<ProbeHit> {
         let end = center + (dir * distance).as_dvec3();
         let pad = DVec3::new(f64::from(radius), 0.0, f64::from(radius));
         // One broad-phase check for the whole ring; usually only the grid is walked.
@@ -763,6 +806,9 @@ impl Players {
             let Some(hit) = q.cast_ray(origin, dir, distance, Some(me), bodies) else {
                 continue;
             };
+            if k == 0 {
+                *centre = Some(hit);
+            }
             if !closest {
                 return Some(hit);
             }
@@ -797,7 +843,8 @@ impl Players {
         } else {
             cfg.probes.ground_probe_margin
         };
-        if let Some(hit) = Self::ring_cast(
+        let mut under = None;
+        if let Some(hit) = Self::ring_cast_centre(
             &ring,
             &q,
             p.body,
@@ -806,10 +853,16 @@ impl Players {
             half_height + reach,
             ring_radius,
             true,
+            &mut under,
         ) {
             g.normal = hit.normal;
             g.gap = hit.distance - half_height;
             g.slope_angle = slope_angle(hit.normal);
+            // Sliding reads the ground under the centre: the ring's highest hit can lie across a
+            // crest, whose face would push the player back onto it.
+            let under = under.unwrap_or(hit);
+            g.under_normal = under.normal;
+            g.under_angle = slope_angle(under.normal);
             g.ground = hit.ground;
             let walkable = g.slope_angle <= cfg.probes.max_slope_angle;
             // Rising faster than the ground below keeps the previous answer until the rise ends.
@@ -824,6 +877,8 @@ impl Players {
             g.grounded = false;
             g.normal = Vec3::Y;
             g.slope_angle = 0.0;
+            g.under_normal = Vec3::Y;
+            g.under_angle = 0.0;
             g.gap = 0.0;
             g.ground = GroundRef::None;
         }
@@ -979,12 +1034,18 @@ impl Players {
         let probe = center + (safe_normalized(f) * (cfg.body.radius + 0.2)).as_dvec3();
         let (x, z) = (probe.x.floor() as i32, probe.z.floor() as i32);
         let y = (feet + cfg.movement.max_step_height + 0.05).floor() as i32;
+        let shape = q.shape(x, y, z);
         let top = y as f32
-            + surface_height_at(
-                q.material(x, y, z),
-                (probe.x - f64::from(x)) as f32,
-                (probe.z - f64::from(z)) as f32,
-            );
+            + if shape.face_count == 0 {
+                0.0
+            } else {
+                solid_span_at(
+                    shape,
+                    (probe.x - f64::from(x)) as f32,
+                    (probe.z - f64::from(z)) as f32,
+                )
+                .hi
+            };
         if top <= feet + cfg.movement.max_step_height || top > feet + 1.05 {
             return false;
         }
@@ -1369,9 +1430,10 @@ impl Players {
         };
         let Some(hit) = hit else { return Vec3::ZERO };
         let step_height = hit.point.y as f32 - feet;
+        // Never onto ground that slides (§6.8): stepping would walk the player up a steep face.
         if step_height > MIN_STEP
             && step_height <= cfg.movement.max_step_height
-            && slope_angle(hit.normal) <= cfg.probes.max_slope_angle
+            && slope_angle(hit.normal) <= cfg.probes.max_slope_angle.min(cfg.slide.min_angle)
         {
             // Dwell: also nudge forward so the probe ring is over the step.
             let ring = cfg.body.radius * cfg.advanced.probe_ring_radius;
@@ -1472,6 +1534,17 @@ impl Players {
         if external_delta.length() > cfg.advanced.external_absorb_threshold {
             c.horizontal.external += external_delta;
         }
+        if c.sliding(cfg.slide.min_angle) {
+            let speed = if c.crouching {
+                cfg.crouch.speed
+            } else if c.input.run {
+                m.run_speed
+            } else {
+                m.walk_speed
+            };
+            Self::slide(c, &cfg, move_direction(&c.input), speed);
+            return;
+        }
         c.horizontal.external = if grounded {
             move_towards(
                 c.horizontal.external,
@@ -1536,6 +1609,66 @@ impl Players {
         if m.edge_guard && grounded && c.crouching {
             Self::apply_edge_guard(&ring, world, physics, p);
         }
+    }
+
+    /// The slide layer (◆ Dwell, §6.8): the horizontal layer on ground steeper than
+    /// `slide.min_angle`. The slope pulls the player down under gravity less friction up to the
+    /// terminal speed; move input steers across the slope (at `slide.steering` of the walking
+    /// acceleration) and, held up the slope, brakes to a lower terminal speed (never to a stop,
+    /// never up the slope); momentum carried up the face dies at `uphill_deceleration`. The
+    /// vertical layer's ground following keeps the body on the slope, as when walking. Of the
+    /// result, the first `speed` (the tick's walking speed) is the player's own `current`, which
+    /// carries on as walking where the slope ends; the rest is `external`: on flat ground the
+    /// normal ground friction takes it away, in the air nothing does (a jump keeps the momentum).
+    /// Speeds and accelerations along the slope are taken to the horizontal plane with `cos θ`.
+    fn slide(c: &mut PlayerController, cfg: &PlayerControllerConfig, move_dir: Vec3, speed: f32) {
+        let s = cfg.slide;
+        let m = cfg.movement;
+        let n = c.ground.under_normal;
+        let downhill = flat(n);
+        let sin = downhill.length();
+        let cos = n.y;
+        if sin < MIN_DIRECTION {
+            return;
+        }
+        let down = downhill / sin;
+        let base = flat(c.platform.base_velocity);
+        let relative = c.horizontal.current + c.horizontal.external - base;
+        let mut along = relative.dot(down);
+        let mut across = relative - down * along;
+        let (friction, terminal) = if c.crouching {
+            (
+                s.crouch_friction,
+                s.terminal_speed * s.crouch_terminal_factor,
+            )
+        } else {
+            (s.friction, s.terminal_speed)
+        };
+        let g = cfg.body.gravity;
+        let brake = (-move_dir.dot(down)).clamp(0.0, 1.0);
+        let terminal = terminal * (1.0 - s.brake * brake) * cos;
+        if along < 0.0 {
+            // Moving up the face: friction and the slope both pull down it.
+            let decel = (s.uphill_deceleration + g * (sin + friction * cos)) * cos;
+            along = (along + decel * DT).min(0.0);
+        } else if along <= terminal {
+            let pull = (g * (sin - friction * cos)).max(0.0) * cos;
+            along = (along + pull * DT).min(terminal);
+        } else {
+            along = (along - s.brake_deceleration * cos * DT).max(terminal);
+        }
+        let side_wish = (move_dir - down * move_dir.dot(down)) * s.steer_speed;
+        let rate = if move_dir.length() > INPUT_DEADZONE {
+            m.acceleration
+        } else {
+            m.deceleration
+        } * s.steering;
+        across = move_towards(across, side_wish, rate * DT);
+        let total = down * along + across;
+        let own = clamp_length(total, speed);
+        c.horizontal.current = own + base;
+        c.horizontal.external = total - own;
+        c.horizontal.contribution = c.horizontal.current + c.horizontal.external;
     }
 
     // 9 — PPCVerticalLayerSystem
@@ -1622,7 +1755,9 @@ impl Players {
 
     // 11 — PPCStateSystem
     fn step_state(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
-        let c = &mut self.pl(i).c;
+        let p = self.pl(i);
+        let min_angle = p.cfg.slide.min_angle;
+        let c = &mut p.c;
         let v = c.target_velocity;
         c.state = if c.climb.climbing {
             State::Climbing
@@ -1630,6 +1765,8 @@ impl Players {
             State::Swimming
         } else if c.fly.flying {
             State::Flying
+        } else if c.sliding(min_angle) {
+            State::Sliding
         } else if c.crouching {
             State::Crouching
         } else if !c.ground.grounded {

@@ -5,7 +5,7 @@
 // launcher, no WASM) uses it too.
 import { buildMixer, DEFAULT_VOLUMES, soundInput, type Mixer, type Volumes } from './mixer';
 import { SOUND_DATA } from './sounds.gen';
-import { makeNoise, playSound, type NoiseBank } from './synth';
+import { makeNoise, playSound, startLoop, type LoopVoice, type NoiseBank } from './synth';
 import { Variation } from './variation';
 import type { SoundData } from './types';
 
@@ -34,6 +34,8 @@ export class AudioEngine {
   private readonly variation = new Variation((Date.now() & 0xffff) + 1);
   private volumes: Volumes = DEFAULT_VOLUMES;
   private readonly ends: number[] = [];
+  /** Loop voices by mover (a slide's scrape). */
+  private readonly loops = new Map<string, { voice: LoopVoice; panner: PannerNode | undefined }>();
   private listener: Vec3 = [0, 0, 0];
   private installed = false;
   /** The latest plays' ids, newest last (the `window.__dwell.sounds()` debug hook). */
@@ -139,15 +141,8 @@ export class AudioEngine {
     if (this.ends.length >= MAX_VOICES) return false;
     let panner: PannerNode | undefined;
     if (at) {
-      panner = ctx.createPanner();
-      panner.panningModel = this.mobile ? 'equalpower' : 'HRTF';
-      panner.distanceModel = 'inverse';
-      panner.refDistance = 2;
-      panner.maxDistance = MAX_DISTANCE;
-      panner.rolloffFactor = 1;
-      panner.positionX.value = at[0];
-      panner.positionY.value = at[1];
-      panner.positionZ.value = at[2];
+      panner = this.panner(ctx);
+      setPosition(panner, at);
     }
     const input = soundInput(ctx, mixer, req.bus, sound.reverb ?? 0, panner);
     const params = this.variation.draw(id, sound, req.intensity ?? 1);
@@ -162,6 +157,74 @@ export class AudioEngine {
     return true;
   }
 
+  /**
+   * Starts a loop sound on `voice` (a mover's slide), replacing what that voice played: a new
+   * surface crossfades. Spatial when `req.at` is given; the panner follows `updateLoop`.
+   */
+  startLoop(voice: string, id: string, req: PlayRequest): boolean {
+    const { ctx, mixer, noise } = this;
+    const sound = this.data.sounds[id];
+    if (!ctx || !mixer || !noise || !sound?.loop || this.hidden || ctx.state === 'closed') {
+      return false;
+    }
+    this.stopLoop(voice);
+    const at = req.at ?? null;
+    let panner: PannerNode | undefined;
+    if (at) {
+      panner = this.panner(ctx);
+      setPosition(panner, at);
+    }
+    const input = soundInput(ctx, mixer, req.bus, sound.reverb ?? 0, panner);
+    const params = this.variation.draw(id, sound, req.intensity ?? 1);
+    const v = startLoop(
+      ctx,
+      noise,
+      input,
+      sound,
+      params,
+      ctx.currentTime + 0.005,
+      req.intensity ?? 1,
+      {
+        ...(req.gain !== undefined ? { gain: req.gain } : {}),
+      },
+    );
+    this.loops.set(voice, { voice: v, panner });
+    this.recent.push(id);
+    if (this.recent.length > 64) this.recent.shift();
+    return true;
+  }
+
+  /** Moves a loop voice's intensity (and position); nothing if it is not playing. */
+  updateLoop(voice: string, intensity: number, at: Vec3 | null = null): void {
+    const l = this.loops.get(voice);
+    if (!l || !this.ctx) return;
+    l.voice.set(intensity, this.ctx.currentTime);
+    if (l.panner && at) setPosition(l.panner, at);
+  }
+
+  /** Fades a loop voice out. */
+  stopLoop(voice: string): void {
+    const l = this.loops.get(voice);
+    if (!l || !this.ctx) return;
+    l.voice.stop(this.ctx.currentTime);
+    this.loops.delete(voice);
+  }
+
+  /** The loop voices playing (the debug hook). */
+  get loopVoices(): string[] {
+    return [...this.loops.keys()];
+  }
+
+  private panner(ctx: AudioContext): PannerNode {
+    const panner = ctx.createPanner();
+    panner.panningModel = this.mobile ? 'equalpower' : 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 2;
+    panner.maxDistance = MAX_DISTANCE;
+    panner.rolloffFactor = 1;
+    return panner;
+  }
+
   /** A UI sound of the menu vocabulary (`click`, `back`, …). */
   ui(kind: string): boolean {
     const id = this.data.ui[kind];
@@ -173,6 +236,12 @@ export class AudioEngine {
     const id = this.data.actions[name];
     return id ? this.play(id, { bus: 'ui' }) : false;
   }
+}
+
+function setPosition(p: PannerNode, at: Vec3): void {
+  p.positionX.value = at[0];
+  p.positionY.value = at[1];
+  p.positionZ.value = at[2];
 }
 
 function distance(a: Vec3, b: Vec3): number {

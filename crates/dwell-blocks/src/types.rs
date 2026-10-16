@@ -130,6 +130,9 @@ pub struct StateInfo {
     pub facing: Facing,
     pub climb_speed_scale: f32,
     pub liquid: bool,
+    /// Shaped from its neighbours at use (docs/ADAPTIVE_BLOCKS.md): stored as a cube, its shape as
+    /// a top block comes from the adaptive table (`crate::adaptive`).
+    pub adaptive: bool,
     /// Blocks with the `fluid` look: index into `FLUIDS` (their opacity is the fluid's).
     pub fluid: Option<FluidId>,
     pub placeable: bool,
@@ -209,15 +212,21 @@ pub struct ShapeInfo {
     pub first_face: u16,
     pub face_count: u16,
     pub corners: [u8; 4],
+    /// The top as 3 × 3 surface points in quarters of a cell (rows north to south, columns west
+    /// to east): corners, edge midpoints and the centre.
+    pub points: [[u8; 3]; 3],
+    /// The top is the fan of 8 triangles around the centre (a ridge shape), each quadrant split
+    /// along its centre–corner diagonal; otherwise two triangles split along `diagonal`.
+    pub fan: bool,
     pub inverted: bool,
     /// Top-surface split: 0 NW–SE, 1 NE–SW.
     pub diagonal: u8,
     pub convex: bool,
     /// m³ (a full cell is 1).
     pub volume: f32,
-    /// Side profiles for culling: heights (halves) at the lower and higher running coordinate of
-    /// faces +X, −X, +Z, −Z.
-    pub sides: [[u8; 2]; 4],
+    /// Side profiles for culling: heights (quarters of a cell) at the lower end, the middle and
+    /// the higher end of the running coordinate of faces +X, −X, +Z, −Z.
+    pub sides: [[u8; 3]; 4],
     pub full_top: bool,
     pub full_bottom: bool,
     pub min_y: f32,
@@ -229,11 +238,13 @@ impl ShapeInfo {
         first_face: 0,
         face_count: 0,
         corners: [0; 4],
+        points: [[0; 3]; 3],
+        fan: false,
         inverted: false,
         diagonal: 0,
         convex: true,
         volume: 0.0,
-        sides: [[0; 2]; 4],
+        sides: [[0; 3]; 4],
         full_top: false,
         full_bottom: false,
         min_y: 0.0,

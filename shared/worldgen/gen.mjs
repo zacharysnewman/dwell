@@ -21,7 +21,7 @@ export function registryBlocks() {
   const out = new Map();
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
     const ns = JSON.parse(readFileSync(join(dir, f), 'utf8'));
-    for (const b of ns.blocks) out.set(`${ns.namespace}:${b.name}`, b);
+    for (const b of ns.blocks ?? []) out.set(`${ns.namespace}:${b.name}`, b);
   }
   return out;
 }
