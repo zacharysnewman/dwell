@@ -1341,8 +1341,10 @@ fn caustic_pattern(xz: vec2f, f: Fluid, footprint: f32, fluid: u32) -> f32 {
     let texels = footprint / cell * CAUSTIC_TEXELS;
     let a = caustic_edge(p + warp, t.x, texels, fluid, 0);
     var c = exp(-a * 11.0);
-    // The finer layer only near, where a pixel is small against its cells.
-    let fine = 1.0 - smoothstep(0.04, 0.12, footprint / cell);
+    // The finer layer only near, where a pixel is small against its cells; on High (an extra)
+    // twice as far out.
+    let reach = select(1.0, 2.0, frame.water.w > 1.5);
+    let fine = 1.0 - smoothstep(0.04 * reach, 0.12 * reach, footprint / cell);
     if (fine > 0.0) {
         let b = caustic_edge(p * 2.0 + vec2f(0.37, 0.71) - 2.0 * warp, t.y, 2.0 * texels, fluid, 1);
         c += 0.6 * fine * exp(-b * 9.0);

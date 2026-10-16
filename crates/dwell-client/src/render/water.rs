@@ -78,8 +78,9 @@ pub const FADE_HI: f32 = 0.5;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WaterQuality {
     Low,
-    Medium,
+    /// The desktop default.
     #[default]
+    Medium,
     High,
 }
 
@@ -146,7 +147,7 @@ pub const NOISE_RES: u32 = NOISE_TILE as u32 * NOISE_TEXELS;
 /// The caustic tile: the cell-edge distances over `CAUSTIC_TILE` cells at `CAUSTIC_TEXELS` texels
 /// per cell, `CAUSTIC_RES` square, drawn each frame.
 pub const CAUSTIC_TILE: i32 = 16;
-pub const CAUSTIC_TEXELS: u32 = 16;
+pub const CAUSTIC_TEXELS: u32 = 32;
 pub const CAUSTIC_RES: u32 = CAUSTIC_TILE as u32 * CAUSTIC_TEXELS;
 
 /// How many cells of about `want` metres span `WRAP_M`, rounded to a whole number of `tile`s (a
@@ -734,7 +735,7 @@ mod tests {
         assert_eq!(WaterQuality::from_level(9), WaterQuality::High);
         assert_eq!(WaterQuality::Low.layers(), 1);
         assert_eq!(WaterQuality::High.layers(), 3);
-        assert_eq!(WaterQuality::default(), WaterQuality::High);
+        assert_eq!(WaterQuality::default(), WaterQuality::Medium, "the desktop default");
         // W3: Medium and High read the scene behind; Low keeps W1b's look, with no copies.
         assert!(!WaterQuality::Low.reads_scene());
         assert!(WaterQuality::Medium.reads_scene() && WaterQuality::High.reads_scene());
