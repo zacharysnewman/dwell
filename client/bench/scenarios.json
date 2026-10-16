@@ -2057,7 +2057,8 @@
         { "do": "settle", "maxS": 60 },
         { "do": "mark" },
         { "do": "wait", "s": 5 },
-        { "do": "record", "name": "above" }
+        { "do": "record", "name": "above" },
+        { "do": "shot", "name": "above-off" }
       ]
     },
     {
@@ -2114,8 +2115,8 @@
     },
     {
       "name": "clouds-above-night",
-      "notes": "The deck from above by moonlight (the sky turned 180°), 3.5 km up looking down at 30°.",
-      "settings": { "clouds": "high", "skyRotation": 180 },
+      "notes": "The deck from above by moonlight (midnight), 3.5 km up looking down at 30°.",
+      "settings": { "clouds": "high", "timeOfDay": 0.0 },
       "steps": [
         { "do": "settle", "maxS": 120 },
         { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -30 },
