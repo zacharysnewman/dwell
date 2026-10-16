@@ -2429,7 +2429,8 @@ materials, an automatic WebGL2 fallback and the active backend shown in the sett
 WGSL shaders), so those items are done by Phase 24 or removed, as marked below. What remains is the
 look registry and textures as data, built on the wgpu renderer and WGSL. It overlaps with the
 transparent-blocks work (render modes as block data: opaque, cutout, translucent; the `cross` look),
-built on its own branch as Phase 31 (ADR 0034): that work's modes and looks are the registry's
+built on its own branch (`claude/transparent-blocks`; its phase and ADR numbers are given when it
+merges — Phase 31 and ADR 0034 went to sky clouds): that work's modes and looks are the registry's
 first entries, and whichever lands second builds on the other.
 
 Deliverables
