@@ -572,9 +572,14 @@ edges; with f64 positions it is exact anywhere in the 8,192 km world, so it need
 anchors and there is no seam under a player (PLAYER_CONTROLLER.md §5). Chunks are added on demand
 around each player (out to 3 m plus twice a tick's travel, capped), re-synced in the same tick as
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
-a chunk with no solid cell holds nothing, so open sky costs no collision memory. Every solid state
-collides as its full cell: the baseline has only cubes (Phase 15); shaped blocks (Phase 18) will
-need their own colliders. The procedural terrain generator and streaming are built (§6.3), and so
+a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
+as their full cube go into the `Voxels` collider; **shaped cells** — adaptive top blocks (below,
+Phase 18) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
+at the chunk's corner) of the faces of their derived shapes that no neighbour covers. A chunk's
+collision reads its voxels with a two-cell apron (a shape reads the columns around it, and its faces
+are culled against its neighbours' shapes), so a chunk with solid cells is rebuilt when any of the
+27 chunks around it changes (watched by stamp and revision; an empty chunk watches only itself),
+and keeps its mesh collider when the rebuild makes the same triangles. The procedural terrain generator and streaming are built (§6.3), and so
 are block edits (§6.5, Phase 3d): the placeable set is the registry's `palette` data (a state's
 `placeable` flag; not air, liquid or indestructible), read from the same generated Rust registry by
 the server and the client.
@@ -643,10 +648,38 @@ see-through neighbour hides no face. Water declares `translucent` (its look is u
 solid (ladders, plants) as air (`dwell_world::lod::lod_drawn`). Render modes are look data: they
 don't enter the registry hash.
 
-**Adaptive natural blocks [planned, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
-[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). Natural blocks (block data `"adaptive": true`)
-will be stored as cubes and shaped at use from the 3 × 3 columns around them by a rule table kept as
-data in `shared/blocks/`, read by the server and the client alike, on the shape mechanism below.
+**Adaptive natural blocks [in progress, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
+[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). A block with `"adaptive": true` in its data
+(grass, dirt, stone and sand; not water, the ladder or the sandbox floor) is stored as a plain cube
+and **shaped at use**: when nothing solid is above it (a *top block*), its shape comes from its 8
+horizontal neighbours, each **higher** (filled one row up), **the same** or **lower** (open in its
+row) — a table of 3⁸ = 6,561 neighbourhoods. Any other adaptive block is a cube. Neighbours are
+compared by occupancy, never by their derived shapes, so nothing iterates and an edit changes the
+shapes of at most the 9 top blocks around and under it. On face B, whose up is −y, the same table
+is read with the rows mirrored and the shape hangs.
+- **The table is data:** `shared/blocks/adaptive.json` names the rule set (`"five-rules"`, the
+  Shape Playground's rules) and holds per-neighbourhood **overrides** (`around` "+==/=.-/===",
+  `shape`, `facing`). `shared/blocks/adaptive.mjs` builds the 6,561 entries, rejects unknown
+  shapes, facings and repeated neighbourhoods with a message naming the entry, and runs the
+  exhaustive adjacency test (every equal-height neighbour pair: the baked side faces match the
+  profiles the meshers cull by, and the two surfaces meet at their shared corners); `gen.mjs`
+  emits `ADAPTIVE_UP` / `ADAPTIVE_DOWN` (shape indices, upright and hanging) in
+  `crates/dwell-blocks/src/adaptive.gen.rs` and the readable `adaptive_vectors.txt`, which the Rust
+  tests check; CI regenerates (stale output fails) and runs `node --test
+  shared/blocks/adaptive.test.mjs` (the owner's 151 hand-shaped playground blocks,
+  `playground-export.json`, are reproduced; an override changes one entry by data alone).
+- **One derivation:** `dwell_blocks::adaptive` (`derive`, `shape_at`, `flooded_at`, over any
+  voxel accessor) and `VoxelWorld::shape_at` / `flooded_at` (world coordinates, face by row).
+  Every user reads it: the chunk mesher (from its padded voxels), the terrain collider (above), the
+  controller's probes (`VoxelQuery::shape`, `FaceQuery::shape`), block targeting and the edit's
+  line of sight (`raycast_block`), the terrain's point queries (`TerrainGenerator::surface_y_at`,
+  spawn) and the LOD mesher (on its cells, §6.6). Server and client hold the same voxels and the
+  same table, so prediction walks the server's shapes.
+- **Water:** an adaptive top block holds water in its open part (it is drawn and swum as flooded)
+  when a liquid is above it or beside it in its row — a shore's shaped bank — unless the rules make
+  it a full cube.
+- **Not stored:** world files, edits and the wire carry the material alone; the registry's state
+  strings and hash do not change (the flag is not part of a state's string).
 
 **Shapes [built, Phase 9; no shaped block since Phase 15]** ([ADR 0016](./adr/0016-slope-blocks.md),
 [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). Every solid state has a **shape**: its top surface is given
@@ -655,7 +688,12 @@ one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube
 mechanism stays: `shapeFamilies` in the block data generates a material's slope and slab families
 (nine slope shapes in four facings and two halves, and the slab; `flooded` means water fills the
 shape's open part) — but since Phase 15 no block uses it (the list is empty), so the shape table
-holds the empty shape and the cube until Phase 18. The geometry is baked once by
+held the empty shape and the cube until Phase 18, which appends the shapes the adaptive table
+derives: the 12 adaptive corner shapes (split along their higher diagonal) and 6 **ridge shapes**
+given as 3 × 3 surface points (corners, edge midpoints, centre; the surface is the fan of 8
+triangles around the centre), each in its facings, upright and hanging — 191 more. Every shape
+carries its 3 × 3 points and three-point side profiles (quarters of a cell), and `solid_span_at`
+reads a ridge shape's fan. The geometry is baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
 culling, volume, convexity and extent — one table, so server, client and meshers agree.
@@ -664,9 +702,11 @@ culling, volume, convexity and extent — one table, so server, client and meshe
 every point query: **block targeting** (`raycast_block`, the controller's ray probes) enters the
 exact shape (a block without a solid, a ladder, is targeted and seen as its whole cell), the
 **edit check** tests the capsule against the placed shape's true volume, and the controller's
-overlap test (uncrouching) uses the true surface; the terrain collider treats every solid as a
-full cell until Phase 18 (above). The exhaustive adjacency test checks every pair of shapes in the
-table. The chunk mesher draws shaped polygons with their true normals and a face tint interpolated
+overlap test (uncrouching) uses the true surface; the terrain collider collides shaped cells as
+their triangle meshes (above). The exhaustive adjacency test checks every pair of shapes in the
+table (the mesher's culling of any two shapes side by side leaves no hole), and geometry tests
+check every shape is closed, wound outward, of its stated volume, with sides covering exactly
+their profiles and a top the probes read where the ray enters (`crates/dwell-blocks/tests/shapes.rs`). The chunk mesher draws shaped polygons with their true normals and a face tint interpolated
 by the normal (`dwell-look` `normal_tint`).
 A state with a `flooded` property (today the ladder) takes it from its cell on placement (placed
 into water: flooded; anywhere else: dry — no water from nothing), breaking a flooded state leaves
@@ -745,7 +785,10 @@ playground** (generator 1 until Phase 15) is now a **structure file**
 (`shared/structures/playground.json`, below) that the controller and netcode tests stamp over
 the flat world; no world uses it. Players spawn on the first dry, level 9 × 9 patch (top voxels at
 one height, at least 2 m above sea level; `SPAWN_CLEAR`, wide enough for the spread of spawning
-players to build beside themselves) found in an 8 m spiral from the origin. Debug tooling: **named
+players to build beside themselves) found in an 8 m spiral from the origin, standing on the
+shaped surface (`TerrainGenerator::surface_y_at`: the top voxel's adaptive shape, ADAPTIVE_BLOCKS.md —
+on a level patch half a block above the top voxel's floor). Water is still generated in open cells
+below sea level; a shaped bank beside or under it holds water in its open part (§6.1). Debug tooling: **named
 views** **[built]** — `client/views/views.json` lists views by name: a seed, a camera (a world
 position and a look, or none for the player's eyes at the spawn), a window size, settings-menu
 values (fog, detail, exposure), the F3 overlay and LOD level tints, a resolution scale and how long
@@ -1147,8 +1190,9 @@ Players break and place blocks. Server-authoritative like every voxel change
 - **Targeting (client):** each frame `raycast_block` (a DDA from the eye along the view,
   `REACH_DISTANCE` long, in float relative to the eye's cell so it is exact anywhere in the world)
   finds the first *targetable* cell — anything but air and liquids — by entering its exact shape
-  (a slab, a slope: `ray_enter_shape`; a ladder, which has no solid, as its whole cell — the server's
-  line-of-sight check sees it the same way), and the face it entered through (a sloped surface counts as
+  (an adaptive block's derived shape, `VoxelWorld::shape_at`: `ray_enter_shape`; a ladder, which has
+  no solid, as its whole cell — the server's line-of-sight check sees it the same way), and the face
+  it entered through (a sloped surface counts as
   the face its normal mostly points through, the top on a tie); the renderer outlines the cell. The
   client runs the same Rust as the server.
 - **Actions:** desktop — left click breaks the targeted block, right click places the selected
@@ -1565,9 +1609,15 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   cracks along section borders, found in a playtest.) The cells themselves — and so the
   server, downsampling, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
-- **Slopes [built, Phase 9d; removed in Phase 15]**: distant terrain was drawn as the slope pieces
-  of the generator's slope stage; both went with the placed shapes. Tops are flat at their surface
-  height until Phase 18's adaptive blocks shape them again.
+- **Adaptive tops [built, Phase 18]** (ADAPTIVE_BLOCKS.md §4.4): the LOD mesher applies the
+  adaptive rule table to its cells — a dry column's topmost cell, if a natural block with nothing
+  above it, takes the shape its neighbourhood of cells gives (corner heights in halves of a cell),
+  so near and far terrain follow one rule. A level run's tops (the rule's slab) rest at half a cell
+  and merge as flat tops; sloped tops are drawn polygon by polygon, shaded by their normal; walls
+  between columns follow three-point profiles. Wet columns and shores keep the surface data's exact
+  heights. An apron column's shape needs cells beyond the apron, so walls toward an apron column's
+  adaptive top are drawn down to the row's floor (any part it hides lies inside it). The LOD format
+  and the cells do not change. (Phase 9d's slope pieces went with the placed shapes in Phase 15.)
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
@@ -1826,7 +1876,7 @@ little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per
 
 ### 8.3 Message formats
 
-Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v12):**
+Every message starts with a `u8` type (`constants.json` `messageTypes`). **Built (protocol v13):**
 `DatagramPing` 0x02 / `DatagramPong` 0x82, `StatusRequest` 0x40 / `StatusResponse` 0x41,
 `ClientHello` 0x42, `Challenge` 0x43, `ClientAuth` 0x44, `Welcome` 0x45, `Reject` 0x46, `Ping`
 0x47 / `Pong` 0x48 (Phase 1); `PlayerInput` 0x01, `PhysicsSnapshot` 0x81, `PlayerEvent` 0x30
@@ -1840,7 +1890,7 @@ state and flags, and the wider `pos64` range for creative flight (Phase 4; proto
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
 (Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
-vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. The remaining formats below are drafts, finalized in the
+vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changes no layout: client and server must derive the same adaptive shapes from the same table (§6.1), so a build that shapes differently must not connect. The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
 `controllerFlags`, `welcomeFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
 `blockEditActions`, `regionEditOps`, `voxelModificationReasons`, `hostStates`) are generated from

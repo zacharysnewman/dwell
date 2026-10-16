@@ -216,6 +216,22 @@ pub struct StreamStats {
     pub resyncs: u32,
 }
 
+/// The 26 chunks around a chunk.
+const AROUND: [Coord; 26] = {
+    let mut out = [[0; 3]; 26];
+    let mut i = 0;
+    let mut k = 0;
+    while k < 27 {
+        let d = [k % 3 - 1, (k / 3) % 3 - 1, k / 9 - 1];
+        if d[0] != 0 || d[1] != 0 || d[2] != 0 {
+            out[i] = d;
+            i += 1;
+        }
+        k += 1;
+    }
+    out
+};
+
 const NEIGHBOURS: [Coord; 6] = [
     [1, 0, 0],
     [-1, 0, 0],
@@ -607,37 +623,45 @@ where
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
         self.dirty.mark(changes.coord);
-        // Neighbours whose border faces the changed voxels touch.
-        // In the order first touched (a JS `Set`'s order), as the TS marked them.
-        let mut touched: Vec<usize> = Vec::with_capacity(6);
-        let mut touch = |n: usize| {
-            if !touched.contains(&n) {
-                touched.push(n);
-            }
-        };
+        // Neighbours a changed voxel is next to, diagonals included: their border faces and their
+        // adaptive blocks' shapes (ADAPTIVE_BLOCKS.md: a shape reads the 8 columns around it and
+        // the layer above) may change. In the order first touched.
+        let mut touched: Vec<Coord> = Vec::with_capacity(7);
         for v in &changes.changes {
             let index = i32::from(v.index);
             let local = [index & 31, (index >> 5) & 31, (index >> 10) & 31];
-            for (axis, &l) in local.iter().enumerate() {
-                if l == 0 {
-                    touch(axis * 2 + 1);
+            let side = |l: i32, d: i32| {
+                if l + d < 0 {
+                    -1
+                } else if l + d >= CHUNK_SIZE {
+                    1
+                } else {
+                    0
                 }
-                if l == CHUNK_SIZE - 1 {
-                    touch(axis * 2);
+            };
+            for dz in -1..=1 {
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let n = [side(local[0], dx), side(local[1], dy), side(local[2], dz)];
+                        if n != [0, 0, 0] && !touched.contains(&n) {
+                            touched.push(n);
+                        }
+                    }
                 }
             }
         }
         for n in touched {
-            let c = add(changes.coord, NEIGHBOURS[n]);
+            let c = add(changes.coord, n);
             if self.loaded.contains_key(&c) && !self.air.contains(&c) {
                 self.dirty.mark(c);
             }
         }
     }
 
-    /// Neighbours' border faces may now be hidden (or exposed) by this chunk.
+    /// Neighbours' border faces may now be hidden (or exposed) by this chunk, and their adaptive
+    /// blocks' shapes changed (diagonal neighbours too).
     fn neighbours_changed(&mut self, coord: Coord) {
-        for d in NEIGHBOURS {
+        for d in AROUND {
             let n = add(coord, d);
             if self.loaded.contains_key(&n) && !self.air.contains(&n) {
                 self.dirty.mark(n);

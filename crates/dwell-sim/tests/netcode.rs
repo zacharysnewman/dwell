@@ -893,7 +893,10 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
     // A builds a wall two blocks high across B's path at z = 3 (edits spaced for the rate limit).
     let stone = require("dwell:stone");
     for y in [-1, 0] {
-        for x in [19, 20, 21] {
+        // The second row from the far end: a natural block beside a higher one is a ramp rising to
+        // it (ADAPTIVE_BLOCKS.md), whose top A (at x 19) must face to place on it.
+        let xs = if y < 0 { [19, 20, 21] } else { [21, 20, 19] };
+        for x in xs {
             let edit = BlockEditRequest {
                 action: BlockEditAction::Place,
                 cell: [world_cell_x(x), y, 3],

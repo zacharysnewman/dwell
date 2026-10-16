@@ -1,23 +1,20 @@
 # Dwell — Adaptive Natural Blocks: Shapes From Neighbours
 
-> **Status: [planned, Phase 18]** (formerly 9e; moved into the baseline rework, whose Phase 18
-> also makes the rule table data with overrides and marks every remaining solid block adaptive —
-> `IMPLEMENTATION_PLAN.md`, `BASELINE_EVALUATION.md` §3.7) — design agreed with the owner in prototypes on 2026-10-07/08
-> ([`prototypes/`](./prototypes/README.md)); decision proposed in
-> [ADR 0024](./adr/0024-adaptive-natural-blocks.md). Nothing here is built yet. When it lands, the
-> built mechanisms move into [`ARCHITECTURE.md`](./ARCHITECTURE.md) (§6.1, §6.3, §6.5, §6.6) and
-> this file keeps the rationale and the tables, as [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) does for
-> Phase 9.
+> **Status: [built, Phase 18]** (formerly 9e) — design agreed with the owner in prototypes on
+> 2026-10-07/08 ([`prototypes/`](./prototypes/README.md)); decision in
+> [ADR 0024](./adr/0024-adaptive-natural-blocks.md) (as built). The built mechanisms are described
+> in [`ARCHITECTURE.md`](./ARCHITECTURE.md) — §6.1 (the flag, the table as data, the derivation,
+> shapes, terrain collision), §6.3 (spawn on the shaped surface), §6.5 (targeting), §6.6 (the rule
+> on LOD cells) — and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md) §5 and §6.2 (collision,
+> walking; steeper than 44° slides, owner 2026-10-15). This file keeps the rationale and the tables, as
+> [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md) does for Phase 9. Outstanding (Phase 18 in
+> `IMPLEMENTATION_PLAN.md`): the two-client e2e, the playground's override export, the owner's walk.
 
-Phase 9 gave Dwell slope blocks that players place and pick by hand, and a terrain stage that
-rounds the generator's continuous surface into slope pieces. This phase makes **natural blocks
-shape themselves**: a dirt, grass, stone, sand or snow block takes its shape from the columns
-around it, so touching natural blocks always join into one clean surface, and a player never
-places or rotates a slope for them. Crafted blocks — and slabs and the placed slope families of
-crafted materials — keep the shapes players give them.
-
-Content is still prototype (`ARCHITECTURE.md` §6.1): which materials are natural is block data
-(an `adaptive` flag), not code.
+Natural blocks **shape themselves**: a grass, dirt, stone or sand block takes its shape from the
+columns around it, so touching natural blocks always join into one clean surface, and a player never
+places or rotates a slope. Which materials are natural is block data (`"adaptive": true` in
+`shared/blocks/dwell.json`), not code; the content is prototype (`ARCHITECTURE.md` §6.1). The
+sandbox floor, water and the ladder are not adaptive: a flat build surface stays cubes.
 
 ## 1. What the player sees
 
@@ -28,28 +25,32 @@ Content is still prototype (`ARCHITECTURE.md` §6.1): which materials are natura
 - **Edges slope gently to the ground**: ½ m over a whole block (about 27°), flush with what is
   beside them.
 - **A 1-block step is one even slope across both blocks**: the lower block rises to its top at the
-  step, the upper block sinks to its floor, ½ m per block.
+  step, the upper block sinks to its floor, ½ m per block — walked up without jumping.
 - **One-block-wide shapes are half-height ridges**: a lone block is a half pyramid, a row a ridge
   with end caps, an L a ridge corner, plus T and cross pieces.
 - **A one-wide block against a higher one is a full 45° ramp up to it** (stairs of single
-  blocks are a run of ramps).
+  blocks are a run of ramps). **Owner decision (2026-10-15): faces steeper than 44° are
+  slides** — 45° ramps and ridge flanks and the saddles' 54.74° faces make the player slide, not
+  stairs; stairs will be their own block later. The shapes stay as designed.
 - Steeper ground (2 blocks or more between neighbours) is a cliff: the shaped top blocks meet the
   full cubes below, and the cubes' sides are the cliff face. Where a block sits diagonally below
   another, its side shows between them; that is expected, not a gap.
+- **Shores:** a shaped top block with water above it or beside it in its row holds water in its open
+  part (flooded), so the water meets the bank without a wall of water inside it.
 
 ## 2. The rules
 
-Every top block of an adaptive material is shaped by these five rules, worked out from the
-owner's hand-shaped examples in the Shape Playground: the rules reproduce all 151 blocks the owner
-shaped (situations A–P), and the owner approved what they make of 12 more situations (Q–AB) that
-exercise every shape they can produce — 250 blocks in 28 situations, no conflicts (§7).
+Every top block of an adaptive material is shaped by five rules, worked out from the owner's
+hand-shaped examples in the Shape Playground: they reproduce all 151 blocks the owner shaped
+(situations A–P; `shared/blocks/adaptive.test.mjs` and `crates/dwell-physics/tests/adaptive.rs`
+check it), and the owner approved what they make of 12 more situations (Q–AB) that exercise every
+shape they can produce — 250 blocks in 28 situations, no conflicts (§6).
 
 Heights are compared column by column: for the block at `(x, y, z)` and each of its 8 horizontal
-neighbours, the neighbour is **higher** if it is solid at `y + 1`, **lower** if it is not solid at
-`y`, and **the same** otherwise (§3 defines "solid" for shaped and crafted neighbours). The shape
-is given by its four **corner heights** in halves of a block above the block's floor: 0 (floor),
-1 (half), 2 (top). Each corner looks at the 3 neighbours around it (the two edge neighbours and
-the diagonal):
+neighbours, the neighbour is **higher** if it is filled at `y + 1`, **lower** if it is not filled at
+`y`, and **the same** otherwise. The shape is given by its four **corner heights** in halves of a
+block above the block's floor: 0 (floor), 1 (half), 2 (top). Each corner looks at the 3 neighbours
+around it (the two edge neighbours and the diagonal):
 
 1. **Rest.** None of the 3 is higher or lower: the corner sits at half height (1).
 2. **Drop.** Any of the 3 is lower: the corner drops to the floor (0).
@@ -65,141 +66,90 @@ is chosen from its 4 edge neighbours instead:
    a wedge (full 45° ramp) rising to the higher one. Rule 5 is checked before rule 4.
 
 Because the rules only ask "higher, the same, or lower" of 8 neighbours, the shape is a function
-of 3⁸ = 6,561 neighbourhoods. It is **baked into a table** (§4.1) that the server and the
-client both read (one Rust crate, `dwell-blocks`, ADR 0028), so collision, prediction and rendering agree exactly. Edges of the
-world treat missing neighbours as the same height.
+of 3⁸ = 6,561 neighbourhoods, baked into one table read by the server, the WASM client, both
+meshers, the collider and the probes. Of the 6,561, rules 1–3 decide 4,448, rule 4 1,789 and
+rule 5 324. On face B (up is −y) the same table is read in the mirror image and the shapes hang.
 
 ## 3. Definitions the rules need
 
-- **Adaptive.** A block state is shaped by the rules when its block has `"adaptive": true` in
-  `shared/blocks/dwell.json` (the prototype set: grass, dirt, stone, sand, snow; sandstone, gravel
-  and ice are owner decisions, see §8). Everything else keeps its own shape.
+- **Adaptive.** A block whose data has `"adaptive": true` — grass, dirt, stone and sand (sandstone,
+  gravel and ice were cut with the baseline). Only a full cube without properties may be adaptive
+  (the generator rejects anything else).
 - **Top block.** An adaptive block whose cell above is not solid (air, water, or a non-solid
   block such as a ladder). Any other adaptive block is a full cube.
-- **Solid, for comparing heights.** A neighbour cell counts as solid when its block's shape covers
-  the cell's full height at that side — full cubes and crafted blocks always; a slab or a placed
-  slope by its own top (a slab beside a block counts as *lower*). An adaptive neighbour that is
-  itself shaped counts as solid: the comparison uses cell occupancy, never derived shapes, so the
-  rule needs no iteration and neighbours never depend on each other's results.
-- **Water.** A shaped top block below a water surface is flooded (its open part filled with
-  water), as Phase 9's flooded states are; the water cell above does not count as solid.
+- **Filled, for comparing heights.** An adaptive block (whatever shape it takes) or any solid block
+  whose own shape is a full cube. A partial shape (a slab or placed slope of a future crafted
+  block) counts as open, so ground beside it is *lower*. The comparison uses cell occupancy, never
+  derived shapes, so nothing iterates and neighbours never depend on each other's results.
+- **Water.** A shaped top block with a liquid above it or beside it in its row is flooded (§1).
+- **The rules say full.** When every corner rises (a one-block pit), the derived shape is the cube:
+  it collides and is meshed as one.
 
-## 4. Changes by system
+## 4. The table as data
 
-### 4.1 Shapes and the registry (`shared/blocks/`)
+`shared/blocks/adaptive.json` is the source of truth: `"rules": "five-rules"` fills every
+neighbourhood, and `overrides` replace single ones — none today, since the owner's shapes all
+follow the rules. An override is
 
-- **New shapes.** The game's shape model is four corner heights plus a split diagonal. The rules
-  need **12 more corner shapes** and **6 shapes that are not corner shapes** (their ridge runs to
-  edge midpoints or the centre):
+```json
+{ "around": "+==/=.-/===", "shape": "saddle", "facing": "east" }
+```
 
-  | Kind | Shapes (corners NW NE SE SW, canonical facing east) |
-  |---|---|
-  | Corner shapes | half-and-half left `2 0 0 1` and right `1 0 0 2`; tall half-and-half left `2 2 1 0` and right `2 2 0 1`; tilt left `2 1 1 0` and right `1 2 0 1`; diagonal slope `1 2 1 0`; dimple `2 1 2 0`; saddle `2 0 2 0`; uneven saddle `2 0 1 0`; half saddle `1 0 1 0`; high half saddle `2 1 2 1` |
-  | Ridge shapes | half pyramid, half ridge, half ridge end, half ridge corner, half ridge T, half ridge cross |
+with `around` the 3 × 3 grid (rows north to south, each row west to east, `+` higher, `=` the same,
+`-` lower, `.` the block), `shape` a shape name (§5) and `facing` north, east, south or west (the way
+a slope descends; a ridge end the way its crest runs; `half_ridge` `east_west` or `north_south`;
+none for `full`, `slab`, `half_pyramid` and `half_ridge_cross`). `node shared/blocks/gen.mjs`
+rejects unknown shapes and facings, malformed or repeated neighbourhoods (each message names the
+entry), runs the exhaustive adjacency test (below), reports how many entries each rule decides and
+how many are overridden, and writes `crates/dwell-blocks/src/adaptive.gen.rs` and the readable
+`shared/blocks/adaptive_vectors.txt`. The Shape Playground is to export overrides in this form
+(outstanding).
 
-  The new corner shapes split along their **higher** diagonal (a crest, not a valley). The ridge
-  shapes extend the model to 3 × 3 surface points (corners, edge midpoints, centre) — the form the
-  prototypes use; `shapes.mjs` bakes their faces like any other shape.
-- **The rule table.** `shared/blocks/gen.mjs` also bakes the 6,561-entry table (neighbourhood →
-  shape, facing), generated from the five rules in one place, with test vectors for the Rust
-  reader in `dwell-blocks` (as the shape table and the registry hash have today).
-- **Registry.** Adaptive blocks keep **only their cube state**: the shape is derived, never
-  stored, so no new block states are needed and world files and edits carry the material alone.
-  The placed slope and slab families of materials that become adaptive are removed from the
-  registry (their placed shapes would fight the rules); crafted materials keep theirs. This
-  changes the registry hash.
-- **Not derived shapes in the voxel data.** Deriving (rather than storing a shape state and
-  updating neighbours on every edit) keeps an edit a single voxel, needs no cascade of state
-  changes over the network, and cannot drift out of date — the class of bug Phase 9's playtests
-  found in stored terrain slopes.
+**The adjacency test** runs over every pair of neighbourhoods of two blocks of the same height side
+by side (east–west and north–south, 3¹⁰ pairs each): the baked side faces must match the profiles
+the meshers cull by (so wherever one block's side stands above the other's it is drawn — no hole),
+and the two surfaces must meet at their shared corners (no step). They may differ at the side's
+middle — a ridge's end stands half a block above a slope beside it and shows its side. The mesher's
+own pairwise test checks every two shapes of the table on every side.
 
-### 4.2 Chunk meshing (client) and terrain collision (server and client)
+## 5. The shapes
 
-- Both look up each adaptive top block's shape in the rule table from its neighbourhood: the 8
-  neighbours at `y` and `y + 1` plus the cell above. Both already read a one-voxel apron around a
-  chunk; it must include the diagonal columns and the layer above.
-- The derived shape replaces the block's own shape for meshing, face culling, collision polygons,
-  ray targeting (`RayEnterShape`) and `SurfaceHeightAt`.
-- An edit changes the shapes of up to 9 neighbouring top blocks (the 8 around it and the one
-  below): re-mesh and rebuild collision for every chunk that holds one (chunk borders already
-  re-mesh neighbours for culling).
-- Prediction parity: the client predicts with the same table and the same occupancy, so the
-  shapes it walks on are the server's.
+The game's shape model was four corner heights plus a split diagonal (Phase 9, `SLOPE_BLOCKS.md`).
+The rules use the cube, the slab and the nine Phase 9 slope pieces, plus **12 corner shapes** and
+**6 ridge shapes** (`shared/blocks/shapes.mjs`):
 
-### 4.3 Terrain generation
+| Kind | Shapes (corners NW NE SE SW, canonical facing east) |
+|---|---|
+| Corner shapes | half-and-half left `2 0 0 1` and right `1 0 0 2`; tall half-and-half left `2 2 1 0` and right `2 2 0 1`; tilt left `2 1 1 0` and right `1 2 0 1`; diagonal slope `1 2 1 0`; dimple `2 1 2 0`; saddle `2 0 2 0`; uneven saddle `2 0 1 0`; half saddle `1 0 1 0`; high half saddle `2 1 2 1` |
+| Ridge shapes (3 × 3 points, rows N–S) | half pyramid `000/010/000`; half ridge `000/111/000`; half ridge end `000/011/000`; half ridge corner `000/011/010`; half ridge T `010/111/000`; half ridge cross `010/111/010` |
 
-- The generator stops shaping the surface: **step 5b (slopes) is removed**, and the terrain is
-  plain occupancy whose top blocks the rules shape. Generation gets simpler and cheaper.
-- This changes what a seed's terrain looks like and what the world file holds, so it is a
-  **generator version bump** (goldens regenerated) and, with the registry change, a **new
-  compatibility line**: the owner raises `client/package.json` (`RELEASES.md`).
-- Natural surfaces now rest half a block lower than the generator's top cell. Water levels,
-  shores, spawn search (`GroundY`, `LevelSpawnY`), tree and boulder placement and `SurfaceAt`
-  must use the shaped surface; the generator's own point queries gain the rule.
+The new corner shapes split along their **higher** diagonal (a crest, not a valley). The ridge
+shapes use 3 × 3 surface points (corners, edge midpoints, centre) — the form the prototypes use;
+their surface is the fan of 8 triangles around the centre, merged into convex polygons. With their
+facings, upright and hanging, the table appends 191 shapes. Convexity (for Phase 20): the half
+pyramid, ridge and ridge end are convex; the ridge corner, T and cross are not.
 
-### 4.4 Level of detail
+Slopes, for walking: the gentle slopes are 26.57° (walkable), ramps, ridge flanks and the
+standard pieces 45°, and the saddle's and dimple's faces from their crest to a floor corner
+arctan √2 ≈ **54.74°** — the "tetrahedral corner" Phase 9 rejected for placed slopes, which the
+owner's rules make. Everything steeper than 44° is a slide (owner, 2026-10-15; built on its own
+branch, PLAYER_CONTROLLER.md §6.2).
 
-- LOD sections apply the same rule table to their cells (a cell at level *k* is a 2ᵏ cube; corner
-  heights are halves of a cell), replacing 9d's slopes from surface heights. The LOD format does
-  not change. Distant and near terrain then use one rule, so they match at the seam.
+## 6. Rationale, prototypes and evidence
 
-### 4.5 Building and the player
-
-- Players place and break adaptive blocks as cubes; the shape follows. Placing on top of a shaped
-  block fills the cell above, which makes the block below full. The creative palette's shape key
-  applies only to crafted materials.
-- Targeting a shaped block hits its true shape; the placement preview shows the cell, and the
-  block's shape after placing is the rule's.
-- The controller already walks 27° and 45° slopes and steps 0.55 m (`PLAYER_CONTROLLER.md`); the
-  new saddle and ridge shapes need scenarios (§5).
-
-### 4.6 Later phases
-
-- **Phase 20 (voxel awakening):** a detached cluster's adaptive blocks keep the shapes they had at
-  the moment of detachment (frozen into its body), or re-derive within the cluster — to decide
-  there. Convex decomposition: the ridge corner, T and cross are not convex (two or three convex
-  parts); the others are.
-- **Phases 21–22:** re-baking a settled body writes cube states; shapes re-derive from occupancy.
-
-## 5. Sub-phase plan (9e, now Phase 18)
-
-> Phase 18 in `IMPLEMENTATION_PLAN.md` is the plan of record; this was the original breakdown.
-
-1. **Shapes and the table.** The 18 new shapes in `shapes.mjs` (corner shapes and the 3 × 3
-   surface form), the rule table and its generator, `adaptive` in `dwell.json`, test vectors;
-   the `dwell-blocks` reader; geometry tests (closure, winding, volume, coverage) and an exhaustive
-   adjacency test that two neighbouring derived shapes never leave a hole at a shared edge of
-   equal-height neighbours.
-2. **Meshing, collision, targeting.** Derived shapes in the chunk mesher, terrain collision,
-   `ray_enter_shape`, `surface_height_at`; edits re-mesh neighbours; controller scenarios on every new
-   shape (walk over ridges, saddles, half-and-half corners, 45° single-block ramps; no launches,
-   hops or sliding at rest), native and WASM.
-3. **Registry and building.** Remove the slope/slab families of adaptive materials; palette shape
-   key for crafted materials only; placing and breaking re-shape neighbours (e2e).
-4. **Terrain.** Remove step 5b; the shaped surface in point queries, spawn, water and features;
-   generator version bump; goldens.
-5. **LOD.** The rule on LOD cells; seam check against chunks.
-
-## 6. How it is checked (exit criteria)
-
-- The rule table equals the five rules for all 6,561 neighbourhoods, in the generator and in
-  `dwell-blocks`, from shared vectors; it reproduces every block of the owner's playground export (`prototypes/`).
-- No holes: for every pair of neighbourhoods that share an edge, the two derived shapes meet
-  without a gap wherever both blocks are the same height (exhaustive test).
-- Controller scenarios on every new shape pass natively and in WASM; the divergence check passes.
-- e2e: placing and breaking adaptive blocks re-shapes the neighbours identically on two clients.
-- Generation and meshing times, and frame time on a desktop and a phone, against Phase 9's.
-- Manual: the owner walks generated terrain and builds with natural blocks, and compares with the
-  Adaptive Block Lab.
-
-## 7. Prototypes and evidence
+Why derived, not stored: deriving (rather than storing a shape state and updating neighbours on
+every edit) keeps an edit a single voxel, needs no cascade of state changes over the network, and
+cannot drift out of date — the class of bug Phase 9's playtests found in stored terrain slopes.
+Saved worlds and the wire carry the material alone; turning adaptivity off for a material (a data
+change) returns its blocks to cubes without touching saved worlds.
 
 Both prototypes are saved in [`prototypes/`](./prototypes/README.md) with their published links:
 
 - **Shape Playground** — every shape, 28 labelled situations (one for every shape the rules can
   produce, the T and the cross included); tap to set shapes; a live rules-and-conflicts check;
-  export/import. The owner's final shapes are embedded: all 250 blocks match the five rules
-  (blocks each rule decides — Rest 159, Drop 217, Rise 68, One block wide 49, Ramp up 10).
+  export/import. The owner's final shapes are embedded (and extracted into
+  `shared/blocks/playground-export.json`): all 250 blocks match the five rules (blocks each rule
+  decides — Rest 159, Drop 217, Rise 68, One block wide 49, Ramp up 10).
 - **Adaptive Block Lab** — the rules on whole scenes (basics, terraces, hill, noise terrain, a
   wall with a sand pile, a meadow) on three grids, with editing, a Copy 5³ export, and the earlier
   rule designs for comparison.
@@ -210,12 +160,27 @@ blocks or left slivers at diagonal 2-block drops; crisp-cliff propagation remove
 whole hillsides. Finer voxel grids (1 × ½ × 1 m, ½ m cubes) were prototyped; the per-block shape
 rules made them unnecessary, and the 1 m grid stays.
 
+## 7. Decisions made in building it (Phase 18)
+
+- **Terrain collision:** full-cube cells stay in the `Voxels` collider; shaped cells are one
+  triangle mesh per chunk of their uncovered faces. Crossing between the meshes keeps the ground.
+- **Chunk borders:** the chunk mesher has a one-voxel apron, so an adaptive top block in the apron
+  is taken to cover none of its sides (faces toward it are drawn; any it does cover lie inside it).
+  The collider reads a two-voxel apron and derives exactly. The LOD treats apron columns the same way.
+- **Edits:** a voxel modification re-meshes every chunk the changed voxels touch, diagonals
+  included, and the collider rebuilds a chunk when any of the 27 around it changes.
+- **The placement check** tests a placed block against players as a cube (its shape is only known
+  after placing, and the cube is the larger).
+- **Generation is unchanged:** the generator writes the same voxels (its chunk and LOD hashes are
+  unchanged); spawn and the point query read the shaped surface. Phase 17's evaluator must keep that.
+- **LOD:** the rule on dry columns' top cells; wet columns and shores keep the generated surface's
+  exact heights.
+
 ## 8. Open details (owner decisions)
 
-- Which materials are adaptive: sandstone, gravel and ice; logs (natural, but tree trunks) are
-  probably crafted-like.
-- Natural ground against crafted blocks: today's rules treat a crafted block like any higher or
-  lower column (ground ramps up to it); confirm in the lab.
-- Slabs as neighbours: a slab counts as lower than a block beside it (§3); confirm.
-- Flooded shaped blocks (§3) and how shores look.
-- Phase 20's choice for detached clusters (§4.6).
+- Natural ground against crafted blocks: today's rules treat a full crafted block like any higher
+  or lower column (ground ramps up to it); confirm in the lab once crafted blocks exist.
+- Slabs as neighbours: a partial shape counts as lower than a block beside it (§3); confirm.
+- How shores look (flooded banks, §1) — the owner's walk.
+- Phase 20's choice for detached clusters: keep the shapes they had at detachment, or re-derive
+  within the cluster; the ridge corner, T and cross are not convex (two or three convex parts).

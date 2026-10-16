@@ -204,13 +204,13 @@ pub fn face_covered(shape: &ShapeInfo, face: usize, neighbour: Option<&ShapeInfo
     let side = |f: usize| if f < 2 { f } else { f - 2 };
     let mine = shape.sides[side(face)];
     let theirs = neighbour.sides[side(face ^ 1)];
-    if mine[0] == 0 && mine[1] == 0 {
+    if mine == [0; 3] {
         return true;
     }
     if shape.inverted == neighbour.inverted {
-        return theirs[0] >= mine[0] && theirs[1] >= mine[1];
+        return (0..3).all(|i| theirs[i] >= mine[i]);
     }
-    theirs[0] == 2 && theirs[1] == 2
+    theirs == [4; 3]
 }
 
 /// The geometry a neighbour covers faces with: none if it is see-through (cutout, translucent).
@@ -218,10 +218,9 @@ fn cover(k: &Kind) -> Option<&'static ShapeInfo> {
     if k.occludes { k.def } else { None }
 }
 
-/// Is the full-cube face `face` of a cube or water voxel `m` hidden by neighbour `n`?
-fn hidden(kinds: &Kinds, m: StateId, n: StateId, face: usize) -> bool {
-    let km = kinds.of(m);
-    let kn = kinds.of(n);
+/// Is the full-cube face `face` of a cube or water voxel `m` (kind `km`) hidden by neighbour `n`
+/// (kind `kn`)?
+fn hidden(km: &Kind, kn: &Kind, m: StateId, n: StateId, face: usize) -> bool {
     if km.liquid && (n == m || kn.flooded) {
         return true;
     }
@@ -230,6 +229,88 @@ fn hidden(kinds: &Kinds, m: StateId, n: StateId, face: usize) -> bool {
         return true;
     }
     face_covered(cube(), face, cover(&kn))
+}
+
+/// The cells' kinds where adaptive blocks change them (docs/ADAPTIVE_BLOCKS.md): an adaptive top
+/// block in the chunk takes its derived shape — a cube when the rules say full — and holds water
+/// beside or under a liquid. Apron cells' shapes need voxels beyond the apron, so an adaptive top
+/// block there is taken to cover none of its sides (its neighbour's faces toward it are drawn; any
+/// it does cover lie inside it). The padded block faces up (a face-B chunk is meshed mirrored).
+struct Cells<'a> {
+    kinds: &'a Kinds,
+    padded: &'a [u16],
+    over: Vec<Option<(u16, bool)>>,
+}
+
+/// The shape an apron's adaptive top block is drawn against: no side covered, the floor full.
+fn apron_shape() -> u16 {
+    // A lone block (every neighbour lower): the half pyramid, whose sides are all zero.
+    dwell_blocks::ADAPTIVE_UP[dwell_blocks::adaptive::index([dwell_blocks::adaptive::LOWER; 8])]
+}
+
+impl<'a> Cells<'a> {
+    fn new(kinds: &'a Kinds, padded: &'a [u16]) -> Self {
+        let mut over = vec![None; padded.len()];
+        let p = PAD as i32;
+        let inside = |v: i32| (-1..p - 1).contains(&v);
+        let at = |x: i32, y: i32, z: i32| {
+            if inside(x) && inside(y) && inside(z) {
+                padded[padded_index(x, y, z)]
+            } else {
+                0
+            }
+        };
+        for y in -1..N + 1 {
+            for z in -1..N + 1 {
+                for x in -1..N + 1 {
+                    let m = padded[padded_index(x, y, z)];
+                    if m == 0 || !STATES.get(usize::from(m)).is_some_and(|s| s.adaptive) {
+                        continue;
+                    }
+                    let interior =
+                        (0..N).contains(&x) && (0..N).contains(&y) && (0..N).contains(&z);
+                    let get = |dx: i32, dy: i32, dz: i32| at(x + dx, y + dy, z + dz);
+                    let derived = if interior {
+                        dwell_blocks::adaptive::derive(get, 1)
+                    } else if y < N
+                        && !STATES
+                            .get(usize::from(get(0, 1, 0)))
+                            .is_some_and(|s| s.solid)
+                    {
+                        Some(apron_shape())
+                    } else {
+                        None
+                    };
+                    if let Some(i) = derived {
+                        over[padded_index(x, y, z)] =
+                            Some((i, dwell_blocks::adaptive::flooded_at(get, 1)));
+                    }
+                }
+            }
+        }
+        Self {
+            kinds,
+            padded,
+            over,
+        }
+    }
+
+    fn state(&self, x: i32, y: i32, z: i32) -> StateId {
+        self.padded[padded_index(x, y, z)]
+    }
+
+    fn kind(&self, x: i32, y: i32, z: i32) -> Kind {
+        let i = padded_index(x, y, z);
+        let mut k = self.kinds.of(self.padded[i]);
+        if let Some((shape, flooded)) = self.over[i] {
+            let def = &dwell_blocks::SHAPES[usize::from(shape)];
+            let full = !def.fan && def.corners == [2, 2, 2, 2];
+            k.shape = if full { Shape::Full } else { Shape::Shaped };
+            k.def = Some(def);
+            k.flooded = flooded && !full;
+        }
+        k
+    }
 }
 
 fn channel(color: u32, shift: u32) -> f64 {
@@ -425,18 +506,23 @@ fn polygon_normal(pts: &[[f64; 3]]) -> [f64; 3] {
 const SIDE_OF_TAG: [i32; 6] = [0, 1, -1, -1, 2, 3];
 
 /// The height of an upright piece's top edge along one of its side faces: the side profile runs
-/// linearly between its heights (halves) at the low and high running coordinate (z on ±X faces, x
-/// on ±Z).
+/// linearly between its heights (quarters of a cell) at the low end, the middle and the high end
+/// of the running coordinate (z on ±X faces, x on ±Z).
 #[derive(Clone, Copy, Debug)]
 struct SideTop {
-    h0: f64,
-    h1: f64,
+    h: [f64; 3],
     run: usize,
 }
 
 impl SideTop {
     fn at(self, pt: &[f64; 3]) -> f64 {
-        (self.h0 + (self.h1 - self.h0) * pt[self.run]) / 2.0
+        let s = pt[self.run];
+        let q = if s <= 0.5 {
+            self.h[0] + (self.h[1] - self.h[0]) * s * 2.0
+        } else {
+            self.h[1] + (self.h[2] - self.h[1]) * (s - 0.5) * 2.0
+        };
+        q / 4.0
     }
 }
 
@@ -446,10 +532,8 @@ fn side_top_of(def: &ShapeInfo, tag: usize) -> Option<SideTop> {
     if side < 0 || def.inverted {
         return None;
     }
-    let [h0, h1] = def.sides[side as usize];
     Some(SideTop {
-        h0: f64::from(h0),
-        h1: f64::from(h1),
+        h: def.sides[side as usize].map(f64::from),
         run: if side < 2 { 2 } else { 0 },
     })
 }
@@ -460,18 +544,80 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
     n
 }
 
+/// An upright shape whose top is flat at half height (the adaptive rules' slab).
+fn is_half_slab(s: &ShapeInfo) -> bool {
+    !s.inverted && !s.fan && s.corners == [1, 1, 1, 1]
+}
+
+/// Greedy rectangles of the flat half-height tops in layer `y` (`mask`: material + 1 per
+/// x + N·z), drawn as the shaped mesher draws a top: the top tile, the top's shading.
+fn flat_tops(b: &mut Builder, kinds: &Kinds, mask: &mut [i32], y: i32) {
+    let n = N as usize;
+    for z in 0..n {
+        let mut x = 0;
+        while x < n {
+            let key = mask[x + n * z];
+            if key == 0 {
+                x += 1;
+                continue;
+            }
+            let mut w = 1;
+            while x + w < n && mask[x + w + n * z] == key {
+                w += 1;
+            }
+            let mut h = 1;
+            'grow: while z + h < n {
+                for k in 0..w {
+                    if mask[x + k + n * (z + h)] != key {
+                        break 'grow;
+                    }
+                }
+                h += 1;
+            }
+            for dz in 0..h {
+                mask[x + n * (z + dz)..x + w + n * (z + dz)].fill(0);
+            }
+            let style = kinds.of((key - 1) as StateId).style;
+            let (color, tile) = surface(&style, 1, 1);
+            // Axis y: u = z, v = x.
+            b.quad(
+                1,
+                1,
+                f64::from(y) + 0.5,
+                (z as f64, (z + h) as f64),
+                (x as f64, (x + w) as f64),
+                color,
+                &tile,
+            );
+            x += w;
+        }
+    }
+}
+
 /// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
+/// `merged_top`: its flat top is drawn merged with its neighbours' (`flat_tops`), not here.
 #[allow(clippy::too_many_arguments)]
-fn shaped_voxel(b: &mut Builder, kinds: &Kinds, k: &Kind, padded: &[u16], x: i32, y: i32, z: i32) {
+fn shaped_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    x: i32,
+    y: i32,
+    z: i32,
+    merged_top: bool,
+) {
     let Some(def) = k.def else {
         return;
     };
     for f in faces_of(def) {
         let tag = usize::from(f.tag);
+        if merged_top && f.tag == dwell_blocks::shape::SURFACE_TAG {
+            continue;
+        }
         if tag < 6 {
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            if face_covered(def, tag, cover(&kinds.of(padded[padded_index(nx, ny, nz)]))) {
+            if face_covered(def, tag, cover(&cells.kind(nx, ny, nz))) {
                 continue;
             }
         }
@@ -502,11 +648,11 @@ fn shaped_voxel(b: &mut Builder, kinds: &Kinds, k: &Kind, padded: &[u16], x: i32
 }
 
 /// Water in the open part of a flooded shaped cell: its faces, inset so the solid shows through.
-fn flooded_water(b: &mut Builder, kinds: &Kinds, padded: &[u16], x: i32, y: i32, z: i32) {
-    let water = kinds.flood();
+fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
+    let water = cells.kinds.flood();
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-        let kn = kinds.of(padded[padded_index(nx, ny, nz)]);
+        let kn = cells.kind(nx, ny, nz);
         if kn.liquid || kn.flooded || face_covered(cube(), face, cover(&kn)) {
             continue;
         }
@@ -595,6 +741,7 @@ pub(crate) fn mesh_chunk_with(
     }
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
+    let cells = Cells::new(kinds, padded);
     let mut cutout = Builder::default();
     let n = N as usize;
     // Merge mask for one slice: material + 1 of a visible mergeable face, 0 for none.
@@ -617,7 +764,7 @@ pub(crate) fn mesh_chunk_with(
                     if m == 0 {
                         continue;
                     }
-                    let k = kinds.of(m);
+                    let k = cells.kind(cx, cy, cz);
                     if let Some(lf) = k.ladder_face {
                         if lf == face {
                             let target = match k.style.render {
@@ -633,7 +780,8 @@ pub(crate) fn mesh_chunk_with(
                         continue; // drawn whole, below
                     }
                     let [nx, ny, nz] = neighbour_of(cx, cy, cz, axis, sign);
-                    if hidden(kinds, m, padded[padded_index(nx, ny, nz)], face) {
+                    let kn = cells.kind(nx, ny, nz);
+                    if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
                         continue;
                     }
                     mask[i as usize + n * j as usize] = i32::from(m) + 1;
@@ -698,22 +846,33 @@ pub(crate) fn mesh_chunk_with(
             }
         }
     }
-    // Shaped blocks: whole voxels, not slices.
-    for cz in 0..N {
-        for cy in 0..N {
+    // Shaped blocks: whole voxels, not slices — but the flat tops of a level run of adaptive
+    // blocks (the rules' slab, half a block up) merge into rectangles like cube faces.
+    for cy in 0..N {
+        mask.fill(0);
+        let mut any = false;
+        for cz in 0..N {
             for cx in 0..N {
                 let m = padded[padded_index(cx, cy, cz)];
                 if m == 0 {
                     continue;
                 }
-                let k = kinds.of(m);
+                let k = cells.kind(cx, cy, cz);
                 if k.shape == Shape::Shaped {
-                    shaped_voxel(&mut opaque, kinds, &k, padded, cx, cy, cz);
+                    let flat = k.def.is_some_and(is_half_slab);
+                    if flat {
+                        mask[cx as usize + n * cz as usize] = i32::from(m) + 1;
+                        any = true;
+                    }
+                    shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz, flat);
                 }
                 if k.flooded {
-                    flooded_water(&mut transparent, kinds, padded, cx, cy, cz);
+                    flooded_water(&mut transparent, &cells, cx, cy, cz);
                 }
             }
+        }
+        if any {
+            flat_tops(&mut opaque, kinds, &mut mask, cy);
         }
     }
     // Ladders carry no sway or fade.

@@ -2025,6 +2025,45 @@
           "name": "sunset-b"
         }
       ]
+    },
+    {
+      "name": "walk-over-a-placed-block",
+      "notes": "Places a block in front of the spawn and walks over it without jumping (Phase 18, ADAPTIVE_BLOCKS.md): natural ground shapes itself, so the placed block is a half pyramid (45° faces: a slide, owner 2026-10-15) and the ground under and around it ramps up at 27° — the controller trace shows what the player does on it (no jump, no launch).",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "select", "slot": 0 },
+        { "do": "look", "yaw": 90, "pitch": -50 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "placed" },
+        { "do": "look", "yaw": 90, "pitch": 0 },
+        { "do": "mark" },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 2 },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "wait", "s": 0.5 },
+        { "do": "record", "name": "walk" }
+      ]
+    },
+    {
+      "name": "slopes-near-far",
+      "notes": "Natural slopes from the player's eyes, looking down at the ground nearby and out to the horizon (Phase 18): screenshots of the adaptive shapes near (chunks) and far (the LOD's sloped tops), and the steady frame there.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "look", "yaw": 0, "pitch": -35 },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "near-north" },
+        { "do": "look", "yaw": 135, "pitch": -25 },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "near-southeast" },
+        { "do": "look", "yaw": 90, "pitch": -4 },
+        { "do": "wait", "s": 0.5 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "steady" },
+        { "do": "shot", "name": "far-east" }
+      ]
     }
   ]
 }

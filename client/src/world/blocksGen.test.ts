@@ -19,7 +19,7 @@ function generate(blocks: object[]): { status: number | null; output: string; ru
   mkdirSync(join(here, 'fixtures'), { recursive: true });
   mkdirSync(join(root, 'client/src/world'), { recursive: true });
   mkdirSync(join(root, 'crates/dwell-blocks/src'), { recursive: true });
-  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs'])
+  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs', 'adaptive.mjs'])
     copyFileSync(join(blocksDir, f), join(here, f));
   // The sound data the generator checks blocks' `sound` against (shared/sounds).
   const sounds = join(root, 'shared/sounds');

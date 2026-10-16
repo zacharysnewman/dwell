@@ -1538,12 +1538,12 @@ impl<S: Scene> Game<S> {
             self.scene.borrow_mut().set_block_outline(None, 1.0);
             return;
         };
-        // The outline hugs the shape's top: slabs and low slopes are not a full cell tall.
-        let shape = dwell_blocks::shape::shape_of(
-            self.streamer
-                .store_mut()
-                .get_voxel(t.cell[0], t.cell[1], t.cell[2]),
-        );
+        // The outline hugs the shape's top: an adaptive block's derived shape is often not a
+        // full cell tall.
+        let shape = self
+            .streamer
+            .store_mut()
+            .shape_at(t.cell[0], t.cell[1], t.cell[2]);
         let height = if shape.inverted {
             1.0
         } else {
