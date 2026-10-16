@@ -303,6 +303,12 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
+    case 'water':
+      await call(
+        page,
+        `d.setWater(${JSON.stringify(s.quality ?? null)}, ${JSON.stringify(s.debug ?? null)})`,
+      );
+      return;
     case 'edit':
       await call(page, `d.edit(${JSON.stringify(s.action)})`);
       return;

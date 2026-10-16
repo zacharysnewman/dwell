@@ -42,7 +42,7 @@ import { SettingsMenu } from './ui/settingsMenu';
 import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
-import { waterQualityLevel } from './ui/waterSettings';
+import { waterQualityLevel, type WaterQuality } from './ui/waterSettings';
 import {
   CompareOverlay,
   RENDERER_CHOICES,
@@ -133,6 +133,11 @@ interface DwellDebug {
   renderer(): string;
   /** Switches renderer at runtime (local builds; false otherwise): see `?renderer=`. */
   setRenderer(name: string, compare?: string): boolean;
+  /**
+   * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
+   * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
+   */
+  setWater(quality: WaterQuality | null, debug: string | null): void;
   /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
   compare(): CompareState | null;
   /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
@@ -616,6 +621,10 @@ async function start(): Promise<App | null> {
       const ok = client.setRenderer(name, compare);
       showRenderer();
       return ok;
+    },
+    setWater: (quality, debug) => {
+      if (quality !== null) client.setWaterQuality(waterQualityLevel(quality));
+      if (debug !== null) client.setWaterDebug(debug);
     },
     compare: () => client.compareState() as CompareState | null,
     setCompare: (view, divider) => {
