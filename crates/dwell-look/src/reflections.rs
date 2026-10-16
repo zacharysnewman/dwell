@@ -97,13 +97,19 @@ mod tests {
     #[test]
     fn the_reflection_never_draws_more_of_the_deck_than_the_sky() {
         let u = reflection_uniforms(&REFLECTIONS, 2, 3, false);
-        assert_eq!(u[1][0], 3.0_f32.min(REFLECTIONS.tier(2).cloud_octaves as f32));
+        assert_eq!(
+            u[1][0],
+            3.0_f32.min(REFLECTIONS.tier(2).cloud_octaves as f32)
+        );
         assert_eq!(u[1][1], 0.0, "no self-shadow while the sky draws none");
         let off = reflection_uniforms(&REFLECTIONS, 2, 0, true);
         assert_eq!(off[1][0], 0.0, "Clouds off: none reflected");
         let m = reflection_uniforms(&REFLECTIONS, 1, 8, true);
         assert_eq!(m[0][0], REFLECTIONS.tier(1).ssr_steps as f32);
-        assert!(m[0][3] < m[0][2] && m[0][3] > 0.0, "the fade starts inside the reach");
+        assert!(
+            m[0][3] < m[0][2] && m[0][3] > 0.0,
+            "the fade starts inside the reach"
+        );
     }
 
     #[test]

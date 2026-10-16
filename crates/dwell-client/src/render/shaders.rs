@@ -1493,6 +1493,34 @@ mod tests {
     }
 
     #[test]
+    fn the_water_reflects_land_from_the_scene_and_the_sky_with_its_clouds() {
+        // WATER_RENDERING.md §8: the water that reads the scene reflects it by screen-space
+        // reflection over the sky and clouds; Low (no copy) reflects the sky and clouds alone. The
+        // deck's footprint is taken before any branch (derivatives need uniform control flow).
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let scene = body("water_scene_fs");
+        assert!(scene.contains("ssr_reflected(reflected_env(") && scene.contains("ssr_trace("));
+        let low = body("water_fs");
+        assert!(low.contains("reflected_env(") && !low.contains("ssr_"));
+        for (name, b) in [("water_scene_fs", &scene), ("water_fs", &low)] {
+            let fw = b.find("reflected_deck_fw(").expect(name);
+            assert!(fw < b.find("if (").expect(name), "{name}");
+        }
+        let env = body("reflected_env");
+        assert!(
+            env.contains("sky(r)")
+                && env.contains("dwell_clouds(")
+                && env.contains("cloud_lighting()")
+        );
+        // What the scene hides of the sky hides the sun's glint and sparkle too.
+        assert!(body("surface_light").contains("(1.0 - refl.a) * (glint + spark)"));
+    }
+
+    #[test]
     fn the_wind_is_drawn_by_the_composite_only_while_there_is_any() {
         let src = super::source(4);
         let at = src.find("fn composite_fs(").expect("composite");

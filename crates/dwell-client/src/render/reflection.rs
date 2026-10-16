@@ -62,23 +62,116 @@ pub struct Hit {
 
 /// The reflected ray `r` (unit) from the surface point `p` (relative to the eye), marched on
 /// screen through `depth_at` (the scene's view depth at a pixel; 0 where nothing is drawn).
-pub fn trace(view: &View, p: [f32; 3], r: [f32; 3], ssr: &Ssr, depth_at: impl Fn([f32; 2]) -> f32) -> Option<Hit> {
-    let _ = (view, p, r, ssr, &depth_at);
+pub fn trace(
+    view: &View,
+    p: [f32; 3],
+    r: [f32; 3],
+    ssr: &Ssr,
+    depth_at: impl Fn([f32; 2]) -> f32,
+) -> Option<Hit> {
+    let d0 = dot(p, view.forward);
+    let toward = dot(r, view.forward);
+    let mut len = ssr.reach;
+    // A ray back toward the eye ends in front of it.
+    if toward < 0.0 {
+        len = len.min(0.9 * d0 / -toward);
+    }
+    if ssr.steps == 0 || len <= 0.0 {
+        return None;
+    }
+    let (a, da) = view.to_screen(p);
+    let (b, db) = view.to_screen([p[0] + r[0] * len, p[1] + r[1] * len, p[2] + r[2] * len]);
+    let delta = [b[0] - a[0], b[1] - a[1]];
+    let t_end = screen_clip(a, delta, view.size);
+    // View depth runs hyperbolically along the screen: 1/depth is linear.
+    let (k0, k1) = (1.0 / da, 1.0 / db);
+    let depth_at_t = |t: f32| 1.0 / (k0 + (k1 - k0) * t);
+    let px_at = |t: f32| [a[0] + delta[0] * t, a[1] + delta[1] * t];
+    let (mut prev_t, mut prev_d) = (0.0, da);
+    for i in 1..=ssr.steps {
+        let t = t_end * i as f32 / ssr.steps as f32;
+        let d = depth_at_t(t);
+        if hits(ssr, depth_at(px_at(t)), d, prev_d) {
+            let (mut lo, mut hi) = (prev_t, t);
+            for _ in 0..ssr.refine {
+                let mid = 0.5 * (lo + hi);
+                let sm = depth_at(px_at(mid));
+                if sm > 0.0 && depth_at_t(mid) >= sm {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let px = px_at(hi);
+            let dh = depth_at_t(hi);
+            // How far along the ray in 3D: view depth is linear along it.
+            let u = if (db - da).abs() > 1e-3 * da {
+                (dh - da) / (db - da)
+            } else {
+                hi
+            };
+            let fade = 1.0 - smoothstep(ssr.fade_from, ssr.reach, u * len);
+            return Some(Hit {
+                px,
+                weight: edge_weight(view, px, ssr.edge_fade) * fade,
+            });
+        }
+        prev_t = t;
+        prev_d = d;
+    }
     None
+}
+
+/// A march step at view depth `d` (from `prev`) meets the scene at depth `scene`: it is behind it,
+/// and the surface lies within the step (else the ray passed behind something in front of it).
+fn hits(ssr: &Ssr, scene: f32, d: f32, prev: f32) -> bool {
+    scene > 0.0 && d >= scene && scene >= prev.min(d) - (ssr.thickness + ssr.thickness_rel * scene)
+}
+
+/// The share of the screen segment from `a` along `delta` that stays on screen.
+fn screen_clip(a: [f32; 2], delta: [f32; 2], size: [f32; 2]) -> f32 {
+    let mut t_end = 1.0f32;
+    for k in 0..2 {
+        if delta[k] > 1e-3 {
+            t_end = t_end.min((size[k] - 0.5 - a[k]) / delta[k]);
+        } else if delta[k] < -1e-3 {
+            t_end = t_end.min((0.5 - a[k]) / delta[k]);
+        }
+    }
+    t_end.max(0.0)
+}
+
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// How much of a hit at `px` survives the screen-edge fade (within `edge_fade` of the screen
 /// height from any edge, the reflection fades into the sky, so it doesn't pop at the edge).
 pub fn edge_weight(view: &View, px: [f32; 2], edge_fade: f32) -> f32 {
-    let _ = (view, px, edge_fade);
-    1.0
+    let e = px[0]
+        .min(view.size[0] - px[0])
+        .min(px[1])
+        .min(view.size[1] - px[1]);
+    smoothstep(0.0, 1.0, e / (edge_fade * view.size[1]))
 }
 
 /// What the surface reflects along its ray: the scene at the hit (`scene_at`: linear colour and
 /// coverage), weighted by the hit's fade and coverage, over `sky` (the sky with its clouds).
-pub fn reflected(sky: [f32; 3], hit: Option<Hit>, scene_at: impl Fn([f32; 2]) -> [f32; 4]) -> [f32; 3] {
-    let _ = (&hit, &scene_at);
-    sky
+pub fn reflected(
+    sky: [f32; 3],
+    hit: Option<Hit>,
+    scene_at: impl Fn([f32; 2]) -> [f32; 4],
+) -> [f32; 3] {
+    let Some(hit) = hit else {
+        return sky;
+    };
+    let c = scene_at(hit.px);
+    if c[3] <= 0.0 {
+        return sky;
+    }
+    let w = hit.weight * c[3].min(1.0);
+    [0, 1, 2].map(|k| sky[k] + (c[k] / c[3] - sky[k]) * w)
 }
 
 /// The constants the WGSL twin takes from the data (the per-tier values ride in the frame
@@ -177,22 +270,29 @@ mod tests {
         let depth = lake(v, 40.0, 10.0);
         let (p, r) = surface(&v, 20.0);
         let hit = trace(&v, p, r, &MEDIUM, &depth).expect("the bank is hit");
-        // It lands on the bank: the wall at z = 40 where the mirror ray crosses it (y = 2).
+        // It lands on the bank: the wall at z = 40 where the mirror ray crosses it (y = 0).
         let at = ray(&v, hit.px);
         let s = 40.0 / at[2];
-        assert!((at[1] * s - 2.0).abs() < 0.5, "hit at y {}", at[1] * s);
-        assert!(hit.weight > 0.9, "a hit mid-screen is whole: {}", hit.weight);
+        assert!((at[1] * s).abs() < 0.3, "hit at y {}", at[1] * s);
+        assert!(
+            hit.weight > 0.9,
+            "a hit mid-screen is whole: {}",
+            hit.weight
+        );
         let c = reflected(SKY, Some(hit), |_| BANK);
         for k in 0..3 {
-            assert!((c[k] - BANK[k]).abs() < 0.1, "the bank's colour, not the sky's: {c:?}");
+            assert!(
+                (c[k] - BANK[k]).abs() < 0.1,
+                "the bank's colour, not the sky's: {c:?}"
+            );
         }
     }
 
     #[test]
     fn a_ray_that_clears_the_bank_reflects_the_sky() {
         let v = view(0.12);
-        // A low bank: the mirror ray crosses z = 40 at y = 2, above it.
-        let depth = lake(v, 40.0, 1.0);
+        // A low bank: the mirror ray crosses z = 40 at y = 0, a metre above it.
+        let depth = lake(v, 40.0, -1.0);
         let (p, r) = surface(&v, 20.0);
         let hit = trace(&v, p, r, &MEDIUM, &depth);
         assert_eq!(hit, None);
@@ -217,8 +317,6 @@ mod tests {
     #[test]
     fn hits_fade_toward_the_screen_edge_and_none_without_steps() {
         let v = view(0.12);
-        // The bank only 0.5 m above the water's mirror line seen at the top edge: the view pitched
-        // so the hit is near the top of the screen.
         let depth = lake(v, 40.0, 10.0);
         let (p, r) = surface(&v, 20.0);
         let mid = trace(&v, p, r, &MEDIUM, &depth).expect("hit");
