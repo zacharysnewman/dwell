@@ -21,20 +21,11 @@ use dwell_protocol::world;
 const FRAME: &str = r"
 struct Frame {
     view_proj: mat4x4f,
-    // x eye height (world y), y face (±1), z exposure, w fog density
+    // x eye height (world y), y face (±1), z exposure (× the time of day's), w fog density (× the
+    // time of day's)
     eye: vec4f,
     // x fog sigma, y fog scale height, z seconds (the water's scroll), w unused
     fog: vec4f,
-    day_pole: vec4f,
-    sun: vec4f,
-    moon: vec4f,
-    // Linear colours × intensity.
-    sun_color: vec4f,
-    moon_color: vec4f,
-    day_sky: vec4f,
-    day_ground: vec4f,
-    night_sky: vec4f,
-    night_ground: vec4f,
     // The sky's view rays: the camera's axes and the half-angle tangents (x, y).
     right: vec4f,
     up: vec4f,
@@ -59,6 +50,9 @@ struct Frame {
     wind_streaks: vec4f,
     wind_shape: vec4f,
     wind_extra: vec4f,
+    // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
+    // face's lights.
+    day: DaySky,
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
@@ -106,18 +100,20 @@ fn own(light_up: f32, frag_on_a: bool) -> f32 {
     return smoothstep(-0.1, 0.1, light_up * face_up);
 }
 
-// three's Lambert: (direct + hemisphere irradiance) × albedo / π, each light weighted to the
-// fragment's own face (BIFACIAL_WORLD.md §6).
+// three's Lambert: (direct + hemisphere irradiance) × albedo / π, with the lights of the fragment's
+// own face (BIFACIAL_WORLD.md §6): its time of day's sun, moon and sky, each direct light weighted
+// by its height over that face's horizon.
 fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
     let on_a = frag_y >= MIDPLANE_Y;
-    var irradiance = vec3f(0.0);
-    irradiance += max(dot(n, frame.sun.xyz), 0.0) * frame.sun_color.rgb * own(frame.sun.y, on_a);
-    irradiance += max(dot(n, frame.moon.xyz), 0.0) * frame.moon_color.rgb * own(frame.moon.y, on_a);
-    let day = frame.day_pole.xyz;
-    let hemi_day = mix(frame.day_ground.rgb, frame.day_sky.rgb, dot(n, day) * 0.5 + 0.5);
-    irradiance += hemi_day * own(day.y, on_a);
-    let hemi_night = mix(frame.night_ground.rgb, frame.night_sky.rgb, dot(n, -day) * 0.5 + 0.5);
-    irradiance += hemi_night * own(-day.y, on_a);
+    let d = frame.day;
+    let face_up = select(-1.0, 1.0, on_a);
+    let sun = select(d.sun_b.rgb, d.sun_a.rgb, on_a);
+    let moon = select(d.moon_b.rgb, d.moon_a.rgb, on_a);
+    let hemi_sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
+    let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
+    var irradiance = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.y, on_a);
+    irradiance += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.y, on_a);
+    irradiance += mix(hemi_ground, hemi_sky, n.y * face_up * 0.5 + 0.5);
     return irradiance * albedo / PI;
 }
 
@@ -169,8 +165,18 @@ fn view_ray(ndc: vec2f) -> vec3f {
     return frame.forward.xyz + ndc.x * frame.tan.x * frame.right.xyz + ndc.y * frame.tan.y * frame.up.xyz;
 }
 
+// The sky's colour toward `dir` (output colour): what far terrain fogs to and water reflects.
 fn sky(dir: vec3f) -> vec3f {
-    return dwell_sky(dir, frame.eye.y, frame.day_pole.xyz, frame.sun.xyz, frame.moon.xyz);
+    return dwell_sky(dir, frame.eye.y, frame.day);
+}
+
+// Half-a-step dither for the 8-bit canvas (interleaved gradient noise, triangular): smooth night
+// and twilight gradients without bands.
+fn dither(p: vec2i) -> f32 {
+    let q = vec2f(p);
+    let a = fract(52.9829189 * fract(dot(q, vec2f(0.06711056, 0.00583715))));
+    let b = fract(52.9829189 * fract(dot(q + vec2f(17.0, 59.0), vec2f(0.06711056, 0.00583715))));
+    return (a + b - 1.0) / 255.0;
 }
 
 // The sky's light along `dir`, in the scene's linear colour.
@@ -429,8 +435,21 @@ fn depth_of(d: array<f32, SAMPLE_SLOTS>) -> vec2f {
 }
 
 // The clouds' light, from the frame: the sky frame and the lights, as the terrain takes them.
+//
+// The day/night cycle's light for the viewer's face: its sun, moon and sky light; the day pole is
+// the sun (its height over the horizon sets day or night).
 fn cloud_lighting() -> CloudLighting {
-    return CloudLighting(frame.day_pole.xyz, frame.sun.xyz, frame.moon.xyz, frame.sun_color.rgb, frame.moon_color.rgb, frame.day_sky.rgb, frame.night_sky.rgb);
+    let d = frame.day;
+    let pole = d.sun.xyz;
+    let on_a = frame.eye.x >= MIDPLANE_Y;
+    let sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
+    return CloudLighting(pole, d.sun.xyz, d.moon.xyz, select(d.sun_b.rgb, d.sun_a.rgb, on_a), select(d.moon_b.rgb, d.moon_a.rgb, on_a), sky, sky);
+}
+
+// The scene's colour as the canvas shows it, at the time of day's saturation.
+fn scene_display(c: vec4f) -> vec3f {
+    let lit = display(c.rgb / c.a);
+    return mix(vec3f(dot(lit, vec3f(0.2126, 0.7152, 0.0722))), lit, frame.day.horizon.a);
 }
 
 fn scene_depth_at(p: vec2i) -> vec2f {
@@ -446,6 +465,8 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // — so the haze terrain fades into is the colour behind it.
 // The clouds (dwell-look's clouds.rs) are drawn over the sky only where the sky shows: the haze the
 // terrain fades into is the clear sky behind it, so distant ground never takes a cloud's colour.
+// The sky behind is the clear sky with the sun, moon and stars (`dwell_sky_bodies`) under the
+// clouds; the time of day sets the scene's saturation (lower by moonlight); dithered last.
 // The composite of one pixel: the scene tone-mapped, encoded, fogged and over the sky.
 fn composited(p: vec2i, ndc: vec2f) -> vec3f {
     let ray = view_ray(ndc);
@@ -458,7 +479,8 @@ fn composited(p: vec2i, ndc: vec2f) -> vec3f {
     let c = textureLoad(scene_color, p, 0);
     var back = clear;
     if (c.a < 1.0) {
-        back = dwell_clouds(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
+        let behind = dwell_sky_bodies(dir, face, frame.day, clear);
+        back = dwell_clouds(behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
     }
     return composited_of(c, scene_depth_at(p).x, ray, clear, back);
 }
@@ -475,7 +497,7 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
     if (c.a <= 0.0) {
         return back;
     }
-    let shown = mix(display(c.rgb / c.a), clear, fog_amount(ray * depth));
+    let shown = mix(scene_display(c), clear, fog_amount(ray * depth));
     return mix(back, shown, min(c.a, 1.0));
 }
 
@@ -490,7 +512,7 @@ fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     if (frame.wind_point.z > 1e-3) {
         color = motion_composite(color, p, i.ndc);
     }
-    return vec4f(color, 1.0);
+    return vec4f(color + dither(p), 1.0);
 }
 
 // Compare mode's second side (group 3): its scene targets and the difference counts.
@@ -820,8 +842,10 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
         // Reflected below the surface's plane: folded back up (the surface would hide it).
         r = normalize(r - 2.0 * min(dot(r, seen), 0.0) * seen);
         let a = glint_alpha(f.scatter.a, w.z);
-        let glint = ggx_glint(n, v, frame.sun.xyz, a, f0) * frame.sun_color.rgb * own(frame.sun.y, on_a)
-            + ggx_glint(n, v, frame.moon.xyz, a, f0) * frame.moon_color.rgb * own(frame.moon.y, on_a);
+        // The glint of the face's own sun and moon at the time of day (the day/night cycle).
+        let d = frame.day;
+        let glint = ggx_glint(n, v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, on_a) * own(d.sun.y, on_a)
+            + ggx_glint(n, v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, on_a) * own(d.moon.y, on_a);
         let alpha = 1.0 - (1.0 - fres) * t;
         o.color = vec4f((fres * sky_radiance(r) + (1.0 - fres) * (1.0 - t) * body + glint) / alpha, alpha);
         return o;
@@ -889,11 +913,12 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{FRAME}\n{}\n{}\n{}\n{COMMON}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{FRAME}\n{}\n{}\n{}\n{COMMON}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
+        dwell_look::daynight::DAY_SKY_WGSL,
         super::water::wgsl(),
         scene_bindings(samples),
         dwell_look::sky_wgsl(),

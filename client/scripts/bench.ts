@@ -26,6 +26,7 @@ import {
   parseScenarios,
   scenarioUrl,
   scenarioView,
+  timelapseTimes,
   type Scenario,
   type Step,
 } from './scenarios.ts';
@@ -336,6 +337,23 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'shot':
       await page.screenshot({ path: join(run.dir, `${s.name}.png`) });
       return;
+    case 'time':
+      await call(
+        page,
+        `d.setTime(${String(s.t)}${s.moon === undefined ? '' : `, ${String(s.moon)}`})`,
+      );
+      return;
+    case 'timelapse': {
+      const times = timelapseTimes(s);
+      const width = String(times.length - 1).length;
+      for (const [i, t] of times.entries()) {
+        await call(page, `d.setTime(${String(t)})`);
+        await sleep(page, s.waitS);
+        const n = String(i).padStart(Math.max(2, width), '0');
+        await page.screenshot({ path: join(run.dir, `${s.name}-${n}.png`) });
+      }
+      return;
+    }
     case 'traceStart':
       await run.browser.startTracing(page, {
         screenshots: true,
