@@ -782,28 +782,8 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                // Each atlas tile's grid lines (dwell_mesh::tile_grids), written once.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // The fluid looks (water.rs), indexed by fluid id.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(water::FLUID_STRIDE),
-                    },
-                    count: None,
-                },
+                frame_extra_entries(wgpu::ShaderStages::FRAGMENT)[0],
+                frame_extra_entries(wgpu::ShaderStages::FRAGMENT)[1],
             ],
         });
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1074,23 +1054,7 @@ impl Renderer {
         let difference = difference::Difference::new(&device);
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
-        let tile_grids: Vec<f32> = dwell_mesh::tile_grids().into_iter().flatten().collect();
-        let tile_grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("tile grids"),
-            size: tile_grids.len() as u64 * 4,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&tile_grid_buffer, 0, floats(&tile_grids));
-        // The fluid looks, generated from the registry (water.rs `pack_fluids`): fixed per build.
-        let fluid_data = water::pack_fluids(&dwell_blocks::FLUIDS);
-        let fluid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("fluids"),
-            size: (fluid_data.len() * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&fluid_buffer, 0, floats(&fluid_data));
+        let (tile_grid_buffer, fluid_buffer) = frame_extras(&device, &queue);
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -1131,6 +1095,7 @@ impl Renderer {
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
         let outline_mesh = Self::outline_lines(&arena, outline_box);
+        let march = MarchRenderer::new(device.clone(), queue.clone(), format);
         Self {
             device,
             queue,
@@ -1152,7 +1117,7 @@ impl Renderer {
             difference_group: None,
             terrain: Routed::new(
                 RasterTerrain::new(arena.clone()),
-                MarchRenderer::new(),
+                march,
                 Selection::default(),
             ),
             compare: Compare::default(),
@@ -1200,7 +1165,10 @@ impl Renderer {
 
     /// Block textures: the tiled-noise atlas, mipmapped (averaged in linear light), sampled crisp
     /// up close and filtered far away.
-    fn atlas(device: &wgpu::Device, queue: &wgpu::Queue) -> (wgpu::TextureView, wgpu::Sampler) {
+    pub(crate) fn atlas(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> (wgpu::TextureView, wgpu::Sampler) {
         let size = dwell_mesh::ATLAS_SIZE as u32;
         let levels = atlas_levels().len() as u32;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1519,6 +1487,30 @@ impl Renderer {
             screen_bytes: pixels * (per_pixel + (sides - 1) * (per_pixel - 8)),
             pixel_ratio: self.pixel_ratio,
             ..self.stats
+        }
+    }
+
+    /// The marcher's resolution against the output's and its upscaler (`?scale=` with
+    /// `?upscaler=fsr1|bilateral`; docs/RAY_MARCHED_RENDERER.md §4.2 step 3).
+    pub fn set_march_resolution(&mut self, scale: f32, upscaler: march::upscale::Upscaler) {
+        self.terrain.march.scale = scale;
+        self.terrain.march.upscaler = upscaler;
+    }
+
+    /// The camera and frame uniforms as the marcher reads them (`march::Marcher::draw`): the same
+    /// lights, fog, sky and view as this renderer's frame.
+    pub fn march_frame(&self) -> march::MarchFrame {
+        let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
+        let tan_y = (vertical_fov(aspect).to_radians() / 2.0).tan();
+        let f3 = |v: V3| v.map(|x| x as f32);
+        march::MarchFrame {
+            uniforms: self.frame_uniforms(&basis, NEAR_PLANE, FAR_PLANE).to_vec(),
+            eye: self.eye,
+            forward: f3(basis.forward()),
+            right: f3(basis.right),
+            up: f3(basis.up),
+            tan: [(tan_y * aspect) as f32, tan_y as f32],
         }
     }
 
@@ -2179,9 +2171,11 @@ impl Renderer {
                 }
                 TerrainKind::March => {
                     let query = self.timer.as_mut().and_then(|t| t.pass(timing::MARCH));
+                    let frame = self.march_frame();
                     self.terrain.march.draw(
                         &mut encoder,
                         &self.targets[side],
+                        &frame,
                         self.timer.as_ref().and_then(|t| t.writes(query)),
                     );
                     cpu[side] = crate::telemetry::now_ms() - t0;
@@ -2258,6 +2252,9 @@ impl Renderer {
         self.queue.submit([encoder.finish()]);
         if let Some(timer) = &mut self.timer {
             timer.submitted();
+        }
+        if kinds.contains(&TerrainKind::March) {
+            self.terrain.march.submitted();
         }
         if differ {
             self.difference.submitted();
@@ -2525,13 +2522,68 @@ impl PassView {
     }
 }
 
+/// The frame group's fixed entries after the uniforms, atlas and sampler (shaders.rs `FRAME`):
+/// binding 3 each atlas tile's grid lines (`dwell_mesh::tile_grids`), binding 4 the fluid looks
+/// (water.rs), seen by `visibility`. The marcher's frame group has them too.
+pub(crate) fn frame_extra_entries(
+    visibility: wgpu::ShaderStages,
+) -> [wgpu::BindGroupLayoutEntry; 2] {
+    [
+        wgpu::BindGroupLayoutEntry {
+            binding: 3,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 4,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(water::FLUID_STRIDE),
+            },
+            count: None,
+        },
+    ]
+}
+
+/// The buffers for [`frame_extra_entries`], written once: the tile grids and the fluid looks
+/// (generated from the registry, `water::pack_fluids`: fixed per build).
+pub(crate) fn frame_extras(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::Buffer, wgpu::Buffer) {
+    let tile_grids: Vec<f32> = dwell_mesh::tile_grids().into_iter().flatten().collect();
+    let tile_grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("tile grids"),
+        size: tile_grids.len() as u64 * 4,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&tile_grid_buffer, 0, floats(&tile_grids));
+    let fluid_data = water::pack_fluids(&dwell_blocks::FLUIDS);
+    let fluid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("fluids"),
+        size: (fluid_data.len() * 4) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&fluid_buffer, 0, floats(&fluid_data));
+    (tile_grid_buffer, fluid_buffer)
+}
+
 /// The plants' gust field repeats every this many metres (`WIND_PERIOD` in the shader): the eye's
 /// position is passed modulo it.
 const WIND_PERIOD: f64 = 1024.0;
 
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 16 vec4s (after `tan` the
 /// clouds' two, then the water's, the wind's six and the wrap) and the day/night cycle's block.
-const FRAME_FLOATS: usize = 16 + 16 * 4 + DAY_SKY_FLOATS;
+pub(crate) const FRAME_FLOATS: usize = 16 + 16 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into

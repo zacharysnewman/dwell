@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix; ~19 ms at 720p on an M1 against raster's ~2.5) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale; ~5 ms at half scale) built; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids), A4b (beam prepass, temporal start); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.11.17, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
@@ -2647,13 +2647,17 @@ the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
 **Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
-builders, pool, reference marcher) done; A2 (the renderer seam, compare mode with a placeholder
-marcher, bench `--compare`) built, its exit check done (compare mode with raster on both sides
-reports zero difference); A1 (the shared frame and GPU timing) built, its exit check done: the
-bench before/after (design doc §7, "A1 as built") and the picture differs slightly — antialiased
-edges, the sea's colour (water now blends in linear light), the outline no longer multisampled —
-which the owner approved (2026-10-14); the e2e suite passes on CI. Next: A3b, the GPU march, worker
-brick jobs, uploads, overlays and telemetry. Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+builders, pool, reference marcher) done; A2 (the renderer seam, compare mode, bench `--compare`)
+built, its exit check done (compare mode with raster on both sides reports zero difference); A1
+(the shared frame and GPU timing) built, its exit check done: the bench before/after (design doc §7,
+"A1 as built") and the picture differs slightly — antialiased edges, the sea's colour (water now
+blends in linear light), the outline no longer multisampled — which the owner approved (2026-10-14);
+the e2e suite passes on CI. A3b (the GPU march, uploads, brick jobs, telemetry) built, its CI run of
+the per-pixel test outstanding. A4a (the march's speed: each level's occupied rows skipped, a
+vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
+concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
+exit check done, its phone report outstanding; next: A3c (overlays, LOD column heights, raster
+ids), A4b (the beam prepass, the temporal start). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2694,15 +2698,37 @@ Deliverables
   pool's size-class allocator and the clipmap levels (CPU side); the CPU reference marcher (integer
   + fraction ray state, cone LOD, masks, column and brick-distance skips, step cap) with a
   brute-force oracle; steps-per-ray statistics (`examples/march_steps.rs`).
-- [ ] **A3b** — Marched terrain at every distance on the GPU: the state table, pool and clipmap
-  uploaded (growth by `copy_buffer_to_buffer`); brick jobs in the workers for chunks and LOD
-  sections; the primary march at full resolution (a WGSL port of the reference marcher) with the
-  hierarchy's masks and cone LOD; overlays through the `frag_depth` pass; steps-per-ray telemetry.
-  `march` mode draws all terrain with no meshes.
-- [ ] **A4** — Empty-space skipping (design doc §4.3): column min-max heights, per-brick empty
-  distances, the beam prepass, the temporal start distance, fog and step-cap exits.
-- [ ] **A5** — Resolution and shapes: render scales 0.5 and 0.75 with FSR 1 and TAA-U; shaped cells
-  as analytic planes.
+- [x] **A3b** — Marched terrain at every distance on the GPU (`crates/dwell-client/src/render/march/`):
+  the state table, pool and clipmap uploaded incrementally (`Scene::take_dirty`, one `writeBuffer`
+  per changed range); bricks made in the workers for chunks and LOD sections (the masked meshing
+  jobs' `BRICKS` payload); the primary march at full resolution, a WGSL port of the reference
+  marcher with its constants generated from the Rust layout, with the hierarchy's masks, column
+  grids, brick distances and cone LOD; behind the seam (`MarchRenderer`, `BUILT`), copied into the
+  shared frame; steps-per-ray telemetry (`march.steps.*`, an atomic histogram) and `gpu.march`; the
+  GPU-against-reference per-pixel test (native and the WebGPU probe); `?marchtest=1`. `march` mode
+  draws all terrain with no meshes. Deviation: a buffer that fills is re-created at double size and
+  re-filled from the CPU copy (which holds every word), not grown by `copy_buffer_to_buffer`.
+- [ ] **A3c** — The rest of A3: overlays over marched terrain through the `frag_depth` pass
+  (players, the outline, water); LOD column heights and side tints in the bricks; a raster id target
+  so compare mode and the bench compare cell ids and faces; edit-to-visible latency (from A2).
+- [x] **A4a** — Empty-space skipping and the per-step cost on the GPU (design doc "A4 as built"):
+  column min-max heights, per-brick empty distances, the fog distance and the step cap (on the GPU
+  since A3b); each level's occupied rows (a ray above or below everything its level holds leaves
+  the level's box in one skip, clipped to its cone-LOD band); the march's inner loop vectorised and
+  branch-light, the column search walking from a guess, shading in a pass of its own; the cone-LOD
+  switch waits while the coarser cell is occupied (the owner's concentric rings, a test that failed
+  first); `perf.rs`, a native profiling harness. Reference and WGSL together, the per-pixel check
+  exact.
+- [ ] **A4b** — The rest of A4's list: the beam prepass (a conservative start distance per 8×8
+  tile, with a test that it never passes the true hit) and the temporal start distance (invalidated
+  on edits and disocclusion). Moved out of A4a: after the level-rows skip the sky takes 15–20
+  steps and the ground 5–10, and the profile puts the cost in the per-step latency, not the count
+  (design doc "A4 as built").
+- [x] **A5a** — Render scales 0.5 and 0.75 for the marcher with FSR 1 (EASU + RCAS in WGSL) or a
+  depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
+  `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
+  and `march-half-bilateral` configurations.
+- [ ] **A5** — The rest of A5: TAA-U (reprojection), and shaped cells as analytic planes.
 - [ ] **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
   raster's depth (the hybrid), bilateral upsample, temporal accumulation; a quality setting.
 - [ ] **A7** — The decision: the owner decides from the full comparison ("measure all"; design doc
@@ -2720,11 +2746,18 @@ Exit criteria
   pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
   without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
   origin (bit-identical), face B as face A mirrored, a state added by data alone.
-- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader); the named views, near
-  and distant, agree with the mesher (over 99.5 % cell-id match where both hit); a first comparison
-  report on a desktop.
-- [ ] A4: steps-per-ray p99 down on `look-horizon` and `fly-high`; a comparison report on a desktop
-  and a phone.
+- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader). Passes locally on
+  SwiftShader (the same probe CI runs: every record bit-identical) and on an M1's Metal (ids exact,
+  `t` within 2 ULP, depth 2.6e-7); CI's run outstanding.
+- [x] A3b: a first comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn
+  look-horizon look-down fly-high`: design doc "A3b as built").
+- [ ] A3c: the named views, near and distant, agree with the mesher (over 99.5 % cell-id match where
+  both hit) — needs raster ids and LOD column heights in the bricks.
+- [x] A4 (desktop): steps-per-ray p99 down on `look-horizon` and `fly-high` (GPU histogram, seed 7, 1280×720:
+  the horizon view's p99 96 → 39, 540 m up 89 → 29; `march_steps`' horizon p95 68 → 22) and a
+  comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn look-horizon
+  look-down fly-high`: design doc "A4 as built").
+- [ ] A4 (phone): the comparison report on a phone (needs the bench to drive a device).
 - [ ] A5: the full comparison report on every device in the design doc (Mac, Windows integrated and
   discrete, an iPhone from the last three years, a recent Android flagship; SwiftShader for
   correctness only).

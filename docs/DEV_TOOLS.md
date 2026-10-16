@@ -94,8 +94,9 @@ npm run bench -- --compare idle-spawn look-horizon [--configs raster-half] [--co
 Runs each scenario once per **configuration** (`client/bench/configs.json`, checked by
 `scripts/configs.ts`: unknown fields, ranges, upscaler names and duplicate names fail with the entry
 named), each in a fresh page on the same seed and inputs. A configuration is a renderer, a scale
-and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last only for `fsr1` and
-`taa-u`; `bilinear` is the browser stretching a scaled canvas, today's `?scale=`):
+and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last only for the
+marcher's `fsr1`, `bilateral` and `taa-u`, which keep the canvas at full size and render the march
+at the scale; `bilinear` is the browser stretching a scaled canvas, today's `?scale=`):
 
 | Config | Renderer | Scale | Upscaler |
 | --- | --- | --- | --- |
@@ -103,15 +104,16 @@ and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last on
 | `raster-half` | raster | 0.5 | bilinear |
 | `march` | march | 1 | none |
 | `march-half-fsr` | march | 0.5 | fsr1 |
+| `march-075-fsr` | march | 0.75 | fsr1 |
+| `march-half-bilateral` | march | 0.5 | bilateral |
 | `march-half-taa` | march | 0.5 | taa-u |
 | `march-075-taa` | march | 0.75 | taa-u |
 
 **Support:** the first run (the baseline's) asks the page what it offers — `__dwell.renderers()` and
 `__dwell.upscalers()`, each a list of names; a build without them offers `raster` and the browser's
 stretch only. Configurations the build can't run are **skipped with the reason** in the printed
-report and `compare.json` (today: every `march` entry — `renderers()` lists `march` only once
-`render/march.rs`'s `BUILT` is true, not while the placeholder fills its side magenta), not
-failed. A new configuration is one entry in the file; `baseline` names the one the others are
+report and `compare.json` (today: the `taa-u` entries, which A5 builds;
+`renderers()` lists `march` because `render/march`'s `BUILT` is true), not failed. A new configuration is one entry in the file; `baseline` names the one the others are
 compared with and `deltaE` the colour threshold (CIE76, default 2.3, about just noticeable).
 
 Output, in `OUT/`:
@@ -155,7 +157,9 @@ first frame drawn with its mesh), which the renderers record the same way.
 
 Not image agreement by cell id, face or depth in the bench yet: the bench compares screenshots'
 colour only. In-game compare mode's difference view (below) compares coverage, view depth and
-colour on the GPU; cell id and face wait for the marcher to write ids (A3).
+colour on the GPU. The marcher writes a cell id + face target (`MarchRenderer::id_view`, ids from
+`render/march/wgsl.rs` `cell_id`); the raster side has none yet, so the difference view still
+compares coverage, not ids.
 
 ## Renderer switch and compare mode (local builds)
 
@@ -166,8 +170,8 @@ The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, �
 
 - `?renderer=raster|march|compare` picks the terrain renderer; compare mode puts raster on the left
   and, by default, the marcher on the right — `?compare=raster` puts raster on **both** sides (the
-  check that compare mode itself adds no difference). The marcher is a placeholder until A3: its
-  side is magenta and its labels say "not built".
+  check that compare mode itself adds no difference). The marcher is the GPU ray marcher
+  (`render/march/`, A3b): it marches the whole screen and its copy pass fills its side.
 - The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
   the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
   render stats.
@@ -220,6 +224,9 @@ What is recorded now:
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result was polled (the worker's run, the transfers and the wait for the next frame) |
+| `gpu.march` (samples) | The ray marcher's GPU time (A3b): from the start of its compute pass to the end of the pass that copies its output into the shared frame's targets (`render/march/renderer.rs`); on the `?marchtest=1` page, the compute pass alone |
+| `march.steps.p50`, `.p95`, `.p99`, `.max`, `.mean`, `.capped` (samples) | Steps per ray as the GPU counted them: every 30th frame (`MarchSettings::histogram_every`) the march adds each ray's step count to an atomic histogram (1,025 bins, steps 0–1,024, then capped, hits, misses: `render/march/stats.rs`), copied to a readback buffer and summarised when it maps (nearest-rank percentiles; `capped` is the share of rays that reached the step cap). One sample per histogram read |
+| `upload.march.bytes`, `march.pool_full` (counters) | Bytes the marcher wrote to its GPU buffers (only the dirty slots, nodes, column grids and pool ranges); builds refused because the pool would pass its binding's limit |
 | `gpu.far`, `gpu.near`, `gpu.far.water`, `gpu.near.water`, `gpu.composite`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes — on Medium and High water, their opaque halves, with their water halves as `gpu.*.water`, WATER_RENDERING.md §8 W3 — the composite with the lines over it) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
 
 Timer resolution: without cross-origin isolation the browser's clock is coarsened to 0.1 ms, so
@@ -229,6 +236,32 @@ does not lift the rounding).
 
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
+
+## The marcher's pages (local builds)
+
+- **`?marchtest=1`** (`client/src/debug/marchTest.ts`, `crates/dwell-client/src/web/march_test.rs`):
+  a generated world drawn by the ray marcher alone, without the game. The job workers generate the
+  chunks around the spawn (`chunks`, default radius 6, ±3 rows) and the LOD sections of levels 1 to
+  `levels` (default 12, radius `sections`, default 6), then build their bricks; `seed`, `workers`,
+  `x,y,z,yaw,pitch` and `hud=0` are optional. `window.__march`: `setCamera(x, y, z, yaw, pitch)`,
+  `configure(stepCap, lodPixels, columns, distances)`, `spawn()`, `pending()` (jobs left),
+  `stats()` (chunks, sections, nodes, pool and GPU MiB, the last steps histogram, `gpu.*`),
+  `telemetryReset()`.
+- **The GPU-vs-reference check** (`render/march/check.rs`): 12 crafted views rendered at 64² and
+  every ray marched again on the CPU with the GPU's own direction. Natively
+  `cargo test -p dwell-client the_gpu_marcher_matches` (on macOS on the Metal GPU; skipped where no
+  GPU adapter is found), and in the browser `npm run build:probe && npm run e2e:webgpu`
+  (`client/e2e-webgpu/march.spec.ts`, headless SwiftShader, port 4190; CI runs it).
+- **The marcher's native profile** (`render/march/perf.rs`, an ignored test): seed 7's spawn
+  generated (chunks and LOD sections as the game streams them), marched at 1280×720 from the
+  bench's views, timed with timestamp queries (march and shade passes), with the GPU's steps
+  histogram: `cargo test --release -p dwell-client march_perf -- --ignored --nocapture`.
+  `DWELL_PERF_VARIANTS='a=@file.wgsl;b=0'` times shader variants (a march module from a file,
+  `DWELL_PERF_DUMP=path` writes the current one to start from; a name starting `noshade` skips the
+  shade pass), `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
+  `DWELL_PERF_IMAGES=dir` writes a steps-per-ray heatmap (PGM) per view and prints steps per
+  8×4 SIMD group, `DWELL_PERF_SIZE=WxH`, `DWELL_PERF_SEED`. Naga's Metal output, not Chrome's
+  Tint: the bench is the measurement, this the quick loop.
 
 ## Interactive use
 

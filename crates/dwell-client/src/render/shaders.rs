@@ -97,6 +97,11 @@ struct Draw {
     // x, y: cos and sin of a turn about +y (players' yaw); identity (1, 0) otherwise.
     rotation: vec4f,
 };
+";
+
+/// The per-draw array (group 1): the raster passes'. The marcher's module leaves it out and binds
+/// its own data there.
+const DRAWS: &str = r"
 @group(1) @binding(0) var<storage, read> draws: array<Draw>;
 ";
 
@@ -1347,17 +1352,28 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{FRAME}\n{}\n{}\n{}\n{COMMON}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        "{}{DRAWS}\n{}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        lighting_source(),
+        scene_bindings(samples),
+        water_slope()
+    )
+}
+
+/// The shared lighting (RAY_MARCHED_RENDERER.md §2: one `lambert`, `aces`, `fog_amount`, `sky` for
+/// both renderers): the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
+/// `atlas_sampler`), the sky, the clouds and the shading functions, without any pass's bindings or
+/// entry points. The marcher's shade module is this plus its own code.
+pub fn lighting_source() -> String {
+    format!(
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,
         super::water::wgsl(),
-        scene_bindings(samples),
         dwell_look::sky_wgsl(),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
-        water_slope()
     )
 }
 

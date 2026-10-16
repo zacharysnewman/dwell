@@ -69,12 +69,12 @@ impl W {
         self.f32s(&m.plants);
         self.u32s(&m.indices);
     }
-    /// The placeholder's bricks (march.rs); the marcher replaces these two with its own layout.
+    /// The marcher's bricks: a node build as words (`dwell_march::NodeBuild::to_words`).
     fn chunk_bricks(&mut self, b: &ChunkBricks) {
-        self.u32(b.solid);
+        self.u32s(&b.0.to_words());
     }
     fn section_bricks(&mut self, b: &SectionBricks) {
-        self.u32(b.solid);
+        self.u32s(&b.0.to_words());
     }
     fn flat(&mut self, m: &FlatMesh) {
         self.f32s(&m.positions);
@@ -175,10 +175,14 @@ impl R<'_> {
         })
     }
     fn chunk_bricks(&mut self) -> Res<ChunkBricks> {
-        Ok(ChunkBricks { solid: self.u32()? })
+        Ok(ChunkBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
     }
     fn section_bricks(&mut self) -> Res<SectionBricks> {
-        Ok(SectionBricks { solid: self.u32()? })
+        Ok(SectionBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
     }
     fn flat(&mut self) -> Res<FlatMesh> {
         Ok(FlatMesh {

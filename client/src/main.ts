@@ -48,6 +48,7 @@ import {
   CompareOverlay,
   RENDERER_CHOICES,
   choiceOf,
+  displayScale,
   rendererParams,
   type CompareState,
 } from './ui/renderer';
@@ -257,12 +258,6 @@ interface App {
   compare: CompareOverlay | null;
 }
 
-/** The ?scale= drawing-buffer scale (comparing performance on a device). */
-function displayScale(search: string): number {
-  const scale = Number(new URLSearchParams(search).get('scale') ?? 1);
-  return Number.isFinite(scale) ? Math.min(2, Math.max(0.25, scale)) : 1;
-}
-
 /** Workers per pool: generation and meshing each get this many (fewer on phones). */
 function defaultWorkerCount(mobile: boolean): number {
   const cores = navigator.hardwareConcurrency || 4;
@@ -414,7 +409,8 @@ async function start(): Promise<App | null> {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   const canvas = element('view', HTMLCanvasElement);
   const params = new URLSearchParams(location.search);
-  const scale = displayScale(location.search);
+  // The ?scale= drawing-buffer scale; 1 when the marcher's upscaler takes the scale.
+  const scale = displayScale(location.search, __RENDERER_SWITCH__);
   const mobile = prefersTouch();
   let client: Client;
   try {
@@ -1025,7 +1021,15 @@ async function routeMadeWorld(): Promise<boolean> {
   return true;
 }
 
-if (launchOf(location.search).kind === 'menu') {
+if (__LOCAL_BUILD__ && new URLSearchParams(location.search).get('marchtest') === '1') {
+  // The ray marcher's dev page (local builds only): a generated world, the marcher alone.
+  void loadWasm()
+    .then(() => import('./debug/marchTest'))
+    .then((m) => m.startMarchTest(element('view', HTMLCanvasElement), location.search))
+    .catch((e: unknown) => {
+      showFatal(`March test: ${e instanceof Error ? e.message : String(e)}`);
+    });
+} else if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();
