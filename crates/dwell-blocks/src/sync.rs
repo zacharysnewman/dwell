@@ -547,9 +547,7 @@ fn read_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
             }
             tag::FLUID => {
                 let i = usize::from(r.u16());
-                row.fluid = fluids
-                    .get(i)
-                    .and_then(|name| crate::fluid(name));
+                row.fluid = fluids.get(i).and_then(|name| crate::fluid(name));
             }
             _ => {}
         }
@@ -847,7 +845,11 @@ mod tests {
             .iter_mut()
             .find(|b| b.name == "dwell:sand")
             .expect("sand");
-        set_field(&mut sand.states[0], tag::DENSITY, 999f32.to_le_bytes().to_vec());
+        set_field(
+            &mut sand.states[0],
+            tag::DENSITY,
+            999f32.to_le_bytes().to_vec(),
+        );
         let stone = p
             .blocks
             .iter()
@@ -931,11 +933,20 @@ mod tests {
             Some(server_id(&p, "dwell:sand")),
             "the palette's sand places the server's sand"
         );
-        assert_eq!(m.server(require("dwell:ladder")), None, "client-only: never sent");
-        let glow = info(m.client(server_id(&p, "test:glow[lit=true]")).expect("glow"));
+        assert_eq!(
+            m.server(require("dwell:ladder")),
+            None,
+            "client-only: never sent"
+        );
+        let glow = info(
+            m.client(server_id(&p, "test:glow[lit=true]"))
+                .expect("glow"),
+        );
         assert_eq!(glow.look, "test:glow_look");
         assert!(glow.solid && glow.shape == VoxelShape::Full);
-        let glow_off = m.client(server_id(&p, "test:glow[lit=false]")).expect("glow");
+        let glow_off = m
+            .client(server_id(&p, "test:glow[lit=false]"))
+            .expect("glow");
         assert_eq!(crate::state_property(glow_off, "lit"), Some("false"));
         assert_eq!(
             crate::with_property(glow_off, "lit", "true"),

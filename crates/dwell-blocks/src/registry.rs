@@ -87,7 +87,10 @@ pub fn with_property(state: StateId, name: &str, value: &str) -> Option<StateId>
     let block = block_of(state);
     let mut idx = indices(block, state);
     let k = (0..block.properties.len()).find(|&k| block.properties[k].name == name)?;
-    idx[k] = block.properties[k].values.iter().position(|v| *v == value)?;
+    idx[k] = block.properties[k]
+        .values
+        .iter()
+        .position(|v| *v == value)?;
     Some(state_of(block, &idx))
 }
 

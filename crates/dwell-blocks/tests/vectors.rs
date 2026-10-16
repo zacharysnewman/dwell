@@ -61,7 +61,10 @@ fn the_registry_payload_vector_decodes_and_maps() {
     let p = Payload::decode(&bytes).expect("decodes");
     assert_eq!(p.encode(), bytes);
     let names: Vec<String> = p.states().map(|(_, n, _)| n).collect();
-    assert_eq!(names, ["dwell:air", "test:lamp[lit=false]", "test:lamp[lit=true]"]);
+    assert_eq!(
+        names,
+        ["dwell:air", "test:lamp[lit=false]", "test:lamp[lit=true]"]
+    );
     let m = map(&p, definitions_hash(&bytes)).expect("maps");
     assert_eq!(m.client(0), Some(blocks::AIR));
     let lamp = blocks::info(m.client(2).expect("lamp"));

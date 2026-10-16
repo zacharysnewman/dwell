@@ -13,10 +13,7 @@
 
 use std::sync::Arc;
 
-use dwell_blocks::{
-    Facing, StateId, block_of, info, parse_state, state_property,
-    with_property,
-};
+use dwell_blocks::{Facing, StateId, block_of, info, parse_state, state_property, with_property};
 
 use crate::{AirChunkTest, CHUNK_SIZE, ChunkCoord, ChunkGenerator, floor_div, local_index};
 

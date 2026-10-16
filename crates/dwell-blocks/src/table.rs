@@ -84,12 +84,7 @@ impl<T: Sync + Send> Store<T> {
         }
     }
     fn get(&self, i: usize) -> Option<&'static T> {
-        self.segs
-            .get(i / SEG)?
-            .get()?
-            .get(i % SEG)?
-            .get()
-            .copied()
+        self.segs.get(i / SEG)?.get()?.get(i % SEG)?.get().copied()
     }
     fn put(&self, i: usize, v: &'static T) {
         let seg = self.segs[i / SEG].get_or_init(|| (0..SEG).map(|_| OnceLock::new()).collect());
@@ -202,16 +197,24 @@ pub fn register(origin: Origin, block: NewBlock) -> Result<StateId, String> {
     for (k, s) in block.states.iter().enumerate() {
         let want = canonical(&block.name, &block.properties, k);
         if s.name != want {
-            return Err(format!("{}: state {k} is named `{}`, not `{want}`", block.name, s.name));
+            return Err(format!(
+                "{}: state {k} is named `{}`, not `{want}`",
+                block.name, s.name
+            ));
         }
     }
     let _guard = WRITER.lock().unwrap_or_else(|e| e.into_inner());
     // An identical registration already in the table.
     for b in blocks().filter(|b| b.origin == origin && b.name == block.name) {
         let same_props = b.properties.len() == block.properties.len()
-            && b.properties.iter().zip(&block.properties).all(|(p, (n, v))| {
-                p.name == n && p.values.len() == v.len() && p.values.iter().zip(v).all(|(a, b)| a == b)
-            });
+            && b.properties
+                .iter()
+                .zip(&block.properties)
+                .all(|(p, (n, v))| {
+                    p.name == n
+                        && p.values.len() == v.len()
+                        && p.values.iter().zip(v).all(|(a, b)| a == b)
+                });
         if same_props
             && b.states().zip(&block.states).all(|(id, s)| {
                 let have = info(id as StateId);
@@ -231,7 +234,12 @@ pub fn register(origin: Origin, block: NewBlock) -> Result<StateId, String> {
         .iter()
         .map(|(n, v)| Property {
             name: leak(n),
-            values: Box::leak(v.iter().map(|s| leak(s)).collect::<Vec<_>>().into_boxed_slice()),
+            values: Box::leak(
+                v.iter()
+                    .map(|s| leak(s))
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            ),
         })
         .collect();
     for (k, s) in block.states.iter().enumerate() {

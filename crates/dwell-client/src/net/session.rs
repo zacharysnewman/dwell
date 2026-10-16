@@ -452,13 +452,22 @@ mod tests {
     /// This build's registry with sand's density changed and a new block.
     fn modded_registry() -> Vec<u8> {
         let mut p = Payload::served();
-        let sand = p.blocks.iter_mut().find(|b| b.name == "dwell:sand").unwrap();
+        let sand = p
+            .blocks
+            .iter_mut()
+            .find(|b| b.name == "dwell:sand")
+            .unwrap();
         for f in &mut sand.states[0] {
             if f.0 == dwell_blocks::sync::tag::DENSITY {
                 f.1 = 5.0f32.to_le_bytes().to_vec();
             }
         }
-        let mut glow = p.blocks.iter().find(|b| b.name == "dwell:stone").unwrap().clone();
+        let mut glow = p
+            .blocks
+            .iter()
+            .find(|b| b.name == "dwell:stone")
+            .unwrap()
+            .clone();
         glow.name = "test:session_glow".into();
         glow.first_state = p.id_end() as u16;
         p.blocks.push(glow);
@@ -559,7 +568,10 @@ mod tests {
         assert_eq!(hash, definitions_hash(&payload));
         assert_eq!(differences.different[0].name, "dwell:sand");
         assert_eq!(differences.added[0].name, "test:session_glow");
-        assert!(s.next_game().is_none(), "nothing reaches the game while asking");
+        assert!(
+            s.next_game().is_none(),
+            "nothing reaches the game while asking"
+        );
         s.accept_registry();
         assert!(matches!(s.state(), SessionState::Joined { .. }));
         let m = s.mapping().expect("mapping");
