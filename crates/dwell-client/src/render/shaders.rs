@@ -616,8 +616,19 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // terrain fades into is the clear sky behind it, so distant ground never takes a cloud's colour.
 // The sky behind is the clear sky with the sun, moon and stars (`dwell_sky_bodies`) under the
 // clouds; the time of day sets the scene's saturation (lower by moonlight); dithered last.
-// The composite of one pixel: the scene tone-mapped, encoded, fogged and over the sky.
-fn composited(p: vec2i, ndc: vec2f) -> vec3f {
+// The composite of one pixel (`color`: the scene tone-mapped, encoded, fogged and over the sky)
+// with the pixel's view ray (view depth 1), clear sky and sky with its clouds, which the edge
+// blur's taps share.
+struct Composited {
+    color: vec3f,
+    ray: vec3f,
+    clear: vec3f,
+    back: vec3f,
+};
+
+// `taps`: the edge blur will composite other pixels over this one's sky, so its clouds are found
+// even where the pixel itself is covered.
+fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
     let face = frame.eye.y;
@@ -627,16 +638,17 @@ fn composited(p: vec2i, ndc: vec2f) -> vec3f {
     let clear = sky(dir);
     let c = textureLoad(scene_color, p, 0);
     var back = clear;
-    if (c.a < 1.0) {
+    if (c.a < 1.0 || taps) {
         let behind = dwell_sky_bodies(dir, face, frame.day, clear);
         back = dwell_clouds(behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
     }
-    return composited_of(c, scene_depth_at(p).x, ray, clear, back);
+    return Composited(composited_of(c, scene_depth_at(p).x, ray, clear, back), ray, clear, back);
 }
 
-// The scene at pixel `p` fogged along `ray` (view depth 1) and over the sky colour `back`.
-fn composited_over(p: vec2i, ray: vec3f, back: vec3f) -> vec3f {
-    return composited_of(textureLoad(scene_color, p, 0), scene_depth_at(p).x, ray, back, back);
+// The scene at pixel `p` composited along another pixel's ray and over its sky (`s`: the edge
+// blur's taps, which share the pixel's sky).
+fn composited_over(p: vec2i, s: Composited) -> vec3f {
+    return composited_of(textureLoad(scene_color, p, 0), scene_depth_at(p).x, s.ray, s.clear, s.back);
 }
 
 // A scene colour `c` (premultiplied by coverage) at view depth `depth` along `ray` (view depth 1),
@@ -657,9 +669,11 @@ fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     if (frame.water.x > 0.5) {
         return vec4f(composite_underwater(p, view_ray(i.ndc), textureLoad(scene_color, p, 0)), 1.0);
     }
-    var color = composited(p, i.ndc);
-    if (frame.wind_point.z > 1e-3) {
-        color = motion_composite(color, p, i.ndc);
+    let wind = frame.wind_point.z > 1e-3;
+    let s = composited(p, i.ndc, wind);
+    var color = s.color;
+    if (wind) {
+        color = motion_composite(s, p, i.ndc);
     }
     return vec4f(color + dither(p), 1.0);
 }
@@ -822,24 +836,24 @@ fn motion_wind(ndc: vec2f) -> vec4f {
 }
 
 // The composited picture at pixel `px` blurred toward the vanishing point (the scene streaming
-// past), then the streaks and vignette over it. `color` is the pixel's own composite.
-// The taps share this pixel's view ray and sky (the sky is the composite's costly part; it barely
-// changes over a few pixels) and are jittered per pixel, so the blur is smooth rather than copies.
-fn motion_composite(color: vec3f, px: vec2i, ndc: vec2f) -> vec3f {
-    var out = color;
+// past), then the streaks and vignette over it. `s` is the pixel's own composite.
+// The taps share this pixel's view ray and sky with its clouds (the sky is the composite's costly
+// part; it barely changes over a few pixels) and are jittered per pixel, so the blur is smooth
+// rather than copies. Over a clear sky of their own instead, the clouds past the blur's inner
+// radius dropped to a fifth at a hard circular edge (the owner's report, 2026-10-16).
+fn motion_composite(s: Composited, px: vec2i, ndc: vec2f) -> vec3f {
+    var out = s.color;
     let blur = frame.wind_extra.x * frame.wind_point.z * frame.wind_point.z * motion_edge(ndc);
     if (blur > 1e-4) {
         let dims = vec2f(textureDimensions(scene_color));
         let here = vec2f(px) + 0.5;
         let vp = vec2f(frame.wind_point.x * 0.5 + 0.5, 0.5 - frame.wind_point.y * 0.5) * dims;
         let step = (vp - here) * blur / 4.0;
-        let ray = view_ray(ndc);
-        let back = sky(normalize(ray));
         let jitter = motion_hash(u32(px.x) * 1973u + u32(px.y) * 9277u);
-        var sum = color;
+        var sum = s.color;
         for (var k = 0; k < 4; k++) {
             let q = clamp(here + step * (f32(k) + jitter), vec2f(0.5), dims - 0.5);
-            sum += composited_over(vec2i(q), ray, back);
+            sum += composited_over(vec2i(q), s);
         }
         out = sum / 5.0;
     }
@@ -1442,7 +1456,11 @@ mod tests {
         let src = super::source(4);
         let at = src.find("fn composite_fs(").expect("composite");
         let c = &src[at..at + src[at..].find("\n}\n").expect("end")];
-        assert!(c.contains("if (frame.wind_point.z > 1e-3)") && c.contains("motion_composite("));
+        assert!(
+            c.contains("let wind = frame.wind_point.z > 1e-3;")
+                && c.contains("if (wind)")
+                && c.contains("motion_composite(")
+        );
         // Procedural: no textures beyond the scene's own colour, which the edge blur samples.
         let m = &src[src.find("fn motion_hash(").expect("motion")..];
         assert!(!m.contains("textureSample("));
@@ -1450,5 +1468,35 @@ mod tests {
             m.contains("composited_over("),
             "the blur samples the composited scene"
         );
+    }
+
+    #[test]
+    fn the_edge_blur_taps_see_the_clouds_the_pixel_sees() {
+        // Owner's report (2026-10-16): the clouds tunnelled into a circle at speed. The blur's
+        // taps composited over the clear sky (`sky(ray)`, no clouds), so past the blur's inner
+        // radius every sky pixel was averaged with four cloudless taps: the clouds dropped to a
+        // fifth at a hard circular edge. The taps must composite over the pixel's own sky with its
+        // clouds (and fog toward its clear sky), as the pixel itself is.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let m = body("motion_composite");
+        assert!(
+            !m.contains("sky("),
+            "the blur must not composite over a cloudless sky of its own"
+        );
+        assert!(m.contains("composited_over(vec2i(q), s)"));
+        assert!(
+            body("composited_over").contains("s.ray, s.clear, s.back)"),
+            "the taps composite over the pixel's sky with its clouds"
+        );
+        // With the wind on, the clouds are found even where the pixel itself is covered, since
+        // its taps may land on sky.
+        let c = body("composited");
+        let clouds = c.find("dwell_clouds(").expect("clouds");
+        assert!(c[..clouds].contains("c.a < 1.0 || taps"));
+        assert!(body("composite_fs").contains("motion_composite(s,"));
     }
 }
