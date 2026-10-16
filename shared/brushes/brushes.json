@@ -1,0 +1,109 @@
+{
+  "formatVersion": 1,
+  "sizes": { "min": 1, "max": 16 },
+  "worldTypes": {
+    "sandbox": { "brushes": true, "reach": 128 }
+  },
+  "presets": [
+    { "name": "ball", "label": "Ball", "brush": "ball", "performer": "set", "size": 3, "key": "KeyU" },
+    { "name": "disc", "label": "Disc", "brush": "disc", "performer": "set", "size": 4, "key": "KeyI" },
+    {
+      "name": "cylinder",
+      "label": "Cylinder",
+      "brush": "cylinder",
+      "performer": "set",
+      "size": 3,
+      "params": { "height": 6 }
+    },
+    { "name": "cube", "label": "Cube", "brush": "cube", "performer": "set", "size": 2 },
+    {
+      "name": "ellipsoid",
+      "label": "Ellipsoid",
+      "brush": "ellipsoid",
+      "performer": "set",
+      "size": 6,
+      "params": { "stretch": [1, 0.5, 1] }
+    },
+    {
+      "name": "splatter",
+      "label": "Splatter",
+      "brush": "splatter",
+      "performer": "set",
+      "size": 4,
+      "key": "KeyJ",
+      "params": { "density": 0.45, "seed": 1 }
+    },
+    {
+      "name": "fill_air",
+      "label": "Ball, air only",
+      "brush": "ball",
+      "performer": "set",
+      "size": 3,
+      "params": { "mask": "air" }
+    },
+    { "name": "line", "label": "Line", "brush": "line", "performer": "set", "size": 1 },
+    { "name": "erase", "label": "Erase", "brush": "ball", "performer": "erase", "size": 3 },
+    { "name": "replace", "label": "Replace", "brush": "ball", "performer": "replace", "size": 4 },
+    {
+      "name": "overlay",
+      "label": "Paint surface",
+      "brush": "ball",
+      "performer": "overlay",
+      "size": 5,
+      "key": "KeyK",
+      "params": { "depth": 1 }
+    },
+    {
+      "name": "smooth",
+      "label": "Smooth",
+      "brush": "ball",
+      "performer": "smooth",
+      "size": 4,
+      "key": "KeyO",
+      "params": { "iterations": 2 }
+    },
+    {
+      "name": "erode",
+      "label": "Erode",
+      "brush": "ball",
+      "performer": "erode",
+      "size": 4,
+      "key": "KeyL",
+      "params": { "erodeFaces": 2, "erodeIterations": 1, "fillFaces": 5, "fillIterations": 1 }
+    },
+    {
+      "name": "melt",
+      "label": "Melt",
+      "brush": "ball",
+      "performer": "erode",
+      "size": 4,
+      "params": { "erodeFaces": 2, "erodeIterations": 2, "fillFaces": 5, "fillIterations": 1 }
+    },
+    {
+      "name": "inflate",
+      "label": "Fill / inflate",
+      "brush": "ball",
+      "performer": "erode",
+      "size": 4,
+      "key": "KeyY",
+      "params": { "erodeFaces": 6, "erodeIterations": 0, "fillFaces": 2, "fillIterations": 1 }
+    },
+    { "name": "flatten", "label": "Flatten", "brush": "cylinder", "performer": "flatten", "size": 5, "params": { "height": 8 } },
+    {
+      "name": "raise",
+      "label": "Raise",
+      "brush": "disc",
+      "performer": "raise",
+      "size": 5,
+      "params": { "height": 2, "falloff": true }
+    },
+    {
+      "name": "lower",
+      "label": "Lower",
+      "brush": "disc",
+      "performer": "lower",
+      "size": 5,
+      "params": { "height": 2, "falloff": true }
+    }
+  ]
+}

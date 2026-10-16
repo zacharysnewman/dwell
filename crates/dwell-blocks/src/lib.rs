@@ -2,6 +2,7 @@
 //! `shared/blocks/*.json` by `shared/blocks/gen.mjs`; code refers to blocks by name
 //! (`"dwell:sand"`), never by a numeric constant, and resolves names once at startup.
 
+pub mod adaptive;
 mod registry;
 pub mod shape;
 mod types;
@@ -10,6 +11,7 @@ mod types;
 #[allow(clippy::all)]
 mod tables {
     include!("blocks.gen.rs");
+    include!("adaptive.gen.rs");
 }
 
 /// A second registry for tests: the build's namespaces plus `shared/blocks/fixtures/*.json`
@@ -23,7 +25,8 @@ pub mod fixture {
 
 pub use registry::*;
 pub use tables::{
-    BLOCKS, FLUIDS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SHAPE_FACES, SHAPES, STATES,
+    ADAPTIVE_DOWN, ADAPTIVE_UP, BLOCKS, FLUIDS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH,
+    SHAPE_FACES, SHAPES, STATES,
 };
 pub use types::*;
 

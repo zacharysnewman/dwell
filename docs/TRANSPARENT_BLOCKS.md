@@ -1,8 +1,8 @@
 # Dwell — Transparent Blocks: Render Modes, Cross Geometry and Tall Grass
 
-> **Status: [in progress, Phase 33]** — built on `claude/transparent-blocks` with the defaults in
-> §2, recorded here because CLAUDE.md's design questions were not put to the owner first; the open
-> questions are in §8. Decision record: [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md).
+> **Status: [built, Phase 33; the owner's look outstanding]** — built on `claude/transparent-blocks` with the defaults in
+> §2 (CLAUDE.md's design questions were not put to the owner first); the owner's answers, which
+> changed some defaults, are in §8. Decision record: [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md).
 > The built mechanisms are described in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 (render modes,
 > the cross look, placement rules), §6.5 (edits) and §5 (`dwell-mesh`, `render/`).
 
@@ -12,7 +12,7 @@ Owner, 2026-10-15: "semitransparent block handling with blades of grass billboar
 block". Added the same day: ladders draw a black background between their rails and rungs; make them
 see-through with the new mode.
 
-## 2. Defaults used (not yet confirmed by the owner)
+## 2. Defaults used at first (see §8 for the owner's answers)
 
 The coordinator's defaults, in place of answers to "what gets added later, by whom, with what tool,
 what stays code, per build or per world":
@@ -25,8 +25,7 @@ what stays code, per build or per world":
   (Phase 19).
 - **Per build**: the registry is per build; nothing is per world or per player. The wind's
   strength is per block; a global wind scale is a renderer setting (§5).
-- **World generation doesn't place grass** (a seed's terrain is unchanged, and the baseline, B10,
-  cut features): grass is placed and broken by hand only.
+- ~~World generation doesn't place grass~~ — reversed by the owner (§8.2): it grows in meadows (§10).
 
 ## 3. Render modes
 
@@ -75,8 +74,9 @@ level covers the same share of the tile as the full-size tile (coverage-preservi
   (0 at the base, `strength` × the plant's height scale at the top) and the speed into the cutout
   vertex's `plants` stream; the vertex shader leans the top along a slow gust field (travelling
   waves whose wavelengths divide 1,024 m, sampled at the world position modulo that, so it's
-  seamless and stays put as the eye moves) plus a faster flutter. `Renderer::set_wind` scales it
-  (0 turns it off; the hook for an effects-quality setting, §8).
+  seamless and stays put as the eye moves) plus a faster flutter. `Renderer::set_plant_wind` scales it (`__dwell.plants(wind, shown)` in the dev tools)
+  (0 turns it off): the settings menu's **Plant sway** toggle (Motion group; `plantSway` in the
+  append-only motion record), off by default when the browser prefers reduced motion.
 - **Fade**: `"fade": { "start": 40, "end": 72 }` — plants fade out (fewer samples covered; dithered
   without MSAA) between those distances, which must end within the smallest full-detail distance
   (96 m, `gen.mjs` checks it), so plants are gone before chunks meet the LOD and nothing pops. The
@@ -96,6 +96,13 @@ Generic block data, checked by the server's edit validation (`dwell_world::edit:
   `VoxelModification` batch (`dwell_world::edit::unsupported_after`).
 - `"selectionBox": [x0, y0, z0, x1, y1, z1]` — a smaller box in the cell for targeting, the
   server's line-of-sight check and the outline.
+- `"medium": "air" | "water"` — what the block may stand in. **Air** (tall grass): placing it into
+  a liquid is refused (`EditCheck::WrongMedium`), a region edit skips those cells, and an air
+  plant that would end up flooded gives way to water in the same batch (water doesn't flow yet,
+  so today only edits can bring it). **Water**: placed only into water cells, holding the water
+  (it needs a `flooded` property, `gen.mjs` checks; placement sets it true), and the mesher draws
+  the water in its cell around it. Absent: no rule. No water plant exists yet: the test fixture
+  `test:kelp` shows one working by data alone.
 
 "Breaks instantly": every edit is instant in creative today; nothing was needed.
 
@@ -105,28 +112,89 @@ Prototype content (ARCHITECTURE.md §6.1), appended to the block list (earlier i
 hashes don't change). Shape empty; cross look, cutout; a procedural tile of several tapering blades
 in the grass block's top colours with transparent gaps (`tallGrass`); wind; fade; placeable only on
 grass or dirt; replaceable; needs support below; a smaller selection box. Sounds: the sound-effects
-work (Phase 28, ADR 0032) isn't on this branch's base; when it lands, tall grass takes the grass
-sound set in its data.
+set is the grass block's (`dwell:grass`).
 
 ## 7. Other systems
 
 - **Physics**: shape empty, `solid: false`: no collider; a test walks a player through.
 - **Targeting**: the selection box (above); breaking it is a normal break.
-- **Ray marching** (Phase 25, `dwell-march`): not on this branch's base. When it lands, its state
-  classification must count `cutout` states as not occluding primary rays (Transparent, or Shaped
-  for crosses drawn as geometry), not as solid bricks.
+- **Ray marching** (Phase 25, `dwell-march`): its state classes count every state whose `render`
+  isn't `opaque` (ladders, tall grass, future glass) as `Transparent`, like water: never occupied
+  for primary rays, drawn by a raster pass over either renderer (a test pins ladders and tall grass).
+- **Region edits** (Phase 27 S3): a fill's cells that need support but have none (tall grass filled
+  into the air, or stacked on itself) are not kept; clearing the ground takes the plants with it.
+- **Sounds** (Phase 28): tall grass uses the grass sound set (`"sound": "dwell:grass"`).
 
-## 8. Open questions for the owner
+## 8. The owner's answers (2026-10-16)
 
-1. **Compatibility**: tall grass changes the registry hash, so it needs the 0.12 line. Raise
-   `client/package.json` to 0.12.0 when it should ship? (The ladder change alone keeps the hash.)
-2. **World generation**: should grass grow on generated terrain (which changes a seed's terrain,
-   another compatibility decision), and if so by what rule (density, biome-free noise)?
-3. **What else comes next** as cutout or translucent data: flowers, leaves, glass, ice? Each is a
-   data entry; leaves (cutout cubes) and glass (translucent cubes) work today.
-4. **An editor**: should blocks like these be tuned in a page like `docs/prototypes/` (jitter,
-   wind, tile), or is the data file enough?
-5. **Effects setting**: there is no effects-quality setting yet; wind has a renderer scale. Add an
-   Effects setting (wind on or off, later more) to the settings menu?
-6. **Grass under water**: placing grass into water replaces the water (it has no `flooded`
-   property). Should plants be placeable under water (a `flooded` property), or refused there?
+1. **Compatibility**: tall grass ships in the 0.13.0 bundle (with wood and leaves) (a new compatibility line). The ladder
+   change ships on its own as a 0.11 patch (0.11.18).
+2. **World generation grows tall grass** (§10): a partial reversal of the baseline's B10 ("no
+   special terrain features") **for plants only** — trees, rocks, caves and the rest stay cut.
+3. **Leaves, glass and ice** will use `cutout` and `translucent` — **future work**: not added now
+   (a cutout cube and a translucent cube already work by data, shown by the test fixtures).
+4. **An editor page** for blocks like these (jitter, wind, tiles) is wanted later — **future work**
+   (in the plan, Phase 33's follow-ups).
+5. **Wind sway setting**: yes — a **Plant sway** toggle in the settings menu's Motion group, kept in
+   the motion record (append-only), off by default when the browser prefers reduced motion (§4).
+6. **Plants under water**: only plants made for it — block data **`medium`** (§5): tall grass is an
+   air plant; a water plant is placed only into water and drawn inside it. No underwater plant is
+   added yet; a test fixture (`test:kelp`) proves the rule.
+
+## 9. Browser check and cost (2026-10-15)
+
+Chrome on the GPU (Apple M-series, 1280 × 720, 4× MSAA), a local terrain world (seed 7), tall grass
+placed through the edits like a player (a field of about 150 plants), ladders on stone posts and in
+the sea. Blade edges are smooth curves up close (the hand-filtered alpha over the distance-field
+tile), thin and pointed; no dark sides from any direction; plants vary in offset, turn and height;
+they sway; from a distance the field reads as grass and fades out before 88 m; ladders show the
+sky, the wall and the water through their gaps, and a flooded ladder sits in unbroken water.
+Remaining nits for the owner's look: a few single samples of distant blade tips near the horizon,
+small notches where two leaning blades' tips meet, and the crossed quads' straight lines at the
+foot of a dense clump.
+
+**Cost** (`__dwell.plants(1, true|false)`, alternated three times at one camera pose, 5 s each,
+unthrottled; the machine was shared, so single runs varied by ±1 ms): `gpu.near` +0.33, +0.40 and
+−0.18 ms with the plants drawn (about +0.3 ms), frame CPU unchanged within noise, +4 draw calls,
++656 triangles. Memory: 656 bytes per plant (8 vertices of 76 bytes, 12 indices), in the cutout mesh
+of its chunk only.
+
+## 10. Tall grass in world generation (owner, 2026-10-16)
+
+A **decoration rule** is data — `shared/worldgen/decorations.json`, validated against the block data
+by `shared/worldgen/gen.mjs` into `crates/dwell-worldgen/src/decorations.gen.rs` (CI regenerates and
+fails on a diff, and runs its node tests):
+
+```json
+{ "name": "meadow_grass", "block": "dwell:tall_grass", "on": ["dwell:grass"], "density": 0.55,
+  "patches": { "wavelength": 40, "coverage": 0.45 }, "maxSlope": 1, "height": [3, 400] }
+```
+
+- The block put one cell above the ground (an air plant, shape empty); the ground blocks it stands
+  on (each must be in the block's `placeOn`); a density inside noise **patches** (meadows, not a
+  lawn); the steepest slope (the most the ground's top differs from its four neighbours'); the
+  ground's height range (face-local, above sea level).
+- **Deterministic and order-independent**: each cell is decided from the world seed and its
+  position alone — the patch noise, a per-cell hash, its ground and its neighbours' tops through
+  `column_at`, the chunk path's own arithmetic — so chunks agree across their borders and generate
+  in any order, bit-identically in WASM (ADR 0010). The sky test leaves one cell above the highest
+  ground for them.
+- **Generator version 13**: seed terrain changes (10 of the 39 chunk goldens, the ones whose
+  ground grows grass); the LOD hashes don't — the LOD never draws cutout plants without a solid,
+  and their distance fade (≤ 88 m) ends before chunks meet it.
+- **Interim home** (a deviation): Phase 17's terrain definitions (ADR 0026) don't exist yet, so the
+  rule lives in its own file beside the generator's goldens; it is one data entry the terrain
+  definitions take over when they come.
+- **B10**: the owner's decision is a partial reversal of the baseline's "no special terrain
+  features" for plants only (ADR 0036).
+
+Screenshots: a grassy hillside near and far (the PR).
+
+## 11. Future work (the owner, 2026-10-16)
+
+- **Leaves, glass and ice** as `cutout` and `translucent` blocks: data entries on the systems built
+  here (a fixture cutout cube and translucent cube already mesh correctly).
+- **An editor page** for these blocks' data (cross options, jitter, wind, the tile), like the
+  prototypes in `docs/prototypes/`.
+- **Water plants**: the `medium: water` rule is built and tested by fixture; the first such block is
+  content for later.

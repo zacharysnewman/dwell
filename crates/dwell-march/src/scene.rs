@@ -2,6 +2,8 @@
 //! the brick pool. Builds ([`crate::build`]) are placed here; [`Scene::gpu`] gives the words to
 //! upload, and the reference marcher ([`crate::march`]) reads the same structures.
 
+use std::collections::{BTreeMap, HashMap};
+
 use dwell_blocks::StateId;
 use dwell_world::{ChunkCoord, lod};
 
@@ -42,6 +44,33 @@ impl GpuBuffers {
     }
 }
 
+/// What changed since the last [`Scene::take_dirty`]: the GPU mirror writes only these (one
+/// `queue.writeBuffer` per range).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Dirty {
+    /// A level's box changed: every level's `slot_base` may have moved, so the levels and all
+    /// slots go up again.
+    pub layout: bool,
+    /// Slots by their index in the concatenated `slots` buffer (valid when `layout` is false).
+    pub slots: Vec<u32>,
+    /// Nodes (and their `node_columns` entry) by index.
+    pub nodes: Vec<u32>,
+    /// Column grids by word offset in `columns` (`COLUMN_WORDS` each).
+    pub columns: Vec<u32>,
+    /// Pool ranges: word offset and length.
+    pub pool: Vec<(u32, u32)>,
+}
+
+impl Dirty {
+    pub fn is_empty(&self) -> bool {
+        !self.layout
+            && self.slots.is_empty()
+            && self.nodes.is_empty()
+            && self.columns.is_empty()
+            && self.pool.is_empty()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Scene {
     pub(crate) table: StateTable,
@@ -54,6 +83,12 @@ pub struct Scene {
     column_ids: IndexPool,
     /// Per node: its bricks (offset, words), to free on replace.
     node_bricks: Vec<Vec<(u32, usize)>>,
+    /// Per placed node: the grid rows its occupied cells span (lo, hi exclusive), and per level
+    /// how many nodes reach each bottom and top: the level's occupied rows ([`Scene::rows`]).
+    extents: HashMap<(u32, [i32; 3]), (i32, i32)>,
+    bottoms: Vec<BTreeMap<i32, u32>>,
+    tops: Vec<BTreeMap<i32, u32>>,
+    dirty: Dirty,
 }
 
 /// Grid cell → the cell at level `l` (floor).
@@ -73,7 +108,96 @@ impl Scene {
             node_ids: IndexPool::default(),
             column_ids: IndexPool::default(),
             node_bricks: Vec::new(),
+            extents: HashMap::new(),
+            bottoms: vec![BTreeMap::new(); LEVEL_COUNT],
+            tops: vec![BTreeMap::new(); LEVEL_COUNT],
+            dirty: Dirty {
+                layout: true,
+                ..Dirty::default()
+            },
         }
+    }
+
+    /// What changed since the last call (a new scene: everything).
+    pub fn take_dirty(&mut self) -> Dirty {
+        std::mem::take(&mut self.dirty)
+    }
+
+    /// Where level `l`'s slots start in the concatenated `slots` buffer (`gpu`'s order).
+    pub fn slot_base(&self, level: u32) -> u32 {
+        self.levels[..level as usize]
+            .iter()
+            .flatten()
+            .map(|lv| lv.slots.len() as u32)
+            .sum()
+    }
+
+    /// The `levels` buffer's words (`slot_base` filled in level order).
+    pub fn level_words(&self) -> Vec<u32> {
+        let mut out = Vec::with_capacity(LEVEL_COUNT * LEVEL_WORDS);
+        let mut base = 0u32;
+        for (l, lv) in self.levels.iter().enumerate() {
+            let mut info = lv.as_ref().map_or(
+                LevelInfo {
+                    cell_log2: l as u32,
+                    ..LevelInfo::default()
+                },
+                |lv| lv.info,
+            );
+            info.slot_base = base;
+            let rows = self.rows(l as u32).unwrap_or((i32::MAX, i32::MIN));
+            out.extend(info.to_words_with_rows(rows));
+            if let Some(lv) = lv {
+                base += lv.slots.len() as u32;
+            }
+        }
+        out
+    }
+
+    /// The concatenated `slots` buffer.
+    pub fn slot_words(&self) -> Vec<u32> {
+        self.levels
+            .iter()
+            .flatten()
+            .flat_map(|lv| lv.slots.iter().copied())
+            .collect()
+    }
+
+    /// Slot word `i` of the concatenated buffer.
+    pub fn slot_word(&self, i: u32) -> u32 {
+        let mut i = i as usize;
+        for lv in self.levels.iter().flatten() {
+            if i < lv.slots.len() {
+                return lv.slots[i];
+            }
+            i -= lv.slots.len();
+        }
+        SLOT_NONE
+    }
+
+    /// The finest and coarsest levels with a box (what the marcher's uniforms carry).
+    pub fn levels_in_use(&self) -> Option<(u32, u32)> {
+        self.level_range()
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+    pub fn node_words(&self, i: u32) -> [u32; NODE_WORDS] {
+        self.nodes[i as usize].to_words()
+    }
+    pub fn node_columns(&self) -> &[u32] {
+        &self.node_columns
+    }
+    pub fn column_words(&self) -> &[u32] {
+        &self.columns
+    }
+    pub fn pool_words(&self) -> &[u32] {
+        self.pool.words()
+    }
+    /// Pool words in live bricks.
+    pub fn pool_live_words(&self) -> usize {
+        self.pool.live_words()
     }
 
     pub fn table(&self) -> &StateTable {
@@ -124,6 +248,7 @@ impl Scene {
             }
         }
         self.levels[l] = Some(Level { info, slots });
+        self.dirty.layout = true;
     }
 
     pub fn slot(&self, level: u32, n: [i32; 3]) -> Slot {
@@ -151,6 +276,24 @@ impl Scene {
     pub fn put(&mut self, level: u32, n: [i32; 3], build: &NodeBuild) {
         self.reserve(level, n, n);
         self.release(level, n);
+        // The rows its occupied cells span (in this level's cells from the node's bottom).
+        let rows = match build {
+            NodeBuild::Air => None,
+            NodeBuild::Solid(_) => Some((0, NODE_CELLS)),
+            NodeBuild::Node(d) => match &d.columns {
+                Some(cols) => {
+                    let (lo, hi) = cols.span(COLUMN_MIPS - 1, 0, 0);
+                    (lo < hi).then_some((i32::from(lo), i32::from(hi)))
+                }
+                None => Some((0, NODE_CELLS)),
+            },
+        };
+        let y0 = n[1] * NODE_CELLS;
+        self.set_extent(
+            level,
+            n,
+            rows.map(|(lo, hi)| ((y0 + lo) << level, (y0 + hi) << level)),
+        );
         let slot = match build {
             NodeBuild::Air => Slot::AllAir,
             NodeBuild::Solid(s) => Slot::AllSolid(*s),
@@ -168,6 +311,7 @@ impl Scene {
                     if let BrickRef::Mixed(local) = node.get(b) {
                         let words = &d.bricks[local as usize];
                         let at = self.pool.insert(words);
+                        self.dirty.pool.push((at, words.len() as u32));
                         owned.push((at, words.len()));
                         node.set(b, BrickRef::Mixed(at));
                     }
@@ -181,22 +325,29 @@ impl Scene {
                     }
                     self.columns[c..c + COLUMN_WORDS].copy_from_slice(&cols.to_words());
                     self.node_columns[iu] = c as u32;
+                    self.dirty.columns.push(c as u32);
                 }
+                self.dirty.nodes.push(i);
                 Slot::Node(i)
             }
         };
+        let base = self.slot_base(level);
         let lv = self.levels[level as usize].as_mut().expect("reserved");
         let i = lv.info.slot_of(n).expect("inside");
         lv.slots[i] = slot.to_word();
+        self.dirty.slots.push(base + i as u32);
     }
 
     /// Back to NONE (no data at this level).
     pub fn remove(&mut self, level: u32, n: [i32; 3]) {
         self.release(level, n);
+        self.set_extent(level, n, None);
+        let base = self.slot_base(level);
         if let Some(lv) = self.levels[level as usize].as_mut()
             && let Some(i) = lv.info.slot_of(n)
         {
             lv.slots[i] = SLOT_NONE;
+            self.dirty.slots.push(base + i as u32);
         }
     }
 
@@ -212,6 +363,38 @@ impl Scene {
         let b = build_section(cells, &self.table);
         self.put(c.level as u32, [c.i, c.j, c.k], &b);
         b
+    }
+
+    fn set_extent(&mut self, level: u32, n: [i32; 3], rows: Option<(i32, i32)>) {
+        let l = level as usize;
+        let dec = |m: &mut BTreeMap<i32, u32>, k: i32| {
+            if let Some(c) = m.get_mut(&k) {
+                *c -= 1;
+                if *c == 0 {
+                    m.remove(&k);
+                }
+            }
+        };
+        if let Some((lo, hi)) = self.extents.remove(&(level, n)) {
+            dec(&mut self.bottoms[l], lo);
+            dec(&mut self.tops[l], hi);
+        }
+        if let Some((lo, hi)) = rows {
+            self.extents.insert((level, n), (lo, hi));
+            *self.bottoms[l].entry(lo).or_default() += 1;
+            *self.tops[l].entry(hi).or_default() += 1;
+        }
+    }
+
+    /// The grid rows level `level`'s occupied cells span (lo, hi exclusive): above `hi` and below
+    /// `lo` its whole box is air (RAY_MARCHED_RENDERER.md §4.3 item 3, the level's own max height).
+    /// `None`: nothing occupied.
+    pub fn rows(&self, level: u32) -> Option<(i32, i32)> {
+        let l = level as usize;
+        Some((
+            *self.bottoms[l].keys().next()?,
+            *self.tops[l].keys().next_back()?,
+        ))
     }
 
     /// The finest level with a box, and the coarsest.
@@ -249,21 +432,11 @@ impl Scene {
 
     /// The upload: every buffer of crate::layout, `slot_base` filled in level order.
     pub fn gpu(&self) -> GpuBuffers {
-        let mut g = GpuBuffers::default();
-        for (l, lv) in self.levels.iter().enumerate() {
-            let mut info = lv.as_ref().map_or(
-                LevelInfo {
-                    cell_log2: l as u32,
-                    ..LevelInfo::default()
-                },
-                |lv| lv.info,
-            );
-            info.slot_base = g.slots.len() as u32;
-            g.levels.extend(info.to_words());
-            if let Some(lv) = lv {
-                g.slots.extend(&lv.slots);
-            }
-        }
+        let mut g = GpuBuffers {
+            levels: self.level_words(),
+            slots: self.slot_words(),
+            ..GpuBuffers::default()
+        };
         g.nodes = self.nodes.iter().flat_map(|n| n.to_words()).collect();
         g.node_columns = self.node_columns.clone();
         g.columns = self.columns.clone();
@@ -322,5 +495,99 @@ mod tests {
         assert_eq!(g.levels.len(), LEVEL_COUNT * LEVEL_WORDS);
         assert_eq!(g.slots.len(), 3);
         assert_eq!(s.bounds(), Some(([320; 3], [416, 352, 352])));
+        // Occupied rows: the solid node at y = 10 fills its node's rows.
+        assert_eq!(s.rows(0), Some((320, 352)));
+        s.remove(0, [12, 10, 10]);
+        assert_eq!(s.rows(0), None);
+    }
+
+    #[test]
+    fn dirty_ranges_replayed_onto_a_copy_reproduce_the_upload() {
+        // The GPU mirror applies only what `take_dirty` names; applying it to a copy of the last
+        // upload must give the full upload where any slot can reach, edit after edit.
+        let t = StateTable::registry();
+        let mut s = Scene::new(t.clone());
+        let mut v = vec![0u16; CHUNK_VOLUME];
+        v[7] = 1;
+        v[9000] = 2;
+        let b = build_chunk(&v, &t);
+        let mut mirror = GpuBuffers::default();
+        type Step<'a> = Box<dyn Fn(&mut Scene) + 'a>;
+        let steps: Vec<Step> = vec![
+            Box::new(|s| s.put(0, [10, 10, 10], &b)),
+            Box::new(|s| s.put(0, [10, 10, 11], &b)),
+            Box::new(|s| s.put(0, [10, 10, 10], &NodeBuild::Solid(1))),
+            Box::new(|s| s.put(0, [10, 10, 10], &b)),
+            Box::new(|s| s.remove(0, [10, 10, 11])),
+            Box::new(|s| s.put(2, [3, 3, 3], &b)),
+            Box::new(|s| s.put(0, [10, 10, 11], &b)),
+        ];
+        for step in steps {
+            step(&mut s);
+            let d = s.take_dirty();
+            let full = s.gpu();
+            // The levels' words (with their occupied rows) go up every frame in the uniforms.
+            mirror.levels = full.levels.clone();
+            if d.layout {
+                mirror.slots = full.slots.clone();
+            } else {
+                for &i in &d.slots {
+                    mirror.slots[i as usize] = s.slot_word(i);
+                }
+            }
+            mirror.nodes.resize(full.nodes.len(), 0);
+            mirror.node_columns.resize(full.node_columns.len(), 0);
+            for &i in &d.nodes {
+                let at = i as usize * NODE_WORDS;
+                mirror.nodes[at..at + NODE_WORDS].copy_from_slice(&s.node_words(i));
+                mirror.node_columns[i as usize] = s.node_columns()[i as usize];
+            }
+            mirror.columns.resize(full.columns.len(), 0);
+            for &c in &d.columns {
+                let c = c as usize;
+                mirror.columns[c..c + COLUMN_WORDS]
+                    .copy_from_slice(&s.column_words()[c..c + COLUMN_WORDS]);
+            }
+            mirror.pool.resize(full.pool.len(), 0);
+            for &(at, n) in &d.pool {
+                let (at, n) = (at as usize, n as usize);
+                mirror.pool[at..at + n].copy_from_slice(&s.pool_words()[at..at + n]);
+            }
+            assert_eq!(mirror.levels, full.levels);
+            assert_eq!(mirror.slots, full.slots);
+            // Freed nodes and bricks keep stale words on the GPU; no slot reaches them.
+            for &w in &full.slots {
+                if let Slot::Node(n) = Slot::from_word(w) {
+                    let at = n as usize * NODE_WORDS;
+                    assert_eq!(
+                        mirror.nodes[at..at + NODE_WORDS],
+                        full.nodes[at..at + NODE_WORDS]
+                    );
+                    assert_eq!(
+                        mirror.node_columns[n as usize],
+                        full.node_columns[n as usize]
+                    );
+                    let c = full.node_columns[n as usize];
+                    if c != COLUMNS_NONE {
+                        let c = c as usize;
+                        assert_eq!(
+                            mirror.columns[c..c + COLUMN_WORDS],
+                            full.columns[c..c + COLUMN_WORDS]
+                        );
+                    }
+                    let node = Node::from_words(&full.nodes[at..at + NODE_WORDS]);
+                    for b in 0..BRICKS_PER_NODE {
+                        if let BrickRef::Mixed(o) = node.get(b) {
+                            let o = o as usize;
+                            assert_eq!(
+                                mirror.pool[o..o + RAW_BRICK_WORDS],
+                                full.pool[o..o + RAW_BRICK_WORDS]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(s.take_dirty().is_empty());
     }
 }

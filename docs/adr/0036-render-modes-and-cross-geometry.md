@@ -1,7 +1,8 @@
 # 0036. Render modes as block data, a cross geometry, and placement rules as data
 
-- Status: Proposed (built on `claude/transparent-blocks` with the defaults below; the owner's
-  answers to [`TRANSPARENT_BLOCKS.md`](../TRANSPARENT_BLOCKS.md) §8 are outstanding)
+- Status: Accepted (the owner's answers, 2026-10-16: [`TRANSPARENT_BLOCKS.md`](../TRANSPARENT_BLOCKS.md) §8)
+- Revisits: [0025](0025-baseline-world.md)'s baseline decision **B10** (no special terrain
+  features) — **partly reversed, for plants only**: world generation grows tall grass
 - Date: 2026-10-15
 - Builds on: [0015](0015-block-registry.md) (blocks as data, the registry generator),
   [0016](0016-slope-blocks.md) (the shape mechanism: collision is separate from the look),
@@ -56,14 +57,23 @@ defaults, recorded in the design doc with the open questions.
 - `placeOn`, `replaceable` and `needsSupport` are checked by `check_block_edit`; support removal
   is computed by `dwell_world::edit::unsupported_after` and sent in the same `VoxelModification`.
 - The starter block is `dwell:tall_grass` (prototype content), appended to the block list.
+- **`medium`** (owner, 2026-10-16): plants say what they stand in — `air` (refused into water, never
+  kept flooded) or `water` (placed only into water, drawn inside it, holding it as its `flooded`
+  state).
+- **World generation grows tall grass** (owner, 2026-10-16), by a decoration rule kept as data
+  (`shared/worldgen/decorations.json`: block, ground blocks, density in noise patches, slope and
+  height limits), decided per cell from the seed and position: generator version 13. This partly
+  reverses B10 for plants only; trees, rocks and caves stay cut. Until Phase 17's terrain
+  definitions exist the rule has its own data file, one entry to move there.
+- **Plant sway** is a settings toggle (Motion group), off under `prefers-reduced-motion`.
 
 ## Consequences
 
 - Adding a block changes the registry hash, so `Welcome` rejects older builds: **the grass needs a
   new compatibility line (0.12)**, the owner's decision; it must not ship as a 0.11 patch. The
   ladder's change is look-only (no state strings change, the hash stays) and can ship alone.
-- Terrain hashes don't change (the grass is appended, so earlier ids hold, and world generation
-  doesn't place it).
+- Earlier ids hold (the grass is appended); the terrain changes in generator version 13 where meadows
+  grow (part of the same 0.12 line).
 - New see-through blocks are data: a `cutout` cube is a leaf block, a `translucent` cube is glass.
   A new geometry is a new look name in the mesher's small vocabulary.
 - The cutout vertex is 19 floats against the terrain's 15; only cutout geometry pays it.

@@ -53,8 +53,15 @@ struct Frame {
     wind_streaks: vec4f,
     wind_shape: vec4f,
     wind_extra: vec4f,
-    // xy the eye's world x and z wrapped to [0, WRAP_M) (render/water.rs `wrapped_origin`).
+    // xy the eye's world x and z wrapped to [0, WRAP_M) (render/water.rs `wrapped_origin`); z the
+    // water's cost-isolation switches (render/water.rs `DEBUG_SWITCHES`; 0 in play).
     wrap: vec4f,
+    // The water's reflections for its quality (dwell-look `reflection_uniforms`): x march steps,
+    // y refine steps, z reach (m), w where hits start fading along it (m); then the cloud
+    // octaves (0: the sky alone), the deck's self-shadow (0 or 1), the edge fade (share of the
+    // screen height) and the hit thickness (m).
+    reflect: vec4f,
+    reflect_sky: vec4f,
     // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
     // face's lights.
     day: DaySky,
@@ -98,6 +105,11 @@ struct Draw {
     // x, y: cos and sin of a turn about +y (players' yaw); identity (1, 0) otherwise.
     rotation: vec4f,
 };
+";
+
+/// The per-draw array (group 1): the raster passes'. The marcher's module leaves it out and binds
+/// its own data there.
+const DRAWS: &str = r"
 @group(1) @binding(0) var<storage, read> draws: array<Draw>;
 ";
 
@@ -191,6 +203,12 @@ fn dither(p: vec2i) -> f32 {
 // The sky's light along `dir`, in the scene's linear colour.
 fn sky_radiance(dir: vec3f) -> vec3f {
     return inverse_display(sky(dir));
+}
+
+// A water cost-isolation switch (`?waterdbg=`, render/water.rs `DEBUG_SWITCHES`): true turns the
+// piece off. Uniform per frame, so its branches don't diverge.
+fn water_off(bit: u32) -> bool {
+    return (u32(frame.wrap.z) & bit) != 0u;
 }
 
 // Schlick's Fresnel (render/water.rs `schlick`).
@@ -769,7 +787,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     var lit = c.rgb / c.a;
     // Caustics on what the pixel shows under the surface (W3, Medium and High): the seabed, walls,
     // anything opaque, before the fog takes its share over the distance to it.
-    if (frame.water.w >= 0.5 && depth > 0.0) {
+    if (frame.water.w >= 0.5 && depth > 0.0 && !water_off(DBG_UNDER)) {
         let rel = ray * depth;
         let under = (frame.water.z - (frame.eye.x + rel.y)) * frame.eye.y;
         // Lit by light that came down through the fluid, focused into caustics.
@@ -1039,20 +1057,184 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     return s;
 }
 
-// What the surface sends back from above besides the body: the sky reflected off the ripple
-// (Fresnel-weighted; reflections below the surface's plane fold back up, the surface would hide
-// them), the sun's and moon's GGX glint, and the sun's sparkle off the facets of fine ripples.
-fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32) -> vec3f {
+// The view reflected off the ripple. Reflections below the surface's plane fold back up (the
+// surface would hide them).
+fn reflected_dir(s: Surface) -> vec3f {
     let seen_up = vec3f(0.0, sign(s.n.y), 0.0);
-    var r = reflect(-s.v, s.n);
-    r = normalize(r - 2.0 * min(dot(r, seen_up), 0.0) * seen_up);
+    let r = reflect(-s.v, s.n);
+    return normalize(r - 2.0 * min(dot(r, seen_up), 0.0) * seen_up);
+}
+
+// What the surface sends back from above besides the body: what it reflects (`refl`: its light,
+// and in a the share of it that is the scene, which hides the sun and moon behind it), Fresnel
+// weighted; the sun's and moon's GGX glint; and the sun's sparkle off the facets of fine ripples.
+fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, refl: vec4f) -> vec3f {
     let a = glint_alpha(f.scatter.a, s.w.z);
     let f0 = f.extra.x;
     // The glint of the face's own sun and moon at the time of day (the day/night cycle).
     let d = frame.day;
-    let glint = ggx_glint(s.n, s.v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, s.on_a) * own(d.sun.y, s.on_a)
-        + ggx_glint(s.n, s.v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, s.on_a) * own(d.moon.y, s.on_a);
-    return fres * sky_radiance(r) + glint + sparkle(i, s, f, footprint);
+    var glint = vec3f(0.0);
+    if (!water_off(DBG_GLINT)) {
+        glint = ggx_glint(s.n, s.v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, s.on_a) * own(d.sun.y, s.on_a)
+            + ggx_glint(s.n, s.v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, s.on_a) * own(d.moon.y, s.on_a);
+    }
+    var reflected = refl.rgb;
+    if (water_off(DBG_SKY)) {
+        reflected = select(d.sky_b.rgb, d.sky_a.rgb, s.on_a);
+    }
+    var spark = vec3f(0.0);
+    if (!water_off(DBG_SPARKLE)) {
+        spark = sparkle(i, s, f, footprint);
+    }
+    return fres * reflected + (1.0 - refl.a) * (glint + spark);
+}
+
+// The sky along a reflected ray `r` from the surface point `rel`, with the cloud deck over it on
+// the tiers that reflect clouds (WATER_RENDERING.md §8; the composite's own sky and clouds, so
+// the day, night and dusk follow), in the scene's linear light. `fw` is the deck's footprint
+// (`reflected_deck_fw`).
+fn reflected_env(r: vec3f, rel: vec3f, fw: f32) -> vec3f {
+    let clear = sky(r);
+    var c = clear;
+    let octaves = frame.reflect_sky.x;
+    if (octaves > 0.5 && !water_off(DBG_CLOUDS)) {
+        let face = frame.eye.y;
+        // The deck seen from the surface point, not the eye: its height above it, and the noise
+        // point under it.
+        let height = frame.cloud_cfg.w - rel.y * face;
+        let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
+        let deck = dwell_cloud_deck(r, face, offsets, height);
+        let cfg = vec4f(frame.cloud_cfg.x, octaves, frame.reflect_sky.y, height);
+        c = dwell_clouds(clear, clear, r, face, deck, fw, offsets, cfg, cloud_lighting());
+    }
+    return inverse_display(c);
+}
+
+// The deck's footprint in a reflection, taken off the calm surface's mirror ray (derivatives need
+// uniform control flow: call it before any branch on the fragment). 0 while no clouds reflect.
+fn reflected_deck_fw(rel: vec3f) -> f32 {
+    if (frame.reflect_sky.x < 0.5 || water_off(DBG_CLOUDS)) {
+        return 0.0;
+    }
+    let up = select(-1.0, 1.0, frame.eye.x + rel.y >= MIDPLANE_Y);
+    let d = normalize(rel);
+    let r = vec3f(d.x, abs(d.y) * up, d.z);
+    let height = frame.cloud_cfg.w - rel.y * frame.eye.y;
+    let deck = dwell_cloud_deck(r, frame.eye.y, vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw), height);
+    return max(fwidth(deck.x), fwidth(deck.y));
+}
+
+// The screen point (pixels, y down) of a point relative to the eye, and its view depth
+// (render/reflection.rs `View::to_screen`).
+fn to_screen(rel: vec3f, size: vec2f) -> vec3f {
+    let d = dot(rel, frame.forward.xyz);
+    let n = vec2f(dot(rel, frame.right.xyz) / (d * frame.tan.x), dot(rel, frame.up.xyz) / (d * frame.tan.y));
+    return vec3f((n.x * 0.5 + 0.5) * size.x, (0.5 - n.y * 0.5) * size.y, d);
+}
+
+fn ssr_depth(px: vec2f) -> f32 {
+    return textureLoad(scene_depth, vec2i(px), 0).r;
+}
+
+// A march step at view depth `d` (from `prev`) meets the scene at depth `scene`: it is behind it,
+// and the surface lies within the step (else the ray passed behind something in front).
+fn ssr_hits(scene: f32, d: f32, prev: f32) -> bool {
+    return scene > 0.0 && d >= scene && scene >= min(prev, d) - (frame.reflect_sky.w + SSR_THICKNESS_REL * scene);
+}
+
+// How much of a hit at `px` survives the fade at the screen's edges (render/reflection.rs
+// `edge_weight`).
+fn ssr_edge(px: vec2f, size: vec2f) -> f32 {
+    let e = min(min(px.x, size.x - px.x), min(px.y, size.y - px.y));
+    return smoothstep(0.0, 1.0, e / (frame.reflect_sky.z * size.y));
+}
+
+// Screen-space reflection (render/reflection.rs `trace`, the tested twin): the reflected ray `r`
+// from the surface point `p` marched on screen through the scene's view depth, in even steps to
+// the screen's edge or the reach, a hit pinned by binary steps. Where it meets the scene (xy, in
+// pixels) and how much of the reflection that gives (z; 0: missed).
+fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
+    let steps = i32(frame.reflect.x);
+    let d0 = dot(p, frame.forward.xyz);
+    let toward = dot(r, frame.forward.xyz);
+    var len = frame.reflect.z;
+    // A ray back toward the eye ends in front of it.
+    if (toward < 0.0) {
+        len = min(len, 0.9 * d0 / -toward);
+    }
+    if (steps <= 0 || len <= 0.0 || water_off(DBG_SSR)) {
+        return vec3f(0.0);
+    }
+    let a = to_screen(p, size);
+    let b = to_screen(p + r * len, size);
+    let delta = b.xy - a.xy;
+    // Clipped to the screen: no steps spent past its edge.
+    let t_end = screen_clip(a.xy, delta, size);
+    // View depth runs hyperbolically along the screen: 1/depth is linear.
+    let k0 = 1.0 / a.z;
+    let k1 = 1.0 / b.z;
+    var prev_t = 0.0;
+    var prev_d = a.z;
+    for (var i = 1; i <= steps; i++) {
+        let t = t_end * f32(i) / f32(steps);
+        let d = 1.0 / mix(k0, k1, t);
+        if (ssr_hits(ssr_depth(a.xy + delta * t), d, prev_d)) {
+            var t_lo = prev_t;
+            var t_hi = t;
+            for (var j = 0; j < i32(frame.reflect.y); j++) {
+                let mid = 0.5 * (t_lo + t_hi);
+                let dm = 1.0 / mix(k0, k1, mid);
+                let sm = ssr_depth(a.xy + delta * mid);
+                if (sm > 0.0 && dm >= sm) {
+                    t_hi = mid;
+                } else {
+                    t_lo = mid;
+                }
+            }
+            let px = a.xy + delta * t_hi;
+            let dh = 1.0 / mix(k0, k1, t_hi);
+            // How far along the ray in 3D: view depth is linear along it.
+            let u = select(t_hi, (dh - a.z) / (b.z - a.z), abs(b.z - a.z) > 1e-3 * a.z);
+            let w = ssr_edge(px, size) * (1.0 - smoothstep(frame.reflect.w, frame.reflect.z, u * len));
+            return vec3f(px, w);
+        }
+        prev_t = t;
+        prev_d = d;
+    }
+    return vec3f(0.0);
+}
+
+// The share of a screen segment from `a` along `delta` that stays on screen.
+fn screen_clip(a: vec2f, delta: vec2f, size: vec2f) -> f32 {
+    var t_end = 1.0;
+    let lo = vec2f(0.5) - a;
+    let hi = size - 0.5 - a;
+    for (var k = 0; k < 2; k++) {
+        if (delta[k] > 1e-3) {
+            t_end = min(t_end, hi[k] / delta[k]);
+        } else if (delta[k] < -1e-3) {
+            t_end = min(t_end, lo[k] / delta[k]);
+        }
+    }
+    return max(t_end, 0.0);
+}
+
+// What the surface reflects (render/reflection.rs `reflected`): the scene at a screen-space hit,
+// from the copy and fogged by its distance as the composite would, over `env` (the sky and
+// clouds) by the hit's weight and coverage. a: the share that is the scene.
+fn ssr_reflected(env: vec3f, hit: vec3f, size: vec2f) -> vec4f {
+    if (hit.z <= 0.0) {
+        return vec4f(env, 0.0);
+    }
+    let c = textureSampleLevel(scene_color, scene_sampler, hit.xy / size, 0.0);
+    if (c.a <= 0.0) {
+        return vec4f(env, 0.0);
+    }
+    let w = hit.z * min(c.a, 1.0);
+    let ndc = vec2f(hit.x / size.x * 2.0 - 1.0, 1.0 - hit.y / size.y * 2.0);
+    let fog = fog_amount(view_ray(ndc) * ssr_depth(hit.xy));
+    let seen = mix(c.rgb / c.a, env, fog);
+    return vec4f(mix(env, seen, w), w);
 }
 
 // The sun's sparkle: a tight highlight off the facets of a fine, fast ripple layer, so the glint
@@ -1096,8 +1278,10 @@ fn from_below(s: Surface, f: Fluid) -> vec4f {
 @fragment
 fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
-    // Derivatives first, in uniform control flow: how many metres a pixel covers.
+    // Derivatives first, in uniform control flow: how many metres a pixel covers, and the cloud
+    // deck's footprint in the reflection.
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
+    let deck_fw = reflected_deck_fw(i.rel);
     let count = arrayLength(&fluids);
     var o: SceneOut;
     o.depth = view_depth(i.rel);
@@ -1115,7 +1299,8 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let fres = schlick(s.ndv, f.extra.x);
     let t = 1.0 - f.absorption.a;
     let alpha = 1.0 - (1.0 - fres) * t;
-    o.color = vec4f((surface_light(i, s, f, fres, footprint) + (1.0 - fres) * (1.0 - t) * s.body) / alpha, alpha);
+    let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw), 0.0);
+    o.color = vec4f((surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body) / alpha, alpha);
     return o;
 }
 
@@ -1138,10 +1323,14 @@ fn ray_thickness(d_behind: f32, d_water: f32, rel_len: f32) -> f32 {
 fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let draw = draws[i.draw];
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
+    let deck_fw = reflected_deck_fw(i.rel);
     let count = arrayLength(&fluids);
     if (i.fluid >= count) {
         let n = normalize(i.normal);
         return vec4f(lambert(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y), 0.5);
+    }
+    if (water_off(DBG_FLAT)) {
+        return vec4f(0.02, 0.1, 0.2, 1.0);
     }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
@@ -1162,8 +1351,12 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let to_px = size.y / (2.0 * frame.tan.y * d_w);
     let shift = vec2f(dot(lean, frame.right.xyz), -dot(lean, frame.up.xyz)) * to_px;
     let q = clamp(px + shift, vec2f(0.5), size - 0.5);
-    let behind_q = textureLoad(scene_depth, vec2i(q), 0).r;
-    let use_q = behind_q <= 0.0 || behind_q > d_w;
+    var behind_q = behind0;
+    var use_q = false;
+    if (!water_off(DBG_REFRACTION)) {
+        behind_q = textureLoad(scene_depth, vec2i(q), 0).r;
+        use_q = behind_q <= 0.0 || behind_q > d_w;
+    }
     let uv = select(px, q, use_q) / size;
     let d_b = select(behind0, behind_q, use_q);
     let scene = textureSampleLevel(scene_color, scene_sampler, uv, 0.0);
@@ -1174,16 +1367,31 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     var floor = s.body;
     if (scene.a > 0.0 && d_b > 0.0) {
         floor = scene.rgb / scene.a;
+    }
+    if (scene.a > 0.0 && d_b > 0.0 && !water_off(DBG_CAUSTICS)) {
         // The floor's pixel footprint: the surface's, scaled out to the floor's distance.
         let floor_fp = footprint * d_b / d_w;
         floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, floor_fp, 1.0, f);
     }
-    let t = exp(-(f.absorption.rgb + f.extra.w) * length_in);
-    let down = exp(-f.absorption.rgb * min(under, DEEP_M));
-    let through = floor * t * down + s.body * (1.0 - t);
-    var color = surface_light(i, s, f, fres, footprint) + (1.0 - fres) * through;
+    var through = mix(floor, s.body, 0.5);
+    if (!water_off(DBG_ABSORPTION)) {
+        let t = exp(-(f.absorption.rgb + f.extra.w) * length_in);
+        let down = exp(-f.absorption.rgb * min(under, DEEP_M));
+        through = floor * t * down + s.body * (1.0 - t);
+    }
+    // The reflection: land by screen-space reflection, else the sky and its clouds.
+    // The land's ray is steered by a calmer surface (SSR_RIPPLE of the ripples' slope), so the
+    // reflection stays coherent where the ripples change from pixel to pixel.
+    var calm = s;
+    calm.n = normalize(mix(vec3f(0.0, sign(s.n.y), 0.0), s.n, SSR_RIPPLE));
+    let hit = ssr_trace(i.rel, reflected_dir(calm), size);
+    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw), hit, size);
+    var color = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * through;
     // Shoreline foam where the water is thin.
-    let foam = foam_amount(i.wrapped, under, f);
+    var foam = 0.0;
+    if (!water_off(DBG_FOAM)) {
+        foam = foam_amount(i.wrapped, under, f);
+    }
     if (foam > 0.0) {
         let lit = lambert(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y);
         color = mix(color, lit, foam);
@@ -1315,7 +1523,7 @@ fn water_slope() -> String {
     );
     for (k, l) in super::water::LAYERS.iter().enumerate() {
         s.push_str(&format!(
-            "    if (layers > {k}) {{\n        sum += wave_layer(xz, f, footprint, {:?}, {:?}, {:?}, vec2f({:?}, {:?}), mat2x2f({:.1}, {:.1}, {:.1}, {:.1}));\n    }} else {{\n        sum.z += f.wave.y * f.wave.y * {:?};\n    }}\n",
+            "    if (layers > {k} && !water_off({bit}u)) {{\n        sum += wave_layer(xz, f, footprint, {:?}, {:?}, {:?}, vec2f({:?}, {:?}), mat2x2f({:.1}, {:.1}, {:.1}, {:.1}));\n    }} else {{\n        sum.z += f.wave.y * f.wave.y * {:?};\n    }}\n",
             l.wavelength,
             l.slope,
             l.speed,
@@ -1325,7 +1533,8 @@ fn water_slope() -> String {
             f64::from(l.turn[0][1]),
             f64::from(l.turn[1][0]),
             f64::from(l.turn[1][1]),
-            l.slope * l.slope
+            l.slope * l.slope,
+            bit = 1u32 << k
         ));
     }
     s.push_str("    return sum;\n}\n");
@@ -1361,17 +1570,29 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{FRAME}\n{}\n{}\n{}\n{COMMON}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        "{}{DRAWS}\n{}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        lighting_source(),
+        scene_bindings(samples),
+        water_slope()
+    )
+}
+
+/// The shared lighting (RAY_MARCHED_RENDERER.md §2: one `lambert`, `aces`, `fog_amount`, `sky` for
+/// both renderers): the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
+/// `atlas_sampler`), the sky, the clouds and the shading functions, without any pass's bindings or
+/// entry points. The marcher's shade module is this plus its own code.
+pub fn lighting_source() -> String {
+    format!(
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n",
         world::MIDPLANE_Y as f64,
         world::SEA_LEVEL as f64,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,
         super::water::wgsl(),
-        scene_bindings(samples),
+        super::reflection::wgsl(),
         dwell_look::sky_wgsl(),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
-        water_slope()
     )
 }
 
@@ -1473,6 +1694,34 @@ mod tests {
             deck < c.find("if (").expect("branch")
                 && c.find("fwidth(").expect("fw") < c.find("if (").unwrap()
         );
+    }
+
+    #[test]
+    fn the_water_reflects_land_from_the_scene_and_the_sky_with_its_clouds() {
+        // WATER_RENDERING.md §8: the water that reads the scene reflects it by screen-space
+        // reflection over the sky and clouds; Low (no copy) reflects the sky and clouds alone. The
+        // deck's footprint is taken before any branch (derivatives need uniform control flow).
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let scene = body("water_scene_fs");
+        assert!(scene.contains("ssr_reflected(reflected_env(") && scene.contains("ssr_trace("));
+        let low = body("water_fs");
+        assert!(low.contains("reflected_env(") && !low.contains("ssr_"));
+        for (name, b) in [("water_scene_fs", &scene), ("water_fs", &low)] {
+            let fw = b.find("reflected_deck_fw(").expect(name);
+            assert!(fw < b.find("if (").expect(name), "{name}");
+        }
+        let env = body("reflected_env");
+        assert!(
+            env.contains("sky(r)")
+                && env.contains("dwell_clouds(")
+                && env.contains("cloud_lighting()")
+        );
+        // What the scene hides of the sky hides the sun's glint and sparkle too.
+        assert!(body("surface_light").contains("(1.0 - refl.a) * (glint + spark)"));
     }
 
     #[test]

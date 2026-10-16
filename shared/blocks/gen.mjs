@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// Generates the block registries for C++, TypeScript and Rust from shared/blocks/*.json
+// Generates the block registries for TypeScript and Rust from shared/blocks/*.json, and the adaptive
+// rule table from adaptive.json
 // (docs/BLOCK_REGISTRY.md). Outputs are checked in; CI regenerates and fails on any diff.
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
-import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, slabShape, slopeShape } from './shapes.mjs';
+import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, namedShape, slabShape, slopeShape } from './shapes.mjs';
+import { NEIGHBOURHOODS, aroundOf, buildTable, describe, summary } from './adaptive.mjs';
 import { loadSounds } from '../sounds/load.mjs';
 import { checkBlockSounds } from '../sounds/validate.mjs';
 
@@ -20,9 +22,11 @@ const header = process.argv.includes('--fixture')
 // `--fixture`: the build's namespaces plus shared/blocks/fixtures/*.json (test content, e.g. a
 // second fluid), written only as crates/dwell-blocks/src/fixture.gen.rs for tests.
 const fixture = process.argv.includes('--fixture');
+// Every JSON file here is a namespace of blocks but the adaptive table's data and its test fixture.
+const NOT_NAMESPACES = ['adaptive.json', 'playground-export.json'];
 const jsonIn = (dir) =>
   readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
+    .filter((f) => f.endsWith('.json') && !NOT_NAMESPACES.includes(f))
     .sort()
     .map((f) => join(dir, f));
 const files = [...jsonIn(here), ...(fixture ? jsonIn(join(here, 'fixtures')) : [])];
@@ -42,6 +46,9 @@ const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross'];
 const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
 // Which neighbour a `needsSupport` block stands on ("below": toward its face's ground).
 const SUPPORTS = ['below'];
+// What a block may stand in (`medium`): only air (put into water, refused), or only water (drawn
+// inside it, its `flooded` property true). Absent: anything.
+const MEDIUMS = ['air', 'water'];
 // The cross geometry's fade must end inside the nearest full-detail distance (the streamed view,
 // VIEW_RADIUS_CHUNKS × 32 m, the settings' minimum), so plants are gone before chunks meet the LOD.
 const MIN_DETAIL_M = 96;
@@ -112,13 +119,16 @@ for (const ns of namespaces) {
 }
 
 // Render mode, cross geometry, wind and the placement rules (docs/TRANSPARENT_BLOCKS.md).
+// A block's render mode: its data's, else translucent for fluids and opaque for the rest.
+const renderOf = (def) => def.render ?? ((def.look ?? 'cube') === 'fluid' ? 'translucent' : 'opaque');
 function validateRender(id, def, look, isAir) {
-  const render = def.render ?? 'opaque';
+  const render = renderOf(def);
   if (!RENDER_MODES.includes(render)) fail(`${id}: render must be one of ${RENDER_MODES.join(', ')} (got ${render})`);
   const opacity = def.opacity ?? fluids.find((f) => f.name === def.fluid)?.opacity ?? 1;
   if (!inRange(opacity, 0, 1)) fail(`${id}: opacity must be in [0, 1]`);
   if (!isAir && opacity < 1 && render !== 'translucent') fail(`${id}: opacity ${opacity} needs "render": "translucent"`);
   if (render === 'cutout' && !def.textures) fail(`${id}: render cutout needs textures (a tile with transparent texels)`);
+  if (look === 'fluid' && render !== 'translucent') fail(`${id}: look fluid is drawn translucent (got render ${render})`);
   if (look === 'cross') {
     if (render === 'opaque') fail(`${id}: look cross has gaps: render must be cutout or translucent`);
     if (def.shape !== 'empty') fail(`${id}: look cross needs shape empty (crosses have no collision geometry)`);
@@ -168,6 +178,13 @@ function validateRender(id, def, look, isAir) {
     fail(`${id}: needsSupport must be one of ${SUPPORTS.join(', ')}`);
   }
   if (def.replaceable !== undefined && typeof def.replaceable !== 'boolean') fail(`${id}: replaceable must be true or false`);
+  if (def.medium !== undefined) {
+    if (!MEDIUMS.includes(def.medium)) fail(`${id}: medium must be one of ${MEDIUMS.join(', ')}`);
+    const f = def.properties?.flooded;
+    if (def.medium === 'water' && !(Array.isArray(f) && f.includes('true'))) {
+      fail(`${id}: medium water needs a flooded property (it holds the water it stands in)`);
+    }
+  }
 }
 
 const fluids = readFluids(namespaces); // fluids.mjs
@@ -208,6 +225,9 @@ for (const ns of namespaces) {
       if (!p || p.values.some((v) => !FACINGS.includes(v))) fail(`${id}: facingProperty`);
     }
     if (def.shape === 'shaped' && !def.slopeFamily) fail(`${id}: shaped blocks come from shapeFamilies`);
+    if (def.adaptive !== undefined && typeof def.adaptive !== 'boolean') fail(`${id}: adaptive is true or false`);
+    if (def.adaptive && (def.shape !== 'full' || props.length || look !== 'cube'))
+      fail(`${id}: only a full cube block without properties can be adaptive (it is shaped from its neighbours)`);
     const count = props.reduce((n, p) => n * p.values.length, 1);
     const fluid = blockFluid(id, def, fluids);
     const block = { id, def, props, first: states.length, count, look, fluid };
@@ -260,7 +280,7 @@ if (states.length > 0xffff) fail('too many states');
 // properties.
 const shapeTable = [{ key: 'empty', shape: null }];
 const shapeIndexOf = (shape) => {
-  const key = JSON.stringify([shape.corners, shape.inverted, shape.diagonal]);
+  const key = JSON.stringify(shape.fan ? [shape.points, shape.inverted, 'fan'] : [shape.corners, shape.inverted, shape.diagonal]);
   let i = shapeTable.findIndex((t) => t.key === key);
   if (i < 0) {
     i = shapeTable.length;
@@ -275,6 +295,14 @@ for (const st of states) {
   else if (d.shape === 'full') st.shapeIndex = shapeIndexOf(cubeShape());
   else st.shapeIndex = shapeIndexOf((d.slopeFamily === 'slope' ? slopeShape : slabShape)(st.values));
 }
+const stateShapeCount = shapeTable.length;
+
+// The adaptive rule table (adaptive.json, adaptive.mjs; docs/ADAPTIVE_BLOCKS.md): each
+// neighbourhood's shape upright (face A) and hanging (face B's mirror image), appended to the shape
+// table after the shapes block states use.
+const adaptiveTable = buildTable(JSON.parse(readFileSync(join(here, 'adaptive.json'), 'utf8')));
+const adaptiveUp = adaptiveTable.map((e) => shapeIndexOf(namedShape(e.shape, e.turns, false)));
+const adaptiveDown = adaptiveTable.map((e) => shapeIndexOf(namedShape(e.shape, e.turns, true)));
 if (shapeTable.length > 0xffff) fail('too many shapes');
 
 // Palette (creative inventory) membership: a block's `palette` lists partial property assignments;
@@ -398,8 +426,8 @@ ts.push('  /** Top-surface diagonal: 0 NW–SE, 1 NE–SW. */');
 ts.push('  diagonal: number;');
 ts.push('  convex: boolean;');
 ts.push('  volume: number;');
-ts.push('  /** Side profile heights (halves) at the face\'s low and high running coordinate, faces +X −X +Z −Z. */');
-ts.push('  sides: readonly (readonly [number, number])[];');
+ts.push('  /** Side profile heights (halves) at the face\'s low end, middle and high end, faces +X −X +Z −Z. */');
+ts.push('  sides: readonly (readonly [number, number, number])[];');
 ts.push('  fullTop: boolean;');
 ts.push('  fullBottom: boolean;');
 ts.push('  minY: number;');
@@ -418,11 +446,12 @@ for (const b of blocks) {
 }
 ts.push('];');
 ts.push('');
+ts.push('/** The shapes block states use (the adaptive table\'s derived shapes are in the Rust tables only). */');
 ts.push('export const SHAPES: readonly ShapeDef[] = [');
-for (const t of shapeTable) {
+for (const t of shapeTable.slice(0, stateShapeCount)) {
   const sh = t.shape;
   if (!sh) {
-    ts.push("  { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0], [0, 0], [0, 0], [0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },");
+    ts.push("  { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },");
     continue;
   }
   const faces = sh.faces.map((fc) => `{ tag: ${fc.tag}, pts: [${fc.pts.map((p) => `[${p.join(', ')}]`).join(', ')}] }`);
@@ -447,7 +476,7 @@ for (let first = 0; first < states.length; first += CHUNK) {
     `block: ${blocks.indexOf(s.block)}`,
     `values: { ${s.block.props.map((p) => `${p.name}: '${s.values[p.name]}'`).join(', ')} }`,
     `look: '${s.block.look}'`,
-    `render: '${d.render ?? 'opaque'}'`,
+    `render: '${renderOf(d)}'`,
     `color: ${colorNum(d.color)}`,
     `opacity: ${opacityOf(s.block)}`,
   ];
@@ -517,7 +546,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
     }
     shapes.push(
       sh
-        ? `    ShapeInfo { first_face: ${first}, face_count: ${sh.faces.length}, corners: [${sh.corners.join(', ')}], inverted: ${sh.inverted}, diagonal: ${sh.diagonal}, convex: ${sh.convex}, volume: ${rf(sh.volume)}, sides: [${sh.sides.map((q) => `[${q.join(', ')}]`).join(', ')}], full_top: ${sh.fullTop}, full_bottom: ${sh.fullBottom}, min_y: ${rf(sh.minY)}, max_y: ${rf(sh.maxY)} },`
+        ? `    ShapeInfo { first_face: ${first}, face_count: ${sh.faces.length}, corners: [${sh.corners.join(', ')}], points: [${sh.points.map((r) => `[${r.map((v) => v * 2).join(', ')}]`).join(', ')}], fan: ${sh.fan}, inverted: ${sh.inverted}, diagonal: ${sh.diagonal}, convex: ${sh.convex}, volume: ${rf(sh.volume)}, sides: [${sh.sides.map((q) => `[${q.map((v) => v * 2).join(', ')}]`).join(', ')}], full_top: ${sh.fullTop}, full_bottom: ${sh.fullBottom}, min_y: ${rf(sh.minY)}, max_y: ${rf(sh.maxY)} },`
         : '    ShapeInfo::EMPTY,',
     );
   }
@@ -555,6 +584,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `facing: ${facing}`,
       `climb_speed_scale: ${rf(d.climbSpeedScale ?? 1)}`,
       `liquid: ${!!d.liquid}`,
+      `adaptive: ${!!d.adaptive}`,
       `fluid: ${st.block.fluid === null ? 'None' : `Some(${st.block.fluid})`}`,
       `placeable: ${!!st.placeable}`,
       `look: ${rstr(st.block.look)}`,
@@ -562,7 +592,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `opacity: ${rf(opacityOf(st.block))}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
       `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
-      `render: RenderMode::${pascal(d.render ?? 'opaque')}`,
+      `render: RenderMode::${pascal(renderOf(d))}`,
       `cross: ${crossRs(d)}`,
       `wind: ${d.wind ? `Some(Wind { strength: ${rf(d.wind.strength)}, speed: ${rf(d.wind.speed)} })` : 'None'}`,
       `fade: ${d.fade ? `Some(Fade { start: ${rf(d.fade.start)}, end: ${rf(d.fade.end)} })` : 'None'}`,
@@ -570,6 +600,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
       `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
       `replaceable: ${!!d.replaceable}`,
+      `medium: Medium::${d.medium ? pascal(d.medium) : 'Any'}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }
@@ -578,6 +609,36 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   rs.push(...fluidsRust(fluids, rf));
   const out = fixture ? 'fixture.gen.rs' : 'blocks.gen.rs';
   writeFileSync(join(root, 'crates/dwell-blocks/src', out), rs.join('\n'));
+
+  if (!fixture) {
+  // The adaptive table: shape indices per neighbourhood (adaptive.mjs's index order).
+  const ad = [`// ${header}`, ''];
+  ad.push('/// Per neighbourhood (`adaptive::index`), the derived shape of an upright top block (face A).');
+  ad.push(`pub static ADAPTIVE_UP: [u16; ${NEIGHBOURHOODS}] = [`);
+  for (let i = 0; i < NEIGHBOURHOODS; i += 27) ad.push(`    ${adaptiveUp.slice(i, i + 27).join(', ')},`);
+  ad.push('];');
+  ad.push('');
+  ad.push('/// The same, hanging (a top block of face B, whose up is −y): `ADAPTIVE_UP`\'s shapes turned over.');
+  ad.push(`pub static ADAPTIVE_DOWN: [u16; ${NEIGHBOURHOODS}] = [`);
+  for (let i = 0; i < NEIGHBOURHOODS; i += 27) ad.push(`    ${adaptiveDown.slice(i, i + 27).join(', ')},`);
+  ad.push('];');
+  ad.push('');
+  writeFileSync(join(root, 'crates/dwell-blocks/src/adaptive.gen.rs'), ad.join('\n'));
+
+  // The adaptive table, readable: one line per neighbourhood (index, around, shape and facing, shape
+  // index upright and hanging), for the Rust tests and for reading.
+  const lines = [
+    `# ${header}`,
+    '# index around shape [facing] up down: `around` rows north to south, + higher, = same, - lower.',
+    ...adaptiveTable.map((e, i) => `${i} ${aroundOf(i)} ${describe(e)} ${adaptiveUp[i]} ${adaptiveDown[i]}`),
+    '',
+  ];
+  writeFileSync(join(here, 'adaptive_vectors.txt'), lines.join('\n'));
+  const counts = summary(adaptiveTable);
+  console.log(
+    `adaptive: ${NEIGHBOURHOODS} neighbourhoods (${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ')}; ${counts.override ?? 0} overridden), ${shapeTable.length - stateShapeCount} derived shapes`,
+  );
+  }
 }
 
 // ---- Shared vector: the canonical strings in id order and the hash (both sides' tests read it) -----

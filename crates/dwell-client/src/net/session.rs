@@ -27,6 +27,9 @@ pub enum SessionState {
         /// The server takes `RegionEdit`s (`welcome_flags::REGION_EDITS`; builds before them
         /// reject an unknown message, so the client sends none without it).
         region_edits: bool,
+        /// The server takes brush strokes in this world: `KEEP` paste cells and the world type's
+        /// brush reach (`welcome_flags::BRUSHES`, BRUSHES.md).
+        brushes: bool,
     },
     Rejected {
         reason: RejectReason,
@@ -265,6 +268,7 @@ impl Session {
                     verification_chunk: w.verification_chunk,
                     may_fly: w.flags & welcome_flags::FLIGHT != 0,
                     region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
+                    brushes: w.flags & welcome_flags::BRUSHES != 0,
                 });
             }
             Message::Reject(r) => {
@@ -387,6 +391,7 @@ mod tests {
                 verification_chunk: [0, 2, 0],
                 may_fly: true,
                 region_edits: false,
+                brushes: false,
             }
         );
         // World messages wait for the game, in order.
@@ -438,20 +443,27 @@ mod tests {
         let Message::Welcome(w) = welcome(REGISTRY_HASH) else {
             unreachable!()
         };
-        for (flags, region_edits) in [
-            (welcome_flags::FLIGHT, false),
-            (welcome_flags::REGION_EDITS | 0x80, true),
+        for (flags, region_edits, brushes) in [
+            (welcome_flags::FLIGHT, false, false),
+            (welcome_flags::REGION_EDITS | 0x80, true, false),
+            (
+                welcome_flags::REGION_EDITS | welcome_flags::BRUSHES,
+                true,
+                true,
+            ),
         ] {
             let (_, mut s) = setup();
             let m = Message::Welcome(Welcome { flags, ..w.clone() });
             s.on_reliable(Channel::Control, &m.encode(), 1000.0);
             let SessionState::Joined {
-                region_edits: got, ..
+                region_edits: got,
+                brushes: got_brushes,
+                ..
             } = s.state()
             else {
                 panic!("{:?}", s.state())
             };
-            assert_eq!(*got, region_edits);
+            assert_eq!((*got, *got_brushes), (region_edits, brushes));
         }
     }
 

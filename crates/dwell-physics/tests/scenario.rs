@@ -121,7 +121,7 @@ fn run_stairs(steps: i32, tread: i32, up: bool, run: bool, halves_only: bool) ->
             // Step i is i + 1 half-cells high: full cubes below, a half step on top when odd.
             let halves = if halves_only { i + 1 } else { 2 * (i + 1) };
             for h in 0..halves / 2 {
-                w.fill(-3, h, z, 3, h, z, stone());
+                w.fill(-3, h, z, 3, h, z, cube_block());
             }
             if halves % 2 == 1 {
                 w.half_step(-3, halves / 2, z, 3, z);
@@ -214,9 +214,9 @@ fn stepping_down_a_stairs_corner_gains_no_momentum() {
                 );
                 // Half, block, block and a half, two blocks: 0.5 m per step (x −10..−8, z 6..10).
                 w.half_step(-10, 0, 6, -8, 6);
-                w.fill(-10, 0, 7, -8, 0, 10, stone());
+                w.fill(-10, 0, 7, -8, 0, 10, cube_block());
                 w.half_step(-10, 1, 8, -8, 8);
-                w.fill(-10, 1, 9, -8, 1, 10, stone());
+                w.fill(-10, 1, 9, -8, 1, 10, cube_block());
                 let e = w.spawn_yaw(Vec3::new(x, 2.0, 10.5), yaw);
                 w.set_input(move |_, _| input(0.0, 1.0, run, false, false, yaw, 0.0));
                 let (mut external, mut driven) = (0.0f32, 0.0f32);
@@ -245,7 +245,7 @@ fn a_one_metre_ledge_is_a_fall_not_a_step() {
 fn doorway() -> PlayerTestWorld {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.fill(-3, 0, 4, 3, 3, 4, stone());
+    w.fill(-3, 0, 4, 3, 3, 4, cube_block());
     w.fill(0, 0, 4, 0, 1, 4, air()); // doorway at x = 0
     w.set_input(|_, _| mv(0.0, 1.0));
     w
@@ -294,7 +294,7 @@ fn walking_across_chunk_seams_in_every_direction_never_loses_the_ground() {
 fn a_block_removed_under_the_feet_starts_a_fall() {
     let mut w = PlayerTestWorld::new();
     w.floor_at(-10, 16);
-    w.fill(0, -1, 0, 0, -1, 0, stone());
+    w.fill(0, -1, 0, 0, -1, 0, cube_block());
     let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
     w.step(10);
     assert!(w.c(e).ground.grounded);
@@ -313,7 +313,7 @@ fn a_block_placed_in_front_is_collided_with_in_the_same_tick() {
     let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
     w.set_input(|_, _| mv(0.0, 1.0));
     w.step(5);
-    w.fill(-2, 0, 3, 2, 2, 3, stone());
+    w.fill(-2, 0, 3, 2, 2, 3, cube_block());
     w.step(ticks(1.5));
     assert!(approx(w.pos(e).z, 2.7, 0.01), "{}", w.pos(e));
 }
@@ -327,7 +327,7 @@ fn auto_jump_climbs_a_one_block_step_when_enabled() {
             PlayerControllerConfig::default()
         });
         w.floor();
-        w.fill(-3, 0, 3, 3, 0, 10, stone());
+        w.fill(-3, 0, 3, 3, 0, 10, cube_block());
         let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
         w.set_input(|_, _| mv(0.0, 1.0));
         w.step(ticks(2.0));
@@ -344,7 +344,7 @@ fn auto_jump_climbs_a_one_block_step_when_enabled() {
 fn auto_jump_does_not_jump_at_a_two_block_wall() {
     let mut w = PlayerTestWorld::with_config(PlayerControllerConfig::touch());
     w.floor();
-    w.fill(-3, 0, 3, 3, 1, 3, stone());
+    w.fill(-3, 0, 3, 3, 1, 3, cube_block());
     let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
     w.set_input(|_, _| mv(0.0, 1.0));
     w.step(ticks(1.5));
@@ -358,7 +358,7 @@ fn edge_guard_keeps_a_crouched_player_on_a_ledge() {
         config.movement.edge_guard = guard;
         let mut w = PlayerTestWorld::with_config(config);
         w.floor_at(-5, 16);
-        w.fill(-4, -1, -4, 3, -1, 2, stone()); // the ledge ends at z = 3
+        w.fill(-4, -1, -4, 3, -1, 2, cube_block()); // the ledge ends at z = 3
         let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
         w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
         w.step(ticks(3.0));
@@ -393,11 +393,11 @@ fn scenario_world() -> PlayerTestWorld {
         0.0,
     ); // ramp
     w.half_step(4, 0, 6, 7, 10);
-    w.fill(-1, 1, 7, 1, 1, 9, stone()); // crawlspace roof
-    w.fill(10, 0, 2, 14, 2, 6, stone()); // ledge
+    w.fill(-1, 1, 7, 1, 1, 9, cube_block()); // crawlspace roof
+    w.fill(10, 0, 2, 14, 2, 6, cube_block()); // ledge
     w.fill(12, 0, 1, 12, 2, 1, require("dwell:ladder[facing=north]"));
     w.fill(-16, -1, -12, -10, -1, -6, air()); // pool pit
-    w.fill(-16, -3, -12, -10, -2, -6, stone());
+    w.fill(-16, -3, -12, -10, -2, -6, cube_block());
     w.fill(-15, -2, -11, -11, -1, -7, require("dwell:water"));
     w.boxed(
         Vec3::new(-12.0, 0.25, 0.0),

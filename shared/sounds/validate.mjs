@@ -11,7 +11,20 @@ export const NOISE_COLORS = ['white', 'pink', 'brown'];
 export const WAVES = ['sine', 'triangle', 'square', 'sawtooth'];
 export const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass', 'peaking', 'notch'];
 /** Events a block's sound set can name; the first five are required. */
-export const SET_EVENTS = ['step', 'land', 'break', 'place', 'hit', 'enter', 'exit', 'swim'];
+export const SET_EVENTS = [
+  'step',
+  'land',
+  'break',
+  'place',
+  'hit',
+  'enter',
+  'exit',
+  'swim',
+  'slide',
+  'slide_stop',
+];
+/** An event's part in a continuous (looped) sound: start a voice, update it, stop it. */
+export const LOOP_PARTS = ['start', 'update', 'stop'];
 export const REQUIRED_SET_EVENTS = ['step', 'land', 'break', 'place', 'hit'];
 /** Footstep gaits, in the order the Rust game numbers them. */
 export const GAITS = ['walk', 'run', 'crouch', 'climb', 'swim'];
@@ -42,9 +55,11 @@ const LAYER_KEYS = [
   'pan',
   'chance',
   'grains',
+  'tremolo',
   'alts',
 ];
-const SOUND_KEYS = ['gain', 'reverb', 'variation', 'intensity', 'layers'];
+const SOUND_KEYS = ['gain', 'reverb', 'variation', 'intensity', 'loop', 'layers'];
+const INTENSITY_KEYS = ['gain', 'cutoff', 'time', 'pitch'];
 const TOP_KEYS = [
   '$comment',
   'namespace',
@@ -106,16 +121,29 @@ function validateFilter(where, f) {
   if (f.gain !== undefined && f.type !== 'peaking') fail(where, 'gain is for peaking filters');
 }
 
-function validateLayerBody(where, layer) {
+function validateLayerBody(where, layer, loop) {
   keysIn(where, layer, LAYER_KEYS);
   oneOf(`${where}.source`, layer.source, SOURCES);
+  if (loop) {
+    // A loop sounds until it is stopped: sustained sources, levels moved by intensity.
+    if (layer.source === 'modal') fail(where, 'a loop sound has noise and osc layers only');
+    for (const k of ['env', 'grains', 'at', 'chance', 'to'])
+      if (layer[k] !== undefined) fail(where, `${k} is not for loop sounds`);
+    for (const f of layer.filters ?? [])
+      if (f.to !== undefined) fail(where, 'filter sweeps (to) are not for loop sounds');
+  } else if (layer.tremolo !== undefined) fail(where, 'tremolo is for loop sounds');
+  if (layer.tremolo !== undefined) {
+    keysIn(`${where}.tremolo`, layer.tremolo, ['rate', 'depth']);
+    number(`${where}.tremolo.rate`, layer.tremolo.rate, 0.1, 60);
+    number(`${where}.tremolo.depth`, layer.tremolo.depth, 0, 1);
+  }
   if (layer.source === 'noise') {
     oneOf(`${where}.color`, layer.color, NOISE_COLORS);
-    if (!layer.env) fail(where, 'a noise layer needs an env');
+    if (!layer.env && !loop) fail(where, 'a noise layer needs an env');
   } else if (layer.color !== undefined) fail(where, 'color is for noise layers');
   if (layer.source === 'osc') {
     oneOf(`${where}.wave`, layer.wave, WAVES);
-    if (!layer.env) fail(where, 'an osc layer needs an env');
+    if (!layer.env && !loop) fail(where, 'an osc layer needs an env');
   } else if (layer.wave !== undefined) fail(where, 'wave is for osc layers');
   if (layer.source === 'osc' || layer.source === 'modal') {
     number(`${where}.freq`, layer.freq, 20, 20000);
@@ -154,8 +182,8 @@ function validateLayerBody(where, layer) {
   }
 }
 
-function validateLayer(where, layer) {
-  validateLayerBody(where, layer);
+function validateLayer(where, layer, loop) {
+  validateLayerBody(where, layer, loop);
   if (layer.alts !== undefined) {
     if (!Array.isArray(layer.alts) || layer.alts.length < 2 || layer.alts.length > 8)
       fail(`${where}.alts`, 'must list 2 to 8 alternatives');
@@ -164,7 +192,7 @@ function validateLayer(where, layer) {
       if (!isObject(alt)) fail(w, 'must be an object');
       if ('alts' in alt || 'source' in alt) fail(w, 'an alternative cannot change source or alts');
       const { alts: _alts, ...base } = layer;
-      validateLayerBody(w, { ...base, ...alt });
+      validateLayerBody(w, { ...base, ...alt }, loop);
     });
   }
 }
@@ -183,15 +211,18 @@ export function validateSound(where, s) {
     number(`${where}.variation.cutoff`, v.cutoff, 0, 0.9, { optional: true });
     number(`${where}.variation.time`, v.time, 0, 0.9, { optional: true });
   }
+  if (s.loop !== undefined && s.loop !== true) fail(`${where}.loop`, 'must be true or absent');
+  const loop = s.loop === true;
   if (s.intensity !== undefined) {
-    keysIn(`${where}.intensity`, s.intensity, ['gain', 'cutoff', 'time']);
-    for (const k of ['gain', 'cutoff', 'time']) {
+    keysIn(`${where}.intensity`, s.intensity, INTENSITY_KEYS);
+    for (const k of INTENSITY_KEYS) {
       if (s.intensity[k] !== undefined) pair(`${where}.intensity.${k}`, s.intensity[k], 0, 4);
     }
+    if (s.intensity.pitch !== undefined && !loop) fail(`${where}.intensity.pitch`, 'is for loop sounds');
   }
   if (!Array.isArray(s.layers) || s.layers.length === 0 || s.layers.length > 12)
     fail(`${where}.layers`, 'must list 1 to 12 layers');
-  s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l));
+  s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l, loop));
 }
 
 /** `local` or `ns:local` → `ns:local`. */
@@ -258,15 +289,26 @@ export function resolveSounds(files) {
       const where = `event ${name}`;
       if (!NAME.test(name)) fail(where, 'bad name');
       if (out.events.some((e) => e.name === name)) fail(where, 'defined twice');
-      keysIn(where, def, ['set', 'sound', 'speed']);
-      if (def.set === undefined && def.sound === undefined) fail(where, 'plays no set event or sound');
+      keysIn(where, def, ['set', 'sound', 'speed', 'loop']);
+      if (def.loop !== undefined) oneOf(`${where}.loop`, def.loop, LOOP_PARTS);
+      const plays = def.set !== undefined || def.sound !== undefined;
+      if (def.loop === 'update') {
+        if (plays) fail(where, 'a loop update plays nothing of its own');
+      } else if (!plays) fail(where, 'plays no set event or sound');
       if (def.set !== undefined) oneOf(`${where}.set`, def.set, SET_EVENTS);
       if (def.speed !== undefined) pair(`${where}.speed`, def.speed, 0, 200, { ordered: true });
+      const id = def.sound !== undefined ? sound(`${where}.sound`, ns, def.sound) : undefined;
+      if (id !== undefined && (out.sounds[id].loop === true) !== (def.loop === 'start'))
+        fail(
+          `${where}.sound`,
+          def.loop === 'start' ? `${id} must be a loop sound` : `${id} is a loop sound`,
+        );
       out.events.push({
         name,
         ...(def.set !== undefined ? { set: def.set } : {}),
-        ...(def.sound !== undefined ? { sound: sound(`${where}.sound`, ns, def.sound) } : {}),
+        ...(id !== undefined ? { sound: id } : {}),
         ...(def.speed !== undefined ? { speed: def.speed } : {}),
+        ...(def.loop !== undefined ? { loop: def.loop } : {}),
       });
     }
     if (file.gaits !== undefined) {
@@ -298,6 +340,25 @@ export function resolveSounds(files) {
     }
   }
   if (!out.fallback || !(out.fallback in out.sets)) fail('fallback', `unknown set "${out.fallback}"`);
+  // A loop's start plays loop sounds, every other event one-shots; the fallback set has every
+  // loop event's set sound, so a set without one still sounds (a loop without a sound would
+  // leave its voice silent, and its stop with nothing to play).
+  for (const e of out.events) {
+    if (e.set === undefined) continue;
+    if (e.loop !== undefined && !(e.set in out.sets[out.fallback]))
+      fail(`event ${e.name}`, `the fallback set ${out.fallback} has no "${e.set}" sound`);
+    for (const [set, events] of Object.entries(out.sets)) {
+      const id = events[e.set];
+      if (id === undefined) continue;
+      if ((out.sounds[id].loop === true) !== (e.loop === 'start'))
+        fail(
+          `set ${set}.${e.set}`,
+          e.loop === 'start'
+            ? `${id} must be a loop sound (event ${e.name} starts a loop)`
+            : `${id} is a loop sound (event ${e.name} plays once)`,
+        );
+    }
+  }
   for (const g of GAITS) if (!(g in out.gaits)) fail('gaits', `missing the "${g}" gait`);
   for (const k of UI_KINDS) if (!(k in out.ui)) fail('ui', `missing the "${k}" sound`);
   if (out.events.length > 255) fail('events', 'too many');

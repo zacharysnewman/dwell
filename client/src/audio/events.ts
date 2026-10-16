@@ -1,7 +1,8 @@
 // The game's sound events (docs/AUDIO.md §5): decoding the numbers the Rust client hands over
 // (`takeSounds`: 7 per event), and mapping each to the sounds it plays — the block's sound set
 // (block state → block → `sound`, else the data's fallback) for set events, the event's own sound,
-// the gait's loudness for footsteps — and the local player's steps alternating left and right.
+// the gait's loudness for footsteps — the local player's steps alternating left and right, and
+// continuous sounds (a slide's scrape) on each mover's voice: started, moved and stopped.
 import { BLOCK_DEFS, STATE_DEFS, type BlockDef, type StateDef } from '../world/blocks.gen';
 import type { SoundData } from './types';
 
@@ -16,6 +17,8 @@ export interface SoundEvent {
   at: [number, number, number] | null;
   /** Index into the data's gaitOrder, for footsteps. */
   gait: number | null;
+  /** The mover's voice for continuous sounds (0: the local player; others: their id). */
+  voice: number | null;
 }
 
 export function decodeSounds(v: ArrayLike<number>): SoundEvent[] {
@@ -23,12 +26,14 @@ export function decodeSounds(v: ArrayLike<number>): SoundEvent[] {
   for (let i = 0; i + FLOATS_PER_EVENT <= v.length; i += FLOATS_PER_EVENT) {
     const flags = v[i + 6] ?? 0;
     const gait = (flags >> 1) & 7;
+    const voice = Math.floor(flags / 16);
     out.push({
       kind: v[i] ?? 0,
       block: v[i + 1] ?? 0,
       intensity: v[i + 2] ?? 1,
       at: flags & 1 ? [v[i + 3] ?? 0, v[i + 4] ?? 0, v[i + 5] ?? 0] : null,
       gait: gait ? gait - 1 : null,
+      voice: voice ? voice - 1 : null,
     });
   }
   return out;
@@ -82,18 +87,57 @@ export type Play = (
   options: { intensity: number; at: [number, number, number] | null; pan?: number; gain: number },
 ) => void;
 
-/** Plays decoded events; keeps the left/right alternation of the local player's steps. */
+/** Continuous sounds by voice (the engine's loop voices). */
+export interface Loops {
+  start(
+    voice: string,
+    sound: string,
+    options: { intensity: number; at: [number, number, number] | null; gain: number },
+  ): void;
+  update(voice: string, intensity: number, at: [number, number, number] | null): void;
+  stop(voice: string): void;
+}
+
+/** The engine's key for an event's voice. */
+export const voiceKey = (voice: number | null): string => `mover:${String(voice ?? 0)}`;
+
+/**
+ * Plays decoded events; keeps the left/right alternation of the local player's steps. Loop
+ * events (`loop` in the data): `start` starts the voice on the event's set sound (a new surface
+ * restarts it), `update` moves its intensity and position, `stop` fades it and plays the event's
+ * one-shot (the set's slide stop).
+ */
 export class EventPlayer {
   private foot = 1;
 
   constructor(
     private readonly data: SoundData,
     private readonly play: Play,
+    private readonly loops: Loops | null = null,
     private readonly registry: Registry = REGISTRY,
   ) {}
 
   playAll(events: SoundEvent[]): void {
     for (const e of events) {
+      const def = this.data.events[e.kind];
+      if (def?.loop) {
+        const voice = voiceKey(e.voice);
+        if (def.loop === 'update') {
+          this.loops?.update(voice, e.intensity, e.at);
+          continue;
+        }
+        if (def.loop === 'start') {
+          const first = soundsFor(e, this.data, this.registry)[0];
+          if (first)
+            this.loops?.start(voice, first.sound, {
+              intensity: e.intensity,
+              at: e.at,
+              gain: first.gain,
+            });
+          continue;
+        }
+        this.loops?.stop(voice);
+      }
       let pan: number | undefined;
       if (e.gait !== null && e.at === null) {
         this.foot = -this.foot;

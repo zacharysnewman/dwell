@@ -25,8 +25,17 @@
 //!   voxels until a hit or it leaves the brick.
 //!
 //! Where the wanted level grows mid-node the ray carries on at the coarser level from where it
-//! is; if that coarser cell is occupied it is hit there, on the plane the ray last crossed (a LOD
-//! transition, like the raster LOD's).
+//! is — unless the coarser cell there is occupied while the level the ray marched at has data
+//! there: then it stays at that finer level (and tries again at the next iteration). Hitting the
+//! coarser cell on the plane the ray last crossed drew a side face at every switch distance, a
+//! ring around the eye; waiting puts the switch where the ray is in the coarser level's air, so
+//! the coarser surface is entered through its own faces. Where the levels' heights disagree (LOD
+//! cells are rounded to their size until the bricks carry column heights, A3c) the switch still
+//! shows as a step in depth, but not as a side face.
+//!
+//! A ray above (or below) every occupied row of its level ([`Scene::rows`]) leaves the level's
+//! box in one skip, clipped to the box around the eye that holds this ray until the cone LOD
+//! moves past the level ([`band_end`]), so coarser data beyond the band is still seen.
 //!
 //! After a skip the ray re-enters at the box's exit plane: that axis is the exact plane, the
 //! others the cell the ray is in at `t` (checked against the same plane distances the DDA uses,
@@ -194,7 +203,29 @@ pub fn level_for(t: f32, p: &MarchParams) -> u32 {
     if footprint < 2.0 {
         return 0;
     }
-    (footprint.log2().floor() as u32).min(MAX_LEVEL)
+    // ⌊log2⌋ from the exponent bits, exactly (the GPU's `log2` is approximate, and a float just
+    // under a power of two can round `log2` up to it): the WGSL marcher computes the same bits.
+    ((footprint.to_bits() >> 23).saturating_sub(127)).min(MAX_LEVEL)
+}
+
+/// The distance (metres) at which the cone LOD moves past level `level`:
+/// `2^(L+1) / (pixel_angle · lod_pixels)`, or [`BAND_END_NONE`] when it never does. The GPU gets
+/// these in the uniforms.
+pub fn band_end(level: u32, p: &MarchParams) -> f32 {
+    let per = p.pixel_angle * p.lod_pixels;
+    if per <= 0.0 || level >= MAX_LEVEL {
+        return BAND_END_NONE;
+    }
+    ((1u32 << (level + 1)) as f32 / per).min(BAND_END_NONE)
+}
+
+/// No band end; also the largest reach a box is clipped to.
+pub const BAND_END_NONE: f32 = 3.0e7;
+
+/// How far (grid cells) a ray with unit direction component `d` moves along its axis by
+/// `band_end`: the half-extent of the box around the eye that holds the ray until then.
+pub fn band_reach(band_end: f32, d: f32) -> i32 {
+    (band_end * d.abs()).floor() as i32
 }
 
 /// The shape hook: whether a ray entering an occupied cell hits it, given its class and the
@@ -309,13 +340,59 @@ impl RayMath {
 }
 
 /// Margin (cells) by which a ray must clear a column region's occupied rows to skip it.
-const COLUMN_EPS: f32 = 1e-4;
+pub const COLUMN_EPS: f32 = 1e-4;
 
 fn box_of(cell: [i32; 3], shift: u32) -> ([i32; 3], [i32; 3]) {
     (cell.map(|c| c << shift), cell.map(|c| (c + 1) << shift))
 }
 
+/// A level, the cell there, its node and the node's slot.
+type Found = (u32, [i32; 3], [i32; 3], Slot);
+
 impl Scene {
+    /// The first level from `from` up with data at grid cell `g`.
+    fn find(&self, g: [i32; 3], from: u32, top: u32) -> Option<Found> {
+        for l in from..=top {
+            let Some(lv) = &self.levels[l as usize] else {
+                continue;
+            };
+            let cell = shr(g, l);
+            let n = shr(cell, 5);
+            if let Some(i) = lv.info.slot_of(n) {
+                let s = Slot::from_word(lv.slots[i]);
+                if s != Slot::None {
+                    return Some((l, cell, n, s));
+                }
+            }
+        }
+        None
+    }
+
+    /// Whether a ray entering this cell would hit it.
+    fn occupied(&self, (_, cell, n, slot): Found) -> bool {
+        match slot {
+            Slot::None | Slot::AllAir => false,
+            Slot::AllSolid(_) => true,
+            Slot::Node(i) => {
+                let local: [i32; 3] = std::array::from_fn(|k| cell[k] - (n[k] << 5));
+                let bc = local.map(|v| v >> 3);
+                match self.nodes[i as usize].get(brick_index(bc[0], bc[1], bc[2])) {
+                    BrickRef::Empty(_) => false,
+                    BrickRef::Uniform(s) => shape_hit(self.table.class(s), 0),
+                    BrickRef::Mixed(off) => {
+                        let brick = self.pool.from(off);
+                        let v = voxel_index(local[0] & 7, local[1] & 7, local[2] & 7);
+                        brick_occupied(brick, v)
+                            && shape_hit(
+                                self.table.class(brick_state(brick, v)),
+                                brick_shape(brick, v),
+                            )
+                    }
+                }
+            }
+        }
+    }
+
     /// Marches one ray (see the module docs).
     pub fn march(&self, ray: &Ray, p: &MarchParams) -> March {
         let rm = RayMath::new(ray);
@@ -359,6 +436,8 @@ impl Scene {
             (lo, hi) = (wlo, whi);
         }
         let t_end = p.max_t.min(rm.exit(wlo, whi).0);
+        // The level the ray marched at in the last iteration.
+        let mut cur: Option<u32> = None;
         let hit = |level: u32, cell: [i32; 3], entry: Option<(usize, i32)>, t: f32, state| {
             Outcome::Hit(Hit {
                 level,
@@ -378,21 +457,18 @@ impl Scene {
             }
             let g = rm.cell_at(t, entry, lo, hi);
             let want = level_for(t, p).min(top);
-            let mut found = None;
-            for l in want..=top {
-                let Some(lv) = &self.levels[l as usize] else {
-                    continue;
-                };
-                let cell = shr(g, l);
-                let n = shr(cell, 5);
-                if let Some(i) = lv.info.slot_of(n) {
-                    let s = Slot::from_word(lv.slots[i]);
-                    if s != Slot::None {
-                        found = Some((l, cell, n, s));
-                        break;
-                    }
-                }
+            let mut found = self.find(g, want, top);
+            // A LOD switch waits while the coarser cell here is occupied and the level the ray
+            // marched at has data (see the module docs).
+            if let (Some(f), Some(c)) = (found, cur)
+                && f.0 > c
+                && self.occupied(f)
+                && let Some(fine) = self.find(g, c, top)
+                && fine.0 < f.0
+            {
+                found = Some(fine);
             }
+            cur = found.map(|f| f.0);
             // Leaves box [blo, bhi) and continues from its exit.
             macro_rules! skip {
                 ($blo:expr, $bhi:expr) => {{
@@ -409,6 +485,29 @@ impl Scene {
                 let (blo, bhi) = box_of(shr(g, top + 5), top + 5);
                 skip!(blo, bhi)
             };
+            // Above or below everything the level holds: leave its box in one skip.
+            if p.columns
+                && let Some(lv) = &self.levels[l as usize]
+            {
+                let s = l + 5;
+                let llo = lv.info.origin.map(|o| o << s);
+                let lhi: [i32; 3] =
+                    std::array::from_fn(|k| (lv.info.origin[k] + lv.info.dims[k] as i32) << s);
+                // ... within the box around the eye that holds this ray until the cone LOD moves
+                // past the level, so coarser data beyond it is not skipped.
+                let be = band_end(l, p);
+                let r: [i32; 3] = std::array::from_fn(|k| band_reach(be, rm.d[k]));
+                let llo: [i32; 3] = std::array::from_fn(|k| llo[k].max(rm.c[k] - r[k]));
+                let lhi: [i32; 3] = std::array::from_fn(|k| lhi[k].min(rm.c[k] + r[k] + 1));
+                let inside = (0..3).all(|k| g[k] >= llo[k] && g[k] < lhi[k]);
+                let (olo, ohi) = self.rows(l).unwrap_or((i32::MAX, i32::MIN));
+                if inside && g[1] >= ohi {
+                    skip!([llo[0], ohi.max(llo[1]), llo[2]], lhi)
+                }
+                if inside && g[1] < olo {
+                    skip!(llo, [lhi[0], olo.min(lhi[1]), lhi[2]])
+                }
+            }
             let node_shift = l + 5;
             let (nlo, nhi) = box_of(n, node_shift);
             let ni = match slot {

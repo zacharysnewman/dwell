@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 12,
+  "protocolVersion": 13,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -67,7 +67,8 @@
     "cellsPerSecond": 65536,
     "burstCells": 131072,
     "reach": 64,
-    "maxQueued": 4
+    "maxQueued": 4,
+    "keep": 65535
   },
   "channels": {
     "control": 0,
@@ -162,7 +163,8 @@
   },
   "welcomeFlags": {
     "flight": 1,
-    "regionEdits": 2
+    "regionEdits": 2,
+    "brushes": 4
   },
   "groundKinds": {
     "None": 0,

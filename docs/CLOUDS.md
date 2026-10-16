@@ -90,18 +90,17 @@ the sky's share of the screen (covered pixels skip them unless the deck is in fr
 to Low. Not yet measured on a phone.
 
 **From above (C5)**, measured with `clouds-above` against `clouds-above-off` (the camera 3.5 km up,
-looking down 40°, the deck over most of the screen; `--unthrottled`, the same window and GPU, the
-best of several runs while other work shared the GPU):
+looking down 40°, the deck over most of the screen; `--unthrottled`, the same window and GPU, one
+run at a quiet moment on a GPU other work shared):
 
 | Clouds | `gpu.composite` p50 |
 |---|---|
-| Off | 1.56 ms |
-| High, from above | 3.13 ms |
+| Off | 1.51 ms |
+| High, from above | 2.42 ms |
 
-About 1.6 ms more: nearly every pixel takes the clouds, but without the self-shadow's second sample.
-In the same session the sky's clouds (`clouds-high` against `clouds-off`) measured 1.74 against
-0.60 ms. The runs varied by up to 3× between repeats, because the machine was shared; treat these
-as rough.
+About 0.9 ms more: nearly every pixel takes the clouds, but without the self-shadow's second
+sample. In the same run the sky's clouds (`clouds-high` against `clouds-off`) measured 1.65 against
+0.60 ms. Runs varied by up to 4× between repeats on the shared machine; treat these as rough.
 
 ## 5. Checks
 

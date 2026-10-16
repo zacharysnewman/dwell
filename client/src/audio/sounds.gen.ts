@@ -93,7 +93,29 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "slide",
-      "sound": "dwell:slide"
+      "set": "slide",
+      "speed": [
+        0.5,
+        14
+      ],
+      "loop": "start"
+    },
+    {
+      "name": "slide_speed",
+      "speed": [
+        0.5,
+        14
+      ],
+      "loop": "update"
+    },
+    {
+      "name": "slide_end",
+      "set": "slide_stop",
+      "speed": [
+        0.5,
+        14
+      ],
+      "loop": "stop"
     },
     {
       "name": "rise",
@@ -126,28 +148,36 @@ export const SOUND_DATA: SoundData = {
       "land": "dwell:stone_land",
       "break": "dwell:stone_break",
       "place": "dwell:stone_place",
-      "hit": "dwell:stone_hit"
+      "hit": "dwell:stone_hit",
+      "slide": "dwell:stone_slide",
+      "slide_stop": "dwell:stone_slide_stop"
     },
     "dwell:dirt": {
       "step": "dwell:dirt_step",
       "land": "dwell:dirt_land",
       "break": "dwell:dirt_break",
       "place": "dwell:dirt_place",
-      "hit": "dwell:dirt_hit"
+      "hit": "dwell:dirt_hit",
+      "slide": "dwell:dirt_slide",
+      "slide_stop": "dwell:dirt_slide_stop"
     },
     "dwell:grass": {
       "step": "dwell:grass_step",
       "land": "dwell:grass_land",
       "break": "dwell:grass_break",
       "place": "dwell:grass_place",
-      "hit": "dwell:dirt_hit"
+      "hit": "dwell:dirt_hit",
+      "slide": "dwell:grass_slide",
+      "slide_stop": "dwell:grass_slide_stop"
     },
     "dwell:sand": {
       "step": "dwell:sand_step",
       "land": "dwell:sand_land",
       "break": "dwell:sand_break",
       "place": "dwell:sand_place",
-      "hit": "dwell:sand_hit"
+      "hit": "dwell:sand_hit",
+      "slide": "dwell:sand_slide",
+      "slide_stop": "dwell:sand_slide_stop"
     },
     "dwell:wood": {
       "step": "dwell:wood_step",
@@ -284,6 +314,42 @@ export const SOUND_DATA: SoundData = {
       "event:break"
     ],
     "Redo": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Brush tool on or off": [
+      "event:tool"
+    ],
+    "Paint at the targeted block": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Paint in front of it": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Pick the block to replace": [
+      "event:tool"
+    ],
+    "Previous / next preset": [
+      "event:tool"
+    ],
+    "Next / previous brush shape": [
+      "event:tool"
+    ],
+    "Next / previous performer": [
+      "event:tool"
+    ],
+    "Smaller / bigger brush": [
+      "event:tool"
+    ],
+    "Pick a preset by its key": [
+      "event:tool"
+    ],
+    "Undo / redo a stroke": [
       "event:tool",
       "event:place",
       "event:break"
@@ -2704,32 +2770,349 @@ export const SOUND_DATA: SoundData = {
         }
       ]
     },
-    "dwell:slide": {
-      "gain": 0.857,
-      "reverb": 0.055,
+    "dwell:stone_slide": {
+      "gain": 0.8,
+      "reverb": 0.06,
+      "loop": true,
       "variation": {
-        "pitch": 2,
+        "pitch": 1.5,
         "gain": 1,
-        "cutoff": 0.15,
-        "time": 0.15
+        "cutoff": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0.15,
+          1
+        ],
+        "cutoff": [
+          0.55,
+          1.35
+        ],
+        "pitch": [
+          0.8,
+          1.3
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.32,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2400,
+              "q": 1.4
+            },
+            {
+              "type": "peaking",
+              "freq": 4200,
+              "q": 2,
+              "gain": 4
+            }
+          ],
+          "tremolo": {
+            "rate": 17,
+            "depth": 0.45
+          }
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.6,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 900,
+              "q": 0.9
+            }
+          ],
+          "tremolo": {
+            "rate": 7,
+            "depth": 0.3
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.45,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 260,
+              "q": 0.7
+            }
+          ]
+        }
+      ]
+    },
+    "dwell:dirt_slide": {
+      "gain": 0.8,
+      "reverb": 0.06,
+      "loop": true,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0.15,
+          1
+        ],
+        "cutoff": [
+          0.55,
+          1.35
+        ],
+        "pitch": [
+          0.8,
+          1.3
+        ]
       },
       "layers": [
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.35,
+          "gain": 0.7,
           "filters": [
             {
               "type": "bandpass",
-              "freq": 1500,
-              "q": 1.6,
-              "to": 900
+              "freq": 700,
+              "q": 0.8
+            }
+          ],
+          "tremolo": {
+            "rate": 11,
+            "depth": 0.5
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.55,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 350,
+              "q": 0.7
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.12,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 2
+            }
+          ],
+          "tremolo": {
+            "rate": 23,
+            "depth": 0.6
+          }
+        }
+      ]
+    },
+    "dwell:grass_slide": {
+      "gain": 0.8,
+      "reverb": 0.06,
+      "loop": true,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0.15,
+          1
+        ],
+        "cutoff": [
+          0.55,
+          1.35
+        ],
+        "pitch": [
+          0.8,
+          1.3
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.55,
+          "filters": [
+            {
+              "type": "highpass",
+              "freq": 1400
+            },
+            {
+              "type": "bandpass",
+              "freq": 3200,
+              "q": 0.9
+            }
+          ],
+          "tremolo": {
+            "rate": 5,
+            "depth": 0.25
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.12,
+          "filters": [
+            {
+              "type": "highpass",
+              "freq": 5000
+            }
+          ],
+          "tremolo": {
+            "rate": 13,
+            "depth": 0.5
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.3,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 250,
+              "q": 0.7
+            }
+          ]
+        }
+      ]
+    },
+    "dwell:sand_slide": {
+      "gain": 0.8,
+      "reverb": 0.06,
+      "loop": true,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0.15,
+          1
+        ],
+        "cutoff": [
+          0.55,
+          1.35
+        ],
+        "pitch": [
+          0.8,
+          1.3
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.4,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 4800,
+              "q": 0.7
+            }
+          ],
+          "tremolo": {
+            "rate": 25,
+            "depth": 0.35
+          }
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.4,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1600,
+              "q": 0.8
+            }
+          ],
+          "tremolo": {
+            "rate": 9,
+            "depth": 0.25
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.2,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300,
+              "q": 0.7
+            }
+          ]
+        }
+      ]
+    },
+    "dwell:stone_slide_stop": {
+      "gain": 0.7,
+      "reverb": 0.08,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.7,
+          1.1
+        ],
+        "time": [
+          0.8,
+          1.2
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.8,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 1400,
+              "q": 0.7
             }
           ],
           "env": {
-            "attack": 0.02,
-            "hold": 0.12,
-            "decay": 0.3
+            "attack": 0.006,
+            "decay": 0.22
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "decay": 0.17600000000000002
           }
         },
         {
@@ -2744,15 +3127,217 @@ export const SOUND_DATA: SoundData = {
             }
           ],
           "env": {
-            "attack": 0.002,
-            "decay": 0.015
+            "attack": 0.0005,
+            "decay": 0.012
           },
           "grains": {
             "count": [
-              6,
-              10
+              3,
+              6
             ],
-            "spread": 0.3,
+            "spread": 0.132,
+            "gain": [
+              0.2,
+              1
+            ],
+            "pitch": 4
+          }
+        }
+      ]
+    },
+    "dwell:dirt_slide_stop": {
+      "gain": 0.7,
+      "reverb": 0.08,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.7,
+          1.1
+        ],
+        "time": [
+          0.8,
+          1.2
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.8,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 900,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.006,
+            "decay": 0.25
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "decay": 0.2
+          }
+        }
+      ]
+    },
+    "dwell:grass_slide_stop": {
+      "gain": 0.7,
+      "reverb": 0.08,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.7,
+          1.1
+        ],
+        "time": [
+          0.8,
+          1.2
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.8,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 0.8
+            }
+          ],
+          "env": {
+            "attack": 0.006,
+            "decay": 0.2
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "decay": 0.16000000000000003
+          }
+        }
+      ]
+    },
+    "dwell:sand_slide_stop": {
+      "gain": 0.7,
+      "reverb": 0.08,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.15
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.7,
+          1.1
+        ],
+        "time": [
+          0.8,
+          1.2
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.8,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3800,
+              "q": 0.8
+            }
+          ],
+          "env": {
+            "attack": 0.006,
+            "decay": 0.3
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "decay": 0.24
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.12,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3600,
+              "q": 2
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.012
+          },
+          "grains": {
+            "count": [
+              3,
+              6
+            ],
+            "spread": 0.18,
             "gain": [
               0.2,
               1

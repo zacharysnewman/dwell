@@ -69,12 +69,12 @@ impl W {
         self.f32s(&m.plants);
         self.u32s(&m.indices);
     }
-    /// The placeholder's bricks (march.rs); the marcher replaces these two with its own layout.
+    /// The marcher's bricks: a node build as words (`dwell_march::NodeBuild::to_words`).
     fn chunk_bricks(&mut self, b: &ChunkBricks) {
-        self.u32(b.solid);
+        self.u32s(&b.0.to_words());
     }
     fn section_bricks(&mut self, b: &SectionBricks) {
-        self.u32(b.solid);
+        self.u32s(&b.0.to_words());
     }
     fn flat(&mut self, m: &FlatMesh) {
         self.f32s(&m.positions);
@@ -175,10 +175,14 @@ impl R<'_> {
         })
     }
     fn chunk_bricks(&mut self) -> Res<ChunkBricks> {
-        Ok(ChunkBricks { solid: self.u32()? })
+        Ok(ChunkBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
     }
     fn section_bricks(&mut self) -> Res<SectionBricks> {
-        Ok(SectionBricks { solid: self.u32()? })
+        Ok(SectionBricks(
+            dwell_march::NodeBuild::from_words(&self.u32s()?).ok_or(DecodeError)?,
+        ))
     }
     fn flat(&mut self) -> Res<FlatMesh> {
         Ok(FlatMesh {
@@ -226,10 +230,12 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             padded,
             mirror,
             payloads,
+            origin,
         } => {
             w.u8(4);
             w.u8(u8::from(*mirror));
             w.u8(payloads.0);
+            origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
         }
         Job::MeshSection {
@@ -279,9 +285,11 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         4 => {
             let mirror = r.u8()? != 0;
             let payloads = Payloads(r.u8()?);
+            let origin = [r.i32()?, r.i32()?, r.i32()?];
             Job::MeshChunk {
                 mirror,
                 payloads,
+                origin,
                 padded: r.u16s()?,
             }
         }
@@ -481,6 +489,7 @@ mod tests {
                 padded: vec![1; dwell_mesh::PADDED_VOLUME],
                 mirror: true,
                 payloads,
+                origin: [-32, 64, 96],
             });
             jobs.push(Job::MeshSection {
                 cells: vec![1; dwell_world::lod::VOLUME],
@@ -515,6 +524,7 @@ mod tests {
                 padded: vec![0; 100],
                 mirror: false,
                 payloads: Payloads::BOTH,
+                origin: [0; 3],
             },
         );
         for n in 0..bytes.len() {
