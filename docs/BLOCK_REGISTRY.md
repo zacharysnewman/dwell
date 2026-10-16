@@ -51,6 +51,22 @@ blocks, new vegetation materials (Phase 11c), and any later content.
   `shared/protocol/constants.json` → `constants.gen.*` today), replacing the hand-mirrored tables.
   "Content is prototype" (§6.1) now has a concrete home: the real block set replaces these files.
 
+**Indestructible blocks** (**built, Phase 27 S2a**): a block's `"indestructible": true` (default
+false) makes the server's edit validation refuse to break any of its states (`Unbreakable`) or to
+place into its cell (which would replace a liquid). It is per block, in the data, read from the
+generated Rust table (`StateInfo::indestructible`). Its first user since bedrock went is
+`dwell:sandbox_floor` (prototype content), the structure sandbox's ground, appended to the list so
+earlier ids are kept; it is not adaptive (Phase 18), so it stays flat cubes.
+
+**Grid look option** (**built, Phase 27 S2a**): `"grid": { "every": N, "strength": s }` on a block
+asks the terrain shader for world-aligned lines every `N` blocks (a divisor of the chunk size, 32),
+darkening by `s` (0 < s ≤ 1); `gen.mjs` rejects other values and unknown keys, and emits it as
+`StateInfo::grid`. The renderer looks it up by texture tile (a table built from the registry, so
+the vertex format does not grow), hence one grid per tile: `gen.mjs` rejects two blocks that draw
+with one tile but want different grids (an untextured block uses the `plain` tile). It is a look
+option like `textures`, so it does not enter the registry hash. The
+sandbox floor pairs it (every 8) with the `grid` texture tile (a faint line at every block edge).
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,
@@ -60,6 +76,44 @@ property combinations (a full cube has no facing) while keeping one material ide
 Phase 15** no material opts in (`shapeFamilies` is empty: the baseline's blocks are air, stone,
 dirt, grass, sand, water and ladders); the mechanism stays for future crafted blocks, and the
 examples here name the families as they were.
+
+**Fluid looks** (**built, Phase 26 W1a**; [ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md), [`WATER_RENDERING.md`](./WATER_RENDERING.md) §2, owner
+answers §7: per build, edited in the data file, other fluids by data, looks only). A namespace's
+`fluids` table names fluid looks, each with every field required:
+
+```json
+"fluids": { "dwell:water": {
+  "opacity": 0.72, "surfaceDrop": 0.125,
+  "absorption": [0.45, 0.12, 0.04], "scatter": "#1a8ee0", "roughness": 0.08, "ior": 1.333,
+  "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
+  "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0 } }
+```
+
+| Field | Range | Meaning |
+|---|---|---|
+| `opacity` | (0, 1] | The fixed alpha its blocks are drawn with (until absorption replaces it) |
+| `surfaceDrop` | [0, 1) | Cells the drawn top sits below the cell's top when the cell above is not the same fluid (face B: above the cell's bottom) |
+| `absorption` | 3 × [0, 100] | Beer–Lambert σ per metre, linear red, green, blue |
+| `scatter`, `foam.color` | `#rrggbb` | Scatter and foam colours |
+| `roughness` | [0, 1] | GGX roughness of the surface |
+| `ior` | [1, 3] | Index of refraction |
+| `normalScale`, `caustics` | [0, 10] | Strength of the normal maps and of the caustics |
+| `waveScale` | (0, 1000] | Metres per normal-map repeat |
+| `flowSpeed` | [0, 10] | Metres per second the normal maps scroll |
+| `foam.depth` | [0, 16] | Metres of water under which the shore foams |
+
+A fluid is named `namespace:name` in its own namespace; ids are table order (namespaces sorted,
+entries in order) and are build-local, like state ids, and not in the registry hash. A block
+draws as a fluid with `"look": "fluid", "fluid": "dwell:water"` and takes its opacity from the
+fluid (an `opacity` of its own is an error); a `fluid` without the look, an unknown fluid name, a
+missing or unknown field or a value out of range fail the generator with a message naming the
+fluid and field (`shared/blocks/fluids.mjs`, tested by `client/src/world/fluids.test.ts`). Liquid
+behaviour stays the block's `liquid` flag. Flooded shaped cells are filled with `dwell:water`'s
+look. The generator also writes a **test registry**: the build's namespaces plus
+`shared/blocks/fixtures/*.json` (the fluid and block `test:oil`) into
+`crates/dwell-blocks/src/fixture.gen.rs`, compiled only with the `fixture` feature tests enable,
+so a test adds an entry by data alone (the chunk mesher draws `test:oil` with its own drop and
+opacity). Values are prototype content.
 
 ## 3. Runtime ids and the registry
 
@@ -138,3 +192,14 @@ so a failure says which changed.
 - Determinism goldens pass (regenerated once if runtime ids change); protocol golden vectors for
   `Welcome`'s registry hash; e2e "break and place every palette block" still passes.
 - If paletted containers are adopted: chunk memory and meshing time measured before and after.
+
+## 7. Sound sets **[in progress, Phase 28]**
+
+A block may name its **sound set** by id: `"sound": "dwell:stone"` (ladders: `"dwell:wood"`). Sets
+live in `shared/sounds/*.json` ([`AUDIO.md`](./AUDIO.md), [ADR 0032](./adr/0032-audio.md)): the
+sound each event plays on that material (step, land, break, place, hit; enter, exit and swim for
+liquids). `shared/blocks/gen.mjs` checks every reference against the sound data
+(`shared/sounds/validate.mjs`) and fails naming the block; the set id is emitted on the block in the
+TS `BLOCK_DEFS`, where the shell's audio maps a state's block to its set. A block without `sound`
+uses the sound data's `fallback` set. Sounds are per build and change no state, id or hash: adding
+or changing one is not a compatibility change.

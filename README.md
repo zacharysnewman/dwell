@@ -62,7 +62,7 @@ workflow (optionally naming a version) or push a `v<version>` tag; merging a PR 
 and serve at `/dwell/` with no launcher; worlds are locked to their version's compatibility line.
 
 **Playing:** the main menu lists your worlds (create one with a name and seed; regenerate or delete it) and joins a friend's world by its code (e.g. `KQ7-XM4`) or a server from a pasted invite link. In a game, Esc (or ☰) opens the game menu: Resume, Host… (in your own worlds: choose how many guests and who may build and fly, then share the code, link or QR code; keep the page open while hosting), Quit to main menu, and the settings. Click the view to capture the mouse. WASD move, Space jump, Shift run, C (or Ctrl)
-crouch, double-tap Space to fly (creative flight: Space/C up and down, Shift faster, the higher the
+crouch, F to fly (creative flight: Space/C up and down, Shift faster, the higher the
 faster — high enough to see the whole disc; while flying, the Flight speed slider (top right) or − / = sets a minimum speed; servers choose who may with `--flight`), F3 debug
 overlay (`?debug=1` opens it on load), F4 terrain map. The
 whole-world view (LOD) is on by default; `?lodcolors=1` tints it by level, `?lod=0` turns it off. `?netsim=150,20,5` simulates 150 ms RTT,
@@ -95,7 +95,8 @@ for players outside your network.
 
 After editing `shared/protocol/constants.json`, run `node shared/protocol/gen.mjs` and
 `python3 shared/protocol/make_vectors.py`; after editing `shared/blocks/*.json`,
-`node shared/blocks/gen.mjs` (CI fails on stale output).
+`node shared/blocks/gen.mjs` and then `node shared/structures/gen.mjs`; after editing
+`shared/structures/**/*.json`, `node shared/structures/gen.mjs` (CI fails on stale output).
 
 After adding, removing or upgrading a dependency that ships in a build (a Rust crate in the server
 or the client, or a client runtime `dependency`), update `shared/licenses/third_party.json` (and its

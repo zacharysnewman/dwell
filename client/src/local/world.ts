@@ -1,7 +1,12 @@
-// Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|flat` picks
+// Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|flat|sandbox` picks
 // the generator (procedural terrain by default) and `?seed=N` the world seed.
 
-export const GENERATORS = { flat: 0, terrain: 8 } as const;
+/**
+ * Generator versions by world type, as the Rust side numbers them (`dwell_world::GENERATOR_*`).
+ * The sandbox (the flat world in its indestructible white floor block, for building structures) is
+ * numbered away from the terrain's versions, which grow.
+ */
+export const GENERATORS = { flat: 0, terrain: 8, sandbox: 100 } as const;
 /** The retired movement playground (now a test structure, Phase 15): old worlds only. */
 export const RETIRED_PLAYGROUND = 1;
 

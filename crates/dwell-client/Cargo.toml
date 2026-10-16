@@ -45,6 +45,8 @@ ed25519-dalek = "2"
 # A stub device (wgpu's noop backend) for the renderer's native tests; never in a build.
 wgpu = { version = "30.0.1", default-features = false, features = ["noop", "webgpu", "wgsl"] }
 naga = { version = "30.0.1", features = ["wgsl-in"] }
+# The test registry (`test:oil`): a second fluid's parameters in the water shader's buffer.
+dwell-blocks = { path = "../dwell-blocks", features = ["fixture"] }
 
 [lints]
 workspace = true
