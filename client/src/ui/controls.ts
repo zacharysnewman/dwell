@@ -46,6 +46,25 @@ export const KEYBOARD: ControlGroup[] = [
     ],
   },
   {
+    // The region tools (dwell-game region_tools.rs `tool_for_key`), while the mouse is captured.
+    title: 'Region tools',
+    controls: [
+      { action: 'Select first corner', keys: ['B'], when: 'the targeted block' },
+      { action: 'Select second corner', keys: ['N'], when: 'the targeted block' },
+      { action: 'Clear the selection', keys: ['X'] },
+      { action: 'Fill with the chosen block', keys: ['G'], when: 'up to 32 a side' },
+      { action: 'Hollow box of the chosen block', keys: ['H'] },
+      { action: 'Replace the targeted kind of block', keys: ['T'], when: 'with the chosen block' },
+      { action: 'Remove the blocks', keys: ['Delete', 'Backspace'] },
+      { action: 'Copy', keys: ['Ctrl+C', '⌘+C'] },
+      { action: 'Paste mode on or off', keys: ['Ctrl+V', '⌘+V'] },
+      { action: 'Paste', keys: ['Right click'], when: 'in paste mode; left click leaves it' },
+      { action: 'Rotate / mirror the paste', keys: ['R', 'M'], when: 'in paste mode' },
+      { action: 'Undo', keys: ['Ctrl+Z', '⌘+Z'] },
+      { action: 'Redo', keys: ['Ctrl+Shift+Z', 'Ctrl+Y', '⌘+Shift+Z'] },
+    ],
+  },
+  {
     title: 'Game',
     controls: [{ action: 'Menu and settings', keys: ['Esc'] }],
   },
@@ -57,6 +76,13 @@ export const DEBUG_KEYS: Control[] = [
   { action: 'Terrain map', keys: ['F4'] },
   { action: 'Map zoom', keys: ['−', '='], when: 'while the map is open' },
   { action: 'Copy block info', keys: ['F6'], when: 'the targeted block, as JSON' },
+  {
+    action: 'Compare view: split, blink, difference',
+    keys: ['F7'],
+    when: 'in compare mode (?renderer=compare, local builds)',
+  },
+  { action: 'Blink: swap the sides', keys: ['F8'], when: 'in compare mode' },
+  { action: 'Move the split', keys: ['Drag the divider'], when: 'in compare mode, split view' },
 ];
 
 export const TOUCH: Control[] = [

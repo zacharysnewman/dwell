@@ -7,6 +7,7 @@ pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;
 pub mod fog;
+pub mod motion;
 pub mod sky_frame;
 
 use sky_frame::SkyFrame;

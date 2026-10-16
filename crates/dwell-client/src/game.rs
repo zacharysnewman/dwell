@@ -16,10 +16,11 @@ use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
+use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
-use dwell_mesh::{ChunkMeshes, SectionMeshes};
+use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
 use dwell_physics::predictor::{Predictor, PredictorStats};
@@ -33,36 +34,49 @@ use dwell_world::{ChunkCoord, VoxelWorld};
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
-use crate::render::{Line, PlayerView, StandIn};
+use crate::render::seam::{ChunkTerrain, SectionTerrain, Selection, TerrainRenderer};
+use crate::render::{Line, PlayerView, RegionBox, StandIn, WindView};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
-const MAX_TICKS_PER_FRAME: f64 = 5.0;
+/// Ticks one frame may catch up (250 ms): beyond it time is dropped, so the frame loop can't spiral.
+/// It covers a slow device's frame (down to 4 fps): a client that drops time predicts fewer ticks
+/// than the server's 60 Hz, the server fills the missing ones by repeating the last input, and the
+/// replays drag the player (a snap once past RECONCILE_SNAP_DISTANCE; e2e/play.spec.ts on CI).
+const MAX_TICKS_PER_FRAME: f64 = 15.0;
 /// Main-thread time per frame for starting mesh jobs (copying chunks' voxels out of the world).
 const MESH_BUDGET_MS: f64 = 4.0;
 /// Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE.
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
 const RATE_NUDGE: f64 = 0.02;
+/// The region tools' outlines: the selection, and where a paste would go.
+const REGION_SELECTION_COLOR: u32 = 0xffffff;
+const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 const PLAYER_COLORS: [u32; 7] = [
     0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
 ];
 
-/// What the game draws through (the wgpu renderer, or a recorder in tests).
-pub trait Scene {
-    fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>);
-    fn set_lod_section(
-        &mut self,
-        id: i64,
-        origin: [f64; 3],
-        cell_size: f64,
-        meshes: Option<&SectionMeshes>,
-    );
-    fn show_lod_sections(&mut self, visible: &[(i64, u8)]);
-    fn show_lod_stand_ins(&mut self, stand_ins: &[StandIn]);
+/// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
+/// the renderer seam's ([`TerrainRenderer`], RAY_MARCHED_RENDERER.md §3): each chunk's and
+/// section's payloads, routed to the terrain renderers the [`Selection`] draws; the rest (camera,
+/// players, outline, lines, stats) is shared by every renderer.
+pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain> {
+    /// What draws the terrain (its payloads are what the meshing jobs make).
+    fn selection(&self) -> Selection;
+    /// Switches renderer; true when the payloads change (the game then rebuilds the terrain).
+    fn select(&mut self, selection: Selection) -> bool;
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
+    /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
+    fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    /// The frame's vertical FOV (degrees; the speed boost, docs/MOTION_EFFECTS.md): the same value
+    /// the LOD selection uses. `None`: the screen's own.
+    fn set_fov(&mut self, fov_y_deg: Option<f64>);
+    /// The wind streaks to draw this frame.
+    fn set_wind(&mut self, wind: WindView);
+    fn set_region_boxes(&mut self, boxes: &[RegionBox]);
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
 }
@@ -72,28 +86,28 @@ pub type SceneRef<S> = Rc<RefCell<S>>;
 /// The streamer's and the LOD system's view of the scene.
 pub struct View<S>(pub SceneRef<S>);
 
-impl<S: Scene> TerrainView<ChunkMeshes> for View<S> {
-    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkMeshes>) {
+impl<S: Scene> TerrainView<ChunkTerrain> for View<S> {
+    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkTerrain>) {
         self.0
             .borrow_mut()
-            .set_terrain_chunk(ChunkCoord::from_array(coord), meshes.as_ref());
+            .set_chunk(ChunkCoord::from_array(coord), meshes.as_ref());
     }
 }
 
-impl<S: Scene> LodView for View<S> {
+impl<S: Scene> LodView<SectionTerrain> for View<S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionMeshes>,
+        meshes: Option<SectionTerrain>,
     ) {
         self.0
             .borrow_mut()
-            .set_lod_section(id, origin, cell_size, meshes.as_ref());
+            .set_section(id, origin, cell_size, meshes.as_ref());
     }
     fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
-        self.0.borrow_mut().show_lod_sections(visible);
+        self.0.borrow_mut().show_sections(visible);
     }
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandInBox]) {
         let boxes: Vec<StandIn> = stand_ins
@@ -104,7 +118,7 @@ impl<S: Scene> LodView for View<S> {
                 hi: b.hi,
             })
             .collect();
-        self.0.borrow_mut().show_lod_stand_ins(&boxes);
+        self.0.borrow_mut().show_stand_ins(&boxes);
     }
 }
 
@@ -333,6 +347,10 @@ pub struct Game<S: Scene> {
     last_draw_ms: Option<f64>,
     eye: EyeCamera,
     pub interaction: BlockInteraction,
+    /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
+    pub region: RegionTools,
+    /// The eye the crosshair targets from (None while not playing).
+    target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -350,6 +368,23 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// A placed camera, if a tool set one.
     view: Option<ViewOverride>,
+    /// The motion effects (docs/MOTION_EFFECTS.md): read the camera's state, never write it.
+    motion: MotionFx,
+    /// The player's choices for them (the settings menu).
+    pub motion_settings: MotionSettings,
+    /// The game menu is open: the effects hold still.
+    pub menu_open: bool,
+    /// The Field of view setting (degrees, vertical; `dwell_lod::base_fov` narrows it on wide
+    /// screens): the base of the projection, the LOD's pixel error and the culling.
+    pub fov_setting: f64,
+    /// The controller's walk and run speeds the effects scale to.
+    speeds: Speeds,
+    /// The face the last drawn frame's camera was on (a change is the turn-over).
+    motion_face: Option<i32>,
+    /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
+    frame_fov: f64,
+    /// The camera the LOD selection last used.
+    lod_camera: Option<LodCamera>,
 }
 
 impl<S: Scene> Game<S> {
@@ -375,6 +410,11 @@ impl<S: Scene> Game<S> {
                     .push(Send::Control(Message::ChunkResync(coords.to_vec())));
             },
         );
+        pool.borrow_mut().payloads = scene.borrow().selection().payloads();
+        let speeds = Speeds {
+            walk: f64::from(config.movement.walk_speed),
+            run: f64::from(config.movement.run_speed),
+        };
         let predictor = Predictor::new(config);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
@@ -406,6 +446,8 @@ impl<S: Scene> Game<S> {
             last_draw_ms: None,
             eye,
             interaction: BlockInteraction::new(),
+            region: RegionTools::new(),
+            target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -417,6 +459,14 @@ impl<S: Scene> Game<S> {
             pending_lod: None,
             map: None,
             view: None,
+            motion: MotionFx::new(),
+            motion_settings: MotionSettings::default(),
+            menu_open: false,
+            fov_setting: dwell_lod::frustum::VERTICAL_FOV,
+            speeds,
+            motion_face: None,
+            frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
+            lod_camera: None,
         };
         match verification {
             Some(c) => game
@@ -428,12 +478,34 @@ impl<S: Scene> Game<S> {
         game
     }
 
+    /// Switches the terrain renderer at runtime (the renderer seam, RAY_MARCHED_RENDERER.md §3):
+    /// when the payloads change, the meshing jobs make the new ones and every chunk and LOD section
+    /// is rebuilt from the voxels and cells the client holds, without a reload.
+    pub fn set_renderer(&mut self, selection: Selection) {
+        if !self.scene.borrow_mut().select(selection) {
+            return;
+        }
+        self.pool.borrow_mut().payloads = selection.payloads();
+        self.streamer.remesh_all();
+        if let Some(lod) = &mut self.lod {
+            lod.rebuild_all();
+        }
+    }
+
     /// Places the camera (None: back to the player's eyes).
     pub fn set_view(&mut self, view: Option<ViewOverride>) {
         self.view = view;
     }
     pub fn view(&self) -> Option<ViewOverride> {
         self.view
+    }
+    /// The vertical FOV the last frame drew with (and the LOD selected with).
+    pub fn frame_fov(&self) -> f64 {
+        self.frame_fov
+    }
+    /// The camera the LOD selection last used (tests: it has the frame's FOV).
+    pub fn lod_camera(&self) -> Option<LodCamera> {
+        self.lod_camera
     }
 
     /// Turns the whole-world view on once the verification is known (`?lod=0` leaves it off).
@@ -722,6 +794,14 @@ impl<S: Scene> Game<S> {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        // In paste mode the buttons paste (right) or leave paste mode (left).
+        if self.region.pasting() {
+            let tool = match action {
+                EditAction::Place => ToolAction::Paste,
+                EditAction::Break => ToolAction::PasteMode,
+            };
+            return self.tool(tool, now_ms);
+        }
         match self.interaction.act(action, now_ms) {
             Some(m) => {
                 self.outbox.borrow_mut().push(Send::Control(m));
@@ -729,6 +809,58 @@ impl<S: Scene> Game<S> {
             }
             None => false,
         }
+    }
+
+    /// Runs a region tool (§6.5) on the crosshair's target and the hotbar's block: only while alive
+    /// and playing. True if it sent a region edit.
+    pub fn tool(&mut self, action: ToolAction, now_ms: f64) -> bool {
+        if self.dead || !self.terrain_ready() {
+            return false;
+        }
+        let target = self.interaction.target().map(|t| t.cell);
+        let target_state =
+            target.map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2]));
+        let material = self
+            .interaction
+            .palette()
+            .get(self.interaction.selected())
+            .map_or(0, |s| s.material);
+        let ctx = ToolContext {
+            target,
+            target_state,
+            placement: self.interaction.placement().map(|(c, _)| c),
+            material,
+            eye: self.target_eye,
+            now_ms,
+        };
+        // Through the streamer: it knows the Air chunks the client never stores.
+        let sent = match self.region.act(action, &ctx, &mut self.streamer) {
+            Some(m) => {
+                self.outbox.borrow_mut().push(Send::Control(m));
+                true
+            }
+            None => false,
+        };
+        self.show_region_boxes();
+        sent
+    }
+
+    /// The region tools' boxes to the renderer.
+    fn show_region_boxes(&self) {
+        let boxes: Vec<RegionBox> = self
+            .region
+            .boxes()
+            .iter()
+            .map(|b| RegionBox {
+                min: b.min.map(f64::from),
+                size: b.size.map(f64::from),
+                color: match b.kind {
+                    ToolBoxKind::Selection => REGION_SELECTION_COLOR,
+                    ToolBoxKind::Ghost => REGION_GHOST_COLOR,
+                },
+            })
+            .collect();
+        self.scene.borrow_mut().set_region_boxes(&boxes);
     }
 
     /// Prediction waits until the terrain around the player has arrived (collision needs it).
@@ -796,10 +928,8 @@ impl<S: Scene> Game<S> {
     fn draw(&mut self, now_ms: f64, input: &KeyboardMouseInput, now: &mut dyn FnMut() -> f64) {
         let c = self.current;
         let face = c.face;
-        let flip = self.flip.draw(
-            face,
-            self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0),
-        );
+        let dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
+        let flip = self.flip.draw(face, dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;
@@ -839,6 +969,7 @@ impl<S: Scene> Game<S> {
         }
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
+        let camera_eye;
         if self.dead {
             // Third person over the body.
             let view = self.player_view(
@@ -853,20 +984,16 @@ impl<S: Scene> Game<S> {
             scene.set_player(u32::from(self.player_id), Some(view));
             let r = yaw.to_radians();
             let [x, y, z] = self.death_feet;
-            scene.set_camera(
-                [
-                    x - r.sin() * 4.0,
-                    y + f64::from(face) * 2.5,
-                    z - r.cos() * 4.0,
-                ],
-                yaw,
-                -25.0,
-                f64::from(face),
-                0.0,
-            );
+            camera_eye = [
+                x - r.sin() * 4.0,
+                y + f64::from(face) * 2.5,
+                z - r.cos() * 4.0,
+            ];
+            scene.set_camera(camera_eye, yaw, -25.0, f64::from(face), 0.0);
             drop(scene);
             self.show_hud_text();
             self.target(None, input);
+            self.update_motion(c.position, dt);
         } else {
             self.scene
                 .borrow_mut()
@@ -874,18 +1001,28 @@ impl<S: Scene> Game<S> {
             self.show_hud_text();
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
+            camera_eye = eye;
             self.scene
                 .borrow_mut()
                 .set_camera(eye, yaw, pitch, f64::from(face), flip);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input);
+            self.update_motion(eye, dt);
         }
-        if let Some(v) = self.view {
-            self.scene
-                .borrow_mut()
-                .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
-            self.scene.borrow_mut().set_block_outline(None, 1.0);
-        }
+        let camera_eye = match self.view {
+            Some(v) => {
+                self.scene
+                    .borrow_mut()
+                    .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
+                self.scene.borrow_mut().set_block_outline(None, 1.0);
+                v.eye
+            }
+            None => camera_eye,
+        };
+        let store = self.streamer.store_mut();
+        let eye_fluid =
+            dwell_world::fluid::eye_fluid(camera_eye, |x, y, z| store.get_voxel(x, y, z));
+        self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
 
         self.hud.health = self.health;
@@ -901,7 +1038,13 @@ impl<S: Scene> Game<S> {
             if let Some(lod) = &self.lod {
                 lines.push(format_lod_stats(&lod.debug_stats()));
             }
-            lines.push(format_render_stats(&self.scene.borrow().stats()));
+            let scene = self.scene.borrow();
+            lines.push(format!(
+                "{} · {}",
+                scene.selection().status(),
+                format_render_stats(&scene.stats())
+            ));
+            drop(scene);
             if !self.memory_note.is_empty() {
                 lines.push(self.memory_note.clone());
             }
@@ -928,12 +1071,51 @@ impl<S: Scene> Game<S> {
         self.hud.status = text.status;
     }
 
+    /// The motion effects for this frame (docs/MOTION_EFFECTS.md): the FOV boost from the camera's
+    /// velocity and state, and the wind. They only read the predicted state. The frame's FOV goes to
+    /// the renderer and, in `update_lod`, to the LOD selection.
+    fn update_motion(&mut self, eye: [f64; 3], dt: f64) {
+        let c = &self.current;
+        let turned_over = self.motion_face.is_some_and(|f| f != c.face);
+        self.motion_face = Some(c.face);
+        let out = self.motion.frame(
+            &MotionInput {
+                eye,
+                velocity: c.velocity,
+                state: c.state,
+                dt,
+                first_person: c.active && !self.dead && self.view.is_none(),
+                turned_over,
+                paused: self.menu_open,
+            },
+            self.motion_settings,
+            self.speeds,
+            &MOTION,
+        );
+        let viewport = self.viewport();
+        self.frame_fov = effective_fov(viewport.fov_y_deg, out.fov_boost_pct);
+        let mut scene = self.scene.borrow_mut();
+        scene.set_fov(Some(self.frame_fov));
+        scene.set_wind(WindView {
+            intensity: out.wind,
+            flight: out.flight,
+            direction: out.direction,
+            time: out.time,
+        });
+    }
+
+    /// The drawing's viewport at the player's Field of view setting (its base FOV, before the
+    /// speed boost).
+    fn viewport(&self) -> dwell_lod::LodViewport {
+        dwell_lod::lod_viewport(self.fov_setting, self.viewport_css.0, self.viewport_css.1)
+    }
+
     /// The whole-world view around the camera.
     fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
         if !c.active || self.lod.is_none() {
             return;
         }
-        let viewport = dwell_lod::lod_viewport(self.viewport_css.0, self.viewport_css.1);
+        let viewport = self.viewport();
         let (position, yaw_deg, pitch_deg) = match self.view {
             Some(v) => (v.eye, v.yaw_deg, v.face() * v.pitch_deg),
             None => (
@@ -951,10 +1133,12 @@ impl<S: Scene> Game<S> {
             position,
             yaw_deg,
             pitch_deg,
-            fov_y_deg: viewport.fov_y_deg,
+            // The frame's FOV, speed boost included: what the renderer draws with.
+            fov_y_deg: self.frame_fov,
             aspect: viewport.aspect,
             height_px: viewport.height_px,
         };
+        self.lod_camera = Some(camera);
         let mut host = LodHost {
             pool_gen: ChunkJobs(self.pool.clone()),
             pool_mesh: MeshJobs(self.pool.clone()),
@@ -977,6 +1161,10 @@ impl<S: Scene> Game<S> {
             input.look.pitch,
             face,
         );
+        self.target_eye = eye;
+        self.region
+            .aim(self.interaction.placement().map(|(c, _)| c));
+        self.show_region_boxes();
         let Some(t) = t else {
             self.scene.borrow_mut().set_block_outline(None, 1.0);
             return;
@@ -1041,13 +1229,13 @@ impl<S: Scene> dwell_lod::SectionMesher for LodHost<'_, S> {
         self.pool_mesh.mesh_section(job, token);
     }
 }
-impl<S: Scene> LodView for LodHost<'_, S> {
+impl<S: Scene> LodView<SectionTerrain> for LodHost<'_, S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionMeshes>,
+        meshes: Option<SectionTerrain>,
     ) {
         self.view.set_lod_section(id, origin, cell_size, meshes);
     }

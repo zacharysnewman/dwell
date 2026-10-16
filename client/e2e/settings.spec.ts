@@ -25,8 +25,14 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     '256 m',
     '4.0 px',
     '256 MB',
+    '75°',
     '1.00×',
     '0°',
+    // Clouds, then (after the FOV boost) the water quality: rows of buttons, the pressed one the
+    // value.
+    '',
+    '100%',
+    '',
   ]);
 
   // Density to zero (no fog), as a drag would.
@@ -53,5 +59,9 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
     exposure: 1,
     skyRotation: 0,
+    clouds: 'high',
+    water: { quality: 'high' },
+    motion: { speedEffects: true, fovBoost: 1 },
+    fovDeg: 75,
   });
 });
