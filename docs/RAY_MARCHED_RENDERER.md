@@ -579,46 +579,44 @@ M1, 1280×720). `gpu.march` is the march through to the copy into the shared fra
 `gpu.frame` is raster's whole GPU frame. The machine was shared with other agents' benches, so each
 run's load average is given, and every row compares with raster measured in the same run:
 
-A4 build, one run with the load average rising from 4 to 44 (the later configurations ran under more load). `gpu.march` has few samples per run (3–10): its timer reads back only when a ring buffer is free.
+The A4 build ran at a load average of 5–7, a quiet machine (2026-10-15, 22:46–23:00).
+`gpu.march` has few samples per configuration (3–15; looking down, 300–800): its timer reads back
+only when a ring buffer is free. Each cell is `gpu.march` p50 / frame interval p50, in ms:
 
-| Scenario | raster `gpu.frame` | `march` | `march-half-fsr` | `march-075-fsr` | `march-half-bilateral` |
-|---|---|---|---|---|---|
-| idle-spawn | 2.5 | **18.9** | 5.4 | 12.8 | 6.9 |
-| look-horizon | 2.8 | **23.6**¹ | 9.3 | 21.7 | 9.0 |
-| look-down | 1.7 | **4.9** | 2.4 | 11.4² | 3.7 |
-| fly-high | 4.0 | **21.4** | 10.3 | 28.4² | 10.6 |
+| Scenario | raster (`gpu.frame` / frame) | A3b `march` | A4 `march` | A4 `march-half-fsr` | A4 `march-075-fsr` | A4 `march-half-bilateral` |
+|---|---|---|---|---|---|---|
+| idle-spawn | 2.1 / 6.6 | 35.5¹ (30.6²) | **17.7** / 18.6 | **5.5** / 6.3 | 12.7 / 13.3 | 7.6 / 5.7 |
+| look-horizon | 2.0 / 6.8 | 43.2¹ (30.0²) | ≈ 20³ / 19.5 | **8.7** / 7.2 | 13.2 / 13.9 | 6.8 / 6.7 |
+| look-down | 1.4 / 6.5 | 8.9² (p95) | **4.5** / 4.9 | **2.5** / 4.4 | 3.7 / 4.2 | 1.6 / 4.7 |
+| fly-high | 3.7 / 4.6 | 31.1² (p95) | **19.8** / 21.1 | **8.4** / 8.4 | 13.7 / 14.9 | 5.5 / 7.2 |
 
-¹ From a second run of the same build at load 44–66 (the first run read no sample).
-² Under the run's highest load. The 0.75 runs came last in each scenario and are not comparable
-with the others.
+¹ The A3b build in this session, at load 10 rising to 40, beside raster's 2.4–3.2 ms in the same
+run. Its later scenarios' screenshots time out at its 40–60 ms frames.
+² A3b's own run on a quiet machine (as built, above).
+³ No sample in the quiet run. 23.6 in a run at load 44–66. The frame interval, 19.5, bounds it.
 
-A3b build (before):
+Earlier runs of the A4 build at load 4–66 read the same within the noise: idle-spawn 18.9,
+look-down 4.9, fly-high 21.4, half-scale FSR 5.4 / 9.3 / 2.4 / 10.3.
 
-- **Quiet machine** (A3b's own run): `gpu.march` 30.6 at idle-spawn, 30.0 at look-horizon, 8.9 p95
-  at look-down and 31.1 p95 at fly-high, against raster's 2.6–2.9.
-- **This session, at load 40–80, with raster 1.8–5.1 in the same runs:**
-  - idle-spawn: frame interval 36 ms (no `gpu.march` sample);
-  - look-horizon: 34.6;
-  - look-down: 6.0;
-  - fly-high: no number. Its screenshot timed out, in two runs, at the A3b marcher's 30–60 ms
-    frames.
+**Steps per ray** (the GPU histogram from the native harness, the same views):
 
-So, at full resolution, against raster's GPU frame measured in the same run, A4 compared with A3b:
-
-| Scenario | A4 | A3b |
+| View | A3b p50 / p95 / p99 | A4 p50 / p95 / p99 |
 |---|---|---|
-| idle-spawn | ≈ 7.7× | ≈ 11× |
-| look-horizon | ≈ 8× | ≈ 18× |
-| look-down | ≈ 2.8× | ≈ 3.3× |
-| fly-high | ≈ 5.3× | ≈ 11× |
-
-At half resolution with FSR 1, the marcher is at 1.4–3.3× raster's frame.
+| The spawn | 10 / 87 / 96 | 10 / 27 / 39 |
+| The horizon (−3°) | 7 / 87 / 96 | 7 / 27 / 39 |
+| Looking down | 3 / 5 / 5 | 3 / 5 / 5 |
+| 540 m up | 30 / 81 / 89 | 9 / 22 / 29 |
 
 **Against the goal** (raster's ≈ 3 ms at 720p):
 
-- At full resolution the marcher is still about 7× raster's GPU frame at the spawn (≈ 19 against
-  2.5 ms), down from about 12× (A3b: 30 against 2.6–2.9 ms).
-- At half resolution with FSR 1 it is ≈ 5–10 ms, and ≈ 2.4 ms looking down.
+- At full resolution the marcher is still about 8× raster's GPU frame at the spawn (≈ 18 against
+  2.1 ms), down from about 12–15×; on the 540 m flight it is about 5×, down from about 11×.
+- Looking down it is 4.5 ms against A3b's 8.9, which beats raster's frame interval there (4.9
+  against 6.5 ms, a CPU-bound frame).
+- At half resolution with FSR 1 it is 2.5–8.7 ms, and the frame interval matches raster's or beats
+  it on every view: 6.3, 7.2, 4.4 and 8.4 ms, against raster's 6.6, 6.8, 6.5 and 4.6.
+- The 0.75 scale costs about 0.7× full resolution, not 0.56×: at that scale the cone LOD's levels
+  fall almost where they do at full resolution, so the rays take the same steps.
 - The next levers are in "Not done" above, with lower per-step latency on Tint (Chrome's
   compiler; Naga's Metal output is 1.3–1.6× faster on the same views).
 
