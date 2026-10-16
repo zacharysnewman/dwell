@@ -2,6 +2,7 @@
 // form sets the guest limit (by platform), who may edit and who may fly; once hosting, the panel
 // shows the join code, an invite link to copy, a QR code for phones, the guests connected, and
 // Stop hosting.
+import { audio } from '../audio/engine';
 import qrcode from 'qrcode-generator';
 import { HostPolicy, maxGuestsFor, type HostSettings, type HostVisibility } from '../net/hosting';
 
@@ -189,10 +190,12 @@ export class HostPanel {
       navigator.clipboard.writeText(hosted.link).then(
         () => {
           copy.textContent = 'Copied';
+          audio().ui('success');
         },
         () => {
           link.select();
           copy.textContent = 'Select and copy';
+          audio().ui('error');
         },
       );
       setTimeout(() => {

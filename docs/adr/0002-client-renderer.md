@@ -1,6 +1,6 @@
 # 0002. Client renderer: Three.js on WebGL2, behind a thin render interface
 
-- Status: Accepted; backend superseded by [0027](0027-webgpu-renderer.md) (WebGPU; Three.js and the render interface stay)
+- Status: Superseded by [0028](0028-rust-port.md) (the client is Rust on wgpu, WebGPU only: Three.js and the render interface are gone); its backend had first been superseded by [0027](0027-webgpu-renderer.md) (WebGPU, keeping Three.js and the render interface), itself superseded by 0028
 - Date: 2026-09-25
 - Resolves: ARCHITECTURE.md Open Decisions #2
 

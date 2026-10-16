@@ -125,6 +125,9 @@ pub enum ToolBoxKind {
 struct Clipboard {
     size: [i32; 3],
     cells: Vec<StateId>,
+    /// Cells that keep what is in the world where they land (a structure's `null` cells); empty
+    /// for a copy, which sets every cell.
+    keep: Vec<bool>,
 }
 
 /// One edit of an undo step: the box and its states before `edit` (what undo pastes back; `KEEP`
@@ -181,6 +184,23 @@ fn fits(size: [i32; 3]) -> Option<[u8; 3]> {
 
 fn size_text(s: [i32; 3]) -> String {
     format!("{}×{}×{}", s[0], s[1], s[2])
+}
+
+/// A clipboard's keep mask moved as `PasteTransform::apply` moves its cells.
+fn transform_mask(p: PasteTransform, size: [i32; 3], keep: &[bool]) -> Vec<bool> {
+    let out_size = p.size(size);
+    let mut out = vec![false; keep.len()];
+    let mut i = 0;
+    for y in 0..size[1] {
+        for z in 0..size[2] {
+            for x in 0..size[0] {
+                let [nx, ny, nz] = p.cell(size, [x, y, z]);
+                out[(nx + out_size[0] * (nz + out_size[2] * ny)) as usize] = keep[i];
+                i += 1;
+            }
+        }
+    }
+    out
 }
 
 impl RegionTools {
@@ -358,7 +378,11 @@ impl RegionTools {
                     self.note = "Not loaded yet".into();
                     return None;
                 };
-                self.clipboard = Some(Clipboard { size, cells });
+                self.clipboard = Some(Clipboard {
+                    size,
+                    cells,
+                    keep: Vec::new(),
+                });
                 self.note = format!("Copied {}", size_text(size));
                 None
             }
@@ -390,8 +414,20 @@ impl RegionTools {
                     self.note = "Aim where to paste".into();
                     return None;
                 };
-                let (size, cells) = p.apply(c.size, &c.cells);
+                let (size, mut cells) = p.apply(c.size, &c.cells);
                 let size = self.fit(size)?;
+                if c.keep.iter().any(|&k| k) {
+                    // Kept cells take what the world holds there now: a paste sets every cell.
+                    let Some(now) = world.read_box(min, dims(size)) else {
+                        self.note = "Not loaded yet".into();
+                        return None;
+                    };
+                    for (i, kept) in transform_mask(p, c.size, &c.keep).into_iter().enumerate() {
+                        if kept {
+                            cells[i] = now[i];
+                        }
+                    }
+                }
                 let edit = RegionEdit {
                     op: RegionEditOp::Paste,
                     min,
@@ -405,6 +441,28 @@ impl RegionTools {
             T::Undo => self.replay(true, ctx, world),
             T::Redo => self.replay(false, ctx, world),
         }
+    }
+
+    /// Puts a structure (STRUCTURES.md §4) on the clipboard and turns paste mode on, as a copy
+    /// and Ctrl+V would: `cells` in layer order, `keep` (empty, or one per cell) where it keeps
+    /// what is there. Like a copy, it pastes with its bottom centre on the aimed-at cell.
+    pub fn load_clipboard(
+        &mut self,
+        size: [i32; 3],
+        cells: Vec<StateId>,
+        keep: Vec<bool>,
+        label: &str,
+    ) -> Result<(), String> {
+        let volume = fits(size)
+            .map(|s| s.iter().map(|&n| usize::from(n)).product::<usize>())
+            .ok_or_else(|| format!("Too big: at most {} a side", region_edit::MAX_SIDE))?;
+        if cells.len() != volume || !(keep.is_empty() || keep.len() == volume) {
+            return Err("The cells don't fill the box".into());
+        }
+        self.clipboard = Some(Clipboard { size, cells, keep });
+        self.paste = Some(PasteTransform::default());
+        self.note = format!("{label}: aim and right click to paste");
+        Ok(())
     }
 
     fn fit(&mut self, size: [i32; 3]) -> Option<[u8; 3]> {
@@ -734,6 +792,46 @@ mod tests {
         for k in ["KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "Space"] {
             assert_eq!(tool_for_key(k, false, false), None, "{k}");
         }
+    }
+
+    #[test]
+    fn a_loaded_structure_pastes_turned_and_keeps_its_kept_cells() {
+        let (stone, sand) = (require("dwell:stone"), require("dwell:sand"));
+        let mut w = world();
+        w.set_voxel(1, 1, 0, sand); // under a kept cell: stays
+        w.set_voxel(0, 1, 0, sand); // under a set cell: replaced
+        let mut t = tools();
+        // 2 × 1 × 1: stone at x = 0, kept at x = 1.
+        assert!(
+            t.load_clipboard([2, 1, 1], vec![stone, M.air], vec![false, true], "post")
+                .is_ok()
+        );
+        assert!(t.pasting());
+        assert_eq!(
+            t.status(),
+            "Paste 2×1×1 (0°) · R rotate · M mirror · right click paste · post: aim and right click to paste"
+        );
+        // Aimed at (1, 0, 0): the box stands on (1, 1, 0) with its bottom centre there.
+        step(&mut t, &mut w, ToolAction::Paste, &ctx(Some([1, 0, 0]), 0));
+        assert_eq!((w.get_voxel(0, 1, 0), w.get_voxel(1, 1, 0)), (stone, sand));
+        // The box is now 1 × 1 × 2 on (5, 1, 4)..(5, 1, 5); the kept cell turned with it.
+        w.set_voxel(5, 1, 4, sand);
+        w.set_voxel(5, 1, 5, sand);
+        t.act(ToolAction::Rotate, &ctx(None, 0), &mut w);
+        step(&mut t, &mut w, ToolAction::Paste, &ctx(Some([5, 0, 5]), 0));
+        assert_eq!((w.get_voxel(5, 1, 4), w.get_voxel(5, 1, 5)), (stone, sand));
+        assert!(
+            t.load_clipboard([33, 1, 1], vec![stone; 33], vec![], "big")
+                .is_err()
+        );
+        assert!(
+            t.load_clipboard([2, 1, 1], vec![stone], vec![], "short")
+                .is_err()
+        );
+        assert!(
+            t.load_clipboard([2, 1, 1], vec![stone; 2], vec![true], "mask")
+                .is_err()
+        );
     }
 
     #[test]

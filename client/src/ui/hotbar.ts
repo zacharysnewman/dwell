@@ -51,6 +51,8 @@ export class Hotbar {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'hotbar-slot';
+      // Choosing a slot has its own sound (the hotbar action), not a click.
+      b.dataset.sound = 'none';
       b.dataset.slot = String(i);
       b.title = slot.name;
       b.append(swatch(slot));

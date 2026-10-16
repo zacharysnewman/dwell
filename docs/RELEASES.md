@@ -42,15 +42,18 @@ granted) and the Rust crate points `license-file` at `LICENSE`. Source-available
 still be adopted later.
 
 **Third-party notices.** Builds ship code under licenses that require their notices in copies
-(Jolt Physics, three.js, `wtransport` and the other Rust crates, zstd, the Emscripten runtime and
-others; SQLite is public domain). **Built:** `shared/licenses/gen.py` writes `THIRD_PARTY_NOTICES`
-at the root from `shared/licenses/third_party.json` (the CMake, npm and Emscripten components,
-with their license texts in `texts/`) and `cargo metadata` (every crate linked into the server,
-its license text read from the crate; for a choice of licenses the most permissive is used, and
-the few crates that publish no license file get the standard MIT text with their authors).
-**Also built:** the file ships in every build (`THIRD_PARTY_NOTICES.txt`, emitted by the Vite build
-and linked from the menu's About screen) and beside the native server (copied next to
-`dwell_server` after each build and installed with it), and CI runs `gen.py --check`.
+(Rapier, wgpu, `wtransport`, `redb`, `lz4_flex` and the other Rust crates, and the client shell's npm
+packages). **Built:** `shared/licenses/gen.py` writes `THIRD_PARTY_NOTICES` at the root from
+`shared/licenses/third_party.json` (the components that are not Rust crates, today the shell's npm
+packages, with their license texts in `texts/`) and `cargo metadata` (every crate linked into
+`dwell-server` natively and into `dwell-client` for wasm32, its license text read from the crate;
+for a choice of licenses the most permissive is used, and the few crates that publish no license
+file get the standard MIT text with their authors). (Before Phase 24 the list also held Jolt
+Physics, three.js, zstd, SQLite and the Emscripten runtime, removed with the C++ and Three.js
+code; ADR 0028.) **Also built:** the file ships in every build (`THIRD_PARTY_NOTICES.txt`, emitted
+by the Vite build and linked from the menu's About screen). Beside the native server it is
+**[planned, Phase 23]**: the C++ build copied it next to `dwell_server`, and `cargo build` does not
+(ARCHITECTURE.md §10). CI runs `gen.py --check`.
 
 ## 3. Builds, versions and tags
 
@@ -114,6 +117,10 @@ act, so merging it is the release. Patch releases are manual:
 2. Check `https://dropkickarcade.com/dwell/` (the launcher opens the new stable build; the menu
    shows its version).
 3. Nothing to bump afterwards: later dev builds are pre-releases of the next patch.
+   Each push to `main` (and each pushed tag) gets its own Release run, never cancelled or replaced
+   by a later one (the workflow's concurrency group is per commit, 2026-10-16): merges released
+   back to back each publish their own version. (With one group per branch, GitHub kept only the
+   newest waiting run, so an earlier merge's release was dropped and had to be tagged by hand.)
 3a. **A patch of an older line (a backport)**, while a newer line is out: commit the fix on the
    line's maintenance branch `release/<line>` (e.g. `release/0.3`, branched from the line's newest
    release tag; its `package.json` stays on the line), then push the tag

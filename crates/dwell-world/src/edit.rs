@@ -135,7 +135,6 @@ pub enum EditCheck {
     NoLineOfSight,
     /// Break: target is air or liquid; Place: nothing to place against.
     NothingThere,
-    /// Break, or Place into its cell: the block data marks the state `"indestructible": true`.
     Unbreakable,
     /// Place: not in the palette, or an unknown id.
     NotPlaceable,

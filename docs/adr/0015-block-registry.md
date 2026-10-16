@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-06
+- Amended by: [0028](0028-rust-port.md) (`gen.mjs` emits Rust for `dwell-blocks`, `blocks.gen.rs`, instead of C++ `blocks.gen.h`, and TypeScript only for the shell's block dump)
 - Resolves: ARCHITECTURE.md Open Decisions #19 (block identity; voxel shapes and slopes under water
   stay with Phase 9's ADR)
 - Supersedes: the material-table parts of ARCHITECTURE.md §6.1 (one hand-numbered `u16` table,

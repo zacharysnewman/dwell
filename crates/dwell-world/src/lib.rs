@@ -4,6 +4,7 @@
 
 pub mod brush;
 pub mod edit;
+pub mod fluid;
 pub mod hash;
 pub mod lod;
 pub mod region;

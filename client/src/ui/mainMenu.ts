@@ -16,6 +16,7 @@ import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
+import { audio } from '../audio/engine';
 
 export interface MainMenuDeps {
   index: WorldIndex;
@@ -314,12 +315,14 @@ export class MainMenu {
           },
           (err: unknown) => {
             this.say(err instanceof Error ? err.message : String(err));
+            audio().ui('error');
           },
         );
       } else {
         this.say(
           'That is not a join code, a server address or an invite link. A host shows its code (e.g. KQ7-XM4); a server prints its code and a link when it starts.',
         );
+        audio().ui('error');
       }
     });
     section.append(title, form);

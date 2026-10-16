@@ -1,4 +1,4 @@
-# 0035. Brushes: VoxelSniper-style painting and sculpting over region-edit pastes
+# 0037. Brushes: VoxelSniper-style painting and sculpting over region-edit pastes
 
 - Status: Accepted
 - Date: 2026-10-15
