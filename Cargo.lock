@@ -661,6 +661,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwell-march"
+version = "0.0.0"
+dependencies = [
+ "dwell-blocks",
+ "dwell-world",
+ "dwell-worldgen",
+]
+
+[[package]]
 name = "dwell-mesh"
 version = "0.0.0"
 dependencies = [

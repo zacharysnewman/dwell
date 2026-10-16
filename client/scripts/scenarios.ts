@@ -3,7 +3,7 @@
 // through `window.__dwell` and record what it reports. scripts/bench.ts runs them in a real browser;
 // adding a benchmark or a repro is a new entry in the data file. Pure: no Node or browser imports.
 
-import { ViewError, type View } from './views.ts';
+import { ViewError, viewUrl, type View } from './views.ts';
 
 export type Vec3 = [number, number, number];
 
@@ -40,7 +40,12 @@ export type Step =
   | { do: 'shot'; name: string }
   /** Starts or stops a Chrome performance trace (`<name>.trace.json`, open in DevTools). */
   | { do: 'traceStart' }
-  | { do: 'traceStop'; name: string };
+  | { do: 'traceStop'; name: string }
+  /** Runs `steps` `times` times (e.g. a burst of edits); no `mark`, `record`, `shot` or traces inside. */
+  | { do: 'repeat'; times: number; steps: Step[] };
+
+/** Which part of the view a scenario measures, for a comparison report's near/far split. */
+export type Split = 'near' | 'far';
 
 export interface Scenario {
   name: string;
@@ -50,6 +55,10 @@ export interface Scenario {
   settings: View['settings'];
   debug: boolean;
   scale: number;
+  /** `?renderer=` (a renderer the client knows by name); null: the client's default. */
+  renderer: string | null;
+  /** Near or far view, for `bench --compare`'s split; null: neither. */
+  split: Split | null;
   steps: Step[];
 }
 
@@ -118,7 +127,11 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   shot: ['name'],
   traceStart: [],
   traceStop: ['name'],
+  repeat: ['times', 'steps'],
 };
+
+/** Steps that name an output or change the run's state, so can't run more than once in a row. */
+const NOT_REPEATED: readonly Step['do'][] = ['mark', 'record', 'shot', 'traceStart', 'traceStop'];
 
 export function parseStep(where: string, v: unknown): Step {
   const kind = (v as Obj | null)?.do;
@@ -170,11 +183,33 @@ export function parseStep(where: string, v: unknown): Step {
     case 'shot':
     case 'traceStop':
       return { do: d, name: name(at('name'), o.name) };
+    case 'repeat': {
+      if (!Array.isArray(o.steps) || o.steps.length === 0) {
+        throw new ViewError(`${at('steps')}: expected a non-empty list`);
+      }
+      const steps = o.steps.map((s, i) => parseStep(`${at('steps')}[${String(i)}]`, s));
+      for (const [i, s] of steps.entries()) {
+        if (NOT_REPEATED.includes(s.do)) {
+          throw new ViewError(
+            `${at('steps')}[${String(i)}]: "${s.do}" can't be repeated (it names an output or marks the run)`,
+          );
+        }
+      }
+      const times = num(at('times'), o.times, 1, 10000);
+      if (!Number.isInteger(times)) throw new ViewError(`${at('times')}: expected a whole number`);
+      return { do: d, times, steps };
+    }
     case 'releaseCamera':
     case 'mark':
     case 'traceStart':
       return { do: d };
   }
+}
+
+function split(where: string, v: unknown): Split | null {
+  if (v === undefined) return null;
+  if (v !== 'near' && v !== 'far') throw new ViewError(`${where}: expected "near" or "far"`);
+  return v;
 }
 
 function parseScenario(where: string, v: unknown): Scenario {
@@ -186,6 +221,8 @@ function parseScenario(where: string, v: unknown): Scenario {
     'settings',
     'debug',
     'scale',
+    'renderer',
+    'split',
     'steps',
   ]);
   const n = name(`${where}.name`, o.name);
@@ -193,7 +230,15 @@ function parseScenario(where: string, v: unknown): Scenario {
   const settings = (
     o.settings === undefined
       ? {}
-      : obj(`${where}.settings`, o.settings, ['fog', 'detail', 'exposure', 'water'])
+      : obj(`${where}.settings`, o.settings, [
+          'fog',
+          'detail',
+          'exposure',
+          'skyRotation',
+          'clouds',
+          'motion',
+          'water',
+        ])
   ) as View['settings'];
   if (!Array.isArray(o.steps) || o.steps.length === 0) {
     throw new ViewError(`${where}.steps: expected a non-empty list`);
@@ -219,6 +264,8 @@ function parseScenario(where: string, v: unknown): Scenario {
     settings,
     debug: bool(`${where}.debug`, o.debug, false),
     scale: num(`${where}.scale`, o.scale, 0.25, 2, 1),
+    renderer: o.renderer === undefined ? null : name(`${where}.renderer`, o.renderer),
+    split: split(`${where}.split`, o.split),
     steps,
   };
 }
@@ -235,6 +282,21 @@ export function parseScenarios(json: unknown): Scenario[] {
     seen.add(s.name);
   }
   return list;
+}
+
+/**
+ * The scenario's page address (views.ts's `viewUrl`) with its renderer, or `params`' (a
+ * `bench --compare` configuration's: `renderer`, `scale`, `upscaler`) in its place.
+ */
+export function scenarioUrl(
+  base: string,
+  s: Scenario,
+  params: Record<string, string> = {},
+): string {
+  const url = new URL(viewUrl(base, scenarioView(s)), 'http://x');
+  if (s.renderer !== null) url.searchParams.set('renderer', s.renderer);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return `${base}${url.search}`;
 }
 
 /** The scenario as a view (its page address and stored settings come from views.ts). */

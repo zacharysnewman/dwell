@@ -1,14 +1,19 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
 // with pages — Settings (the height fog, render/fog.ts; the detail settings, lod/detail.ts; the
-// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts;
-// ARCHITECTURE.md §5, §6.6), Controls (every key
+// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts; the
+// volumes, audio/settings.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
+import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
+import { DEFAULT_FOV, FOV_LIMITS, VIEW_KEY, sanitizeFovSetting, viewRecord } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
+import { audio } from '../audio/engine';
+import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
+import { loadVolumes, saveVolumes } from '../audio/settings';
 import {
   defaultWater,
   sanitizeWater,
@@ -18,6 +23,14 @@ import {
   type WaterQuality,
   type WaterSettings,
 } from './waterSettings';
+import {
+  MOTION_KEY,
+  defaultMotion,
+  motionRecord,
+  prefersReducedMotion,
+  sanitizeMotion,
+  type MotionSettings,
+} from './motionSettings';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -50,17 +63,29 @@ export interface Settings {
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
+  /** Master, effects and interface volumes, 0–1 (audio/settings.ts; this browser only). */
+  audio: Volumes;
+  /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
+  clouds: CloudQuality;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
+  /** Speed effects: the FOV boost and the wind (docs/MOTION_EFFECTS.md). */
+  motion: MotionSettings;
+  /** The vertical field of view in degrees (60–100; narrower on wide screens, dwell-lod's base_fov). */
+  fovDeg: number;
 }
 
-export function defaultSettings(mobile: boolean): Settings {
+export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
   return {
     fog: { ...DEFAULT_FOG },
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
+    audio: { ...DEFAULT_VOLUMES },
+    clouds: defaultClouds(mobile),
     water: defaultWater(mobile),
+    motion: defaultMotion(reducedMotion),
+    fovDeg: DEFAULT_FOV,
   };
 }
 
@@ -79,7 +104,18 @@ export function settingsJson(s: Settings): string {
     },
     exposure: Math.round(s.exposure * 100) / 100,
     skyRotation: Math.round(s.skyRotation),
+    audio: {
+      master: Math.round(s.audio.master * 100) / 100,
+      effects: Math.round(s.audio.effects * 100) / 100,
+      ui: Math.round(s.audio.ui * 100) / 100,
+    },
+    clouds: s.clouds,
     water: { quality: s.water.quality },
+    motion: {
+      speedEffects: s.motion.speedEffects,
+      fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
+    },
+    fovDeg: Math.round(s.fovDeg),
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -88,6 +124,8 @@ const FOG_KEY = 'dwell.fog';
 const DETAIL_KEY = 'dwell.detail';
 const EXPOSURE_KEY = 'dwell.exposure';
 const SKY_ROTATION_KEY = 'dwell.skyRotation';
+/** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
+const CLOUDS_KEY = 'dwell.clouds';
 /** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
 const WATER_KEY = 'dwell.water';
 
@@ -116,7 +154,11 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
+    audio: loadVolumes(),
+    clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
+    motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
+    fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
   };
 }
 
@@ -126,10 +168,15 @@ export function saveSettings(s: Settings): void {
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
+    localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
     localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
+    // Append-only: fields a newer build stored are kept.
+    localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
+    localStorage.setItem(VIEW_KEY, JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg)));
   } catch {
     // Not kept: the settings still apply for this visit.
   }
+  saveVolumes(s.audio);
 }
 
 interface SliderSpec {
@@ -143,15 +190,54 @@ interface SliderSpec {
   with: (s: Settings, v: number) => Settings;
 }
 
+/** The Look section's choices (a row of buttons each, as the water quality's). */
+const CHOICES: ChoiceSpec<CloudQuality>[] = [
+  {
+    label: 'Clouds',
+    hint: 'Clouds in the sky; Low is lighter on the GPU',
+    choices: CLOUD_QUALITIES,
+    labels: { off: 'Off', low: 'Low', high: 'High' },
+    get: (s) => s.clouds,
+    with: (s, v) => ({ ...s, clouds: v }),
+  },
+];
+
+interface ToggleSpec {
+  label: string;
+  hint: string;
+  get: (s: Settings) => boolean;
+  with: (s: Settings, v: boolean) => Settings;
+}
+
 const withFog = (key: keyof FogSettings) => (s: Settings, v: number) => ({
   ...s,
   fog: { ...s.fog, [key]: v },
 });
 
 /** The menu's sliders; the detail ranges depend on the device (lod/detail.ts). */
-function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
+function sections(
+  mobile: boolean,
+): { title: string; sliders: SliderSpec[]; toggles?: ToggleSpec[] }[] {
   const DETAIL_LIMITS = detailLimits(mobile);
+  const volume = (label: string, hint: string, key: keyof Volumes): SliderSpec => ({
+    label,
+    hint,
+    min: 0,
+    max: 1,
+    log: false,
+    format: (v) => `${String(Math.round(v * 100))}%`,
+    get: (s) => s.audio[key],
+    with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
+  });
   return [
+    {
+      title: 'Sound',
+      sliders: [
+        volume('Master', 'Everything Dwell plays', 'master'),
+        volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
+        volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
+      ],
+    },
     {
       title: 'Fog',
       sliders: [
@@ -220,6 +306,15 @@ function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
       title: 'Look',
       sliders: [
         {
+          label: 'Field of view',
+          hint: 'How much the view takes in, top to bottom (narrower on wide screens)',
+          ...FOV_LIMITS,
+          log: false,
+          format: (v) => `${String(Math.round(v))}°`,
+          get: (s) => s.fovDeg,
+          with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
+        },
+        {
           label: 'Exposure',
           hint: 'How bright the picture is after tone mapping',
           ...EXPOSURE_LIMITS,
@@ -237,6 +332,29 @@ function sections(mobile: boolean): { title: string; sliders: SliderSpec[] }[] {
           format: (v) => `${String(Math.round(v))}°`,
           get: (s) => s.skyRotation,
           with: (s, v) => ({ ...s, skyRotation: v }),
+        },
+      ],
+    },
+    {
+      title: 'Motion',
+      toggles: [
+        {
+          label: 'Speed effects',
+          hint: 'The view widens and wind streaks past when moving fast',
+          get: (s) => s.motion.speedEffects,
+          with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
+        },
+      ],
+      sliders: [
+        {
+          label: 'FOV boost',
+          hint: 'How much the view widens at speed (0: not at all)',
+          min: 0,
+          max: 1,
+          log: false,
+          format: (v) => `${String(Math.round(v * 100))}%`,
+          get: (s) => s.motion.fovBoost,
+          with: (s, v) => ({ ...s, motion: { ...s.motion, fovBoost: v } }),
         },
       ],
     },
@@ -270,11 +388,12 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = 'settings' | 'controls' | 'debug' | 'host';
+type Page = 'settings' | 'controls' | 'structures' | 'debug' | 'host';
 
 const PAGE_TITLES: Record<Page, string> = {
   settings: 'Settings',
   controls: 'Controls',
+  structures: 'Structures',
   debug: 'Debug',
   host: 'Host',
 };
@@ -330,6 +449,7 @@ export class SettingsMenu {
     get: (s: Settings) => string;
     buttons: Map<string, HTMLButtonElement>;
   }[] = [];
+  private readonly toggles: { spec: ToggleSpec; input: HTMLInputElement }[] = [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
   private settings: Settings;
@@ -350,6 +470,8 @@ export class SettingsMenu {
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', 'settings-menu');
     button.title = 'Menu and settings (Esc)';
+    // Opening and closing have their own sounds (main.ts), not a click.
+    button.dataset.sound = 'none';
     button.append(el('span', 'menu-glyph'));
 
     this.panel = document.createElement('div');
@@ -368,6 +490,7 @@ export class SettingsMenu {
     close.type = 'button';
     close.setAttribute('aria-label', 'Close menu');
     close.title = 'Close (Esc)';
+    close.dataset.sound = 'none';
     close.addEventListener('click', () => {
       this.setOpen(false);
     });
@@ -423,6 +546,7 @@ export class SettingsMenu {
     const resume = el('button', 'block-button', 'Resume');
     resume.type = 'button';
     resume.id = 'menu-resume';
+    resume.dataset.sound = 'none';
     resume.addEventListener('click', () => {
       this.setOpen(false);
       onResume();
@@ -456,6 +580,19 @@ export class SettingsMenu {
     this.pages.get('host')?.tab.setAttribute('id', 'menu-host');
   }
 
+  /**
+   * Adds the Structures page (ui/structuresPanel.ts): `onShow` runs each time it is opened, to
+   * list the saved structures.
+   */
+  addStructuresPanel(panel: HTMLElement, onShow: () => void): void {
+    const page = el('section');
+    page.append(panel);
+    this.addPage('structures', page);
+    const tab = this.pages.get('structures')?.tab;
+    tab?.setAttribute('id', 'menu-structures');
+    tab?.addEventListener('click', onShow);
+  }
+
   /** Adds the Debug page: each tool a button with its key (DEBUG_KEYS). */
   addDebugTools(tools: DebugTool[]): void {
     const page = el('section');
@@ -467,6 +604,8 @@ export class SettingsMenu {
       const c = DEBUG_KEYS.find((d) => d.keys.includes(tool.key));
       const b = el('button', 'debug-tool');
       b.type = 'button';
+      // Each tool sounds as its key does (main.ts).
+      b.dataset.sound = 'none';
       b.append(el('span', 'debug-tool-name', c?.action ?? tool.key), ...keycaps(tool.key));
       if (c?.when) b.append(el('span', 'debug-tool-when', c.when));
       b.addEventListener('click', () => {
@@ -486,6 +625,39 @@ export class SettingsMenu {
     this.addPage('debug', page);
   }
 
+  /**
+   * The active terrain renderer (RAY_MARCHED_RENDERER.md §3), at the foot of the menu; with
+   * `choices` (local builds' renderer switch) a picker that switches it at runtime.
+   */
+  setRenderer(
+    label: string,
+    choices: { id: string; label: string }[] | null,
+    current: string | undefined,
+    onPick: (id: string) => void,
+  ): void {
+    let row = this.footer.querySelector<HTMLElement>('.gm-renderer');
+    if (!row) {
+      row = el('p', 'gm-renderer');
+      row.id = 'menu-renderer';
+      this.footer.prepend(row);
+    }
+    row.replaceChildren(el('span', 'gm-renderer-name', `Renderer: ${label}`));
+    if (!choices) return;
+    const pick = document.createElement('select');
+    pick.setAttribute('aria-label', 'Renderer');
+    for (const c of choices) {
+      const o = document.createElement('option');
+      o.value = c.id;
+      o.textContent = c.label;
+      o.selected = c.id === current;
+      pick.append(o);
+    }
+    pick.addEventListener('change', () => {
+      onPick(pick.value);
+    });
+    row.append(' ', pick);
+  }
+
   /** A line at the foot of the menu (the build). */
   setFootnote(text: string): void {
     let note = this.footer.querySelector<HTMLElement>('.gm-note');
@@ -503,7 +675,7 @@ export class SettingsMenu {
   }
 
   private addPage(name: Page, page: HTMLElement): void {
-    const order: Page[] = ['settings', 'controls', 'debug', 'host'];
+    const order: Page[] = ['settings', 'controls', 'structures', 'debug', 'host'];
     const tab = el('button', 'gm-tab', PAGE_TITLES[name]);
     tab.type = 'button';
     tab.setAttribute('role', 'tab');
@@ -544,7 +716,9 @@ export class SettingsMenu {
       const group = el('div', 'gm-group');
       group.append(el('h2', undefined, section.title));
       const grid = el('div', 'gm-grid');
+      for (const spec of section.toggles ?? []) grid.append(this.toggle(spec));
       for (const spec of section.sliders) grid.append(this.slider(spec));
+      if (section.title === 'Look') for (const spec of CHOICES) grid.append(this.choice(spec));
       group.append(grid);
       page.append(group);
     }
@@ -558,7 +732,7 @@ export class SettingsMenu {
     reset.type = 'button';
     reset.title = 'Back to the defaults';
     reset.addEventListener('click', () => {
-      this.set(defaultSettings(this.mobile));
+      this.set(defaultSettings(this.mobile, prefersReducedMotion()));
     });
     const copy = el('button', 'quiet-button settings-copy', 'Copy JSON');
     copy.type = 'button';
@@ -650,6 +824,25 @@ export class SettingsMenu {
     }
   }
 
+  private toggle(spec: ToggleSpec): HTMLLabelElement {
+    const row = document.createElement('label');
+    row.className = 'settings-row settings-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.title = spec.hint;
+    input.addEventListener('change', () => {
+      this.settings = spec.with(this.settings, input.checked);
+      this.apply();
+    });
+    row.append(
+      el('span', 'settings-name', spec.label),
+      input,
+      el('span', 'settings-hint', spec.hint),
+    );
+    this.toggles.push({ spec, input });
+    return row;
+  }
+
   /** The slider's filled part, as a CSS variable the track's gradient reads. */
   private paint(input: HTMLInputElement): void {
     input.style.setProperty('--fill', `${String((100 * Number(input.value)) / SLIDER_STEPS)}%`);
@@ -664,6 +857,7 @@ export class SettingsMenu {
       this.paint(input);
     }
     this.showChoices();
+    for (const { spec, input } of this.toggles) input.checked = spec.get(settings);
     this.apply();
   }
 
@@ -673,12 +867,14 @@ export class SettingsMenu {
       await navigator.clipboard.writeText(json);
       this.fallback.hidden = true;
       button.textContent = 'Copied';
+      audio().ui('success');
     } catch {
       // No clipboard (an insecure page, or permission denied): select the JSON to copy by hand.
       this.fallback.value = json;
       this.fallback.hidden = false;
       this.fallback.select();
       button.textContent = 'Select and copy';
+      audio().ui('error');
     }
     setTimeout(() => {
       button.textContent = 'Copy JSON';

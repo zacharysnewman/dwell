@@ -71,7 +71,14 @@ Sampled from the image (hue-family medians of the vivid pixels, and point sample
 
 ### 1.4 What was changed (Phase 7, built)
 
-Built in `client/src/render/look.ts` (the live values), `textures.ts`, `materials.ts` and `render/three/sky.ts`; the tables below are the starting points the work was tuned from, kept for the rationale.
+Built in the Three.js client of the time (`client/src/render/look.ts`, `textures.ts`, `materials.ts`,
+`render/three/sky.ts`, `mesh/mesher.ts`: the file names in this section are that build's), and
+ported to Rust by Phase 24 ([ADR 0028](./adr/0028-rust-port.md)): the live values are in `dwell-look`
+(`lib.rs`: palette, face tints, lights, the sky and its generated WGSL; `fog.rs`: the haze amount;
+`sky_frame.rs`), the texture tiles in `dwell-mesh` `textures.rs`, the block colours in `dwell-mesh`
+`style.rs`, and tone mapping, exposure and fog in the wgpu renderer's WGSL (`dwell-client`
+`render/shaders.rs`). The tables below are the starting points the work was tuned from, kept for
+the rationale.
 
 **Scope: colours only, no terrain generation change.** Phase 7 is a first pass at better
 colours: it retunes how the existing materials and the sky are drawn. It adds no materials, does

@@ -26,8 +26,13 @@ export interface View {
     fog?: { distanceM: number; density: number; heightM: number };
     detail?: { distanceM: number; pixelError: number; memoryMb: number };
     exposure?: number;
+    /** The sky's rotation (degrees; 180 is night) and the Clouds setting. */
+    skyRotation?: number;
+    clouds?: 'off' | 'low' | 'high';
     /** The water quality (ui/waterSettings.ts). */
     water?: { quality: 'low' | 'medium' | 'high' };
+    /** Speed effects (ui/motionSettings.ts): on or off and the FOV boost's strength 0–1. */
+    motion?: { speedEffects: boolean; fovBoost: number };
   };
   /** The F3 overlay (`?debug=1`) and per-level LOD tints (`?lodcolors=1`) in the shot. */
   debug: boolean;
@@ -140,7 +145,15 @@ function parseView(index: string, raw: unknown): View {
   const s =
     o.settings === undefined
       ? {}
-      : fields(`${at}.settings`, o.settings, ['fog', 'detail', 'exposure', 'water']);
+      : fields(`${at}.settings`, o.settings, [
+          'fog',
+          'detail',
+          'exposure',
+          'skyRotation',
+          'clouds',
+          'motion',
+          'water',
+        ]);
   const settings: View['settings'] = {};
   if (s.fog !== undefined) {
     settings.fog = numbers(`${at}.settings.fog`, s.fog, ['distanceM', 'density', 'heightM']);
@@ -154,12 +167,30 @@ function parseView(index: string, raw: unknown): View {
   }
   if (s.exposure !== undefined)
     settings.exposure = num(`${at}.settings.exposure`, s.exposure, 0, 10);
+  if (s.skyRotation !== undefined)
+    settings.skyRotation = num(`${at}.settings.skyRotation`, s.skyRotation, 0, 360);
+  if (s.clouds !== undefined) {
+    if (s.clouds !== 'off' && s.clouds !== 'low' && s.clouds !== 'high') {
+      throw new ViewError(`${at}.settings.clouds: expected "off", "low" or "high"`);
+    }
+    settings.clouds = s.clouds;
+  }
   if (s.water !== undefined) {
     const w = fields(`${at}.settings.water`, s.water, ['quality']);
     if (w.quality !== 'low' && w.quality !== 'medium' && w.quality !== 'high') {
       throw new ViewError(`${at}.settings.water.quality: expected "low", "medium" or "high"`);
     }
     settings.water = { quality: w.quality };
+  }
+  if (s.motion !== undefined) {
+    const m = fields(`${at}.settings.motion`, s.motion, ['speedEffects', 'fovBoost']);
+    settings.motion = {
+      speedEffects:
+        m.speedEffects === undefined
+          ? true
+          : bool(`${at}.settings.motion.speedEffects`, m.speedEffects),
+      fovBoost: num(`${at}.settings.motion.fovBoost`, m.fovBoost, 0, 1, 1),
+    };
   }
 
   return {
@@ -217,6 +248,11 @@ export function viewStorage(view: View): Record<string, string> {
   if (view.settings.exposure !== undefined) {
     out['dwell.exposure'] = JSON.stringify(view.settings.exposure);
   }
+  if (view.settings.skyRotation !== undefined) {
+    out['dwell.skyRotation'] = JSON.stringify(view.settings.skyRotation);
+  }
+  if (view.settings.clouds) out['dwell.clouds'] = JSON.stringify(view.settings.clouds);
   if (view.settings.water) out['dwell.water'] = JSON.stringify(view.settings.water);
+  if (view.settings.motion) out['dwell.motion'] = JSON.stringify(view.settings.motion);
   return out;
 }

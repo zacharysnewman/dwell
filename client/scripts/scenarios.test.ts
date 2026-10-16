@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseScenarios, scenarioView } from './scenarios.ts';
+import { parseScenarios, scenarioUrl, scenarioView } from './scenarios.ts';
 import { viewUrl } from './views.ts';
 
 const file = (scenarios: unknown[]): unknown => ({ scenarios });
@@ -12,6 +12,17 @@ describe('scenarios', () => {
       readFileSync(new URL('../bench/scenarios.json', import.meta.url), 'utf8'),
     ) as unknown;
     expect(parseScenarios(json).length).toBeGreaterThan(0);
+  });
+
+  it('every checked-in scenario that records also takes a shot (for --compare)', () => {
+    const json = JSON.parse(
+      readFileSync(new URL('../bench/scenarios.json', import.meta.url), 'utf8'),
+    ) as unknown;
+    const without = parseScenarios(json)
+      .filter((s) => s.steps.some((x) => x.do === 'record'))
+      .filter((s) => !s.steps.some((x) => x.do === 'shot'))
+      .map((s) => s.name);
+    expect(without).toEqual([]);
   });
 
   it('fills defaults and makes a local-world address', () => {
@@ -47,6 +58,36 @@ describe('scenarios', () => {
       'traceStop',
       'record',
     ]);
+  });
+
+  it('repeats steps, and takes a renderer and a near/far split', () => {
+    const body = [
+      { do: 'edit', action: 'place' },
+      { do: 'wait', s: 0.12 },
+    ];
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'c',
+          renderer: 'march',
+          split: 'near',
+          steps: [{ do: 'repeat', times: 3, steps: body }],
+        },
+      ]),
+    );
+    expect(s.steps[0]).toEqual({ do: 'repeat', times: 3, steps: body });
+    expect(s.split).toBe('near');
+    expect(scenarioUrl('./', s)).toBe('./?local=1&seed=7&renderer=march');
+    const repeat = (times: number, steps: unknown[]): unknown =>
+      file([{ name: 'a', steps: [{ do: 'repeat', times, steps }] }]);
+    expect(() => parseScenarios(repeat(2, [{ do: 'record', name: 'x' }]))).toThrow(
+      /"record" can't be repeated/,
+    );
+    expect(() => parseScenarios(repeat(1.5, body))).toThrow(/whole number/);
+    expect(() => parseScenarios(repeat(2, []))).toThrow(/non-empty/);
+    expect(() =>
+      parseScenarios(file([{ name: 'a', split: 'mid', steps: [{ do: 'mark' }] }])),
+    ).toThrow(/"near" or "far"/);
   });
 
   it('rejects bad entries with a message', () => {

@@ -7,6 +7,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
 import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, slabShape, slopeShape } from './shapes.mjs';
+import { loadSounds } from '../sounds/load.mjs';
+import { checkBlockSounds } from '../sounds/validate.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -115,6 +117,14 @@ for (const ns of namespaces) {
     if (!(def.shape in SHAPES)) fail(`${id}: shape ${def.shape}`);
     if (def.tint !== undefined) fail(`${id}: tint is no longer supported (biome tints were removed)`);
     if (def.launchSpeed !== undefined) fail(`${id}: launchSpeed is no longer supported`);
+    // `grid` (a look option): lines the terrain shader draws every `every` blocks in world space,
+    // darkening by `strength`. `every` divides the chunk size (32), so chunk-local uvs line up.
+    if (def.grid !== undefined) {
+      const { every, strength, ...rest } = def.grid ?? {};
+      if (Object.keys(rest).length) fail(`${id}: grid: unknown ${Object.keys(rest).join(', ')}`);
+      if (![1, 2, 4, 8, 16, 32].includes(every)) fail(`${id}: grid.every must divide 32 (1, 2, 4, 8, 16 or 32)`);
+      if (!(typeof strength === 'number' && strength > 0 && strength <= 1)) fail(`${id}: grid.strength must be in (0, 1]`);
+    }
     const look = def.look ?? 'cube';
     if (!LOOKS.includes(look)) fail(`${id}: look ${look}`);
     if (def.facingProperty) {
@@ -143,6 +153,25 @@ for (const ns of namespaces) {
   }
 }
 if (states[0]?.string !== 'dwell:air') fail('dwell:air must be state 0');
+// The terrain shader finds a face's grid from its texture tile (dwell-mesh tile_grids), so every
+// block drawn with a tile (an untextured one with `plain`) must want the same grid, or none.
+{
+  const gridOfTile = new Map();
+  for (const b of blocks) {
+    const t = b.def.textures;
+    const tiles = t ? (typeof t === 'string' ? [t] : [t.top, t.side, t.bottom]) : ['plain'];
+    const want = b.def.grid ? `every ${b.def.grid.every}, strength ${b.def.grid.strength}` : 'no grid';
+    for (const tile of tiles) {
+      const seen = gridOfTile.get(tile);
+      if (seen && seen.want !== want) {
+        fail(`${b.id}: texture tile ${tile} is drawn with ${seen.want} by ${seen.id} but ${want} here (a tile has one grid: give the block its own tile)`);
+      }
+      gridOfTile.set(tile, seen ?? { id: b.id, want });
+    }
+  }
+}
+// Sound sets (docs/AUDIO.md): a block's optional `sound` names a set in shared/sounds/*.json.
+checkBlockSounds(blocks.map((b) => ({ id: b.id, sound: b.def.sound })), loadSounds());
 if (states.length > 0xffff) fail('too many states');
 
 // Shapes (shapes.mjs): one baked geometry per distinct (corners, inversion, diagonal); index 0 is
@@ -244,6 +273,8 @@ ts.push('  id: string;');
 ts.push('  first: number;');
 ts.push('  count: number;');
 ts.push('  properties: readonly BlockProperty[];');
+ts.push('  /** Its sound set (shared/sounds, docs/AUDIO.md); none: the sounds\' fallback set. */');
+ts.push('  sound?: string;');
 ts.push('}');
 ts.push('');
 ts.push('/** One block state with how it is drawn (the physics side lives in the C++ core). */');
@@ -298,7 +329,8 @@ ts.push('');
 ts.push('export const BLOCK_DEFS: readonly BlockDef[] = [');
 for (const b of blocks) {
   const props = b.props.map((p) => `{ name: '${p.name}', values: [${p.values.map((v) => `'${v}'`).join(', ')}] }`);
-  ts.push(`  { id: '${b.id}', first: ${b.first}, count: ${b.count}, properties: [${props.join(', ')}] },`);
+  const sound = b.def.sound ? `, sound: '${b.def.sound}'` : '';
+  ts.push(`  { id: '${b.id}', first: ${b.first}, count: ${b.count}, properties: [${props.join(', ')}]${sound} },`);
 }
 ts.push('];');
 ts.push('');
@@ -437,6 +469,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `color: 0x${d.color.replace('#', '').toLowerCase()}`,
       `opacity: ${rf(opacityOf(st.block))}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
+      `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

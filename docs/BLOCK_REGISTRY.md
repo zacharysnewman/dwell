@@ -8,6 +8,14 @@
 > sorting by name; the per-state `placeable` set comes from an optional `palette` list in the data
 > (partial property assignments); paletted in-memory chunks were measured and **deferred**.
 
+> **Since Phase 24** ([ADR 0028](./adr/0028-rust-port.md)) the C++ and TypeScript code this file
+> names is Rust: `shared/blocks/gen.mjs` emits the registry for `dwell-blocks` (`blocks.gen.rs`, looked
+> up by name in `registry.rs`) and TypeScript only for the shell's block dump
+> (`client/src/world/blocks.gen.ts`); both are checked against `shared/blocks/vectors.txt`
+> (`dwell-blocks` `tests/vectors.rs`, `client/src/world/blocks.test.ts`). The world file is redb,
+> not SQLite, with LZ4 instead of zstd (`dwell-storage` `db.rs`), and keeps the `block_states` table
+> of world state ids. The text below describes the design as it was made, in Phase 8's terms.
+
 ## 1. Why
 
 Today a voxel is a `u16` **material id** from one global, hand-numbered table
@@ -50,6 +58,22 @@ blocks, new vegetation materials (Phase 11c), and any later content.
   drops, the LOD colour. A generator script emits the C++ and TypeScript registries from it (like
   `shared/protocol/constants.json` → `constants.gen.*` today), replacing the hand-mirrored tables.
   "Content is prototype" (§6.1) now has a concrete home: the real block set replaces these files.
+
+**Indestructible blocks** (**built, Phase 27 S2a**): a block's `"indestructible": true` (default
+false) makes the server's edit validation refuse to break any of its states (`Unbreakable`) or to
+place into its cell (which would replace a liquid). It is per block, in the data, read from the
+generated Rust table (`StateInfo::indestructible`). Its first user since bedrock went is
+`dwell:sandbox_floor` (prototype content), the structure sandbox's ground, appended to the list so
+earlier ids are kept; it is not adaptive (Phase 18), so it stays flat cubes.
+
+**Grid look option** (**built, Phase 27 S2a**): `"grid": { "every": N, "strength": s }` on a block
+asks the terrain shader for world-aligned lines every `N` blocks (a divisor of the chunk size, 32),
+darkening by `s` (0 < s ≤ 1); `gen.mjs` rejects other values and unknown keys, and emits it as
+`StateInfo::grid`. The renderer looks it up by texture tile (a table built from the registry, so
+the vertex format does not grow), hence one grid per tile: `gen.mjs` rejects two blocks that draw
+with one tile but want different grids (an untextured block uses the `plain` tile). It is a look
+option like `textures`, so it does not enter the registry hash. The
+sandbox floor pairs it (every 8) with the `grid` texture tile (a faint line at every block edge).
 
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
@@ -184,3 +208,14 @@ so a failure says which changed.
 - Determinism goldens pass (regenerated once if runtime ids change); protocol golden vectors for
   `Welcome`'s registry hash; e2e "break and place every palette block" still passes.
 - If paletted containers are adopted: chunk memory and meshing time measured before and after.
+
+## 7. Sound sets **[in progress, Phase 28]**
+
+A block may name its **sound set** by id: `"sound": "dwell:stone"` (ladders: `"dwell:wood"`). Sets
+live in `shared/sounds/*.json` ([`AUDIO.md`](./AUDIO.md), [ADR 0032](./adr/0032-audio.md)): the
+sound each event plays on that material (step, land, break, place, hit; enter, exit and swim for
+liquids). `shared/blocks/gen.mjs` checks every reference against the sound data
+(`shared/sounds/validate.mjs`) and fails naming the block; the set id is emitted on the block in the
+TS `BLOCK_DEFS`, where the shell's audio maps a state's block to its set. A block without `sound`
+uses the sound data's `fallback` set. Sounds are per build and change no state, id or hash: adding
+or changing one is not a compatibility change.
