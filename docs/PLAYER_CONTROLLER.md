@@ -261,7 +261,7 @@ Why:
   excluding the player's own body. `cast_ray` returns the nearer of the two. A ring of probes
   first asks the broad phase once (`bodies_near`) and skips Rapier when no moving body is in reach
   — the common case — which keeps 64 players' passes at ~0.48 ms/tick (Release; ~0.51 ms
-  ~8,000 km from the origin).
+  ~8,000 km from the origin, measured before Phase 16 moved the far-origin runs to ~49 km).
 - `overlaps_solid` tests the vertical capsule against solid cell shapes exactly (axis segment to
   shape distance, `vertical_segment_distance_sq`) and against moving bodies with Rapier's
   `intersect_shape`. `submerged_fraction` samples the centre column (liquid or flooded cells).
@@ -281,7 +281,7 @@ own colliders.
   so passing through the sky (fast flight) costs no memory per chunk. Every 64 ticks, chunks more
   than 2 chunks from every player are dropped.
 - Rapier caps body speed at 400 m/s by default; spawning a player raises the world's limit to
-  cover creative flight at the ceiling (`Physics::raise_max_linear_velocity`, §6.7).
+  cover creative flight at its top speed (`Physics::raise_max_linear_velocity`, §6.7).
 
 Rules that keep the grid and the physics world consistent:
 - A voxel edit updates the collider **in the same tick** on the server: `TerrainCollision::sync`
@@ -408,25 +408,27 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   input along the camera's yaw, up with jump, down with crouch — at
   `max(min(fly.speed × run × (1 + max(0, feet − SEA_LEVEL) / fly.boost_height), cap),
   fly.speed × run × fly_speed_factor(input.fly_speed))` (run = `fly.run_factor` while running, else
-  1; cap = `fly.terrain_speed` below `WORLD_MAX_Y`, else none), so speed grows with height and the
-  climb is exponential.
-  `input.fly_speed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 39, carried in bits
+  1; cap = `fly.terrain_speed` below `fly.terrain_band`, else the top level's speed,
+  `fly.speed × run × fly_speed_factor(FLY_SPEED_MAX_LEVEL)`), so speed grows with height and the
+  climb is exponential up to the top level's speed (reached ~33 km above the sea).
+  `input.fly_speed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 20, carried in bits
   4–9 of the input's `buttons`, protocol v9): `fly_speed_factor(L) = 2^(L/2)` — computed with
   `libm::ldexpf` and the correctly rounded `sqrt(2)`, so native and WASM agree exactly — is a true
-  minimum speed; level 0 (factor 1) is the height-based speed alone, and level 39
-  (2^19.5 ≈ 741,000) stays just under the factor at the ceiling, within the world's velocity
-  limit. Below `WORLD_MAX_Y` the height-based speed is capped at `fly.terrain_speed`: collision
+  minimum speed; level 0 (factor 1) is the height-based speed alone, and level 20 (2^10, 11.3 km/s
+  walking, 28 km/s running) crosses the 100 km world in ~9 s (Phase 16 re-checked the levels for
+  the 50 km world: 39 levels, to 2^19.5, were for the 8,192 km disc). Below `fly.terrain_band`
+  the height-based speed is capped at `fly.terrain_speed`: collision
   around the player is built a couple of ticks ahead (its reach is capped at 64 m of travel), and
   the server has to generate the chunks being flown through. The slider's minimum overrides the cap
   (a playtest request): faster than about 64 m per tick near the terrain, the player may pass
   through ground whose collision is not built yet, and the view runs ahead of streaming. Collision
   is unchanged — the player body's continuous collision detection (Rapier CCD) keeps a fast dive
   from tunnelling into the ground (`diving_at_the_bands_top_speed_stops_on_the_ground`).
-- **Limits.** The feet stop at `fly.ceiling` (`FLIGHT_CEILING`, 24,000 km: from there the 8,192 km
-  disc fills about two thirds of the view) and |x|, |z| at `fly.horizontal_limit` (just past the
-  rim); the velocity is clamped to arrive exactly, as a tick up there covers hundreds of
-  kilometres. Spawning a player raises the physics world's velocity limit (Rapier's default is
-  400 m/s) above the fastest flight speed.
+- **No world limit** (Phase 16, ADR 0025 D3): the build sphere bounds building, not movement, so
+  there is no flight ceiling and no rim limit; players fly anywhere (`flight_is_not_bounded_by_the_build_sphere`).
+  Only the wire format's range holds a position: |x|, |y|, |z| stop at `fly.position_limit`
+  (`POS64_LIMIT` − 1 km), the velocity clamped to arrive exactly. Spawning a player raises the
+  physics world's velocity limit (Rapier's default is 400 m/s) above the fastest flight speed.
 - **Leaving flight** hands back to the normal layers with the current velocity, like leaving
   water: the player falls, and a hard landing does fall damage. Landing while flying does not end
   flight (the vertical layer, which reports `LANDED`, is skipped), so flying into the ground is
@@ -475,7 +477,7 @@ PPC default for voxels.
 | | `buoyancy` / `drag` / `float_fraction` | 12 m/s² / 2 /s / 0.7 | — | |
 | `band` ◆ | `boost_gravities` | 2 | — | The flip band (§11) |
 | `fly` ◆ | `speed` / `run_factor` / `boost_height` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × max(1 + height above sea / boost_height, 2^(speed level / 2)) |
-| | `terrain_speed` / `ceiling` / `horizontal_limit` | 400 m/s / 24,000 km / 8,400 km | — | Below `WORLD_MAX_Y` / feet height / \|x\|, \|z\| |
+| | `terrain_speed` / `terrain_band` / `position_limit` | 400 m/s / 6,144 m / 33,553 km | — | The height-based speed's cap / feet height it applies below / \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
 | `damage` ◆ | `fall_damage_min_speed` / `fall_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `LANDED` event's impact speed |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `advanced` | `step_probe_distance` / `probe_ring_radius` / `wall_check_distance` | 0.01 m / 0.9 / 0.16 m | same | |
@@ -583,7 +585,7 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
   `pos64` (exact, so reconciliation compares like for like anywhere) and remote feet positions
   `posfix`. Vertical controller fields (`accumulated_y`, `platform_y`, `target_y`) stay `f32`: they
   are velocities and platform heights, not the player's height. `pos64` accepts ±`POS64_LIMIT`
-  (33,554 km), covering creative flight up to its ceiling (protocol v7); a flying player's remote
+  (33,554 km), where flight is held (protocol v7); a flying player's remote
   `posfix` position clamps at ±8,388 km.
 
 ---
@@ -659,15 +661,17 @@ launch-pad knockback test is a server-issued knockback.
 | Phase6Climb | `platform_climb_swim.rs`: ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | `scenario.rs`: the same scenarios on voxel geometry (standing on heads, half-step stairs, stair corners, ledges) |
 | GoldenTrace | `scenario.rs`: the five-player scenario is identical across repeated runs and matches `tests/golden/scenario.trace` bit for bit in the origin frame (natively and under `wasm32-wasip1`, §8.3); far from the origin and on face B every state must match and positions stay within 1 mm. Re-record with `DWELL_UPDATE_GOLDEN=1` (origin frame only); re-recorded on Rapier in Phase 24 |
-| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap and the ceiling, the speed level, flying round the rim to face B, a fast dive stopping on the ground); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
+| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
 
 Performance gate: 64 players' controller passes (excluding the physics step) under 1 ms/tick —
 measured at ~0.48 ms in a Release build with `enhanced-determinism` on, ~0.51 ms ~8,000 km from the
-origin; checked by `sixty_four_players_controller_passes_cost_under_1_ms_per_tick` (`scenario.rs`;
+origin (before Phase 16); checked by `sixty_four_players_controller_passes_cost_under_1_ms_per_tick` (`scenario.rs`;
 strict in optimised builds, 25 ms in unoptimised ones; a release step of the CI `rust` job).
 
 **Far from the origin** (ADR 0011): every test describes its world in a local frame that
-`tests/common/mod.rs` places in the world; `DWELL_ORIGIN_X=far` puts it 7 999 488 m east, and the
+`tests/common/mod.rs` places in the world — its y 0 at sea level (`ORIGIN_Y` = 32, the flat
+worlds' surface, so the flight speeds' heights are local heights; the midplane is 32 m below);
+`DWELL_ORIGIN_X=far` puts it 49 152 m east, 848 m from the rim (Phase 16; 7 999 488 m before), and the
 whole `dwell-physics` suite — the golden trace and the performance gate included — and the netcode
 suite pass there unchanged (CI runs both; the `wasm32-wasip1` run is in the origin frame).
 World-level tests cover the rest: walking off the rim of the disc falls toward the midplane, not

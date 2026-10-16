@@ -32,13 +32,16 @@ fn flat_bounds() -> LodBounds {
     }
 }
 
-/// Both faces, each flat: stone where a face-local cell's bottom is below 0.
+/// The bifacial test world's crust per face: the 10-layer core (Phase 16), so 20 layers in all.
+const CRUST: i64 = dwell_world::CORE_LAYERS as i64;
+
+/// Both faces, each flat: ground where a face-local cell's bottom is below `CRUST`.
 fn bifacial_bounds() -> LodBounds {
     LodBounds {
         lo: f64::NEG_INFINITY,
-        hi: 0.0,
+        hi: CRUST as f64,
         lo_b: f64::NEG_INFINITY,
-        hi_b: 0.0,
+        hi_b: CRUST as f64,
         any_inside: true,
         bifacial: true,
     }
@@ -61,10 +64,13 @@ fn bifacial_section(c: LodCoord) -> GeneratedSection {
         for y in -1..=32 {
             let bottom = y0 + i64::from(y) * size;
             let on_a = row_face(c, y) == Face::A;
+            // The face-local bottom of the cell, within the crust: on face A its own, on face B
+            // that of its mirror image; the other side of the midplane is that face's crust.
             let solid = if on_a {
-                bottom < 0
+                bottom < CRUST && bottom + size > -CRUST
             } else {
-                mirror_row_bottom(bottom, size) < 0
+                mirror_row_bottom(bottom, size) < CRUST
+                    && mirror_row_bottom(bottom, size) + size > -CRUST
             };
             if !solid {
                 continue;
@@ -823,6 +829,91 @@ fn meshes_level_7_and_up_sections_for_the_viewers_face_the_other_faces_rows_are_
     }
 }
 
+// --- the thin crust (Phase 16) -----------------------------------------------------------------
+
+/// Signed area (cells²) of a mesh's faces whose normals point up (+) and down (−).
+fn up_down_area(m: &dwell_mesh::FlatMesh) -> (f64, f64) {
+    let (mut up, mut down) = (0.0, 0.0);
+    let p = |i: u32| {
+        let i = i as usize * 3;
+        [
+            f64::from(m.positions[i]),
+            f64::from(m.positions[i + 1]),
+            f64::from(m.positions[i + 2]),
+        ]
+    };
+    for t in m.indices.chunks_exact(3) {
+        let (a, b, c) = (p(t[0]), p(t[1]), p(t[2]));
+        let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        // The y component of the normal, its length twice the triangle's horizontal area.
+        let ny = e1[2] * e2[0] - e1[0] * e2[2];
+        if ny > 1e-9 {
+            up += ny / 2.0;
+        } else if ny < -1e-9 {
+            down -= ny / 2.0;
+        }
+    }
+    (up, down)
+}
+
+/// Columns of a section with any ground: what the viewer's face should cover, once.
+fn ground_columns(c: LodCoord) -> f64 {
+    let cells = bifacial_section(c).cells;
+    let mut n = 0;
+    for z in 0..SECTION_CELLS {
+        for x in 0..SECTION_CELLS {
+            n += i32::from((0..SECTION_CELLS).any(|y| cells[cell_index(x, y, z)] != 0));
+        }
+    }
+    f64::from(n)
+}
+
+/// Meshes a section of the 20-layer crust as the system does for a viewer on `view_face`.
+fn crust_mesh(c: LodCoord, view_face: i32) -> dwell_mesh::SectionMeshes {
+    let mut cells = bifacial_section(c).cells;
+    cells_for_viewer(c, &mut cells, view_face, false);
+    dwell_mesh::mesh_section(
+        &cells,
+        &dwell_mesh::MeshSectionOptions {
+            mirror: is_face_b_section(c),
+            ..Default::default()
+        },
+    )
+    .expect("section volume")
+}
+
+#[test]
+fn a_thin_crust_meshes_the_viewers_face_whole_and_none_of_the_other_at_every_level() {
+    // ADR 0025's risk: with a crust of 20 layers, a cell from level 4 up is thicker than a face's
+    // crust. Every level's sections by the midplane, seen from each face: the viewer's face covers
+    // every column with ground exactly once (no holes), and no face of the other side faces the
+    // viewer (none of it shows through). Levels up to 11 lie wholly on one face; the root holds
+    // both and is meshed for the viewer's face.
+    for level in 1..=MAX_LEVEL {
+        let above = section_at(level, [0.5, 0.5, 0.5]);
+        let below = section_at(level, [0.5, -0.5, 0.5]);
+        for view_face in [1, -1] {
+            for c in [above, below] {
+                let (up, down) = up_down_area(&crust_mesh(c, view_face).opaque);
+                let ctx = format!("level {level} {c:?} viewer {view_face}: up {up} down {down}");
+                let columns = ground_columns(c);
+                assert!(columns > 0.0, "{ctx}");
+                if level == MAX_LEVEL {
+                    // Both faces in one section: only the viewer's, whole.
+                    let (mine, other) = if view_face == 1 { (up, down) } else { (down, up) };
+                    assert_eq!((mine, other), (columns, 0.0), "{ctx}");
+                } else if is_face_b_section(c) {
+                    // Face B's own section: its ground faces −y (down, away from face A).
+                    assert_eq!((up, down), (0.0, columns), "{ctx}");
+                } else {
+                    assert_eq!((up, down), (columns, 0.0), "{ctx}");
+                }
+            }
+        }
+    }
+}
+
 // --- LOD requests (§6.6) -------------------------------------------------------------------------
 
 struct Requests {
@@ -1039,6 +1130,70 @@ impl ChunkSetup {
             .flatten()
             .map(|&c| ChunkCoord::from_array(c))
             .collect()
+    }
+}
+
+#[test]
+fn flying_out_through_the_build_sphere_asks_for_nothing_outside_it() {
+    // Phase 16's exit criterion (ADR 0025 D3): the controller flies out of the sphere — flight is not
+    // bounded by it — while the LOD follows the eye, generating sections and asking the server for
+    // chunks: none of either is wholly outside the build volume. Runs natively and under WASM.
+    use dwell_physics::config::PlayerControllerConfig;
+    use dwell_physics::controller::{Input, Players};
+    use dwell_physics::{DVec3, Physics};
+    use dwell_protocol::players::FLY_SPEED_MAX_LEVEL;
+    use dwell_world::{BUILD_VOLUME, Overlap, VoxelWorld, empty_generator};
+
+    let mut world = VoxelWorld::new(empty_generator(), Some(std::sync::Arc::new(|_| true)));
+    let mut physics = Physics::default();
+    let mut players = Players::new(&mut physics, true);
+    let config = PlayerControllerConfig::default();
+    // Over the rim, low: up and out, past the sphere's surface ~9 km above (and the rim beside).
+    let start = DVec3::new(49_000.0, 100.0, 0.5);
+    let h = players.spawn(&mut physics, config, start, 90.0);
+    let mut setup = ChunkSetup::new([start.x, start.y + 1.6, start.z], 4.0);
+    setup.host.bifacial = true;
+    let (mut outside_ticks, mut highest) = (0, 0.0f64);
+    for tick in 0..240 {
+        players.set_input(
+            h,
+            Input {
+                fly: true,
+                fly_speed: FLY_SPEED_MAX_LEVEL as u8,
+                jump: true,
+                move_y: 1.0,
+                look_yaw: 90.0,
+                ..Input::default()
+            },
+        );
+        players.tick(&mut world, &mut physics);
+        physics.step(1.0 / 60.0);
+        let p = players.position(&physics, h);
+        highest = highest.max(p.y);
+        let cell = [p.x.floor() as i64, p.y.floor() as i64, p.z.floor() as i64];
+        if !BUILD_VOLUME.contains_voxel(cell[0], cell[1], cell[2]) {
+            outside_ticks += 1;
+        }
+        if tick % 4 == 0 {
+            let cam = camera([p.x, p.y + 1.6, p.z], 90.0, -30.0);
+            setup.run(&cam, 1);
+        }
+    }
+    assert!(outside_ticks > 60, "{outside_ticks} ticks outside, highest {highest}");
+    assert!(highest > 10_000.0, "{highest}");
+    let generated = &setup.host.generated;
+    assert!(!generated.is_empty());
+    for c in generated {
+        let o = section_origin(*c);
+        let s = section_size(c.level);
+        assert_ne!(
+            BUILD_VOLUME.box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s]),
+            Overlap::Outside,
+            "{c:?}"
+        );
+    }
+    for c in setup.requested() {
+        assert!(BUILD_VOLUME.chunk_may_hold(c), "{c:?}");
     }
 }
 
