@@ -43,12 +43,13 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.11.17, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
+| 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -95,6 +96,11 @@ effects).
 On 2026-10-14 the owner asked for sound effects (procedural, data-driven, every game and menu
 action): **Phase 28** ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)); it needs Phase 24
 only.
+Also on 2026-10-15 the owner asked for a day/night cycle with good transitions, fog included, and a
+better sun and moon, added as **Phase 32 — the day/night cycle** ([ADR 0035](./adr/0035-day-night-cycle.md),
+[`DAY_NIGHT.md`](./DAY_NIGHT.md)). It builds on A1 and
+Phase 31 (the clouds take its light), changes no world file, protocol or terrain, and its clock is
+the one tree growth (Phase 30) counts days with.
 Phase 6's pipeline (6a) is complete; its version selector (6b) can land alongside later phases.
 Phase 12's dome bounds (12a) can go earlier.
 
@@ -1979,7 +1985,7 @@ Exit criteria
 - [x] Native, WASM and Vitest suites pass with regenerated goldens.
 - [x] Chunk and LOD generation time measured against generator version 11 (`… bench`).
 - [x] e2e passes in CI (known failures in `CLAUDE.md` aside): green once the specs that named block
-  ids by number name them by state (`stateId`), and the settings spec counts the sky rotation slider.
+  ids by number name them by state (`stateId`), and the settings spec counts the sky rotation slider (removed by Phase 32).
 
 **Measured** (`dwell_worldgen_inspect <seed> bench`, Release, seeds 0 and 20260925): a chunk
 1.03–1.07 ms (version 11) → 0.07 ms (version 12); LOD sections 0.9–2.1 ms → 0.54–0.84 ms per
@@ -3081,7 +3087,9 @@ Deliverables
   desktops and Low on touch devices, kept under `dwell.clouds` (append-only store); the drift's
   clock is the server's tick (`world_clock.rs`).
 - [x] **C4** — Bench scenarios `clouds-high`, `-low`, `-off` (GPU cost), `-night`, `-dusk`, `-fly`
-  and `-altitude`; named views and scenarios take `settings.clouds` and `settings.skyRotation`.
+  and `-altitude`; named views and scenarios take `settings.clouds` and `settings.skyRotation`
+  (Phase 32 replaced the sky rotation with the time of day: `settings.timeOfDay`, and the clouds'
+  light now comes from the day/night cycle, day or night by the sun's height).
 
 Exit criteria
 - [x] The deck intersection, the wrap, coverage, the quality setting, the clock and a tunable changed
@@ -3093,6 +3101,57 @@ Exit criteria
 - [x] GPU cost measured against Off (`gpu.composite`, `--unthrottled`, `CLOUDS.md` §4).
 - [ ] The owner's look at the clouds, and answers to `CLOUDS.md` §6.
 - [ ] CI green, and the frame time on a phone with the default (Low).
+
+## Phase 32 — The Day/Night Cycle
+
+**Goal:** A day/night cycle with good-looking transitions of sky, light and fog, and a better sun
+and moon (owner, 2026-10-15): a 30-minute day (20 min day, 10 min night) whose length tree growth
+shares, driven by server-authoritative world time, as an extendable system — the clock and the
+look as data a tool can edit ([ADR 0035](./adr/0035-day-night-cycle.md), [`DAY_NIGHT.md`](./DAY_NIGHT.md)).
+
+**Status:** In progress. D0–D5 are built and tested natively, in Node and in a browser on the GPU.
+Outstanding: the owner's look and answers to `DAY_NIGHT.md` §8 (the defaults were taken without
+asking: the cycle is new), CI, and a phone's frame time.
+
+Compatibility: no protocol change. World time is the server's tick, already saved
+(`meta.world_tick`) and sent in `Welcome` and every snapshot on the 0.11 line; the clock in the data
+is public API from now on (`DAY_NIGHT.md` §2).
+
+Deliverables
+- [x] **D0** — ADR 0035 and `DAY_NIGHT.md` (defaults, model, open questions); ARCHITECTURE.md §5,
+  §6.3 (light and sky), §6.6 (the cycle) and §7.4; `TREE_GROWTH.md` points at the shared clock.
+- [x] **D1** — The data: `shared/look/daynight.json` (clock, sun path, sun/moon/star looks, 14
+  keyframes) → `crates/dwell-look/src/daynight.gen.rs` by `shared/look/daynight.mjs` (validated,
+  `daynight.test.mjs`; CI regenerates and fails on a diff).
+- [x] **D2** — The model (`dwell-look` `daynight.rs`): time of day and day number from world time,
+  the sun's uneven path (daylight for `dayS`), the moon opposite, the phase over 8 days, per-face
+  keyframe samples (a monotone cubic in Oklab), the `DaySky` uniform block.
+- [x] **D3** — Drawing: the sky with its horizon band and halos (`sky.wgsl`, also the fog's and
+  reflections' colour), the sun disc, the moon (phases, maria, earthshine) and stars behind the
+  world and the clouds; per-face lights; the keyframes' fog density, exposure and saturation; the
+  viewer's sky eased across the flip band; a dither in the composite. The clouds' light from the
+  block.
+- [x] **D4** — The clock on the client (the server's tick from snapshots, `world_clock.rs`, shared
+  with the clouds); the sky rotation setting, `?skyrot` and `?skyspin` removed (its storage key left
+  as it is).
+- [x] **D5** — Dev controls: `?time=`, `?moon=`, `?timespeed=`, the F3 line, `__dwell.setTime`, bench
+  steps `time` and `timelapse`, scenarios `day-night`, `day-timelapse`, `day-night-cost`; views and
+  scenarios take `settings.timeOfDay`.
+
+Exit criteria
+- [x] Keyframe interpolation (continuous through every keyframe and across midnight, no overshoot),
+  time of day from world time, the sun's path and daylight share, the moon's direction and phase,
+  fog tracking the horizon at every time, a readable night, face B's night under face A's day, and a
+  keyframe changed by data alone are pinned by tests; the WGSL validates with Naga (alone and in the
+  renderer's module).
+- [x] In a browser on the GPU: night, dawn, sunrise, golden hour, morning, noon, sunset, dusk and
+  midnight toward and away from the sun, the moon at three phases, face B's sky (night under face
+  A's noon, day under its midnight) and a 48-frame timelapse, from
+  screenshots.
+- [x] GPU cost measured at noon and midnight, looking at the horizon and up (`day-night-cost`,
+  `--unthrottled`).
+- [ ] The owner's look at the cycle, and answers to `DAY_NIGHT.md` §8.
+- [ ] CI green, and the frame time on a phone.
 
 ---
 

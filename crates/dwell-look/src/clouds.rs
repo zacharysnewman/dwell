@@ -12,7 +12,12 @@
 //! coordinates stay small anywhere in the world. Client-side visuals only: no network, no
 //! simulation.
 
-use crate::{MOON_GLOW, Rgb, SUN_GLOW, TWILIGHT};
+use crate::Rgb;
+use crate::daynight::DAY_NIGHT;
+
+/// How far (in the sine of the sun's height) the clouds' twilight reaches either side of the
+/// horizon.
+const TWILIGHT: f64 = 0.1;
 
 /// Where the deck is and how it fades (`clouds.json`'s `deck`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -304,8 +309,14 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_SUNSET: vec3f = {};", vec3(l.sunset)),
         format!("const CLOUD_NIGHT_LIT: vec3f = {};", vec3(l.night_lit)),
         format!("const CLOUD_NIGHT_SHADE: vec3f = {};", vec3(l.night_shade)),
-        format!("const CLOUD_SUN_GLOW: vec3f = {};", vec3(SUN_GLOW.color)),
-        format!("const CLOUD_MOON_GLOW: vec3f = {};", vec3(MOON_GLOW.color)),
+        format!(
+            "const CLOUD_SUN_GLOW: vec3f = {};",
+            vec3(DAY_NIGHT.brightest().glow)
+        ),
+        format!(
+            "const CLOUD_MOON_GLOW: vec3f = {};",
+            vec3(DAY_NIGHT.moon.glow_color)
+        ),
         format!("const CLOUD_ABSORPTION: f32 = {};", f(l.absorption)),
         format!(
             "const CLOUD_SHADOW_STEP: f32 = {};",
@@ -430,10 +441,9 @@ fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offse
 		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
 	}
 	let lit = exp(-CLOUD_ABSORPTION * occl);
-	// Day or night as the sky behind is: the sphere's gradient runs by the direction's dot with the
-	// day zenith, so a turned sky can be night on one side and day on the other.
-	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole))
-		* smoothstep(-0.3, 0.1, dot(dir, day_pole));
+	// Day or night as the viewer's sky is (the day/night cycle: the same time of day all round the
+	// sky), by the day pole's height: the sun's.
+	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole));
 	var day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
 	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
 	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);

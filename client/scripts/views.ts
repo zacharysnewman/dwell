@@ -26,13 +26,14 @@ export interface View {
     fog?: { distanceM: number; density: number; heightM: number };
     detail?: { distanceM: number; pixelError: number; memoryMb: number };
     exposure?: number;
-    /** The sky's rotation (degrees; 180 is night) and the Clouds setting. */
-    skyRotation?: number;
+    /** The Clouds setting. */
     clouds?: 'off' | 'low' | 'high';
     /** The water quality (ui/waterSettings.ts). */
     water?: { quality: 'low' | 'medium' | 'high' };
     /** Speed effects (ui/motionSettings.ts): on or off and the FOV boost's strength 0–1. */
     motion?: { speedEffects: boolean; fovBoost: number };
+    /** The time of day shown (0–1, 0 midnight, 0.5 noon): `?time=`, this client only. */
+    timeOfDay?: number;
   };
   /** The F3 overlay (`?debug=1`) and per-level LOD tints (`?lodcolors=1`) in the shot. */
   debug: boolean;
@@ -149,10 +150,10 @@ function parseView(index: string, raw: unknown): View {
           'fog',
           'detail',
           'exposure',
-          'skyRotation',
           'clouds',
           'motion',
           'water',
+          'timeOfDay',
         ]);
   const settings: View['settings'] = {};
   if (s.fog !== undefined) {
@@ -167,8 +168,8 @@ function parseView(index: string, raw: unknown): View {
   }
   if (s.exposure !== undefined)
     settings.exposure = num(`${at}.settings.exposure`, s.exposure, 0, 10);
-  if (s.skyRotation !== undefined)
-    settings.skyRotation = num(`${at}.settings.skyRotation`, s.skyRotation, 0, 360);
+  if (s.timeOfDay !== undefined)
+    settings.timeOfDay = num(`${at}.settings.timeOfDay`, s.timeOfDay, 0, 1);
   if (s.clouds !== undefined) {
     if (s.clouds !== 'off' && s.clouds !== 'low' && s.clouds !== 'high') {
       throw new ViewError(`${at}.settings.clouds: expected "off", "low" or "high"`);
@@ -237,6 +238,7 @@ export function viewUrl(base: string, view: View): string {
   if (view.scale !== 1) q.set('scale', String(view.scale));
   if (view.debug) q.set('debug', '1');
   if (view.lodColors) q.set('lodcolors', '1');
+  if (view.settings.timeOfDay !== undefined) q.set('time', String(view.settings.timeOfDay));
   return `${base}?${q.toString()}`;
 }
 
@@ -247,9 +249,6 @@ export function viewStorage(view: View): Record<string, string> {
   if (view.settings.detail) out['dwell.detail'] = JSON.stringify(view.settings.detail);
   if (view.settings.exposure !== undefined) {
     out['dwell.exposure'] = JSON.stringify(view.settings.exposure);
-  }
-  if (view.settings.skyRotation !== undefined) {
-    out['dwell.skyRotation'] = JSON.stringify(view.settings.skyRotation);
   }
   if (view.settings.clouds) out['dwell.clouds'] = JSON.stringify(view.settings.clouds);
   if (view.settings.water) out['dwell.water'] = JSON.stringify(view.settings.water);

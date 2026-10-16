@@ -117,6 +117,10 @@ act, so merging it is the release. Patch releases are manual:
 2. Check `https://dropkickarcade.com/dwell/` (the launcher opens the new stable build; the menu
    shows its version).
 3. Nothing to bump afterwards: later dev builds are pre-releases of the next patch.
+   Each push to `main` (and each pushed tag) gets its own Release run, never cancelled or replaced
+   by a later one (the workflow's concurrency group is per commit, 2026-10-16): merges released
+   back to back each publish their own version. (With one group per branch, GitHub kept only the
+   newest waiting run, so an earlier merge's release was dropped and had to be tagged by hand.)
 3a. **A patch of an older line (a backport)**, while a newer line is out: commit the fix on the
    line's maintenance branch `release/<line>` (e.g. `release/0.3`, branched from the line's newest
    release tag; its `package.json` stays on the line), then push the tag

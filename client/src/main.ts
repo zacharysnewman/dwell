@@ -79,6 +79,10 @@ export interface GameDebugState {
   target: BlockTarget | null;
   lod: Record<string, unknown> | null;
   flying: boolean;
+  /** The day/night cycle as this client shows it: 0 midnight, 0.5 noon; the day; 0 new, 0.5 full. */
+  timeOfDay: number;
+  day: number;
+  moonPhase: number;
 }
 
 interface RenderStats {
@@ -147,6 +151,11 @@ interface DwellDebug {
   sounds(): string[];
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
+  /**
+   * Shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase (0 new, 0.5 full)
+   * on this client only, as `?time=` and `?moon=` do; null returns to the world's.
+   */
+  setTime(t: number | null, moon?: number | null): void;
 }
 
 /** A distribution's summary (telemetry.rs `Stats`). */
@@ -490,7 +499,6 @@ async function start(): Promise<App | null> {
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
-    client.setSkyRotation(s.skyRotation);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setFov(s.fovDeg);
@@ -630,6 +638,10 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    setTime: (t, moon) => {
+      client.setTimeOfDay(t ?? undefined);
+      if (moon !== undefined) client.setMoonPhase(moon ?? undefined);
+    },
   };
 
   const frame = (now: number): void => {

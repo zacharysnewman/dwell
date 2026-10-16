@@ -23,11 +23,11 @@ pub mod water;
 use dwell_world::hash::HashMap;
 
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
+use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
-use dwell_look::sky_frame::{SkyFrame, sky_rest};
-use dwell_look::{DEFAULT_EXPOSURE, LIGHT, hex, sanitize_exposure, srgb_to_linear};
+use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
 use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
@@ -606,7 +606,9 @@ pub struct Renderer {
     /// When the renderer started (ms, telemetry's clock): the water's scroll time.
     start_ms: f64,
     exposure: f64,
-    sky: SkyFrame,
+    /// The day/night cycle's state (the game sets it each frame) and seconds for the stars' twinkle.
+    day: DayState,
+    day_seconds: f64,
     /// The sky's clouds: the setting, the coverage (the data's, or a weather system's) and their
     /// clock (s).
     clouds: CloudQuality,
@@ -1087,7 +1089,8 @@ impl Renderer {
             water_debug: 0,
             start_ms: crate::telemetry::now_ms(),
             exposure: DEFAULT_EXPOSURE,
-            sky: sky_rest(),
+            day: DayState::default(),
+            day_seconds: 0.0,
             clouds: CloudQuality::High,
             cloud_coverage: CLOUDS.shape.coverage,
             cloud_seconds: 0.0,
@@ -1217,8 +1220,18 @@ impl Renderer {
     pub fn set_lod_level_colors(&mut self, on: bool) {
         self.level_colors = on;
     }
-    pub fn set_sky_frame(&mut self, frame: SkyFrame) {
-        self.sky = frame;
+    /// The time of day: the sun, moon and stars, each face's sky and lights (`seconds` drives the
+    /// stars' twinkle).
+    pub fn set_day(&mut self, day: &DayState, seconds: f64) {
+        self.day = *day;
+        self.day_seconds = seconds;
+    }
+    /// How far the viewer is toward face A (1) from face B (0): eased across the flip band so the
+    /// sky's colours don't jump as the camera turns over at the midplane.
+    fn viewer_weight_a(&self) -> f64 {
+        let band = dwell_protocol::world::FLIP_BAND as f64;
+        let t = ((self.eye[1] - dwell_look::MIDPLANE_Y) / band * 0.5 + 0.5).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
     }
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
@@ -1378,11 +1391,13 @@ impl Renderer {
         for col in &vp {
             put(col);
         }
+        let weight_a = self.viewer_weight_a();
+        let viewer = self.day.viewer(weight_a);
         put(&[
             self.eye[1] as f32,
             self.face as f32,
-            self.exposure as f32,
-            self.fog.density as f32,
+            (self.exposure * viewer.exposure) as f32,
+            (self.fog.density * viewer.fog_density).min(1.0) as f32,
         ]);
         // The water's scroll time, seconds since the renderer started.
         let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
@@ -1393,22 +1408,6 @@ impl Renderer {
             self.water_debug as f32,
         ]);
         let f3 = |v: [f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32];
-        put(&f3(self.sky.day_pole));
-        put(&f3(self.sky.sun));
-        put(&f3(self.sky.moon));
-        let lit = |c: u32, k: f64| linear(c).map(|v| v * k as f32);
-        put(&lit(LIGHT.sun, LIGHT.sun_intensity));
-        put(&lit(LIGHT.moon, LIGHT.moon_intensity));
-        put(&lit(LIGHT.hemisphere_sky, LIGHT.hemisphere_intensity));
-        put(&lit(LIGHT.hemisphere_ground, LIGHT.hemisphere_intensity));
-        put(&lit(
-            LIGHT.moon_hemisphere_sky,
-            LIGHT.moon_hemisphere_intensity,
-        ));
-        put(&lit(
-            LIGHT.moon_hemisphere_ground,
-            LIGHT.moon_hemisphere_intensity,
-        ));
         put(&f3(basis.right));
         put(&f3(basis.up));
         put(&f3(basis.forward()));
@@ -1440,6 +1439,8 @@ impl Renderer {
         ) {
             put(&v);
         }
+        let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
+        put(&self.day.pack(weight_a, self.day_seconds, pixel_angle));
         u
     }
 
@@ -2322,9 +2323,10 @@ impl PassView {
     }
 }
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 27 vec4s (after `tan`
-/// the clouds' two, then the water's, the wind's six, the wrap and the reflections' two).
-const FRAME_FLOATS: usize = 16 + 27 * 4;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 18 vec4s (after `tan` the
+/// clouds' two, then the water's, the wind's six, the wrap and the reflections' two) and the
+/// day/night cycle's block.
+const FRAME_FLOATS: usize = 16 + 18 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2415,6 +2417,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         Renderer::set_eye_fluid(self, eye_fluid);
+    }
+    fn set_day(&mut self, day: &DayState, seconds: f64) {
+        Renderer::set_day(self, day, seconds);
     }
     fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
         Renderer::set_block_outline(self, cell, height);
@@ -2988,8 +2993,8 @@ mod tests {
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
         // `tan` is the vec4 before the clouds' two, the water's, the wind's six, the wrap and the
-        // reflections' two.
-        let tan_y = f64::from(u[FRAME_FLOATS - 12 * 4 - 3]);
+        // reflections' two (then the day's block).
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 12 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
@@ -3004,7 +3009,9 @@ mod tests {
         r.resize(1600, 900, 2.0);
         let basis = aim(0.0, 0.0, 1.0, 0.0);
         let wind = |r: &Renderer| {
-            r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - 36..FRAME_FLOATS - 12].to_vec()
+            r.frame_uniforms(&basis, 1.0, 100.0)
+                [FRAME_FLOATS - DAY_SKY_FLOATS - 36..FRAME_FLOATS - DAY_SKY_FLOATS - 12]
+                .to_vec()
         };
         assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
         // Falling forward: the vanishing point drops below the centre, the intensity is passed.
@@ -3025,7 +3032,11 @@ mod tests {
         let mut r = noop_renderer();
         r.resize(1280, 720, 1.0);
         let basis = aim(0.0, 0.0, 1.0, 0.0);
-        let refl = |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - 8..].to_vec();
+        let refl = |r: &Renderer| {
+            r.frame_uniforms(&basis, 1.0, 100.0)
+                [FRAME_FLOATS - DAY_SKY_FLOATS - 8..FRAME_FLOATS - DAY_SKY_FLOATS]
+                .to_vec()
+        };
         r.set_water_quality(WaterQuality::Low);
         let low = refl(&r);
         assert_eq!((low[0], low[4]), (0.0, 0.0), "Low: the sky alone");
@@ -3041,7 +3052,7 @@ mod tests {
 
     #[test]
     fn the_frame_block_matches_the_shader_struct() {
-        // mat4x4f + the vec4f in `Frame`.
+        // mat4x4f + the vec4fs + the `DaySky` block in `Frame`.
         let fields = shaders::source(1)
             .split("struct Frame {")
             .nth(1)
@@ -3051,6 +3062,6 @@ mod tests {
             .unwrap()
             .matches("vec4f,")
             .count();
-        assert_eq!(16 + 4 * fields, FRAME_FLOATS);
+        assert_eq!(16 + 4 * fields + DAY_SKY_FLOATS, FRAME_FLOATS);
     }
 }
