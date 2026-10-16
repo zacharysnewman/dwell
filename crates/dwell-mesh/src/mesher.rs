@@ -9,7 +9,9 @@
 
 use std::sync::OnceLock;
 
-use dwell_blocks::{FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of};
+use dwell_blocks::{
+    FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of,
+};
 use dwell_protocol::CHUNK_SIZE;
 
 use crate::LengthError;
