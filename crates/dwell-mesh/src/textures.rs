@@ -18,7 +18,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 10] = [
+pub const TILE_ORDER: [&str; 13] = [
     "plain",
     "grass",
     "grassSide",
@@ -28,6 +28,9 @@ pub const TILE_ORDER: [&str; 10] = [
     "water",
     "ladder",
     "grid",
+    "logSide",
+    "logTop",
+    "leaves",
     "tallGrass",
 ];
 
@@ -135,6 +138,10 @@ const STONE_FLECK: Rgb = rgb(0xd6c6b4);
 const SAND: Rgb = rgb(0xeed9a4);
 const WATER: Rgb = rgb(0x2f86e0);
 const RAIL: Rgb = rgb(0xa0703a);
+const BARK: Rgb = rgb(0x7a5236);
+const WOOD: Rgb = rgb(0xc09a62);
+const LEAVES: Rgb = rgb(0x6fa83a);
+const LEAVES_HIGH: Rgb = rgb(0xa9c94a);
 
 fn grass(x: i64, y: i64) -> Rgb {
     let (fx, fy) = (x as f64, y as f64);
@@ -200,6 +207,39 @@ fn water(x: i64, y: i64) -> Rgb {
     let ripple = tiled_noise(fx, fy, 4, 5, 151);
     let fine = tiled_fbm(fx, fy, 152);
     scale(WATER, 0.85 + 0.15 * ripple + 0.12 * fine)
+}
+
+/// Bark: vertical streaks (noise varying along x only, stretched along y).
+fn log_side(x: i64, y: i64) -> Rgb {
+    let (fx, fy) = (x as f64, y as f64);
+    let streak = tiled_noise(fx, fy * 0.125, 16, 4, 91);
+    let n = tiled_fbm(fx, fy, 92);
+    scale(BARK, 0.7 + 0.35 * streak + 0.15 * n)
+}
+
+/// Cut wood with growth rings around the tile centre, and a bark rim.
+fn log_top(x: i64, y: i64) -> Rgb {
+    let half = (TILE / 2) as f64;
+    let dx = x as f64 - half + 0.5;
+    let dy = y as f64 - half + 0.5;
+    if dx.abs().max(dy.abs()) > half - 3.0 {
+        return log_side(x, y);
+    }
+    let ring = 0.5 + 0.5 * (dx.hypot(dy) * 1.3).cos();
+    scale(
+        WOOD,
+        0.8 + 0.15 * ring + 0.1 * tiled_fbm(x as f64, y as f64, 93),
+    )
+}
+
+/// Leaves; the gaps between them are transparent (`leaves_alpha`: the leaves draw cutout).
+fn leaves(x: i64, y: i64) -> Rgb {
+    let n = tiled_fbm(x as f64, y as f64, 101);
+    mix(scale(LEAVES, 0.95), LEAVES_HIGH, (n - 0.3).max(0.0) * 1.5)
+}
+
+fn leaves_alpha(x: i64, y: i64) -> f64 {
+    if hash(x, y, 2, 102) > 0.8 { 0.0 } else { 255.0 }
 }
 
 /// The ladder's rails (two columns) and rungs (every 8 texels).
@@ -340,6 +380,9 @@ fn painter(name: &str) -> fn(i64, i64) -> Rgb {
         "water" => water,
         "ladder" => ladder,
         "grid" => grid,
+        "logSide" => log_side,
+        "logTop" => log_top,
+        "leaves" => leaves,
         "tallGrass" => tall_grass,
         _ => |_, _| [255.0, 255.0, 255.0],
     }
@@ -350,6 +393,7 @@ fn painter(name: &str) -> fn(i64, i64) -> Rgb {
 fn alpha(name: &str, x: i64, y: i64) -> f64 {
     match name {
         "ladder" => ladder_alpha(x, y),
+        "leaves" => leaves_alpha(x, y),
         "tallGrass" => tall_grass_alpha(x, y),
         _ => 255.0,
     }

@@ -17,7 +17,7 @@
     },
     {
       "$comment": "A block of each render mode by data alone (docs/TRANSPARENT_BLOCKS.md): cutout leaves, translucent glass, and a cross-look reed.",
-      "name": "leaves", "density": 300, "shape": "full", "render": "cutout", "color": "#3a7a2a", "textures": "tallGrass"
+      "name": "hedge", "density": 300, "shape": "full", "render": "cutout", "color": "#3a7a2a", "textures": "tallGrass"
     },
     {
       "name": "glass", "density": 2500, "shape": "full", "render": "translucent", "opacity": 0.4, "color": "#c8e8f0", "textures": "water"

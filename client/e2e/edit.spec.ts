@@ -109,7 +109,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await page.goto('./?world=flat');
   await ready(page);
   const slots = await page.locator('.hotbar-slot').count();
-  expect(slots).toBe(6);
+  expect(slots).toBe(8);
   const ground = await aim(page);
   expect(ground.face).toBe(2);
   const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);

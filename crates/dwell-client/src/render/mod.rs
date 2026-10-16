@@ -3001,10 +3001,13 @@ mod tests {
                     assert!(got > 0.0, "{name} vanishes at mip {level}");
                 }
             }
-            // Plain averaging would have lost it: the unscaled level 2 covers much less.
+            // Plain averaging would have lost a sparse tile (the ladder): the unscaled level 2
+            // covers much less. A mostly solid tile with scattered holes (the leaves) fills in.
             let plain = downsample(&downsample(&levels[0].0, levels[0].1), levels[0].1 / 2);
             let lost = tile_coverage(&plain, levels[0].1 / 4, tile, 1.0);
-            assert!(lost < want, "{name}: plain mips keep {lost} of {want}");
+            if want < 0.5 {
+                assert!(lost < want, "{name}: plain mips keep {lost} of {want}");
+            }
         }
         assert!(checked >= 1, "the ladder tile has transparent texels");
     }

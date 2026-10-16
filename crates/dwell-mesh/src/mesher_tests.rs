@@ -196,12 +196,12 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
 
 #[test]
 fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
-    // shared/blocks/fixtures/test.json adds `test:leaves` (cutout cube), `test:glass` (translucent
+    // shared/blocks/fixtures/test.json adds `test:hedge` (cutout cube), `test:glass` (translucent
     // cube) and `test:reed` (a three-quad cross) and nothing else: the mesher sorts them by data.
     use dwell_blocks::fixture::{FLUIDS, STATES};
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
     let (leaves, glass, reed, stone, water) = (
-        id("test:leaves"),
+        id("test:hedge"),
         id("test:glass"),
         id("test:reed"),
         id("dwell:stone"),

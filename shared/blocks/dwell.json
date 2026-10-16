@@ -53,6 +53,15 @@
       "color": "#ffffff", "textures": "grid", "grid": { "every": 8, "strength": 0.3 }
     },
     {
+      "name": "log", "sound": "dwell:wood", "density": 700, "shape": "full", "placeable": true,
+      "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
+    },
+    {
+      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves.",
+      "name": "leaves", "sound": "dwell:grass", "density": 200, "shape": "full", "placeable": true,
+      "render": "cutout", "color": "#6fa83a", "textures": "leaves"
+    },
+    {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
       "name": "tall_grass", "sound": "dwell:grass", "density": 200, "shape": "empty", "placeable": true,
       "look": "cross", "render": "cutout",
