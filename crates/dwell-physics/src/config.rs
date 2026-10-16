@@ -105,12 +105,13 @@ pub struct Fly {
     pub boost_height: f32,
     /// 1/s: how quickly velocity follows the wish.
     pub drag: f32,
-    /// Limit on the height-based speed below `WORLD_MAX_Y`; the speed slider overrides it.
+    /// Limit on the height-based speed below `terrain_band`; the speed slider overrides it.
     pub terrain_speed: f32,
-    /// Feet height (m).
-    pub ceiling: f32,
-    /// |x|, |z| (m): just past the world's rim.
-    pub horizontal_limit: f32,
+    /// Feet height (m) below which the height-based speed is capped at `terrain_speed`.
+    pub terrain_band: f32,
+    /// |x|, |y|, |z| (m): flight is not bounded by the world (ADR 0025 D3), only held inside the
+    /// wire format's position range (`POS64_LIMIT`).
+    pub position_limit: f32,
 }
 
 /// ◆ Dwell addition.
@@ -216,8 +217,8 @@ impl Default for PlayerControllerConfig {
                 boost_height: 32.0,
                 drag: 8.0,
                 terrain_speed: 400.0,
-                ceiling: dwell_protocol::players::FLIGHT_CEILING as f32,
-                horizontal_limit: 8_400_000.0,
+                terrain_band: 6_144.0,
+                position_limit: (dwell_protocol::world::POS64_LIMIT - 1_024) as f32,
             },
             damage: Damage {
                 fall_damage_min_speed: 12.0,

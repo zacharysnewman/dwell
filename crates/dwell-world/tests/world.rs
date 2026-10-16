@@ -54,16 +54,17 @@ fn chunk_coordinates_use_floor_division() {
 #[test]
 fn flat_world_layers_and_revisions() {
     let mut world = VoxelWorld::flat();
-    assert_eq!(world.get_voxel(5, 0, 5), s("dwell:air"));
-    assert_eq!(world.get_voxel(5, -1, 5), s("dwell:grass"));
-    assert_eq!(world.get_voxel(5, -2, 5), s("dwell:dirt"));
-    assert_eq!(world.get_voxel(5, -10, 5), s("dwell:stone"));
+    let top = FLAT_TOP_Y;
+    assert_eq!(world.get_voxel(5, top, 5), s("dwell:air"));
+    assert_eq!(world.get_voxel(5, top - 1, 5), s("dwell:grass"));
+    assert_eq!(world.get_voxel(5, top - 2, 5), s("dwell:dirt"));
+    assert_eq!(world.get_voxel(5, top - 10, 5), s("dwell:stone"));
     assert_eq!(world.get_voxel(5, MIDPLANE_Y, 5), s("dwell:stone")); // the core: stone, no bedrock
-    assert_eq!(world.get_voxel(5, MIDPLANE_Y - 1, 5), s("dwell:air")); // the void
-    let coord = chunk_of(5, -1, 5);
+    assert_eq!(world.get_voxel(5, MIDPLANE_Y - 1, 5), s("dwell:air")); // no face B
+    let coord = chunk_of(5, top - 1, 5);
     assert_eq!(world.find(coord).expect("generated").revision(), 0);
-    world.set_voxel(5, -1, 5, s("dwell:air"));
-    assert_eq!(world.get_voxel(5, -1, 5), s("dwell:air"));
+    world.set_voxel(5, top - 1, 5, s("dwell:air"));
+    assert_eq!(world.get_voxel(5, top - 1, 5), s("dwell:air"));
     assert_eq!(world.find(coord).expect("chunk").revision(), 1);
 }
 
@@ -372,20 +373,40 @@ fn flooded_blocks_follow_their_cell_and_leave_water() {
 }
 
 #[test]
-fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
+fn nothing_is_placed_outside_the_build_volume_or_disc() {
+    // The build sphere (ADR 0025): over its top, under its bottom (face B), and beside it high
+    // over the rim, where the sphere is low.
     let mut world = empty();
-    let top = WORLD_MAX_Y - 1;
+    let sky = BUILD_VOLUME.y_range().1 as i32;
+    let top = sky - 1;
     world.set_voxel(0, top, 2, s("dwell:stone"));
     let r = place([0, top, 2], 2, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, f64::from(WORLD_MAX_Y) + 0.6, 2.5], &[]).check,
+        check(&mut world, r, [0.5, f64::from(sky) + 0.6, 2.5], &[]).check,
         EditCheck::OutOfWorld
     );
     let r = place([0, top, 2], 5, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, f64::from(WORLD_MAX_Y) - 0.5, 0.5], &[]).check,
+        check(&mut world, r, [0.5, f64::from(sky) - 0.5, 0.5], &[]).check,
         EditCheck::Ok
     );
+    let bottom = BUILD_VOLUME.y_range().0 as i32;
+    world.set_voxel(0, bottom, 2, s("dwell:stone"));
+    let r = place([0, bottom, 2], 3, s("dwell:stone"));
+    assert_eq!(
+        check(&mut world, r, [0.5, f64::from(bottom) - 0.6, 2.5], &[]).check,
+        EditCheck::OutOfWorld
+    );
+    // 45 km out the sphere is 21.8 km tall: inside below, outside above.
+    let (x, high) = (45_000, 21_793);
+    world.set_voxel(x, high - 1, 0, s("dwell:stone"));
+    let r = place([x, high - 1, 0], 2, s("dwell:stone"));
+    assert_eq!(
+        check(&mut world, r, [f64::from(x) + 0.5, f64::from(high) + 0.6, 0.5], &[]).check,
+        EditCheck::OutOfWorld
+    );
+    assert!(inside_build_volume(i64::from(x), i64::from(high) - 1, 0));
+    assert!(!inside_build_volume(i64::from(x), i64::from(high), 0));
     let rim = WORLD_RADIUS - 1;
     world.set_voxel(rim, 0, 0, s("dwell:stone"));
     let r = place([rim, 0, 0], 0, s("dwell:stone"));

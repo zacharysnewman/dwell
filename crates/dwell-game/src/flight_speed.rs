@@ -1,6 +1,6 @@
 //! The flight speed slider (PLAYER_CONTROLLER.md §6.7): a level carried in every input frame
 //! (`input_buttons::FLY_SPEED`). Level 0 flies at the height-based speed alone; level L flies at
-//! least fly.speed × 2^(L/2) — also below WORLD_MAX_Y, where only the height-based speed is capped.
+//! least fly.speed × 2^(L/2) — also in the terrain band (below fly.terrainBand), where only the height-based speed is capped.
 //! The controller applies it (`dwell-physics`); this module only mirrors it for display. Keeping the
 //! chosen level between sessions is the shell's job: [`fly_speed_level_from_stored`] and
 //! [`fly_speed_level_to_stored`] turn it to and from the stored text.
@@ -21,7 +21,7 @@ pub fn fly_base_speed() -> f64 {
     f64::from(PlayerControllerConfig::default().fly.speed)
 }
 
-/// fly.terrainSpeed: the height-based speed's cap below WORLD_MAX_Y (m/s).
+/// fly.terrainSpeed: the height-based speed's cap in the terrain band (m/s).
 pub fn fly_terrain_speed() -> f64 {
     f64::from(PlayerControllerConfig::default().fly.terrain_speed)
 }

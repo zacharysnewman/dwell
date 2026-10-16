@@ -316,6 +316,12 @@ mod tests {
             panic!()
         };
         assert_eq!(bytes.len(), 8 * 8 * 3);
+        // Heights above sea level (the map's colours: sea below 0), not face-local ones: the
+        // generator's heights count from the midplane since Phase 16 (sea level 32).
+        let t = dwell_worldgen::BifacialTerrain::new(1);
+        let want = t.local(dwell_world::Face::A).column_at(-64, -64).height
+            - dwell_world::SEA_LEVEL as f32;
+        assert_eq!(i16::from_le_bytes([bytes[0], bytes[1]]), want as i16);
         let Output::Map(None) = Runner::world(0, 1).run(Job::Map {
             x0: 0,
             z0: 0,

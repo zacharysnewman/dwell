@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use dwell_world::lod::{self, LodBoundsFn, LodGenerator};
 use dwell_world::{
     AirChunkTest, CHUNK_SIZE, ChunkCoord, ChunkGenerator, DiscOverlap, FlatLayers,
-    GENERATOR_SANDBOX, GENERATOR_TERRAIN, SEA_LEVEL, WORLD_MAX_Y, chunk_disc_overlap,
+    GENERATOR_SANDBOX, GENERATOR_TERRAIN, SEA_LEVEL, chunk_disc_overlap,
     face_local_chunk, face_of_chunk_y, flat_generator, flat_generator_of, flat_is_air,
 };
 
@@ -53,7 +53,7 @@ pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {
     Arc::new(move |coord: ChunkCoord| {
         let face = face_of_chunk_y(coord.y);
         let y0 = face_local_chunk(coord).y * CHUNK_SIZE;
-        if !(SEA_LEVEL..WORLD_MAX_Y).contains(&y0)
+        if !(SEA_LEVEL..terrain::FACE_MAX_Y).contains(&y0)
             || chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
         {
             return terrain.is_air_chunk(coord);
@@ -75,7 +75,7 @@ pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     if version == GENERATOR_TERRAIN {
         return BifacialTerrain::new(world_seed).spawn_point();
     }
-    [0.5, 0.0, 0.5]
+    [0.5, f64::from(dwell_world::FLAT_TOP_Y), 0.5]
 }
 
 pub fn lod_generator_for(version: u32, world_seed: u64) -> LodGenerator {

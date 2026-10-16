@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 12,
+  "protocolVersion": 13,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -16,18 +16,18 @@
     "predictProxyRadius": 16,
     "reachDistance": 5,
     "blockEditIntervalMs": 100,
-    "flightCeiling": 24000000,
     "flySpeedShift": 4,
-    "flySpeedMaxLevel": 39
+    "flySpeedMaxLevel": 20
   },
   "world": {
-    "midplaneY": -2048,
-    "worldBottomY": -10240,
-    "worldMaxY": 6144,
+    "midplaneY": 0,
+    "coreLayers": 10,
     "coreAnchorLayers": 8,
     "flipBand": 4,
-    "seaLevel": 0,
-    "worldRadius": 8192000,
+    "seaLevel": 32,
+    "islandRadius": 25000,
+    "flatTopY": 32,
+    "worldRadius": 50000,
     "positionFixedScale": 256,
     "viewRadiusChunks": 3,
     "renderRadiusChunks": 12,
@@ -38,9 +38,10 @@
     "autosaveSeconds": 30,
     "pos64Limit": 33554432
   },
+  "bounds": { "shape": "sphere", "center": [0, 0, 0], "radius": 50000 },
   "lod": {
     "sectionCells": 32,
-    "maxLevel": 19,
+    "maxLevel": 12,
     "indexLevel": 8,
     "pixelErrorDesktop": 4,
     "pixelErrorMobile": 8,
