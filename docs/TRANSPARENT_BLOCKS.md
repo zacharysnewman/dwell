@@ -1,8 +1,8 @@
 # Dwell — Transparent Blocks: Render Modes, Cross Geometry and Tall Grass
 
-> **Status: [in progress, Phase 31]** — built on `claude/transparent-blocks` with the defaults in
+> **Status: [in progress, Phase 32]** — built on `claude/transparent-blocks` with the defaults in
 > §2, recorded here because CLAUDE.md's design questions were not put to the owner first; the open
-> questions are in §8. Decision record: [ADR 0034](./adr/0034-render-modes-and-cross-geometry.md).
+> questions are in §8. Decision record: [ADR 0035](./adr/0035-render-modes-and-cross-geometry.md).
 > The built mechanisms are described in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 (render modes,
 > the cross look, placement rules), §6.5 (edits) and §5 (`dwell-mesh`, `render/`).
 

@@ -1,24 +1,32 @@
 {
-  "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). `fluids` are the named fluid looks (docs/BLOCK_REGISTRY.md, 'Fluid looks') that blocks with `\"look\": \"fluid\"` reference by name; a fluid block's opacity is its fluid's. The content is prototype (ARCHITECTURE.md §6.1).",
   "namespace": "dwell",
   "shapeFamilies": [],
+  "fluids": {
+    "dwell:water": {
+      "opacity": 0.72, "surfaceDrop": 0.125,
+      "absorption": [0.45, 0.12, 0.04], "scatter": "#1a8ee0", "roughness": 0.08, "ior": 1.333,
+      "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
+      "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0
+    }
+  },
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
-      "name": "stone", "density": 2400, "shape": "full", "placeable": true,
+      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true,
       "color": "#bbafa6", "textures": "stone"
     },
     {
-      "name": "dirt", "density": 1500, "shape": "full", "placeable": true,
+      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true,
       "color": "#8a5a3a", "textures": "dirt"
     },
     {
-      "name": "grass", "density": 1400, "shape": "full", "placeable": true,
+      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true,
       "color": "#8dbf3f",
       "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
     {
-      "name": "ladder", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
+      "name": "ladder", "sound": "dwell:wood", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
       "facingProperty": "facing",
       "properties": {
         "facing": ["north", "east", "south", "west"],
@@ -31,22 +39,21 @@
       "render": "cutout", "color": "#a0703a", "textures": "ladder"
     },
     {
-      "name": "water", "density": 1000, "shape": "empty", "look": "water", "liquid": true,
-      "render": "translucent",
-      "color": "#3fb2d6", "opacity": 0.55, "textures": "water"
+      "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
+      "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water"
     },
     {
-      "name": "sand", "density": 1600, "shape": "full", "placeable": true,
+      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true,
       "color": "#eed9a4", "textures": "sand"
     },
     {
       "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white with a faint line at every block edge (the `grid` tile) and a stronger one every 8 blocks (the `grid` look option), not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
-      "name": "sandbox_floor", "density": 2400, "shape": "full", "indestructible": true,
+      "name": "sandbox_floor", "sound": "dwell:stone", "density": 2400, "shape": "full", "indestructible": true,
       "color": "#ffffff", "textures": "grid", "grid": { "every": 8, "strength": 0.3 }
     },
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
-      "name": "tall_grass", "density": 200, "shape": "empty", "placeable": true,
+      "name": "tall_grass", "sound": "dwell:grass", "density": 200, "shape": "empty", "placeable": true,
       "look": "cross", "render": "cutout",
       "cross": { "height": 0.85, "quads": 2, "jitter": { "offset": 0.22, "rotation": 30, "height": [0.75, 1.0] } },
       "wind": { "strength": 0.09, "speed": 1.0 },

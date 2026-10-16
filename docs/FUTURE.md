@@ -16,7 +16,7 @@ Each entry notes what the current architecture already does to keep the option o
 **Idea:** when the host leaves, hand the world to another participant (or to a dedicated server)
 so the session continues.
 
-**What keeps it open:** a world is a single SQLite file (ADR 0006) and the integrated server is the
+**What keeps it open:** a world is a single redb file (ADR 0006, ADR 0028 §8) and the integrated server is the
 same sim core on every client, so a snapshot can be transferred and resumed. Would need: a
 consistent mid-session snapshot, transfer to the new host, re-signaling all guests through the
 master server, and rules for who becomes host.
@@ -28,7 +28,7 @@ when its owner is offline — the world is started on demand on managed infrastr
 joins and shut down when empty.
 
 **What keeps it open:**
-- World = one SQLite file (ADR 0006) → store it in object storage or a cloud database.
+- World = one redb file (ADR 0006, ADR 0028 §8) → store it in object storage or a cloud database.
 - The dedicated server ships as a Docker image (ADR 0003) → run it on demand on a container
   platform that supports UDP.
 - The master server already lists servers and resolves join codes (ADR 0003) → it can start a
@@ -59,7 +59,7 @@ fingerprints). It would only add stable, human-readable addresses. Needs program
 ## Sun and moon moving separately (sky phase 2)
 
 **Today:** the sky is one sphere whose frame (day zenith, sun, moon) turns as a unit, client-side
-only (`render/skyFrame.ts`).
+only (`dwell-look` `sky_frame.rs`).
 
 **Idea:** the sun and the moon move separately, with the gradient weighted toward each; the
 meshers' baked face shading (warm tops, cool sides, blue undersides) moves into the shader so it

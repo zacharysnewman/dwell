@@ -133,7 +133,7 @@ const STONE: Rgb = rgb(0xbbafa6);
 const STONE_COOL: Rgb = rgb(0x9c95a8);
 const STONE_FLECK: Rgb = rgb(0xd6c6b4);
 const SAND: Rgb = rgb(0xeed9a4);
-const WATER: Rgb = rgb(0x3fb2d6);
+const WATER: Rgb = rgb(0x2f86e0);
 const RAIL: Rgb = rgb(0xa0703a);
 
 fn grass(x: i64, y: i64) -> Rgb {

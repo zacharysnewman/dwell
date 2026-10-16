@@ -8,6 +8,11 @@
 > proposes the work to get there. Once the owner settles the open decisions (§7), the agreed parts
 > become ADRs, a re-plan of `IMPLEMENTATION_PLAN.md`, and changes to `ARCHITECTURE.md` in the
 > changes that build them.
+>
+> **A record of its day.** The code it evaluates is the C++ server and core and the TypeScript/Three.js
+> client of app 0.8.1. On 2026-10-13 the owner decided to port Dwell to Rust ([ADR 0028](./adr/0028-rust-port.md),
+> Phase 24), which replaced that code and superseded decision D4 (WebGPU only, on wgpu, no WebGL2
+> fallback); Phases 16–19 are built in Rust. `ARCHITECTURE.md` describes the current code.
 
 ## 1. Why
 

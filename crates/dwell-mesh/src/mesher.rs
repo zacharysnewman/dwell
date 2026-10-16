@@ -9,11 +9,15 @@
 
 use std::sync::OnceLock;
 
-use dwell_blocks::{RenderMode, STATES, ShapeInfo, StateId, shape::faces_of};
+use dwell_blocks::{
+    FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of,
+};
 use dwell_protocol::CHUNK_SIZE;
 
 use crate::LengthError;
-use crate::style::{Look, MaterialStyle, cube, material_style, mirror_material};
+use crate::style::{
+    Look, MaterialStyle, cube, fluid_value, material_style, mirror_material, style_of,
+};
 use crate::textures::{TileRect, tile_rect};
 use dwell_look::{face_tint, normal_tint};
 
@@ -46,6 +50,9 @@ pub struct MeshArrays {
     /// plant's base and on ladders), the wind's speed, and the distance fade's start and end (m;
     /// end 0: no fade).
     pub plants: Vec<f32>,
+    /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
+    /// is no fluid's); empty in the opaque mesh.
+    pub fluids: Vec<f32>,
     /// Triangles, counter-clockwise seen from outside.
     pub indices: Vec<u32>,
 }
@@ -59,6 +66,7 @@ impl MeshArrays {
             + self.uvs.len()
             + self.tiles.len()
             + self.plants.len()
+            + self.fluids.len()
             + self.indices.len())
     }
 }
@@ -79,7 +87,6 @@ const FACES: [(usize, i32); 6] = [(0, 1), (0, -1), (1, 1), (1, -1), (2, 1), (2, 
 
 /// The plate sits this far in front of the cell's back face.
 const LADDER_INSET: f64 = 0.05;
-const WATER_SURFACE: f64 = 0.875;
 /// Water in a flooded cell sits this far inside its faces.
 const FLOOD_INSET: f64 = 0.002;
 
@@ -106,10 +113,9 @@ struct Kind {
     style: MaterialStyle,
 }
 
-fn make_kind(id: StateId) -> Kind {
-    let style = material_style(id);
+fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
     let empty = id == 0
-        || style.look == Look::Water
+        || style.look == Look::Fluid
         || style.look == Look::Ladder
         || style.look == Look::Cross;
     let shaped = !empty && style.look == Look::Shaped;
@@ -128,7 +134,7 @@ fn make_kind(id: StateId) -> Kind {
         } else {
             Some(cube())
         },
-        liquid: style.look == Look::Water,
+        liquid: style.look == Look::Fluid,
         // Shaped blocks and ladders hold water in a flooded cell.
         flooded: (shaped || style.look == Look::Ladder) && style.flooded,
         occludes: !empty && style.render == RenderMode::Opaque,
@@ -141,18 +147,48 @@ fn make_kind(id: StateId) -> Kind {
     }
 }
 
-fn kind_of(id: StateId) -> Kind {
-    static KINDS: OnceLock<Vec<Kind>> = OnceLock::new();
-    let kinds = KINDS.get_or_init(|| (0..STATES.len()).map(|i| make_kind(i as StateId)).collect());
-    match kinds.get(usize::from(id)) {
-        Some(k) => *k,
-        None => make_kind(id),
+/// The mesher's view of a registry: every state's kind, and the state whose look fills flooded
+/// cells. The build's ([`Kinds::build`]), or a test registry's (`dwell_blocks::fixture`).
+pub(crate) struct Kinds {
+    table: Vec<Kind>,
+    flood: StateId,
+}
+
+impl Kinds {
+    pub(crate) fn new(states: &[StateInfo], fluids: &[FluidInfo], flood: Option<StateId>) -> Self {
+        let table = states
+            .iter()
+            .enumerate()
+            .map(|(i, s)| make_kind(i as StateId, style_of(s, fluids)))
+            .collect();
+        Self {
+            table,
+            flood: flood.unwrap_or(StateId::MAX),
+        }
+    }
+
+    /// The build's registry; flooded cells are drawn as `dwell:water`.
+    fn build() -> &'static Self {
+        static KINDS: OnceLock<Kinds> = OnceLock::new();
+        KINDS.get_or_init(|| Self::new(&STATES, &FLUIDS, dwell_blocks::state("dwell:water")))
+    }
+
+    fn of(&self, id: StateId) -> Kind {
+        match self.table.get(usize::from(id)) {
+            Some(k) => *k,
+            None => make_kind(id, material_style(id)),
+        }
+    }
+
+    /// How flooded cells' water is drawn.
+    fn flood(&self) -> Kind {
+        self.of(self.flood)
     }
 }
 
-/// The (only) water state: how flooded cells are drawn.
-fn water_kind() -> Kind {
-    kind_of(dwell_blocks::state("dwell:water").unwrap_or(StateId::MAX))
+/// The drawn top of a fluid cell (chunk-local, cells): `surface_drop` below the cell's top.
+fn fluid_top(y: i32, style: &MaterialStyle) -> f64 {
+    f64::from(y) + (1.0 - style.surface_drop)
 }
 
 /// Whether the part of `shape` on its cell face `face` is completely covered by the opposite face
@@ -186,9 +222,9 @@ fn cover(k: &Kind) -> Option<&'static ShapeInfo> {
 }
 
 /// Is the full-cube face `face` of a cube or water voxel `m` hidden by neighbour `n`?
-fn hidden(m: StateId, n: StateId, face: usize) -> bool {
-    let km = kind_of(m);
-    let kn = kind_of(n);
+fn hidden(kinds: &Kinds, m: StateId, n: StateId, face: usize) -> bool {
+    let km = kinds.of(m);
+    let kn = kinds.of(n);
     if km.liquid && (n == m || kn.flooded) {
         return true;
     }
@@ -211,6 +247,12 @@ struct Builder {
 impl Builder {
     fn vertex_count(&self) -> u32 {
         (self.m.positions.len() / 3) as u32
+    }
+
+    /// Tags the vertices added since the last tag with `fluid` (the transparent mesh's `fluids`).
+    fn tag_fluid(&mut self, fluid: Option<dwell_blocks::FluidId>) {
+        let n = self.vertex_count() as usize;
+        self.m.fluids.resize(n, fluid_value(fluid));
     }
 
     fn push_tile(&mut self, tile: &TileRect) {
@@ -506,7 +548,8 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
 }
 
 /// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
-fn shaped_voxel(b: &mut Builder, k: &Kind, padded: &[u16], x: i32, y: i32, z: i32) {
+#[allow(clippy::too_many_arguments)]
+fn shaped_voxel(b: &mut Builder, kinds: &Kinds, k: &Kind, padded: &[u16], x: i32, y: i32, z: i32) {
     let Some(def) = k.def else {
         return;
     };
@@ -515,7 +558,7 @@ fn shaped_voxel(b: &mut Builder, k: &Kind, padded: &[u16], x: i32, y: i32, z: i3
         if tag < 6 {
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            if face_covered(def, tag, cover(&kind_of(padded[padded_index(nx, ny, nz)]))) {
+            if face_covered(def, tag, cover(&kinds.of(padded[padded_index(nx, ny, nz)]))) {
                 continue;
             }
         }
@@ -546,11 +589,11 @@ fn shaped_voxel(b: &mut Builder, k: &Kind, padded: &[u16], x: i32, y: i32, z: i3
 }
 
 /// Water in the open part of a flooded shaped cell: its faces, inset so the solid shows through.
-fn flooded_water(b: &mut Builder, padded: &[u16], x: i32, y: i32, z: i32) {
-    let water = water_kind();
+fn flooded_water(b: &mut Builder, kinds: &Kinds, padded: &[u16], x: i32, y: i32, z: i32) {
+    let water = kinds.flood();
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-        let kn = kind_of(padded[padded_index(nx, ny, nz)]);
+        let kn = kinds.of(padded[padded_index(nx, ny, nz)]);
         if kn.liquid || kn.flooded || face_covered(cube(), face, cover(&kn)) {
             continue;
         }
@@ -564,7 +607,7 @@ fn flooded_water(b: &mut Builder, padded: &[u16], x: i32, y: i32, z: i32) {
                 FLOOD_INSET
             };
         if face == 2 {
-            plane = f64::from(y) + WATER_SURFACE;
+            plane = fluid_top(y, &water.style);
         }
         let (color, tile) = surface(&water.style, axis, sign);
         b.quad(
@@ -576,6 +619,7 @@ fn flooded_water(b: &mut Builder, padded: &[u16], x: i32, y: i32, z: i32) {
             color,
             &tile,
         );
+        b.tag_fluid(water.style.fluid);
     }
 }
 
@@ -625,6 +669,16 @@ pub fn mesh_chunk_at(
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_with(Kinds::build(), padded, mirror, origin)
+}
+
+/// [`mesh_chunk_at`] over the registry `kinds` describes.
+pub(crate) fn mesh_chunk_with(
+    kinds: &Kinds,
+    padded: &[u16],
+    mirror: bool,
+    origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
     if padded.len() != PADDED_VOLUME {
         return Err(LengthError {
             expected: PADDED_VOLUME,
@@ -632,7 +686,7 @@ pub fn mesh_chunk_at(
         });
     }
     if mirror {
-        let m = mesh_chunk_at(&mirror_padded(padded), false, origin)?;
+        let m = mesh_chunk_with(kinds, &mirror_padded(padded), false, origin)?;
         return Ok(ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -663,7 +717,7 @@ pub fn mesh_chunk_at(
                     if m == 0 {
                         continue;
                     }
-                    let k = kind_of(m);
+                    let k = kinds.of(m);
                     if let Some(lf) = k.ladder_face {
                         if lf == face {
                             let target = match k.style.render {
@@ -672,6 +726,9 @@ pub fn mesh_chunk_at(
                                 RenderMode::Translucent => &mut transparent,
                             };
                             ladder_face(target, &k.style, face, cx, cy, cz);
+                            if k.style.render == RenderMode::Translucent {
+                                target.tag_fluid(k.style.fluid);
+                            }
                         }
                         continue;
                     }
@@ -679,7 +736,7 @@ pub fn mesh_chunk_at(
                         continue; // drawn whole, below
                     }
                     let [nx, ny, nz] = neighbour_of(cx, cy, cz, axis, sign);
-                    if hidden(m, padded[padded_index(nx, ny, nz)], face) {
+                    if hidden(kinds, m, padded[padded_index(nx, ny, nz)], face) {
                         continue;
                     }
                     mask[i as usize + n * j as usize] = i32::from(m) + 1;
@@ -715,12 +772,13 @@ pub fn mesh_chunk_at(
                         mask[i + n * (j + dv)..i + w + n * (j + dv)].fill(0);
                     }
                     let m = (key - 1) as StateId;
-                    let style = kind_of(m).style;
+                    let style = kinds.of(m).style;
                     let mut plane = f64::from(if sign > 0 { d + 1 } else { d });
-                    if style.look == Look::Water && face == 2 {
-                        plane = f64::from(d) + WATER_SURFACE;
+                    if style.look == Look::Fluid && face == 2 {
+                        plane = fluid_top(d, &style);
                     }
                     let (color, tile) = surface(&style, axis, sign);
+                    let see_through = style.render == RenderMode::Translucent;
                     let target = match style.render {
                         RenderMode::Opaque => &mut opaque,
                         RenderMode::Cutout => &mut cutout,
@@ -735,6 +793,9 @@ pub fn mesh_chunk_at(
                         color,
                         &tile,
                     );
+                    if see_through {
+                        target.tag_fluid(style.fluid);
+                    }
                     i += w;
                 }
             }
@@ -748,9 +809,9 @@ pub fn mesh_chunk_at(
                 if m == 0 {
                     continue;
                 }
-                let k = kind_of(m);
+                let k = kinds.of(m);
                 if k.shape == Shape::Shaped {
-                    shaped_voxel(&mut opaque, &k, padded, cx, cy, cz);
+                    shaped_voxel(&mut opaque, kinds, &k, padded, cx, cy, cz);
                 }
                 if k.style.look == Look::Cross {
                     let target = match k.style.render {
@@ -763,9 +824,12 @@ pub fn mesh_chunk_at(
                         i64::from(origin[2]) + i64::from(cz),
                     ];
                     cross_voxel(target, &k.style, world, [cx, cy, cz]);
+                    if k.style.render == RenderMode::Translucent {
+                        target.tag_fluid(k.style.fluid);
+                    }
                 }
                 if k.flooded {
-                    flooded_water(&mut transparent, padded, cx, cy, cz);
+                    flooded_water(&mut transparent, kinds, padded, cx, cy, cz);
                 }
             }
         }

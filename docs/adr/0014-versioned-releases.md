@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-06
+- Amended by: [0028](0028-rust-port.md) (the version is embedded by `dwell-sim`'s `build.rs` from `DWELL_VERSION`, not CMake; the release model stands)
 - Resolves: ARCHITECTURE.md Open Decisions #20 (release pipeline)
 - Supersedes: the deployment parts of ARCHITECTURE.md §2.1 (one build deployed on every push to
   `main`) and ADR 0005's note that older builds "are kept at `/dwell/v/<version>/`", which this

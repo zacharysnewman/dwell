@@ -1,4 +1,4 @@
-# 0034. Render modes as block data, a cross geometry, and placement rules as data
+# 0035. Render modes as block data, a cross geometry, and placement rules as data
 
 - Status: Proposed (built on `claude/transparent-blocks` with the defaults below; the owner's
   answers to [`TRANSPARENT_BLOCKS.md`](../TRANSPARENT_BLOCKS.md) §8 are outstanding)

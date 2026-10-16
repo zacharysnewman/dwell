@@ -8,6 +8,14 @@
 > sorting by name; the per-state `placeable` set comes from an optional `palette` list in the data
 > (partial property assignments); paletted in-memory chunks were measured and **deferred**.
 
+> **Since Phase 24** ([ADR 0028](./adr/0028-rust-port.md)) the C++ and TypeScript code this file
+> names is Rust: `shared/blocks/gen.mjs` emits the registry for `dwell-blocks` (`blocks.gen.rs`, looked
+> up by name in `registry.rs`) and TypeScript only for the shell's block dump
+> (`client/src/world/blocks.gen.ts`); both are checked against `shared/blocks/vectors.txt`
+> (`dwell-blocks` `tests/vectors.rs`, `client/src/world/blocks.test.ts`). The world file is redb,
+> not SQLite, with LZ4 instead of zstd (`dwell-storage` `db.rs`), and keeps the `block_states` table
+> of world state ids. The text below describes the design as it was made, in Phase 8's terms.
+
 ## 1. Why
 
 Today a voxel is a `u16` **material id** from one global, hand-numbered table
@@ -67,7 +75,7 @@ with one tile but want different grids (an untextured block uses the `plain` til
 option like `textures`, so it does not enter the registry hash. The
 sandbox floor pairs it (every 8) with the `grid` texture tile (a faint line at every block edge).
 
-**Render modes** (**built, Phase 31**, [ADR 0034](./adr/0034-render-modes-and-cross-geometry.md),
+**Render modes** (**built, Phase 32**, [ADR 0035](./adr/0035-render-modes-and-cross-geometry.md),
 [`TRANSPARENT_BLOCKS.md`](./TRANSPARENT_BLOCKS.md)): `"render": "opaque" | "cutout" | "translucent"`
 (default `opaque`) says how a block's pixels are drawn; `gen.mjs` rejects other values, an `opacity`
 below 1 without `translucent`, and `cutout` without textures, and emits `StateInfo::render`. Water is
@@ -83,6 +91,44 @@ property combinations (a full cube has no facing) while keeping one material ide
 Phase 15** no material opts in (`shapeFamilies` is empty: the baseline's blocks are air, stone,
 dirt, grass, sand, water and ladders); the mechanism stays for future crafted blocks, and the
 examples here name the families as they were.
+
+**Fluid looks** (**built, Phase 26 W1a**; [ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md), [`WATER_RENDERING.md`](./WATER_RENDERING.md) §2, owner
+answers §7: per build, edited in the data file, other fluids by data, looks only). A namespace's
+`fluids` table names fluid looks, each with every field required:
+
+```json
+"fluids": { "dwell:water": {
+  "opacity": 0.72, "surfaceDrop": 0.125,
+  "absorption": [0.45, 0.12, 0.04], "scatter": "#1a8ee0", "roughness": 0.08, "ior": 1.333,
+  "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
+  "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0 } }
+```
+
+| Field | Range | Meaning |
+|---|---|---|
+| `opacity` | (0, 1] | The fixed alpha its blocks are drawn with (until absorption replaces it) |
+| `surfaceDrop` | [0, 1) | Cells the drawn top sits below the cell's top when the cell above is not the same fluid (face B: above the cell's bottom) |
+| `absorption` | 3 × [0, 100] | Beer–Lambert σ per metre, linear red, green, blue |
+| `scatter`, `foam.color` | `#rrggbb` | Scatter and foam colours |
+| `roughness` | [0, 1] | GGX roughness of the surface |
+| `ior` | [1, 3] | Index of refraction |
+| `normalScale`, `caustics` | [0, 10] | Strength of the normal maps and of the caustics |
+| `waveScale` | (0, 1000] | Metres per normal-map repeat |
+| `flowSpeed` | [0, 10] | Metres per second the normal maps scroll |
+| `foam.depth` | [0, 16] | Metres of water under which the shore foams |
+
+A fluid is named `namespace:name` in its own namespace; ids are table order (namespaces sorted,
+entries in order) and are build-local, like state ids, and not in the registry hash. A block
+draws as a fluid with `"look": "fluid", "fluid": "dwell:water"` and takes its opacity from the
+fluid (an `opacity` of its own is an error); a `fluid` without the look, an unknown fluid name, a
+missing or unknown field or a value out of range fail the generator with a message naming the
+fluid and field (`shared/blocks/fluids.mjs`, tested by `client/src/world/fluids.test.ts`). Liquid
+behaviour stays the block's `liquid` flag. Flooded shaped cells are filled with `dwell:water`'s
+look. The generator also writes a **test registry**: the build's namespaces plus
+`shared/blocks/fixtures/*.json` (the fluid and block `test:oil`) into
+`crates/dwell-blocks/src/fixture.gen.rs`, compiled only with the `fixture` feature tests enable,
+so a test adds an entry by data alone (the chunk mesher draws `test:oil` with its own drop and
+opacity). Values are prototype content.
 
 ## 3. Runtime ids and the registry
 
@@ -161,3 +207,14 @@ so a failure says which changed.
 - Determinism goldens pass (regenerated once if runtime ids change); protocol golden vectors for
   `Welcome`'s registry hash; e2e "break and place every palette block" still passes.
 - If paletted containers are adopted: chunk memory and meshing time measured before and after.
+
+## 7. Sound sets **[in progress, Phase 28]**
+
+A block may name its **sound set** by id: `"sound": "dwell:stone"` (ladders: `"dwell:wood"`). Sets
+live in `shared/sounds/*.json` ([`AUDIO.md`](./AUDIO.md), [ADR 0032](./adr/0032-audio.md)): the
+sound each event plays on that material (step, land, break, place, hit; enter, exit and swim for
+liquids). `shared/blocks/gen.mjs` checks every reference against the sound data
+(`shared/sounds/validate.mjs`) and fails naming the block; the set id is emitted on the block in the
+TS `BLOCK_DEFS`, where the shell's audio maps a state's block to its set. A block without `sound`
+uses the sound data's `fallback` set. Sounds are per build and change no state, id or hash: adding
+or changing one is not a compatibility change.

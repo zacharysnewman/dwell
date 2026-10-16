@@ -154,8 +154,6 @@ pub enum TouchEvent {
     Fly,
     /// The debug button was pressed (toggles the overlay, as F3 does).
     Debug,
-    /// Jump went down at this time (a double tap toggles flight, as Space does).
-    JumpPress(f64),
 }
 
 /// Where to draw the floating stick (screen px): its base and the knob's offset from it.
@@ -313,19 +311,19 @@ impl TouchControls {
         }
     }
 
-    /// A pointer went down on a button at `now_ms`.
-    pub fn button_down(&mut self, button: TouchButton, now_ms: f64) -> Option<TouchEvent> {
+    /// A pointer went down on a button.
+    pub fn button_down(&mut self, button: TouchButton) -> Option<TouchEvent> {
         let on = self.buttons[button.index()].press();
-        self.apply(button, on, now_ms)
+        self.apply(button, on)
     }
 
     /// `pointerup` or `pointercancel` on a button.
-    pub fn button_up(&mut self, button: TouchButton, now_ms: f64) -> Option<TouchEvent> {
+    pub fn button_up(&mut self, button: TouchButton) -> Option<TouchEvent> {
         let on = self.buttons[button.index()].release();
-        self.apply(button, on, now_ms)
+        self.apply(button, on)
     }
 
-    fn apply(&mut self, button: TouchButton, on: bool, now_ms: f64) -> Option<TouchEvent> {
+    fn apply(&mut self, button: TouchButton, on: bool) -> Option<TouchEvent> {
         match button {
             TouchButton::Run => {
                 self.run_latched = on;
@@ -337,9 +335,8 @@ impl TouchControls {
                 None
             }
             TouchButton::Jump => {
-                let pressed = on && !self.state.jump;
                 self.state.jump = on;
-                pressed.then_some(TouchEvent::JumpPress(now_ms))
+                None
             }
             TouchButton::Fly => on.then_some(TouchEvent::Fly),
             TouchButton::Debug => on.then_some(TouchEvent::Debug),
@@ -428,8 +425,8 @@ mod tests {
         assert_eq!(v.origin, (100.0, 300.0));
         assert_close(v.knob.1, -STICK_RADIUS, 9);
         assert!(v.running);
-        t.button_down(TouchButton::Run, 0.0);
-        t.button_up(TouchButton::Run, 0.0);
+        t.button_down(TouchButton::Run);
+        t.button_up(TouchButton::Run);
         t.stick_up(1);
         assert_eq!(t.stick_view(), None);
         assert_eq!((t.state.move_y, t.state.run), (0.0, true));
@@ -451,27 +448,28 @@ mod tests {
     }
 
     #[test]
-    fn buttons_report_jump_presses_fly_debug_and_place_mode() {
+    fn buttons_report_fly_debug_and_place_mode() {
         let mut t = TouchControls::new();
-        assert_eq!(
-            t.button_down(TouchButton::Jump, 42.0),
-            Some(TouchEvent::JumpPress(42.0))
-        );
+        // Jump is held, and only held: two quick taps are two jumps, not flight (the Fly button
+        // toggles it).
+        for _ in 0..2 {
+            assert_eq!(t.button_down(TouchButton::Jump), None);
+            assert!(t.state.jump);
+            assert_eq!(t.button_up(TouchButton::Jump), None);
+        }
+        assert_eq!(t.button_down(TouchButton::Jump), None);
         assert!(t.state.jump);
-        assert_eq!(t.button_up(TouchButton::Jump, 50.0), None);
+        assert_eq!(t.button_up(TouchButton::Jump), None);
         assert!(!t.state.jump);
-        assert_eq!(t.button_down(TouchButton::Fly, 0.0), Some(TouchEvent::Fly));
-        assert_eq!(t.button_up(TouchButton::Fly, 0.0), None);
+        assert_eq!(t.button_down(TouchButton::Fly), Some(TouchEvent::Fly));
+        assert_eq!(t.button_up(TouchButton::Fly), None);
+        assert_eq!(t.button_down(TouchButton::Debug), Some(TouchEvent::Debug));
         assert_eq!(
-            t.button_down(TouchButton::Debug, 0.0),
-            Some(TouchEvent::Debug)
-        );
-        assert_eq!(
-            t.button_down(TouchButton::Edit, 0.0),
+            t.button_down(TouchButton::Edit),
             Some(TouchEvent::PlaceMode(true))
         );
         assert_eq!(t.edit_label(), "Place");
-        t.button_down(TouchButton::Crouch, 0.0);
+        t.button_down(TouchButton::Crouch);
         assert!(t.state.crouch && t.button_active(TouchButton::Crouch));
     }
 }

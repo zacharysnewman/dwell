@@ -152,6 +152,92 @@ fn draws_water_in_the_transparent_pass_with_its_surface_lowered_and_hides_it_aga
 }
 
 #[test]
+fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity() {
+    // shared/blocks/fixtures/test.json adds `test:oil` (surfaceDrop 0.25, opacity 0.8) and nothing
+    // else: the mesher draws it from its data, beside water at water's own height.
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let (oil, water) = (id("test:oil"), id("dwell:water"));
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
+    assert_eq!(kinds.of(oil).style.opacity, 0.8);
+    assert_eq!(kinds.of(oil).style.surface_drop, 0.25);
+    let cells = voxels(&[(0, 0, 0, oil), (4, 0, 0, water)]);
+    let ChunkMeshes {
+        opaque,
+        transparent,
+        ..
+    } = mesh_chunk_with(&kinds, &cells, false, [0; 3]).expect("padded volume");
+    assert_eq!(quads(&opaque), 0);
+    let mut tops: Vec<(f32, f32)> = (0..quads(&transparent))
+        .filter(|q| transparent.normals[q * 12 + 1] == 1.0)
+        .map(|q| {
+            let (lo, hi) = bounds(&transparent, q);
+            (lo[0], hi[1])
+        })
+        .collect();
+    tops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(tops, [(0.0, 0.75), (4.0, 0.875)]);
+    // Each vertex carries its fluid's id (the water shader's parameters, WATER_RENDERING.md W1b):
+    // oil's faces (x < 1) its own, water's water's.
+    assert_eq!(transparent.fluids.len(), transparent.positions.len() / 3);
+    for (v, &f) in transparent.fluids.iter().enumerate() {
+        let want = if transparent.positions[v * 3] <= 1.0 {
+            "test:oil"
+        } else {
+            "dwell:water"
+        };
+        assert_eq!(FLUIDS[f as usize].name, want, "vertex {v}");
+    }
+    assert!(opaque.fluids.is_empty());
+}
+
+#[test]
+fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
+    // shared/blocks/fixtures/test.json adds `test:leaves` (cutout cube), `test:glass` (translucent
+    // cube) and `test:reed` (a three-quad cross) and nothing else: the mesher sorts them by data.
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let (leaves, glass, reed, stone, water) = (
+        id("test:leaves"),
+        id("test:glass"),
+        id("test:reed"),
+        id("dwell:stone"),
+        id("dwell:water"),
+    );
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
+    let mesh_of = |cells: &[(i32, i32, i32, u16)]| {
+        mesh_chunk_with(&kinds, &voxels(cells), false, [0; 3]).expect("padded volume")
+    };
+    // A lone leaf block: six cutout faces, nothing opaque or blended.
+    let m = mesh_of(&[(1, 1, 1, leaves)]);
+    assert_eq!(
+        (quads(&m.opaque), quads(&m.cutout), quads(&m.transparent)),
+        (0, 6, 0)
+    );
+    // Glass: six blended faces, each tagged as no fluid's.
+    let m = mesh_of(&[(1, 1, 1, glass)]);
+    assert_eq!(
+        (quads(&m.opaque), quads(&m.cutout), quads(&m.transparent)),
+        (0, 0, 6)
+    );
+    assert!(m.transparent.fluids.iter().all(|&f| f == crate::NO_FLUID));
+    // See-through blocks hide no face of their neighbours, and none between two of themselves.
+    let alone = quads(&mesh_of(&[(2, 1, 1, stone)]).opaque);
+    for b in [leaves, glass] {
+        let m = mesh_of(&[(1, 1, 1, b), (2, 1, 1, stone), (1, 1, 2, b)]);
+        assert_eq!(quads(&m.opaque), alone, "{}", STATES[usize::from(b)].name);
+        let see = quads(&m.cutout) + quads(&m.transparent);
+        // Two blocks in a row along z: their shared faces skipped, coplanar faces merged (−x, ±y),
+        // the end faces, and the +x face of the one beside stone drawn only for the other.
+        assert_eq!(see, 6, "{}", STATES[usize::from(b)].name);
+    }
+    // The reed: its data's three quads, in the cutout mesh with its plants stream.
+    let m = mesh_of(&[(1, 1, 1, reed)]);
+    assert_eq!(quads(&m.cutout), 3);
+    assert_eq!(m.cutout.plants.len(), 3 * 4 * 4);
+}
+
+#[test]
 fn draws_a_ladder_as_one_cutout_plate_near_the_back_of_its_cell() {
     // A north ladder faces −Z (face 5): the plate is at z = 1 − 0.05, in the cutout mesh (its data
     // says `"render": "cutout"`: the gaps between rails and rungs are see-through).

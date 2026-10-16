@@ -1,11 +1,13 @@
 //! How block states are drawn (`client/src/world/materials.ts`): each state's look, colour,
-//! render mode, textures, ladder face, shape and flooding, read from the generated registry
+//! opacity, render mode, textures, ladder face, shape, flooding, fluid and the cross look, read
+//! from the generated registry
 //! (`dwell-blocks`), with the TS fallback for ids the registry does not know (a magenta cube).
 
 use std::sync::OnceLock;
 
 use dwell_blocks::{
-    Cross, Facing, Fade, RenderMode, SHAPES, STATES, ShapeInfo, StateId, Textures, Wind,
+    Cross, FLUIDS, Facing, Fade, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo,
+    StateId, StateInfo, Textures, Wind,
 };
 
 /// The look a state is drawn with (the registry's `look` name).
@@ -14,7 +16,8 @@ pub(crate) enum Look {
     Cube,
     Shaped,
     Ladder,
-    Water,
+    /// A fluid's look (`"look": "fluid"`): its parameters are the state's `fluid`.
+    Fluid,
     /// Crossed vertical quads through the cell (plants).
     Cross,
 }
@@ -24,6 +27,9 @@ pub(crate) struct MaterialStyle {
     pub look: Look,
     /// sRGB `0xRRGGBB`.
     pub color: u32,
+    /// See-through share (fluids take theirs from the fluid table).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub opacity: f32,
     /// How its pixels are drawn: which of the chunk's meshes it goes in.
     pub render: RenderMode,
     pub textures: Option<Textures>,
@@ -36,6 +42,16 @@ pub(crate) struct MaterialStyle {
     pub cross: Option<Cross>,
     pub wind: Option<Wind>,
     pub fade: Option<Fade>,
+    /// Fluids: how far below the cell's top its surface is drawn, in cells (0 otherwise).
+    pub surface_drop: f64,
+    /// The fluid whose look it is drawn with (an index into the registry's fluid table).
+    pub fluid: Option<FluidId>,
+}
+
+/// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
+/// a fluid's id, as the meshes' `fluids` stream holds it.
+pub(crate) fn fluid_value(fluid: Option<FluidId>) -> f32 {
+    fluid.map_or(crate::NO_FLUID, f32::from)
 }
 
 /// The full cube's shape: what a full face is tested against.
@@ -50,13 +66,14 @@ fn cube_index() -> usize {
         .expect("the shape table has a full cube")
 }
 
-fn style_of_state(i: usize) -> MaterialStyle {
-    let s = &STATES[i];
+/// The style of a state row, with `fluids` the table its `fluid` indexes (the build's, or a test
+/// registry's).
+pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     let look = match s.look {
         "shaped" => Look::Shaped,
         "ladder" => Look::Ladder,
-        "water" => Look::Water,
         "cross" => Look::Cross,
+        "fluid" => Look::Fluid,
         // 'cube', and any look the meshers do not know: a full cube.
         _ => Look::Cube,
     };
@@ -71,6 +88,7 @@ fn style_of_state(i: usize) -> MaterialStyle {
     MaterialStyle {
         look,
         color: s.color,
+        opacity: s.opacity,
         render: s.render,
         textures: s.textures,
         ladder_face: if look == Look::Ladder {
@@ -83,6 +101,11 @@ fn style_of_state(i: usize) -> MaterialStyle {
         cross: s.cross,
         wind: s.wind,
         fade: s.fade,
+        surface_drop: s
+            .fluid
+            .and_then(|f| fluids.get(usize::from(f)))
+            .map_or(0.0, |f| f.surface_drop),
+        fluid: s.fluid,
     }
 }
 
@@ -91,13 +114,14 @@ const UNKNOWN_COLOR: u32 = 0xff00ff;
 /// The style of state `id`.
 pub(crate) fn material_style(id: StateId) -> MaterialStyle {
     static STYLES: OnceLock<Vec<MaterialStyle>> = OnceLock::new();
-    let styles = STYLES.get_or_init(|| (0..STATES.len()).map(style_of_state).collect());
+    let styles = STYLES.get_or_init(|| STATES.iter().map(|s| style_of(s, &FLUIDS)).collect());
     styles
         .get(usize::from(id))
         .copied()
         .unwrap_or_else(|| MaterialStyle {
             look: Look::Cube,
             color: UNKNOWN_COLOR,
+            opacity: 1.0,
             render: RenderMode::Opaque,
             textures: None,
             ladder_face: None,
@@ -106,6 +130,8 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             cross: None,
             wind: None,
             fade: None,
+            surface_drop: 0.0,
+            fluid: None,
         })
 }
 

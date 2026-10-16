@@ -1,20 +1,16 @@
-//! Creative flight toggle (PLAYER_CONTROLLER.md §6.7). Flight is a mode the client holds: while it
-//! is on, every input frame carries the fly bit, and the shared controller flies the player. The
+//! Creative flight toggle (PLAYER_CONTROLLER.md §6.7). Flight is a mode the client holds, turned on
+//! and off by the fly key (`input::FLY_KEY`) or the touch Fly button: while it is on, every input frame carries the fly bit, and the shared controller flies the player. The
 //! server clears the bit for players its flight policy excludes; Welcome says whether this one may.
 //! Where the TS raised `onChange` / `onSpeedChange`, the methods here return the new value when it
 //! changed.
 
 use crate::flight_speed::clamp_fly_speed_level;
 
-/// Two jump presses within this many ms toggle flight.
-pub const DOUBLE_TAP_MS: f64 = 300.0;
-
 #[derive(Clone, Debug)]
 pub struct FlightToggle {
     /// The server lets this player fly (Welcome's flight flag).
     may_fly: bool,
     on: bool,
-    last_press: f64,
     level: u8,
 }
 
@@ -23,7 +19,6 @@ impl Default for FlightToggle {
         Self {
             may_fly: true,
             on: false,
-            last_press: f64::NEG_INFINITY,
             level: 0,
         }
     }
@@ -75,18 +70,6 @@ impl FlightToggle {
         self.set(!self.on)
     }
 
-    /// A jump press (not a key repeat) at `now_ms`; the second of a quick pair toggles flight.
-    /// Returns the new flying state if it changed.
-    pub fn jump_pressed(&mut self, now_ms: f64) -> Option<bool> {
-        if now_ms - self.last_press <= DOUBLE_TAP_MS {
-            self.last_press = f64::NEG_INFINITY;
-            self.toggle()
-        } else {
-            self.last_press = now_ms;
-            None
-        }
-    }
-
     fn changed(&self, was: bool) -> Option<bool> {
         (self.flying() != was).then_some(self.flying())
     }
@@ -99,21 +82,15 @@ mod tests {
     use dwell_protocol::{input_buttons, players};
 
     #[test]
-    fn a_quick_double_jump_toggles_flight_slow_presses_do_not() {
+    fn toggling_turns_flight_on_and_off_and_reports_each_change() {
         let mut f = FlightToggle::new();
         let mut changes = Vec::new();
-        let mut press = |f: &mut FlightToggle, t: f64| changes.extend(f.jump_pressed(t));
-        press(&mut f, 1000.0);
-        press(&mut f, 1000.0 + DOUBLE_TAP_MS + 1.0);
-        assert!(!f.flying());
-        press(&mut f, 1400.0);
+        for _ in 0..3 {
+            changes.extend(f.toggle());
+        }
         assert!(f.flying());
-        // The pair is used up: a third press starts a new pair.
-        press(&mut f, 1450.0);
-        assert!(f.flying());
-        press(&mut f, 1500.0);
-        assert!(!f.flying());
-        assert_eq!(changes, vec![true, false]);
+        assert_eq!(changes, vec![true, false, true]);
+        assert_eq!(f.set(true), None);
     }
 
     #[test]
@@ -123,9 +100,8 @@ mod tests {
         assert!(f.flying());
         f.set_allowed(false);
         assert!(!f.flying());
-        f.toggle();
-        f.jump_pressed(0.0);
-        f.jump_pressed(10.0);
+        assert_eq!(f.toggle(), None);
+        assert_eq!(f.set(true), None);
         assert!(!f.flying());
     }
 
