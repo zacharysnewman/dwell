@@ -304,7 +304,7 @@ pub fn inverse_aces(display: [f32; 3], exposure: f32) -> [f32; 3] {
 
 /// The water's cost-isolation switches (a dev tool, `?waterdbg=`; docs/WATER_RENDERING.md §8): each
 /// name turns one piece of the water's shading off, so its GPU time (`gpu.*.water`) can be told
-/// apart. Carried to the shader as a bit mask in the frame uniform (`fog.w`); 0 draws everything.
+/// apart. Carried to the shader as a bit mask in the frame uniform (`wrap.z`); 0 draws everything.
 pub const DEBUG_SWITCHES: [(&str, u32); 14] = [
     ("ripple0", 1),
     ("ripple1", 2),

@@ -45,8 +45,13 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       channel: ${{ steps.plan.outputs.channel }}
       archive: ${{ steps.plan.outputs.archive }}
+      publish: ${{ steps.check.outputs.action }}
+      event: ${{ steps.plan.outputs.event }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The parent commit too: a push releases package.json's version only if it raised it.
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -63,23 +68,28 @@ jobs:
             refs/heads/*) if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then event=dispatch; else event=push; fi ;;
             *) echo "::error::unexpected ref $GITHUB_REF"; exit 1 ;;
           esac
-          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" | tee -a "$GITHUB_OUTPUT"
-      - name: A release is made once
+          previous=$(git show HEAD^1:client/package.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
+          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" "$previous" | tee -a "$GITHUB_OUTPUT"
+          echo "event=$event" >> "$GITHUB_OUTPUT"
+      # A release is made once (release.ts publishAction): checked here, and again just before
+      # publishing, since another run may publish the version in between.
+      - id: check
+        working-directory: client
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.plan.outputs.tag }}
           CHANNEL: ${{ steps.plan.outputs.channel }}
+          EVENT: ${{ steps.plan.outputs.event }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            if [ "$CHANNEL" = stable ]; then
-              echo "::error::$TAG is already released."
-              exit 1
-            fi
-          fi
+          tag_commit=$(git ls-remote --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" "refs/tags/$TAG^{}" | sort -k2 | tail -1 | cut -f1)
+          exists=false; gh release view "$TAG" >/dev/null 2>&1 && exists=true
+          node --experimental-strip-types scripts/release.ts publish "$CHANNEL" "$EVENT" "$GITHUB_SHA" "${tag_commit:--}" "$exists" | tee -a "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ needs.plan.outputs.version }}
     needs: plan
+    if: needs.plan.outputs.publish == 'create'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -138,6 +148,12 @@ jobs:
     needs: [plan, build]
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: client
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/download-artifact@v4
         with:
           name: build
@@ -149,7 +165,17 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
           ARCHIVE: ${{ needs.plan.outputs.archive }}
+          EVENT: ${{ needs.plan.outputs.event }}
         run: |
+          # Again, just before publishing (release.ts publishAction): another run may have published
+          # this version since the plan.
+          tag_commit=$(git ls-remote --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" "refs/tags/$TAG^{}" | sort -k2 | tail -1 | cut -f1)
+          exists=false; gh release view "$TAG" >/dev/null 2>&1 && exists=true
+          action=$(cd client && node --experimental-strip-types scripts/release.ts publish "$CHANNEL" "$EVENT" "$GITHUB_SHA" "${tag_commit:--}" "$exists" | sed -n 's/^action=//p')
+          if [ "$action" != create ]; then
+            echo "$TAG is already published (or this push is not its release): nothing to do."
+            exit 0
+          fi
           # `build.json` was uploaded from client/dist/, so it sits under client/dist/ here.
           files=("$ARCHIVE" client/dist/build.json)
           if [ "$CHANNEL" = dev ]; then

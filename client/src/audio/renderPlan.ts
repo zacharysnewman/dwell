@@ -1,6 +1,7 @@
 // What `npm run sfx:render` renders (docs/AUDIO.md §7), from the sound data alone: every set's
 // every event, every event's, action's and UI sound, a 10-step walk and run per surface, break
-// and place variations per set, and landings soft to hard. Pure, so the plan is tested.
+// and place variations per set, landings soft to hard, and each surface's slide from slow to fast
+// ending in its stop. Pure, so the plan is tested.
 import type { SoundData } from './types';
 
 export interface RenderPlay {
@@ -11,6 +12,8 @@ export interface RenderPlay {
   pan?: number;
   gain?: number;
   bus: 'effects' | 'ui';
+  /** A loop sound: held for `seconds`, its intensity ramping `from` → `to`, then stopped. */
+  loop?: { seconds: number; from: number; to: number };
 }
 
 export interface RenderJob {
@@ -28,9 +31,15 @@ const local = (id: string): string => id.slice(id.indexOf(':') + 1);
 /** Seconds of tail after the last play (reverb). */
 const TAIL = 0.8;
 
+/** Seconds a slide render holds its loop. */
+export const SLIDE_SECONDS = 4;
+
 export function renderPlan(data: SoundData, walkSpeed = 5, runSpeed = 8): RenderJob[] {
   const jobs: RenderJob[] = [];
+  const isLoop = (sound: string): boolean => data.sounds[sound]?.loop === true;
   const single = (name: string, sound: string, bus: 'effects' | 'ui', intensity = 1): void => {
+    // Loop sounds render as slides (below), not as one play.
+    if (isLoop(sound)) return;
     jobs.push({
       name,
       plays: [{ sound, at: 0.02, intensity, bus }],
@@ -90,6 +99,31 @@ export function renderPlan(data: SoundData, walkSpeed = 5, runSpeed = 8): Render
         intensity: levels[i] ?? 1,
       }));
     }
+  }
+  // Each surface with a slide of its own: the scrape from slow to fast, then the slide's end with
+  // its soft stop.
+  const fallback = data.sets[data.fallback] ?? {};
+  for (const [set, events] of Object.entries(data.sets)) {
+    const slide = events.slide;
+    if (!slide) continue;
+    const stop = events.slide_stop ?? fallback.slide_stop;
+    const plays: RenderPlay[] = [
+      {
+        sound: slide,
+        at: 0.02,
+        bus: 'effects',
+        loop: { seconds: SLIDE_SECONDS, from: 0.05, to: 1 },
+      },
+    ];
+    if (stop) plays.push({ sound: stop, at: 0.02 + SLIDE_SECONDS, bus: 'effects', intensity: 1 });
+    jobs.push({
+      name: `slide_${local(set)}_slow_to_fast`,
+      plays,
+      seconds: SLIDE_SECONDS + TAIL + 1,
+      seed: 3,
+      minSeconds: SLIDE_SECONDS,
+      maxSeconds: SLIDE_SECONDS + 1.5,
+    });
   }
   return jobs;
 }

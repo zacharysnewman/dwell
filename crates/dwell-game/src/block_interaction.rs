@@ -412,7 +412,8 @@ mod tests {
     #[test]
     fn the_voxel_world_targets_through_the_shared_ray_cast() {
         let mut world = VoxelWorld::streamed();
-        world.set_voxel(3, 0, 4, require("dwell:stone"));
+        // A non-adaptive cube (a lone stone block would be a half pyramid).
+        world.set_voxel(3, 0, 4, require("dwell:sandbox_floor"));
         let mut interaction = BlockInteraction::new();
         let t = interaction.update(&mut world, Some([3.5, 0.5, 0.5]), 0.0, 0.0, 1);
         assert_eq!(

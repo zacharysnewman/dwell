@@ -7,8 +7,9 @@
 
 import { ViewError } from './views.ts';
 
-/** Upscalers by name: `bilinear` is the browser's stretch of a scaled canvas (today's `?scale=`). */
-export const UPSCALERS = ['none', 'bilinear', 'fsr1', 'taa-u'] as const;
+/** Upscalers by name: `bilinear` is the browser's stretch of a scaled canvas (today's `?scale=`);
+ * `fsr1` and `bilateral` are the marcher's (its own render scale, the canvas at full size). */
+export const UPSCALERS = ['none', 'bilinear', 'fsr1', 'bilateral', 'taa-u'] as const;
 export type Upscaler = (typeof UPSCALERS)[number];
 /** The upscalers every build has (they need nothing from the renderer). */
 const BUILT_IN_UPSCALERS: readonly Upscaler[] = ['none', 'bilinear'];
