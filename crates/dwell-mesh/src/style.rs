@@ -24,7 +24,6 @@ pub(crate) struct MaterialStyle {
     pub look: Look,
     /// sRGB `0xRRGGBB`.
     pub color: u32,
-    pub opacity: f32,
     /// How its pixels are drawn: which of the chunk's meshes it goes in.
     pub render: RenderMode,
     pub textures: Option<Textures>,
@@ -78,7 +77,6 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     MaterialStyle {
         look,
         color: s.color,
-        opacity: s.opacity,
         render: s.render,
         textures: s.textures,
         ladder_face: if look == Look::Ladder {
@@ -108,7 +106,6 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
         .unwrap_or_else(|| MaterialStyle {
             look: Look::Cube,
             color: UNKNOWN_COLOR,
-            opacity: 1.0,
             render: RenderMode::Opaque,
             textures: None,
             ladder_face: None,

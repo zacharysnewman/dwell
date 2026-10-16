@@ -159,7 +159,8 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
     let (oil, water) = (id("test:oil"), id("dwell:water"));
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
-    assert_eq!(kinds.of(oil).style.opacity, 0.8);
+    // Its opacity reaches the meshes through the registry row (the render mode picks the mesh).
+    assert_eq!(STATES[usize::from(oil)].opacity, 0.8);
     assert_eq!(kinds.of(oil).style.surface_drop, 0.25);
     let cells = voxels(&[(0, 0, 0, oil), (4, 0, 0, water)]);
     let ChunkMeshes {
