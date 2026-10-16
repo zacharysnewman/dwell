@@ -1,7 +1,11 @@
 // What a run of the Release workflow builds (RELEASES.md §3), decided in one tested place:
-//   release.ts EVENT REF RUN SHA [RELEASES.json [REQUESTED]]   (EVENT: push | tag | dispatch),
-// reading ./package.json and the releases (`gh release list --json tagName`)
-// prints `key=value` lines for $GITHUB_OUTPUT. Runs under Node's type stripping.
+//   release.ts EVENT REF RUN SHA [RELEASES.json [REQUESTED [PREVIOUS_PACKAGE_VERSION]]]
+//     (EVENT: push | tag | dispatch), reading ./package.json and the releases (`gh release list
+//     --json tagName`), prints `key=value` lines for $GITHUB_OUTPUT;
+//   release.ts publish CHANNEL EVENT SHA TAG_COMMIT RELEASE_EXISTS
+//     (TAG_COMMIT: the remote tag's commit or `-`; RELEASE_EXISTS: true | false), checked again just
+//     before publishing, prints `action=create|skip` (`publishAction`).
+// Runs under Node's type stripping.
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { compareVersionText, isStable, parseVersion, sameLine } from '../src/version/semver.ts';
@@ -84,6 +88,11 @@ export function releasePlan(input: {
   lineLatest?: string | null;
   /** A version asked for by the manual workflow's input (empty or absent: the next one). */
   requested?: string;
+  /**
+   * `package.json`'s version before this push (its first parent's): a push releases
+   * `package.json`'s version only if it raised it. Absent: not known (counts as raised).
+   */
+  previousPackageVersion?: string;
 }): ReleasePlan {
   const { event, ref, run, sha, packageVersion, latestStable: latest } = input;
   const pkg = parseVersion(packageVersion);
@@ -93,7 +102,14 @@ export function releasePlan(input: {
     );
   }
   const next = nextVersion(packageVersion, latest);
-  const raised = latest === null || compareVersionText(packageVersion, latest) > 0;
+  // Only the push that raised package.json releases it: a later push still above the newest
+  // release (its run started before the release was published) is a dev build.
+  const raisedHere =
+    input.previousPackageVersion === undefined ||
+    compareVersionText(packageVersion, input.previousPackageVersion) > 0;
+  const raised =
+    (latest === null || compareVersionText(packageVersion, latest) > 0) &&
+    (event !== 'push' || raisedHere);
   if (event === 'tag' || event === 'dispatch' || raised) {
     const named =
       event === 'tag'
@@ -156,8 +172,60 @@ export function releasePlan(input: {
   };
 }
 
+/**
+ * What the publish step does, decided again just before it publishes (another run may have
+ * published the version since this one planned): `create` the release, or `skip` it.
+ * - Already released from this commit (the tag at `sha` and its release exist): skip, it is done.
+ * - The tag is at another commit: for a push, that commit is the release and this push is not
+ *   (skip); a pushed tag or a run by hand named a version that is taken (an error).
+ * - Otherwise create it (a pushed tag without its release yet, or a new tag at this commit).
+ */
+export function publishAction(input: {
+  channel: 'stable' | 'dev';
+  event: ReleaseEvent;
+  sha: string;
+  /** The commit the remote tag points at, or null when there is no such tag. */
+  tagCommit: string | null;
+  releaseExists: boolean;
+}): 'create' | 'skip' {
+  const { channel, event, sha, tagCommit, releaseExists } = input;
+  if (tagCommit !== null && tagCommit !== sha) {
+    if (channel === 'dev' || event === 'push') return 'skip';
+    throw new Error(`the tag is already at another commit (${tagCommit.slice(0, 7)})`);
+  }
+  return releaseExists ? 'skip' : 'create';
+}
+
+function publishMain(args: string[]): number {
+  const [channel, event, sha = '', tagCommit = '-', releaseExists = 'false'] = args;
+  if (
+    (channel !== 'stable' && channel !== 'dev') ||
+    (event !== 'push' && event !== 'tag' && event !== 'dispatch')
+  ) {
+    console.error(
+      'usage: release.ts publish stable|dev push|tag|dispatch SHA TAG_COMMIT|- true|false',
+    );
+    return 2;
+  }
+  try {
+    const action = publishAction({
+      channel,
+      event,
+      sha,
+      tagCommit: tagCommit === '-' || tagCommit === '' ? null : tagCommit,
+      releaseExists: releaseExists === 'true',
+    });
+    console.log(`action=${action}`);
+    return 0;
+  } catch (err) {
+    console.error(`::error::${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+}
+
 function main(args: string[]): number {
-  const [event, ref = '', run = '0', sha = '', releasesFile, requested] = args;
+  if (args[0] === 'publish') return publishMain(args.slice(1));
+  const [event, ref = '', run = '0', sha = '', releasesFile, requested, previous] = args;
   if (event !== 'push' && event !== 'tag' && event !== 'dispatch') {
     console.error('usage: release.ts push|tag|dispatch REF RUN SHA [RELEASES.json [REQUESTED]]');
     return 2;
@@ -179,6 +247,7 @@ function main(args: string[]): number {
       latestStable: latestStable(tags),
       lineLatest: latestStable(tags, packageVersion),
       ...(requested ? { requested } : {}),
+      ...(previous ? { previousPackageVersion: previous } : {}),
     });
     for (const [key, value] of Object.entries(plan) as [string, string][]) {
       console.log(`${key}=${value}`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestStable, nextVersion, releasePlan } from './release';
+import { latestStable, nextVersion, publishAction, releasePlan } from './release';
 
 const SHA = 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12';
 const base = { run: 42, sha: SHA, packageVersion: '0.2.0', latestStable: null };
@@ -236,5 +236,108 @@ describe('a patch of an older line', () => {
     expect(latestStable(tags, '0.4.0')).toBe('0.4.0');
     expect(latestStable(tags, '0.5.0')).toBeNull();
     expect(latestStable(tags)).toBe('0.4.0');
+  });
+});
+
+describe('two runs that would release one version (concurrent pushes, 2026-10-16)', () => {
+  const OTHER = 'cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34';
+  it('is a dev build for a push that did not raise package.json itself', () => {
+    // #109 merged after #103 had raised package.json to 0.11.17: before either run published,
+    // both planned a stable 0.11.17. Only the push that raised it releases it.
+    const plan = releasePlan({
+      ...base,
+      packageVersion: '0.11.17',
+      previousPackageVersion: '0.11.17',
+      latestStable: '0.11.16',
+      event: 'push',
+      ref: 'refs/heads/main',
+    });
+    expect(plan.channel).toBe('dev');
+    expect(plan.version).toBe('0.11.17-dev.42');
+    expect(
+      releasePlan({
+        ...base,
+        packageVersion: '0.11.17',
+        previousPackageVersion: '0.11.16',
+        latestStable: '0.11.16',
+        event: 'push',
+        ref: 'refs/heads/main',
+      }).channel,
+    ).toBe('stable');
+  });
+
+  it('skips publishing a version already tagged at another commit', () => {
+    for (const releaseExists of [false, true]) {
+      expect(
+        publishAction({
+          channel: 'stable',
+          event: 'push',
+          sha: SHA,
+          tagCommit: OTHER,
+          releaseExists,
+        }),
+      ).toBe('skip');
+    }
+    // A tag or a run by hand names its version: another commit's tag is an error there.
+    expect(() =>
+      publishAction({
+        channel: 'stable',
+        event: 'dispatch',
+        sha: SHA,
+        tagCommit: OTHER,
+        releaseExists: true,
+      }),
+    ).toThrow(/already/);
+  });
+
+  it('succeeds without doing anything when this commit is already released', () => {
+    expect(
+      publishAction({
+        channel: 'stable',
+        event: 'push',
+        sha: SHA,
+        tagCommit: SHA,
+        releaseExists: true,
+      }),
+    ).toBe('skip');
+    expect(
+      publishAction({
+        channel: 'dev',
+        event: 'push',
+        sha: SHA,
+        tagCommit: SHA,
+        releaseExists: true,
+      }),
+    ).toBe('skip');
+  });
+
+  it('publishes otherwise: a new tag at this commit, or a pushed tag that has no release yet', () => {
+    expect(
+      publishAction({
+        channel: 'stable',
+        event: 'push',
+        sha: SHA,
+        tagCommit: null,
+        releaseExists: false,
+      }),
+    ).toBe('create');
+    expect(
+      publishAction({
+        channel: 'stable',
+        event: 'tag',
+        sha: SHA,
+        tagCommit: SHA,
+        releaseExists: false,
+      }),
+    ).toBe('create');
+    expect(
+      publishAction({
+        channel: 'dev',
+        event: 'push',
+        sha: SHA,
+        tagCommit: null,
+        releaseExists: false,
+      }),
+    ).toBe('create');
   });
 });
