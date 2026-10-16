@@ -592,9 +592,12 @@ impl Client {
         telemetry::with(telemetry::Telemetry::reset);
     }
 
-    /// The drawing buffer's size: CSS pixels × the pixel ratio.
+    /// The drawing buffer's size: CSS pixels × the pixel ratio (a share of it on a CPU adapter,
+    /// `render::pixel_ratio_for`).
     pub fn resize(&self, css_width: f64, css_height: f64, pixel_ratio: f64) {
         let mut s = self.inner.borrow_mut();
+        let adapter = s.renderer.borrow().adapter();
+        let pixel_ratio = crate::render::pixel_ratio_for(adapter, pixel_ratio);
         let (w, h) = (
             ((css_width * pixel_ratio).round() as u32).max(1),
             ((css_height * pixel_ratio).round() as u32).max(1),

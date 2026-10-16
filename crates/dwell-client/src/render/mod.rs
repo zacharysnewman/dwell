@@ -49,24 +49,57 @@ pub const NEAR_PLANE: f64 = 0.05;
 pub const FAR_PLANE: f64 = 5e7;
 pub const SAMPLES: u32 = 4;
 
-/// Multisampling for an adapter: 4× on a GPU; none on a CPU (software) adapter, where every sample
-/// is the main thread's own time (CI's SwiftShader drops to a few frames a second with 4×).
-/// The clouds a frame draws on an adapter of `device_type` with the Clouds setting `quality`:
-/// none on a CPU adapter (SwiftShader: CI, machines without a GPU), whatever the setting — the
-/// deck's per-pixel noise costs whole frames there (as MSAA does, `samples_for`).
+// A CPU (software) adapter — SwiftShader: CI, machines without a GPU — draws the cheapest tier of
+// everything, whatever the settings: there every pixel and sample is the CPU's time, shared with
+// the game and its workers, and a frame of the full look takes whole seconds (CI's e2e suite timed
+// out). The functions below are that policy, one per cost; a GPU keeps the settings.
+
+fn is_cpu(device_type: wgpu::DeviceType) -> bool {
+    device_type == wgpu::DeviceType::Cpu
+}
+
+/// Multisampling for an adapter: 4× on a GPU; none on a CPU adapter.
+pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
+    if is_cpu(device_type) { 1 } else { SAMPLES }
+}
+
+/// The clouds a frame draws with the Clouds setting `quality`: none on a CPU adapter (the deck's
+/// per-pixel noise).
 pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> CloudQuality {
-    if device_type == wgpu::DeviceType::Cpu {
+    if is_cpu(device_type) {
         CloudQuality::Off
     } else {
         quality
     }
 }
 
-pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
-    if device_type == wgpu::DeviceType::Cpu {
-        1
+/// The water a frame draws with the Water setting `quality`: Low on a CPU adapter (one layer of
+/// ripples).
+pub fn water_for(device_type: wgpu::DeviceType, quality: WaterQuality) -> WaterQuality {
+    if is_cpu(device_type) {
+        WaterQuality::Low
     } else {
-        SAMPLES
+        quality
+    }
+}
+
+/// Whether the wind's edge blur draws (four more composites of the pixel): not on a CPU adapter.
+/// The streaks and vignette still do.
+pub fn motion_blur_for(device_type: wgpu::DeviceType) -> bool {
+    !is_cpu(device_type)
+}
+
+/// The drawing buffer's share of the screen's pixels on a CPU adapter (each axis): the frame's
+/// cost there is per pixel (measured on SwiftShader: 0.75 frames/s at full size, 1.5 at half).
+pub const CPU_RESOLUTION: f64 = 0.5;
+
+/// The drawing buffer's pixels per CSS pixel on an adapter, for a screen of `pixel_ratio`
+/// (the device's, capped, times `?scale=`): that ratio on a GPU, `CPU_RESOLUTION` of it on a CPU.
+pub fn pixel_ratio_for(device_type: wgpu::DeviceType, pixel_ratio: f64) -> f64 {
+    if is_cpu(device_type) {
+        pixel_ratio * CPU_RESOLUTION
+    } else {
+        pixel_ratio
     }
 }
 
@@ -1164,11 +1197,15 @@ impl Renderer {
     pub fn set_fog(&mut self, fog: FogSettings) {
         self.fog = fog;
     }
-    /// The Clouds setting (Off, Low, High).
-    /// The adapter the frames draw on (its kind: `clouds_for`).
+    /// The adapter the frames draw on (its kind: a CPU adapter draws the cheapest tiers,
+    /// `clouds_for` and its neighbours).
     pub fn set_adapter(&mut self, device_type: wgpu::DeviceType) {
         self.adapter = device_type;
     }
+    pub fn adapter(&self) -> wgpu::DeviceType {
+        self.adapter
+    }
+    /// The Clouds setting (Off, Low, High).
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
     }
@@ -1365,7 +1402,10 @@ impl Renderer {
         );
         put(&clouds[0]);
         put(&clouds[1]);
-        put(&water_uniform(self.eye_fluid, self.water_quality));
+        put(&water_uniform(
+            self.eye_fluid,
+            water_for(self.adapter, self.water_quality),
+        ));
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
         }
@@ -1403,7 +1443,16 @@ impl Renderer {
                 f(t.vignette),
                 f(t.flow_speed),
             ],
-            [f(t.blur), 0.0, 0.0, 0.0],
+            [
+                if motion_blur_for(self.adapter) {
+                    f(t.blur)
+                } else {
+                    0.0
+                },
+                0.0,
+                0.0,
+                0.0,
+            ],
         ]
     }
 
@@ -2349,6 +2398,49 @@ mod tests {
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
         let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
         assert!(u[cfg + 1] > 0.0, "the setting's octaves on a GPU");
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_the_cheapest_water_and_no_motion_blur() {
+        // CI's SwiftShader: with clouds off the two-client and friend-world tests still timed out
+        // on slower runners; every per-pixel cost there is the main thread's time.
+        let mut r = noop_renderer();
+        r.set_water_quality(WaterQuality::High);
+        r.set_wind(WindView {
+            intensity: 1.0,
+            flight: 1.0,
+            direction: [0.0, 0.0, 1.0],
+            time: 1.0,
+        });
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        // The water's vec4 is before the wind's six; its w the quality. The wind's last x: blur.
+        let water_w = FRAME_FLOATS - 6 * 4 - 1;
+        let blur = FRAME_FLOATS - 4;
+        let u = r.frame_uniforms(&basis, 1.0, 100.0);
+        assert_eq!(u[water_w], 2.0, "the setting's water on a GPU");
+        assert!(u[blur] > 0.0, "the edge blur on a GPU");
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        let u = r.frame_uniforms(&basis, 1.0, 100.0);
+        assert_eq!(u[water_w], 0.0, "Low water on a CPU adapter");
+        assert_eq!(u[blur], 0.0, "no edge blur on a CPU adapter");
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_a_smaller_buffer() {
+        assert_eq!(pixel_ratio_for(wgpu::DeviceType::DiscreteGpu, 2.0), 2.0);
+        assert_eq!(pixel_ratio_for(wgpu::DeviceType::Cpu, 1.0), CPU_RESOLUTION);
+        assert_eq!(
+            pixel_ratio_for(wgpu::DeviceType::Cpu, 2.0),
+            2.0 * CPU_RESOLUTION
+        );
+        assert_eq!(
+            water_for(wgpu::DeviceType::Cpu, WaterQuality::High),
+            WaterQuality::Low
+        );
+        assert_eq!(
+            water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::Medium),
+            WaterQuality::Medium
+        );
     }
 
     #[test]
