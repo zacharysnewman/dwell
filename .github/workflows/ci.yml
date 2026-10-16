@@ -24,6 +24,7 @@ jobs:
           node shared/blocks/gen.mjs
           node shared/structures/gen.mjs
           node shared/look/gen.mjs
+          node shared/brushes/gen.mjs
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs

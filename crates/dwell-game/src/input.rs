@@ -513,48 +513,46 @@ mod tests {
         // A world without brushes: V and E are not taken (nothing else binds them).
         assert!(
             input
-                .key_down("KeyV", false, false, false, 0.0)
+                .key_down("KeyV", false, false, false)
                 .events
                 .is_empty()
         );
         input.blur();
         input.brushes = true;
         assert_eq!(
-            input.key_down("KeyV", false, false, false, 0.0).events,
+            input.key_down("KeyV", false, false, false).events,
             vec![InputEvent::Brush(BrushAction::Toggle)]
         );
         assert!(
             input
-                .key_down("KeyE", false, false, false, 0.0)
+                .key_down("KeyE", false, false, false)
                 .events
                 .is_empty()
         );
         input.blur();
         input.brush_active = true;
         assert_eq!(
-            input.key_down("KeyE", false, false, false, 0.0).events,
+            input.key_down("KeyE", false, false, false).events,
             vec![InputEvent::Brush(BrushAction::NextPreset)]
         );
         // Held ] keeps growing the brush; Ctrl+Z is still undo, not the brush cycle.
         assert_eq!(
-            input
-                .key_down("BracketRight", true, false, false, 0.0)
-                .events,
+            input.key_down("BracketRight", true, false, false).events,
             vec![InputEvent::Brush(BrushAction::Bigger)]
         );
         assert_eq!(
-            input.key_down("KeyZ", false, true, false, 0.0).events,
+            input.key_down("KeyZ", false, true, false).events,
             vec![InputEvent::Tool(ToolAction::Undo)]
         );
         // Walking still walks.
-        input.key_down("KeyW", false, false, false, 0.0);
+        input.key_down("KeyW", false, false, false);
         assert!(input.sample(None).move_y > 0.0);
     }
 
     #[test]
     fn looks_and_clicks_only_while_the_pointer_is_locked() {
         let mut input = KeyboardMouseInput::new();
-        input.mouse_move(100.0, 0.0);
+        input.mouse_move(100.0);
         assert_eq!(input.mouse_down(0), None);
         assert_eq!(input.wheel(3.0), None);
         input.pointer_locked = true;
