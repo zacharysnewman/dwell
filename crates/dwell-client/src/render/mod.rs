@@ -14,6 +14,7 @@ pub mod display;
 pub mod frame;
 pub mod geometry;
 pub mod march;
+pub mod reflection;
 pub mod seam;
 pub mod shaders;
 pub mod timing;
@@ -26,6 +27,7 @@ use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
+use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
@@ -698,6 +700,8 @@ pub struct Renderer {
     eye_fluid: Option<EyeFluid>,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
+    /// The water's cost-isolation switches (`water::debug_mask`, `?waterdbg=`; 0 in play).
+    water_debug: u32,
     /// When the renderer started (ms, telemetry's clock): the water's scroll time.
     start_ms: f64,
     exposure: f64,
@@ -1151,6 +1155,7 @@ impl Renderer {
             fog: DEFAULT_FOG,
             eye_fluid: None,
             water_quality: WaterQuality::default(),
+            water_debug: 0,
             start_ms: crate::telemetry::now_ms(),
             exposure: DEFAULT_EXPOSURE,
             day: DayState::default(),
@@ -1345,6 +1350,10 @@ impl Renderer {
     /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
+    }
+    /// The water's cost-isolation switches (a dev tool: `water::debug_mask`).
+    pub fn set_water_debug(&mut self, mask: u32) {
+        self.water_debug = mask;
     }
     /// The water this adapter draws: the setting's, Low on a CPU adapter (`water_for`).
     fn water(&self) -> WaterQuality {
@@ -1578,7 +1587,17 @@ impl Renderer {
         }
         // The eye's x and z wrapped for the water's detail (the composite's caustics under it).
         let [wx, wz] = water::wrapped_origin(self.eye);
-        put(&[wx, wz, 0.0, 0.0]);
+        // z: the water's cost-isolation switches (`water::debug_mask`; 0 in play).
+        put(&[wx, wz, self.water_debug as f32, 0.0]);
+        // The water's reflections for its quality, under the Clouds setting (WATER_RENDERING.md §8).
+        for v in reflection_uniforms(
+            &REFLECTIONS,
+            self.water().level() as usize,
+            self.clouds.octaves(&CLOUDS),
+            self.clouds.self_shadow(),
+        ) {
+            put(&v);
+        }
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day = self.day.pack(weight_a, self.day_seconds, pixel_angle);
         if !stars_for(self.adapter) {
@@ -2581,9 +2600,10 @@ pub(crate) fn frame_extras(
 /// position is passed modulo it.
 const WIND_PERIOD: f64 = 1024.0;
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 16 vec4s (after `tan` the
-/// clouds' two, then the water's, the wind's six and the wrap) and the day/night cycle's block.
-pub(crate) const FRAME_FLOATS: usize = 16 + 16 * 4 + DAY_SKY_FLOATS;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 18 vec4s (after `tan` the
+/// clouds' two, then the water's, the wind's six, the wrap and the reflections' two) and the
+/// day/night cycle's block.
+pub(crate) const FRAME_FLOATS: usize = 16 + 18 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2875,7 +2895,8 @@ mod tests {
         r.set_clouds(CloudQuality::High);
         let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
         // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
-        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 6 * 4 - 4 - 4;
+        // (Then the wind's six, the wrap and the reflections' two.)
+        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 4;
         assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
         let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
@@ -2896,9 +2917,9 @@ mod tests {
         });
         let basis = aim(0.0, 0.0, 1.0, 0.0);
         // After the water's vec4 (w: the quality) come the wind's six (the last's x: the blur),
-        // the wrapped eye and the day sky.
-        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 6 * 4 - 1;
-        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 4;
+        // the wrapped eye, the reflections' two and the day sky.
+        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 1;
+        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 4;
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         assert_eq!(u[water_w], 2.0, "the setting's water on a GPU");
         assert!(u[blur] > 0.0, "the edge blur on a GPU");
@@ -3438,9 +3459,9 @@ mod tests {
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
-        // `tan` is the vec4 before the clouds' two, the water's, the wind's six and the wrap (then
-        // the day's block).
-        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 10 * 4 - 3]);
+        // `tan` is the vec4 before the clouds' two, the water's, the wind's six, the wrap and the
+        // reflections' two (then the day's block).
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 12 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
@@ -3456,7 +3477,7 @@ mod tests {
         let basis = aim(0.0, 0.0, 1.0, 0.0);
         let wind = |r: &Renderer| {
             r.frame_uniforms(&basis, 1.0, 100.0)
-                [FRAME_FLOATS - DAY_SKY_FLOATS - 28..FRAME_FLOATS - DAY_SKY_FLOATS - 4]
+                [FRAME_FLOATS - DAY_SKY_FLOATS - 36..FRAME_FLOATS - DAY_SKY_FLOATS - 12]
                 .to_vec()
         };
         assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
@@ -3471,6 +3492,29 @@ mod tests {
         assert!(w[1] < -0.3 && w[0].abs() < 1e-6 && w[2] == 0.5 && w[7] == 1.0);
         // Widths are in CSS pixels: doubled on a 2× screen.
         assert!((f64::from(w[15]) - 2.0 * MOTION.wind.width_px).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_reflections_follow_the_water_quality_and_the_clouds_setting() {
+        let mut r = noop_renderer();
+        r.resize(1280, 720, 1.0);
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let refl = |r: &Renderer| {
+            r.frame_uniforms(&basis, 1.0, 100.0)
+                [FRAME_FLOATS - DAY_SKY_FLOATS - 8..FRAME_FLOATS - DAY_SKY_FLOATS]
+                .to_vec()
+        };
+        r.set_water_quality(WaterQuality::Low);
+        let low = refl(&r);
+        assert_eq!((low[0], low[4]), (0.0, 0.0), "Low: the sky alone");
+        r.set_water_quality(WaterQuality::Medium);
+        let m = refl(&r);
+        assert_eq!(m[0], REFLECTIONS.tier(1).ssr_steps as f32);
+        assert!(m[4] > 0.0, "Medium reflects clouds");
+        r.set_water_quality(WaterQuality::High);
+        assert_eq!(refl(&r)[0], REFLECTIONS.tier(2).ssr_steps as f32);
+        r.set_clouds(CloudQuality::Off);
+        assert_eq!(refl(&r)[4], 0.0, "no clouds in the sky, none reflected");
     }
 
     #[test]

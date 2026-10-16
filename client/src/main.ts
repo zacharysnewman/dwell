@@ -163,6 +163,8 @@ interface DwellDebug {
    * on this client only, as `?time=` and `?moon=` do; null returns to the world's.
    */
   setTime(t: number | null, moon?: number | null): void;
+  /** The water's cost-isolation switches (`?waterdbg=` names, comma-separated; "" for none). */
+  waterDebug(names: string): void;
 }
 
 /** A distribution's summary (telemetry.rs `Stats`). */
@@ -518,6 +520,9 @@ async function start(): Promise<App | null> {
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
+    // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
+    const waterDebug = new URLSearchParams(location.search).get('waterdbg');
+    if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setFov(s.fovDeg);
@@ -658,6 +663,9 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    waterDebug: (names) => {
+      client.setWaterDebug(names);
+    },
     setTime: (t, moon) => {
       client.setTimeOfDay(t ?? undefined);
       if (moon !== undefined) client.setMoonPhase(moon ?? undefined);

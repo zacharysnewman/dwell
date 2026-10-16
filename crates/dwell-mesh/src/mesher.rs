@@ -228,7 +228,7 @@ fn hidden(km: &Kind, kn: &Kind, m: StateId, n: StateId, face: usize) -> bool {
     if n == m && !km.occludes {
         return true;
     }
-    face_covered(cube(), face, cover(&kn))
+    face_covered(cube(), face, cover(kn))
 }
 
 /// The cells' kinds where adaptive blocks change them (docs/ADAPTIVE_BLOCKS.md): an adaptive top
