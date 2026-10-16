@@ -378,7 +378,15 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
   cost), turned and steeper. Then the beach across open water at several pitches and from the side
   (the edge fades), the clouds in the sea, and the bank at dusk and at night with the low sun over the
   water.
-- **Cost:** COST_TBD
+- **Cost** (Apple M1, 1280×720, `--unthrottled`, Medium, the bank view). The switches were toggled
+  within one page (the bench's `waterDebug` step), three rounds, so the sides shared the machine's
+  load. That load was very heavy (averages of 78–105 from other agents' builds), so this is an upper
+  bound and not a check against the 1 ms budget:
+  - The water half (`gpu.near.water`) p50 was 11.3 ms with both on and 8.1 ms with both off.
+  - SSR alone was about 1.7 ms of that, and the reflected clouds the rest.
+  - The frame p50 was 17.5 ms against 12.3 ms.
+
+  The unloaded measurement is outstanding (the plan's W5a exit criteria).
 - **Limits** (screen-space): what is off screen, or hidden behind something nearer on screen, isn't
   reflected (it fades to the sky). Ray-marched reflections (W6) would remove both.
 
