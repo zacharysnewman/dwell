@@ -66,6 +66,7 @@ impl W {
         self.f32s(&m.uvs);
         self.f32s(&m.tiles);
         self.f32s(&m.fluids);
+        self.f32s(&m.plants);
         self.u32s(&m.indices);
     }
     /// The marcher's bricks: a node build as words (`dwell_march::NodeBuild::to_words`).
@@ -169,6 +170,7 @@ impl R<'_> {
             uvs: self.f32s()?,
             tiles: self.f32s()?,
             fluids: self.f32s()?,
+            plants: self.f32s()?,
             indices: self.u32s()?,
         })
     }
@@ -346,6 +348,7 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             if let Some(m) = &t.raster {
                 w.arrays(&m.opaque);
                 w.arrays(&m.transparent);
+                w.arrays(&m.cutout);
             }
             if let Some(b) = &t.march {
                 w.chunk_bricks(b);
@@ -406,6 +409,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
                 Some(ChunkMeshes {
                     opaque: r.arrays()?,
                     transparent: r.arrays()?,
+                    cutout: r.arrays()?,
                 })
             } else {
                 None

@@ -14,6 +14,12 @@ pub const FAR: &str = "gpu.far";
 pub const NEAR: &str = "gpu.near";
 pub const RIGHT_FAR: &str = "gpu.right.far";
 pub const RIGHT_NEAR: &str = "gpu.right.near";
+/// A raster pass's water half when the water reads the scene (W3: Medium and High split a pass
+/// with water into its opaque half, timed as the pass, and this).
+pub const FAR_WATER: &str = "gpu.far.water";
+pub const NEAR_WATER: &str = "gpu.near.water";
+pub const RIGHT_FAR_WATER: &str = "gpu.right.far.water";
+pub const RIGHT_NEAR_WATER: &str = "gpu.right.near.water";
 pub const MARCH: &str = "gpu.march";
 pub const COMPOSITE: &str = "gpu.composite";
 /// The whole frame on the GPU: the first pass's start to the last one's end.

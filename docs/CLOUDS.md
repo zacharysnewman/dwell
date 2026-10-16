@@ -44,12 +44,13 @@ defaults were chosen and are open to change (§6):
   `evolveMps` toward `evolveDirectionDeg`, so the shapes change as they go. The clock is world time:
   the server's tick from its snapshots (`world_clock.rs`: the largest server-minus-local offset seen,
   reset when a server starts over), or the local clock before the first snapshot.
-- **Light.** It comes from the renderer's frame, so the clouds follow whatever sets the sky frame
-  and the lights (a day/night cycle included):
+- **Light.** It comes from the day/night cycle (Phase 32, [`DAY_NIGHT.md`](./DAY_NIGHT.md)): the
+  renderer's `cloud_lighting` reads the frame's `DaySky` block for the viewer's face:
   - The light is the sun or the moon, whichever is over the viewer's face.
   - The data's `sunlit`, `shade`, `nightLit` and `nightShade` colours tint the hues of the sun's,
     the day sky's ambient, the moon's and the night sky's ambient lights.
-  - Day or night follows the sky behind the pixel: the face's dayness times the direction's.
+  - Day or night by the sun's height over the face (the cycle has one time of day all round the
+    sky; before it, a turned sky could be night on one side and day on the other).
   - Self-shadow (High): `lit = exp(−absorption × (0.35·d + d'))`, with `d'` the density
     `shadowStepM` toward the light. Low uses `0.6·d` alone.
   - A silver lining brightens thin cloud near the light. A low sun warms the lit parts toward
@@ -70,7 +71,7 @@ The Clouds setting has three values: Off, Low (`lowOctaves` = 3, no self-shadow)
 = 5 and the self-shadow). It is a row of buttons in Settings → Look. It defaults to High on desktops
 and Low on touch devices (`prefersTouch`, the same test the LOD's phone budgets use). It is kept
 under `dwell.clouds`, its own key in the browser's append-only settings store. Named views and bench
-scenarios can set it, and the sky rotation too (`settings.clouds`, `settings.skyRotation`).
+scenarios can set it, and the time of day too (`settings.clouds`, `settings.timeOfDay`: `?time=`).
 
 ## 4. Cost
 

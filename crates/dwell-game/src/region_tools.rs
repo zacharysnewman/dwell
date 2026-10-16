@@ -7,13 +7,22 @@
 //! A diff keeps the box's states read from the client's world just before the edit is sent: undo
 //! pastes them back (and keeps what it replaced, for redo). Edits only go to a server that
 //! announced `welcome_flags::REGION_EDITS`.
+//!
+//! A brush stroke (BRUSHES.md, `brush_tool.rs`) is one undo step of several pastes whose untouched
+//! cells are `KEEP`; its edits wait in a queue and go out as the server's cell rate allows
+//! ([`RegionTools::pump`]). With a server that takes `KEEP` cells (`welcome_flags::BRUSHES`),
+//! undo keeps unbreakable cells as `KEEP` too, since no paste may put one down.
+
+use std::collections::VecDeque;
 
 use dwell_blocks::StateId;
 use dwell_protocol::{Message, RegionEdit, RegionEditOp, region_edit};
 use dwell_world::VoxelWorld;
-use dwell_world::region::{PasteTransform, box_distance_sq, read_box};
+use dwell_world::edit::unbreakable;
+use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, read_box};
 
-/// Undo steps kept (each holds two boxes of states, at most 32³ each).
+/// Undo steps kept (each holds its boxes' states twice; a brush stroke's boxes are trimmed to
+/// the cells it changes).
 pub const UNDO_DEPTH: usize = 64;
 
 /// What a key asks of the tools (bindings: [`tool_for_key`], the controls table in
@@ -121,7 +130,8 @@ struct Clipboard {
     keep: Vec<bool>,
 }
 
-/// One step of the undo stack: the box and its states before `edit` (what undo pastes back).
+/// One edit of an undo step: the box and its states before `edit` (what undo pastes back; `KEEP`
+/// where it leaves a cell alone).
 #[derive(Clone, Debug, PartialEq)]
 struct Diff {
     min: [i32; 3],
@@ -134,13 +144,22 @@ struct Diff {
 pub struct RegionTools {
     /// The server takes region edits (`welcome_flags::REGION_EDITS`).
     pub enabled: bool,
+    /// The server takes `KEEP` paste cells and brushes (`welcome_flags::BRUSHES`).
+    pub keep: bool,
+    /// How far from the eye an edit's nearest cell may be (m): `region_edit::REACH`, or the world
+    /// type's brush reach (`dwell_world::region::region_reach`, without its slack).
+    pub reach: f32,
     a: Option<[i32; 3]>,
     b: Option<[i32; 3]>,
     clipboard: Option<Clipboard>,
     paste: Option<PasteTransform>,
     ghost: Option<[i32; 3]>,
-    undo: Vec<Diff>,
-    redo: Vec<Diff>,
+    /// Steps of one or more edits (a brush stroke has several).
+    undo: Vec<Vec<Diff>>,
+    redo: Vec<Vec<Diff>>,
+    /// Edits waiting for the rate, and how many the last batch had.
+    queue: VecDeque<RegionEdit>,
+    queued: usize,
     /// Cells the server's rate allows now (its token bucket, mirrored).
     credit: f64,
     credit_ms: f64,
@@ -188,6 +207,8 @@ impl RegionTools {
     pub fn new() -> Self {
         Self {
             enabled: false,
+            keep: false,
+            reach: region_edit::REACH,
             a: None,
             b: None,
             clipboard: None,
@@ -195,6 +216,8 @@ impl RegionTools {
             ghost: None,
             undo: Vec::new(),
             redo: Vec::new(),
+            queue: VecDeque::new(),
+            queued: 0,
             credit: region_edit::BURST_CELLS as f64,
             credit_ms: f64::NEG_INFINITY,
             note: String::new(),
@@ -271,10 +294,21 @@ impl RegionTools {
             };
             parts.push(format!("Selection {} ({n} blocks){over}", size_text(size)));
         }
-        if !self.note.is_empty() {
+        if let Some((sent, all)) = self.progress() {
+            parts.push(format!("Sending {sent} of {all} edits"));
+        } else if !self.note.is_empty() {
             parts.push(self.note.clone());
         }
         parts.join(" · ")
+    }
+
+    /// The last tool's message.
+    pub fn note(&self) -> &str {
+        &self.note
+    }
+
+    pub fn set_note(&mut self, note: impl Into<String>) {
+        self.note = note.into();
     }
 
     /// Runs a tool: the request to send, if it makes one. Every action leaves a status note.
@@ -438,6 +472,38 @@ impl RegionTools {
         }
         f
     }
+    /// The server's cell bucket: refilled at CELLS_PER_SECOND up to BURST_CELLS.
+    fn refill(&mut self, now_ms: f64) {
+        if self.credit_ms.is_finite() {
+            let refill =
+                (now_ms - self.credit_ms).max(0.0) / 1000.0 * region_edit::CELLS_PER_SECOND as f64;
+            self.credit = (self.credit + refill).min(region_edit::BURST_CELLS as f64);
+        }
+        self.credit_ms = now_ms;
+    }
+
+    fn in_reach(&mut self, edit: &RegionEdit, eye: [f64; 3]) -> bool {
+        let reach = f64::from(self.reach);
+        let ok = box_distance_sq(edit.min, dims(edit.size), eye) <= reach * reach;
+        if !ok {
+            self.note = "Too far away".into();
+        }
+        ok
+    }
+
+    /// A box's states as undo keeps them: with a server that takes `KEEP` cells, unbreakable
+    /// cells (which no edit changes, and no paste may put down) and the cells `like` keeps are
+    /// `KEEP`.
+    fn masked(&self, mut states: Vec<StateId>, like: Option<&[StateId]>) -> Vec<StateId> {
+        if self.keep {
+            for (i, m) in states.iter_mut().enumerate() {
+                if unbreakable(*m) || like.is_some_and(|l| l.get(i) == Some(&KEEP)) {
+                    *m = KEEP;
+                }
+            }
+        }
+        states
+    }
 
     /// Checks what the server will (support, reach, rate), reads the box's states for undo, and
     /// returns the request.
@@ -446,24 +512,17 @@ impl RegionTools {
         edit: &RegionEdit,
         ctx: &ToolContext,
         world: &mut impl BoxSource,
+        like: Option<&[StateId]>,
     ) -> Option<Vec<StateId>> {
         if !self.enabled {
             self.note = "This server doesn't take region edits (an older build)".into();
             return None;
         }
         let eye = ctx.eye?;
-        let reach = f64::from(region_edit::REACH);
-        if box_distance_sq(edit.min, dims(edit.size), eye) > reach * reach {
-            self.note = "Too far away".into();
+        if !self.in_reach(edit, eye) {
             return None;
         }
-        // The server's cell bucket: refilled at CELLS_PER_SECOND up to BURST_CELLS.
-        if self.credit_ms.is_finite() {
-            let refill = (ctx.now_ms - self.credit_ms).max(0.0) / 1000.0
-                * region_edit::CELLS_PER_SECOND as f64;
-            self.credit = (self.credit + refill).min(region_edit::BURST_CELLS as f64);
-        }
-        self.credit_ms = ctx.now_ms;
+        self.refill(ctx.now_ms);
         let cost = edit.volume() as f64;
         if self.credit < cost {
             self.note = "Too fast: wait a moment".into();
@@ -474,7 +533,7 @@ impl RegionTools {
             return None;
         };
         self.credit -= cost;
-        Some(before)
+        Some(self.masked(before, like))
     }
 
     fn submit(
@@ -483,32 +542,123 @@ impl RegionTools {
         ctx: &ToolContext,
         world: &mut impl BoxSource,
     ) -> Option<Message> {
-        let before = self.sendable(&edit, ctx, world)?;
+        if self.busy() {
+            return None;
+        }
+        let before = self.sendable(&edit, ctx, world, None)?;
         self.redo.clear();
-        self.push_undo(Diff {
+        self.push_undo(vec![Diff {
             min: edit.min,
             size: edit.size,
             before,
             edit: edit.clone(),
-        });
+        }]);
         Some(Message::RegionEdit(edit))
     }
 
-    fn push_undo(&mut self, d: Diff) {
-        self.undo.push(d);
+    fn push_undo(&mut self, step: Vec<Diff>) {
+        self.undo.push(step);
         if self.undo.len() > UNDO_DEPTH {
             self.undo.remove(0);
         }
     }
 
-    /// Undo pastes a step's earlier states back; redo sends its edit again. Either way the box's
-    /// current states are kept, so the step can go back the other way.
+    /// Edits still waiting for the server's rate (a brush stroke, or the undo of one): no other
+    /// edit starts until they are sent.
+    pub fn busy(&mut self) -> bool {
+        let busy = !self.queue.is_empty();
+        if busy {
+            self.note = "Still sending the last stroke".into();
+        }
+        busy
+    }
+
+    /// One brush stroke (BRUSHES.md) — `edits` are its `KEEP` pastes (`brush::paste_edits`) — as
+    /// one undo step; its edits are sent by [`pump`](Self::pump) as the rate allows. False (with a
+    /// note) if the server can't take it, a box is out of reach or not loaded.
+    pub fn stroke(
+        &mut self,
+        edits: Vec<RegionEdit>,
+        ctx: &ToolContext,
+        world: &mut impl BoxSource,
+    ) -> bool {
+        self.note.clear();
+        if !self.enabled || !self.keep {
+            self.note = "This server doesn't take brushes (an older build or another world)".into();
+            return false;
+        }
+        if edits.is_empty() {
+            self.note = "Nothing to change".into();
+            return false;
+        }
+        if self.busy() {
+            return false;
+        }
+        let Some(eye) = ctx.eye else {
+            return false;
+        };
+        let mut step = Vec::with_capacity(edits.len());
+        for edit in &edits {
+            if !self.in_reach(edit, eye) {
+                return false;
+            }
+            let Some(before) = world.read_box(edit.min, dims(edit.size)) else {
+                self.note = "Not loaded yet".into();
+                return false;
+            };
+            step.push(Diff {
+                min: edit.min,
+                size: edit.size,
+                before: self.masked(before, Some(&edit.cells)),
+                edit: edit.clone(),
+            });
+        }
+        self.redo.clear();
+        self.push_undo(step);
+        self.enqueue(edits);
+        true
+    }
+
+    fn enqueue(&mut self, edits: Vec<RegionEdit>) {
+        self.queued = edits.len();
+        self.queue.extend(edits);
+    }
+
+    /// The queued edits the server's rate allows now (each frame).
+    pub fn pump(&mut self, now_ms: f64) -> Vec<Message> {
+        let mut out = Vec::new();
+        if self.queue.is_empty() {
+            return out;
+        }
+        self.refill(now_ms);
+        while let Some(e) = self.queue.front() {
+            let cost = e.volume() as f64;
+            if self.credit < cost {
+                break;
+            }
+            self.credit -= cost;
+            out.push(Message::RegionEdit(self.queue.pop_front().expect("front")));
+        }
+        out
+    }
+
+    /// Queued edits sent of all (a stroke's progress), while any wait.
+    pub fn progress(&self) -> Option<(usize, usize)> {
+        (!self.queue.is_empty()).then(|| (self.queued - self.queue.len(), self.queued))
+    }
+
+    /// Undo pastes a step's earlier states back; redo sends its edits again. Either way the boxes'
+    /// current states are kept, so the step can go back the other way. A step of several edits
+    /// (a brush stroke) is queued for [`pump`](Self::pump).
     fn replay(
         &mut self,
         undo: bool,
         ctx: &ToolContext,
         world: &mut impl BoxSource,
     ) -> Option<Message> {
+        if self.busy() {
+            return None;
+        }
         let from = if undo { &self.undo } else { &self.redo };
         let Some(step) = from.last().cloned() else {
             self.note = if undo {
@@ -519,35 +669,60 @@ impl RegionTools {
             .into();
             return None;
         };
-        let edit = if undo {
-            RegionEdit {
-                op: RegionEditOp::Paste,
-                min: step.min,
-                size: step.size,
-                material: 0,
-                from: 0,
-                cells: step.before.clone(),
+        let edit_of = |d: &Diff| {
+            if undo {
+                RegionEdit {
+                    op: RegionEditOp::Paste,
+                    min: d.min,
+                    size: d.size,
+                    material: 0,
+                    from: 0,
+                    cells: d.before.clone(),
+                }
+            } else {
+                d.edit.clone()
             }
-        } else {
-            step.edit.clone()
         };
-        let current = self.sendable(&edit, ctx, world)?;
+        let mut message = None;
+        let mut turned = Vec::with_capacity(step.len());
+        if let [d] = step.as_slice() {
+            let edit = edit_of(d);
+            let current = self.sendable(&edit, ctx, world, Some(&d.before))?;
+            turned.push(Diff {
+                before: current,
+                ..d.clone()
+            });
+            message = Some(Message::RegionEdit(edit));
+        } else {
+            let eye = ctx.eye?;
+            let mut edits = Vec::with_capacity(step.len());
+            for d in &step {
+                let edit = edit_of(d);
+                if !self.in_reach(&edit, eye) {
+                    return None;
+                }
+                let Some(current) = world.read_box(d.min, dims(d.size)) else {
+                    self.note = "Not loaded yet".into();
+                    return None;
+                };
+                turned.push(Diff {
+                    before: self.masked(current, Some(&d.before)),
+                    ..d.clone()
+                });
+                edits.push(edit);
+            }
+            self.enqueue(edits);
+        }
         if undo {
             self.undo.pop();
-            self.redo.push(Diff {
-                before: current,
-                ..step
-            });
+            self.redo.push(turned);
             self.note = "Undone".into();
         } else {
             self.redo.pop();
-            self.push_undo(Diff {
-                before: current,
-                ..step
-            });
+            self.push_undo(turned);
             self.note = "Redone".into();
         }
-        Some(Message::RegionEdit(edit))
+        message
     }
 }
 
@@ -594,6 +769,7 @@ mod tests {
     fn tools() -> RegionTools {
         RegionTools {
             enabled: true,
+            keep: true,
             ..RegionTools::new()
         }
     }
@@ -706,6 +882,27 @@ mod tests {
         assert_eq!(t.undo_depth(), (2, 0));
         step(&mut t, &mut w, ToolAction::Undo, &ctx(None, 0));
         assert_eq!(snapshot(&mut w), filled);
+    }
+
+    #[test]
+    fn undo_of_a_box_over_an_unbreakable_block_round_trips() {
+        // The sandbox's floor is unbreakable: a fill over it leaves it, and its undo must not
+        // paste it back (the server rejects a paste that puts down an unbreakable block).
+        let (stone, floor) = (require("dwell:stone"), require("dwell:sandbox_floor"));
+        let mut w = world();
+        for x in 0..3 {
+            w.set_voxel(x, 0, 0, floor);
+        }
+        let original = snapshot(&mut w);
+        let mut t = tools();
+        t.act(ToolAction::CornerA, &ctx(Some([0, 0, 0]), stone), &mut w);
+        t.act(ToolAction::CornerB, &ctx(Some([2, 1, 0]), stone), &mut w);
+        step(&mut t, &mut w, ToolAction::Fill, &ctx(None, stone));
+        assert_eq!((w.get_voxel(1, 0, 0), w.get_voxel(1, 1, 0)), (floor, stone));
+        step(&mut t, &mut w, ToolAction::Undo, &ctx(None, 0));
+        assert_eq!(snapshot(&mut w), original);
+        step(&mut t, &mut w, ToolAction::Redo, &ctx(None, 0));
+        assert_eq!(w.get_voxel(1, 1, 0), stone);
     }
 
     #[test]

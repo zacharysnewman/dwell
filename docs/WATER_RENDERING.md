@@ -89,7 +89,7 @@ rays: one bounce, a coarse level, a short max distance ending at the sky.
 | Tier | Contents |
 |---|---|
 | Low (phone default) | Normal maps, Fresnel, glint, sky-only reflection, absorption at constant depth; underwater fog only. No copies |
-| Medium | Half-res colour and depth copy: refraction, depth absorption, foam, caustics |
+| Medium | Colour copy (full-res in W3; half-res in W5): refraction, depth absorption, foam, caustics |
 | High | Plus half-res SSR and god rays |
 | Ultra (desktop) | Full-res SSR; ray-marched reflections when A3 exists |
 
@@ -102,8 +102,8 @@ Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-re
 |---|---|---|
 | **W1** | Fluid data in the registry (§2), a dedicated `water_fs` (normal maps, Fresnel, GGX, sky reflection), the eye-submerged uniform with the 0.875 rule. No new passes | Fixture-fluid test; **regression test for the cell-vs-surface mismatch, seen failing first**; owner look |
 | **W2** | The frame restructure — [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) A1 (built once, shared) | As A1 |
-| **W3** | Refraction with the depth check, Beer–Lambert absorption, shoreline foam | Screenshots of shore views; bench |
-| **W4** | Underwater: fog, the split line, Snell's window and TIR, caustics, distortion | Named views underwater and half in; owner look |
+| **W3** | Refraction with the depth check, Beer–Lambert absorption, shoreline foam; caustics (brought forward from W4) | Screenshots of shore views; bench |
+| **W4** | Underwater: fog, the split line, Snell's window and TIR, distortion, god rays | Named views underwater and half in; owner look |
 | **W5** | SSR and the quality tiers, phone defaults | Bench on desktop and a phone |
 | **W6** | Under ray marching (after A3, if marching is kept): reflection and refraction rays replace SSR and the copy on high tiers | Parity against W5's views |
 
@@ -203,6 +203,109 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
 - **Known, not W1b's:** vertical water faces at sea-floor steps show as faint dashed bands from
   above (they were there before). The near shore is pale over bright sand until W3's depth
   absorption.
+
+### W3, the water reads the scene (2026-10-15)
+
+The owner asked for tropical water: rich clear blue in the deep, luminous turquoise to cyan in the
+shallows over sand, never murky or green, with caustics the star under the surface. W3 grades the
+colour by depth, which is what makes the shallows work.
+
+- **Frame (`render/frame.rs`, `render/mod.rs`).** On Medium and High, a scene pass with water is
+  split in two:
+  1. Its opaque half keeps the multisampled colour and the depth buffer, and resolves the colour.
+  2. The resolved colour is copied (`copy_texture_to_texture`) into the **under-water copy**, a
+     single-sample `rgba16float` allocated only on these tiers.
+  3. Its water half loads the colour and depth and draws the fluids with `water_scene_fs`. It reads
+     the copy and the view depth as group 2 (`frame::under_layout`: the copy filtered, the view
+     depth as the composite reads it, a linear sampler). It doesn't attach the view depth, so it
+     can read it.
+
+  The far and near passes split alike, so far water reads the far scene and near water reads both.
+  Low keeps W1b's single pass, `water_fs` and no copy. Changing the tier rebuilds the targets.
+  The opaque half is timed as the pass (`gpu.far`, `gpu.near`), and the water half as
+  `gpu.far.water` and `gpu.near.water`. Only the raster side of the renderer seam splits.
+- **`water_scene_fs`:**
+  - **Thickness:** the ray's length in the water is `ray_thickness`, the view depth behind minus the
+    surface's, scaled along the ray (nothing behind counts as deep). Its depth under the surface is
+    the floor point's height below it.
+  - **Refraction:** the scene is sampled at a pixel offset from the ripples' slope × the fluid's
+    `refraction`, scaled to the view depth and by the thickness up to 1 m (none at the waterline).
+    It falls back to the undistorted pixel where the offset sample is in front of the water
+    (`refracted_sample`, the foreground-bleed check). Depth is read from sample 0, one load per
+    lookup.
+  - **Colour, Beer–Lambert (`through_fluid`):** what is behind keeps `exp(−(σ + s)·length)` along
+    the ray, where σ is `absorption` and s is the new `scattering`. It was lit by light that came
+    down through the water, which keeps `exp(−σ·depth)`. The lit body (the scatter colour) fills the
+    rest. So the colour grades from almost clear over sand at the edge, through turquoise (red goes
+    first), to blue. The surface's Fresnel reflection, glint and sparkle go over it. The output is
+    the whole view through the surface (alpha 1).
+  - **From below:** unchanged (the W4 stub).
+- **Caustics** (brought forward from W4 at the owner's request). They are procedural, with no
+  texture:
+  - **Pattern:** one layer of moving Worley cell edges (F2 − F1), warped so the lines wander, plus a
+    finer layer when near. Each cell divides the 1,024 m wrap (`caustic_period`). The lattice hash
+    uses no trig.
+  - **Placement:** evaluated at the floor point, shifted back along the refracted sun, and animated
+    with the flow speed.
+  - **Brightness:** they fade with depth (`exp(−depth / caustics.depth)`, `caustic_fade`) and where
+    a pixel covers a good part of a cell (no aliasing far away). They are focused, not added: a
+    little dimmer between the lines, brighter on them.
+  - **Light source:** the moon gives faint ones (0.2 of the sun's). In daylight on the face's own
+    side, the sun gives them.
+  - **Cost:** they are skipped where they would be under 2 % strength.
+- **Caustics under the surface.** While the eye is under a fluid on Medium and High, the composite
+  lights every opaque pixel below the surface: the seabed, walls, blocks. That light came down
+  through the fluid, `exp(−σ·depth)`, and is focused into the same caustics, 1.7× as bright as seen
+  from above. Then comes the fluid's fog over the distance to it. The fog takes absorption plus
+  scattering. Under the surface the caustics are the main show, and the fog doesn't wash them out
+  in the shallows.
+- **Shoreline foam:** where the water over what is behind is under the foam depth, thin drifting
+  lines lap toward the shore, broken up by noise, with a soft rim where the water meets the bank
+  (at most 0.8). On voxel shores the bank is a step, so the rim shows as a thin line along the
+  waterline.
+- **Sparkle** (all tiers): a tight highlight (power 2,400) off a fine, fast ripple layer
+  (0.06 × `waveScale`, faded by the footprint), × the fluid's `sparkle`. The glint breaks into
+  glitter on the ripples.
+- **Data** (`shared/blocks/fluids.mjs`, validated, with every field required):
+  - `caustics` became `{ strength, scale, depth }`.
+  - New fields: `scattering`, `refraction` and `sparkle`.
+  - The fluid buffer has six vec4 per fluid: scattering in `extra.w`, and `optics` = refraction,
+    caustic scale, caustic depth, sparkle.
+  - The frame uniform gained `wrap` (the eye's x and z wrapped, for the composite's caustics).
+  - `dwell:water` (prototype content, tuned from the screenshots): absorption [1.0, 0.16, 0.045],
+    scatter `#1496e0`, scattering 0.3, refraction 0.4, sparkle 1.5, foam depth 0.5, caustics
+    strength 1.3, scale 1.4 m, depth 4 m.
+  - The test `the_builds_water_grades_from_clear_through_turquoise_to_blue_never_green` pins the
+    look over sand: green never more than 1.1× blue once the red has gone, and blue over 2× green
+    when deep.
+- **Distant water:** LOD water draws with the same pipeline over the LOD floor, so the colour
+  grades the same way and near and far meet without a seam (`water-shore` `far-1000`). The faint
+  dashed bands at sea-floor steps from W1b are gone, because the steps now show through as depth.
+- **Bench:** the `water-shore` scenario flies to the `water-views` coast. It shoots the beach edge
+  at a low angle, straight down into the shallows, the deep-to-shallow gradient from 20 m, under
+  the surface (the floor, along it, and up), and the far water from 1 km.
+- **Cost** (Apple M1, 1280×720, 4× MSAA, `--unthrottled`). The machine was shared with other
+  agents' builds and benches (load average 20–70), so these numbers are noisy. Runs under heavier
+  load were up to twice these. The views were the shore from 20 m and under the surface in the
+  shallows. The cleanest of four runs, GPU p50:
+
+  | Tier | Frame, shore | Water half `gpu.near.water`, shore | Frame, under | Water half, under |
+  |---|---|---|---|---|
+  | Low | 3.4 ms | (none) | 2.2 ms | (none) |
+  | Medium | 10.7 ms | 7.9 ms | 6.3 ms | 1.9 ms |
+  | High | 11.5 ms | 5.4 ms | 11.5 ms | (noisy) |
+
+  The frame interval stayed CPU-bound at 11–13 ms on every tier.
+  - **Where the cost is:** with `water_scene_fs` returning a constant, the split and copy cost
+    nothing measurable. The cost is the shading: caustics about 2 ms, and the rest in the
+    three-layer ripples, the sky reflection and the scene reads over a nearly full-screen surface.
+  - **The water halves** are timed on their own as `gpu.far.water` and `gpu.near.water`.
+  - **Next:** W5's half-resolution copies on Medium, and a measurement on an unloaded machine and
+    on phones (Low stays the phone default).
+- **Not yet (W4):**
+  - The surface from below is still the flat body colour.
+  - No water line, no god rays (not brought forward: the caustics took the time).
+  - Refraction to the scene above through Snell's window.
 
 ## Sources
 

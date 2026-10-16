@@ -73,6 +73,7 @@ pub mod region_edit {
     pub const BURST_CELLS: usize = 131072;
     pub const REACH: f32 = 64.0;
     pub const MAX_QUEUED: usize = 4;
+    pub const KEEP: usize = 65535;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -480,5 +481,6 @@ pub mod controller_flags {
 pub mod welcome_flags {
     pub const FLIGHT: u8 = 1;
     pub const REGION_EDITS: u8 = 2;
-    pub const ALL: u8 = 3;
+    pub const BRUSHES: u8 = 4;
+    pub const ALL: u8 = 7;
 }
