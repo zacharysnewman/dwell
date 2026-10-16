@@ -9,8 +9,16 @@ use dwell_worldgen::*;
 
 const S: i32 = CHUNK_SIZE;
 
+/// A solid cell (the registry's data): decorations such as tall grass are not.
 fn solid(m: StateId) -> bool {
-    m != M.air && m != M.water
+    dwell_blocks::info(m).solid
+}
+
+/// What the generator puts over the ground: one of `shared/worldgen/decorations.json`'s blocks.
+fn decoration(m: StateId) -> bool {
+    dwell_worldgen::decorations::DECORATIONS
+        .iter()
+        .any(|d| dwell_blocks::require(d.block) == m)
 }
 
 fn gen_chunk(g: &TerrainGenerator, c: ChunkCoord) -> Chunk {
@@ -309,7 +317,7 @@ fn the_flat_world_and_retired_versions_are_unchanged_by_the_sandbox() {
 fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
     let g = TerrainGenerator::new(0);
     let (cx, cz) = coast_on_axis(&g);
-    let (mut water, mut grass, mut sand) = (0, 0, 0);
+    let (mut water, mut grass, mut sand, mut decorated) = (0, 0, 0, 0);
     for x in (cx - 200..=cx + 200).step_by(40) {
         let h = g.column_at(x, cz).height as i32;
         for cy in [floor_div(h, S) - 1, floor_div(h, S), floor_div(h, S) + 1] {
@@ -322,7 +330,9 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         let wy = c.y * S + y;
                         let m = chunk.get(lx, y, z);
                         let depth = ground - wy;
-                        if depth < 0 {
+                        if depth == -1 && wy >= SEA_LEVEL && decoration(m) {
+                            decorated += 1;
+                        } else if depth < 0 {
                             assert_eq!(m, if wy < SEA_LEVEL { M.water } else { M.air });
                             water += i32::from(m == M.water);
                         } else if ground < SEA_LEVEL + 2 {
@@ -345,8 +355,8 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
         }
     }
     assert!(
-        water > 1000 && grass > 100 && sand > 100,
-        "{water} {grass} {sand}"
+        water > 1000 && grass > 100 && sand > 100 && decorated > 10,
+        "{water} {grass} {sand} {decorated}"
     );
 }
 
@@ -363,7 +373,9 @@ fn players_spawn_on_level_open_ground_near_the_origin() {
         for dz in -4..=4 {
             for dx in -4..=4 {
                 assert!(solid(world.get_voxel(x + dx, y - 1, z + dz)), "seed {seed}");
-                assert_eq!(world.get_voxel(x + dx, y, z + dz), M.air);
+                // Open: air, or a decoration players walk through (tall grass).
+                let at = world.get_voxel(x + dx, y, z + dz);
+                assert!(at == M.air || (decoration(at) && !solid(at)), "seed {seed}");
                 assert_eq!(world.get_voxel(x + dx, y + 1, z + dz), M.air);
             }
         }
@@ -553,4 +565,51 @@ fn the_air_test_knows_face_bs_sky_and_rows_outside_the_world() {
         air(ChunkCoord::new(0, MIN_CHUNK_Y - 1, 0)) && air(ChunkCoord::new(0, MAX_CHUNK_Y + 1, 0))
     );
     let _ = require("dwell:air");
+}
+
+#[test]
+fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
+    // shared/worldgen/decorations.json: each plant stands in the air cell over a grass block,
+    // within the rule's slope and height; a cell's answer is its own (no other chunk is read), so
+    // chunk borders agree and chunks generate in any order.
+    let g = TerrainGenerator::new(7);
+    let rule = &dwell_worldgen::decorations::DECORATIONS[0];
+    let tall = require(rule.block);
+    let (mut plants, mut grass_tops) = (0, 0);
+    for (cx, cz) in [(0, 0), (1, 0), (0, 1), (-3, 5), (12, -7)] {
+        let h = g.column_at(cx * S + 16, cz * S + 16).height as i32;
+        for cy in [floor_div(h, S), floor_div(h, S) + 1] {
+            let c = ChunkCoord::new(cx, cy, cz);
+            let chunk = gen_chunk(&g, c);
+            assert_eq!(chunk.voxels(), gen_chunk(&g, c).voxels());
+            for z in 0..S {
+                for x in 0..S {
+                    let (wx, wz) = (c.x * S + x, c.z * S + z);
+                    let top = g.ground_y(wx, wz).expect("inside");
+                    if (c.y * S..c.y * S + S).contains(&top)
+                        && chunk.get(x, top - c.y * S, z) == M.grass
+                    {
+                        grass_tops += 1;
+                    }
+                    for y in 0..S {
+                        if chunk.get(x, y, z) != tall {
+                            continue;
+                        }
+                        plants += 1;
+                        assert_eq!(c.y * S + y, top + 1, "over the ground");
+                        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                            let n = g.ground_y(wx + dx, wz + dz).expect("inside");
+                            assert!((n - top).abs() <= rule.max_slope);
+                        }
+                        assert!((rule.min_height..=rule.max_height).contains(&top));
+                    }
+                }
+            }
+        }
+    }
+    // Meadows, not a lawn: some of the grass, not all of it.
+    assert!(
+        plants > 20 && plants < grass_tops,
+        "{plants} of {grass_tops}"
+    );
 }

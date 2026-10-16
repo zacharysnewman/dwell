@@ -1,5 +1,7 @@
-//! Procedural terrain, generator version 12 (ARCHITECTURE.md §6.3): the interim baseline of Phase
-//! 15 — one island at the origin, a 2D height field, and the ground filled by depth. A chunk is a
+//! Procedural terrain, generator version 13 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
+//! version 13 (Phase 32) the decorations of `shared/worldgen/decorations.json` one cell above the
+//! ground (tall grass; `decorations.rs`). A chunk is a
 //! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
 //! natively or in WASM, bit-identically (noise.rs, ADR 0010).
 //!
@@ -16,6 +18,7 @@ use dwell_world::{
     chunk_disc_overlap, inside_world_disc, local_index,
 };
 
+use crate::decorations::{DECORATIONS, Placer};
 use crate::island::{self, IslandLayout};
 use crate::noise::{
     clamp01, fbm2, floor_div, floor_mod, floor_to_int, lerp, noise_offset, octaves_resolved,
@@ -98,7 +101,13 @@ pub struct TerrainGenerator {
     offset_x: i64,
     offset_z: i64,
     island: IslandLayout,
+    /// The decorations (data), resolved for this world.
+    decorations: Vec<Placer>,
 }
+
+/// How far above the ground decorations reach: the sky test leaves this much room over the
+/// highest ground before a chunk is all air.
+const DECORATION_RISE: f32 = 1.0;
 
 impl TerrainGenerator {
     pub fn new(world_seed: u64) -> Self {
@@ -108,6 +117,7 @@ impl TerrainGenerator {
             offset_x: noise_offset(seed_word(world_seed, 3)),
             offset_z: noise_offset(seed_word(world_seed, 4)),
             island: IslandLayout::new(world_seed),
+            decorations: Placer::resolve(&DECORATIONS, world_seed),
         }
     }
 
@@ -250,6 +260,7 @@ impl TerrainGenerator {
         cols.iter()
             .filter(|c| !c.outside)
             .fold(-1e9f32, |top, c| top.max(c.height))
+            + DECORATION_RISE
     }
 
     /// The sky test's height for a chunk column: chunks with y0 above it (and at or above sea
@@ -316,8 +327,52 @@ impl TerrainGenerator {
                         *v = M.water;
                     }
                 }
+                // A decoration in the air cell over the ground, if this chunk holds that cell.
+                let above = top + 1;
+                if (y0..y0 + S).contains(&above)
+                    && above >= SEA_LEVEL
+                    && (FACE_MIN_Y..WORLD_MAX_Y).contains(&above)
+                    && let Some(m) = self.decoration_at(&cols, x0, z0, x, z, top)
+                {
+                    voxels[local_index(x, above - y0, z)] = m;
+                }
             }
         }
+    }
+
+    /// The decoration (if any) over the ground of column (x0 + lx, z0 + lz), whose top is `top`;
+    /// `cols` are the chunk's columns, and columns beyond them come from `column_at` (the same
+    /// arithmetic), so the answer doesn't depend on the chunk asking.
+    fn decoration_at(
+        &self,
+        cols: &[Column],
+        x0: i32,
+        z0: i32,
+        lx: i32,
+        lz: i32,
+        top: i32,
+    ) -> Option<StateId> {
+        const S: i32 = CHUNK_SIZE;
+        let (x, z) = (x0 + lx, z0 + lz);
+        let ground = fill(top, 0);
+        let neighbour_top = |nx: i32, nz: i32| {
+            let (ix, iz) = (nx - x0, nz - z0);
+            let col = if (0..S).contains(&ix) && (0..S).contains(&iz) {
+                cols[(iz * S + ix) as usize]
+            } else {
+                self.column_at(nx, nz)
+            };
+            if col.outside {
+                i32::MIN / 2
+            } else {
+                top_voxel(col.height)
+            }
+        };
+        let noise = (i64::from(x) + self.offset_x, i64::from(z) + self.offset_z);
+        self.decorations
+            .iter()
+            .find(|p| p.places((x, z), noise, ground, top, neighbour_top))
+            .map(Placer::state)
     }
 
     // --- level of detail (§6.6) -------------------------------------------------------------------

@@ -28,6 +28,8 @@ jobs:
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs
           node shared/sounds/gen.mjs
+          node shared/worldgen/gen.mjs
+          node --test shared/worldgen/gen.test.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
           git diff --exit-code
