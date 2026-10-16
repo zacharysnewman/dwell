@@ -135,9 +135,10 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   - Both roots are in forms that don't cancel. `deck_distance` is the f64 twin, tested from below,
     above and inside.
   - From above, the clouds fade where the ray grazes the deck (`horizonFade`, on the sine of the
-    angle it meets the sphere at). The distance fade stretches by `deck_reach`: how far the deck's
-    horizon is from the eye, over how far it is from sea level. So from high up the deck reads as a
-    cloud sea out to its own horizon.
+    angle it meets the sphere at). The distance fade reaches out with the deck's own horizon
+    (`deck_fade`: from 40% of the horizon's distance to all of it), so from high up the deck reads
+    as a cloud sea out to its horizon. From above, the clouds are also denser (the square root of
+    the density: the deck is seen through its whole depth).
 - **Over the scene, by depth.** The deck hit is `t` along the unit ray. The view ray scaled to view
   depth 1 is `|ray|` long, so the hit's view depth is `t / |ray|`. The composite draws the clouds
   over a covered pixel only when that is nearer than the stored view depth (A1's `r32float` target,

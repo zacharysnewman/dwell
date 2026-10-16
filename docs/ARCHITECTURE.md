@@ -1440,8 +1440,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   silver lining near the light, a warm tint from a low sun, and a mix toward the clear sky with
   distance. From below, clouds are hidden below the horizon. **From above** (Phase 31 C5,
   `CLOUDS.md` §7), rays aimed down past the deck's own horizon meet its top. The top is lit
-  brighter (`topLight`), and the distance fade stretches with the deck's horizon (`deck_reach`), so
-  from high up it reads as a cloud sea. The composite draws the clouds over the sky, and over the
+  brighter (`topLight`), and the distance fade reaches out to the deck's own horizon (`deck_fade`),
+  so from high up it reads as a cloud sea. The composite draws the clouds over the sky, and over the
   scene where the deck's hit is nearer than the stored view depth (`dwell_cloud_in_front`: the hit's
   view depth is `t / |ray|`, compared with A1's `r32float` target, so chunks and LOD sections alike
   are tested). The deck fades out over `crossFadeM` either side of the eye. An in-cloud fog fades in

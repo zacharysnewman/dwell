@@ -136,13 +136,17 @@ pub fn deck_distance(above: f64, height: f64, altitude: f64, curvature: f64) -> 
     }
 }
 
-/// How far the deck's horizon is from the eye, over how far it is from sea level: the distance
-/// fade stretches by this (at least 1), so from high above the deck reads as a cloud sea out to its
-/// own horizon.
-pub fn deck_reach(height: f64, altitude: f64, curvature: f64) -> f64 {
-    let k = height * (2.0 * (curvature + altitude) - height);
-    let sea = altitude * (2.0 * curvature + altitude);
-    (k.abs() / sea).sqrt().max(1.0)
+/// The distance fade's start and end along the ray. From below they are the data's; from above
+/// they reach out with the deck's own horizon (`√(|eye|² − |deck|²)`: from 40% of it to all of it),
+/// so from high above the deck reads as a cloud sea out to its horizon. `dwell_cloud_fade` is this.
+pub fn deck_fade(t: &CloudTunables, height: f64) -> (f64, f64) {
+    let (a, r) = (t.deck.altitude_m, t.deck.curvature_m);
+    let k = -height * (2.0 * (r + a) - height);
+    let far = k.max(0.0).sqrt();
+    (
+        t.deck.fade_start_m.max(0.4 * far),
+        t.deck.fade_end_m.max(far),
+    )
 }
 
 /// Whether the deck, met `t` metres along a unit ray, is in front of what the scene drew there: the
@@ -172,7 +176,7 @@ fn heading(deg: f64) -> [f64; 2] {
 /// offset from it, in cells, each wrapped into one period), `cfg` (coverage, octaves, 1 with the
 /// self-shadow, the deck's height above the eye: negative above it) and `inside` (x: how much the
 /// eye is in cloud — the cloud's density under the eye, faded in over `cross_fade_m` either side of
-/// the deck, times `inside_fog`; y: the distance fade's stretch, `deck_reach`). `seconds` is the
+/// the deck, times `inside_fog`; y, z, w unused). `seconds` is the
 /// clouds' clock (world time where there is one). Face B's clouds are another part of the noise
 /// (half a period away).
 pub fn cloud_uniforms(
@@ -213,12 +217,7 @@ pub fn cloud_uniforms(
             if quality.self_shadow() { 1.0 } else { 0.0 },
             height as f32,
         ],
-        [
-            inside as f32,
-            deck_reach(height, t.deck.altitude_m, t.deck.curvature_m) as f32,
-            0.0,
-            0.0,
-        ],
+        [inside as f32, 0.0, 0.0, 0.0],
     ]
 }
 
@@ -425,10 +424,18 @@ fn cloud_shape(n_in: f32, coverage: f32) -> f32 {
 	return select(0.0, smoothstep(cut, cut + CLOUD_SOFTNESS, n), coverage > 0.0);
 }
 
-// `height` is the deck's height above the eye (negative: the eye is above it), `reach` the
-// distance fade's stretch (deck_reach). From below, clouds show above the horizon; from above, rays
-// down past the deck's horizon meet its top, faded where they graze it.
-fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32, reach: f32) -> vec4f {
+// The distance fade's start and end (deck_fade): the data's from below; from above, out to the
+// deck's own horizon.
+fn dwell_cloud_fade(height: f32) -> vec2f {
+	let k = -height * (2.0 * (CLOUD_CURVATURE + CLOUD_ALTITUDE) - height);
+	let far = sqrt(max(k, 0.0));
+	return vec2f(max(CLOUD_FADE_START, 0.4 * far), max(CLOUD_FADE_END, far));
+}
+
+// `height` is the deck's height above the eye (negative: the eye is above it). From below, clouds
+// show above the horizon; from above, rays down past the deck's horizon meet its top, faded where
+// they graze it.
+fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f {
 	let above = dir.y * face;
 	let e = CLOUD_CURVATURE + CLOUD_ALTITUDE - height;
 	let k = -height * (2.0 * (CLOUD_CURVATURE + CLOUD_ALTITUDE) - height);
@@ -444,7 +451,7 @@ fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32, reach: f
 	let q = offsets.xy + dir.xz * (t / CLOUD_SCALE);
 	let shown = select(0.0, 1.0, hit) * facing
 		* smoothstep(0.0, CLOUD_CROSS_FADE, abs(height))
-		* (1.0 - smoothstep(CLOUD_FADE_START * reach, CLOUD_FADE_END * reach, t));
+		* (1.0 - smoothstep(dwell_cloud_fade(height).x, dwell_cloud_fade(height).y, t));
 	return vec4f(q, t, shown);
 }
 
@@ -516,8 +523,10 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	let rim = CLOUD_SILVER * pow(toward_light, CLOUD_SILVER_POWER) * (1.0 - d) * (1.0 - d);
 	col += rim * mix(CLOUD_MOON_GLOW * 0.5, CLOUD_SUN_GLOW, dayness);
 	// Far cloud takes the sky's haze behind it.
-	col = mix(col, clear, 0.85 * smoothstep(0.0, CLOUD_FADE_END, deck.z));
-	return mix(under, col, d * CLOUD_OPACITY * deck.w);
+	col = mix(col, clear, 0.85 * smoothstep(0.0, dwell_cloud_fade(cfg.w).y, deck.z));
+	// From above the deck is seen through its whole depth: denser, and solid sooner at its edges.
+	let cover = select(d, sqrt(d), from_above);
+	return mix(under, col, cover * CLOUD_OPACITY * deck.w);
 }
 
 // Inside the cloud: the whole view mixed toward the cloud's lit colour by `amount` (cloud_uniforms'
@@ -587,7 +596,9 @@ mod tests {
         assert!((flat - h / 0.25).abs() < 1e-3);
         // From below every ray meets it, even one aimed down (the composite's depth test hides it).
         assert!(deck_distance(-0.5, h, a, r).is_some());
-        assert_eq!(deck_reach(h, a, r), 1.0);
+        let mut t = CLOUDS;
+        (t.deck.altitude_m, t.deck.curvature_m) = (a, r);
+        assert_eq!(deck_fade(&t, h), (t.deck.fade_start_m, t.deck.fade_end_m));
     }
 
     #[test]
@@ -616,8 +627,19 @@ mod tests {
             last = t;
             on_sphere(y, h, a, r, t);
         }
-        // High above, the deck reads as a sea out to its own horizon: the fade stretches.
-        assert!(deck_reach(-50_000.0, a, r) > 3.0);
+        // High above, the deck reads as a sea out to its own horizon: the fade reaches it.
+        let mut t = CLOUDS;
+        (t.deck.altitude_m, t.deck.curvature_m) = (a, r);
+        let high = -13_000.0;
+        let e = r + a - high;
+        let horizon = (e * e - (r + a) * (r + a)).sqrt();
+        let (start, end) = deck_fade(&t, high);
+        assert!((end - horizon).abs() < 1e-6 && start < end && start > t.deck.fade_start_m);
+        // Just over the deck, the data's fade.
+        assert_eq!(
+            deck_fade(&t, -10.0),
+            (t.deck.fade_start_m, t.deck.fade_end_m)
+        );
     }
 
     #[test]

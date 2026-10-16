@@ -42,7 +42,7 @@ struct Frame {
     tan: vec4f,
     // The sky's clouds (dwell-look's cloud_uniforms): the noise point under the eye and the warp
     // field's offset (cells); coverage, octaves (0: off), self-shadow, the deck's height above the
-    // eye (negative above it); how much the eye is in cloud, and the distance fade's stretch.
+    // eye (negative above it); how much the eye is in cloud.
     clouds: vec4f,
     cloud_cfg: vec4f,
     cloud_inside: vec4f,
@@ -456,7 +456,7 @@ fn composited(p: vec2i, ndc: vec2f) -> vec3f {
     let dir = normalize(ray);
     let face = frame.eye.y;
     // In uniform control flow, for the pixel's footprint on the deck.
-    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w, frame.cloud_inside.y);
+    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
     let fw = max(fwidth(deck.x), fwidth(deck.y));
     let clear = sky(dir);
     let lights = cloud_lighting();

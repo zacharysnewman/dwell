@@ -3078,7 +3078,7 @@ Follow-up (owner, 2026-10-15)
 - [x] **C5** — Clouds from above (`CLOUDS.md` §7):
   - the deck's top drawn below an eye above it;
   - over the terrain where the deck is nearer than the stored view depth (`dwell_cloud_in_front`);
-  - sunlit tops (`topLight`), and a cloud sea to the deck's horizon from high up (`deck_reach`);
+  - sunlit tops (`topLight`), and a cloud sea to the deck's horizon from high up (`deck_fade`);
   - a cross-fade through the layer with an in-cloud fog (`crossFadeM`, `insideFog`), with no pop;
   - face B on its own deck;
   - tests from below, above and inside, and the depth comparison at chunk and LOD distances;
