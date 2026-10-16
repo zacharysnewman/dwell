@@ -21,11 +21,11 @@ defaults were chosen and are open to change (§6):
 ## 2. The model
 
 - **The deck.** The deck is a thin layer `altitudeM` (1.8 km) above the viewer's face's sea level. It
-  lies on a sphere about a centre `curvatureM` (120 km) below sea level, under the eye. From an eye
+  lies on a sphere about a centre `curvatureM` (400 km; 120 km before C5, raised so that from high up the deck reaches far toward the flat world's horizon) below sea level, under the eye. From an eye
   at sea level, a sky pixel's view ray `d` meets it at distance `t = c / (r·y + √(r²y² + c))`, with
   `c = 2rh + h²`, `y = d·up` and `h` the deck's height above the eye (§7 has the general form, from
   any height). This form doesn't cancel: `t = h` straight up and `√(2rh + h²)`
-  ≈ 21 km at the horizon. Below the horizon the clouds are hidden. They fade in over `horizonFade`,
+  ≈ 38 km at the horizon. Below the horizon the clouds are hidden. They fade in over `horizonFade`,
   fade out between `fadeStartM` and `fadeEndM` along the ray, and fade as the eye comes within
   `crossFadeM` of the deck. From above, the deck's top shows (§7).
 - **World-anchored, f32-safe.** The hit's horizontal offset from the eye is added to the noise point
@@ -148,7 +148,7 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   a peak seen through it from below. The terrain still fogs toward the clear sky first, and the
   clouds go over that.
 - **Bright tops.** Seen from above with the light over the face, the light reaches the top through
-  less cloud: the self-shadow's absorption is cut by `topLight` (0.7). Day or night follows the sky
+  less cloud: the self-shadow's absorption is cut by `topLight` (0.9). Day or night follows the sky
   in the ray's level direction, as `dwell_sky` takes it below the horizon.
 - **The crossing.** The deck fades out over `crossFadeM` (400 m) either side of it, from below as
   before and now from above. As it does, an in-cloud fog fades in: the whole view mixes toward the
@@ -156,4 +156,9 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   how near the eye is to the deck. The CPU computes that density once a frame with the noise's twin
   (`cloud_uniforms`' third vector). Clear air at the deck gives no fog, a cloud gives a white-out,
   and nothing pops.
+- **Edge-on.** Within the layer the deck is seen edge-on, as a band at the horizon
+  (`deck_band`): along a ray within 0.12 (elevation sine) of level, cloud where the ray leaves the
+  layer (`crossFadeM` thick each side), out to the fade's start. It is strongest with the eye at the
+  deck and the ray level, and it hands over to the deck proper as the eye leaves the layer.
+- **Cost.** From above, the self-shadow's second sample is skipped: the sunlit top barely shows it.
 - **Face B** uses its own deck: the height is face-local, and up is `(0, face, 0)`.

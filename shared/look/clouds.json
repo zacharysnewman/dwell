@@ -3,7 +3,7 @@
   "deck": {
     "$comment": "altitudeM: the deck's height above sea level, on the viewer's face. curvatureM: the radius of the sphere the deck lies on (smaller: the deck meets the horizon nearer). crossFadeM: the deck fades out as the eye comes within this of it, from below or above, and insideFog fades in instead: the view mixed toward the cloud colour by the density of the cloud the eye is in (0–1). horizonFade: the elevation sine over which clouds fade in above the horizon. fadeStartM/fadeEndM: the distance along the view ray over which clouds fade into the sky's haze.",
     "altitudeM": 1800,
-    "curvatureM": 120000,
+    "curvatureM": 400000,
     "crossFadeM": 400,
     "insideFog": 0.9,
     "horizonFade": 0.06,
@@ -41,6 +41,6 @@
     "silverLining": 0.9,
     "silverPower": 8,
     "sunWarmth": 0.4,
-    "topLight": 0.7
+    "topLight": 0.9
   }
 }

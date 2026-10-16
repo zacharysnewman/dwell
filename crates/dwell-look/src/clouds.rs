@@ -149,6 +149,20 @@ pub fn deck_fade(t: &CloudTunables, height: f64) -> (f64, f64) {
     )
 }
 
+/// How far from level (the ray's dot with up) the edge-on band reaches.
+pub const BAND: f64 = 0.12;
+
+/// The deck seen edge-on from within the layer, `cross_fade_m` either side of it: for a ray nearly
+/// level with it (`above`, its dot with up), cloud where the ray leaves the layer, no farther than
+/// the fade's start; strongest with the eye at the deck (`height` 0) and the ray level. Returns the
+/// distance and the weight; the shader's `dwell_cloud_band` is this.
+pub fn deck_band(t: &CloudTunables, height: f64, above: f64) -> (f64, f64) {
+    let level = above.abs();
+    let inside = 1.0 - smoothstep(0.0, t.deck.cross_fade_m, height.abs());
+    let d = (t.deck.cross_fade_m / level.max(1e-4)).min(t.deck.fade_start_m);
+    (d, inside * (1.0 - smoothstep(0.0, BAND, level)))
+}
+
 /// Whether the deck, met `t` metres along a unit ray, is in front of what the scene drew there: the
 /// view ray scaled to view depth 1 is `ray_len` long, so the hit is at view depth `t / ray_len`;
 /// `scene_depth` is the opaque scene's view depth (0: nothing, the sky). The composite's
@@ -338,6 +352,7 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_CURVATURE: f32 = {};", f(d.curvature_m)),
         format!("const CLOUD_ALTITUDE: f32 = {};", f(d.altitude_m)),
         format!("const CLOUD_CROSS_FADE: f32 = {};", f(d.cross_fade_m)),
+        format!("const CLOUD_BAND: f32 = {};", f(BAND)),
         format!("const CLOUD_TOP_LIGHT: f32 = {};", f(l.top_light)),
         format!("const CLOUD_HORIZON_FADE: f32 = {};", f(d.horizon_fade)),
         format!("const CLOUD_FADE_START: f32 = {};", f(d.fade_start_m)),
@@ -448,11 +463,25 @@ fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f
 	// The sine of the angle the ray meets the deck at, from above: 0 at the deck's horizon.
 	let graze = s / (CLOUD_CURVATURE + CLOUD_ALTITUDE);
 	let facing = select(smoothstep(0.0, CLOUD_HORIZON_FADE, graze), smoothstep(0.0, CLOUD_HORIZON_FADE, above), from_below);
-	let q = offsets.xy + dir.xz * (t / CLOUD_SCALE);
 	let shown = select(0.0, 1.0, hit) * facing
 		* smoothstep(0.0, CLOUD_CROSS_FADE, abs(height))
 		* (1.0 - smoothstep(dwell_cloud_fade(height).x, dwell_cloud_fade(height).y, t));
-	return vec4f(q, t, shown);
+	// Within the layer the deck is seen edge-on: a band at the horizon (dwell_cloud_band).
+	let band = dwell_cloud_band(height, above);
+	let use_band = band.y > shown;
+	let d = select(t, band.x, use_band);
+	let q = offsets.xy + dir.xz * (d / CLOUD_SCALE);
+	return vec4f(q, d, max(shown, band.y));
+}
+
+// The deck seen edge-on from within the layer (`cross_fade_m` either side of it): along a ray
+// nearly level with it, cloud where the ray leaves the layer, out to the fade's start; strongest
+// with the eye at the deck and the ray level. (distance, weight); deck_band is its twin.
+fn dwell_cloud_band(height: f32, above: f32) -> vec2f {
+	let level = abs(above);
+	let inside = 1.0 - smoothstep(0.0, CLOUD_CROSS_FADE, abs(height));
+	let d = min(CLOUD_CROSS_FADE / max(level, 1e-4), CLOUD_FADE_START);
+	return vec2f(d, inside * (1.0 - smoothstep(0.0, CLOUD_BAND, level)));
 }
 
 // Whether the deck point `t` along the unit ray is in front of the opaque scene at view depth
@@ -496,14 +525,15 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	// The light: the sun or the moon, whichever is above this face.
 	let sun_up = dot(sun, up);
 	let light = select(moon, sun, sun_up >= dot(moon, up));
-	// Self-shadow (High): the density a step toward the light, plus the cloud's own thickness.
+	// Self-shadow (High): the density a step toward the light, plus the cloud's own thickness. Not
+	// from above: the sunlit top barely shows it (topLight), so the second sample is skipped there.
+	let from_above = cfg.w < 0.0;
 	var occl = 0.6 * d;
-	if (cfg.z > 0.0) {
+	if (cfg.z > 0.0 && !from_above) {
 		let toward = light.xz * CLOUD_SHADOW_STEP;
 		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
 	}
 	// Seen from above, the deck's sunlit top: the light reaches it through less cloud.
-	let from_above = cfg.w < 0.0;
 	let lit = exp(-CLOUD_ABSORPTION * occl * select(1.0, 1.0 - CLOUD_TOP_LIGHT, from_above && dot(light, up) > 0.0));
 	// Day or night as the sky behind is: the sphere's gradient runs by the direction's dot with the
 	// day zenith, so a turned sky can be night on one side and day on the other.
@@ -674,6 +704,25 @@ mod tests {
         assert_eq!(
             cloud_uniforms(&t, [0.0, deck, 0.0], 1.0, 0.0, CloudQuality::Off, 1.0)[2][0],
             0.0
+        );
+    }
+
+    #[test]
+    fn at_the_deck_it_is_a_band_at_the_horizon_that_hands_over_to_the_deck() {
+        let t = CLOUDS;
+        // At the deck, looking level: the band at full weight, as far as the fade's start.
+        assert_eq!(deck_band(&t, 0.0, 0.0), (t.deck.fade_start_m, 1.0));
+        // Steeper rays leave the layer sooner and the band goes; out of the layer it is gone.
+        let (near, w) = deck_band(&t, 0.0, 0.08);
+        assert!(near < t.deck.fade_start_m && w > 0.0 && w < 1.0);
+        assert_eq!(deck_band(&t, 0.0, 0.2).1, 0.0);
+        assert_eq!(deck_band(&t, t.deck.cross_fade_m, 0.0).1, 0.0);
+        assert_eq!(deck_band(&t, -t.deck.cross_fade_m, 0.0).1, 0.0);
+        // Symmetric either side of the deck, and the shader carries the same expression.
+        assert_eq!(deck_band(&t, 120.0, 0.03), deck_band(&t, -120.0, -0.03));
+        let src = cloud_wgsl(&t);
+        assert!(
+            src.contains("let d = min(CLOUD_CROSS_FADE / max(level, 1e-4), CLOUD_FADE_START);")
         );
     }
 

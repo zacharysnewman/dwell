@@ -462,6 +462,7 @@
         { "do": "shot", "name": "above-15000" },
         { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
         { "do": "wait", "s": 2 },
+        { "do": "settle", "maxS": 60 },
         { "do": "mark" },
         { "do": "wait", "s": 5 },
         { "do": "record", "name": "above" }
@@ -475,6 +476,7 @@
         { "do": "settle", "maxS": 120 },
         { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
         { "do": "wait", "s": 3 },
+        { "do": "settle", "maxS": 60 },
         { "do": "mark" },
         { "do": "wait", "s": 5 },
         { "do": "record", "name": "above" }
