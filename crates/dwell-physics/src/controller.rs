@@ -5,7 +5,7 @@
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::surface_height_at};
 use dwell_world::{
-    MIDPLANE_Y, SEA_LEVEL, VoxelWorld, WORLD_MAX_Y, chunk_distance, chunk_of, mirror_y,
+    MIDPLANE_Y, SEA_LEVEL, VoxelWorld, chunk_distance, chunk_of, mirror_y,
 };
 use rapier3d_f64::prelude::*;
 
@@ -408,12 +408,9 @@ impl Players {
                 f64::from(c.face) * f64::from(cfg.half_height(false)),
                 0.0,
             );
-        // Creative flight near the ceiling is far faster than the engine's default limit.
+        // Creative flight at its top speed is far faster than the engine's default limit.
         physics.raise_max_linear_velocity(f64::from(
-            cfg.fly.speed
-                * cfg.fly.run_factor
-                * (1.0 + cfg.fly.ceiling / cfg.fly.boost_height)
-                * 1.1,
+            cfg.fly.speed * cfg.fly.run_factor * fly_speed_factor(u8::MAX) * 1.1,
         ));
         // Rotation locked, no physics gravity, frictionless, never sleeps; continuous collision so
         // fast flight cannot tunnel (§2, §6.7).
@@ -1304,27 +1301,28 @@ impl Players {
         let feet = position.y - f64::from(cfg.half_height(c.crouching));
         let above_sea = (feet - f64::from(SEA_LEVEL)).max(0.0) as f32;
         let base = cfg.fly.speed * if c.input.run { cfg.fly.run_factor } else { 1.0 };
-        // The height-based speed, capped in the terrain band, and the slider's true minimum.
+        // The height-based speed, capped in the terrain band and at the top level's, and the
+        // slider's true minimum.
         let mut speed = base * (1.0 + above_sea / cfg.fly.boost_height);
-        if feet < f64::from(WORLD_MAX_Y) {
+        if feet < f64::from(cfg.fly.terrain_band) {
             speed = speed.min(cfg.fly.terrain_speed);
         }
-        speed = speed.max(base * fly_speed_factor(c.input.fly_speed));
+        speed = speed
+            .min(base * fly_speed_factor(u8::MAX))
+            .max(base * fly_speed_factor(c.input.fly_speed));
         let mut wish = move_direction(&c.input) * speed;
         wish.y = (f32::from(u8::from(c.input.jump)) - f32::from(u8::from(c.input.crouch))) * speed;
         let mut velocity =
             body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.fly.drag * DT));
-        // Sideways, stop just past the rim; up top, arrive at the ceiling instead of passing it.
-        let limit = f64::from(cfg.fly.horizontal_limit);
+        // No bound from the world (ADR 0025 D3): only the wire format's range holds a position.
+        let limit = f64::from(cfg.fly.position_limit);
         let dt = f64::from(DT);
         let hold = |at: f64, v: f32| {
             f64::from(v).clamp(((-limit - at) / dt).min(0.0), ((limit - at) / dt).max(0.0)) as f32
         };
         velocity.x = hold(position.x, velocity.x);
+        velocity.y = hold(position.y, velocity.y);
         velocity.z = hold(position.z, velocity.z);
-        velocity.y = velocity
-            .y
-            .min(((f64::from(cfg.fly.ceiling) - feet).max(0.0) / dt) as f32);
         c.fly.velocity = velocity;
         c.horizontal.current = Vec3::ZERO;
         c.horizontal.external = Vec3::ZERO;

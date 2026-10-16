@@ -4,7 +4,7 @@
 use super::*;
 use crate::grid::{MAX_ALIGNED_LEVEL, is_face_b_section, origin_m};
 use dwell_world::lod::{PAD, VOLUME, ancestor, mirror_row_bottom, section_origin};
-use dwell_world::{MIDPLANE_Y, WORLD_MAX_Y};
+use dwell_world::{MIDPLANE_Y, inside_build_volume};
 
 /// A deterministic PRNG (mulberry32), as the TS tests use.
 fn rng(seed: u32) -> impl FnMut() -> f64 {
@@ -327,7 +327,7 @@ fn point_in_view(cam: &LodCamera, random: &mut dyn FnMut() -> f64, range: f64) -
     }
     let radius = f64::from(dwell_world::WORLD_RADIUS);
     let inside = p[1] >= f64::from(MIDPLANE_Y)
-        && p[1] < f64::from(WORLD_MAX_Y)
+        && inside_build_volume(p[0].floor() as i64, p[1].floor() as i64, p[2].floor() as i64)
         && p[0] * p[0] + p[2] * p[2] < radius * radius;
     inside.then_some(p)
 }

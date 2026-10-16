@@ -6,7 +6,7 @@ use dwell_blocks::shape::{faces_of, ray_enter_shape, shape_of, vertical_segment_
 use dwell_blocks::{ShapeInfo, StateId, VoxelShape, info, state_property, with_property};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
-use crate::{ChunkCoord, M, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, inside_world_disc};
+use crate::{ChunkCoord, M, VoxelWorld, inside_build_volume, inside_world_disc};
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
 pub const FACE_DIRS: [[i32; 3]; 6] = [
@@ -295,9 +295,12 @@ pub fn check_block_edit(
     }
     let n = FACE_DIRS[usize::from(request.face)];
     let cell = [c[0] + n[0], c[1] + n[1], c[2] + n[2]];
-    if cell[1] < WORLD_BOTTOM_Y
-        || cell[1] >= WORLD_MAX_Y
-        || !inside_world_disc(i64::from(cell[0]), i64::from(cell[2]))
+    // The build volume bounds building (ADR 0025); the disc, the terrain's columns.
+    if !inside_build_volume(
+        i64::from(cell[0]),
+        i64::from(cell[1]),
+        i64::from(cell[2]),
+    ) || !inside_world_disc(i64::from(cell[0]), i64::from(cell[2]))
     {
         return EditOutcome::fail(EditCheck::OutOfWorld);
     }

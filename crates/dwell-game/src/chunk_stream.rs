@@ -13,17 +13,13 @@ use dwell_world::hash::{HashMap, HashSet};
 
 use dwell_protocol::{CHUNK_SIZE, CHUNK_VOLUME, ChunkChanges, ChunkData, ChunkForm};
 use dwell_world::edit::apply_chunk_changes;
-use dwell_world::{
-    Chunk, ChunkCoord, Face, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, face_of_chunk_y, local_index,
-};
+pub use dwell_world::{MAX_CHUNK_Y, MIN_CHUNK_Y};
+use dwell_world::{BUILD_VOLUME, Chunk, ChunkCoord, Face, VoxelWorld, face_of_chunk_y, local_index};
 
 use crate::chunk_diff::{PADDED_VOLUME, padded_index};
 
 /// A chunk coordinate as on the wire.
 pub type Coord = [i32; 3];
-
-pub const MIN_CHUNK_Y: i32 = WORLD_BOTTOM_Y.div_euclid(CHUNK_SIZE);
-pub const MAX_CHUNK_Y: i32 = WORLD_MAX_Y / CHUNK_SIZE - 1;
 
 /// What the streamer needs from the client sim.
 pub trait ChunkStore {
@@ -407,13 +403,16 @@ where
         self.loaded.get(&coord).copied()
     }
 
-    /// True when the chunks around `position` (±1 chunk, within the world's rows) are loaded.
+    /// True when the chunks around `position` (±1 chunk, not wholly outside the build volume) are
+    /// loaded.
     pub fn ready_around(&self, position: [f64; 3]) -> bool {
         let [cx, cy, cz] = position.map(|v| (v / f64::from(CHUNK_SIZE)).floor() as i32);
         for y in (cy - 1).max(MIN_CHUNK_Y)..=(cy + 1).min(MAX_CHUNK_Y) {
             for z in cz - 1..=cz + 1 {
                 for x in cx - 1..=cx + 1 {
-                    if !self.loaded.contains_key(&[x, y, z]) {
+                    if !self.loaded.contains_key(&[x, y, z])
+                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                    {
                         return false;
                     }
                 }
