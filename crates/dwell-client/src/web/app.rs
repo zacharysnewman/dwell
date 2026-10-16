@@ -312,12 +312,14 @@ impl Client {
                 &format!("Dwell: WebGPU device lost ({reason:?}): {message}").into(),
             );
         });
+        let device_type = adapter.get_info().device_type;
         let mut renderer = Renderer::with_samples(
             device,
             queue,
             format,
-            crate::render::samples_for(adapter.get_info().device_type),
+            crate::render::samples_for(device_type),
         );
+        renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
         renderer.select(selection);

@@ -51,6 +51,17 @@ pub const SAMPLES: u32 = 4;
 
 /// Multisampling for an adapter: 4× on a GPU; none on a CPU (software) adapter, where every sample
 /// is the main thread's own time (CI's SwiftShader drops to a few frames a second with 4×).
+/// The clouds a frame draws on an adapter of `device_type` with the Clouds setting `quality`:
+/// none on a CPU adapter (SwiftShader: CI, machines without a GPU), whatever the setting — the
+/// deck's per-pixel noise costs whole frames there (as MSAA does, `samples_for`).
+pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> CloudQuality {
+    if device_type == wgpu::DeviceType::Cpu {
+        CloudQuality::Off
+    } else {
+        quality
+    }
+}
+
 pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
     if device_type == wgpu::DeviceType::Cpu {
         1
@@ -601,6 +612,8 @@ pub struct Renderer {
     /// The sky's clouds: the setting, the coverage (the data's, or a weather system's) and their
     /// clock (s).
     clouds: CloudQuality,
+    /// The adapter's kind (`clouds_for`): a CPU adapter draws no clouds.
+    adapter: wgpu::DeviceType,
     cloud_coverage: f64,
     cloud_seconds: f64,
     stats: RenderStats,
@@ -1016,6 +1029,7 @@ impl Renderer {
             exposure: DEFAULT_EXPOSURE,
             sky: sky_rest(),
             clouds: CloudQuality::High,
+            adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
             cloud_seconds: 0.0,
             stats: RenderStats::default(),
@@ -1151,6 +1165,10 @@ impl Renderer {
         self.fog = fog;
     }
     /// The Clouds setting (Off, Low, High).
+    /// The adapter the frames draw on (its kind: `clouds_for`).
+    pub fn set_adapter(&mut self, device_type: wgpu::DeviceType) {
+        self.adapter = device_type;
+    }
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
     }
@@ -1342,7 +1360,7 @@ impl Renderer {
             self.eye,
             self.face,
             self.cloud_seconds,
-            self.clouds,
+            clouds_for(self.adapter, self.clouds),
             self.cloud_coverage,
         );
         put(&clouds[0]);
@@ -2309,6 +2327,28 @@ mod tests {
         assert_eq!(samples_for(wgpu::DeviceType::Cpu), 1);
         assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu), SAMPLES);
         assert_eq!(samples_for(wgpu::DeviceType::IntegratedGpu), SAMPLES);
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_no_clouds() {
+        // Main's e2e suite (SwiftShader) slowed until two-client and walking tests timed out once
+        // the clouds landed (0.11.10): their noise ran per pixel on the CPU.
+        for q in [CloudQuality::Off, CloudQuality::Low, CloudQuality::High] {
+            assert_eq!(clouds_for(wgpu::DeviceType::Cpu, q), CloudQuality::Off);
+            assert_eq!(clouds_for(wgpu::DeviceType::DiscreteGpu, q), q);
+            assert_eq!(clouds_for(wgpu::DeviceType::IntegratedGpu, q), q);
+        }
+        // And the renderer on one sends the shader zero octaves (the deck off).
+        let mut r = noop_renderer();
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        r.set_clouds(CloudQuality::High);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
+        let cfg = FRAME_FLOATS - 7 * 4 - 4;
+        assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
+        r.set_adapter(wgpu::DeviceType::DiscreteGpu);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        assert!(u[cfg + 1] > 0.0, "the setting's octaves on a GPU");
     }
 
     #[test]
