@@ -31,17 +31,9 @@ fn add(a: V3, b: V3) -> V3 {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
 
-/// Vertical field of view (degrees) on screens narrow enough not to hit the horizontal cap.
-pub const VERTICAL_FOV: f64 = 75.0;
-/// Widest horizontal field of view (degrees); wider screens get a narrower vertical one.
-pub const MAX_HORIZONTAL_FOV: f64 = 100.0;
-
-/// Vertical field of view (degrees) for an aspect ratio (width / height).
-pub fn vertical_fov(aspect: f64) -> f64 {
-    let h = MAX_HORIZONTAL_FOV.to_radians();
-    let capped = (2.0 * ((h / 2.0).tan() / aspect).atan()).to_degrees();
-    VERTICAL_FOV.min(capped)
-}
+/// The field of view's rule is dwell-lod's (`base_fov`), so the renderer and the LOD selection
+/// agree: the Field of view setting (default 75° vertical), narrowed on wide screens.
+pub use dwell_lod::frustum::{MAX_HORIZONTAL_FOV, VERTICAL_FOV, vertical_fov};
 /// Horizontal field of view (degrees) that a vertical one gives at an aspect ratio.
 pub fn horizontal_fov(vertical_deg: f64, aspect: f64) -> f64 {
     (2.0 * ((vertical_deg.to_radians() / 2.0).tan() * aspect).atan()).to_degrees()

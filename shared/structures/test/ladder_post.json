@@ -1,0 +1,24 @@
+{
+  "$comment": "Test fixture (crates/dwell-world/tests/world.rs, shared/structures/gen.test.mjs): an asymmetric post with a ladder facing north against its wall, an explicit air cell that carves, kept (null) cells, and every variant operation. Not game content.",
+  "format": 1,
+  "name": "test:ladder_post",
+  "kind": "voxels",
+  "size": [3, 2, 2],
+  "anchor": [0, 0, 0],
+  "palette": {
+    ".": null,
+    "_": "dwell:air",
+    "s": "dwell:stone",
+    "l": "dwell:ladder[facing=north]",
+    "d": "dwell:dirt"
+  },
+  "layers": [
+    ["sl.", "ss_"],
+    ["s..", "sd."]
+  ],
+  "variants": {
+    "rotate": [0, 90, 180, 270],
+    "mirror": ["x"],
+    "choices": { "d": [["dwell:dirt", 1], ["dwell:sand", 3]] }
+  }
+}

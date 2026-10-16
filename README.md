@@ -95,7 +95,8 @@ for players outside your network.
 
 After editing `shared/protocol/constants.json`, run `node shared/protocol/gen.mjs` and
 `python3 shared/protocol/make_vectors.py`; after editing `shared/blocks/*.json`,
-`node shared/blocks/gen.mjs` (CI fails on stale output).
+`node shared/blocks/gen.mjs` and then `node shared/structures/gen.mjs`; after editing
+`shared/structures/**/*.json`, `node shared/structures/gen.mjs` (CI fails on stale output).
 
 After adding, removing or upgrading a dependency that ships in a build (a Rust crate in the server
 or the client, or a client runtime `dependency`), update `shared/licenses/third_party.json` (and its
