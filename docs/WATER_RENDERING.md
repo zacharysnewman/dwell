@@ -221,8 +221,9 @@ colour by depth, which is what makes the shallows work.
      can read it.
 
   The far and near passes split alike, so far water reads the far scene and near water reads both.
-  Low keeps W1b's single pass, `water_fs` and no copy. Changing the tier rebuilds the targets. The
-  pass's GPU timing spans both halves.
+  Low keeps W1b's single pass, `water_fs` and no copy. Changing the tier rebuilds the targets.
+  The opaque half is timed as the pass (`gpu.far`, `gpu.near`), and the water half as
+  `gpu.far.water` and `gpu.near.water`. Only the raster side of the renderer seam splits.
 - **`water_scene_fs`:**
   - **Thickness:** the ray's length in the water is `ray_thickness`, the view depth behind minus the
     surface's, scaled along the ray (nothing behind counts as deep). Its depth under the surface is
@@ -230,7 +231,8 @@ colour by depth, which is what makes the shallows work.
   - **Refraction:** the scene is sampled at a pixel offset from the ripples' slope × the fluid's
     `refraction`, scaled to the view depth and by the thickness up to 1 m (none at the waterline).
     It falls back to the undistorted pixel where the offset sample is in front of the water
-    (`refracted_sample`, the foreground-bleed check). Depth is read from sample 0.
+    (`refracted_sample`, the foreground-bleed check). Depth is read from sample 0, one load per
+    lookup.
   - **Colour, Beer–Lambert (`through_fluid`):** what is behind keeps `exp(−(σ + s)·length)` along
     the ray, where σ is `absorption` and s is the new `scattering`. It was lit by light that came
     down through the water, which keeps `exp(−σ·depth)`. The lit body (the scatter colour) fills the
@@ -282,21 +284,24 @@ colour by depth, which is what makes the shallows work.
 - **Bench:** the `water-shore` scenario flies to the `water-views` coast. It shoots the beach edge
   at a low angle, straight down into the shallows, the deep-to-shallow gradient from 20 m, under
   the surface (the floor, along it, and up), and the far water from 1 km.
-- **Cost** (Apple M1, 1280×720, 4× MSAA, `--unthrottled`). The machine was heavily loaded by other
-  agents (load average about 90), so these numbers are noisy and a second run was worse. The views
-  were the shore from 20 m and under the surface in the shallows. GPU frame p50 by tier:
+- **Cost** (Apple M1, 1280×720, 4× MSAA, `--unthrottled`). The machine was shared with other
+  agents' builds and benches (load average 20–70), so these numbers are noisy. Runs under heavier
+  load were up to twice these. The views were the shore from 20 m and under the surface in the
+  shallows. The cleanest of four runs, GPU p50:
 
-  | Tier | Shore from 20 m | Under the surface |
-  |---|---|---|
-  | Low | 3.1 ms | 2.2 ms |
-  | Medium | 10.3 ms | 8.1 ms |
-  | High | 10.8 ms | 8.1 ms |
+  | Tier | Frame, shore | Water half `gpu.near.water`, shore | Frame, under | Water half, under |
+  |---|---|---|---|---|
+  | Low | 3.4 ms | (none) | 2.2 ms | (none) |
+  | Medium | 10.7 ms | 7.9 ms | 6.3 ms | 1.9 ms |
+  | High | 11.5 ms | 5.4 ms | 11.5 ms | (noisy) |
 
-  The frame interval stayed CPU-bound, at 12–13 ms on every tier.
+  The frame interval stayed CPU-bound at 11–13 ms on every tier.
   - **Where the cost is:** with `water_scene_fs` returning a constant, the split and copy cost
-    nothing measurable (3.1 ms). Without caustics it was 8.4 ms. So the shading costs about 5 ms
-    and the caustics about 2 ms.
-  - **Next:** W5's half-resolution copies on Medium and an unloaded measurement.
+    nothing measurable. The cost is the shading: caustics about 2 ms, and the rest in the
+    three-layer ripples, the sky reflection and the scene reads over a nearly full-screen surface.
+  - **The water halves** are timed on their own as `gpu.far.water` and `gpu.near.water`.
+  - **Next:** W5's half-resolution copies on Medium, and a measurement on an unloaded machine and
+    on phones (Low stays the phone default).
 - **Not yet (W4):**
   - The surface from below is still the flat body colour.
   - No water line, no god rays (not brought forward: the caustics took the time).
