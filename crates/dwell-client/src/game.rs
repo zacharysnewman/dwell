@@ -414,7 +414,7 @@ pub struct Game<S: Scene> {
     pub rtt_ms: Option<f64>,
     /// The verification hash sent (None until the verification chunk is generated).
     verified: Option<u64>,
-    /// The session's id translation (ADR 0036): the worldgen check hashes server ids.
+    /// The session's id translation (ADR 0038): the worldgen check hashes server ids.
     registry: Option<dwell_blocks::sync::Mapping>,
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
@@ -588,7 +588,7 @@ impl<S: Scene> Game<S> {
         self.start_lod();
     }
 
-    /// The session's registry mapping (ADR 0036), right after joining: the job workers learn the
+    /// The session's registry mapping (ADR 0038), right after joining: the job workers learn the
     /// states synced from the server (they are separate WASM instances with tables of their own),
     /// and the worldgen check hashes the server's ids.
     pub fn set_registry(&mut self, mapping: Option<dwell_blocks::sync::Mapping>) {

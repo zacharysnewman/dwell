@@ -310,7 +310,7 @@ vectors = {
 }
 
 
-# Registry sync (ADR 0036): a registry payload (format 1) of air and a two-state block, with a
+# Registry sync (ADR 0038): a registry payload (format 1) of air and a two-state block, with a
 # shape the Rust build lacks, and BlockRegistry messages carrying parts of it.
 def payload_fields(fields):
     return struct.pack("<B", len(fields)) + b"".join(

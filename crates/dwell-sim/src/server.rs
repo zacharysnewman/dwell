@@ -497,7 +497,7 @@ pub struct Server {
     generator: ChunkGenerator,
     verification_chunk: ChunkCoord,
     verification_hash: u64,
-    /// The registry payload sent at join (ADR 0036) and its definitions hash, for the table size
+    /// The registry payload sent at join (ADR 0038) and its definitions hash, for the table size
     /// it was made at (states registered later — placeholders, mods — remake it).
     registry: (usize, std::sync::Arc<Vec<u8>>, u64),
     view_offsets: Vec<ChunkCoord>, // chunks in view relative to the center, nearest first
@@ -839,7 +839,7 @@ impl Server {
             flags: welcome_flags::REGION_EDITS | if flight { welcome_flags::FLIGHT } else { 0 },
             registry_hash: self.registry().1,
         };
-        // The registry first (ADR 0036): the client maps ids with it when Welcome arrives.
+        // The registry first (ADR 0038): the client maps ids with it when Welcome arrives.
         let (payload, _) = self.registry();
         let parts = dwell_blocks::sync::parts(&payload);
         for (i, part) in parts.iter().enumerate() {
@@ -866,7 +866,7 @@ impl Server {
         }
     }
 
-    /// The registry payload this server sends at join and its definitions hash (ADR 0036).
+    /// The registry payload this server sends at join and its definitions hash (ADR 0038).
     pub fn registry(&mut self) -> (std::sync::Arc<Vec<u8>>, u64) {
         let count = dwell_blocks::state_count();
         if self.registry.0 != count || self.registry.1.is_empty() {

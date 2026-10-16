@@ -1,4 +1,4 @@
-//! Registry sync (ADR 0036, docs/BLOCK_REGISTRY.md §8): the **registry payload** a server sends
+//! Registry sync (ADR 0038, docs/BLOCK_REGISTRY.md §8): the **registry payload** a server sends
 //! at join — its blocks, their properties and every state's definition as tagged fields — and the
 //! client's side, which maps each server state to a state of its own table, adopting the server's
 //! definitions where they differ and recording every difference for the join prompt.
@@ -403,7 +403,7 @@ pub struct Difference {
     pub fields: Vec<String>,
 }
 
-/// What a server's registry does differently from this build (ADR 0036 decision 3).
+/// What a server's registry does differently from this build (ADR 0038 decision 3).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Differences {
     /// Known by name, with different rules or shape: the server's are used.
@@ -429,7 +429,7 @@ impl Differences {
     }
 }
 
-/// A session's id translation (ADR 0036 decision 5) and what it found.
+/// A session's id translation (ADR 0038 decision 5) and what it found.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mapping {
     /// Server id → client id (`None`: not a state of the server's registry).
@@ -555,7 +555,7 @@ fn read_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
 }
 
 /// The client side: maps a server's registry onto this process's table, registering synced
-/// states (ADR 0036 decision 3). Never refuses over differences; errors only when the table would
+/// states (ADR 0038 decision 3). Never refuses over differences; errors only when the table would
 /// pass `u16`.
 pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
     // Server shape index → build shape index, by geometry.
@@ -786,7 +786,7 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
 impl Mapping {
     /// The `WorldgenCheck` hash of the verification chunk the client generated (`voxels`, its
     /// own ids; `hash` the job's FNV-1a of them): the same FNV-1a over the server's ids, which is
-    /// what the server hashes (ADR 0036 decision 6). 0 — every chunk explicit — when a state
+    /// what the server hashes (ADR 0038 decision 6). 0 — every chunk explicit — when a state
     /// differs on the server (generated terrain would hold the build's rules) or a cell names a
     /// state the server does not have.
     pub fn verification_hash(&self, voxels: &[u16], hash: u64) -> u64 {

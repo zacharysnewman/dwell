@@ -80,7 +80,7 @@ fn is_liquid(m: StateId) -> bool {
     });
     match table.get(usize::from(m)) {
         Some(&liquid) => liquid,
-        // A state registered at run time (a synced one, ADR 0036).
+        // A state registered at run time (a synced one, ADR 0038).
         None => material_style(m).look == Look::Fluid,
     }
 }

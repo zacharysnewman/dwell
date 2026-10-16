@@ -63,11 +63,11 @@ pub struct Welcome {
     /// `welcome_flags`.
     pub flags: u8,
     /// The definitions hash: FNV-1a 64 of the registry payload the server sent in its
-    /// `BlockRegistry` parts (ADR 0036), for logs and the join prompt's "don't ask again".
+    /// `BlockRegistry` parts (ADR 0038), for logs and the join prompt's "don't ask again".
     pub registry_hash: u64,
 }
 
-/// S→C reliable, control channel, before `Welcome` (ADR 0036): part `part` of `parts` of the
+/// S→C reliable, control channel, before `Welcome` (ADR 0038): part `part` of `parts` of the
 /// server's registry payload (`dwell_blocks::sync`), each at most `MAX_REGISTRY_PART_BYTES`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BlockRegistry {

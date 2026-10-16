@@ -1,4 +1,4 @@
-# 0036. Block registry sync: the server sends its registry at join, the client maps ids at the boundary
+# 0038. Block registry sync: the server sends its registry at join, the client maps ids at the boundary
 
 - Status: Proposed (the owner's decision of 2026-10-16 — "we need registry sync; have it go out at
   the same time with 0.12.0" — with the defaults below; amended the same day by the owner: **never

@@ -1,4 +1,4 @@
-//! The process's block table (ADR 0036): the build's generated states (`STATES`, ids
+//! The process's block table (ADR 0038): the build's generated states (`STATES`, ids
 //! `0..STATES.len()`) followed by states registered at run time — a server's own blocks (mods, the
 //! test fixture), placeholders for states a world file names that the server lacks, and on a
 //! client the **synced** states a server sent that the build does not have. The table only grows;

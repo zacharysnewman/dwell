@@ -87,7 +87,7 @@ impl StateTable {
             gpu,
         }
     }
-    /// The process's block table: the build's states and any registered at run time (ADR 0036).
+    /// The process's block table: the build's states and any registered at run time (ADR 0038).
     pub fn registry() -> Self {
         let states: Vec<StateInfo> = (0..dwell_blocks::state_count())
             .map(|i| *dwell_blocks::info(i as StateId))

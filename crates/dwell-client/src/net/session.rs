@@ -17,7 +17,7 @@ fn smooth(prev: Option<f64>, sample: f64) -> Option<f64> {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SessionState {
     Handshaking,
-    /// The server's block registry differs from this build's (ADR 0036): waiting for the player to
+    /// The server's block registry differs from this build's (ADR 0038): waiting for the player to
     /// continue ([`Session::accept_registry`]) or cancel ([`Session::cancel_registry`]).
     Confirming {
         differences: Differences,
@@ -54,7 +54,7 @@ pub struct SessionStats {
     pub server_tick: u32,
     /// A friend world's host has paused it (their page is hidden, HostStatus, §10.2).
     pub host_paused: bool,
-    /// Edits not sent because they named a state the server does not have (ADR 0036).
+    /// Edits not sent because they named a state the server does not have (ADR 0038).
     pub edits_unmapped: u32,
 }
 
@@ -91,7 +91,7 @@ pub struct Session {
     registry_parts_total: u16,
     /// The complete payload, once every part arrived.
     registry: Option<Vec<u8>>,
-    /// The server's ids ↔ this client's (ADR 0036), from Welcome on.
+    /// The server's ids ↔ this client's (ADR 0038), from Welcome on.
     mapping: Option<Mapping>,
     /// The Welcome waiting on the player's answer (Confirming).
     pending: Option<Welcome>,
@@ -280,7 +280,7 @@ impl Session {
         }
     }
 
-    /// An outgoing message with its state ids in the server's terms (ADR 0036); `None` if it
+    /// An outgoing message with its state ids in the server's terms (ADR 0038); `None` if it
     /// names a state the server does not have (a client-only block), which is not sent.
     fn to_server(&self, m: &Message) -> Option<Message> {
         let Some(map) = self.mapping.as_ref().filter(|m| !m.identity) else {

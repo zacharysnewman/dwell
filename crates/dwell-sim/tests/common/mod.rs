@@ -98,7 +98,7 @@ impl Fixture {
         };
         let signature = who.sign(&auth_transcript(&nonce, &self.binding, &who.public_key));
         self.send(id, Message::ClientAuth(signature));
-        // The registry's parts come first (ADR 0036), then Welcome.
+        // The registry's parts come first (ADR 0038), then Welcome.
         let mut out = self.take(id).into_iter().map(|(m, _)| m);
         let mut registry = Vec::new();
         loop {

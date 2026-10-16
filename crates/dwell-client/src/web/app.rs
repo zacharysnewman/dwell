@@ -38,7 +38,7 @@ type Events = Rc<RefCell<VecDeque<TransportEvent>>>;
 /// The device key's signature of the join transcript, once the shell's promise settles.
 type SignatureSlot = Rc<RefCell<Option<Result<[u8; 64], String>>>>;
 
-/// The join prompt's lists (ADR 0036): `{ hash, different, added, clientOnly }`, each item of the
+/// The join prompt's lists (ADR 0038): `{ hash, different, added, clientOnly }`, each item of the
 /// first two `{ name, fields }`.
 fn registry_object(d: &dwell_blocks::sync::Differences, hash: u64) -> Object {
     let items = |list: &[dwell_blocks::sync::Difference]| {
@@ -237,7 +237,7 @@ struct Inner {
     link: Option<Link>,
     events: Events,
     session: Option<Session>,
-    /// A registry definitions hash the player said not to ask about for this server (ADR 0036).
+    /// A registry definitions hash the player said not to ask about for this server (ADR 0038).
     trusted_registry: Option<u64>,
     netsim: Option<NetSim>,
     signature: SignatureSlot,
@@ -1216,7 +1216,7 @@ impl Client {
     // ----- State for the shell -----
 
     /// Joins without the registry prompt when the server's definitions hash is `hash` (16 hex
-    /// digits; "don't ask again for this server", ADR 0036). Call before `connect`.
+    /// digits; "don't ask again for this server", ADR 0038). Call before `connect`.
     #[wasm_bindgen(js_name = trustRegistry)]
     pub fn trust_registry(&self, hash: Option<String>) {
         let hash = hash.and_then(|h| u64::from_str_radix(&h, 16).ok());
@@ -1242,7 +1242,7 @@ impl Client {
     }
 
     /// `{ phase: 'connecting' | 'handshaking' | 'confirming' | 'joined' | 'rejected' | 'closed',
-    /// … }`; `confirming` carries `registry: { hash, different, added, clientOnly }` (ADR 0036).
+    /// … }`; `confirming` carries `registry: { hash, different, added, clientOnly }` (ADR 0038).
     #[wasm_bindgen(js_name = sessionState)]
     pub fn session_state(&self) -> JsValue {
         let s = self.inner.borrow();

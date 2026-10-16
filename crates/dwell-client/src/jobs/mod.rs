@@ -45,7 +45,7 @@ pub enum Job {
         mirror: bool,
         payloads: Payloads,
     },
-    /// The block states the main thread registered at run time (synced from a server, ADR 0036),
+    /// The block states the main thread registered at run time (synced from a server, ADR 0038),
     /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
     /// jobs naming synced ids read the same rows. Sent to every worker ([`crate::pool::Jobs::broadcast`]).
     Registry { payload: Vec<u8> },

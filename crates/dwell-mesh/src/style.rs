@@ -101,7 +101,7 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
     if let Some(s) = styles.get(usize::from(id)) {
         return *s;
     }
-    // A state registered at run time (synced from a server, ADR 0036): its own row.
+    // A state registered at run time (synced from a server, ADR 0038): its own row.
     if let Some(s) = dwell_blocks::try_info(id) {
         return style_of(s, &FLUIDS);
     }
