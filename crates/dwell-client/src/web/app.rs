@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use dwell_game::input::{EditAction, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
+use dwell_look::clouds::CloudQuality;
 use dwell_look::fog::FogSettings;
 use dwell_look::sky_frame::{SkySwitches, sky_angle, sky_frame, sky_switches};
 use dwell_physics::config::PlayerControllerConfig;
@@ -478,6 +479,11 @@ impl Client {
             s.options.sky,
             (now_ms - start) / 1000.0,
         )));
+        // The clouds drift by the world's clock once the server's ticks have arrived.
+        let world = s.game.as_ref().and_then(|g| g.clock.seconds(now_ms));
+        s.renderer
+            .borrow_mut()
+            .set_cloud_time(world.unwrap_or((now_ms - start) / 1000.0));
         s.draw();
         telemetry::add("frame.cpu", telemetry::now_ms() - t0);
     }
@@ -898,6 +904,24 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_exposure(exposure);
+    }
+    /// The Clouds setting: `off`, `low` or `high` (anything else: high).
+    #[wasm_bindgen(js_name = setClouds)]
+    pub fn set_clouds(&self, quality: &str) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_clouds(CloudQuality::from_name(quality).unwrap_or(CloudQuality::High));
+    }
+    /// The clouds' coverage, 0 (clear) to 1 (overcast): for a weather system, or by hand.
+    #[wasm_bindgen(js_name = setCloudCoverage)]
+    pub fn set_cloud_coverage(&self, coverage: f64) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cloud_coverage(coverage);
     }
     /// The water quality (0 Low, 1 Medium, 2 High; WATER_RENDERING.md §4).
     #[wasm_bindgen(js_name = setWaterQuality)]

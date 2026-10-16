@@ -230,7 +230,15 @@ function parseScenario(where: string, v: unknown): Scenario {
   const settings = (
     o.settings === undefined
       ? {}
-      : obj(`${where}.settings`, o.settings, ['fog', 'detail', 'exposure', 'motion', 'water'])
+      : obj(`${where}.settings`, o.settings, [
+          'fog',
+          'detail',
+          'exposure',
+          'skyRotation',
+          'clouds',
+          'motion',
+          'water',
+        ])
   ) as View['settings'];
   if (!Array.isArray(o.steps) || o.steps.length === 0) {
     throw new ViewError(`${where}.steps: expected a non-empty list`);

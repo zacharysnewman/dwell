@@ -8,6 +8,7 @@
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
+import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
 import { DEFAULT_FOV, FOV_LIMITS, VIEW_KEY, sanitizeFovSetting, viewRecord } from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 import {
@@ -59,6 +60,8 @@ export interface Settings {
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
   skyRotation: number;
+  /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
+  clouds: CloudQuality;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
   /** Speed effects: the FOV boost and the wind (docs/MOTION_EFFECTS.md). */
@@ -73,6 +76,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     skyRotation: 0,
+    clouds: defaultClouds(mobile),
     water: defaultWater(mobile),
     motion: defaultMotion(reducedMotion),
     fovDeg: DEFAULT_FOV,
@@ -94,6 +98,7 @@ export function settingsJson(s: Settings): string {
     },
     exposure: Math.round(s.exposure * 100) / 100,
     skyRotation: Math.round(s.skyRotation),
+    clouds: s.clouds,
     water: { quality: s.water.quality },
     motion: {
       speedEffects: s.motion.speedEffects,
@@ -108,6 +113,8 @@ const FOG_KEY = 'dwell.fog';
 const DETAIL_KEY = 'dwell.detail';
 const EXPOSURE_KEY = 'dwell.exposure';
 const SKY_ROTATION_KEY = 'dwell.skyRotation';
+/** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
+const CLOUDS_KEY = 'dwell.clouds';
 /** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
 const WATER_KEY = 'dwell.water';
 
@@ -136,6 +143,7 @@ export function loadSettings(mobile: boolean): Settings {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     skyRotation: sanitizeSkyRotation(load(SKY_ROTATION_KEY)),
+    clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
@@ -148,6 +156,7 @@ export function saveSettings(s: Settings): void {
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(SKY_ROTATION_KEY, JSON.stringify(s.skyRotation));
+    localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
     localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
     // Append-only: fields a newer build stored are kept.
     localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
@@ -167,6 +176,18 @@ interface SliderSpec {
   get: (s: Settings) => number;
   with: (s: Settings, v: number) => Settings;
 }
+
+/** The Look section's choices (a row of buttons each, as the water quality's). */
+const CHOICES: ChoiceSpec<CloudQuality>[] = [
+  {
+    label: 'Clouds',
+    hint: 'Clouds in the sky; Low is lighter on the GPU',
+    choices: CLOUD_QUALITIES,
+    labels: { off: 'Off', low: 'Low', high: 'High' },
+    get: (s) => s.clouds,
+    with: (s, v) => ({ ...s, clouds: v }),
+  },
+];
 
 interface ToggleSpec {
   label: string;
@@ -646,6 +667,7 @@ export class SettingsMenu {
       const grid = el('div', 'gm-grid');
       for (const spec of section.toggles ?? []) grid.append(this.toggle(spec));
       for (const spec of section.sliders) grid.append(this.slider(spec));
+      if (section.title === 'Look') for (const spec of CHOICES) grid.append(this.choice(spec));
       group.append(grid);
       page.append(group);
     }

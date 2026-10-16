@@ -430,6 +430,7 @@ async function start(): Promise<App | null> {
     client.setExposure(s.exposure);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
     client.setSkyRotation(s.skyRotation);
+    client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);

@@ -12,6 +12,7 @@ pub mod render;
 pub mod telemetry;
 #[cfg(target_arch = "wasm32")]
 mod web;
+pub mod world_clock;
 
 /// Side of the probe's square render target, in pixels.
 pub const PROBE_SIZE: u32 = 64;

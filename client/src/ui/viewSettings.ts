@@ -45,6 +45,20 @@ export function sanitizeExposure(value: unknown): number {
     : DEFAULT_EXPOSURE;
 }
 
+/** The sky's clouds (dwell-look's clouds.rs): Low has fewer noise octaves and no self-shadow. */
+export const CLOUD_QUALITIES = ['off', 'low', 'high'] as const;
+export type CloudQuality = (typeof CLOUD_QUALITIES)[number];
+
+/** High on desktops, Low on phones (the GPU time a phone can spare). */
+export function defaultClouds(mobile: boolean): CloudQuality {
+  return mobile ? 'low' : 'high';
+}
+
+/** A stored Clouds setting; anything else (missing, unknown) takes the device's default. */
+export function sanitizeClouds(value: unknown, mobile: boolean): CloudQuality {
+  return CLOUD_QUALITIES.find((q) => q === value) ?? defaultClouds(mobile);
+}
+
 /** The Field of view setting: vertical degrees (dwell-lod's `base_fov` narrows it on wide screens). */
 export const DEFAULT_FOV = 75;
 export const FOV_LIMITS = { min: 60, max: 100 } as const;

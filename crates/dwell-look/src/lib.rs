@@ -3,6 +3,9 @@
 //! LOD meshers share it and tests pin it. Colours are sRGB triples in 0–1 unless a name says linear.
 //! Port of client/src/render/{look,fog,skyFrame}.ts.
 
+pub mod clouds;
+#[path = "clouds.gen.rs"]
+mod clouds_gen;
 pub mod fog;
 pub mod motion;
 pub mod sky_frame;
