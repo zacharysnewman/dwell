@@ -1,0 +1,231 @@
+//! The water's reflections of land (docs/WATER_RENDERING.md §8; W5's screen-space reflections
+//! brought forward): the reflected ray marched on screen through the scene's view depth, and what
+//! the reflection shows: the scene where the ray hits it, faded at the screen's edges and the ray's
+//! reach into the sky (with the clouds) where it doesn't. The WGSL twin is `ssr_trace` and
+//! `reflected` in shaders.rs; the tunables are dwell-look's `REFLECTIONS` (data).
+
+/// The camera as the shader has it (the frame's basis and half-angle tangents) and the screen in
+/// pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct View {
+    pub right: [f32; 3],
+    pub up: [f32; 3],
+    pub forward: [f32; 3],
+    /// tan of the half angles (x, y).
+    pub tan: [f32; 2],
+    /// The screen (pixels).
+    pub size: [f32; 2],
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+impl View {
+    /// A point relative to the eye on screen (pixels, y down) and its view depth.
+    pub fn to_screen(&self, rel: [f32; 3]) -> ([f32; 2], f32) {
+        let d = dot(rel, self.forward);
+        let nx = dot(rel, self.right) / (d * self.tan[0]);
+        let ny = dot(rel, self.up) / (d * self.tan[1]);
+        (
+            [
+                (nx * 0.5 + 0.5) * self.size[0],
+                (0.5 - ny * 0.5) * self.size[1],
+            ],
+            d,
+        )
+    }
+}
+
+/// One tier's march (dwell-look `reflection_uniforms`).
+#[derive(Clone, Copy, Debug)]
+pub struct Ssr {
+    pub steps: u32,
+    pub refine: u32,
+    /// The ray's reach (m), and where hits start fading out along it.
+    pub reach: f32,
+    pub fade_from: f32,
+    /// The edge fade (share of the screen height) and the hit thickness (m, plus `thickness_rel`
+    /// of the surface's depth).
+    pub edge_fade: f32,
+    pub thickness: f32,
+    pub thickness_rel: f32,
+}
+
+/// Where the reflected ray meets the scene on screen (pixels), and how much of the reflection it
+/// gives (0–1: faded at the screen's edges and the end of the reach).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hit {
+    pub px: [f32; 2],
+    pub weight: f32,
+}
+
+/// The reflected ray `r` (unit) from the surface point `p` (relative to the eye), marched on
+/// screen through `depth_at` (the scene's view depth at a pixel; 0 where nothing is drawn).
+pub fn trace(view: &View, p: [f32; 3], r: [f32; 3], ssr: &Ssr, depth_at: impl Fn([f32; 2]) -> f32) -> Option<Hit> {
+    let _ = (view, p, r, ssr, &depth_at);
+    None
+}
+
+/// How much of a hit at `px` survives the screen-edge fade (within `edge_fade` of the screen
+/// height from any edge, the reflection fades into the sky, so it doesn't pop at the edge).
+pub fn edge_weight(view: &View, px: [f32; 2], edge_fade: f32) -> f32 {
+    let _ = (view, px, edge_fade);
+    1.0
+}
+
+/// What the surface reflects along its ray: the scene at the hit (`scene_at`: linear colour and
+/// coverage), weighted by the hit's fade and coverage, over `sky` (the sky with its clouds).
+pub fn reflected(sky: [f32; 3], hit: Option<Hit>, scene_at: impl Fn([f32; 2]) -> [f32; 4]) -> [f32; 3] {
+    let _ = (&hit, &scene_at);
+    sky
+}
+
+/// The constants the WGSL twin takes from the data (the per-tier values ride in the frame
+/// uniform's `reflect` and `reflect_sky`).
+pub fn wgsl() -> String {
+    format!(
+        "const SSR_THICKNESS_REL: f32 = {:?};\n",
+        dwell_look::reflections::REFLECTIONS.ssr.thickness_rel as f32
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn norm(v: [f32; 3]) -> [f32; 3] {
+        let l = dot(v, v).sqrt();
+        [v[0] / l, v[1] / l, v[2] / l]
+    }
+    fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    }
+
+    /// A 1280×720 view from the origin looking along +z, pitched `down` (slope) toward the water.
+    fn view(down: f32) -> View {
+        let forward = norm([0.0, -down, 1.0]);
+        let right = norm(cross([0.0, 1.0, 0.0], forward));
+        let up = cross(forward, right);
+        let tan_y = (37.5f32).to_radians().tan();
+        View {
+            right,
+            up,
+            forward,
+            tan: [tan_y * 16.0 / 9.0, tan_y],
+            size: [1280.0, 720.0],
+        }
+    }
+
+    /// The view ray through a pixel (view depth 1), as the shader's `view_ray`.
+    fn ray(v: &View, px: [f32; 2]) -> [f32; 3] {
+        let nx = px[0] / v.size[0] * 2.0 - 1.0;
+        let ny = 1.0 - px[1] / v.size[1] * 2.0;
+        let k = |i: usize| v.forward[i] + nx * v.tan[0] * v.right[i] + ny * v.tan[1] * v.up[i];
+        [k(0), k(1), k(2)]
+    }
+
+    /// A lake: the sea floor at y = −6 seen through the water (water writes no depth), and a bank
+    /// (a wall facing the eye) at z = `wall_z` rising to `wall_top`. The scene's view depth at a pixel.
+    fn lake(v: View, wall_z: f32, wall_top: f32) -> impl Fn([f32; 2]) -> f32 {
+        move |px| {
+            let d = ray(&v, px);
+            let mut best = f32::INFINITY;
+            // The ray scaled to view depth 1: a hit at parameter s has view depth s.
+            if d[2] > 0.0 {
+                let s = wall_z / d[2];
+                let y = d[1] * s;
+                if (-6.0..=wall_top).contains(&y) {
+                    best = best.min(s);
+                }
+            }
+            if d[1] < 0.0 {
+                let s = -6.0 / d[1];
+                best = best.min(s);
+            }
+            if best.is_finite() { best } else { 0.0 }
+        }
+    }
+
+    const MEDIUM: Ssr = Ssr {
+        steps: 12,
+        refine: 4,
+        reach: 600.0,
+        fade_from: 420.0,
+        edge_fade: 0.12,
+        thickness: 1.5,
+        thickness_rel: 0.03,
+    };
+
+    /// The water point the eye sees at view depth ~`z` straight ahead, and its mirror ray.
+    fn surface(_v: &View, z: f32) -> ([f32; 3], [f32; 3]) {
+        let p = [0.0, -2.0, z];
+        let d = norm(p);
+        (p, [d[0], -d[1], d[2]])
+    }
+
+    const SKY: [f32; 3] = [0.2, 0.4, 0.9];
+    const BANK: [f32; 4] = [0.6, 0.3, 0.1, 1.0];
+
+    #[test]
+    fn a_reflected_ray_over_terrain_shows_the_scene_not_the_sky() {
+        let v = view(0.12);
+        let depth = lake(v, 40.0, 10.0);
+        let (p, r) = surface(&v, 20.0);
+        let hit = trace(&v, p, r, &MEDIUM, &depth).expect("the bank is hit");
+        // It lands on the bank: the wall at z = 40 where the mirror ray crosses it (y = 2).
+        let at = ray(&v, hit.px);
+        let s = 40.0 / at[2];
+        assert!((at[1] * s - 2.0).abs() < 0.5, "hit at y {}", at[1] * s);
+        assert!(hit.weight > 0.9, "a hit mid-screen is whole: {}", hit.weight);
+        let c = reflected(SKY, Some(hit), |_| BANK);
+        for k in 0..3 {
+            assert!((c[k] - BANK[k]).abs() < 0.1, "the bank's colour, not the sky's: {c:?}");
+        }
+    }
+
+    #[test]
+    fn a_ray_that_clears_the_bank_reflects_the_sky() {
+        let v = view(0.12);
+        // A low bank: the mirror ray crosses z = 40 at y = 2, above it.
+        let depth = lake(v, 40.0, 1.0);
+        let (p, r) = surface(&v, 20.0);
+        let hit = trace(&v, p, r, &MEDIUM, &depth);
+        assert_eq!(hit, None);
+        assert_eq!(reflected(SKY, hit, |_| BANK), SKY);
+    }
+
+    #[test]
+    fn the_water_does_not_reflect_its_own_floor_and_rays_toward_the_eye_stay_in_front() {
+        // No bank at all: only the floor seen through the water, which the ray stays above.
+        let v = view(0.3);
+        let depth = lake(v, 1e6, -100.0);
+        for z in [5.0, 20.0, 80.0] {
+            let (p, r) = surface(&v, z);
+            assert_eq!(trace(&v, p, r, &MEDIUM, &depth), None, "z {z}");
+        }
+        // A ray back toward the eye ends in front of it (no division by a crossed depth).
+        let (p, _) = surface(&v, 20.0);
+        let back = norm([0.0, 0.3, -1.0]);
+        assert_eq!(trace(&v, p, back, &MEDIUM, &depth), None);
+    }
+
+    #[test]
+    fn hits_fade_toward_the_screen_edge_and_none_without_steps() {
+        let v = view(0.12);
+        // The bank only 0.5 m above the water's mirror line seen at the top edge: the view pitched
+        // so the hit is near the top of the screen.
+        let depth = lake(v, 40.0, 10.0);
+        let (p, r) = surface(&v, 20.0);
+        let mid = trace(&v, p, r, &MEDIUM, &depth).expect("hit");
+        // The same hit taken as if the screen edge were just above it.
+        let near_edge = edge_weight(&v, [mid.px[0], 4.0], MEDIUM.edge_fade);
+        assert!(near_edge < 0.2 && edge_weight(&v, mid.px, MEDIUM.edge_fade) > 0.9);
+        let none = Ssr { steps: 0, ..MEDIUM };
+        assert_eq!(trace(&v, p, r, &none, &depth), None);
+    }
+}

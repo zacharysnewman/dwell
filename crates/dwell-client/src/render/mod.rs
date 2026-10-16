@@ -14,6 +14,7 @@ pub mod display;
 pub mod frame;
 pub mod geometry;
 pub mod march;
+pub mod reflection;
 pub mod seam;
 pub mod shaders;
 pub mod timing;
@@ -24,6 +25,7 @@ use dwell_world::hash::HashMap;
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
+use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::sky_frame::{SkyFrame, sky_rest};
 use dwell_look::{DEFAULT_EXPOSURE, LIGHT, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
@@ -1422,6 +1424,15 @@ impl Renderer {
         // The eye's x and z wrapped for the water's detail (the composite's caustics under it).
         let [wx, wz] = water::wrapped_origin(self.eye);
         put(&[wx, wz, 0.0, 0.0]);
+        // The water's reflections for its quality, under the Clouds setting (WATER_RENDERING.md §8).
+        for v in reflection_uniforms(
+            &REFLECTIONS,
+            self.water_quality.level() as usize,
+            self.clouds.octaves(&CLOUDS),
+            self.clouds.self_shadow(),
+        ) {
+            put(&v);
+        }
         u
     }
 
@@ -2304,9 +2315,9 @@ impl PassView {
     }
 }
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 24 vec4s (after `tan`
-/// the clouds' two, then the water's, then the wind's six).
-const FRAME_FLOATS: usize = 16 + 25 * 4;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix and 27 vec4s (after `tan`
+/// the clouds' two, then the water's, the wind's six, the wrap and the reflections' two).
+const FRAME_FLOATS: usize = 16 + 27 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2969,8 +2980,9 @@ mod tests {
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
-        // `tan` is the vec4 before the clouds' two, the water's, the wind's six and the wrap.
-        let tan_y = f64::from(u[FRAME_FLOATS - 10 * 4 - 3]);
+        // `tan` is the vec4 before the clouds' two, the water's, the wind's six, the wrap and the
+        // reflections' two.
+        let tan_y = f64::from(u[FRAME_FLOATS - 12 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
@@ -2985,7 +2997,7 @@ mod tests {
         r.resize(1600, 900, 2.0);
         let basis = aim(0.0, 0.0, 1.0, 0.0);
         let wind = |r: &Renderer| {
-            r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - 28..FRAME_FLOATS - 4].to_vec()
+            r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - 36..FRAME_FLOATS - 12].to_vec()
         };
         assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
         // Falling forward: the vanishing point drops below the centre, the intensity is passed.
@@ -2999,6 +3011,25 @@ mod tests {
         assert!(w[1] < -0.3 && w[0].abs() < 1e-6 && w[2] == 0.5 && w[7] == 1.0);
         // Widths are in CSS pixels: doubled on a 2× screen.
         assert!((f64::from(w[15]) - 2.0 * MOTION.wind.width_px).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_reflections_follow_the_water_quality_and_the_clouds_setting() {
+        let mut r = noop_renderer();
+        r.resize(1280, 720, 1.0);
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let refl = |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - 8..].to_vec();
+        r.set_water_quality(WaterQuality::Low);
+        let low = refl(&r);
+        assert_eq!((low[0], low[4]), (0.0, 0.0), "Low: the sky alone");
+        r.set_water_quality(WaterQuality::Medium);
+        let m = refl(&r);
+        assert_eq!(m[0], REFLECTIONS.tier(1).ssr_steps as f32);
+        assert!(m[4] > 0.0, "Medium reflects clouds");
+        r.set_water_quality(WaterQuality::High);
+        assert_eq!(refl(&r)[0], REFLECTIONS.tier(2).ssr_steps as f32);
+        r.set_clouds(CloudQuality::Off);
+        assert_eq!(refl(&r)[4], 0.0, "no clouds in the sky, none reflected");
     }
 
     #[test]

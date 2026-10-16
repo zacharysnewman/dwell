@@ -8,6 +8,9 @@ pub mod clouds;
 mod clouds_gen;
 pub mod fog;
 pub mod motion;
+pub mod reflections;
+#[path = "reflections.gen.rs"]
+mod reflections_gen;
 pub mod sky_frame;
 
 use sky_frame::SkyFrame;
