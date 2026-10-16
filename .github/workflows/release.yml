@@ -27,9 +27,12 @@ permissions:
   pages: write
   id-token: write
 
-# One release run at a time per ref; a later push waits (never cancel a half-published release).
+# One group per pushed commit (or tag): every push gets its own run and none is ever cancelled.
+# A shared group per ref kept only one run waiting, so back-to-back merges dropped the earlier
+# one's release (0.11.14 had to be tagged by hand). Each run publishes only its own version; the
+# site deploys (pages.yml) still go one at a time and the last assembles every release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
