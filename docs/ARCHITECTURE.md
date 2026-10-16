@@ -1444,7 +1444,7 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   and the `DaySky` uniform block (17 vec4: the directions, the viewer's sky, each face's lights,
   linear × intensity) the renderer's frame carries as `frame.day`. The shader sky (`sky.wgsl`):
   `dwell_sky` (gradient, band, halos; the glow capped below the disc) is the sky's, the fog's and
-  water's reflections' colour; `dwell_sky_bodies` draws, behind the world and under the clouds, the
+  water's reflections' colour (the water's glint takes the face's sun and moon light from the block); `dwell_sky_bodies` draws, behind the world and under the clouds, the
   sun (limb-darkened, ×`horizonScale` near the horizon), the moon (lit from the sun's side by its
   phase, value-noise maria, earthshine; its frame from world vectors) and the stars (one per cell of
   a cube-face grid fixed to the turning sky, sized in pixels, twinkling, faded by the sky's

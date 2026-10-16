@@ -134,7 +134,7 @@ and each face's lights). The renderer's frame carries it as `frame.day`; clouds 
   directions, so they stay put while the view turns.
 
 Water's reflection uses `sky()`, which is `dwell_sky` with the frame's `DaySky`, so it follows the
-cycle. The clouds (Phase 31) take their light from the same block (`cloud_lighting`: the viewer's
+cycle; its glint takes the face's sun and moon light from the block too. The clouds (Phase 31) take their light from the same block (`cloud_lighting`: the viewer's
 face's sun, moon and sky light; day or night by the sun's height).
 
 ## 6. Dev controls
@@ -146,8 +146,15 @@ face's sun, moon and sky light; day or night by the sun's height).
   30% · moon phase 0.62, 85% lit`.
 - `__dwell.setTime(t, moon?)`; the bench's `time {t, moon?}` and `timelapse {name, frames, from,
   to, waitS}` steps; scenarios `day-night` (each time of day toward and away from the sun, the moon
-  at three phases), `day-timelapse` (48 frames) and `day-night-cost` (GPU time at noon and at
-  midnight, `--unthrottled`).
+  at three phases), `day-timelapse` (48 frames), `day-night-face-b` (face B's sky at face A's noon,
+  midnight, sunset and sunrise) and `day-night-cost` (GPU time at noon and at midnight, clouds off,
+  `--unthrottled`).
+
+**Measured** (Apple M-series GPU, Chrome, 1280×720, `day-night-cost`, clouds off, p50
+`gpu.composite`): the horizon at midnight 0.76 ms, looking up at midnight (stars everywhere) 0.71 ms,
+looking up at noon (no stars) 0.58 ms: the stars cost about 0.1 ms over a full sky; the sun and
+moon only touch the pixels near them. Readings varied up to ×3 between runs (passes overlap on a
+tile-based GPU, and thermal state), so treat them as an order of magnitude.
 
 ## 7. Extending it
 

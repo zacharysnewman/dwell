@@ -3123,7 +3123,8 @@ Exit criteria
   keyframe changed by data alone are pinned by tests; the WGSL validates with Naga (alone and in the
   renderer's module).
 - [x] In a browser on the GPU: night, dawn, sunrise, golden hour, morning, noon, sunset, dusk and
-  midnight toward and away from the sun, the moon at three phases, and a 48-frame timelapse, from
+  midnight toward and away from the sun, the moon at three phases, face B's sky (night under face
+  A's noon, day under its midnight) and a 48-frame timelapse, from
   screenshots.
 - [x] GPU cost measured at noon and midnight, looking at the horizon and up (`day-night-cost`,
   `--unthrottled`).
