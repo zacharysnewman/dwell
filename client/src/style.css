@@ -1228,6 +1228,109 @@ body.menu-open #menu-button {
   image-rendering: pixelated;
 }
 
+/* ---------- Structures (ui/structuresPanel.ts), a page of the game menu ---------- */
+
+#structures-panel {
+  max-width: 640px;
+}
+
+#structures-panel input,
+#structures-panel select,
+#structures-panel textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: 16px var(--font-body);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#structures-panel textarea {
+  font: 13px var(--font-mono);
+  resize: vertical;
+}
+
+.st-corners {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+}
+
+.st-corners[hidden] {
+  display: none;
+}
+
+.st-row,
+.st-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.st-button {
+  padding: 8px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font: 700 14px var(--font-body);
+  cursor: pointer;
+}
+
+.st-button:hover {
+  border-color: var(--sky-deep);
+}
+
+.st-primary {
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--grass-light), var(--grass) 55%);
+  color: #fff;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 28%);
+}
+
+.st-status {
+  min-height: 1.2em;
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.st-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.st-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.st-name {
+  font: 700 15px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.st-size,
+.st-empty {
+  color: var(--ink-soft, #666);
+  font-size: 13px;
+}
+
 /* ---------- HUD (ui/hud.ts and the widgets around it) ---------- */
 
 #hud {

@@ -25,9 +25,9 @@ pub type Coord = [i32; 3];
 pub const MIN_CHUNK_Y: i32 = WORLD_BOTTOM_Y.div_euclid(CHUNK_SIZE);
 pub const MAX_CHUNK_Y: i32 = WORLD_MAX_Y / CHUNK_SIZE - 1;
 
-/// The region tools read the client's world through the streamer: a box is loaded when every chunk
-/// it covers is, Air chunks included — the client never stores those, and its world reads them as
-/// air. (`region::read_box` on the bare world counts them as missing.)
+/// The region tools read the client's world through the streamer (structures too): a box is loaded
+/// when every chunk it covers is, Air chunks included — the client never stores those, and its
+/// world reads them as air. (`region::read_box` on the bare world counts them as missing.)
 impl<G, M, V> crate::region_tools::BoxSource for ChunkStreamer<VoxelWorld, G, M, V>
 where
     G: ChunkSource,
@@ -873,8 +873,8 @@ mod tests {
         v
     }
 
-    /// The region tools read a box through the streamer: an Air chunk the server sent is loaded
-    /// (all air), though the client never stores it; a chunk not sent is not.
+    /// The region tools and the structures store read a box through the streamer: an Air chunk the
+    /// server sent is loaded (all air), though the client never stores it; a chunk not sent is not.
     #[test]
     fn a_box_over_an_air_chunk_reads_as_loaded_air() {
         use crate::region_tools::BoxSource;

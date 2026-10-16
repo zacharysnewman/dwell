@@ -44,7 +44,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S2b; S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.5, a patch release of the 0.11 line |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) done; next: G0, the prototype page; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length |
 | 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
@@ -2773,9 +2773,10 @@ Deviations (W1a):
 locally and exported into `shared/structures/`
 ([ADR 0031](./adr/0031-data-driven-structures.md), [`STRUCTURES.md`](./STRUCTURES.md)).
 
-**Status:** In progress — S0 (the ADR), S1 (the structure format and its generator), S2a (the
-floor and the sandbox world type) and S3a (region edits and the region tools) done; outstanding for
-S2a: its e2e exit check; outstanding for S3: S3b (anchor, touch) and the sandbox e2e; next: S2b.
+**Status:** In progress — S0 (the ADR), S1 (the structure format and its generator), S2a (the floor
+and the sandbox world type), S2b (the structures store) and S3a (region edits and the region tools)
+done; outstanding for S2a: its e2e exit check; outstanding for S3: S3b (anchor, touch) and the
+sandbox e2e.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
 placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
 in part and ship on a new compatibility line. S1–S3 change no terrain.
@@ -2794,9 +2795,12 @@ Deliverables
   untextured, not placeable, not adaptive) appended to the registry; a `sandbox` world type
   (generator 100: the flat generator with a layers parameter, in the floor block; flight on, the
   default policy) in the main menu and the launcher's new-world route (`?new=1&type=sandbox`).
-- [ ] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
+- [x] **S2b** — The structures store (after S1): OPFS `dwell/structures/<name>.json`, append-only
   (unknown fields kept, unreadable files left alone); save a selection as a structure; export and
-  import JSON (download, clipboard).
+  import JSON (download, clipboard). *(Built: `client/src/local/structureStore.ts`, `structures.ts`,
+  the game menu's Structures page `ui/structuresPanel.ts`; the format's rules shared with `gen.mjs`
+  as `shared/structures/format.mjs`; save from the B/N selection, everything built near the player
+  or two corners; load through the region tools' paste (`RegionTools::load_clipboard`).)*
 - [x] **S3a** — Editing tools: box select with an outline and its size, fill (also hollow, replace,
   remove), copy and paste with a ghost preview, rotate and mirror, undo/redo (`dwell-game`
   `region_tools.rs`); the `RegionEdit` message (≤ 32³ per request, negotiated within the 0.10 line
@@ -2828,8 +2832,13 @@ Exit criteria
   every 8 blocks from the `grid` look option), checked near, far and from above: the lines stay
   readable under tone mapping, fade without shimmer at a distance, and leave the block outline
   clear.
-- [ ] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
-  accepts; the store's append-only test.
+- [x] S2b: a structure saved in the sandbox survives a reload and exports to JSON that `gen.mjs`
+  accepts; the store's append-only test. *(Verified: `structureStore.test.ts` (append-only: unknown
+  fields kept through rename and save-over, broken, newer-format and invalid files never rewritten or
+  deleted); `structures.test.ts` validates an export with `gen.mjs`'s `loadDir`; browser check
+  (2026-10-15, Chrome on the GPU, `?world=sandbox`): stones built, saved as `dwell:s2b_check`
+  (2 × 2 × 2), downloaded and passed `gen.mjs`, listed after a reload, deleted, imported from the
+  file, loaded and pasted — the stones doubled.)*
 - [ ] S3: build, copy, rotate, mirror, paste and undo a structure in the sandbox (e2e; needs S2a's
   world type — covered natively meanwhile by `dwell-client` `game_local` and `dwell-game`
   `region_tools` tests).
@@ -2841,6 +2850,16 @@ Deviations (S3a): region edits leave **indestructible** cells as they are — th
 (coordinator, 2026-10-14). `RegionEdit` ships without a `protocolVersion` bump: an older server
 rejects unknown messages, so it is gated by the `regionEdits` Welcome flag instead (ARCHITECTURE.md
 §10.5); a new compatibility line was not needed.
+
+Deviations (S2b):
+- **Loading uses S3's region paste**, not edits stamped at the anchor: the structure goes on the
+  region tools' clipboard in paste mode, so it is placed like a copy (ghost box, rotate, mirror, a
+  right click, undo) and stands on its bottom centre; the anchor is not used until S3b's anchor work.
+  A structure's kept (`null`) cells take what the world holds when the paste is sent.
+- **Found and fixed:** the region tools refused boxes reaching into all-air chunks ("Not loaded
+  yet"), which the client never stores; the streamer now answers what is loaded (regression test
+  `a_box_over_an_air_chunk_reads_as_loaded_air`).
+- The store needs OPFS `createWritable` on the page (no fallback where it is missing).
 
 Deviations (S1):
 - Choices are **per voxel** (each cell draws independently, hashed from the seed and the unturned

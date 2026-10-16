@@ -32,6 +32,9 @@ use crate::render::compare::CompareView;
 use crate::render::seam::{Selection, TerrainKind};
 use crate::telemetry;
 
+/// The most cells `Client::voxels` reads at once (about 2 M: a 128³ box).
+const MAX_VOXEL_READ: u64 = 128 * 128 * 128;
+
 type Events = Rc<RefCell<VecDeque<TransportEvent>>>;
 /// The device key's signature of the join transcript, once the shell's promise settles.
 type SignatureSlot = Rc<RefCell<Option<Result<[u8; 64], String>>>>;
@@ -857,6 +860,55 @@ impl Client {
             .game
             .as_mut()
             .map_or(0, |g| g.voxel(x, y, z))
+    }
+    /// The client's states in the box of `sx × sy × sz` cells from its lowest corner, in a
+    /// structure's layer order (y-slices, z-rows, x fastest; `region::read_box`): saving a
+    /// structure (STRUCTURES.md §4). Empty before playing, where a chunk of the box isn't loaded,
+    /// or for a box over `MAX_VOXEL_READ`.
+    pub fn voxels(&self, x: i32, y: i32, z: i32, sx: u32, sy: u32, sz: u32) -> Vec<u16> {
+        let cells = u64::from(sx) * u64::from(sy) * u64::from(sz);
+        if cells == 0 || cells > MAX_VOXEL_READ {
+            return Vec::new();
+        }
+        self.inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .map_or_else(Vec::new, |g| g.voxels([x, y, z], [sx, sy, sz]))
+    }
+    /// The box selected with the region tools (B, N): `[x, y, z, sx, sy, sz]` (its lowest corner
+    /// and size); empty with none. Saving a structure saves it when there is one.
+    pub fn selection(&self) -> Vec<i32> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .and_then(|g| g.region.selection())
+            .map_or_else(Vec::new, |(min, size)| [min, size].concat())
+    }
+    /// Loads a structure into the region tools' clipboard and turns paste mode on: the ghost box
+    /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
+    /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
+    /// error message, or empty when loaded.
+    #[wasm_bindgen(js_name = loadStructure)]
+    pub fn load_structure(
+        &self,
+        sx: i32,
+        sy: i32,
+        sz: i32,
+        cells: Vec<u16>,
+        keep: Vec<u8>,
+        label: &str,
+    ) -> String {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = s.game.as_mut() else {
+            return "Not playing".into();
+        };
+        let keep: Vec<bool> = keep.iter().map(|&k| k != 0).collect();
+        match g.region.load_clipboard([sx, sy, sz], cells, keep, label) {
+            Ok(()) => String::new(),
+            Err(e) => e,
+        }
     }
     pub fn fly(&self, on: bool) {
         let mut s = self.inner.borrow_mut();

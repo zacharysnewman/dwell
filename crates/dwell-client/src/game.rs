@@ -594,6 +594,14 @@ impl<S: Scene> Game<S> {
     pub fn voxel(&mut self, x: i32, y: i32, z: i32) -> u16 {
         self.streamer.store_mut().get_voxel(x, y, z)
     }
+    /// The client's states in a box, in layer order; empty where a chunk of it isn't loaded (Air
+    /// chunks are loaded; the streamer's `BoxSource`): saving a structure.
+    pub fn voxels(&mut self, min: [i32; 3], size: [u32; 3]) -> Vec<u16> {
+        use dwell_game::region_tools::BoxSource;
+        self.streamer
+            .read_box(min, size.map(|n| n as i32))
+            .unwrap_or_default()
+    }
     pub fn state(&self) -> &ClientState {
         &self.current
     }

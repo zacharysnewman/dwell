@@ -39,6 +39,9 @@ import { Hotbar } from './ui/hotbar';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
+import { StructuresPanel } from './ui/structuresPanel';
+import { opfsStructureDir, StructureStore } from './local/structureStore';
+import { clipboardOf, type Vec3 as Cell } from './local/structures';
 import { waterQualityLevel } from './ui/waterSettings';
 import {
   CompareOverlay,
@@ -265,6 +268,10 @@ function toggleDebug(app: App): void {
 function forwardInput(app: App): void {
   const { canvas, client } = app;
   window.addEventListener('keydown', (e) => {
+    // Typing in a field of the menu (a structure's name, pasted JSON) is not playing.
+    const t = e.target;
+    if (t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.type !== 'range'))
+      return;
     if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
@@ -479,6 +486,30 @@ async function start(): Promise<App | null> {
       },
     },
   ]);
+  // The Structures page (STRUCTURES.md §4): the browser's structures store, saved from and
+  // loaded into this world through the region tools.
+  const structures = new StructuresPanel({
+    store: new StructureStore(opfsStructureDir()),
+    selection: () => {
+      const s = client.selection();
+      return s.length === 6
+        ? { min: [s[0], s[1], s[2]] as Cell, size: [s[3], s[4], s[5]] as Cell }
+        : null;
+    },
+    read: (min, size) => client.voxels(...min, ...size),
+    feet: () => (client.debugState() as GameDebugState | null)?.feet ?? null,
+    target: () => (client.debugState() as GameDebugState | null)?.target?.cell ?? null,
+    load: (s) => {
+      const { cells, keep } = clipboardOf(s);
+      return client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+    },
+    close: () => {
+      settings.setOpen(false);
+    },
+  });
+  settings.addStructuresPanel(structures.element, () => {
+    void structures.refresh();
+  });
   app.hud.onToggleMap = () => {
     app.map.toggle();
   };

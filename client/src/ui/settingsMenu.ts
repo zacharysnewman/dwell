@@ -357,11 +357,12 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = 'settings' | 'controls' | 'debug' | 'host';
+type Page = 'settings' | 'controls' | 'structures' | 'debug' | 'host';
 
 const PAGE_TITLES: Record<Page, string> = {
   settings: 'Settings',
   controls: 'Controls',
+  structures: 'Structures',
   debug: 'Debug',
   host: 'Host',
 };
@@ -544,6 +545,19 @@ export class SettingsMenu {
     this.pages.get('host')?.tab.setAttribute('id', 'menu-host');
   }
 
+  /**
+   * Adds the Structures page (ui/structuresPanel.ts): `onShow` runs each time it is opened, to
+   * list the saved structures.
+   */
+  addStructuresPanel(panel: HTMLElement, onShow: () => void): void {
+    const page = el('section');
+    page.append(panel);
+    this.addPage('structures', page);
+    const tab = this.pages.get('structures')?.tab;
+    tab?.setAttribute('id', 'menu-structures');
+    tab?.addEventListener('click', onShow);
+  }
+
   /** Adds the Debug page: each tool a button with its key (DEBUG_KEYS). */
   addDebugTools(tools: DebugTool[]): void {
     const page = el('section');
@@ -624,7 +638,7 @@ export class SettingsMenu {
   }
 
   private addPage(name: Page, page: HTMLElement): void {
-    const order: Page[] = ['settings', 'controls', 'debug', 'host'];
+    const order: Page[] = ['settings', 'controls', 'structures', 'debug', 'host'];
     const tab = el('button', 'gm-tab', PAGE_TITLES[name]);
     tab.type = 'button';
     tab.setAttribute('role', 'tab');
