@@ -333,7 +333,8 @@ fn vec3(c: Rgb) -> String {
 ///
 /// - `fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f`: where
 ///   the view ray `dir` meets the deck: the noise point (xy, cells), the distance (z) and how much
-///   of the cloud there shows (w: 0 below the horizon, past the fade, or with the eye at the deck).
+///   of the cloud there shows (w: 0 below the horizon, past the fade, or with the eye at the deck;
+///   negative for the edge-on band within the layer, which takes the coverage as its density).
 ///   Call it in uniform control flow and take `fwidth` of its xy (the pixel's footprint in cells).
 /// - `fn dwell_clouds(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offsets: vec4f,
 ///   cfg: vec4f, lights: CloudLighting) -> vec3f`, with `CloudLighting` the sky frame and the
@@ -471,7 +472,9 @@ fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f
 	let use_band = band.y > shown;
 	let d = select(t, band.x, use_band);
 	let q = offsets.xy + dir.xz * (d / CLOUD_SCALE);
-	return vec4f(q, d, max(shown, band.y));
+	// The band is flagged by a negative weight: it is the layer seen through its length, so it
+	// takes the coverage's mean rather than the noise (whose columns would show as stripes).
+	return vec4f(q, d, select(shown, -band.y, use_band));
 }
 
 // The deck seen edge-on from within the layer (`cross_fade_m` either side of it): along a ray
@@ -513,11 +516,17 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	let sun = lights.sun;
 	let moon = lights.moon;
 	let octaves = i32(cfg.y);
-	if (octaves <= 0 || deck.w <= 0.0) {
+	let band = deck.w < 0.0;
+	let weight = abs(deck.w);
+	if (octaves <= 0 || weight <= 0.0) {
 		return under;
 	}
-	let p = cloud_warped(deck.xy, offsets.zw, fw);
-	let d = cloud_shape(cloud_fbm(p, octaves, fw), cfg.x);
+	var p = deck.xy;
+	var d = cfg.x;
+	if (!band) {
+		p = cloud_warped(deck.xy, offsets.zw, fw);
+		d = cloud_shape(cloud_fbm(p, octaves, fw), cfg.x);
+	}
 	if (d <= 0.0) {
 		return under;
 	}
@@ -529,7 +538,7 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	// from above: the sunlit top barely shows it (topLight), so the second sample is skipped there.
 	let from_above = cfg.w < 0.0;
 	var occl = 0.6 * d;
-	if (cfg.z > 0.0 && !from_above) {
+	if (cfg.z > 0.0 && !from_above && !band) {
 		let toward = light.xz * CLOUD_SHADOW_STEP;
 		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
 	}
@@ -556,7 +565,7 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	col = mix(col, clear, 0.85 * smoothstep(0.0, dwell_cloud_fade(cfg.w).y, deck.z));
 	// From above the deck is seen through its whole depth: denser, and solid sooner at its edges.
 	let cover = select(d, sqrt(d), from_above);
-	return mix(under, col, cover * CLOUD_OPACITY * deck.w);
+	return mix(under, col, cover * CLOUD_OPACITY * weight);
 }
 
 // Inside the cloud: the whole view mixed toward the cloud's lit colour by `amount` (cloud_uniforms'

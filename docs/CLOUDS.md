@@ -85,8 +85,22 @@ window on an Apple GPU (Metal), looking 25° up (mostly sky):
 | High | 1.59 ms | 1.88 ms | 2.81 ms |
 
 Clouds cost about 0.9 ms of composite time on High and 0.7 ms on Low at this size, and scale with
-the sky's share of the screen (covered pixels skip them). Phones default to Low. Not yet measured
-on a phone.
+the sky's share of the screen (covered pixels skip them unless the deck is in front). Phones default
+to Low. Not yet measured on a phone.
+
+**From above (C5)**, measured with `clouds-above` against `clouds-above-off` (the camera 3.5 km up,
+looking down 40°, the deck over most of the screen; `--unthrottled`, the same window and GPU, the
+best of several runs while other work shared the GPU):
+
+| Clouds | `gpu.composite` p50 |
+|---|---|
+| Off | 1.56 ms |
+| High, from above | 3.13 ms |
+
+About 1.6 ms more: nearly every pixel takes the clouds, but without the self-shadow's second sample.
+In the same session the sky's clouds (`clouds-high` against `clouds-off`) measured 1.74 against
+0.60 ms. The runs varied by up to 3× between repeats, because the machine was shared; treat these
+as rough.
 
 ## 5. Checks
 
@@ -158,7 +172,9 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   and nothing pops.
 - **Edge-on.** Within the layer the deck is seen edge-on, as a band at the horizon
   (`deck_band`): along a ray within 0.12 (elevation sine) of level, cloud where the ray leaves the
-  layer (`crossFadeM` thick each side), out to the fade's start. It is strongest with the eye at the
-  deck and the ray level, and it hands over to the deck proper as the eye leaves the layer.
+  layer (`crossFadeM` thick each side), out to the fade's start. The band is the layer seen
+  through its length, so its density is the coverage (the noise there would show as vertical
+  stripes). It is strongest with the eye at the deck and the ray level, and it hands over to the
+  deck proper as the eye leaves the layer.
 - **Cost.** From above, the self-shadow's second sample is skipped: the sunlit top barely shows it.
 - **Face B** uses its own deck: the height is face-local, and up is `(0, face, 0)`.
