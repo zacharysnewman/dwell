@@ -137,14 +137,14 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
         f.take_all()
     };
     // On the flat world's grass: placed. On a stone block: refused (its data's placeOn).
-    f.send(1, place([0, -1, 2], 2, tall));
-    f.send(1, place([-1, -1, 2], 2, M.stone));
+    f.send(1, place([0, 31, 2], 2, tall));
+    f.send(1, place([-1, 31, 2], 2, M.stone));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), tall);
+    assert_eq!(f.server.world().get_voxel(0, 32, 2), tall);
     settle(&mut f);
-    f.send(1, place([-1, 0, 2], 2, tall));
+    f.send(1, place([-1, 32, 2], 2, tall));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(-1, 1, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(-1, 33, 2), M.air);
     assert_eq!(
         f.server.stats_of(1).unwrap().last_edit_check,
         EditCheck::NoSupport
@@ -156,7 +156,7 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
         1,
         Message::RegionEdit(RegionEdit {
             op: RegionEditOp::Fill,
-            min: [0, -1, 2],
+            min: [0, 31, 2],
             size: [1, 1, 1],
             material: M.air,
             from: 0,
@@ -164,9 +164,9 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
         }),
     );
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(0, -1, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, 31, 2), M.air);
     assert_eq!(
-        f.server.world().get_voxel(0, 0, 2),
+        f.server.world().get_voxel(0, 32, 2),
         M.air,
         "the plant went with it"
     );
@@ -181,13 +181,13 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
     assert_eq!(changes.len(), 2, "{changes:?}");
     assert!(changes.iter().all(|c| c.material == M.air));
     // Placing into a plant replaces it.
-    f.send(1, place([1, -1, 2], 2, tall));
+    f.send(1, place([1, 31, 2], 2, tall));
     f.server.step();
     settle(&mut f);
-    f.send(1, place([1, 0, 2], 2, M.sand));
+    f.send(1, place([1, 32, 2], 2, M.sand));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(1, 0, 2), M.sand);
-    assert_eq!(f.server.world().get_voxel(1, 1, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(1, 32, 2), M.sand);
+    assert_eq!(f.server.world().get_voxel(1, 33, 2), M.air);
 }
 
 #[test]

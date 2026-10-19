@@ -865,14 +865,7 @@ fn predictor_remote_proxy_right_after_the_first_snapshot() {
     snap.local.controller.flags = controller_flags::GROUNDED;
     snap.local.controller.ground_kind = GroundKind::Terrain;
     p.on_snapshot(&mut world, &snap);
-    p.set_remote(
-        1,
-        DVec3::new(-1.0, G, -0.25),
-        Vec3::ZERO,
-        false,
-        0.0,
-        false,
-    );
+    p.set_remote(1, DVec3::new(-1.0, G, -0.25), Vec3::ZERO, false, 0.0, false);
     for _ in 0..10 {
         let f = quantize_input(&Input::default(), p.next_seq());
         p.tick(&mut world, &f);
@@ -891,7 +884,7 @@ fn stairs_generator() -> ChunkGenerator {
         base(coord, chunk);
         let voxels = chunk.voxels_mut();
         for k in 0..4 {
-            for y in 0..=k {
+            for y in G as i32..=G as i32 + k {
                 let (x, z) = (30, 30 + k);
                 let o = [
                     coord.x * CHUNK_SIZE,
@@ -911,7 +904,7 @@ fn stairs_generator() -> ChunkGenerator {
 /// and goes off to roam; B later runs into them from their foot. Returns the run (12 s) after
 /// checking that both slid, B saw A sliding, and neither climbed the stairs.
 fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
-    let mut sim = NetSim::with_world(conditions, stairs_generator(), [32.0, 2.6, 33.25]);
+    let mut sim = NetSim::with_world(conditions, stairs_generator(), [32.0, G + 2.6, 33.25]);
     let a = sim.join(
         Some(Box::new(|t, c| match t {
             0..90 => Input::default(),
@@ -962,7 +955,7 @@ fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
             s.snaps
         );
         // Neither climbed the stairs (the top is 4 m up; this is the capsule's centre).
-        assert!(c.position().y < 2.5, "{}", c.position());
+        assert!(c.position().y < G as f32 + 2.5, "{}", c.position());
     }
     (sim, [a, b])
 }
@@ -1036,7 +1029,11 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
     for y in [G as i32 - 1, G as i32] {
         // The second row from the far end: a natural block beside a higher one is a ramp rising to
         // it (ADAPTIVE_BLOCKS.md), whose top A (at x 19) must face to place on it.
-        let xs = if y < G as i32 { [19, 20, 21] } else { [21, 20, 19] };
+        let xs = if y < G as i32 {
+            [19, 20, 21]
+        } else {
+            [21, 20, 19]
+        };
         for x in xs {
             let edit = BlockEditRequest {
                 action: BlockEditAction::Place,

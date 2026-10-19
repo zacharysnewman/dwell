@@ -343,7 +343,11 @@ fn point_in_view(cam: &LodCamera, random: &mut dyn FnMut() -> f64, range: f64) -
     }
     let radius = f64::from(dwell_world::WORLD_RADIUS);
     let inside = p[1] >= f64::from(MIDPLANE_Y)
-        && inside_build_volume(p[0].floor() as i64, p[1].floor() as i64, p[2].floor() as i64)
+        && inside_build_volume(
+            p[0].floor() as i64,
+            p[1].floor() as i64,
+            p[2].floor() as i64,
+        )
         && p[0] * p[0] + p[2] * p[2] < radius * radius;
     inside.then_some(p)
 }
@@ -908,7 +912,11 @@ fn a_thin_crust_meshes_the_viewers_face_whole_and_none_of_the_other_at_every_lev
                 assert!(columns > 0.0, "{ctx}");
                 if level == MAX_LEVEL {
                     // Both faces in one section: only the viewer's, whole.
-                    let (mine, other) = if view_face == 1 { (up, down) } else { (down, up) };
+                    let (mine, other) = if view_face == 1 {
+                        (up, down)
+                    } else {
+                        (down, up)
+                    };
                     assert_eq!((mine, other), (columns, 0.0), "{ctx}");
                 } else if is_face_b_section(c) {
                     // Face B's own section: its ground faces −y (down, away from face A).
@@ -1186,7 +1194,10 @@ fn flying_out_through_the_build_sphere_asks_for_nothing_outside_it() {
             setup.run(&cam, 1);
         }
     }
-    assert!(outside_ticks > 60, "{outside_ticks} ticks outside, highest {highest}");
+    assert!(
+        outside_ticks > 60,
+        "{outside_ticks} ticks outside, highest {highest}"
+    );
     assert!(highest > 10_000.0, "{highest}");
     let generated = &setup.host.generated;
     assert!(!generated.is_empty());

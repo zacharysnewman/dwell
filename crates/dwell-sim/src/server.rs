@@ -30,8 +30,8 @@ use dwell_world::edit::{
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M,
-    SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
+    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, SavedChunks,
+    VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
 use dwell_protocol::auth::verify_ed25519;

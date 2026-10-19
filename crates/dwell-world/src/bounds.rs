@@ -68,9 +68,7 @@ impl BuildVolume {
                 let c = |a: usize| 2 * i128::from(center[a]);
                 let r2 = 2 * i128::from(radius);
                 let r2 = r2 * r2;
-                let near: i128 = (0..3)
-                    .map(|a| nearest2(c(a), lo(a), hi(a)).pow(2))
-                    .sum();
+                let near: i128 = (0..3).map(|a| nearest2(c(a), lo(a), hi(a)).pow(2)).sum();
                 if near >= r2 {
                     return Overlap::Outside;
                 }
@@ -149,7 +147,10 @@ mod tests {
         assert!(s.contains_voxel(35_354, 0, 35_354) && !s.contains_voxel(35_355, 0, 35_355));
         // Symmetric about the midplane under the face mirror y ↔ −1 − y.
         for y in [0, 31, 1000, 49_999] {
-            assert_eq!(s.contains_voxel(30_000, y, 0), s.contains_voxel(30_000, -1 - y, 0));
+            assert_eq!(
+                s.contains_voxel(30_000, y, 0),
+                s.contains_voxel(30_000, -1 - y, 0)
+            );
         }
         // Far away (players fly anywhere): no overflow.
         assert!(!s.contains_voxel(33_554_432, -33_554_432, 33_554_432));
@@ -191,10 +192,22 @@ mod tests {
                 Overlap::Partial => assert!(any && !all, "{c:?} {any} {all}"),
             }
         }
-        assert_eq!(s.chunk_overlap(ChunkCoord::new(0, 1562, 0)), Overlap::Partial);
-        assert_eq!(s.chunk_overlap(ChunkCoord::new(0, 1563, 0)), Overlap::Outside);
-        assert_eq!(s.chunk_overlap(ChunkCoord::new(0, -1563, 0)), Overlap::Partial);
-        assert_eq!(s.chunk_overlap(ChunkCoord::new(0, -1564, 0)), Overlap::Outside);
+        assert_eq!(
+            s.chunk_overlap(ChunkCoord::new(0, 1562, 0)),
+            Overlap::Partial
+        );
+        assert_eq!(
+            s.chunk_overlap(ChunkCoord::new(0, 1563, 0)),
+            Overlap::Outside
+        );
+        assert_eq!(
+            s.chunk_overlap(ChunkCoord::new(0, -1563, 0)),
+            Overlap::Partial
+        );
+        assert_eq!(
+            s.chunk_overlap(ChunkCoord::new(0, -1564, 0)),
+            Overlap::Outside
+        );
         assert_eq!(s.chunk_overlap(ChunkCoord::new(3, 4, 5)), Overlap::Inside);
         assert_eq!(s.box_overlap([0, 0, 0], [0, 5, 5]), Overlap::Outside);
     }
@@ -209,13 +222,19 @@ mod tests {
         assert!(slab.contains_voxel(9_000_000, -64, -9_000_000));
         assert!(slab.contains_voxel(0, 63, 0) && !slab.contains_voxel(0, 64, 0));
         assert!(!slab.contains_voxel(0, -65, 0));
-        assert_eq!(slab.chunk_overlap(ChunkCoord::new(99, 1, 0)), Overlap::Inside);
-        assert_eq!(slab.chunk_overlap(ChunkCoord::new(99, 2, 0)), Overlap::Outside);
-        assert_eq!(slab.chunk_overlap(ChunkCoord::new(99, -3, 0)), Overlap::Outside);
         assert_eq!(
-            slab.box_overlap([0, 60, 0], [32, 70, 32]),
-            Overlap::Partial
+            slab.chunk_overlap(ChunkCoord::new(99, 1, 0)),
+            Overlap::Inside
         );
+        assert_eq!(
+            slab.chunk_overlap(ChunkCoord::new(99, 2, 0)),
+            Overlap::Outside
+        );
+        assert_eq!(
+            slab.chunk_overlap(ChunkCoord::new(99, -3, 0)),
+            Overlap::Outside
+        );
+        assert_eq!(slab.box_overlap([0, 60, 0], [32, 70, 32]), Overlap::Partial);
         assert_eq!(slab.y_range(), (-64, 64));
     }
 }

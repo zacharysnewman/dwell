@@ -112,7 +112,12 @@ fn main() {
             }
         }
         // The rim and the sphere's edge over it.
-        for p in [[49_900, 0, 0], [49_900, -1, 0], [35_300, 0, 35_300], [49_900, 2_000, 0]] {
+        for p in [
+            [49_900, 0, 0],
+            [49_900, -1, 0],
+            [35_300, 0, 35_300],
+            [49_900, 2_000, 0],
+        ] {
             for level in [1, 4, 8, 10] {
                 sections.push((seed, section_at(level, p)));
             }

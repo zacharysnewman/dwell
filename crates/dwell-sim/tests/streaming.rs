@@ -16,8 +16,7 @@ use dwell_sim::server::ServerConfig;
 use dwell_sim::worldgen_pool::WorldgenPool;
 use dwell_world::{
     CHUNK_SIZE, Chunk, ChunkCoord, FLAT_TOP_Y, GENERATOR_FLAT, GENERATOR_TERRAIN, M, MAX_CHUNK_Y,
-    MIDPLANE_Y,
-    MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash, chunk_of,
+    MIDPLANE_Y, MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash, chunk_of,
 };
 use dwell_worldgen::{TerrainGenerator, air_test_for, generator_for};
 
@@ -270,7 +269,12 @@ fn chunks_are_generated_ahead_of_a_moving_player_never_on_the_tick() {
     f.join(1, &Client::new(1));
     let before = f.server.world().generated_on_access();
     for i in 0..12 * CHUNK_SIZE {
-        f.move_to(1, 0.5 + f64::from(i), f64::from(FLAT_TOP_Y), 0.5 + f64::from(i) * 0.4);
+        f.move_to(
+            1,
+            0.5 + f64::from(i),
+            f64::from(FLAT_TOP_Y),
+            0.5 + f64::from(i) * 0.4,
+        );
         f.server.step();
         f.server.take_outbox();
     }

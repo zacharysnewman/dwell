@@ -340,22 +340,25 @@ fn placing_into_tall_grass_replaces_it() {
 #[test]
 fn breaking_the_block_under_tall_grass_takes_the_grass_with_it() {
     let grass = s("dwell:tall_grass");
+    // On face A, clear of the midplane (Phase 16: it is at y = 0).
     let mut world = ground();
-    world.set_voxel(0, 0, 2, grass);
+    world.set_voxel(0, 31, 2, s("dwell:grass"));
+    world.set_voxel(1, 31, 2, s("dwell:grass"));
+    world.set_voxel(0, 32, 2, grass);
     // The grass block under it is broken: the plant goes too (it needs support below).
     assert_eq!(
-        unsupported_after(&mut world, [0, -1, 2], s("dwell:air")),
-        vec![([0, 0, 2], s("dwell:air"))]
+        unsupported_after(&mut world, [0, 31, 2], s("dwell:air")),
+        vec![([0, 32, 2], s("dwell:air"))]
     );
     // Turned to dirt, it still stands; on stone it would not.
-    assert!(unsupported_after(&mut world, [0, -1, 2], s("dwell:dirt")).is_empty());
+    assert!(unsupported_after(&mut world, [0, 31, 2], s("dwell:dirt")).is_empty());
     assert_eq!(
-        unsupported_after(&mut world, [0, -1, 2], s("dwell:stone")).len(),
+        unsupported_after(&mut world, [0, 31, 2], s("dwell:stone")).len(),
         1
     );
     // A block with no rule above a broken one is left alone.
-    world.set_voxel(1, 0, 2, s("dwell:stone"));
-    assert!(unsupported_after(&mut world, [1, -1, 2], s("dwell:air")).is_empty());
+    world.set_voxel(1, 32, 2, s("dwell:stone"));
+    assert!(unsupported_after(&mut world, [1, 31, 2], s("dwell:air")).is_empty());
     // On face B "below" is toward the midplane (+y).
     let y = MIDPLANE_Y - 10;
     world.set_voxel(0, y, 9, grass);
@@ -581,7 +584,13 @@ fn nothing_is_placed_outside_the_build_volume_or_disc() {
     world.set_voxel(x, high - 1, 0, s("dwell:sandbox_floor"));
     let r = place([x, high - 1, 0], 2, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [f64::from(x) + 0.5, f64::from(high) + 0.6, 0.5], &[]).check,
+        check(
+            &mut world,
+            r,
+            [f64::from(x) + 0.5, f64::from(high) + 0.6, 0.5],
+            &[]
+        )
+        .check,
         EditCheck::OutOfWorld
     );
     assert!(inside_build_volume(i64::from(x), i64::from(high) - 1, 0));

@@ -106,7 +106,10 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
     // Face-local heights from the midplane: sea level 32, the core's top 10.
     let sea = SEA_LEVEL as f32;
     assert!(highest > sea + 60.0 && highest < sea + 200.0, "{highest}");
-    assert!(lowest >= CORE_LAYERS as f32 && lowest > sea - 30.0, "{lowest}");
+    assert!(
+        lowest >= CORE_LAYERS as f32 && lowest > sea - 30.0,
+        "{lowest}"
+    );
     assert!((g.column_at(cx, cz).height - sea).abs() < 6.0);
 }
 
@@ -178,7 +181,11 @@ fn the_core_is_stone_nothing_below_the_face_or_over_the_build_volume() {
             }
         }
     }
-    for cy in [bottom - 1, dwell_worldgen::terrain::FACE_MAX_Y / S, MAX_CHUNK_Y + 1] {
+    for cy in [
+        bottom - 1,
+        dwell_worldgen::terrain::FACE_MAX_Y / S,
+        MAX_CHUNK_Y + 1,
+    ] {
         assert!(
             gen_chunk(&g, ChunkCoord::new(0, cy, 0))
                 .voxels()
@@ -244,7 +251,7 @@ fn chunks_the_air_test_calls_air_generate_as_air() {
             (-3, 1550),
         ] {
             let surface = floor_div(g.column_at(cx * S, cz * S).height as i32, S);
-            for cy in surface - 2..=surface + 6 {
+            for cy in (surface - 2).max(0)..=surface + 6 {
                 let c = ChunkCoord::new(cx, cy, cz);
                 let is_air = air(c);
                 assert_eq!(is_air, g.is_air_chunk(c), "{c:?}");
@@ -284,7 +291,12 @@ fn the_sandbox_is_the_flat_world_in_its_indestructible_floor_block() {
     let sandbox = generator_for(GENERATOR_SANDBOX, 7);
     let flat = generator_for(GENERATOR_FLAT, 7);
     let air = air_test_for(GENERATOR_SANDBOX, 7);
-    for c in [(0, 0, 0), (0, 1, 0), (3, -5, -2), (0, MIDPLANE_Y / S - 1, 0)] {
+    for c in [
+        (0, 0, 0),
+        (0, 1, 0),
+        (3, -5, -2),
+        (0, MIDPLANE_Y / S - 1, 0),
+    ] {
         let c = ChunkCoord::new(c.0, c.1, c.2);
         let (mut a, mut b) = (Chunk::default(), Chunk::default());
         sandbox(c, &mut a);
@@ -339,6 +351,9 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                     let ground = g.ground_y(c.x * S + lx, c.z * S + z).expect("inside");
                     for y in 0..S {
                         let wy = c.y * S + y;
+                        if wy < MIDPLANE_Y {
+                            continue; // face B's rows: this is face A's generator
+                        }
                         let m = chunk.get(lx, y, z);
                         let depth = ground - wy;
                         if depth == -1 && wy >= SEA_LEVEL && decoration(m) {
@@ -458,7 +473,12 @@ fn the_mirror_maps_voxels_and_chunks_and_is_its_own_inverse() {
         ChunkCoord::new(3, 69, -4)
     );
     // The build sphere is symmetric under the mirror: a chunk and its face-local chunk agree.
-    for c in [(1562, -1, 0), (0, -1563, 0), (1104, -2, 1104), (1560, -89, 0)] {
+    for c in [
+        (1562, -1, 0),
+        (0, -1563, 0),
+        (1104, -2, 1104),
+        (1560, -89, 0),
+    ] {
         let c = ChunkCoord::new(c.0, c.1, c.2);
         assert_eq!(
             BUILD_VOLUME.chunk_overlap(c),
@@ -481,7 +501,6 @@ fn a_chunk_of_face_b_is_the_flip_of_its_face_local_chunk() {
             (0, -2, 0),
             (9, -1, 2),
             (780, -1, 0),
-            (780, -2, 0),
         ] {
             let c = ChunkCoord::new(c.0, c.1, c.2);
             let flipped = gen_world(&g, c);

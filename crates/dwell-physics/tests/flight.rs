@@ -149,7 +149,7 @@ fn flight_is_not_bounded_by_the_build_sphere() {
     });
     w.step(ticks(3.0));
     let x = w.pos(e).x;
-    assert!(x > 60_000.0 || x < 38_000.0, "{x}");
+    assert!(!(38_000.0..=60_000.0).contains(&x), "{x}");
 }
 
 #[test]
@@ -167,11 +167,7 @@ fn the_speed_level_is_a_true_minimum_speed() {
     // A level slower than the height gives changes nothing (level 0 is the old behaviour).
     assert_eq!(speed_at(20000.0, 10, false), speed_at(20000.0, 0, false));
     // Above the terrain band a higher level flies faster: level 20 is 11 m/s × 2^10.
-    assert!(approx(
-        speed_at(20000.0, 20, false),
-        f.speed * 1024.0,
-        0.05
-    ));
+    assert!(approx(speed_at(20000.0, 20, false), f.speed * 1024.0, 0.05));
     // Near the ground a low level helps: level 8 is 11 m/s × 16.
     assert!(approx(speed_at(4.0, 8, false), f.speed * 16.0, 0.05));
     // The band's cap limits only the height-based speed: the level's minimum holds there too...

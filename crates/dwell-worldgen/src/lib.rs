@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use dwell_world::lod::{self, LodBoundsFn, LodGenerator};
 use dwell_world::{
     AirChunkTest, CHUNK_SIZE, ChunkCoord, ChunkGenerator, DiscOverlap, FlatLayers,
-    GENERATOR_SANDBOX, GENERATOR_TERRAIN, SEA_LEVEL, chunk_disc_overlap,
-    face_local_chunk, face_of_chunk_y, flat_generator, flat_generator_of, flat_is_air,
+    GENERATOR_SANDBOX, GENERATOR_TERRAIN, SEA_LEVEL, chunk_disc_overlap, face_local_chunk,
+    face_of_chunk_y, flat_generator, flat_generator_of, flat_is_air,
 };
 
 pub use bifacial::BifacialTerrain;

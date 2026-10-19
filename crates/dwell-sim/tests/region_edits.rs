@@ -58,30 +58,34 @@ fn a_fill_of_tall_grass_keeps_only_the_plants_that_stand_on_grass() {
     join_streaming(&mut f, 1);
     f.server.step();
     f.take_all();
-    f.send(1, fill([-2, -1, 3], [1, 1, 1], M.stone));
+    f.send(1, fill([-2, 31, 3], [1, 1, 1], M.stone));
     f.server.step();
     for _ in 0..30 {
         f.server.step();
     }
-    f.send(1, fill([-2, 0, 2], [3, 3, 3], tall));
+    f.send(1, fill([-2, 32, 2], [3, 3, 3], tall));
     f.server.step();
     for x in -2..1 {
         for z in 2..5 {
             let want = if [x, z] == [-2, 3] { M.air } else { tall };
-            assert_eq!(f.server.world().get_voxel(x, 0, z), want, "{x} 0 {z}");
+            assert_eq!(f.server.world().get_voxel(x, 32, z), want, "{x} 0 {z}");
             for y in 1..3 {
-                assert_eq!(f.server.world().get_voxel(x, y, z), M.air, "{x} {y} {z}");
+                assert_eq!(
+                    f.server.world().get_voxel(x, y + 32, z),
+                    M.air,
+                    "{x} {y} {z}"
+                );
             }
         }
     }
     for _ in 0..30 {
         f.server.step();
     }
-    f.send(1, fill([-2, -1, 2], [3, 1, 3], M.air));
+    f.send(1, fill([-2, 31, 2], [3, 1, 3], M.air));
     f.server.step();
     for x in -2..1 {
         for z in 2..5 {
-            assert_eq!(f.server.world().get_voxel(x, 0, z), M.air, "{x} 0 {z}");
+            assert_eq!(f.server.world().get_voxel(x, 32, z), M.air, "{x} 0 {z}");
         }
     }
 }
@@ -293,7 +297,7 @@ fn only_a_brush_world_announces_brushes() {
 #[test]
 fn brush_strokes_reach_far_in_the_sandbox_only() {
     // 100 m from the spawn: beyond the region reach (64 m), within the sandbox's brush reach.
-    let far = fill([100, 3, 0], [2, 2, 2], M.stone);
+    let far = fill([100, 35, 0], [2, 2, 2], M.stone);
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
@@ -301,7 +305,7 @@ fn brush_strokes_reach_far_in_the_sandbox_only() {
     f.server.step();
     let stats = f.server.stats_of(1).unwrap();
     assert_eq!(stats.last_region_check, RegionCheck::OutOfReach);
-    assert_eq!(f.server.world().get_voxel(100, 3, 0), M.air);
+    assert_eq!(f.server.world().get_voxel(100, 35, 0), M.air);
 
     let mut f = Fixture::new(sandbox());
     join_sandbox(&mut f, 1);
@@ -309,9 +313,9 @@ fn brush_strokes_reach_far_in_the_sandbox_only() {
     f.send(1, far);
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().region_edits_applied, 1);
-    assert_eq!(f.server.world().get_voxel(100, 3, 0), M.stone);
+    assert_eq!(f.server.world().get_voxel(100, 35, 0), M.stone);
     // Still bounded: 200 m is out of reach.
-    f.send(1, fill([200, 3, 0], [1, 1, 1], M.stone));
+    f.send(1, fill([200, 35, 0], [1, 1, 1], M.stone));
     f.server.step();
     let stats = f.server.stats_of(1).unwrap();
     assert_eq!(stats.last_region_check, RegionCheck::OutOfReach);
@@ -322,19 +326,19 @@ fn a_brush_paste_keeps_its_keep_cells_and_the_unbreakable_floor() {
     let mut f = Fixture::new(sandbox());
     join_sandbox(&mut f, 1);
     f.server.step();
-    let floor = f.server.world().get_voxel(4, -1, 4);
+    let floor = f.server.world().get_voxel(4, 31, 4);
     assert!(
         STATES[usize::from(floor)].indestructible,
         "the sandbox floor"
     );
-    f.server.world().set_voxel(5, 0, 4, M.sand);
+    f.server.world().set_voxel(5, 32, 4, M.sand);
     // A 3 × 2 × 1 paste over the floor: stone on the cell above it, keep everywhere else.
     let keep = region_edit::KEEP as u16;
     f.send(
         1,
         Message::RegionEdit(RegionEdit {
             cells: vec![keep, keep, keep, M.stone, keep, keep],
-            ..region(RegionEditOp::Paste, [4, -1, 4], [3, 2, 1], 0)
+            ..region(RegionEditOp::Paste, [4, 31, 4], [3, 2, 1], 0)
         }),
     );
     f.server.step();
@@ -344,7 +348,7 @@ fn a_brush_paste_keeps_its_keep_cells_and_the_unbreakable_floor() {
         (1, 1)
     );
     let w = f.server.world();
-    assert_eq!(w.get_voxel(4, 0, 4), M.stone);
-    assert_eq!(w.get_voxel(5, 0, 4), M.sand);
-    assert_eq!(w.get_voxel(4, -1, 4), floor);
+    assert_eq!(w.get_voxel(4, 32, 4), M.stone);
+    assert_eq!(w.get_voxel(5, 32, 4), M.sand);
+    assert_eq!(w.get_voxel(4, 31, 4), floor);
 }

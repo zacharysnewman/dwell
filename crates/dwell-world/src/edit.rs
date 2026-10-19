@@ -470,11 +470,8 @@ pub fn check_block_edit(
         [c[0] + n[0], c[1] + n[1], c[2] + n[2]]
     };
     // The build volume bounds building (ADR 0025); the disc, the terrain's columns.
-    if !inside_build_volume(
-        i64::from(cell[0]),
-        i64::from(cell[1]),
-        i64::from(cell[2]),
-    ) || !inside_world_disc(i64::from(cell[0]), i64::from(cell[2]))
+    if !inside_build_volume(i64::from(cell[0]), i64::from(cell[1]), i64::from(cell[2]))
+        || !inside_world_disc(i64::from(cell[0]), i64::from(cell[2]))
     {
         return EditOutcome::fail(EditCheck::OutOfWorld);
     }

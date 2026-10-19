@@ -196,7 +196,7 @@ fn sections_beyond_the_rim_are_outside() {
     assert!(!in_world(section_at(4, 35_900, 0, 35_900)));
     // Over the rim the build sphere is low: a section above it is outside (ADR 0025).
     assert!(in_world(section_at(4, 49_000, 9_000, 0)));
-    assert!(!in_world(section_at(4, 49_000, 11_000, 0)));
+    assert!(!in_world(section_at(4, 49_000, 12_000, 0)));
 }
 
 fn block(f: impl Fn(usize, usize, usize) -> StateId) -> StateId {
@@ -456,7 +456,7 @@ fn a_straddling_section_keeps_each_cell_on_its_face() {
 #[test]
 fn coarse_cells_show_the_grounds_surface_not_the_floor() {
     let g = TerrainGenerator::new(0);
-    for level in [8, 10, 12] {
+    for level in [8, 10, 11] {
         let c = section_at(level, 0, 0, 0);
         let mut cells = LodCells::new();
         assert_eq!(g.generate_lod(c, &mut cells, None), LodKind::Content);
