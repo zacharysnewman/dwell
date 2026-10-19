@@ -5,7 +5,11 @@ Plans for work that has been investigated but **not adopted**. Nothing here is a
 A proposal is adopted by answering its owner questions, writing an ADR and adding phases to the
 implementation plan; the proposal is then folded into the design doc or deleted.
 
-There are no open proposals.
+Open proposals:
+
+| Proposal | Investigated | Owner questions |
+|---|---|---|
+| [Half-height voxels](./HALF_HEIGHT_VOXELS.md): 1 × ½ × 1 m cells, so ground and plants line up and plants grow ½ m at a time | 2026-10-19, with the [Half-Height Voxel Lab](../prototypes/half-height-lab.html) | §8 |
 
 Adopted proposals, and where they went:
 
