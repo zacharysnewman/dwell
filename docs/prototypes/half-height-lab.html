@@ -58,6 +58,8 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
 .seg button { border: 0; background: transparent; border-radius: 6px; padding: 6px 6px; font-size: 13px; }
+.seg-2 { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+.set-list { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
 .seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
@@ -121,6 +123,23 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
     </section>
 
     <section>
+      <h2>Slope shapes (½ m view)</h2>
+      <div class="seg seg-2" id="set">
+        <button type="button" id="set-adaptive" data-v="adaptive">Adaptive (all shapes)</button>
+        <button type="button" id="set-corners" data-v="corners">Cardinal ramps + corners</button>
+        <button type="button" id="set-ramps" data-v="ramps">Cardinal ramps only</button>
+        <button type="button" id="set-none" data-v="none">No slopes</button>
+      </div>
+      <ul class="hint-text set-list">
+        <li><b>Adaptive:</b> every shape the rules make, reshaped from the neighbours on every edit.</li>
+        <li><b>Cardinal ramps + corners:</b> ramps facing north, east, south and west, plus outer and inner corners, at ½ m and 1 m (24 pieces).</li>
+        <li><b>Cardinal ramps only:</b> the 8 straight ramps (4 facings × ½ m and 1 m), no corners.</li>
+        <li><b>No slopes:</b> flat-topped blocks only.</li>
+      </ul>
+      <p class="hint-text">The last three are stored: picked when the scene is built or a block is placed, and not changed when a neighbour is. A shape the set has no piece for, and ground uncovered by digging, is a flat block. The 1 m view always uses today's adaptive rules.</p>
+    </section>
+
+    <section>
       <h2>Views</h2>
       <div class="seg" id="layout">
         <button type="button" id="layout-both" data-v="both">Side by side</button>
@@ -179,15 +198,6 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
             <button type="button" id="steep-on" data-v="on">1 m on steep ground</button>
           </div>
           <p class="hint-text">½ m view: how scenes are built. With 1 m on steep ground, a column whose ground drops 1 m or more to any of its 8 neighbours gets a 1 m double block on top, which shapes into a 45° ramp. Gentle ground stays ½ m blocks with 27° slopes.</p>
-        </div>
-        <div>
-          <div class="seg" id="set">
-            <button type="button" id="set-adaptive" data-v="adaptive">Adaptive</button>
-            <button type="button" id="set-corners" data-v="corners">Ramps + corners</button>
-            <button type="button" id="set-ramps" data-v="ramps">Ramps only</button>
-            <button type="button" id="set-none" data-v="none">No slopes</button>
-          </div>
-          <p class="hint-text">½ m view: the shape set. Adaptive reshapes from the neighbours on every edit. Ramps + corners (cardinal ramps, outer and inner corners, at ½ m and 1 m: 24 pieces and the full block), Ramps only (8 ramps and the full block) and No slopes (flat blocks only) are stored. They are picked when the scene is built or a block is placed, and don't change when a neighbour does. Ground uncovered by digging is a full block, and anything the set has no piece for is a full block.</p>
         </div>
         <div class="seg" id="mode">
           <button type="button" id="mode-adaptive" data-v="adaptive">Adaptive</button>

@@ -82,9 +82,10 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   Plant and Grow (both views). Grow all, Mow, Scatter, and grow over time.
 - Plant footing: at the cell floor (as the game draws plants) or sunk to the shaped surface.
   Floating plants are tinted red and counted per view.
-- Shape set for the half grid: **Adaptive** (reshaped from the neighbours on every edit), **Ramps +
-  corners** (cardinal ramps, outer and inner corners at ½ m and 1 m: 24 pieces and the full block)
-  **Ramps only** (8 ramps and the full block) or **No slopes** (flat ½ m blocks). The fixed sets are
+- **Slope shapes (½ m view)**, its own section at the top: **Adaptive (all shapes)** (reshaped from
+  the neighbours on every edit), **Cardinal ramps + corners** (ramps facing N, E, S, W plus outer
+  and inner corners, at ½ m and 1 m: 24 pieces and the full block), **Cardinal ramps only** (the 8
+  straight ramps and the full block) or **No slopes** (flat ½ m blocks). The fixed sets are
   stored: picked when the scene
   is built or a block is placed, never changed by a neighbour. Dug-out ground and shapes without a
   piece are full blocks. The view counts the blocks off the rules.
