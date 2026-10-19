@@ -180,6 +180,14 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
           </div>
           <p class="hint-text">½ m view: how scenes are built. With 1 m on steep ground, a column whose ground drops 1 m or more to any of its 8 neighbours gets a 1 m double block on top, which shapes into a 45° ramp. Gentle ground stays ½ m blocks with 27° slopes.</p>
         </div>
+        <div>
+          <div class="seg" id="set">
+            <button type="button" id="set-adaptive" data-v="adaptive">Adaptive</button>
+            <button type="button" id="set-corners" data-v="corners">Ramps + corners</button>
+            <button type="button" id="set-ramps" data-v="ramps">Ramps only</button>
+          </div>
+          <p class="hint-text">½ m view: the shape set. Adaptive reshapes from the neighbours on every edit. Ramps + corners (cardinal ramps, outer and inner corners, at ½ m and 1 m: 24 pieces and the full block) and Ramps only (8 ramps and the full block) are stored. They are picked when the scene is built or a block is placed, and don't change when a neighbour does. Ground uncovered by digging is a full block, and anything the set has no piece for is a full block.</p>
+        </div>
         <div class="seg" id="mode">
           <button type="button" id="mode-adaptive" data-v="adaptive">Adaptive</button>
           <button type="button" id="mode-cubes" data-v="cubes">Cubes</button>
@@ -264,7 +272,7 @@ const W = 24, D = 24, MAX_M = 16, MAX_GROWTH = 4; // growth steps of ½ m
 const idx = (x, z) => z * W + x;
 const clampi = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-const state = { layout: 'both', tool: 'place', mat: 'grass', brush: 2, footing: 'cell', steep: 'on', mode: 'adaptive', markFloat: true, cells: false, auto: false, scene: 'meadow' };
+const state = { layout: 'both', tool: 'place', mat: 'grass', brush: 2, footing: 'cell', steep: 'on', set: 'adaptive', mode: 'adaptive', markFloat: true, cells: false, auto: false, scene: 'meadow' };
 
 // ---- Two worlds. Each is columns of cells, bottom to top (2.5D: no caves), plus a plant per column
 // (growth steps of ½ m). `sy` is the cell height in metres. `part` marks each cell: 0 a block of
@@ -368,18 +376,47 @@ function shapeHalf(w, x, z) {
     if (o.ramp !== undefined) { // rule 4: the edge toward the higher neighbour rises to the top
       const k = [[1, 2], [2, 3], [3, 0], [0, 1]][o.ramp]; // corner indices on the E, S, W, N edge
       const cc = c.slice(); for (const i of k) cc[i] = t;
-      return { name: 'ramp' + deep, facing: DIRS[(o.ramp + 2) % 4], g: fill(...cc) };
+      return { name: 'ramp' + deep, facing: DIRS[(o.ramp + 2) % 4], g: fill(...cc), cc };
     }
     const r = rotG(RIDGES[o.shape], o.turns), g = fill(...c);
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (r[i][j]) g[i][j] = t;
-    return { name: o.shape.replace('half_', '') + deep, facing: o.shape === 'half_ridge' ? (o.turns % 2 ? 'north-south' : 'east-west') : o.shape === 'half_ridge_end' || o.shape === 'half_ridge_corner' || o.shape === 'half_ridge_tee' ? DIRS[o.turns] : '', g };
+    return { cc: c, name: o.shape.replace('half_', '') + deep, facing: o.shape === 'half_ridge' ? (o.turns % 2 ? 'north-south' : 'east-west') : o.shape === 'half_ridge_end' || o.shape === 'half_ridge_corner' || o.shape === 'half_ridge_tee' ? DIRS[o.turns] : '', g };
   }
   const up = c.map((v) => v === t), n = up.filter(Boolean).length;
   let name = 'full';
   if (n === 3) name = 'inner corner';
   else if (n === 1) name = 'outer corner';
   else if (n === 2) name = up[0] === up[2] ? 'saddle' : 'wedge';
-  return { name: name + (n < 4 ? deep : ''), facing: '', g: fill(...c) };
+  return { name: name + (n < 4 ? deep : ''), facing: '', g: fill(...c), cc: c };
+}
+
+// ---- Fixed shape sets (½ m view): a small stored set instead of the adaptive table. The rules
+// above pick the corners; the set keeps what it has a piece for and makes everything else a full
+// block. A 1 m block's corner counts as down only when it reaches the block's floor.
+//   corners: cardinal ramps, outer and inner corners, at ½ m (27°) and 1 m (45°), and the full block.
+//   ramps:   cardinal ramps at ½ m and 1 m, and the full block.
+const DIAG = ['north-west', 'north-east', 'south-east', 'south-west'];
+function fixedShape(w, x, z) {
+  const col = idx(x, z), t = heightOf(w, col), size = topSize(w, col);
+  const s = shapeHalf(w, x, z), up = s.cc.map((v) => v === t), n = up.filter(Boolean).length;
+  const deep = size === 2 ? ' (1 m)' : '';
+  const piece = (name, facing, corners) => ({ name: name + deep, facing, g: fill(...corners.map((u) => (u ? t : t - size))) });
+  const full = { name: 'full', facing: '', g: fill(t, t, t, t) };
+  if (n === 2) {
+    const e = [[0, 1], [1, 2], [2, 3], [3, 0]].findIndex(([a, b]) => up[a] && up[b]); // N E S W edge that stays up
+    if (e < 0) return full; // a saddle: no piece for it
+    return piece('ramp', ['south', 'west', 'north', 'east'][e], up);
+  }
+  if (state.set === 'corners' && n === 1) { const i = up.indexOf(true); return piece('outer corner', DIAG[(i + 2) % 4], up); }
+  if (state.set === 'corners' && n === 3) { const i = up.indexOf(false); return piece('inner corner', DIAG[i], up); }
+  return full; // 4 up, or no piece in the set (ridges, pyramids; corners in the ramps-only set)
+}
+// Stored shapes: chosen when the scene is built or a block is placed, never when a neighbour changes.
+// A block uncovered by digging has no stored shape and is a full block.
+function storeAll(w) {
+  w.stored = new Map();
+  if (w.kind !== 'half' || state.set === 'adaptive') return;
+  for (let c = 0; c < W * D; c++) if (adaptive(w, c)) w.stored.set(c, { t: heightOf(w, c), s: fixedShape(w, c % W, Math.floor(c / W)) });
 }
 
 // A column's top surface in metres (3 × 3, rows north to south, entries west to east), and its shape name.
@@ -391,7 +428,9 @@ function columnSurface(w, x, z) {
     const label = s.shape === 'slab' ? 'slab (rests at ½)' : RIDGES[s.shape] || ['full', 'slab'].includes(s.shape) ? s.shape : `${s.shape} ${DIRS[s.turns]}`;
     return { g: pointsM1(s).map((r) => r.map((v) => t - 1 + v / 2)), name: label, key: s.shape };
   }
-  const s = shapeHalf(w, x, z);
+  let s;
+  if (state.set === 'adaptive') s = shapeHalf(w, x, z);
+  else { const st = w.stored?.get(c); s = st && st.t === t ? st.s : { name: 'full', facing: '', g: fill(t, t, t, t) }; }
   return { g: s.g.map((r) => r.map((v) => v * w.sy)), name: s.name + (s.facing ? ' ' + s.facing : ''), key: s.name };
 }
 // Height of a 3 × 3 surface at (fx, fz) in [0,1]², on the same triangles the mesh draws.
@@ -628,16 +667,20 @@ function rebuildLines(v) {
 }
 function updateStats(v) {
   const w = v.world;
-  let cells = 0, plantCellsN = 0, doubles = 0; const kinds = new Set();
+  let cells = 0, plantCellsN = 0, doubles = 0, off = 0; const kinds = new Set();
+  const fixed = w.kind === 'half' && state.set !== 'adaptive';
   for (let c = 0; c < W * D; c++) {
     cells += w.cols[c].length; doubles += w.part[c].filter((q) => q === 2).length;
-    if (adaptive(w, c)) kinds.add(w.surf[c].key);
+    if (!adaptive(w, c)) continue;
+    kinds.add(w.surf[c].key);
+    // A fixed set's block that differs from what the rules would shape now: no piece for it, or stale.
+    if (fixed && w.surf[c].g.some((row, i) => row.some((h, j) => Math.abs(h - shapeHalf(w, c % W, Math.floor(c / W)).g[i][j] * w.sy) > 1e-6))) off++;
   }
   for (const p of w.plants.values()) plantCellsN += plantCells(w, p.n);
   const n = w.plants.size;
   const plantStore = w.kind === 'half' ? `${plantCellsN} plant voxels` : `${plantCellsN} plant blocks with a height property`;
   document.getElementById('stats-' + v.kind).innerHTML =
-    `<span><strong>${cells.toLocaleString()}</strong> ground cells</span>${w.kind === 'half' ? ` · <span><strong>${doubles}</strong> 1 m blocks</span>` : ''} · <span><strong>${kinds.size}</strong> shapes in use</span> · ` +
+    `<span><strong>${cells.toLocaleString()}</strong> ground cells</span>${w.kind === 'half' ? ` · <span><strong>${doubles}</strong> 1 m blocks</span>` : ''}${fixed ? ` · <span class="${off ? 'bad' : ''}"><strong>${off}</strong> blocks off the rules</span>` : ''} · <span><strong>${kinds.size}</strong> shapes in use</span> · ` +
     `<span>${plantStore}</span> · <span class="${v.floating ? 'bad' : ''}"><strong>${v.floating}</strong> of ${n} plants floating</span>`;
 }
 function refresh(groundToo = true) {
@@ -677,6 +720,7 @@ function realise() {
       if (dbl) { w.cols[c][n - 2] = top; w.part[c][n - 2] = 1; w.part[c][n - 1] = 2; }
       if (plant && (top === 'grass' || top === 'dirt')) w.plants.set(c, { n: plant, shown: plant });
     }
+    storeAll(w);
   }
 }
 function valueNoise(x, z, seed) {
@@ -760,7 +804,8 @@ seg('tool', (v) => setTool(v));
 seg('brush', (v) => { state.brush = Number(v); });
 seg('footing', (v) => { state.footing = v; refresh(false); });
 seg('steep', (v) => { state.steep = v; realise(); refresh(); });
-seg('mode', (v) => { state.mode = v; refresh(); });
+seg('set', (v) => { state.set = v; storeAll(worlds.half); refresh(); });
+seg('mode', (v) => { state.mode = v; storeAll(worlds.half); refresh(); });
 $('opt-float').addEventListener('change', (e) => { state.markFloat = e.target.checked; refresh(false); });
 $('opt-cells').addEventListener('change', (e) => { state.cells = e.target.checked; refresh(false); });
 $('opt-auto').addEventListener('change', (e) => { state.auto = e.target.checked; });
@@ -825,6 +870,12 @@ function apply(v, inf, remove) {
   }
   // Plants are replaceable and need ground: an edit to their column takes them with it.
   w.plants.delete(t.col);
+  // A fixed set's shape is picked once, here, for the placed block only; neighbours keep theirs.
+  if (w.kind === 'half' && w.stored) {
+    w.stored.delete(t.col);
+    const x = t.col % W, z = Math.floor(t.col / W);
+    if (state.set !== 'adaptive' && !(remove || state.tool === 'remove') && adaptive(w, t.col)) w.stored.set(t.col, { t: heightOf(w, t.col), s: fixedShape(w, x, z) });
+  }
   rebuildGround(v); rebuildPlants(v); rebuildLines(v); updateStats(v);
 }
 function showGhost(v, inf) {
@@ -928,6 +979,7 @@ pressGroup($('tool'), state.tool);
 pressGroup($('brush'), String(state.brush));
 pressGroup($('footing'), state.footing);
 pressGroup($('steep'), state.steep);
+pressGroup($('set'), state.set);
 pressGroup($('mode'), state.mode);
 pressGroup(paletteEl, state.mat);
 loadScene(state.scene);
