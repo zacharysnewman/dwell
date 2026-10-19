@@ -43,13 +43,15 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing) and A2 (the renderer seam, compare mode, bench `--compare`) built, A2's exit check done (zero difference with raster on both sides), A3a (the CPU core: `crates/dwell-march`) done; the owner approved A1's image differences (2026-10-14) and the e2e suite passes on CI; next: A3b (GPU march, brick jobs); local builds only until the owner's decision (A7); `package.json` raised to 0.11.8, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; next: W3; W6 only if marching is kept at A7; `package.json` raised to 0.11.9, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.11.17, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
-| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.10, a patch release of the 0.11 line |
+| 31 — Sky clouds | 🚧 In progress — C0–C4 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); outstanding: the owner's look and answers to `CLOUDS.md` §6, CI, a phone's frame time; `package.json` raised to 0.11.19, a patch release of the 0.11 line |
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
+| 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data (opaque, cutout, translucent) and cutout (see-through) ladders shipped on the 0.11 line (ADR 0036, `TRANSPARENT_BLOCKS.md`; no registry-hash change); the cross look, placement rules and `dwell:tall_grass` are on `claude/transparent-blocks` for the 0.12.0 line; `package.json` raised to 0.11.18, a patch release of the 0.11 line |
+| 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -2751,8 +2753,11 @@ underwater rendering and reflections in quality tiers
 **Status:** In progress — W1a done (fluid looks in the registry, the surface drop and opacity read
 from them, the eye-under-fluid test in the frame uniform); W2 built (Phase 25's A1); W1b built (the
 water shader, `water_fs`, with the fluid id per vertex, the fluid buffer, the underwater fog stub and
-the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look. Next: W3; W3–W5
-build on the shared frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look; W3 built (the water
+reads the scene on Medium and High: refraction, depth absorption, foam, sparkle, and caustics brought
+forward from W4, also under the surface; checked in Chrome on an M1 with `water-shore`), outstanding:
+the owner's look and the per-tier cost on an unloaded machine. Next: W4; W3–W5 build on the shared
+frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change.
 
 Deliverables
@@ -2768,10 +2773,10 @@ Deliverables
   fluid's roughness and the sky reflection.
 - [x] **W2** — The frame restructure: the same work as Phase 25's **A1**, built once there; ticked
   with it.
-- [ ] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
-  shoreline foam.
+- [x] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
+  shoreline foam; caustics, brought forward from W4 (WATER_RENDERING.md §8, W3).
 - [ ] **W4** — Underwater: absorption fog, the water line, Snell's window and total internal
-  reflection, caustics, distortion (god rays with W5's High tier).
+  reflection, distortion (god rays with W5's High tier). Caustics moved to W3.
 - [ ] **W5** — Screen-space reflections and the quality tiers (Low, Medium, High, Ultra) in the
   settings menu; Low the phone default, tentatively (owner).
 - [ ] **W6** — Under ray marching (after A3, and only if marching is kept at A7): reflection and
@@ -2787,6 +2792,20 @@ Exit criteria
   parameters (`render::water` `packs_each_fluid_at_its_id_…`); the shader validates (naga) and draws
   in Chrome on the GPU (`npm run bench -- water-views`).
 - [ ] W1b: the owner's look (`water-views` screenshots in the PR).
+
+Deviations (W3):
+- Caustics came forward from W4 (the owner asked for them, under the surface most of all): on the
+  floor seen through the surface, and in the composite on every opaque pixel under the surface
+  while the eye is submerged. God rays stay in W4.
+- The copy is full resolution on Medium and High in W3 (no half-res copy yet): Medium and High
+  look the same until W5. The copy is colour only; the water reads the view depth directly (the
+  water half doesn't attach it), so no depth copy.
+- New fluid data beyond the plan's: `scattering` (needed for turquoise shallows over yellow sand:
+  absorption alone turns them green), `refraction`, `sparkle`, and `caustics` as
+  `{ strength, scale, depth }`.
+- The sparkle (all tiers, Low too) is beyond the plan: the owner asked for a sparkly glint.
+- `dwell:water` retuned for the tropical look (owner): absorption [1.0, 0.16, 0.045], scatter
+  `#1496e0`, scattering 0.3, foam depth 0.5, caustics 1.3 / 1.4 m / 4 m (prototype content).
 
 Deviations (W1b):
 - Beyond the plan, from the brief: the underwater fog stub (the composite reads the `water` uniform:
@@ -2815,7 +2834,12 @@ Deviations (W1a):
   `dwell-mesh` `a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity`, and
   `dwell-world` `fluid::tests` (the regression: an eye 0.9 m up a water cell under air is not
   underwater; failed against the whole-cell rule, as physics counts it, then passed).
-- [ ] W3: screenshots of shore views; bench.
+- [x] W3: screenshots of shore views (`npm run bench -- water-shore`: the beach edge, straight down
+  into the shallows, the deep-to-shallow gradient, the floor and its caustics under the surface,
+  the far water; in the PR); bench per tier (WATER_RENDERING.md §8, W3: measured on a loaded M1,
+  noisy); the colour grading pinned over sand (`render::water`
+  `the_builds_water_grades_from_clear_through_turquoise_to_blue_never_green`).
+- [ ] W3: the owner's look, and the per-tier cost measured on an unloaded machine.
 - [ ] W4: named views underwater and half in; the owner's look.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
   it on the two target phones.
@@ -3132,6 +3156,45 @@ Exit criteria
 - [ ] CI green, and the frame time on a phone.
 
 ---
+
+## Phase 34 — Brushes
+
+**Goal:** VoxelSniper-style painting and sculpting tools in the sandbox world, as an extendable
+system: a fixed vocabulary of brushes and performers, named presets as data
+([ADR 0037](./adr/0037-brushes.md), [`BRUSHES.md`](./BRUSHES.md); the owner's brief, 2026-10-15:
+"painting tooling … like Voxel Sniper").
+
+**Status:** In progress — B1 built and tested; outstanding: the owner's try-out and answers to
+`BRUSHES.md` §5, CI. Needs Phase 27's sandbox world type and region edits (S2a, S3a).
+
+Deliverables
+- [x] **B1** — Brushes (ball, disc, cylinder, cube, ellipsoid, seeded splatter, line), performers
+  (set, replace, overlay, erase; masks) and sculpt (smooth, erode/fill, flatten, raise, lower) in
+  `dwell-world` `brush.rs`; presets and the per-world-type policy as data
+  (`shared/brushes/brushes.json`, `gen.mjs`, CI stale check); strokes as `KEEP` pastes of ≤ 32³
+  behind a `brushes` Welcome flag with the sandbox's 128 m reach (server-validated as region edits);
+  the brush tool (`dwell-game` `brush_tool.rs`: keys, ranged aim, wireframe outline,
+  arrow/gunpowder, pick, one undo step per stroke, rate-paced sending, the region `tool` sound);
+  the HUD panel and the controls table.
+
+Exit criteria
+- [x] Each brush's cells (counts, symmetry, seeded splatter, lines), each performer and sculpt on
+  fixtures, splitting into ≤ 32³ edits, and every preset stroke (`dwell-world` `brush.rs` tests); a
+  preset added by data alone and bad entries failing with a message (`brushesGen.test.ts`,
+  `brush.rs` `a_preset_added_by_data_alone_works`); ranged region edits accepted in the sandbox only
+  and `KEEP` cells kept (`dwell-sim` `tests/region_edits.rs`); a stroke as one undo step, round trip
+  (`dwell-game` `brush_tool.rs`, `dwell-client` `game_local`
+  `a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_step`).
+- [x] In the browser (2026-10-15, and again on 0.11.17 after the merge, 2026-10-16; Chrome on the GPU, a sandbox world, driven through
+  `__dwell.brush`): a mound built from two balls 26 m away, a dirt disc beside it, then smooth,
+  erode, a sand splatter and grass surface paint, each screenshotted with the wireframe and the HUD
+  panel; undo took the paint off in one step and redo put it back.
+- [ ] The owner tries the brushes and answers `BRUSHES.md` §5.
+
+Deviations: built without the "ask before designing" questions (the coordinator's defaults, recorded
+with open questions in `BRUSHES.md` §5). The S3 paste could not leave cells alone (and a paste over
+the unbreakable floor is rejected), so strokes use a `KEEP` paste cell behind a new `brushes`
+Welcome flag rather than no protocol change at all; still protocol v12 and the 0.11 line.
 
 ## Phase 28 — Sound Effects
 

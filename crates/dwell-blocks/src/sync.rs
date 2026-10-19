@@ -19,9 +19,9 @@
 use dwell_protocol::bytes::{ByteReader, ByteWriter};
 
 use crate::{
-    AIR, FLUIDS, Facing, Grid, NewBlock, Origin, SHAPES, STATES, ShapeInfo, StateId, StateInfo,
-    Textures, VoxelShape, blocks, build_state, info, intern, register, shape::faces_of,
-    state_count,
+    AIR, Cross, FLUIDS, Facing, Fade, Grid, NewBlock, Origin, RenderMode, SHAPES, STATES,
+    ShapeInfo, StateId, StateInfo, Support, Textures, VoxelShape, Wind, blocks, build_state, info,
+    intern, register, shape::faces_of, state_count,
 };
 
 /// The payload format this build reads and writes.
@@ -43,7 +43,13 @@ pub mod tag {
     pub const FACING: u8 = 4;
     /// `f32`.
     pub const CLIMB_SPEED: u8 = 5;
-    // 6–9 reserved (#95): selection box, placeOn, needsSupport.
+    /// `f32` × 6: the selection box (min x, y, z, max x, y, z in the cell).
+    pub const SELECTION: u8 = 6;
+    /// `u8` count, `str` block ids: the blocks it may be placed on.
+    pub const PLACE_ON: u8 = 7;
+    /// `u8` (0 none, 1 below): the neighbour it needs to stay.
+    pub const NEEDS_SUPPORT: u8 = 8;
+    // 9 reserved.
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -54,10 +60,18 @@ pub mod tag {
     pub const GRID: u8 = 0x84;
     /// `u16` index into the payload's fluid names.
     pub const FLUID: u8 = 0x85;
-    // 0x86 reserved: sound set; 0x87–0x8a reserved (#95): render mode, cross, wind, fade.
+    // 0x86 reserved: sound set.
+    /// `u8` render mode (0 opaque, 1 cutout, 2 translucent).
+    pub const RENDER: u8 = 0x87;
+    /// `f32` height, `u8` quads, `f32` offset, rotation (degrees), height min, height max.
+    pub const CROSS: u8 = 0x88;
+    /// `f32` strength, speed.
+    pub const WIND: u8 = 0x89;
+    /// `f32` start, end (m).
+    pub const FADE: u8 = 0x8a;
 }
 
-/// Rule flag bits (tag `FLAGS`). Bits 6 (`adaptive`, #82) and 7 (`replaceable`, #95) are reserved.
+/// Rule flag bits (tag `FLAGS`). Bit 6 is reserved for `adaptive` (#82).
 pub mod flag {
     pub const SOLID: u32 = 1;
     pub const INDESTRUCTIBLE: u32 = 2;
@@ -65,14 +79,16 @@ pub mod flag {
     pub const CLIMBABLE: u32 = 8;
     pub const LIQUID: u32 = 16;
     pub const PLACEABLE: u32 = 32;
-    pub const KNOWN: u32 = 63;
-    pub const NAMES: [(u32, &str); 6] = [
+    pub const REPLACEABLE: u32 = 128;
+    pub const KNOWN: u32 = 63 | REPLACEABLE;
+    pub const NAMES: [(u32, &str); 7] = [
         (SOLID, "solid"),
         (INDESTRUCTIBLE, "indestructible"),
         (FLOODED, "flooded"),
         (CLIMBABLE, "climbable"),
         (LIQUID, "liquid"),
         (PLACEABLE, "placeable"),
+        (REPLACEABLE, "replaceable"),
     ];
 }
 
@@ -185,6 +201,7 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         (flag::CLIMBABLE, s.climbable),
         (flag::LIQUID, s.liquid),
         (flag::PLACEABLE, s.placeable),
+        (flag::REPLACEABLE, s.replaceable),
     ] {
         if on {
             flags |= bit;
@@ -221,6 +238,48 @@ pub fn state_fields(s: &StateInfo) -> Fields {
     if let Some(f) = s.fluid {
         out.push(field(tag::FLUID, |w| w.u16(u16::from(f))));
     }
+    if let Some(b) = s.selection {
+        out.push(field(tag::SELECTION, |w| b.iter().for_each(|&v| w.f32(v))));
+    }
+    if !s.place_on.is_empty() {
+        out.push(field(tag::PLACE_ON, |w| {
+            w.u8(s.place_on.len() as u8);
+            s.place_on.iter().for_each(|n| w.str(n));
+        }));
+    }
+    if s.needs_support != Support::None {
+        out.push(field(tag::NEEDS_SUPPORT, |w| w.u8(1)));
+    }
+    out.push(field(tag::RENDER, |w| {
+        w.u8(match s.render {
+            RenderMode::Opaque => 0,
+            RenderMode::Cutout => 1,
+            RenderMode::Translucent => 2,
+        })
+    }));
+    if let Some(c) = s.cross {
+        out.push(field(tag::CROSS, |w| {
+            w.f32(c.height);
+            w.u8(c.quads);
+            w.f32(c.offset);
+            w.f32(c.rotation_deg);
+            w.f32(c.height_min);
+            w.f32(c.height_max);
+        }));
+    }
+    if let Some(v) = s.wind {
+        out.push(field(tag::WIND, |w| {
+            w.f32(v.strength);
+            w.f32(v.speed);
+        }));
+    }
+    if let Some(f) = s.fade {
+        out.push(field(tag::FADE, |w| {
+            w.f32(f.start);
+            w.f32(f.end);
+        }));
+    }
+    out.sort_by_key(|(t, _)| *t);
     out
 }
 
@@ -473,46 +532,154 @@ impl Mapping {
     }
 }
 
-/// The parts of a decoded definition.
-struct Decoded {
-    flags: u32,
-    occupancy: u8,
-    shape: Option<u16>,
-    density: f32,
-    facing: u8,
-    climb: f32,
-    unknown: Vec<u8>,
+/// A row with every field at its default (what an absent field means), named `name`.
+fn default_row(name: &str) -> StateInfo {
+    StateInfo {
+        name: intern(name),
+        block: 0,
+        density_kg_m3: 0.0,
+        solid: false,
+        indestructible: false,
+        shape: VoxelShape::Empty,
+        shape_index: 0,
+        flooded: false,
+        climbable: false,
+        facing: Facing::None,
+        climb_speed_scale: 1.0,
+        liquid: false,
+        fluid: None,
+        placeable: false,
+        look: "cube",
+        color: 0,
+        opacity: 1.0,
+        textures: None,
+        grid: None,
+        render: RenderMode::Opaque,
+        cross: None,
+        wind: None,
+        fade: None,
+        selection: None,
+        place_on: &[],
+        needs_support: Support::None,
+        replaceable: false,
+    }
 }
 
-fn decode_rules(fields: &Fields) -> Decoded {
-    let mut d = Decoded {
-        flags: 0,
-        occupancy: 0,
-        shape: None,
-        density: 0.0,
-        facing: 0,
-        climb: 1.0,
-        unknown: Vec::new(),
-    };
+/// Sets `row`'s rules (shape, flags, density, facing, climb speed, selection box, placement and
+/// support) from the must-understand fields, absent ones at their defaults. `shape` maps a payload
+/// shape index to one of this build's (`None`: not in its vocabulary: degraded to the full cube,
+/// or empty); what this build cannot honour is noted.
+fn apply_rules(
+    fields: &Fields,
+    row: &mut StateInfo,
+    shape: &dyn Fn(u16) -> Option<u16>,
+    notes: &mut Vec<String>,
+) {
+    let (mut flags, mut occupancy, mut index) = (0u32, 0u8, None);
+    row.density_kg_m3 = 0.0;
+    row.facing = Facing::None;
+    row.climb_speed_scale = 1.0;
+    row.selection = None;
+    row.place_on = &[];
+    row.needs_support = Support::None;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
-            tag::FLAGS => d.flags = r.u32(),
+            tag::FLAGS => flags = r.u32(),
             tag::SHAPE => {
-                d.occupancy = r.u8();
-                d.shape = Some(r.u16());
+                occupancy = r.u8();
+                index = Some(r.u16());
             }
-            tag::DENSITY => d.density = r.f32(),
-            tag::FACING => d.facing = r.u8(),
-            tag::CLIMB_SPEED => d.climb = r.f32(),
-            t if t & tag::LOOK_BIT == 0 => d.unknown.push(t),
+            tag::DENSITY => row.density_kg_m3 = r.f32(),
+            tag::FACING => {
+                let f = r.u8();
+                row.facing = facing_of(f).unwrap_or_else(|| {
+                    notes.push(format!("facing {f} not in this version (none)"));
+                    Facing::None
+                });
+            }
+            tag::CLIMB_SPEED => row.climb_speed_scale = r.f32(),
+            tag::SELECTION => {
+                let b: [f32; 6] = std::array::from_fn(|_| r.f32());
+                row.selection = r.ok().then_some(b);
+            }
+            tag::PLACE_ON => {
+                let n = r.u8();
+                let names: Vec<&'static str> = (0..n).map(|_| intern(&r.str(MAX_STR))).collect();
+                if r.ok() {
+                    row.place_on = Box::leak(names.into_boxed_slice());
+                }
+            }
+            tag::NEEDS_SUPPORT => {
+                row.needs_support = match r.u8() {
+                    0 => Support::None,
+                    1 => Support::Below,
+                    other => {
+                        notes.push(format!("support {other} not in this version (none)"));
+                        Support::None
+                    }
+                }
+            }
+            t if t & tag::LOOK_BIT == 0 => {
+                notes.push(format!("rule field {t} not in this version (ignored)"));
+            }
             _ => {}
         }
     }
-    d
+    let has = |bit| flags & bit != 0;
+    row.solid = has(flag::SOLID);
+    row.indestructible = has(flag::INDESTRUCTIBLE);
+    row.flooded = has(flag::FLOODED);
+    row.climbable = has(flag::CLIMBABLE);
+    row.liquid = has(flag::LIQUID);
+    row.placeable = has(flag::PLACEABLE);
+    row.replaceable = has(flag::REPLACEABLE);
+    if flags & !flag::KNOWN != 0 {
+        notes.push(format!(
+            "rule flags {:#x} not in this version (ignored)",
+            flags & !flag::KNOWN
+        ));
+    }
+    let kind = match occupancy {
+        0 => VoxelShape::Empty,
+        1 => VoxelShape::Full,
+        _ => VoxelShape::Shaped,
+    };
+    match index.and_then(shape) {
+        Some(i) => {
+            row.shape = kind;
+            row.shape_index = i;
+        }
+        None if kind == VoxelShape::Empty => {
+            row.shape = VoxelShape::Empty;
+            row.shape_index = 0;
+        }
+        None => {
+            notes.push("shape not in this version: a full cube here".into());
+            row.shape = VoxelShape::Full;
+            row.shape_index = cube_shape();
+        }
+    }
 }
 
-fn read_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
+/// This build's full cube (`SHAPES` index).
+fn cube_shape() -> u16 {
+    STATES
+        .iter()
+        .find(|s| s.shape == VoxelShape::Full)
+        .map_or(0, |s| s.shape_index)
+}
+
+/// Sets `row`'s look from the look fields (absent optional ones cleared), `fluids` the names the
+/// fluid indices refer to.
+fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
+    row.textures = None;
+    row.grid = None;
+    row.fluid = None;
+    row.cross = None;
+    row.wind = None;
+    row.fade = None;
+    row.render = RenderMode::Opaque;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -549,6 +716,38 @@ fn read_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                 let i = usize::from(r.u16());
                 row.fluid = fluids.get(i).and_then(|name| crate::fluid(name));
             }
+            tag::RENDER => {
+                row.render = match r.u8() {
+                    1 => RenderMode::Cutout,
+                    2 => RenderMode::Translucent,
+                    _ => RenderMode::Opaque,
+                }
+            }
+            tag::CROSS => {
+                let c = Cross {
+                    height: r.f32(),
+                    quads: r.u8(),
+                    offset: r.f32(),
+                    rotation_deg: r.f32(),
+                    height_min: r.f32(),
+                    height_max: r.f32(),
+                };
+                row.cross = r.ok().then_some(c);
+            }
+            tag::WIND => {
+                let w = Wind {
+                    strength: r.f32(),
+                    speed: r.f32(),
+                };
+                row.wind = r.ok().then_some(w);
+            }
+            tag::FADE => {
+                let f = Fade {
+                    start: r.f32(),
+                    end: r.f32(),
+                };
+                row.fade = r.ok().then_some(f);
+            }
             _ => {}
         }
     }
@@ -565,11 +764,6 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
         .iter()
         .map(|s| own.iter().position(|o| o == s).map(|i| i as u16))
         .collect();
-    let cube = STATES
-        .iter()
-        .find(|s| s.shape == VoxelShape::Full)
-        .map_or(0, |s| s.shape_index);
-
     let mut differences = Differences::default();
     let mut to_client: Vec<Option<StateId>> = vec![None; payload.id_end()];
     let mut seen_build = vec![false; STATES.len()];
@@ -585,83 +779,18 @@ pub fn map(payload: &Payload, hash: u64) -> Result<Mapping, String> {
         let mut needs_copy = false;
         for (k, fields) in b.states.iter().enumerate() {
             let name = crate::canonical(&b.name, &b.properties, k);
-            let d = decode_rules(fields);
             let mut notes = Vec::new();
             let known = build_state(&name);
             let mut row = match known {
                 Some(id) => *info(id),
-                None => StateInfo {
-                    name: "",
-                    block: 0,
-                    density_kg_m3: 0.0,
-                    solid: false,
-                    indestructible: false,
-                    shape: VoxelShape::Empty,
-                    shape_index: 0,
-                    flooded: false,
-                    climbable: false,
-                    facing: Facing::None,
-                    climb_speed_scale: 1.0,
-                    liquid: false,
-                    fluid: None,
-                    placeable: false,
-                    look: "cube",
-                    color: 0,
-                    opacity: 1.0,
-                    textures: None,
-                    grid: None,
-                },
+                None => default_row(&name),
             };
             let before = row;
-            row.name = intern(&name);
             if known.is_none() {
-                read_look(fields, &payload.fluids, &mut row);
+                apply_look(fields, &payload.fluids, &mut row);
             }
-            let has = |bit| d.flags & bit != 0;
-            row.solid = has(flag::SOLID);
-            row.indestructible = has(flag::INDESTRUCTIBLE);
-            row.flooded = has(flag::FLOODED);
-            row.climbable = has(flag::CLIMBABLE);
-            row.liquid = has(flag::LIQUID);
-            row.placeable = has(flag::PLACEABLE);
-            row.density_kg_m3 = d.density;
-            row.climb_speed_scale = d.climb;
-            row.facing = facing_of(d.facing).unwrap_or_else(|| {
-                notes.push(format!("facing {} not in this version (none)", d.facing));
-                Facing::None
-            });
-            let occupancy = match d.occupancy {
-                0 => VoxelShape::Empty,
-                1 => VoxelShape::Full,
-                _ => VoxelShape::Shaped,
-            };
-            match d
-                .shape
-                .and_then(|i| shape_map.get(usize::from(i)).copied().flatten())
-            {
-                Some(i) => {
-                    row.shape = occupancy;
-                    row.shape_index = i;
-                }
-                None if occupancy == VoxelShape::Empty => {
-                    row.shape = VoxelShape::Empty;
-                    row.shape_index = 0;
-                }
-                None => {
-                    notes.push("shape not in this version: a full cube here".into());
-                    row.shape = VoxelShape::Full;
-                    row.shape_index = cube;
-                }
-            }
-            if d.flags & !flag::KNOWN != 0 {
-                notes.push(format!(
-                    "rule flags {:#x} not in this version (ignored)",
-                    d.flags & !flag::KNOWN
-                ));
-            }
-            for t in &d.unknown {
-                notes.push(format!("rule field {t} not in this version (ignored)"));
-            }
+            let shape = |i: u16| shape_map.get(usize::from(i)).copied().flatten();
+            apply_rules(fields, &mut row, &shape, &mut notes);
             match known {
                 Some(id) => {
                     seen_build[usize::from(id)] = true;
@@ -779,6 +908,15 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
     }
     if a.climb_speed_scale.to_bits() != b.climb_speed_scale.to_bits() {
         out.push("climb speed".into());
+    }
+    if a.selection.map(|b| b.map(f32::to_bits)) != b.selection.map(|b| b.map(f32::to_bits)) {
+        out.push("selection box".into());
+    }
+    if a.place_on != b.place_on {
+        out.push("placed on".into());
+    }
+    if a.needs_support != b.needs_support {
+        out.push("needs support".into());
     }
     out
 }
@@ -920,29 +1058,9 @@ pub fn apply_extension(bytes: &[u8]) -> Result<(), String> {
 /// A state's row from its fields as this build wrote them (`state_fields`: build shape and fluid
 /// indices), `fluids` the names the fluid indices refer to.
 pub fn row_from_fields(name: &str, fields: &Fields, fluids: &[String]) -> StateInfo {
-    let d = decode_rules(fields);
-    let mut row = *info(AIR);
-    row.name = intern(name);
-    row.textures = None;
-    row.grid = None;
-    row.fluid = None;
-    read_look(fields, fluids, &mut row);
-    let has = |bit| d.flags & bit != 0;
-    row.solid = has(flag::SOLID);
-    row.indestructible = has(flag::INDESTRUCTIBLE);
-    row.flooded = has(flag::FLOODED);
-    row.climbable = has(flag::CLIMBABLE);
-    row.liquid = has(flag::LIQUID);
-    row.placeable = has(flag::PLACEABLE);
-    row.density_kg_m3 = d.density;
-    row.climb_speed_scale = d.climb;
-    row.facing = facing_of(d.facing).unwrap_or(Facing::None);
-    row.shape = match d.occupancy {
-        0 => VoxelShape::Empty,
-        1 => VoxelShape::Full,
-        _ => VoxelShape::Shaped,
-    };
-    row.shape_index = d.shape.unwrap_or(0);
+    let mut row = default_row(name);
+    apply_look(fields, fluids, &mut row);
+    apply_rules(fields, &mut row, &|i| Some(i), &mut Vec::new());
     row
 }
 

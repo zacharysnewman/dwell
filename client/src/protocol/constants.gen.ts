@@ -73,6 +73,7 @@ export const RegionEdit = {
   burstCells: 131072,
   reach: 64,
   maxQueued: 4,
+  keep: 65535,
 } as const;
 
 export const Channel = {
@@ -245,4 +246,5 @@ export const ControllerFlags = {
 export const WelcomeFlags = {
   flight: 1,
   regionEdits: 2,
+  brushes: 4,
 } as const;

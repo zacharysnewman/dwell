@@ -288,6 +288,42 @@ export const SOUND_DATA: SoundData = {
       "event:place",
       "event:break"
     ],
+    "Brush tool on or off": [
+      "event:tool"
+    ],
+    "Paint at the targeted block": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Paint in front of it": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
+    "Pick the block to replace": [
+      "event:tool"
+    ],
+    "Previous / next preset": [
+      "event:tool"
+    ],
+    "Next / previous brush shape": [
+      "event:tool"
+    ],
+    "Next / previous performer": [
+      "event:tool"
+    ],
+    "Smaller / bigger brush": [
+      "event:tool"
+    ],
+    "Pick a preset by its key": [
+      "event:tool"
+    ],
+    "Undo / redo a stroke": [
+      "event:tool",
+      "event:place",
+      "event:break"
+    ],
     "Menu and settings": [
       "action:menu_open",
       "action:menu_close"

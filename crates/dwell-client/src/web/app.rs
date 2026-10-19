@@ -341,12 +341,14 @@ impl Client {
                 &format!("Dwell: WebGPU device lost ({reason:?}): {message}").into(),
             );
         });
+        let device_type = adapter.get_info().device_type;
         let mut renderer = Renderer::with_samples(
             device,
             queue,
             format,
-            crate::render::samples_for(adapter.get_info().device_type),
+            crate::render::samples_for(device_type),
         );
+        renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
         renderer.select(selection);
@@ -613,9 +615,12 @@ impl Client {
         telemetry::with(telemetry::Telemetry::reset);
     }
 
-    /// The drawing buffer's size: CSS pixels × the pixel ratio.
+    /// The drawing buffer's size: CSS pixels × the pixel ratio (a share of it on a CPU adapter,
+    /// `render::pixel_ratio_for`).
     pub fn resize(&self, css_width: f64, css_height: f64, pixel_ratio: f64) {
         let mut s = self.inner.borrow_mut();
+        let adapter = s.renderer.borrow().adapter();
+        let pixel_ratio = crate::render::pixel_ratio_for(adapter, pixel_ratio);
         let (w, h) = (
             ((css_width * pixel_ratio).round() as u32).max(1),
             ((css_height * pixel_ratio).round() as u32).max(1),
@@ -688,15 +693,32 @@ impl Client {
     pub fn mouse_move(&self, dx: f64, dy: f64) {
         self.inner.borrow_mut().input.mouse_move(dx, dy);
     }
+    /// A `mousedown`: `alt` is Alt (⌥) held. With the brush tool on, a middle or Alt click picks
+    /// the replace target (BRUSHES.md).
     #[wasm_bindgen(js_name = mouseDown)]
-    pub fn mouse_down(&self, button: i16, now_ms: f64) {
+    pub fn mouse_down(&self, button: i16, now_ms: f64, alt: bool) {
         let mut s = self.inner.borrow_mut();
+        if s.input.pointer_locked
+            && (button == 1 || alt)
+            && let Some(g) = &mut s.game
+            && g.brush_pick()
+        {
+            return;
+        }
         if let Some(action) = s.input.mouse_down(button) {
             s.edit(action, now_ms);
         }
     }
-    pub fn wheel(&self, delta_y: f64) {
+    /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size.
+    pub fn wheel(&self, delta_y: f64, alt: bool) {
         let mut s = self.inner.borrow_mut();
+        if let Some(step) = s.input.wheel(delta_y)
+            && alt
+            && let Some(g) = &mut s.game
+            && g.brush_wheel(step)
+        {
+            return;
+        }
         if let Some(step) = s.input.wheel(delta_y)
             && let Some(g) = &mut s.game
             && let Some(slot) = g.interaction.scroll(step)
@@ -871,6 +893,43 @@ impl Client {
             .game
             .as_mut()
             .is_some_and(|g| g.tool(tool, now_ms))
+    }
+    /// Drives the brush tool (BRUSHES.md) as its keys and clicks would, for tools and tests:
+    /// `toggle`, `preset:<name>`, `size:<n>`, `nextBrush`, `nextPerformer`, `apply` (left click),
+    /// `gunpowder` (right click), `pick` (middle click). True if it did (for `apply` and
+    /// `gunpowder`: queued a stroke).
+    pub fn brush(&self, command: &str, now_ms: f64) -> bool {
+        use dwell_game::brush_tool::BrushAction as B;
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return false;
+        };
+        let (name, arg) = command.split_once(':').unwrap_or((command, ""));
+        match name {
+            "toggle" => g.brush_key(B::Toggle),
+            "nextBrush" => g.brush_key(B::NextBrush),
+            "nextPerformer" => g.brush_key(B::NextPerformer),
+            "preset" => {
+                let Some(i) = dwell_world::brush::PRESETS
+                    .iter()
+                    .position(|p| p.name == arg)
+                else {
+                    return false;
+                };
+                g.brush_key(B::Preset(i));
+            }
+            "size" => {
+                let Ok(n) = arg.parse::<i32>() else {
+                    return false;
+                };
+                g.brush.resize(n - i32::from(g.brush.spec().size));
+            }
+            "apply" => return g.brush_apply(false, now_ms),
+            "gunpowder" => return g.brush_apply(true, now_ms),
+            "pick" => return g.brush_pick(),
+            _ => return false,
+        }
+        true
     }
     pub fn select(&self, slot: i32) {
         let mut s = self.inner.borrow_mut();
@@ -1313,6 +1372,26 @@ impl Client {
             );
             set(&o, "damaged", std::mem::take(&mut g.hud.damaged));
             set(&o, "region", g.region.status().as_str());
+            // The brush panel (BRUSHES.md): null while the tool is off.
+            match g.brush_panel() {
+                Some(p) => {
+                    let b = Object::new();
+                    set(&b, "preset", p.preset);
+                    set(&b, "brush", p.brush);
+                    set(&b, "performer", p.performer);
+                    set(&b, "size", u32::from(p.size));
+                    set(&b, "material", p.material.as_str());
+                    set(
+                        &b,
+                        "replace",
+                        p.replace.as_deref().map_or(JsValue::NULL, JsValue::from),
+                    );
+                    set(&b, "note", p.note.as_str());
+                    set(&o, "brush", b);
+                }
+                None => set(&o, "brush", JsValue::NULL),
+            }
+            set(&o, "brushes", g.brush.available);
         }
         o.into()
     }
@@ -1532,6 +1611,11 @@ impl Inner {
                     g.tool(tool, now_ms);
                 }
             }
+            InputEvent::Brush(action) => {
+                if let Some(g) = &mut self.game {
+                    g.brush_key(action);
+                }
+            }
         }
     }
 
@@ -1657,6 +1741,7 @@ impl Inner {
             verification_chunk,
             may_fly,
             region_edits,
+            brushes,
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;
@@ -1688,7 +1773,7 @@ impl Inner {
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
-        game.region.enabled = region_edits;
+        game.set_capabilities(region_edits, brushes, generator_version);
         game.day_override = self.options.day;
         let mapping = self.session.as_ref().and_then(|s| s.mapping().cloned());
         if let Some(m) = mapping.as_ref().filter(|m| !m.differences.is_empty()) {

@@ -27,8 +27,9 @@ runtime ids (Minecraft's registry sync)".
 
 Clients **predict** movement and edits (PLAYER_CONTROLLER.md), and generate terrain locally
 (`ChunkForm::Generated`, client-side LOD), so client and server must agree on every state's shape
-and rules, not only on its name. Two open PRs bound for 0.12 add fields the sync must carry: #82
-(adaptive blocks: an `adaptive` flag and derived top shapes) and #95 (transparent blocks: render
+and rules, not only on its name. Two changes bound for 0.12 add fields the sync must carry: #82
+(adaptive blocks, open: an `adaptive` flag and derived top shapes) and transparent blocks
+([ADR 0036](0036-render-modes-and-cross-geometry.md), on main: render
 modes, `cross` geometry, wind, fade, a selection box, and the placement rules `placeOn`,
 `replaceable` and `needsSupport`).
 
@@ -100,19 +101,24 @@ predicts) and **asks the player** before entering, listing what differs.
 
    | Tag | Field | Kind |
    |---|---|---|
-   | 1 | rule flags `u32`: solid, indestructible, flooded, climbable, liquid, placeable; reserved bits for #82 `adaptive` (6) and #95 `replaceable` (7) | must |
+   | 1 | rule flags `u32`: solid (bit 0), indestructible, flooded, climbable, liquid, placeable (5), replaceable (7); bit 6 reserved for #82's `adaptive` | must |
    | 2 | occupancy `u8` (empty, full, shaped) and shape `u16` (index into the shapes) | must |
    | 3 | density `f32` (kg/m³) | must |
    | 4 | facing `u8` | must |
    | 5 | climb speed scale `f32` | must |
-   | 6–9 | reserved for #95: selection box, `placeOn` (block names), `needsSupport` | must |
+   | 6 | selection box `f32` × 6 | must |
+   | 7 | `placeOn`: `u8` count, block names `str` | must |
+   | 8 | `needsSupport` `u8` (0 none, 1 below) | must |
    | 0x81 | look name `str` | look |
    | 0x82 | colour `u32`, opacity `f32` | look |
    | 0x83 | textures (top, side, bottom `str`) | look |
    | 0x84 | grid (`u8` every, `f32` strength) | look |
    | 0x85 | fluid look (`u16` index into the fluid names) | look |
    | 0x86 | sound set `str` | look |
-   | 0x87–0x8a | reserved for #95: render mode, cross geometry, wind, fade | look |
+   | 0x87 | render mode `u8` (opaque, cutout, translucent) | look |
+   | 0x88 | cross geometry (`f32` height, `u8` quads, `f32` offset, rotation, height min, max) | look |
+   | 0x89 | wind (`f32` strength, speed) | look |
+   | 0x8a | fade (`f32` start, end) | look |
 
    An absent field takes the generator's default. Unknown must-understand tags, or a set flag bit
    the client does not know, are ignored and listed in the join prompt (decision 4).

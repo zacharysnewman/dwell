@@ -67,7 +67,8 @@
     "cellsPerSecond": 65536,
     "burstCells": 131072,
     "reach": 64,
-    "maxQueued": 4
+    "maxQueued": 4,
+    "keep": 65535
   },
   "channels": {
     "control": 0,
@@ -163,7 +164,8 @@
   },
   "welcomeFlags": {
     "flight": 1,
-    "regionEdits": 2
+    "regionEdits": 2,
+    "brushes": 4
   },
   "groundKinds": {
     "None": 0,
