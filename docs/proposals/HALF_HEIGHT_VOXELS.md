@@ -134,7 +134,7 @@ neighbours. The lab's ½ m view has two such sets beside **Adaptive**:
 
 Each block's piece is chosen once, when the scene is built or the block is placed, from what the
 rules would make. A shape the set has no piece for becomes a full block: saddles, ridges and
-pyramids, plus corners in Ramps only. A 1 m block's corner counts as down only at the block's floor.
+pyramids, plus corners in Cardinal ramps only. A 1 m block's corner counts as down only at the block's floor.
 A neighbour's later edit changes nothing, and a block uncovered by digging is a full block. The lab
 counts the **blocks off the rules**: blocks whose stored piece differs from what the rules would
 shape now.
