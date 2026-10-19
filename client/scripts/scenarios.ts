@@ -27,6 +27,8 @@ export type Step =
    */
   | { do: 'camera'; position: Vec3; yaw: number; pitch: number; aroundPlayer?: boolean }
   | { do: 'releaseCamera' }
+  /** The water quality, and/or its cost-isolation switches (`?waterdbg=` names; "" for none). */
+  | { do: 'water'; quality?: 'low' | 'medium' | 'high'; debug?: string }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
   | { do: 'select'; slot: number }
@@ -134,6 +136,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   flySpeed: ['level'],
   camera: ['position', 'yaw', 'pitch', 'aroundPlayer'],
   releaseCamera: [],
+  water: ['quality', 'debug'],
   edit: ['action'],
   select: ['slot'],
   settle: ['maxS'],
@@ -195,6 +198,21 @@ export function parseStep(where: string, v: unknown): Step {
           ? {}
           : { aroundPlayer: bool(at('aroundPlayer'), o.aroundPlayer) }),
       };
+    case 'water': {
+      const q = o.quality;
+      if (q !== undefined && q !== 'low' && q !== 'medium' && q !== 'high') {
+        throw new ViewError(`${at('quality')}: expected "low", "medium" or "high"`);
+      }
+      // "" turns every switch off again, so text may be empty here.
+      if (o.debug !== undefined && typeof o.debug !== 'string') {
+        throw new ViewError(`${at('debug')}: expected text`);
+      }
+      return {
+        do: d,
+        ...(q === undefined ? {} : { quality: q }),
+        ...(o.debug === undefined ? {} : { debug: o.debug }),
+      };
+    }
     case 'edit':
       if (o.action !== 'break' && o.action !== 'place') {
         throw new ViewError(`${at('action')}: expected "break" or "place"`);

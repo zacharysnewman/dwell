@@ -177,6 +177,8 @@ pub struct Marcher {
     _atlas: (wgpu::TextureView, wgpu::Sampler),
     /// The frame group's tile grids and fluid looks (`render::frame_extras`).
     extras: (wgpu::Buffer, wgpu::Buffer),
+    /// The water's tiles the composite samples (water_tiles.rs).
+    tiles: super::WaterTiles,
 }
 
 fn storage(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -266,6 +268,10 @@ impl Marcher {
                 },
                 super::frame_extra_entries(vis)[0],
                 super::frame_extra_entries(vis)[1],
+                // The water's tiles (water_tiles.rs), for the composite's caustics under water.
+                super::WaterTiles::layout_entries()[0],
+                super::WaterTiles::layout_entries()[1],
+                super::WaterTiles::layout_entries()[2],
             ],
         });
         let mut data_entries = vec![wgpu::BindGroupLayoutEntry {
@@ -372,6 +378,14 @@ impl Marcher {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let tiles = super::WaterTiles::new(
+            &device,
+            &raster,
+            &frame_buffer,
+            &extras.1,
+            &dwell_blocks::FLUIDS,
+        );
+        let [t5, t6, t7] = tiles.group_entries();
         let frame_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("march frame"),
             layout: &frame_layout,
@@ -396,6 +410,9 @@ impl Marcher {
                     binding: 4,
                     resource: extras.1.as_entire_binding(),
                 },
+                t5,
+                t6,
+                t7,
             ],
         });
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
@@ -445,6 +462,7 @@ impl Marcher {
             last_steps: None,
             _atlas: atlas,
             extras,
+            tiles,
         }
     }
 
@@ -680,6 +698,8 @@ impl Marcher {
         targets: &MarchTargets,
         timestamps: Option<wgpu::ComputePassTimestampWrites<'_>>,
     ) {
+        // The water's tiles, for the composite's caustics under water.
+        self.tiles.draw(encoder, true, None);
         let bytes = self.gpu.sync(&self.device, &self.queue);
         if bytes > 0 {
             crate::telemetry::count("upload.march.bytes", bytes as f64);

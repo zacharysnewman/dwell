@@ -77,6 +77,7 @@ fields, ranges and names fail with the entry named):
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
+| `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
 Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
@@ -222,6 +223,8 @@ What is recorded now:
 | `mesh_dirty` | starting chunk mesh jobs (copying padded chunks), within its 4 ms budget |
 | `lod` | the whole-world view's update (`LodSystem`): selection, job requests, stand-ins |
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
+| `draw.skipped` (counter) | frames not drawn because two were still on the GPU (`render/pacing.rs`) |
+| `gpu.water.tiles` (samples) | the water's noise tile (once) and caustic layers (each Medium/High frame with water; `render/water_tiles.rs`) |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result was polled (the worker's run, the transfers and the wait for the next frame) |
 | `gpu.march` (samples) | The ray marcher's GPU time (A3b): from the start of its compute pass to the end of the pass that copies its output into the shared frame's targets (`render/march/renderer.rs`); on the `?marchtest=1` page, the compute pass alone |
@@ -292,3 +295,12 @@ same scenarios against both: `npm run bench -- <scenario…> --base http://local
 then without `--base` into `B`, and compare the two `report.json` files' `telemetry.frames`
 (and the screenshots, pixel by pixel). A worktree needs its own `target/`: cargo names a path
 crate's artifacts the same wherever it is, so sharing one directory mixes the two builds.
+
+## Water cost isolation (`?waterdbg=`)
+
+`?waterdbg=caustics,foam` (names from `render/water.rs` `DEBUG_SWITCHES`: `ripple0`–`ripple2`, `glint`, `sky`,
+`refraction`, `absorption`, `caustics`, `foam`, `sparkle`, `under`, `flat`, `all`) turns pieces of the water's
+shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` configuration can set it with
+`params` (`{ "name": "no-caustics", "renderer": "raster", "params": { "waterdbg": "caustics" } }`), and a
+scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
+every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.
