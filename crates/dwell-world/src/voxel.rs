@@ -1,6 +1,8 @@
-//! Voxel storage (ARCHITECTURE.md §6.1): 32³ chunks, the world's bounds and two faces, and the
-//! voxel grid that generates, loads or streams chunks.
+//! Voxel storage (ARCHITECTURE.md §6.1): 32³ chunks, the world's disc and two faces, and the
+//! voxel grid that generates, loads or streams chunks. What bounds building and storage is the
+//! build volume (`bounds.rs`).
 
+use crate::bounds::{BUILD_VOLUME, Overlap};
 use crate::hash::HashMap;
 use std::sync::{Arc, LazyLock};
 
@@ -10,14 +12,18 @@ use dwell_protocol::world;
 pub const CHUNK_SIZE: i32 = dwell_protocol::CHUNK_SIZE;
 pub const CHUNK_VOLUME: usize = (CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE) as usize;
 
-/// Face A starts here: the halfway plane of the bifacial world (BIFACIAL_WORLD.md).
+/// Face A starts here: the halfway plane of the bifacial world (BIFACIAL_WORLD.md), the origin of
+/// generation and the build sphere's centre (ADR 0025).
 pub const MIDPLANE_Y: i32 = world::MIDPLANE_Y as i32;
-/// Face B's lowest voxel row.
-pub const WORLD_BOTTOM_Y: i32 = world::WORLD_BOTTOM_Y as i32;
-/// Generated terrain stays below this.
-pub const WORLD_MAX_Y: i32 = world::WORLD_MAX_Y as i32;
-/// Terrain: water fills open space below.
+/// Terrain: water fills open space below this face-local height (on face A, y). Interim: Phase 17
+/// moves it into the terrain definition.
 pub const SEA_LEVEL: i32 = world::SEA_LEVEL as i32;
+/// The stone core's layers per face, face-local heights 0..CORE_LAYERS, never carved by generation
+/// (ADR 0025 D1). Interim: Phase 17 moves it into the terrain definition.
+pub const CORE_LAYERS: i32 = world::CORE_LAYERS as i32;
+/// The flat worlds' (the flat test world's, the structure sandbox's) surface: their ground fills
+/// the midplane up to here.
+pub const FLAT_TOP_Y: i32 = world::FLAT_TOP_Y as i32;
 /// The world disc's radius (m); beyond it, the void.
 pub const WORLD_RADIUS: i32 = world::WORLD_RADIUS as i32;
 
@@ -252,9 +258,9 @@ pub fn chunk_disc_overlap(cx: i32, cz: i32) -> DiscOverlap {
     }
 }
 
-/// Chunk rows the world can hold anything in; outside is air.
-pub const MIN_CHUNK_Y: i32 = WORLD_BOTTOM_Y / CHUNK_SIZE;
-pub const MAX_CHUNK_Y: i32 = WORLD_MAX_Y / CHUNK_SIZE - 1;
+/// Chunk rows the build volume reaches; outside them everything is air.
+pub const MIN_CHUNK_Y: i32 = BUILD_VOLUME.y_range().0.div_euclid(CHUNK_SIZE as i64) as i32;
+pub const MAX_CHUNK_Y: i32 = (BUILD_VOLUME.y_range().1 - 1).div_euclid(CHUNK_SIZE as i64) as i32;
 
 /// The two faces of the disc (BIFACIAL_WORLD.md §2): A at or above the midplane, B its mirror image
 /// below. Face B's voxel y is face-local height `MIRROR_SUM − y`; its chunk row cy is
@@ -271,6 +277,14 @@ pub const MIRROR_CHUNK_SUM: i32 = 2 * MIDPLANE_CHUNK_Y - 1;
 const _: () = assert!(
     MIDPLANE_Y % CHUNK_SIZE == 0,
     "the midplane lies on a chunk boundary"
+);
+const _: () = assert!(
+    world::CORE_ANCHOR_LAYERS <= world::CORE_LAYERS,
+    "the core anchor zone lies within the never-carved core"
+);
+const _: () = assert!(
+    FLAT_TOP_Y > MIDPLANE_Y && FLAT_TOP_Y % CHUNK_SIZE == 0,
+    "the flat worlds' surface lies above the midplane, on a chunk boundary"
 );
 
 pub fn face_of_y(y: i64) -> Face {
@@ -313,7 +327,7 @@ pub fn chunk_distance(a: ChunkCoord, b: ChunkCoord) -> i32 {
         .max((a.z - b.z).abs())
 }
 
-/// What a flat world is made of, by depth below its surface at y = 0: the top layer (y = −1), the
+/// What a flat world is made of, by depth below its surface at `FLAT_TOP_Y`: the top layer, the
 /// three below it, and the rest down to the midplane. The flat test world is grass over dirt over
 /// stone; the structure sandbox is its floor block throughout ([`FlatLayers::of`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -342,7 +356,7 @@ impl FlatLayers {
         }
     }
 
-    /// The block `depth` cells below the surface (0: the top layer, at y = −1).
+    /// The block `depth` cells below the surface (0: the top layer, at `FLAT_TOP_Y − 1`).
     pub fn at_depth(&self, depth: i64) -> StateId {
         match depth {
             0 => self.top,
@@ -352,23 +366,26 @@ impl FlatLayers {
     }
 
     fn at(&self, y: i32) -> StateId {
-        if !(MIDPLANE_Y..0).contains(&y) {
+        if !(MIDPLANE_Y..FLAT_TOP_Y).contains(&y) {
             M.air
         } else {
-            self.at_depth(i64::from(-1 - y))
+            self.at_depth(i64::from(FLAT_TOP_Y - 1 - y))
         }
     }
 }
 
-/// The flat test world: stone from the midplane up, three layers of dirt, grass topped at y = 0.
+/// The flat test world: stone from the midplane up, three layers of dirt, grass topped at
+/// `FLAT_TOP_Y`.
 pub fn generate_flat_chunk(coord: ChunkCoord, chunk: &mut Chunk) {
     generate_flat_chunk_of(&FlatLayers::standard(), coord, chunk);
 }
 
-/// A flat world of `layers`, topped at y = 0 from the midplane up (the shape of the flat world).
+/// A flat world of `layers`, topped at `FLAT_TOP_Y` from the midplane up (the shape of the flat
+/// world), within the disc and the build volume.
 pub fn generate_flat_chunk_of(layers: &FlatLayers, coord: ChunkCoord, chunk: &mut Chunk) {
     let disc = chunk_disc_overlap(coord.x, coord.z);
-    if disc == DiscOverlap::Outside {
+    let volume = BUILD_VOLUME.chunk_overlap(coord);
+    if disc == DiscOverlap::Outside || volume == Overlap::Outside {
         return;
     }
     for ly in 0..CHUNK_SIZE {
@@ -386,6 +403,15 @@ pub fn generate_flat_chunk_of(layers: &FlatLayers, coord: ChunkCoord, chunk: &mu
                 {
                     continue;
                 }
+                if volume == Overlap::Partial
+                    && !BUILD_VOLUME.contains_voxel(
+                        i64::from(coord.x * CHUNK_SIZE + lx),
+                        i64::from(coord.y * CHUNK_SIZE + ly),
+                        i64::from(coord.z * CHUNK_SIZE + lz),
+                    )
+                {
+                    continue;
+                }
                 chunk.voxels_mut()[local_index(lx, ly, lz)] = m;
             }
         }
@@ -394,7 +420,10 @@ pub fn generate_flat_chunk_of(layers: &FlatLayers, coord: ChunkCoord, chunk: &mu
 
 pub fn flat_is_air(c: ChunkCoord) -> bool {
     let y0 = c.y * CHUNK_SIZE;
-    y0 >= 0 || y0 + CHUNK_SIZE <= MIDPLANE_Y || chunk_disc_overlap(c.x, c.z) == DiscOverlap::Outside
+    y0 >= FLAT_TOP_Y
+        || y0 + CHUNK_SIZE <= MIDPLANE_Y
+        || chunk_disc_overlap(c.x, c.z) == DiscOverlap::Outside
+        || !BUILD_VOLUME.chunk_may_hold(c)
 }
 
 pub fn flat_generator() -> ChunkGenerator {

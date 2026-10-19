@@ -32,7 +32,7 @@ small- and large-scale dynamic physics (collapsing structures, explosions, debri
 | Identity | Device keys (Ed25519) now; optional accounts later (§10.4, ADR 0004) |
 | Simulation | 60 Hz internal physics step, 20 Hz network snapshots |
 | Players | Dynamic-body, velocity-layer controller ported from the Physics Player Controller, client-predicted (§9, [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md)) |
-| World | **[built, Phase 3c]** A disc of radius 8,192 km, 16,384 m tall with two faces (Phase 13), double-precision physics (§6.3, ADR 0011) |
+| World | **[built, Phase 3c; resized, Phase 16]** A disc of radius 50 km with two faces (Phase 13) about the midplane y = 0, a 10-layer stone core per face, a spherical build volume of radius 50 km, double-precision physics (§6.3, ADR 0011, ADR 0025) |
 | Terrain | Seeded deterministic procedural generation, the same Rust crate (`dwell-worldgen`) on server and client (§6.3) |
 | Whole-world view | **[built, Phase 4]** 3D level-of-detail octree around the camera, generated on the client from the seed; only modified sections are sent (§6.6, ADR 0012) |
 | First deployment target | **GitHub Pages** at `https://dropkickarcade.com/dwell/` (ADR 0005) |
@@ -106,7 +106,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 13, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 14, §6.3) by
    default; `?world=flat`, `?world=sandbox` and `?seed=N` (local mode) or `--generator N` and
    `--seed N` (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
    test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
@@ -296,7 +296,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 13 (§6.3); decorations.json: the terrain's decoration rules (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 14 (§6.3); decorations.json: the terrain's decoration rules (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -341,7 +341,7 @@ argument and their collaborators as traits, so they run natively under test as i
 | Desktop | Electron 44.4.5 (`platforms/electron`) |
 | Releases | `release.yml` and `pages.yml` (§2.1): Node 22 type stripping runs `client/scripts/*.ts`; the Rust client is built with `DWELL_VERSION` (`npm run build:wasm`); `gh` publishes releases; the site is deployed with `actions/deploy-pages` |
 | Master server | TypeScript 6.0 on Cloudflare Workers (`services/master`, compatibility date 2026-08-15), Wrangler 4.124.0, `@cloudflare/workers-types`, Vitest 4.1 with `@cloudflare/vitest-pool-workers` 0.22.0 (tests run in workerd), ESLint/Prettier as the client; `legacy-peer-deps` in its `.npmrc` |
-| CI (`ci.yml`) | Protocol: the generators' (protocol, blocks, sounds) Rust and TS output and the golden vectors (including `shared/master/vectors.json`) must match the committed files. Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client-lint (its own fast job): builds the Rust client's module and types (`npm run build:wasm`), then format, lint, typecheck. Client: `npm run build:wasm`, Vitest, build, launcher build. E2E (the browser suite is serial, so it runs as four `--shard`s on separate runners, each building `dwell-server` in Release and the client): Playwright Chromium **headed under Xvfb** on SwiftShader's WebGPU — headless Chromium's software adapter loses the WebGPU device as soon as a canvas presents — against the native server and the built client (WebTransport, WebRTC, local mode, session replacement, movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view, terrain drawing, flight speed, the block dump, menus, settings, friend worlds through a local `wrangler dev` master, the lobby, the version lock); shard 1 also runs the launcher's own e2e (`npm run e2e:site`: three versions assembled locally — which build each address opens, worlds in their own line, version badges, errors) and the Electron smoke test under Xvfb (a dedicated server over WebTransport, and local mode). Rust: `cargo fmt --check`, clippy `-D warnings` natively (all targets) and for `dwell-client` on wasm32, the third-party notices are current (`shared/licenses/gen.py --check`), `cargo nextest` over the workspace, the controller suites again ~8,000 km from the origin (`DWELL_ORIGIN_X=far`) and on face B (`DWELL_FACE=b`) and the netcode suite far from the origin, the deterministic suites (blocks, protocol, world, worldgen goldens, the controller's golden trace as the native↔WASM divergence check) again under `wasm32-wasip1`, the 64-player controller gate in Release, then the WebGPU probe and the renderer's smoke scene in headless Chromium (`--use-webgpu-adapter=swiftshader`, offscreen first). The `CI` job needs all of the above and fails if any did not succeed: it is the one check to require in branch protection |
+| CI (`ci.yml`) | Protocol: the generators' (protocol, blocks, sounds) Rust and TS output and the golden vectors (including `shared/master/vectors.json`) must match the committed files. Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client-lint (its own fast job): builds the Rust client's module and types (`npm run build:wasm`), then format, lint, typecheck. Client: `npm run build:wasm`, Vitest, build, launcher build. E2E (the browser suite is serial, so it runs as four `--shard`s on separate runners, each building `dwell-server` in Release and the client): Playwright Chromium **headed under Xvfb** on SwiftShader's WebGPU — headless Chromium's software adapter loses the WebGPU device as soon as a canvas presents — against the native server and the built client (WebTransport, WebRTC, local mode, session replacement, movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view, terrain drawing, flight speed, the block dump, menus, settings, friend worlds through a local `wrangler dev` master, the lobby, the version lock); shard 1 also runs the launcher's own e2e (`npm run e2e:site`: three versions assembled locally — which build each address opens, worlds in their own line, version badges, errors) and the Electron smoke test under Xvfb (a dedicated server over WebTransport, and local mode). Rust: `cargo fmt --check`, clippy `-D warnings` natively (all targets) and for `dwell-client` on wasm32, the third-party notices are current (`shared/licenses/gen.py --check`), `cargo nextest` over the workspace, the controller suites again ~49 km from the origin, near the rim (`DWELL_ORIGIN_X=far`) and on face B (`DWELL_FACE=b`) and the netcode suite far from the origin, the deterministic suites (blocks, protocol, world, worldgen goldens, the controller's golden trace as the native↔WASM divergence check) again under `wasm32-wasip1`, the 64-player controller gate in Release, then the WebGPU probe and the renderer's smoke scene in headless Chromium (`--use-webgpu-adapter=swiftshader`, offscreen first). The `CI` job needs all of the above and fails if any did not succeed: it is the one check to require in branch protection |
 | Enforced boundaries | Workspace lints forbid `unsafe` code; only `dwell-physics` uses Rapier types (game code holds opaque `BodyHandle`s); ESLint forbids `node:` built-ins outside tests in the client |
 
 ---
@@ -574,7 +574,7 @@ file the tests stamp over the flat world (§6.3). **Terrain collision** (`dwell-
 `terrain.rs`; Rust port, Phase 24): one static Rapier **voxel collider** (Parry's `Voxels` shape)
 holding the solid cells of the chunks around players. Parry classifies each voxel by its
 neighbours, so a capsule slides across voxel edges and chunk borders without catching on internal
-edges; with f64 positions it is exact anywhere in the 8,192 km world, so it needs no regions or
+edges; with f64 positions it is exact anywhere (players may fly far outside the 50 km world), so it needs no regions or
 anchors and there is no seam under a player (PLAYER_CONTROLLER.md §5). Chunks are added on demand
 around each player (out to 3 m plus twice a tick's travel, capped), re-synced in the same tick as
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
@@ -753,9 +753,9 @@ placement preview) went with the placed families.
 - Voxel = 1 m cube; `uint16` block-state ID (0 = air). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
-  every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The world is 256 chunk
-  rows (8,192 m) tall; `int32` coordinates reach the rim of the 8,192 km disc (chunk ±256 000) with
-  room to spare.
+  every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The build volume (§6.3)
+  spans 3,126 chunk rows (−1 563 to 1 562) over the centre, fewer toward the rim; `int32`
+  coordinates reach far beyond the 50 km disc (chunk ±1 563).
 - Wire / storage encoding **[built]**: per-chunk **palette + run-length encoding**
   (`ChunkData Explicit`, §8.3). Voxels are taken in layer order (x fastest, then z, then y) so
   horizontal strata make long runs; the palette lists materials in order of first appearance; each
@@ -799,16 +799,19 @@ the generator down to an **interim** one: one island at the origin, a 2D height 
 depth — no continents, plates, rivers, lakes, climate, biomes, tints, mountain cascade, 3D density,
 caves, ores, trees, boulders or slope stage (their ADRs 0017–0022 are superseded). Its parameters
 are code constants: Phase 17 replaces it with an evaluator of terrain definitions (data,
-[ADR 0026](./adr/0026-terrain-definitions.md)); Phase 16 resizes the world to the 50 km disc
-(the island is already sized for it: 20–30 km in radius). The colour pass of Phase 7
+[ADR 0026](./adr/0026-terrain-definitions.md)). **[built, Phase 16]** The world is the 50 km disc
+with the midplane at 0, the 10-layer core and sea level `h` = 32 (generator version 14); the island
+keeps its Phase 15 size (owner, 2026-10-15): its mean radius is an absolute distance in data,
+`world.islandRadius` = 25 000 m in `constants.json`, independent of `worldRadius` (Phase 17 moves it
+into the terrain definition's layout). The colour pass of Phase 7
 ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §1) stays.
 **[built, Phase 13]** The world is **bifacial**: a second face on the disc's underside, mirrored
-about the midplane (y = −2,048), with its own terrain, and gravity toward the midplane on both
+about the midplane (y = 0 since Phase 16), with its own terrain, and gravity toward the midplane on both
 sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md);
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 13, 15; Rust, Phase 24):** the generator (`dwell-worldgen`: `terrain.rs`,
-`island.rs`, `noise.rs`, `bifacial.rs`) is **generator version 13** (Phase 15's interim baseline generator, with Phase 33's decorations; versions 2–11
+`island.rs`, `noise.rs`, `bifacial.rs`) is **generator version 14** (Phase 15's interim baseline generator, with Phase 33's decorations (13) and Phase 16's resize (14); versions 2–13
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
@@ -853,43 +856,68 @@ position and view) — or shows it to copy by hand where the clipboard is refuse
 regenerated and examined exactly.
 **Built (Phase 3b):** streaming, the verification chunk, and the generation pools (below).
 
-#### World bounds **[built, Phase 3c]**
-A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
-- **Horizontal:** a disc of `WORLD_RADIUS` = 8 192 000 m (8,192 km, ≈ 2.108 × 10⁸ km²) centred on
-  the origin: a column (x, z) is inside when x² + z² < `WORLD_RADIUS`² (`InsideWorldDisc`).
-  Columns outside it generate nothing, in every generator: the rim is a cliff about 4 km tall
-  between the two seas, with nothing in front of it, and a body that goes over it falls toward the
+#### World bounds and the build volume **[built, Phase 3c; resized, Phase 16]**
+The baseline world ([ADR 0025](./adr/0025-baseline-world.md), superseding ADR 0011's 8,192 km disc;
+its precision decisions stand):
+- **Horizontal:** a disc of `WORLD_RADIUS` = 50 000 m (50 km) centred on the origin: a column
+  (x, z) is inside when x² + z² < `WORLD_RADIUS`² (`inside_world_disc`). Columns outside it
+  generate nothing, in every generator: the rim is a cliff a few tens of metres tall (the two
+  seas and the 20-layer crust between them), and a body that goes over it falls toward the
   midplane and is carried across it by the flip band (*Bifacial world* below).
-- **Vertical:** `WORLD_BOTTOM_Y` = −10 240 to `WORLD_MAX_Y` = 6 144 (16,384 m, 512 chunk rows):
-  **face A** (the top, today's terrain) from the midplane `MIDPLANE_Y` = −2 048 to `WORLD_MAX_Y`, with
-  `SEA_LEVEL` = 0, and **face B** its mirror image below the midplane, [−10 240, −2 048). There is
-  no void below the world and no bedrock (below).
-- **Precision:** float32 steps by 0.5 m at 8,192 km, so physics is Rapier's f64 build
-  (`rapier3d-f64`) on the server and in the browser (f64 world positions through the controller,
-  probes, the terrain collider and prediction, §6.1); wire positions are f64 or 1/256 m fixed point
-  (§8.3); worldgen never converts a whole world coordinate to float (see Determinism). The client
-  keeps positions as f64 and the renderer draws camera-relative (§5). The player controller
-  suites and the netcode tests run both at the origin and ~8,000 km from it
+- **The midplane** `MIDPLANE_Y` = 0 (D9): the origin of generation, the disc's halfway plane and
+  the build sphere's centre. **Face A** is y ≥ 0, **face B** its mirror image below. Heights in the
+  terrain are face-local (`h`, from the midplane): sea level `SEA_LEVEL` = 32 and the stone core of
+  `CORE_LAYERS` = 10 per face (h 0–9, never carved by generation, so the disc is at least 20 layers
+  thick) are interim constants until Phase 17 moves them into the terrain definition. There is no
+  void below the world and no bedrock (below).
+- **The build volume** (`dwell_world::bounds`, `BuildVolume`, `inside_build_volume`): one predicate
+  bounds building and storage, driven by data — `bounds` in `shared/protocol/constants.json`,
+  `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }` (D2), generated into
+  `dwell_protocol::BOUNDS` (and `Bounds` in TS). The shape is a small closed set in code
+  (`BoundsShape`: `sphere`; `slab`, rows only, kept for tests and old worlds' bounds); the generator
+  (`shared/protocol/gen.mjs`) rejects an unknown shape or a bad parameter with a message. A voxel is
+  inside when its centre is; a box (a chunk, an LOD section, a region edit) is classified
+  conservatively (`Overlap::{Inside, Partial, Outside}`), in exact integer arithmetic. Everything
+  that bounds the world reads it: **edits** (the server's `check_block_edit` and `check_region_edit`
+  refuse a cell or box outside, `OutOfWorld`; the client's `BlockInteraction::act` and region tools
+  don't send one), **generation and storage** (chunks wholly outside are air — the generators
+  return nothing, the air tests say so, so they are never generated or stored; partial chunks are
+  clipped voxel by voxel), **streaming** (the server streams and the ChunkRequest handler accepts
+  only chunks that may hold something; the client waits for no others) and the **LOD** (`in_world`:
+  sections wholly outside are never generated, stored or requested; the rows `first_row`/
+  `last_row` and `MIN_CHUNK_Y`/`MAX_CHUNK_Y` = −1 563/1 562 come from the volume's height). The rim
+  lies on the sphere's equator: 50 km of build height over the centre, ~9.9 km at 49 km out, ~1 km
+  at 49.99 km. **Not movement** (D3): `flightCeiling` is gone and flight is held only inside the
+  wire format's range (`POS64_LIMIT`, `fly.position_limit`); players may fly anywhere, and the
+  client asks for nothing outside the volume while there.
+- **Precision:** physics is Rapier's f64 build (`rapier3d-f64`) on the server and in the browser
+  (f64 world positions through the controller, probes, the terrain collider and prediction, §6.1);
+  wire positions are f64 or 1/256 m fixed point (§8.3); worldgen never converts a whole world
+  coordinate to float (see Determinism). Kept at 50 km (ADR 0025 decision 8): built, generic and
+  cheap. The client keeps positions as f64 and the renderer draws camera-relative (§5). The player
+  controller suites and the netcode tests run both at the origin and ~49 km from it, near the rim
   (`DWELL_ORIGIN_X=far`), with the same results; the golden trace is held bit-exactly in the
-  origin frame, natively and in WASM.
+  origin frame (local y 0 at sea level, 32 m above the midplane), natively and in WASM.
 - **Scale of terrain:** (prototype content, §6.1) since generator version 12 (Phase 15) **one
   island** 20–30 km in radius at the origin (*Interim island layout* below), land up to ~130 m above
-  sea level and a sea floor 20 m deep; the rest of the 8,192 km disc is open sea until Phase 16
-  shrinks the world to 50 km. The full-detail world is never generated wholesale — distant terrain
-  comes from the LOD system (§6.6).
+  sea level and a sea floor ~20 m deep (never below the core), and open sea out to the rim. The
+  full-detail world is never generated wholesale — distant terrain comes from the LOD system (§6.6).
 
-The terrain generators leave everything below `WORLD_BOTTOM_Y` and at or above `WORLD_MAX_Y`
-empty. The terrain has **no bedrock**: the rock at the midplane is ordinary stone and can be dug
-through, in the flat test world too (its `BEDROCK_LAYERS` went in Phase 15), which has no face B. The anchor for structural integrity (§7.1) is the core zone
-of `CORE_ANCHOR_LAYERS` (8) either side of the midplane, by position (Phase 20).
+The terrain has **no bedrock**: the rock at the midplane is ordinary stone and can be dug
+through, in the flat test world too, which has no face B. The flat worlds (the flat test world and
+the structure sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, their surface. The anchor for
+structural integrity (§7.1) is the core zone of `CORE_ANCHOR_LAYERS` (8) either side of the
+midplane, by position (Phase 20); checked against the 10-layer core in Phase 16, it lies within it
+(a compile-time assertion), so anchoring never reaches above the never-carved stone.
 
 #### Bifacial world **[built, Phase 13]**
 ([ADR 0023](./adr/0023-bifacial-world.md); design in [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).)
 The disc has a second inhabited face on its underside; **down is always toward the midplane**, so a
 player on face B stands upside down in the world.
-- **The mirror.** A voxel at height `y` on face B is the face-local voxel `h = −4 097 − y`
-  (`mirror_y`), a chunk row `cy` is face-local row `−129 − cy` (`mirror_chunk_y`): voxels map onto
-  voxels and chunks onto chunks. Face B's sea surface is `y = −4 096`. `dwell_world::Face`,
+- **The mirror.** A voxel at height `y` on face B is the face-local voxel `h = −1 − y`
+  (`mirror_y`, `MIRROR_SUM` = −1), a chunk row `cy` is face-local row `−1 − cy` (`mirror_chunk_y`):
+  voxels map onto voxels and chunks onto chunks. Face B's sea surface is `y = −32`. The build
+  sphere is symmetric under the mirror, so a face-B chunk and its face-local chunk lie alike in it. `dwell_world::Face`,
   `face_of_y` and `face_local_chunk` (`voxel.rs`) are the one mapping, used by server and client.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
@@ -897,7 +925,7 @@ player on face B stands upside down in the world.
   face B is the face-local chunk flipped vertically (`dwell_blocks::mirror`: a state with a `half` swaps it
   — none since Phase 15 — every other state is its own mirror). Generation stays a pure function of
   `(seed, version, chunk)`. Air chunks, the sky floor and the disc are per face; spawn is on face A;
-  streaming, edits and the chunk rows cover both (`kMinChunkY` = −320).
+  streaming, edits and the chunk rows cover both (`MIN_CHUNK_Y` = −1 563, from the build volume).
 - **Gravity.** The controller's `face` (±1) is the side of the midplane the body is on; the
   controller works in the face-local frame (`dwell-physics` `frame.rs`, PLAYER_CONTROLLER.md §11)
   and gravity points to −y in it. Tier 1 bodies (Phase 20) get a Rapier gravity scale of their side
@@ -927,14 +955,16 @@ player on face B stands upside down in the world.
 #### Interim island layout **[built, Phase 15; replaced by the terrain definition's layout in Phase 17]**
 
 `dwell-worldgen` `island.rs`: the signed distance to the coast (m, > 0 on land) of one island at the
-origin — `radius − |p + warp(p)| + detail(p)`, where the radius is 25 km plus a smooth 20 km-wavelength
+origin — `radius − |p + warp(p)| + detail(p)`, where the radius is `world.islandRadius` (25 km, data) plus a smooth 20 km-wavelength
 noise of up to ±5 km, the warp a 6 km two-octave vector noise of up to ±3 km, and the detail five
 octaves of fractal noise from a 4 km wavelength (±1.6 km). The distance uses the correctly rounded
 double square root (deterministic, as ADR 0017's bisectors did). Every noise field is read at
 coordinates shifted by a hashed per-seed offset (`noise_offset`, `noise.rs`): gradient noise is zero on
 its lattice, which the origin and the level of detail's cell centres would otherwise sit on. Over
-seeds the island reaches 28–32 km and the sea starts 19–22 km from the origin
-(measured with the C++ build's inspect tool; the Rust generator reproduces its output exactly). The level of detail keeps the coast detail's octaves its cell
+seeds the island reaches 28–32 km and the sea starts 16–21 km from the origin, the coast 25 km out
+on average and ~1,950 km² of land, leaving ≥ 18 km of sea to the 50 km rim (`cargo run --release -p
+dwell-worldgen --example island`: extents over seeds and a whole-island height map; unchanged by
+Phase 16's resize). The level of detail keeps the coast detail's octaves its cell
 resolves.
 
 #### Structure files **[in progress, Phase 27: the format and loader built (S1)]**
@@ -1007,7 +1037,7 @@ that subtree (or tombstones the tree); the cut-off part is a Phase 20 body (§7.
 wait for structure placement in worldgen (Open Decision #24).
 
 
-#### Generator pipeline **[built, Phase 15: generator version 12; decorations, Phase 33: version 13]**
+#### Generator pipeline **[built, Phase 15: generator version 12; decorations, Phase 33: 13; Phase 16: 14]**
 Executed per chunk. Every stage reads only noise of world coordinates, never another chunk's data,
 so chunks can be generated in any order and in parallel. The 2D fields are sampled on a 4-column
 lattice and interpolated bilinearly; the chunk path and the point queries (`column_at`, `solid_at`,
@@ -1051,24 +1081,24 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   layout, which IEEE 754 fixes to the last bit (x86-64 `sqrtsd`, WebAssembly `f64.sqrt`;
   [ADR 0017](./adr/0017-continents-from-voronoi-plates.md) amends ADR 0010).
 - A golden test (`shared/worldgen/golden/chunk-hashes.txt`, `dwell-worldgen` `tests/golden.rs`) hashes chunks across the
-  pipeline for two seeds — the surface at the spawn, deep rock, the core (the rows either side of the
-  midplane), sky, the top of the world, the coast of each face's island where it crosses the +x
-  axis (and just inland and offshore), the open sea, the rim and the sea ~8,000 km out — and chunks
-  of face B (the rows either side of the midplane and its island's surface); CI runs it natively and under
-  WASM (`wasm32-wasip1` on Node's WASI). The hashes were recorded by the C++ generator; the Rust
-  port reproduces them exactly, so none were re-recorded.
+  pipeline for two seeds — the core and ground at the spawn, the sea surface or land above it, sky,
+  inland and across the coast on both faces (the island's coast lies 16–32 km out), the rim on the
+  axis and the diagonal on both faces and beyond it, and the build sphere's edge (above the centre
+  and over the rim); CI runs it natively and under WASM (`wasm32-wasip1` on Node's WASI). The
+  hashes were recorded by the C++ generator up to version 12 and re-recorded by the Rust generator
+  for version 14 (Phase 16: the new geometry; 13 added decorations), with `cargo run -p dwell-worldgen --example goldens`.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
 - **[built, Phase 3c]** Planet-scale coordinates (ADR 0011): noise never converts a whole world
   coordinate to float. World coordinates are integers and wavelengths integer metres; each octave
   splits `x · 2^octave` (64-bit) into an integer lattice cell (feeding the hash) and the offset
   within it, `remainder / wavelength` — one correctly rounded float division (`lattice`,
-  `noise.rs`). A test checks that noise is as detailed ~8,000 km out as at the origin.
+  `noise.rs`). A test checks that noise is as detailed ~8,000 km out as at the origin (kept: it costs
+  nothing, ADR 0025 decision 8).
 - **[built, Phase 4a]** LOD generation (§6.6) follows the same rules and has its own golden
-  hashes (`shared/worldgen/golden/lod-hashes.txt`: the surface near the spawn, mountains,
-  ocean, the rim, terrain ~8,000 km out, the index level and the root, and — Phase 10 — a coast, an
-  ocean gap, an island, an interior and the abyss at several levels), checked natively and under
-  WASM (`wasm32-wasip1`).
+  hashes (`shared/worldgen/golden/lod-hashes.txt`: every level at the origin either side of the
+  midplane, up to the root; inland, the coast and the open sea on both faces; the rim and the
+  sphere's edge over it), checked natively and under WASM (`wasm32-wasip1`).
 
 #### Authority, storage, and streaming **[built]**
 - **Server storage.** The server's `VoxelWorld` holds chunks only while they are needed: every 64
@@ -1351,11 +1381,21 @@ high above the disc — is drawn, at a detail that drops with distance.
 
 **Grid.** A 3D octree of **sections**. At level L a cell is a 2^L m cube and a section is 32³
 cells (32 × 2^L m on a side); **level 0 is the chunk grid**. Section coordinates `(L, i, j, k)`
-count from the corner (−2²³, −2²³, −2²³), so cells of consecutive levels nest exactly and one
-root section at `LOD_MAX_LEVEL` = 19 (16 777 km) holds the whole disc. The world's
-height is 16,384 m: from level 9 a section spans all of it (one row of the octree). **Phase 13:**
-sections up to level 6 (2,048 m) lie wholly on one face of the midplane, a row belonging to the face
-of its centre; coarser ones straddle it, and each cell takes the face of its centre. A face-B section
+count from the root's corner (−2¹⁶, −2¹⁶, −2¹⁶), so cells of consecutive levels nest exactly and
+one root section at `LOD_MAX_LEVEL` = 12 (131 km), centred on the origin, holds the whole disc and
+build volume (**Phase 16**; 19 and 16,777 km before). Sections wholly outside the build volume are
+not in the world (`in_world`): never generated, stored or requested; the rows of a level are those
+the volume's height reaches (3,126 at level 0, one at the root). Section ids pack (level, i, row, k)
+in 12 bits each (`dwell-lod` `lod_id`). **Phase 13:** a row belongs to the face of its centre.
+**Phase 16:** with the midplane at 0, a section boundary at every level below the root, sections up
+to `MAX_ALIGNED_LEVEL` = 11 lie wholly on one face (the only straddling section is the root, each
+of its cells taking the face of its centre). **The thin crust:** a face's crust is its 10-layer
+core plus the ground (≥ 20 layers in all), thinner than one cell from level 4 up; a cell is filled
+from its bottom voxel, so a face's section by the midplane is solid in its bottom row and its apron
+toward the midplane is the other face's crust (solid): it draws only its own face's surface, with no
+hole, and the other face's section, culled beyond `OTHER_FACE_NEAR_M`, draws only surfaces facing
+away. The root is meshed for the viewer's face (`cells_for_viewer`: the other face's rows become
+stone). A mesher test over a 20-layer crust holds this at every level from either face. A face-B section
 is generated as the mirror image of a face-local section (rows reversed, `generate_lod_at` on face B's
 generator), downsampled with the block read upside down, and meshed as its mirror image
 (`mesh_section` with `mirror`) then turned back, so the surface it draws is the one facing down.
@@ -1367,7 +1407,7 @@ Column bounds carry both faces (`LodBounds`: `lo`/`hi` and, in face-local terms,
 | 0 | 1 m | 32 m | The streamed chunks around the player (§6.3) |
 | 1–4 | 2–16 m | 64–512 m | From the edge of the streamed view to ~5.6 km |
 | 5–8 | 32–256 m | 1–8 km | 5.6–90 km; level 8 is the LOD index level |
-| 9–19 | 512 m–524 km | 16–16 777 km | Beyond 90 km, out to the whole disc from altitude |
+| 9–12 | 512 m–4 km | 16–131 km | Beyond 90 km: the whole disc from altitude, the root from far out |
 
 (Level L is drawn from about 176 × 2^L m under those settings; the world is flat, so from the
 ground the view reaches the rim wherever terrain does not block it. `LOD_PIXEL_ERROR` was 2 px
@@ -1705,11 +1745,12 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   rate that rises with it is bound by pixels rather than draws (`render/display.rs`).
 
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
-The player flies — the body itself, simulated by the server and predicted like any movement — up
-to `FLIGHT_CEILING` (24,000 km), from where the whole disc fills about two thirds of the view.
-Speed grows with height above the sea, so the climb is exponential (capped at 400 m/s within the
-terrain band). In the browser test (local mode, SwiftShader) the player flies to the ceiling
-and the whole disc is drawn by the time it arrives.
+The player flies — the body itself, simulated by the server and predicted like any movement — with
+no ceiling (Phase 16, ADR 0025 D3: the build sphere bounds building, not movement); from ~150 km up
+the whole 50 km disc fills about two thirds of the view. Speed grows with height above the sea, so
+the climb is exponential (capped at 400 m/s within the terrain band, 6,144 m, and at the slider's
+top level's speed, 11.3 km/s, above). In the browser test (local mode, SwiftShader) the player
+flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
 
@@ -1840,16 +1881,18 @@ in the code yet.
 | `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~256 KB; 16 bytes each since Phase 13) |
 | `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
 | **Terrain (§6.3)** | | |
-| `MIDPLANE_Y` | −2 048 | The halfway plane: face A starts here, face B's mirror image lies below (§6.3) |
-| `WORLD_BOTTOM_Y` / `WORLD_MAX_Y` | −10 240 / 6 144 | Vertical world bounds (16,384 m: face B and face A) |
+| `MIDPLANE_Y` | 0 | The halfway plane: face A starts here, face B's mirror image lies below; the origin of generation and the build sphere's centre (§6.3, Phase 16) |
+| `bounds` | `{ shape: sphere, center: [0, 0, 0], radius: 50 000 }` | The build volume: what bounds building, generation, storage, streaming and LOD requests, not movement (`BuildVolume`, §6.3; shapes `sphere`, `slab`) |
 | `FLIP_BAND` | 4 m | Distance from the midplane within which a body moving toward it is accelerated and one moving away feels a fading pull (§6.3) |
-| `CORE_ANCHOR_LAYERS` | 8 | Layers either side of the midplane that anchor both faces (Phase 20) |
-| `WORLD_RADIUS` | 8 192 000 m | Radius of the world disc; beyond it, the void |
+| `CORE_LAYERS` | 10 | The stone core's layers per face from the midplane, never carved (interim: the terrain definition's in Phase 17) |
+| `CORE_ANCHOR_LAYERS` | 8 | Layers either side of the midplane that anchor both faces (Phase 20); within `CORE_LAYERS` (checked at compile time) |
+| `WORLD_RADIUS` | 50 000 m | Radius of the world disc; beyond it, the void |
+| `ISLAND_RADIUS` | 25 000 m | The interim island's mean radius, absolute (owner, 2026-10-15; the terrain definition's layout in Phase 17) |
+| `FLAT_TOP_Y` | 32 | The flat worlds' surface (the flat test world, the structure sandbox) |
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
-| `FLIGHT_CEILING` | 24 000 000 m | Highest feet position in creative flight (§9.1; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
-| `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 39 / 4 | Flight speed slider: highest level (2^19.5 × `fly.speed`) and its bit position in `PlayerInput.buttons` (§9.1) |
-| `SEA_LEVEL` | 0 | Water fill height |
+| `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 20 / 4 | Flight speed slider: highest level (2^10 × `fly.speed`, 11.3 km/s: the 100 km world in ~9 s; Phase 16, was 39) and its bit position in `PlayerInput.buttons` (§9.1). No flight ceiling (Phase 16, D3; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
+| `SEA_LEVEL` | 32 | Water fill height, face-local (interim: the terrain definition's in Phase 17) |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
 | `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
 | `CHUNK_REQUESTS_PER_SECOND` | 256 | Per-client `ChunkRequest` rate limit (chunks) |
@@ -1859,7 +1902,7 @@ in the code yet.
 | `MAX_CHUNKS_PER_TICK` | 32 | Chunk messages per client per tick |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |
-| `LOD_MAX_LEVEL` | 19 | Root level; one section holds the whole disc |
+| `LOD_MAX_LEVEL` | 12 | Root level (131 km); one section holds the whole disc and build volume (Phase 16, was 19) |
 | `LOD_INDEX_LEVEL` | 8 | Level of the modified-section index sent to clients |
 | `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels; a setting (1–16) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
 | LOD error scale (client, `dwell-lod` `system.rs`) | ×1.15 steps, 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
@@ -1969,11 +2012,12 @@ phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates
 `constants.json`; decoders reject unknown values.
 
 **Positions at planet scale — protocol v4 [built, Phase 3c]** ([ADR 0011](./adr/0011-planet-scale-world.md)).
-f32 steps by 0.5 m near the rim of the 8,192 km disc, so world positions have their own types:
+f32 steps by 0.5 m 8,000 km out, the size of the world when this was built (and still reachable in
+flight), so world positions have their own types:
 - **`pos64`** (`f64×3`) where client prediction must match the server exactly: the local
   player's position in `PhysicsSnapshot` and the `Respawn` position in `PlayerEvent`. Decoders
-  reject values outside ±`POS64_LIMIT` (33,554 km: the world and the sky above it, up to the
-  creative-flight ceiling; protocol v7), NaN included.
+  reject values outside ±`POS64_LIMIT` (33,554 km: far beyond the world, where flight is held;
+  protocol v7), NaN included.
 - **`posfix`** (`i32×3`, 1/`POSITION_FIXED_SCALE` = 1/256 m, ±8 388 km) for remote players, and
   later Tier 1 entities and `PhysicsEvent` origins — the same 12 bytes as f32×3, with a uniform
   3.9 mm step. Encoders round to the nearest step (halves up, as the reference encoder does)
@@ -2215,7 +2259,8 @@ architectural summary.
   voxel geometry (`crates/dwell-physics/tests`: voxel geometry, crouch, steps and air, step
   smoothness, knockback, flight, platforms, climbing and swimming, a five-player golden trace
   stored as exact floats, and the 64-player < 1 ms/tick gate — ~0.5 ms in Release with
-  `enhanced-determinism`), and runs at the origin, ~8,000 km from it and on face B. Player bodies
+  `enhanced-determinism`), and runs at the origin, ~49 km from it (near the rim) and on face B, in a
+  test frame whose y 0 is sea level (32 m above the midplane). Player bodies
   are in the `Character` collision group (terrain, Tier 1 and characters are Rapier interaction
   groups, the former Jolt object layers), have f64 positions (ADR 0011), and read their contact
   normals from Rapier's narrow phase after each step (`Physics::contact_normals`). Rapier's
@@ -2230,11 +2275,13 @@ architectural summary.
   a stairs block comes later.
 - **Creative flight** **[built, Phase 4]** (PLAYER_CONTROLLER.md §6.7): an exclusive layer while
   the input's `fly` mode bit is set — no gravity, move along the view's yaw, jump up, crouch down,
-  speed growing with height above the sea up to `FLIGHT_CEILING`. A **flight speed slider**
+  speed growing with height above the sea, with no ceiling (Phase 16, D3: held only inside the wire
+  format's range). A **flight speed slider**
   (top right while flying; the − / = keys; `ui/flightSpeedControl.ts`, kept in local storage) sets
   a level carried in every input (protocol v9) that raises the speed to at least 11 m/s × 2^(L/2),
-  up to about the speed near the ceiling — a true minimum: the 400 m/s cap below `WORLD_MAX_Y`
-  limits only the height-based speed. The
+  up to level 20 (11.3 km/s) — a true minimum: the 400 m/s cap in the terrain band (below
+  `fly.terrain_band`, 6,144 m) limits only the height-based speed, which never exceeds the top
+  level's. The
   client toggles flight (the F key, or the touch Fly button); the server's flight policy (`--flight`, told to the
   client in `Welcome`) decides who may, clearing the bit for anyone else. While flying the client
   keeps predicting even where the streamed terrain has not arrived yet.

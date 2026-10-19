@@ -30,8 +30,8 @@ use dwell_world::edit::{
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, MAX_CHUNK_Y, MIN_CHUNK_Y,
-    SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
+    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, SavedChunks,
+    VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
 use dwell_protocol::auth::verify_ed25519;
@@ -1234,7 +1234,7 @@ impl Server {
         for o in &self.prefetch_offsets {
             for &center in &centers {
                 let c = add(center, *o);
-                if c.y < MIN_CHUNK_Y || c.y > MAX_CHUNK_Y || self.world.find(c).is_some() {
+                if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
                     continue;
                 }
                 if self.is_saved(c) {
@@ -1283,7 +1283,7 @@ impl Server {
             }
             let ok = s.chunk_mode != ChunkMode::AwaitingCheck
                 && center.is_some_and(|center| within_radius(c, center, render))
-                && (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&c.y)
+                && BUILD_VOLUME.chunk_may_hold(c)
                 && s.chunk_request_credit >= 1.0
                 && s.chunk_requests.len() < MAX_QUEUED_CHUNK_REQUESTS;
             if !ok {
@@ -1372,7 +1372,8 @@ impl Server {
         for i in 0..self.view_offsets.len() {
             let c = add(center, self.view_offsets[i]);
             let s = &self.sessions[&id];
-            if c.y < MIN_CHUNK_Y || c.y > MAX_CHUNK_Y || s.streamed.contains(&c) {
+            // Chunks wholly outside the build volume are air everywhere: never sent (ADR 0025).
+            if !BUILD_VOLUME.chunk_may_hold(c) || s.streamed.contains(&c) {
                 continue;
             }
             complete = false;

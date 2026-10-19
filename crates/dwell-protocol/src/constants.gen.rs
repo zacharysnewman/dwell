@@ -17,19 +17,19 @@ pub mod players {
     pub const PREDICT_PROXY_RADIUS: f32 = 16.0;
     pub const REACH_DISTANCE: f32 = 5.0;
     pub const BLOCK_EDIT_INTERVAL_MS: i64 = 100;
-    pub const FLIGHT_CEILING: i64 = 24000000;
     pub const FLY_SPEED_SHIFT: i64 = 4;
-    pub const FLY_SPEED_MAX_LEVEL: i64 = 39;
+    pub const FLY_SPEED_MAX_LEVEL: i64 = 20;
 }
 
 pub mod world {
-    pub const MIDPLANE_Y: i64 = -2048;
-    pub const WORLD_BOTTOM_Y: i64 = -10240;
-    pub const WORLD_MAX_Y: i64 = 6144;
+    pub const MIDPLANE_Y: i64 = 0;
+    pub const CORE_LAYERS: i64 = 10;
     pub const CORE_ANCHOR_LAYERS: i64 = 8;
     pub const FLIP_BAND: i64 = 4;
-    pub const SEA_LEVEL: i64 = 0;
-    pub const WORLD_RADIUS: i64 = 8192000;
+    pub const SEA_LEVEL: i64 = 32;
+    pub const ISLAND_RADIUS: i64 = 25000;
+    pub const FLAT_TOP_Y: i64 = 32;
+    pub const WORLD_RADIUS: i64 = 50000;
     pub const POSITION_FIXED_SCALE: i64 = 256;
     pub const VIEW_RADIUS_CHUNKS: i64 = 3;
     pub const RENDER_RADIUS_CHUNKS: i64 = 12;
@@ -43,7 +43,7 @@ pub mod world {
 
 pub mod lod {
     pub const SECTION_CELLS: i64 = 32;
-    pub const MAX_LEVEL: i64 = 19;
+    pub const MAX_LEVEL: i64 = 12;
     pub const INDEX_LEVEL: i64 = 8;
     pub const PIXEL_ERROR_DESKTOP: i64 = 4;
     pub const PIXEL_ERROR_MOBILE: i64 = 8;
@@ -56,6 +56,21 @@ pub mod lod {
     pub const PROPAGATION_SECTIONS_PER_TICK: i64 = 8;
     pub const MAX_REQUEST_SECTIONS: i64 = 32;
 }
+
+/// The build volume (ARCHITECTURE.md §6.3, ADR 0025): one shape of a closed set, its parameters
+/// from `constants.json` (`dwell_world::BuildVolume` evaluates it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoundsShape {
+    /// Voxels whose centres lie within `radius` of `center`.
+    Sphere { center: [i64; 3], radius: i64 },
+    /// Voxel rows `min_y..max_y`, unbounded across (tests and old worlds).
+    Slab { min_y: i64, max_y: i64 },
+}
+
+pub const BOUNDS: BoundsShape = BoundsShape::Sphere {
+    center: [0, 0, 0],
+    radius: 50000,
+};
 
 pub mod limits {
     pub const DISPLAY_NAME_MAX_BYTES: usize = 64;

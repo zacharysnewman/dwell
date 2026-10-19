@@ -81,10 +81,10 @@
     },
     {
       "name": "disc",
-      "notes": "The whole disc from the flight ceiling (24,000 km).",
+      "notes": "The whole 50 km disc from 150 km up (there is no flight ceiling since Phase 16).",
       "seed": 7,
       "camera": {
-        "position": [0, 24000000, 0],
+        "position": [0, 150000, 0],
         "yaw": 0,
         "pitch": -89
       }

@@ -19,7 +19,7 @@ use dwell_blocks::StateId;
 use dwell_protocol::{Message, RegionEdit, RegionEditOp, region_edit};
 use dwell_world::VoxelWorld;
 use dwell_world::edit::unbreakable;
-use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, read_box};
+use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, box_in_world, read_box};
 
 /// Undo steps kept (each holds its boxes' states twice; a brush stroke's boxes are trimmed to
 /// the cells it changes).
@@ -505,7 +505,7 @@ impl RegionTools {
         states
     }
 
-    /// Checks what the server will (support, reach, rate), reads the box's states for undo, and
+    /// Checks what the server will (support, the build volume, reach, rate), reads the box's states for undo, and
     /// returns the request.
     fn sendable(
         &mut self,
@@ -516,6 +516,11 @@ impl RegionTools {
     ) -> Option<Vec<StateId>> {
         if !self.enabled {
             self.note = "This server doesn't take region edits (an older build)".into();
+            return None;
+        }
+        // The server refuses a box not wholly inside the build volume (ADR 0025).
+        if !box_in_world(edit.min, dims(edit.size)) {
+            self.note = "Outside the build volume".into();
             return None;
         }
         let eye = ctx.eye?;
@@ -1020,6 +1025,17 @@ mod tests {
             ..ctx(None, 0)
         };
         assert!(t.act(ToolAction::Clear, &later, &mut w).is_some());
+        // Outside the build sphere (ADR 0025): over its top, eye beside it.
+        let top = dwell_world::BUILD_VOLUME.y_range().1 as i32;
+        let near_top = ToolContext {
+            eye: Some([0.5, f64::from(top) - 1.0, 0.5]),
+            now_ms: 10_000.0,
+            ..ctx(None, stone)
+        };
+        t.act(ToolAction::CornerA, &ctx(Some([0, top - 3, 0]), 0), &mut w);
+        t.act(ToolAction::CornerB, &ctx(Some([1, top, 1]), 0), &mut w);
+        assert_eq!(t.act(ToolAction::Fill, &near_top, &mut w), None);
+        assert!(t.status().contains("build volume"), "{}", t.status());
         // Not loaded: a streamed world without the chunks.
         let mut streamed = VoxelWorld::streamed();
         assert_eq!(t.act(ToolAction::Copy, &ctx(None, 0), &mut streamed), None);

@@ -1,6 +1,7 @@
 //! Level of detail: the whole-world view (ARCHITECTURE.md §6.6, ADR 0012). A 3D octree of sections:
 //! at level L a cell is a 2^L m cube and a section 32³ cells, so level 0 is the chunk grid.
-//! Section coordinates count from (−2²³, −2²³, −2²³); one root at `MAX_LEVEL` holds the whole disc.
+//! Section coordinates count from the root's corner (−2¹⁶, −2¹⁶, −2¹⁶) m: one root at `MAX_LEVEL`
+//! (131 km) holds the whole disc and build volume, centred on the origin.
 //! Section content is 34³ cells (the section and a one-cell apron) in layer order (x fastest, then
 //! z, then y): the codec's order and the client mesher's padded layout.
 
@@ -14,9 +15,10 @@ pub const MAX_LEVEL: i32 = lod::MAX_LEVEL as i32;
 pub const INDEX_LEVEL: i32 = lod::INDEX_LEVEL as i32;
 pub const PAD: i32 = SECTION_CELLS + 2;
 pub const VOLUME: usize = (PAD * PAD * PAD) as usize;
-pub const ORIGIN_X: i64 = -(1 << 23);
-pub const ORIGIN_Y: i64 = -(1 << 23);
-pub const ORIGIN_Z: i64 = -(1 << 23);
+/// The root section's minimum corner: the root is centred on the world's origin.
+pub const ORIGIN_X: i64 = -(section_size(MAX_LEVEL) / 2);
+pub const ORIGIN_Y: i64 = ORIGIN_X;
+pub const ORIGIN_Z: i64 = ORIGIN_X;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LodCoord {
@@ -59,12 +61,18 @@ pub const fn floor_div64(a: i64, b: i64) -> i64 {
             0
         }
 }
-/// The first and last section rows of a level that hold part of the world's height.
+/// The first and last section rows of a level that reach the build volume's height.
 pub const fn first_row(level: i32) -> i32 {
-    floor_div64(WORLD_BOTTOM_Y as i64 - ORIGIN_Y, section_size(level)) as i32
+    floor_div64(
+        crate::BUILD_VOLUME.y_range().0 - ORIGIN_Y,
+        section_size(level),
+    ) as i32
 }
 pub const fn last_row(level: i32) -> i32 {
-    floor_div64(WORLD_MAX_Y as i64 - 1 - ORIGIN_Y, section_size(level)) as i32
+    floor_div64(
+        crate::BUILD_VOLUME.y_range().1 - 1 - ORIGIN_Y,
+        section_size(level),
+    ) as i32
 }
 
 /// World metres of a section's minimum corner.
@@ -103,7 +111,13 @@ pub fn ancestor(c: LodCoord, level: i32) -> LodCoord {
 
 const CHUNK_OFFSET_XZ: i32 = (-ORIGIN_X / CHUNK_SIZE as i64) as i32;
 const CHUNK_OFFSET_Y: i32 = (-ORIGIN_Y / CHUNK_SIZE as i64) as i32;
-const _: () = assert!(CHUNK_OFFSET_Y == 1 << 18);
+const _: () = assert!(CHUNK_OFFSET_Y == 1 << 11);
+const _: () = assert!(
+    -ORIGIN_Y >= crate::BUILD_VOLUME.y_range().1
+        && ORIGIN_Y <= crate::BUILD_VOLUME.y_range().0
+        && -ORIGIN_X >= WORLD_RADIUS as i64,
+    "the root holds the disc and the build volume"
+);
 
 /// The level-0 section that is this chunk.
 pub fn lod_of_chunk(c: ChunkCoord) -> LodCoord {
@@ -123,7 +137,8 @@ pub fn chunk_of_lod(c: LodCoord) -> ChunkCoord {
     )
 }
 
-/// Inside the octree, within the world's rows, and overlapping the world's disc.
+/// Inside the octree, within the world's rows, overlapping the world's disc and not wholly outside
+/// the build volume (sections that are, are never generated, stored or requested).
 pub fn in_world(c: LodCoord) -> bool {
     if c.level < 0 || c.level > MAX_LEVEL {
         return false;
@@ -147,6 +162,8 @@ pub fn in_world(c: LodCoord) -> bool {
         }
     };
     inside_world_disc(nearest(o.x, o.x + s), nearest(o.z, o.z + s))
+        && crate::BUILD_VOLUME.box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s])
+            != crate::Overlap::Outside
 }
 
 /// `VOLUME` cells in `cell_index` order.
@@ -439,9 +456,10 @@ pub fn flat_lod_bounds(level: i32, i: i32, k: i32) -> LodBounds {
             all_inside &= inside_world_disc(x, z);
         }
     }
+    let top = f64::from(FLAT_TOP_Y);
     LodBounds {
-        hi: -1.0,
-        lo: if all_inside { 0.0 } else { f64::NEG_INFINITY },
+        hi: top - 1.0,
+        lo: if all_inside { top } else { f64::NEG_INFINITY },
         bifacial: false,
         any_inside: in_world(c),
         ..LodBounds::default()
@@ -480,8 +498,8 @@ pub fn generate_flat_lod_of(layers: &FlatLayers, c: LodCoord, cells: &mut LodCel
                 let a = o.y + i64::from(y) * cell;
                 let m = if a < i64::from(MIDPLANE_Y) {
                     layers.base // below the world: the apron reads solid, so the floor is not drawn
-                } else if a < 0 {
-                    layers.at_depth(-cell - a)
+                } else if a < i64::from(FLAT_TOP_Y) {
+                    layers.at_depth((i64::from(FLAT_TOP_Y) - cell - a).max(0))
                 } else {
                     M.air
                 };

@@ -29,7 +29,7 @@ describe('settings menu sliders', () => {
   });
 
   it('round-trip a value to its slider position', () => {
-    for (const v of [min, 100_000, 3_000_000, max]) {
+    for (const v of [min, 10_000, 30_000, max]) {
       const back = sliderToValue(valueToSlider(v, min, max, true), min, max, true);
       expect(Math.abs(back - v) / v).toBeLessThan(0.01);
     }

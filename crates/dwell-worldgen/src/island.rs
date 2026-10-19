@@ -1,13 +1,16 @@
 //! The interim land layout (Phase 15, ARCHITECTURE.md §6.3): one island at the origin. Its coast is
 //! a circle whose radius varies by smooth noise, seen through a domain warp, with fractal coast
-//! detail. A pure function of (world seed, world coordinates). The parameters are code constants
-//! for now: Phase 17 moves the layout into the terrain definition (data, ADR 0026).
+//! detail. A pure function of (world seed, world coordinates). Its size is an absolute distance in
+//! data (`world.islandRadius`, constants.json), independent of the world's radius (owner,
+//! 2026-10-15: the island keeps its Phase 15 size when the world shrinks to 50 km). The other
+//! parameters are code constants for now: Phase 17 moves the layout into the terrain definition
+//! (data, ADR 0026).
 
 use crate::noise::{fbm2, noise_offset, seed_word};
 
-/// The island's mean radius (m) and how far (m) the radius noise moves its coast, at that noise's
-/// wavelength (m).
-pub const RADIUS: f32 = 25_000.0;
+/// The island's mean radius (m, data) and how far (m) the radius noise moves its coast, at that
+/// noise's wavelength (m).
+pub const RADIUS: f32 = dwell_protocol::world::ISLAND_RADIUS as f32;
 pub const RADIUS_VARIATION: f32 = 5_000.0;
 pub const RADIUS_WAVELENGTH: i32 = 20_000;
 /// The domain warp: amplitude (m) and wavelength (m), 2 octaves.

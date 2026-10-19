@@ -3,6 +3,8 @@
 // height and hill-shaded. `-` and `=` zoom out and in, from the player's surroundings (1 km across)
 // to the whole disc. The colours are prototype (§6.1); the baseline has no biomes (ADR 0025).
 
+import { World } from '../protocol/constants.gen';
+
 /** Bytes per sampled column of the map (height i16 little-endian, outside flag; jobs/mod.rs). */
 export const MAP_COLUMN_BYTES = 3;
 
@@ -18,10 +20,11 @@ export const UPLAND_COLOR = 0xa58c64;
 /** Columns per map edge. */
 export const MAP_SIZE = 128;
 /**
- * Metres per column at each zoom. The last is the whole disc (128 columns × 128 km = its 16,384 km
- * diameter), centred on the origin; the others are centred on the player.
+ * Metres per column at each zoom. The last is the whole disc (128 columns × 782 m: its 100 km
+ * diameter), centred on the origin; the others are centred on the player (Phase 16 narrowed the
+ * range for the 50 km world).
  */
-export const MAP_ZOOMS = [8, 64, 512, 4096, 32768, 128000] as const;
+export const MAP_ZOOMS = [8, 32, 128, 512, Math.ceil((2 * World.worldRadius) / MAP_SIZE)] as const;
 export const DISC_ZOOM = MAP_ZOOMS.length - 1;
 /** Metres per column of the map around the player at the first zoom (the old fixed map). */
 export const MAP_STEP = MAP_ZOOMS[0];

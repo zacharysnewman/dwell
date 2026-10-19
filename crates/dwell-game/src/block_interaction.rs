@@ -6,8 +6,8 @@
 
 use dwell_blocks::{BLOCKS, Facing, STATES, StateId, info};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, Message, players};
-use dwell_world::VoxelWorld;
 use dwell_world::edit::{FACE_DIRS, placeable, raycast_block};
+use dwell_world::{VoxelWorld, inside_build_volume};
 
 use crate::FaceSign;
 pub use crate::input::EditAction;
@@ -235,21 +235,27 @@ impl BlockInteraction {
     }
 
     /// Breaks the targeted block or places the selected one against the targeted face: the request
-    /// to send, or None when there is no target or it is too soon after the last edit
-    /// (`BLOCK_EDIT_INTERVAL_MS`).
+    /// to send, or None when there is no target, the block would be placed outside the build volume
+    /// or it is too soon after the last edit (`BLOCK_EDIT_INTERVAL_MS`).
     pub fn act(&mut self, action: EditAction, now_ms: f64) -> Option<Message> {
         let t = self.current?;
         if now_ms - self.last_edit_ms < players::BLOCK_EDIT_INTERVAL_MS as f64 {
             return None;
         }
-        self.last_edit_ms = now_ms;
         let (action, material) = match action {
             EditAction::Break => (BlockEditAction::Break, 0),
-            EditAction::Place => (
-                BlockEditAction::Place,
-                self.placement().map_or(0, |(_, m)| m),
-            ),
+            EditAction::Place => {
+                let placement = self.placement();
+                // The server refuses a block outside the build volume (ADR 0025): not sent.
+                if placement.is_some_and(|(c, _)| {
+                    !inside_build_volume(i64::from(c[0]), i64::from(c[1]), i64::from(c[2]))
+                }) {
+                    return None;
+                }
+                (BlockEditAction::Place, placement.map_or(0, |(_, m)| m))
+            }
         };
+        self.last_edit_ms = now_ms;
         Some(Message::BlockEditRequest(BlockEditRequest {
             action,
             cell: t.cell,
@@ -436,6 +442,24 @@ mod tests {
         assert_eq!(name(material), "dwell:sand");
         let m = interaction.act(EditAction::Place, 0.0).unwrap();
         assert_eq!(request(&m).material, material);
+    }
+
+    #[test]
+    fn does_not_send_a_place_outside_the_build_volume_and_keeps_the_interval_for_one_inside() {
+        // The build sphere's top: a block on the top face of (0, 49,999, 0) would be at y = 50,000,
+        // outside (ADR 0025); breaking that block, inside, is sent.
+        let top = dwell_world::BUILD_VOLUME.y_range().1 as i32;
+        let mut world = VoxelWorld::streamed();
+        world.set_voxel(0, top - 1, 0, require("dwell:stone"));
+        let mut interaction = BlockInteraction::new();
+        let eye = [0.5, f64::from(top) + 1.5, 0.5];
+        let t = interaction.update(&mut world, Some(eye), 0.0, -90.0, 1);
+        assert_eq!(t.map(|t| (t.cell, t.face)), Some(([0, top - 1, 0], 2)));
+        assert_eq!(interaction.placement().unwrap().0, [0, top, 0]);
+        assert_eq!(interaction.act(EditAction::Place, 0.0), None);
+        // The refused place did not use up the interval.
+        let m = interaction.act(EditAction::Break, 1.0).unwrap();
+        assert_eq!(request(&m).cell, [0, top - 1, 0]);
     }
 
     // Beyond the TS suite: the voxel world is a target source through the shared ray cast.

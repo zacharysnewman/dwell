@@ -9,7 +9,7 @@ use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 use crate::edit::{
     EditCapsule, REACH_SLACK, flooded_for, medium_allows, overlaps_player, placeable, unbreakable,
 };
-use crate::{M, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, chunk_of, inside_world_disc};
+use crate::{BUILD_VOLUME, M, Overlap, VoxelWorld, chunk_of, inside_world_disc};
 
 /// How far the server lets a region edit's nearest cell be from the eye (m).
 pub const DEFAULT_REGION_REACH: f32 = region_edit::REACH + REACH_SLACK;
@@ -33,7 +33,7 @@ pub enum RegionCheck {
     BadSize,
     /// The box's nearest cell is farther than the region reach from the eye.
     OutOfReach,
-    /// Part of the box is outside the world's rows or disc.
+    /// Part of the box is outside the build volume or the world's disc.
     OutOfWorld,
     /// Fill, Hollow, Replace: the block is neither air nor in the palette. Replace's `from`, or a
     /// pasted state, is an unknown id or an unbreakable block.
@@ -86,13 +86,12 @@ pub fn box_distance_sq(min: [i32; 3], size: [i32; 3], eye: [f64; 3]) -> f64 {
         .sum()
 }
 
-/// The whole box lies in the world's rows and disc.
+/// The whole box lies in the build volume (ADR 0025) and the world's disc.
 pub fn box_in_world(min: [i32; 3], size: [i32; 3]) -> bool {
     let lo = min.map(i64::from);
     let hi: [i64; 3] = std::array::from_fn(|i| lo[i] + i64::from(size[i]) - 1);
     // The disc is convex, so the four column corners inside means every column is.
-    lo[1] >= i64::from(WORLD_BOTTOM_Y)
-        && hi[1] < i64::from(WORLD_MAX_Y)
+    BUILD_VOLUME.box_overlap(lo, hi.map(|v| v + 1)) == Overlap::Inside
         && [
             (lo[0], lo[2]),
             (lo[0], hi[2]),
@@ -410,11 +409,11 @@ mod tests {
             check(&mut w, &fill([65, 1, 0], [1, 1, 1], stone)),
             RegionCheck::OutOfReach
         );
-        let far_eye = [8_191_990.0, 0.0, 0.0];
+        let far_eye = [49_990.0, 0.0, 0.0];
         assert_eq!(
             check_region_edit(
                 &mut w,
-                &fill([8_191_998, 0, 0], [4, 1, 1], stone),
+                &fill([49_998, 0, 0], [4, 1, 1], stone),
                 far_eye,
                 &[],
                 64.0
@@ -422,11 +421,13 @@ mod tests {
             .check,
             RegionCheck::OutOfWorld
         );
-        let top = [0.0, f64::from(WORLD_MAX_Y), 0.0];
+        // Over the build sphere's top (ADR 0025).
+        let sphere_top = BUILD_VOLUME.y_range().1 as i32;
+        let top = [0.0, f64::from(sphere_top), 0.0];
         assert_eq!(
             check_region_edit(
                 &mut w,
-                &fill([0, WORLD_MAX_Y - 1, 0], [1, 2, 1], stone),
+                &fill([0, sphere_top - 1, 0], [1, 2, 1], stone),
                 top,
                 &[],
                 64.0

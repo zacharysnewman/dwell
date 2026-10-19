@@ -14,20 +14,19 @@ use dwell_world::hash::{HashMap, HashSet};
 use dwell_protocol::{CHUNK_SIZE, CHUNK_VOLUME, ChunkChanges, ChunkData, ChunkForm};
 use dwell_world::edit::apply_chunk_changes;
 use dwell_world::{
-    Chunk, ChunkCoord, Face, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, face_of_chunk_y, local_index,
+    BUILD_VOLUME, Chunk, ChunkCoord, Face, VoxelWorld, face_of_chunk_y, local_index,
 };
+pub use dwell_world::{MAX_CHUNK_Y, MIN_CHUNK_Y};
 
 use crate::chunk_diff::{PADDED_VOLUME, padded_index};
 
 /// A chunk coordinate as on the wire.
 pub type Coord = [i32; 3];
 
-pub const MIN_CHUNK_Y: i32 = WORLD_BOTTOM_Y.div_euclid(CHUNK_SIZE);
-pub const MAX_CHUNK_Y: i32 = WORLD_MAX_Y / CHUNK_SIZE - 1;
-
 /// The region tools read the client's world through the streamer (structures too): a box is loaded
 /// when every chunk it covers is, Air chunks included — the client never stores those, and its
-/// world reads them as air. (`region::read_box` on the bare world counts them as missing.)
+/// world reads them as air. (`region::read_box` on the bare world counts them as missing.) Chunks
+/// wholly outside the build volume are never streamed: they read as air.
 impl<G, M, V> crate::region_tools::BoxSource for ChunkStreamer<VoxelWorld, G, M, V>
 where
     G: ChunkSource,
@@ -43,7 +42,9 @@ where
         for y in lo[1]..=hi[1] {
             for z in lo[2]..=hi[2] {
                 for x in lo[0]..=hi[0] {
-                    if !self.is_loaded([x, y, z]) {
+                    if !self.is_loaded([x, y, z])
+                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                    {
                         return None;
                     }
                 }
@@ -460,13 +461,16 @@ where
         self.loaded.get(&coord).copied()
     }
 
-    /// True when the chunks around `position` (±1 chunk, within the world's rows) are loaded.
+    /// True when the chunks around `position` (±1 chunk, not wholly outside the build volume) are
+    /// loaded.
     pub fn ready_around(&self, position: [f64; 3]) -> bool {
         let [cx, cy, cz] = position.map(|v| (v / f64::from(CHUNK_SIZE)).floor() as i32);
         for y in (cy - 1).max(MIN_CHUNK_Y)..=(cy + 1).min(MAX_CHUNK_Y) {
             for z in cz - 1..=cz + 1 {
                 for x in cx - 1..=cx + 1 {
-                    if !self.loaded.contains_key(&[x, y, z]) {
+                    if !self.loaded.contains_key(&[x, y, z])
+                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                    {
                         return false;
                     }
                 }

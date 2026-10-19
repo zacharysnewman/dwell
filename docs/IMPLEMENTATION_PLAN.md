@@ -34,7 +34,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser; follow-up (owner, 2026-10-16): the log and leaves blocks restored as prototype content (appended to the registry, no worldgen placement; a new registry hash, so the 0.13 line) |
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
-| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
+| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | 🚧 In progress — built: the data-driven build volume (sphere) bounding edits, generation, storage, streaming and LOD; the 50 km disc, midplane 0, 10-layer core, sea level 32, LOD root 12, no flight ceiling, the island at its Phase 15 size (data); generator v14, protocol 14; outstanding: CI, the owner's browser look, an e2e edit at the boundary |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35); `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
@@ -2292,37 +2292,59 @@ Exit criteria
 
 **Goal:** The baseline's geometry, with every bound read from one data-driven predicate.
 
-**Status:** Not started.
+**Status:** 🚧 Built and tested (generator v14, protocol 14: the 0.14 line); outstanding: CI, the
+owner's manual look in a browser, and one e2e edit at the boundary.
 
 Deliverables
-- [ ] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
+- [x] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
   `seaLevel` and the core's thickness move to the terrain definition in Phase 17 (interim values here:
   sea level `h` = 32, core 10); `worldBottomY`/`worldMaxY` replaced by `bounds`
   `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }`; `lod.maxLevel` 12;
   `flightCeiling` removed (D3: no movement limit); fly-speed levels re-checked for a 50 km world.
   Protocol version bumped.
-- [ ] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
+- [x] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
   (sphere; slab kept for tests), parameters from data. Used by: edits (server rejection, client
   pre-check), generation and storage (chunks wholly outside are air, never stored; `IsAirChunk`,
   `LodBoundsAt`), streaming and LOD requests. Not movement: players may fly outside it (D3).
-- [ ] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
+- [x] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
   flip band and `CORE_ANCHOR_LAYERS` (8) checked against the 10-layer core.
-- [ ] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
+- [x] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
   only, without holes or the other face showing through.
-- [ ] Far-origin test runs moved to ~49 km; F4 zoom range narrowed.
-- [ ] Docs: `ARCHITECTURE.md` world bounds, bifacial, §6.6, §7.4; `BIFACIAL_WORLD.md` geometry.
+- [x] Far-origin test runs moved to ~49 km; F4 zoom range narrowed.
+- [x] Docs: `ARCHITECTURE.md` world bounds, bifacial, §6.6, §7.4; `BIFACIAL_WORLD.md` geometry.
 
 Exit criteria
-- [ ] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
-  one e2e edit at the boundary).
-- [ ] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
-- [ ] Flight is not bounded by the sphere (D3): a controller scenario flies out through it, native
+- [x] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
+  the e2e edit at the boundary is split out below).
+- [x] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
+- [x] Flight is not bounded by the sphere (D3): a controller scenario flies out through it, native
   and WASM, and the client requests no chunk or LOD section outside it while there (test).
-- [ ] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
+- [x] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
   (mesher tests over a 20-layer crust).
-- [ ] Walking over the rim still carries a player across the midplane to face B (controller
+- [x] Walking over the rim still carries a player across the midplane to face B (controller
   scenario).
-- [ ] Manual: a look in a browser from the ground, from altitude and from face B.
+- [ ] Manual: a look in a browser from the ground, from altitude and from face B (screenshots
+  taken by the agent, 2026-10-19; the owner's look outstanding).
+- [ ] Edits outside the sphere: unit tests built (server `check_block_edit`/`check_region_edit`,
+  client `BlockInteraction::act` and the region tools, red → green); the e2e edit at the boundary
+  outstanding (moved here from the criterion above, which is ticked for its unit tests only).
+
+Deviations
+- **Rust, not C++/TS** (ADR 0028): `InsideBuildVolume` is `dwell_world::bounds` (`BuildVolume`,
+  `inside_build_volume`, `BoundsShape` generated into `dwell-protocol`); `kMinChunkY`/`kMaxChunkY`
+  are `MIN_CHUNK_Y`/`MAX_CHUNK_Y`; the client pre-checks are in `dwell-game`.
+- **The island keeps its size** (owner, 2026-10-15): its mean radius is `world.islandRadius` =
+  25,000 m in `constants.json`, absolute; measured identical before and after (BASELINE_EVALUATION.md
+  §7); a test holds the mean coast within ±10%.
+- **Thin crust:** with the midplane at 0 every section up to level 11 is aligned to it; only the
+  root straddles. The mesher test runs over a 20-layer crust at every level 1–12, both faces.
+- **The flat worlds** (test world, sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, and the
+  controller tests' local frame puts y 0 at sea level (32 m over the midplane): their old ground at
+  y = 0 would have lain on the midplane.
+- **Fly speeds:** `flySpeedMaxLevel` 39 → 20 (11.3 km/s); the height-based speed is capped at the
+  top level's; the terrain band (6,144 m) is a controller tunable; flight is held only at the wire
+  range (`POS64_LIMIT`).
+- `coreAnchorLayers` stays 8, within the 10-layer core (a compile-time check).
 
 ---
 
