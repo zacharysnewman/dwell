@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use dwell_blocks::{REGISTRY_HASH, STATES, StateId, info, parse_state};
+use dwell_blocks::{REGISTRY_HASH, StateId, info, parse_state};
 use dwell_world::ChunkCoord;
 use dwell_world::lod::LodCoord;
 use redb::{Database, ReadableDatabase, ReadableTable, StorageBackend, TableDefinition};
@@ -130,24 +130,48 @@ struct States {
     to_runtime: Vec<Option<StateId>>,
     /// Runtime id → world state id (`None`: not in the file yet).
     to_world: Vec<Option<u32>>,
+    /// States the file names that are not the build's (ADR 0038): blocks registered at run time
+    /// (a mod's), and placeholders for strings this process has no state for.
+    placeholders: Vec<StateId>,
 }
 
 impl States {
     fn from_strings(strings: Vec<String>) -> Self {
         let mut s = Self {
             to_runtime: vec![None; strings.len()],
-            to_world: vec![None; STATES.len()],
+            to_world: vec![None; dwell_blocks::state_count()],
+            placeholders: Vec::new(),
             strings,
         };
-        for (i, text) in s.strings.iter().enumerate() {
-            if let Ok(runtime) = parse_state(text)
-                && info(runtime).name == text
-            {
+        for i in 0..s.strings.len() {
+            let text = &s.strings[i];
+            let runtime = match parse_state(text) {
+                Ok(runtime) if info(runtime).name == text => Some(runtime),
+                // A state this process lacks (a mod's, ADR 0038): a placeholder under the same
+                // string, so the chunk loads and saves it back.
+                _ => dwell_blocks::sync::placeholder(text).ok().inspect(|&p| {
+                    if !s.placeholders.contains(&p) {
+                        s.placeholders.push(p);
+                    }
+                }),
+            };
+            if let Some(runtime) = runtime {
+                if !dwell_blocks::is_build_state(runtime) && !s.placeholders.contains(&runtime) {
+                    s.placeholders.push(runtime);
+                }
                 s.to_runtime[i] = Some(runtime);
-                s.to_world[usize::from(runtime)] = Some(i as u32);
+                s.set_world(runtime, i as u32);
             }
         }
         s
+    }
+
+    fn set_world(&mut self, runtime: StateId, world: u32) {
+        let at = usize::from(runtime);
+        if at >= self.to_world.len() {
+            self.to_world.resize(at + 1, None);
+        }
+        self.to_world[at] = Some(world);
     }
 }
 
@@ -302,6 +326,12 @@ impl WorldDb {
         }
         *self.states.lock().expect("states") = States::from_strings(strings);
         Ok(())
+    }
+
+    /// The states this file names that are not the build's — registered ones and placeholders
+    /// (ADR 0038): a server serves them with its registry.
+    pub fn placeholders(&self) -> Vec<StateId> {
+        self.states.lock().expect("states").placeholders.clone()
     }
 
     pub fn format_version(&self) -> u64 {
@@ -592,8 +622,8 @@ impl WorldDb {
                 let mut world_voxels = Vec::with_capacity(c.voxels.len());
                 for &v in &c.voxels {
                     // Unknown ids read as air.
-                    let v = if usize::from(v) < STATES.len() { v } else { 0 };
-                    let id = match states.to_world[usize::from(v)] {
+                    let v = if dwell_blocks::try_info(v).is_some() { v } else { 0 };
+                    let id = match states.to_world.get(usize::from(v)).copied().flatten() {
                         Some(id) => id,
                         None => {
                             let id = states.strings.len() as u32;
@@ -601,7 +631,7 @@ impl WorldDb {
                             table_states.insert(id, name).map_err(err)?;
                             states.strings.push(name.to_owned());
                             states.to_runtime.push(Some(v));
-                            states.to_world[usize::from(v)] = Some(id);
+                            states.set_world(v, id);
                             id
                         }
                     };

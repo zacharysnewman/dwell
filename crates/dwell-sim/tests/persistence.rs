@@ -291,3 +291,47 @@ fn lod_sections_survive_a_restart_and_are_rebuilt_when_stale_or_missing() {
         assert!(!stale);
     }
 }
+
+/// A world holding a block that is not the build's (a mod's, ADR 0038) is served with it by the
+/// next server on that file, even one that never registered it: clients learn it by sync.
+#[test]
+fn a_worlds_blocks_beyond_the_build_are_in_its_servers_registry() {
+    let scratch = Scratch::new("mod");
+    let path = scratch.world("mod");
+    let moss = {
+        let store = WorldStore::open_file(&path).expect("opens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            ..flat()
+        });
+        let mut row = *dwell_blocks::info(M.stone);
+        row.name = dwell_blocks::intern("mod:moss");
+        let moss = f
+            .server
+            .register_block(dwell_blocks::NewBlock {
+                name: "mod:moss".into(),
+                properties: Vec::new(),
+                states: vec![row],
+            })
+            .expect("registers");
+        f.join(1, &Client::new(1));
+        f.server.step();
+        f.send(1, place([-1, -1, 2], 2, moss));
+        f.server.step();
+        assert_eq!(f.server.world().get_voxel(-1, 0, 2), moss);
+        f.move_to(1, 3.5, 0.0, 4.5);
+        f.server.step();
+        f.server.save_now();
+        f.server.flush_store();
+        moss
+    };
+    let store = WorldStore::open_file(&path).expect("reopens");
+    let mut f = Fixture::new(ServerConfig {
+        store: Some(store),
+        ..flat()
+    });
+    assert_eq!(f.server.world().get_voxel(-1, 0, 2), moss);
+    let (payload, _) = f.server.registry();
+    let p = dwell_blocks::sync::Payload::decode(&payload).expect("decodes");
+    assert!(p.blocks.iter().any(|b| b.name == "mod:moss"));
+}

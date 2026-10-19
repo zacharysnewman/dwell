@@ -276,21 +276,39 @@ fn a_chunk_means_its_strings_not_the_runtime_ids() {
     assert_eq!(c.voxels[1], require("dwell:dirt"));
     drop(db);
     {
-        // A state this build does not know: the chunk is generated instead.
+        // A state this build does not know (a mod's block, ADR 0038).
         let raw = Database::create(&path).expect("raw");
         let txn = raw.begin_write().expect("write");
         txn.open_table(BLOCK_STATES)
             .expect("table")
-            .insert(0, "dwell:unobtainium")
+            .insert(0, "mod:unobtainium[lit=true]")
             .expect("insert");
         txn.commit().expect("commit");
     }
-    assert_eq!(
-        WorldDb::open(&path)
-            .expect("reopens")
-            .load_chunk(ChunkCoord::new(0, 0, 0)),
-        None
-    );
+    // It loads as a placeholder under that exact string (a solid, indestructible cube), and
+    // saving writes the string back unchanged.
+    let db = WorldDb::open(&path).expect("reopens");
+    let mut c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("kept, not regenerated");
+    let p = c.voxels[0];
+    let row = dwell_blocks::info(p);
+    assert_eq!(row.name, "mod:unobtainium[lit=true]");
+    assert!(row.solid && row.indestructible && !row.placeable);
+    assert_eq!(db.placeholders(), vec![p]);
+    assert_eq!(c.voxels[1], require("dwell:dirt"));
+    c.voxels[1] = require("dwell:stone");
+    c.revision = 2;
+    db.save(&SaveBatch {
+        chunks: vec![c],
+        ..Default::default()
+    })
+    .expect("save");
+    drop(db);
+    let db = WorldDb::open(&path).expect("reopens");
+    assert!(db.block_states().contains(&"mod:unobtainium[lit=true]".to_string()));
+    let c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("chunk");
+    assert_eq!(dwell_blocks::info(c.voxels[0]).name, "mod:unobtainium[lit=true]");
+    assert_eq!(c.voxels[0], p, "the same placeholder, not a second one");
+    assert_eq!(c.voxels[1], require("dwell:stone"));
     let _ = std::fs::remove_file(&path);
 }
 

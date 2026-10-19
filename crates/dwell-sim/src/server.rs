@@ -910,11 +910,24 @@ impl Server {
 
     /// The registry payload this server sends at join and its definitions hash (ADR 0038).
     pub fn registry(&mut self) -> (std::sync::Arc<Vec<u8>>, u64) {
+        // Placeholders for states the world file names and this server lacks are its own too.
+        let placeholders = self
+            .config
+            .store
+            .as_ref()
+            .map(|st| st.db().placeholders())
+            .unwrap_or_default();
+        for p in placeholders {
+            if !self.own_blocks.contains(&p) {
+                self.own_blocks.push(p);
+            }
+        }
         let count = self.own_blocks.len();
         if self.registry.0 != count || self.registry.1.is_empty() {
             let own = &self.own_blocks;
             let bytes = dwell_blocks::sync::Payload::served_by(|b| {
-                b.origin == dwell_blocks::Origin::Build || own.contains(&b.first_state)
+                b.origin == dwell_blocks::Origin::Build
+                    || own.iter().any(|&id| b.states().contains(&usize::from(id)))
             })
             .encode();
             let hash = dwell_blocks::sync::definitions_hash(&bytes);

@@ -1106,6 +1106,32 @@ pub fn row_from_fields(name: &str, fields: &Fields, fluids: &[String]) -> StateI
     row
 }
 
+/// The stand-in for a state a world file names and this process does not have (ADR 0038
+/// decision 8): a one-state block named by the exact string, a solid, indestructible full cube
+/// with no look of its own (clients draw the fallback), so the world plays, syncs it and saves the
+/// string back. The same string returns the same id.
+pub fn placeholder(name: &str) -> Result<StateId, String> {
+    if name.is_empty() || name.len() > MAX_STR {
+        return Err(format!("not a state name: {name:?}"));
+    }
+    let mut row = default_row(name);
+    row.solid = true;
+    row.indestructible = true;
+    row.shape = VoxelShape::Full;
+    row.shape_index = cube_shape();
+    row.density_kg_m3 = 1000.0;
+    row.look = "placeholder";
+    row.color = 0xff00ff;
+    register(
+        Origin::Placeholder,
+        NewBlock {
+            name: name.to_owned(),
+            properties: Vec::new(),
+            states: vec![row],
+        },
+    )
+}
+
 /// Splits a payload into `BlockRegistry` parts.
 pub fn parts(payload: &[u8]) -> Vec<&[u8]> {
     if payload.is_empty() {
