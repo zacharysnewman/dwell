@@ -185,8 +185,9 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
             <button type="button" id="set-adaptive" data-v="adaptive">Adaptive</button>
             <button type="button" id="set-corners" data-v="corners">Ramps + corners</button>
             <button type="button" id="set-ramps" data-v="ramps">Ramps only</button>
+            <button type="button" id="set-none" data-v="none">No slopes</button>
           </div>
-          <p class="hint-text">½ m view: the shape set. Adaptive reshapes from the neighbours on every edit. Ramps + corners (cardinal ramps, outer and inner corners, at ½ m and 1 m: 24 pieces and the full block) and Ramps only (8 ramps and the full block) are stored. They are picked when the scene is built or a block is placed, and don't change when a neighbour does. Ground uncovered by digging is a full block, and anything the set has no piece for is a full block.</p>
+          <p class="hint-text">½ m view: the shape set. Adaptive reshapes from the neighbours on every edit. Ramps + corners (cardinal ramps, outer and inner corners, at ½ m and 1 m: 24 pieces and the full block), Ramps only (8 ramps and the full block) and No slopes (flat blocks only) are stored. They are picked when the scene is built or a block is placed, and don't change when a neighbour does. Ground uncovered by digging is a full block, and anything the set has no piece for is a full block.</p>
         </div>
         <div class="seg" id="mode">
           <button type="button" id="mode-adaptive" data-v="adaptive">Adaptive</button>
@@ -395,6 +396,7 @@ function shapeHalf(w, x, z) {
 // block. A 1 m block's corner counts as down only when it reaches the block's floor.
 //   corners: cardinal ramps, outer and inner corners, at ½ m (27°) and 1 m (45°), and the full block.
 //   ramps:   cardinal ramps at ½ m and 1 m, and the full block.
+//   none:    the full block only: ½ m (and 1 m) blocks with flat tops.
 const DIAG = ['north-west', 'north-east', 'south-east', 'south-west'];
 function fixedShape(w, x, z) {
   const col = idx(x, z), t = heightOf(w, col), size = topSize(w, col);
@@ -402,6 +404,7 @@ function fixedShape(w, x, z) {
   const deep = size === 2 ? ' (1 m)' : '';
   const piece = (name, facing, corners) => ({ name: name + deep, facing, g: fill(...corners.map((u) => (u ? t : t - size))) });
   const full = { name: 'full', facing: '', g: fill(t, t, t, t) };
+  if (state.set === 'none') return full;
   if (n === 2) {
     const e = [[0, 1], [1, 2], [2, 3], [3, 0]].findIndex(([a, b]) => up[a] && up[b]); // N E S W edge that stays up
     if (e < 0) return full; // a saddle: no piece for it
@@ -503,8 +506,28 @@ function buildGround(w) {
     if (owner < 0 || k < 0) return linear(BASE_SIDE);
     const s = w.cols[owner];
     if (!s.length) return linear(BASE_SIDE);
-    return linear(MAT[s[Math.min(k, s.length - 1)]].side, jitter(owner * 31 + k) * (k % 2 ? 0.96 : 1));
+    const m = s[Math.min(k, s.length - 1)];
+    // A grass block's side is dirt; its grass shows as the skirt along the top edge (below).
+    return linear(MAT[m === 'grass' ? 'dirt' : m].side, jitter(owner * 31 + k) * (k % 2 ? 0.96 : 1));
   };
+  // The game's grass side texture: dirt with a ragged grass fringe 4–9 px of a 32 px (1 m) tile,
+  // hanging from the face's top edge (the mesher's side_top), so it follows a shaped top down the
+  // slope. Drawn as strips 1/8 m wide just in front of the wall.
+  const SKIRT_MIN = 4 / 32, SKIRT_MAX = 9 / 32;
+  const skirtColor = linear(MAT.grass.top, 0.8);
+  function skirt(P, s0, s1, hiF, loF, owner, facing, out) {
+    const len = Math.hypot(out[0], out[2]) || 1, push = [(out[0] / len) * 0.003, 0, (out[2] / len) * 0.003];
+    const steps = Math.max(1, Math.round((s1 - s0) * 4));
+    for (let i = 0; i < steps; i++) {
+      const sa = s0 + ((s1 - s0) * i) / steps, sb = s0 + ((s1 - s0) * (i + 1)) / steps;
+      const mid = P((sa + sb) / 2, 0);
+      const d = SKIRT_MIN + (SKIRT_MAX - SKIRT_MIN) * hash2(Math.round(mid[0] * 8), Math.round(mid[2] * 8), 5);
+      const bot = (s) => Math.max(loF(s), hiF(s) - d);
+      const q = [[sa, bot(sa)], [sb, bot(sb)], [sb, hiF(sb)], [sa, hiF(sa)]].map(([s, y]) => { const p = P(s, y); return [p[0] + push[0], p[1], p[2] + push[2]]; });
+      tri(q[0], q[1], q[2], skirtColor, { kind: 'wall', owner, facing }, out);
+      tri(q[0], q[2], q[3], skirtColor, { kind: 'wall', owner, facing }, out);
+    }
+  }
   function wall(P, a0, a1, b0, b1, A, B) {
     const d0 = a0 - b0, d1 = a1 - b1;
     const spans = d0 * d1 < 0 ? [[0, d0 / (d0 - d1)], [d0 / (d0 - d1), 1]] : [[0, 1]];
@@ -523,6 +546,10 @@ function buildGround(w) {
         const ox = (owner % W) + 0.5, oz = Math.floor(owner / W) + 0.5;
         const out = [pts[0][0] - ox, 0, pts[0][2] - oz];
         for (let i = 1; i + 1 < pts.length; i++) tri(pts[0], pts[i], pts[i + 1], color, { kind: 'wall', owner, facing }, out);
+      }
+      if (owner >= 0 && topMat(w, owner) === 'grass') {
+        const ox = (owner % W) + 0.5, oz = Math.floor(owner / W) + 0.5, p = P((s0 + s1) / 2, 0);
+        skirt(P, s0, s1, hiF, loF, owner, facing, [p[0] - ox, 0, p[2] - oz]);
       }
     }
   }

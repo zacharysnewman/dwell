@@ -84,9 +84,12 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   Floating plants are tinted red and counted per view.
 - Shape set for the half grid: **Adaptive** (reshaped from the neighbours on every edit), **Ramps +
   corners** (cardinal ramps, outer and inner corners at ½ m and 1 m: 24 pieces and the full block)
-  or **Ramps only** (8 ramps and the full block). The fixed sets are stored: picked when the scene
+  **Ramps only** (8 ramps and the full block) or **No slopes** (flat ½ m blocks). The fixed sets are
+  stored: picked when the scene
   is built or a block is placed, never changed by a neighbour. Dug-out ground and shapes without a
   piece are full blocks. The view counts the blocks off the rules.
+- Grass blocks' sides are drawn as the game's grass side texture: dirt with a ragged grass skirt
+  (4–9 px of a 32 px tile, 0.12–0.28 m) hanging from the face's top edge, so it follows shaped tops.
 - Show cells outlines the top ground block (both voxels of a double block) and the cells a plant
   occupies. The cell inspector lists what each world stores for the
   column under the pointer (`tall_grass {height: 1.5 m}` + `{part: upper}` against three plant

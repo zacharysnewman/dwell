@@ -130,6 +130,7 @@ neighbours. The lab's ½ m view has two such sets beside **Adaptive**:
 - **Ramps + corners:** cardinal ramps, outer corners and inner corners at ½ m (27°) and 1 m (45°),
   24 pieces, plus the full block.
 - **Ramps only:** the 8 cardinal ramps (½ m and 1 m), plus the full block.
+- **No slopes:** the full block only: ½ m (and 1 m) blocks with flat tops, for comparison.
 
 Each block's piece is chosen once, when the scene is built or the block is placed, from what the
 rules would make. A shape the set has no piece for becomes a full block: saddles, ridges and
@@ -138,19 +139,22 @@ A neighbour's later edit changes nothing, and a block uncovered by digging is a 
 counts the **blocks off the rules**: blocks whose stored piece differs from what the rules would
 shape now.
 
-| Blocks off the rules | Adaptive | Ramps + corners | Ramps only |
-|---|---|---|---|
-| Hill, ½ m blocks only | 0 | 5 | 217 |
-| Terrain, ½ m blocks only | 0 | 16 | 257 |
-| Basics, ½ m blocks only | 0 | 9 | 49 |
-| Hill, 1 m on steep ground | 0 | 142 | 245 |
-| Terrain, 1 m on steep ground | 0 | 165 | 293 |
+| Blocks off the rules | Adaptive | Ramps + corners | Ramps only | No slopes |
+|---|---|---|---|---|
+| Hill, ½ m blocks only | 0 | 5 | 217 | 377 |
+| Terrain, ½ m blocks only | 0 | 16 | 257 | 465 |
+| Basics, ½ m blocks only | 0 | 9 | 49 | 138 |
+| Hill, 1 m on steep ground | 0 | 142 | 245 | 377 |
+| Terrain, 1 m on steep ground | 0 | 165 | 293 | 465 |
 
 - **Ramps + corners on ½ m blocks is nearly the full rule set.** The few blocks off are saddles and
   lone bumps, which become ½ m cubes. Steep ground shows ½ m walls under the slopes, as adaptive
   ½ m blocks do.
 - **Ramps only** puts a ½ m cube at every convex corner and every saddle, and leaves a notch at every
   concave bend. It reads as stepped terrain with ramps between the steps.
+- **No slopes** is ½ m terraces: every shaped block is off the rules. With the game's grass side (dirt
+  with a grass skirt, which the lab draws on both grids), each ½ m step shows a thin dirt band under
+  its grass edge. Every step can be walked up (the step height is 0.55 m).
 - **1 m blocks don't fit a fixed set of top-or-floor pieces.** A 1 m block on generated terrain
   often has one neighbour ½ m lower and another 1 m lower. The rules then put a corner at its
   middle, and no fixed piece has one. Snapping it up or down leaves notches; snapping down (as the
