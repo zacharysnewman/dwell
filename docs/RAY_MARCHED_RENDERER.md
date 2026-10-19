@@ -104,7 +104,7 @@ is exactly one 4×4×4 node of 8³ bricks.
 
 ```wgsl
 struct LevelInfo { origin: vec3<i32>, dims: vec3<u32>, slot_base: u32, cell_log2: u32 };
-@group(0) @binding(0) var<storage, read> levels: array<LevelInfo, 20>;
+@group(0) @binding(0) var<storage, read> levels: array<LevelInfo, LEVEL_COUNT>;
 @group(0) @binding(1) var<storage, read> slots: array<u32>;  // node | NONE | ALL_AIR | ALL_SOLID(state)
 struct Node {
   mixed:   vec2<u32>,         // 64-bit mask: brick has a payload
@@ -425,7 +425,7 @@ Nothing here changes public API (world files, seeds' terrain, protocols), so no 
   they fill (re-filled from the CPU copy; no `copy_buffer_to_buffer` needed, since the CPU holds every
   word) and are capped at the device's `max_storage_buffer_binding_size` (128 MiB by default; the
   device's own limit is read); a build that would pass it is refused and counted
-  (`march.pool_full`). **Binding layout** (group 1): 0 uniforms (the 20 levels and the camera, 1,088
+  (`march.pool_full`). **Binding layout** (group 1): 0 uniforms (the 13 levels, `LEVEL_COUNT`, and the camera: 752
   B), 1 slots, 2 nodes, 3 node column offsets, 4 column grids, 5 the brick pool, 6 the state table,
   7 the stats buffer (atomics: the histogram, and per-pixel debug records for the test) — 7 storage
   buffers of the default 8, 3 storage textures of 4. Group 0 is the frame (uniforms, atlas, sampler);
