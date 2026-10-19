@@ -667,3 +667,29 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
         "{plants} of {grass_tops}"
     );
 }
+
+#[test]
+fn the_island_keeps_its_phase_15_size_in_the_50_km_world() {
+    // Owner, 2026-10-15: shrinking the world to 50 km must not shrink the island. Its mean coast
+    // lay 24.8–25.7 km out over seeds before the resize (`--example island`): within ±10% of that,
+    // and well clear of the rim.
+    for seed in [1u64, 42, 12345] {
+        let g = TerrainGenerator::new(seed);
+        let mut sum = 0.0;
+        for ray in 0..72 {
+            let a = f64::from(ray * 5).to_radians();
+            let mut last_land = 0.0;
+            let mut r = 0.0;
+            while r < 45_000.0 {
+                if g.coast_at((r * a.cos()) as i32, (r * a.sin()) as i32) > 0.0 {
+                    last_land = r;
+                }
+                r += 200.0;
+            }
+            assert!(last_land < f64::from(WORLD_RADIUS) - 8_000.0, "seed {seed}");
+            sum += last_land;
+        }
+        let mean = sum / 72.0;
+        assert!((mean - 25_000.0).abs() < 2_500.0, "seed {seed}: {mean}");
+    }
+}
