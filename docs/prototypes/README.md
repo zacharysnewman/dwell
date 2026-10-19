@@ -8,7 +8,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 |---|---|---|---|
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
-| Half-Height Voxel Lab | [`half-height-lab.html`](./half-height-lab.html) | https://claude.ai/artifact/DGQZG6GH1GhxvZRtPgh5MN | Today's 1 m cells beside 1 × ½ × 1 m cells: shapes, plants standing on the ground, ½ m growth ([proposal](../proposals/HALF_HEIGHT_VOXELS.md)) |
+| Half-Height Voxel Lab | [`half-height-lab.html`](./half-height-lab.html) | https://claude.ai/artifact/DGQZG6GH1GhxvZRtPgh5MN | Today's 1 m cells beside 1 × ½ × 1 m cells with 1 m double blocks: shapes, 27° and 45° slopes, plants standing on the ground, ½ m growth ([proposal](../proposals/HALF_HEIGHT_VOXELS.md)) |
 | Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
@@ -74,12 +74,16 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
 - Scenes: Meadow, Basics (lone ½ m and 1 m bumps, a ridge, ½ m and 1 m one-wide stairs, pits, ½ m
   and 1 m terraces), Hill, Terrain, Growth rows. They are given as surface heights in metres and
   realised as each grid best can.
-- Tools: Place and Remove (½ m or 1 m in the half grid), Plant and Grow (both views). Grow all, Mow,
-  Scatter, and grow over time.
+- Blocks in the half grid are ½ m (one voxel) or 1 m double blocks (two voxels, one block). A
+  block's corners drop at most to its floor, so ½ m blocks make 27° slopes and 1 m blocks 45° ramps.
+  **1 m on steep ground** (default) puts a double block on top of any column 1 m or more above any
+  of its 8 neighbours; **½ m blocks only** compares without them.
+- Tools: Place (a ½ m block or a 1 m double block in the half grid) and Remove (the top block),
+  Plant and Grow (both views). Grow all, Mow, Scatter, and grow over time.
 - Plant footing: at the cell floor (as the game draws plants) or sunk to the shaped surface.
   Floating plants are tinted red and counted per view.
-- Shape depth for the half grid: the top ½ m or the top 1 m. Show cells outlines the top ground
-  cell and the cells a plant occupies. The cell inspector lists what each world stores for the
+- Show cells outlines the top ground block (both voxels of a double block) and the cells a plant
+  occupies. The cell inspector lists what each world stores for the
   column under the pointer (`tall_grass {height: 1.5 m}` + `{part: upper}` against three plant
   voxels).
 

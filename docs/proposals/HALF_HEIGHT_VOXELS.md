@@ -51,11 +51,13 @@ nothing ever needs to reach into the cell above.
 |---|---|---|
 | Rules | Rest, Drop, Rise, One wide, Ramp | Top, Drop, One wide, Ramp |
 | Corner heights | 0, ½, 1 of the cell | floor or top |
-| Shapes | 29 (191 with facings and hanging) | 11: full, wedge, outer corner, inner corner, saddle, and 6 ridge pieces |
-| Neighbourhoods the table covers | 3⁸ = 6,561 | 3⁴ × 2⁴ = 1,296 (diagonals only matter as lower or not) |
+| Block heights | 1 m | ½ m, or 1 m (a double block) |
+| Shapes | 29 (191 with facings and hanging) | ½ m blocks: 11 (full, wedge, outer corner, inner corner, saddle, 6 ridge pieces); 1 m blocks add 45° and mixed pieces |
+| Neighbourhoods the table covers | 3⁸ = 6,561 | 1,296 for ½ m blocks (diagonals only matter as lower or not), 20,736 for 1 m blocks |
+| Steepest natural slope | 45° (ramps), 54.74° (saddles) | 27° (½ m blocks), 45° (1 m blocks) |
 | Flat natural ground | rests ½ m into its top block | the top of a cell, at any ½ m |
 | Slope over a ½ m step | 27° across one block | 27° (a wedge in one voxel) |
-| One-wide stairs | 1 m steps, 45° ramps that slide | ½ m steps, a 27° walkable ramp |
+| One-wide stairs | 1 m steps, 45° ramps that slide | ½ m blocks: a 27° walkable ramp; 1 m blocks: 45° ramps |
 | A plant on flat ground | foot ½ m above the ground (bug, §1) | foot on the ground |
 | Grass growth by ½ m | a `height` property per stage, and an upper block above 1 m | one more voxel per stage |
 
@@ -63,12 +65,33 @@ The shapes look as they do today at the surface. A lone ½ m voxel is the same h
 is the same 27° slope. The difference is that each shape fills one ½ m voxel instead of the top half
 of a 1 m block.
 
-**Drops of more than one voxel.** With the four rules, a 1 m drop becomes a ½ m wall under a 27°
-slope. Shaping the top two voxels (the lab's **Top 1 m** option) makes it one 45° slope, at the cost
-of more shapes and a 4⁴ × 3⁴ = 20,736-entry table. Today's grid makes a 1 m step one 27° slope
-across both blocks. In the half grid that only happens when the terrain itself steps ½ m at a time.
-The generator would produce that wherever terrain is gentler than 27°, because it would write
-heights to the nearest ½ m.
+**1 m double blocks (owner, 2026-10-19).** Blocks come in two heights: a **½ m block** (one voxel)
+and a **1 m double block** (two voxels, one block: placed, broken and shaped as one). The rules
+above apply to the column's top block, whatever its height. Rule 2 drops a corner to the lowest of
+the 3 columns around it, but no lower than the block's floor. So a ½ m block makes 27° slopes, and a
+1 m block makes 45° ramps, 1 m ridges and pyramids, or mixed pieces where one neighbour is ½ m lower
+and another 1 m (corners at its floor, middle or top). With ½ m blocks alone, a 1 m drop becomes a ½ m
+wall under a 27° slope; a 1 m block there makes it one 45° slope instead.
+
+Where double blocks come from:
+
+- **Building.** The 1 m brush places a double block; Remove takes the top block, whichever size.
+  Crafted 1 m blocks are double blocks, so 1 m building keeps one click per block.
+- **Generation.** The lab's **1 m on steep ground** puts a double block on top of any column that
+  is 1 m or more above **any of its 8 neighbours**. The diagonals matter. A ½ m block 1 m above a
+  diagonal neighbour can drop only ½ m at that corner, while its edge neighbours drop to the
+  diagonal's height, and a triangle of its side shows between them. With edge neighbours only, the
+  noise terrain showed dozens of these; with all 8, it shows about as few as the 1 m grid. Gentle
+  ground stays ½ m blocks.
+
+The table grows: a 1 m block's corners need "lower by ½ m" and "lower by 1 m" apart, 4⁴ × 3⁴ =
+20,736 neighbourhoods, beside the ½ m block's 1,296. That is two tables keyed by block height, both
+generated from the same rules.
+
+**Walking 45°.** Faces steeper than 44° slide in the game today (owner, 2026-10-15;
+`PLAYER_CONTROLLER.md` §6.8). So a 1 m block's ramps would slide unless that limit moves to 46°, or
+unless double blocks are for cliffs and slopes the player isn't meant to walk up. One-wide stairs of
+½ m blocks stay a walkable 27° ramp.
 
 ## 3. What the prototype shows
 
@@ -82,7 +105,8 @@ cells that is `round(S + ½)` blocks resting ½ m down; on ½ m cells it is `rou
 | Meadow: plants floating | 283 of 283 | 0 of 283 |
 | Terrain (value noise, ~10 m relief): plants floating | 198 of 200 | 160 of 200 |
 | Terrain: ground cells | 2,137 | 3,728 (1.74×) |
-| Terrain: distinct shapes in use | 24 | 9 (15 with Top 1 m) |
+| Terrain: 1 m double blocks (1 m on steep ground) | none | 185 |
+| Terrain: distinct shapes in use | 24 | 9 with ½ m blocks only, 15 with 1 m on steep ground |
 | Growth rows (plants ½–2 m): plant storage | 162 blocks with a height property | 264 plant voxels |
 
 What this means:
@@ -91,11 +115,11 @@ What this means:
   stands on the cell's top, up to ½ m above the slope. Plants on shaped ground need their foot on
   the surface under them (**Sink to surface** in the lab, which brings both grids to 0 floating).
   Alternatively, plants could grow only on flat tops. Neither grid avoids that work.
-- **Steep terrain shows more small walls.** The finer grid has more distinct levels, so it has more
-  places where a column sits more than one voxel below a diagonal neighbour. There the side of the
-  higher voxel shows as a small triangle: the "side between them" that `ADAPTIVE_BLOCKS.md` §1
-  accepts, appearing more often. **Top 1 m** halves them. A generator that limits neighbouring
-  columns to one voxel of difference outside cliffs would remove most of them.
+- **Steep terrain needs the 1 m blocks.** With ½ m blocks only, the finer grid has many places
+  where a column sits more than ½ m below a diagonal neighbour. There the side of the higher block
+  shows as a small triangle: the "side between them" that `ADAPTIVE_BLOCKS.md` §1 accepts, appearing
+  far more often. Double blocks on any column 1 m above one of its 8 neighbours remove nearly all of
+  them. What remains are drops of more than 1 m, as on the 1 m grid.
 - **Data roughly doubles.** That is 1.74× here, and 2× underground, where no air is saved.
 
 ## 4. Implications by area
@@ -125,10 +149,17 @@ constant is the first step of any version of this proposal.
   and two free cells above) change. The controller's tunables are in metres and mostly survive.
   `max_step_height` 0.55 steps one voxel; the 1.8 m capsule is 3.6 cells; a 2 m doorway is 4 cells.
   The golden `scenario.trace` and about 12 physics test files hard-code 1 m geometry.
-- **Building.** A 1 m crafted block is two voxels. Either the hotbar places a 1 m brush by default
-  (the lab's **1 m** brush), or crafted blocks become ½ m tall, with twice the clicks for the same
-  wall. Breaking a 1 m hole is one action only with that brush. The brush tool's shapes (`brush.rs`:
-  ball, ellipsoid, disc) are in cell space and would flatten unless scaled.
+- **Double blocks.** A 1 m block is a block that spans two cells, which the engine has no notion of
+  today. The upper cell needs a marker (an `upper` part, or a reserved state) that collision, the
+  mesher, picking, breaking, support and the network all treat as part of the block below. Saves
+  must keep the pair together, and an edit to either cell edits both. That is the kind of special
+  handling the half grid otherwise avoids, so it should be one mechanism used by every 1 m block
+  (crafted 1 m blocks, natural double blocks, later doors), not per-block code. An alternative
+  would be to store a double block's two cells as plain voxels plus a "joined" flag that shaping
+  reads; it needs the same care in editing.
+- **Building.** With double blocks, a 1 m block is one click to place and one to break. The brush
+  tool's shapes (`brush.rs`: ball, ellipsoid, disc) are in cell space and would flatten unless
+  scaled.
 - **Plants and growth.** A growing plant is a stack of plant voxels. The mesher draws a cross per
   voxel, jittered by column (not by cell) so that the segments line up, with the tip texture where
   the cell above is not the same plant: a derived look, like adaptive shapes. `needsSupport` and
@@ -156,8 +187,10 @@ goldens, the protocol and save break, and re-authored content. A sensible order:
    Behaviour is unchanged at 1.0 and checked by the existing suite.
 2. Set it to ½. Fix every test that breaks, regenerate the goldens, apply the new rules and shape
    table, and use a world-space texture v.
-3. Building brushes, the protocol and save break, and the compatibility line.
-4. Plants as stacks, and growth (its own design).
+3. Double blocks: blocks that span two cells, as one mechanism (edits, collision, meshing, picking,
+   saves), and the second shape table.
+4. Building brushes, the protocol and save break, and the compatibility line.
+5. Plants as stacks, and growth (its own design).
 
 ## 6. The alternative: keep 1 m cells
 
@@ -182,7 +215,8 @@ What only the half grid gives:
 
 Fix the floating plants on the 1 m grid now (§6); that is a bug in the current game. Treat the half
 grid as the owner's decision on look and feel, using the lab. If the owner wants ½ m terrain, ½ m
-building and walkable one-wide stairs, the half grid is the cleaner long-term model, and the right
+building and walkable one-wide stairs, with 1 m double blocks for steep ground and 1 m building, the
+half grid is the cleaner long-term model, and the right
 time for it is before more content and saved worlds depend on 1 m: step 1 of §5 costs little and
 makes the switch measurable. If ½ m growth is the main reason, the 1 m grid with a `height`
 property covers it at a fraction of the cost.
@@ -190,9 +224,10 @@ property covers it at a fraction of the cost.
 ## 8. Questions for the owner
 
 1. Is ½ m terrain and ½ m building wanted for its own sake, or only for plants and growth?
-2. Crafted blocks on a ½ m grid: placed as 1 m (two voxels) by default, or ½ m tall?
-3. How deep should natural ground shape: one voxel (½ m walls under slopes at 1 m drops) or the
-   top 1 m (45° slopes, more shapes)?
+2. Crafted blocks: 1 m double blocks only, ½ m blocks only, or both, per block in the registry?
+3. Double blocks: should the generator place them only on steep ground (any of 8 neighbours 1 m
+   lower, as in the lab) or as all natural ground below the top ½ m? Should 45° ramps be walkable
+   (moving the 44° slide limit), or slide?
 4. Plants on slopes: sink to the surface, or grow only on flat tops?
 5. Growth: what grows, who adds growing plants (block data, an editor), and is growth per world
    (a world rule) or per block? This is the extendable-system question for growth on either grid.

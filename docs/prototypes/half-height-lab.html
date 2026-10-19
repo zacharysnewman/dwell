@@ -145,10 +145,10 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
       <div class="palette" id="palette"></div>
       <div id="brush-wrap" style="margin-top:8px">
         <div class="seg" id="brush">
-          <button type="button" id="brush-half" data-v="1">½ m (one voxel)</button>
-          <button type="button" id="brush-full" data-v="2">1 m (two voxels)</button>
+          <button type="button" id="brush-half" data-v="1">½ m block</button>
+          <button type="button" id="brush-full" data-v="2">1 m double block</button>
         </div>
-        <p class="hint-text">How much a click places or removes in the ½ m view. The 1 m view always works in 1 m.</p>
+        <p class="hint-text">What a click places in the ½ m view: a ½ m block (one voxel) or a 1 m double block (two voxels, one block). Remove takes the top block, whichever size. The 1 m view always works in 1 m.</p>
       </div>
     </section>
 
@@ -174,11 +174,11 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
           <p class="hint-text">Where a plant's foot is. The game draws it at the floor of its cell. Sink to surface puts it on the shaped ground under its centre, which needs the ground's shape at the plant.</p>
         </div>
         <div>
-          <div class="seg" id="depth">
-            <button type="button" id="depth-1" data-v="1">Shape the top ½ m</button>
-            <button type="button" id="depth-2" data-v="2">Top 1 m</button>
+          <div class="seg" id="steep">
+            <button type="button" id="steep-off" data-v="off">½ m blocks only</button>
+            <button type="button" id="steep-on" data-v="on">1 m on steep ground</button>
           </div>
-          <p class="hint-text">½ m view: how deep the surface may cut. One voxel turns a 1 m drop into a ½ m wall under a slope. Two voxels make it one 45° slope.</p>
+          <p class="hint-text">½ m view: how scenes are built. With 1 m on steep ground, a column whose ground drops 1 m or more to any of its 8 neighbours gets a 1 m double block on top, which shapes into a 45° ramp. Gentle ground stays ½ m blocks with 27° slopes.</p>
         </div>
         <div class="seg" id="mode">
           <button type="button" id="mode-adaptive" data-v="adaptive">Adaptive</button>
@@ -187,7 +187,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
         <label class="toggle"><input type="checkbox" id="opt-float" checked><span class="switch"></span>
           <span>Mark floating plants<small>Tints red any plant whose foot is more than 5 cm above the ground under it.</small></span></label>
         <label class="toggle"><input type="checkbox" id="opt-cells"><span class="switch"></span>
-          <span>Show cells<small>Outlines each column's top ground cell (white) and the cells its plant occupies (green).</small></span></label>
+          <span>Show cells<small>Outlines each column's top ground block (white: one voxel, or both voxels of a double block) and the cells its plant occupies (green).</small></span></label>
       </div>
     </section>
 
@@ -206,21 +206,23 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
         <thead><tr><th></th><th>1 m (Phase 18)</th><th>½ m tall</th></tr></thead>
         <tbody>
           <tr><td>Rules</td><td>Rest, Drop, Rise, One wide, Ramp</td><td>Top, Drop, One wide, Ramp</td></tr>
-          <tr><td>Corner heights</td><td>0, ½, 1 of a cell</td><td>floor or top</td></tr>
-          <tr><td>Shapes</td><td>29</td><td>11 (½ m), more at 1 m depth</td></tr>
-          <tr><td>Neighbourhoods</td><td>3⁸ = 6,561</td><td>3⁴ × 2⁴ = 1,296</td></tr>
+          <tr><td>Block heights</td><td>1 m</td><td>½ m, or 1 m (double)</td></tr>
+          <tr><td>Corner heights</td><td>0, ½, 1 of a cell</td><td>floor or top (½ m); floor, middle or top (1 m)</td></tr>
+          <tr><td>Steepest natural slope</td><td>45° (one-wide ramps), 55° (saddles)</td><td>27° (½ m), 45° (1 m)</td></tr>
+          <tr><td>Shapes</td><td>29</td><td>11 for ½ m blocks; 1 m blocks add their own</td></tr>
+          <tr><td>Neighbourhoods</td><td>3⁸ = 6,561</td><td>1,296 (½ m), 20,736 (1 m)</td></tr>
           <tr><td>Flat ground</td><td>rests ½ m into its top block</td><td>the top of a cell</td></tr>
-          <tr><td>1-wide ½ m stairs</td><td>can't be built</td><td>27° walkable ramp</td></tr>
+          <tr><td>1-wide stairs</td><td>1 m steps: 45° ramps</td><td>½ m steps: 27° ramps; 1 m double blocks: 45° ramps</td></tr>
           <tr><td>Grass growth</td><td>a height property per stage, a second block above 1 m</td><td>one more voxel per stage</td></tr>
         </tbody>
       </table>
       <ol class="rule" style="margin-top:10px">
-        <li><b>Top.</b> A corner of a natural top voxel stays at the voxel's top.</li>
-        <li><b>Drop.</b> If any of the 3 columns around the corner is lower, it drops to the voxel's floor (with Top 1 m, down to that column's height, at most 1 m).</li>
-        <li><b>One voxel wide.</b> When every corner drops, a ridge runs from the centre to each same-height edge neighbour: pyramid, ridge end, ridge, corner, T, cross.</li>
-        <li><b>Ramp up.</b> When every corner drops and exactly one edge neighbour is higher (none the same), the voxel is a wedge rising to it.</li>
+        <li><b>Top.</b> A corner of a natural top block stays at the block's top.</li>
+        <li><b>Drop.</b> If any of the 3 columns around the corner is lower, the corner drops to that column's height, but no lower than the block's floor. A ½ m block drops ½ m; a 1 m double block drops ½ m or 1 m.</li>
+        <li><b>One block wide.</b> When every corner drops, a ridge runs from the centre to each same-height edge neighbour: pyramid, ridge end, ridge, corner, T, cross. It is as tall as the block.</li>
+        <li><b>Ramp up.</b> When every corner drops and exactly one edge neighbour is higher (none the same), the block is a wedge rising to it: 27° for a ½ m block, 45° for a 1 m one.</li>
       </ol>
-      <p class="hint-text">No Rest or Rise rule: with ½ m cells, flat ground already ends on a cell boundary, so nothing needs to rise into the cell above.</p>
+      <p class="hint-text">No Rest or Rise rule: with ½ m cells, flat ground already ends on a cell boundary, so nothing needs to rise into the cell above. The block's own height sets how steep it can get. In the game today, faces steeper than 44° slide, so 45° ramps would slide unless that limit moves.</p>
     </section>
     <p class="keys">Click to use the tool, right-click to remove, drag to orbit (both views follow), scroll to zoom. <kbd>1</kbd>–<kbd>6</kbd> block, <kbd>P</kbd> plant, <kbd>G</kbd> grow, <kbd>X</kbd> place/remove.</p>
   </aside>
@@ -262,17 +264,20 @@ const W = 24, D = 24, MAX_M = 16, MAX_GROWTH = 4; // growth steps of ½ m
 const idx = (x, z) => z * W + x;
 const clampi = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-const state = { layout: 'both', tool: 'place', mat: 'grass', brush: 2, footing: 'cell', depth: 1, mode: 'adaptive', markFloat: true, cells: false, auto: false, scene: 'meadow' };
+const state = { layout: 'both', tool: 'place', mat: 'grass', brush: 2, footing: 'cell', steep: 'on', mode: 'adaptive', markFloat: true, cells: false, auto: false, scene: 'meadow' };
 
 // ---- Two worlds. Each is columns of cells, bottom to top (2.5D: no caves), plus a plant per column
-// (growth steps of ½ m). `sy` is the cell height in metres.
+// (growth steps of ½ m). `sy` is the cell height in metres. `part` marks each cell: 0 a block of
+// its own, 1 and 2 the lower and upper cells of a 1 m double block (½ m world only).
 function makeWorld(kind) {
-  return { kind, sy: kind === 'm1' ? 1 : 0.5, cols: Array.from({ length: W * D }, () => []), plants: new Map(), surf: [], triInfo: [] };
+  return { kind, sy: kind === 'm1' ? 1 : 0.5, cols: Array.from({ length: W * D }, () => []), part: Array.from({ length: W * D }, () => []), plants: new Map(), surf: [], triInfo: [] };
 }
 const worlds = { m1: makeWorld('m1'), half: makeWorld('half') };
 const heightOf = (w, c) => w.cols[c].length; // cells
 const adaptive = (w, c) => state.mode === 'adaptive' && w.cols[c].length > 0 && MAT[w.cols[c][w.cols[c].length - 1]].natural;
 const topMat = (w, c) => { const s = w.cols[c]; return s.length ? s[s.length - 1] : null; };
+// The top block's height in cells: 2 for a double block, else 1.
+const topSize = (w, c) => (w.part[c][w.cols[c].length - 1] === 2 ? 2 : 1);
 
 // ---- Today's rules (Phase 18, ADAPTIVE_BLOCKS.md §2): the Shape Playground's tables.
 // Corner heights in halves of a cell (0 floor, 1 half, 2 top), NW NE SE SW; canonical shapes descend east.
@@ -350,13 +355,14 @@ function fill(nw, ne, se, sw) {
   const centre = d1 > d2 ? a1 : d2 > d1 ? a2 : Math.max(a1, a2);
   return [[nw, (nw + ne) / 2, ne], [(nw + sw) / 2, centre, (ne + se) / 2], [sw, (sw + se) / 2, se]];
 }
+// The top block is ½ m (one cell) or a 1 m double block (two): its corners drop at most to its floor.
 function shapeHalf(w, x, z) {
-  const t = heightOf(w, idx(x, z)), at = around(w, t), d = state.depth;
+  const col = idx(x, z), t = heightOf(w, col), at = around(w, t), d = topSize(w, col);
   const c = CORNERS.map(([dx, dz]) => {
     const m = Math.min(at(x + dx, z), at(x, z + dz), at(x + dx, z + dz));
     return m >= t ? t : Math.max(t - d, m); // top, or drop (rule 2)
   });
-  const deep = c.some((v) => v < t - 1) ? ' (1 m)' : '';
+  const deep = d === 2 ? ' (1 m)' : '';
   if (c.every((v) => v < t)) {
     const o = oneWide(w, x, z, t);
     if (o.ramp !== undefined) { // rule 4: the edge toward the higher neighbour rises to the top
@@ -611,7 +617,7 @@ function rebuildLines(v) {
     for (let c = 0; c < W * D; c++) {
       const t = heightOf(w, c); if (!t) continue;
       const x = c % W, z = Math.floor(c / W);
-      boxEdges(lp, x + 0.01, (t - 1) * w.sy + 0.005, z + 0.01, x + 0.99, t * w.sy - 0.005, z + 0.99);
+      boxEdges(lp, x + 0.01, (t - topSize(w, c)) * w.sy + 0.005, z + 0.01, x + 0.99, t * w.sy - 0.005, z + 0.99);
       const p = w.plants.get(c);
       if (p) for (let k = 0; k < plantCells(w, p.n); k++) boxEdges(pp, x + 0.03, (t + k) * w.sy + 0.01, z + 0.03, x + 0.97, (t + k + 1) * w.sy - 0.01, z + 0.97);
     }
@@ -622,13 +628,16 @@ function rebuildLines(v) {
 }
 function updateStats(v) {
   const w = v.world;
-  let cells = 0, plantCellsN = 0; const kinds = new Set();
-  for (let c = 0; c < W * D; c++) { cells += w.cols[c].length; if (adaptive(w, c)) kinds.add(w.surf[c].key); }
+  let cells = 0, plantCellsN = 0, doubles = 0; const kinds = new Set();
+  for (let c = 0; c < W * D; c++) {
+    cells += w.cols[c].length; doubles += w.part[c].filter((q) => q === 2).length;
+    if (adaptive(w, c)) kinds.add(w.surf[c].key);
+  }
   for (const p of w.plants.values()) plantCellsN += plantCells(w, p.n);
   const n = w.plants.size;
   const plantStore = w.kind === 'half' ? `${plantCellsN} plant voxels` : `${plantCellsN} plant blocks with a height property`;
   document.getElementById('stats-' + v.kind).innerHTML =
-    `<span><strong>${cells.toLocaleString()}</strong> ground cells</span> · <span><strong>${kinds.size}</strong> shapes in use</span> · ` +
+    `<span><strong>${cells.toLocaleString()}</strong> ground cells</span>${w.kind === 'half' ? ` · <span><strong>${doubles}</strong> 1 m blocks</span>` : ''} · <span><strong>${kinds.size}</strong> shapes in use</span> · ` +
     `<span>${plantStore}</span> · <span class="${v.floating ? 'bad' : ''}"><strong>${v.floating}</strong> of ${n} plants floating</span>`;
 }
 function refresh(groundToo = true) {
@@ -647,13 +656,25 @@ function stack(n, sy, top) {
   }
   return s;
 }
+// On ½ m cells with "1 m on steep ground", a column at least 1 m above any of its 8 neighbours gets
+// a 1 m double block on top (its top two cells of the top material), so it shapes into 45°. The
+// diagonals count: a ½ m block 1 m above a diagonal neighbour could drop only ½ m at that corner,
+// while its edge neighbours drop to the diagonal's height, and its side would show between them.
 function realise() {
   for (const w of Object.values(worlds)) {
     w.plants.clear();
+    const N = design.map(({ S }) => Math.min(Math.round(MAX_M / w.sy) - 4, w.kind === 'm1' ? Math.max(1, Math.round(S + 0.5)) : Math.max(1, Math.round(S / 0.5))));
     for (let c = 0; c < W * D; c++) {
-      const { S, top, plant } = design[c];
-      const n = w.kind === 'm1' ? Math.max(1, Math.round(S + 0.5)) : Math.max(1, Math.round(S / 0.5));
-      w.cols[c] = stack(Math.min(n, Math.round(MAX_M / w.sy) - 4), w.sy, top);
+      const { top, plant } = design[c], n = N[c], x = c % W, z = Math.floor(c / W);
+      let dbl = false;
+      if (w.kind === 'half' && state.steep === 'on' && n >= 2)
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, zz = z + dz;
+          if (xx >= 0 && xx < W && zz >= 0 && zz < D && N[idx(xx, zz)] <= n - 2) dbl = true;
+        }
+      w.cols[c] = stack(n, w.sy, top);
+      w.part[c] = w.cols[c].map(() => 0);
+      if (dbl) { w.cols[c][n - 2] = top; w.part[c][n - 2] = 1; w.part[c][n - 1] = 2; }
       if (plant && (top === 'grass' || top === 'dirt')) w.plants.set(c, { n: plant, shown: plant });
     }
   }
@@ -738,7 +759,7 @@ seg('layout', (v) => { state.layout = v; $('stage').dataset.layout = v; });
 seg('tool', (v) => setTool(v));
 seg('brush', (v) => { state.brush = Number(v); });
 seg('footing', (v) => { state.footing = v; refresh(false); });
-seg('depth', (v) => { state.depth = Number(v); refresh(); });
+seg('steep', (v) => { state.steep = v; realise(); refresh(); });
 seg('mode', (v) => { state.mode = v; refresh(); });
 $('opt-float').addEventListener('change', (e) => { state.markFloat = e.target.checked; refresh(false); });
 $('opt-cells').addEventListener('change', (e) => { state.cells = e.target.checked; refresh(false); });
@@ -773,11 +794,11 @@ function pick(v, px, py) {
 function targetOf(v, inf, remove) {
   const w = v.world;
   const k = w.kind === 'half' ? state.brush : 1;
-  if (remove) {
+  if (remove) { // the whole top block, whichever size
     const col = inf.kind === 'top' ? inf.col : inf.owner;
     if (col < 0 || !w.cols[col].length) return null;
-    const n = w.cols[col].length, yb = Math.max(0, Math.floor((n - 1) / k) * k);
-    return { col, yb, yt: n };
+    const n = w.cols[col].length;
+    return { col, yb: n - topSize(w, col), yt: n };
   }
   const col = inf.kind === 'top' ? inf.col : inf.facing;
   if (col < 0) return null;
@@ -797,8 +818,11 @@ function apply(v, inf, remove) {
   }
   const t = targetOf(v, inf, remove || state.tool === 'remove');
   if (!t) return;
-  if (remove || state.tool === 'remove') w.cols[t.col].length = t.yb;
-  else for (let y = t.yb; y < t.yt; y++) w.cols[t.col].push(state.mat);
+  if (remove || state.tool === 'remove') { w.cols[t.col].length = t.yb; w.part[t.col].length = t.yb; }
+  else {
+    const dbl = t.yt - t.yb === 2 && w.kind === 'half';
+    for (let y = t.yb; y < t.yt; y++) { w.cols[t.col].push(state.mat); w.part[t.col].push(dbl ? (y === t.yb ? 1 : 2) : 0); }
+  }
   // Plants are replaceable and need ground: an edit to their column takes them with it.
   w.plants.delete(t.col);
   rebuildGround(v); rebuildPlants(v); rebuildLines(v); updateStats(v);
@@ -834,8 +858,11 @@ function inspect(col) {
       rows.push([t + k, label, 'plant']);
     }
     for (let y = t - 1; y >= Math.max(0, t - 3); y--) {
-      const m = w.cols[col][y];
-      rows.push([y, y === t - 1 && adaptive(w, col) ? `${m} · ${w.surf[col].name}` : `${m} · full`, '']);
+      const m = w.cols[col][y], q = w.part[col][y];
+      const top = y >= t - topSize(w, col);
+      const shape = top && adaptive(w, col) ? w.surf[col].name : 'full';
+      const label = q === 2 ? `${m} 1 m block (upper half) · ${shape}` : q === 1 ? `${m} 1 m block (lower half)${top ? '' : ' · full'}` : `${m} · ${shape}`;
+      rows.push([y, label, '']);
     }
     el.innerHTML = rows.map(([y, label, cls]) => `<li><span>${fmtM(y * w.sy)} m</span><span class="${cls}">${esc(label)}</span></li>`).join('') +
       (p ? `<li><span></span><span>foot ${state.footing === 'cell' ? 'at the cell floor' : 'on the surface'}, ${fmtM(Math.max(0, plantGeom(w, col).float))} m above ground</span></li>` : '');
@@ -900,7 +927,7 @@ pressGroup($('layout'), state.layout);
 pressGroup($('tool'), state.tool);
 pressGroup($('brush'), String(state.brush));
 pressGroup($('footing'), state.footing);
-pressGroup($('depth'), String(state.depth));
+pressGroup($('steep'), state.steep);
 pressGroup($('mode'), state.mode);
 pressGroup(paletteEl, state.mat);
 loadScene(state.scene);
