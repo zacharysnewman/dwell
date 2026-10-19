@@ -47,6 +47,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   the structures store; worldgen placement deferred.
 - `docs/TREE_GROWTH.md` — design for Phase 30 (ADR 0033): hand-built trees grown by a computed skeleton
   reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
+- `docs/HALF_HEIGHT_GRID.md` — design for Phase 36 (ADR 0038), on the long-lived branch
+  `claude/half-height-voxels` only: ½ m cells, stored cardinal ramps shaped at generation, no reshaping.
 - `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
   not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).
 - `docs/adr/` — architecture decision records.

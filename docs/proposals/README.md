@@ -5,11 +5,7 @@ Plans for work that has been investigated but **not adopted**. Nothing here is a
 A proposal is adopted by answering its owner questions, writing an ADR and adding phases to the
 implementation plan; the proposal is then folded into the design doc or deleted.
 
-Open proposals:
-
-| Proposal | Investigated | Owner questions |
-|---|---|---|
-| [Half-height voxels](./HALF_HEIGHT_VOXELS.md): 1 × ½ × 1 m cells, so ground and plants line up and plants grow ½ m at a time | 2026-10-19, with the [Half-Height Voxel Lab](../prototypes/half-height-lab.html) | §8 |
+There are no open proposals.
 
 Adopted proposals, and where they went:
 
@@ -19,6 +15,7 @@ Adopted proposals, and where they went:
 | Water (`WATER.md`): fluid looks as data, refraction, underwater, reflections | 2026-10-14, [ADR 0030](../adr/0030-fluid-looks-and-water-rendering.md), Phase 26 | [`docs/WATER_RENDERING.md`](../WATER_RENDERING.md) |
 | Structures (`STRUCTURES.md`): a structure sandbox and a data-driven structure system | 2026-10-14, [ADR 0031](../adr/0031-data-driven-structures.md), Phase 27 | [`docs/STRUCTURES.md`](../STRUCTURES.md) |
 | Tree growth (`TREE_GROWTH.md`): growing a hand-built tree from its extracted skeleton, and variations of it | 2026-10-14, [ADR 0033](../adr/0033-tree-growth.md), Phase 30 | [`docs/TREE_GROWTH.md`](../TREE_GROWTH.md) |
+| Half-height voxels (`HALF_HEIGHT_VOXELS.md`): ½ m cells, stored cardinal ramps, shaped at generation | 2026-10-19, [ADR 0038](../adr/0038-half-height-cells.md), Phase 36, for a playtest on the branch `claude/half-height-voxels` | [`docs/HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md); the proposal is kept beside it as the investigation's record |
 
 Numbers marked *estimate* in a proposal are extrapolated from published figures or arithmetic, not
 measured on Dwell. Measure them with the bench (`docs/DEV_TOOLS.md`) before relying on them.

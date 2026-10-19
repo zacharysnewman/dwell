@@ -1,10 +1,12 @@
 # Proposal: Half-Height Voxels (1 × ½ × 1 m cells)
 
-> **Status: proposal, not adopted** (2026-10-19). Investigated at the owner's request: make every
-> voxel half a metre tall, to simplify natural slopes, let plants such as grass line up with the
-> ground, and let plants grow ½ m at a time without special block handling. Prototype:
-> [Half-Height Voxel Lab](../prototypes/half-height-lab.html) ([`prototypes/`](../prototypes/README.md)).
-> Nothing here is architecture until an ADR adopts it (§8 lists the owner's questions).
+> **Status: adopted for a playtest** (2026-10-19, [ADR 0038](../adr/0038-half-height-cells.md),
+> Phase 36, design in [`HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md)), on the long-lived branch
+> `claude/half-height-voxels`. The owner chose ½ m cells, cardinal ramps only (½ m, and 1 m from
+> two ½ m cells on steep ground), shapes stored at generation and never reshaped, placed natural
+> blocks flat, ½ m per click, and 45° ramps that slide. This file is kept as the investigation's
+> record: the comparisons below include options not chosen (adaptive shapes, double blocks,
+> corners). Prototype: [Half-Height Voxel Lab](../prototypes/half-height-lab.html).
 
 This grid was considered once before. [ADR 0024](../adr/0024-adaptive-natural-blocks.md) option 3
 rejected it in favour of per-block shape rules, citing 2× the voxels, a non-cubic grid and "a

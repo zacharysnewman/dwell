@@ -741,7 +741,10 @@ into water: flooded; anywhere else: dry — no water from nothing), breaking a f
 water, and a flooded cell counts as water for swimming. Shape picking in the hotbar (the R key, the
 placement preview) went with the placed families.
 
-- Voxel = 1 m cube; `uint16` block-state ID (0 = air). The registry defines each state's density,
+- Voxel = 1 m cube; `uint16` block-state ID (0 = air). **[planned, Phase 36, on the branch
+  `claude/half-height-voxels` only]** cells 1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural
+  ground shaped once at generation from stored cardinal ramps ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md),
+  ADR 0038); until it is built, everything below describes 1 m cells. The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
   every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The world is 256 chunk

@@ -43,6 +43,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0035](0035-day-night-cycle.md) | The day/night cycle: world time drives a keyframed sky, light and fog, as data | Accepted |
 | [0036](0036-render-modes-and-cross-geometry.md) | Render modes as block data (opaque, cutout, translucent), a cross geometry, and placement rules as data; plants in world generation (partly revisits B10) | Accepted |
 | [0037](0037-brushes.md) | Brushes: VoxelSniper-style painting and sculpting over region-edit pastes with `KEEP` cells | Accepted |
+| [0038](0038-half-height-cells.md) | Half-height cells with stored cardinal ramps, shaped at generation | Accepted for a playtest on a branch |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the
