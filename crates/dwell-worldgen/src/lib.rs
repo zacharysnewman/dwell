@@ -76,9 +76,14 @@ pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     if version == GENERATOR_TERRAIN {
         return BifacialTerrain::new(world_seed).spawn_point();
     }
-    // The flat world's surface: its top layer (y = FLAT_TOP_Y − 1) as the adaptive rules shape it —
-    // a level field of natural blocks rests at half height (ADAPTIVE_BLOCKS.md).
-    let mut flat = dwell_world::VoxelWorld::flat();
+    // The flat world's (or the sandbox's) surface: its top layer (y = FLAT_TOP_Y − 1) as the
+    // adaptive rules shape it — a level field of natural blocks rests at half height
+    // (ADAPTIVE_BLOCKS.md), the sandbox's floor cube at full height — so the spawn is on the
+    // ground, not inside it.
+    let mut flat = dwell_world::VoxelWorld::new(
+        generator_for(version, world_seed),
+        Some(air_test_for(version, world_seed)),
+    );
     let top_y = dwell_world::FLAT_TOP_Y - 1;
     let top = flat.shape_at(0, top_y, 0);
     let feet = f64::from(top_y) + f64::from(dwell_blocks::shape::solid_span_at(top, 0.5, 0.5).hi);

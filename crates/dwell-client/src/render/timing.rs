@@ -21,6 +21,8 @@ pub const NEAR_WATER: &str = "gpu.near.water";
 pub const RIGHT_FAR_WATER: &str = "gpu.right.far.water";
 pub const RIGHT_NEAR_WATER: &str = "gpu.right.near.water";
 pub const MARCH: &str = "gpu.march";
+/// The water's tiles (water_tiles.rs): the noise tile once, the caustic layers each frame.
+pub const WATER_TILES: &str = "gpu.water.tiles";
 pub const COMPOSITE: &str = "gpu.composite";
 /// The whole frame on the GPU: the first pass's start to the last one's end.
 pub const FRAME: &str = "gpu.frame";

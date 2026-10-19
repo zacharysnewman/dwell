@@ -390,6 +390,62 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
 - **Limits** (screen-space): what is off screen, or hidden behind something nearer on screen, isn't
   reflected (it fades to the sky). Ray-marched reflections (W6) would remove both.
 
+### Cost: what the water spends and the fixes (2026-10-19)
+
+Measured with `?waterdbg=` (render/water.rs `DEBUG_SWITCHES`, each name turns one piece off: `ripple0`–`ripple2`,
+`glint`, `sky`, `refraction`, `absorption`, `caustics`, `foam`, `sparkle`, `under`, `flat`, `all`) and the
+bench's `water` step, which switches tier and switches mid-run. One flight, then round-robin records at fixed
+cameras, so a loaded machine's drift spreads over every configuration. Apple M1, 1280×720, 4× MSAA,
+`--unthrottled`. Other agents shared the machine (load 20–130), so each figure is a pass's least GPU time over a
+4 s record (telemetry's new `min`), the median of 3–6 rounds.
+
+**Before** (W3), shore from 20 m, `gpu.frame`: Low 2.95 ms, Medium 7.35 (+4.4), High 8.15 (+5.2). Under the
+surface: Low 1.60, Medium 5.03, High 6.12. The breakdown on Medium's shore view:
+
+| Piece off | Saves | |
+|---|---|---|
+| Caustics (above the surface) | 2.8 ms | Worley 3×3 per layer, two layers near, an integer modulo and two trig calls per point |
+| The three ripple layers | 1.3 ms | four hashed gradients per layer (modulo, sin and cos each) |
+| Glint, sky, refraction, absorption, foam, sparkle | under 0.4 each | within noise |
+| Under the surface: the composite's caustics | 2.7 ms | the same pattern over every floor pixel |
+| The split pass and the scene copy | ~0 | `flat` (a constant colour) costs the same as Low |
+
+**Fixes:**
+
+1. **Cheaper hashing** (`noise_d`, `cell_edge`): the lattice wraps once per lookup and neighbours step without
+   a modulo (`wrap_step`); gradients and the points' phases are unit vectors from the hash (`hash_dir`, one
+   rsqrt), so a point's wander needs the time's sines once per call. F1/F2 are kept branchless. About −2.7 ms
+   on the shore view, −3 ms under the surface (`water.rs` tests pin the wrap and the directions).
+2. **Water tiles** (`render/water_tiles.rs`): gradient noise with derivatives over 32 cells at 16 texels per
+   cell (512², drawn once), and per fluid this frame's two caustic layers over 16 cells at 32 texels per cell
+   (512² `rg16float`, drawn each Medium or High frame with water, `gpu.water.tiles` ≈ 0.35 ms). Ripples,
+   sparkle and foam sample the noise tile; caustics sample theirs where a pixel covers a texel or more and are
+   evaluated per pixel nearer (blended between), so close up they stay exact. Periods round to whole tiles
+   (`tile_cells`), so the wrap at 1,024 m stays exact; the ripples' largest layer repeats every 64 m, the
+   caustics every 22 m, under the other layers' turned lattices. A further −1.7 ms on the shore view.
+3. **Overdraw** was checked and is not a cost: chunk and LOD water don't overlap, water under the surface is
+   culled against solid neighbours, and the water half draws one layer per pixel.
+
+**After** (the same views, before W5a's reflections merged in): shore Low 2.39, Medium 4.02 (+1.6), High
+4.11 (+1.7); under Low 1.55, Medium 3.59 (+2.0), High 3.61. With W5a's reflections merged (0.13.1): shore
+Low 3.00, Medium 7.50 (+4.5), High 9.58 (+6.6); under Medium 3.73, High 3.78. The reflections (screen-space
+marching and the reflected clouds) are now the largest cost on Medium and High, over the 2 and 3 ms targets:
+their own budget is W5a's to tune.
+
+**Stalls** (35–340 ms frames): the main thread blocked inside `draw.raster` while the GPU, shared with other
+processes or behind on heavy frames, caught up; recording more commands into a backed-up GPU process waits
+for it. They came in bursts on every tier (Low too) whenever another process loaded the GPU, and stopped
+when it did. `render/pacing.rs` now keeps at most two frames in flight (`Queue::on_submitted_work_done`):
+the app skips a draw while two are (`draw.skipped`), and gives up waiting after 1 s. Under the same load,
+the W3 build's records showed long tasks to 557 ms; this build's frame interval stayed under 36 ms.
+
+**Tiers:** Low (phones): one ripple layer, no scene reads. **Medium is now the desktop default**: the whole
+look. High: Medium plus the fine caustic layer to twice the distance (reflections at their High settings
+come with W5a). A CPU adapter (SwiftShader in CI) draws Low whatever is chosen (`water_for`, #104).
+
+**Look:** the shore, edge and under-the-surface views were compared before and after: the same look, with
+the caustic and ripple patterns in other places (new hashes and periods).
+
 ## Sources
 
 - GPU Gems 2 ch. 19, generic refraction: https://developer.nvidia.com/gpugems/gpugems2/part-ii-shading-lighting-and-shadows/chapter-19-generic-refraction-simulation

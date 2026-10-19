@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestStable, nextVersion, publishAction, releasePlan } from './release';
+import { latestStable, nextVersion, publishAction, releasePlan, siteDeploy } from './release';
 
 const SHA = 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12';
 const base = { run: 42, sha: SHA, packageVersion: '0.2.0', latestStable: null };
@@ -339,5 +339,20 @@ describe('two runs that would release one version (concurrent pushes, 2026-10-16
         releaseExists: false,
       }),
     ).toBe('create');
+  });
+});
+
+describe('how a run updates the site (the v0.13.0 tag run, 2026-10-16)', () => {
+  // The github-pages environment deploys only from the default branch: v0.13.0's tag run was
+  // rejected ("Tag "v0.13.0" is not allowed to deploy to github-pages due to environment
+  // protection rules"), so a run off the default branch hands the deploy to a run on it.
+  it('calls the Pages workflow from a run on the default branch', () => {
+    expect(siteDeploy('refs/heads/main', 'main')).toBe('call');
+  });
+  it('dispatches it on the default branch from a pushed tag', () => {
+    expect(siteDeploy('refs/tags/v0.13.0', 'main')).toBe('dispatch');
+  });
+  it('and from a run by hand on another branch', () => {
+    expect(siteDeploy('refs/heads/release-0.12', 'main')).toBe('dispatch');
   });
 });

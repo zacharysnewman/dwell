@@ -4,7 +4,9 @@
 //     --json tagName`), prints `key=value` lines for $GITHUB_OUTPUT;
 //   release.ts publish CHANNEL EVENT SHA TAG_COMMIT RELEASE_EXISTS
 //     (TAG_COMMIT: the remote tag's commit or `-`; RELEASE_EXISTS: true | false), checked again just
-//     before publishing, prints `action=create|skip` (`publishAction`).
+//     before publishing, prints `action=create|skip` (`publishAction`);
+//   release.ts site REF DEFAULT_BRANCH
+//     prints `site=call|dispatch` (`siteDeploy`): how the run deploys the site.
 // Runs under Node's type stripping.
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -196,6 +198,17 @@ export function publishAction(input: {
   return releaseExists ? 'skip' : 'create';
 }
 
+/**
+ * How a release run updates the site (RELEASES.md §4): `call` the Pages workflow in this run, or
+ * `dispatch` it on the default branch. The github-pages environment deploys only from the default
+ * branch (its deployment branch policy), so a run on a tag — or by hand on another branch — would
+ * have its deploy rejected (v0.13.0, 2026-10-16); it hands the deploy to a Pages run on the default
+ * branch instead, which assembles the site from every release, its own included.
+ */
+export function siteDeploy(ref: string, defaultBranch: string): 'call' | 'dispatch' {
+  return ref === `refs/heads/${defaultBranch}` ? 'call' : 'dispatch';
+}
+
 function publishMain(args: string[]): number {
   const [channel, event, sha = '', tagCommit = '-', releaseExists = 'false'] = args;
   if (
@@ -225,6 +238,15 @@ function publishMain(args: string[]): number {
 
 function main(args: string[]): number {
   if (args[0] === 'publish') return publishMain(args.slice(1));
+  if (args[0] === 'site') {
+    const [ref, defaultBranch] = args.slice(1);
+    if (!ref || !defaultBranch) {
+      console.error('usage: release.ts site REF DEFAULT_BRANCH');
+      return 2;
+    }
+    console.log(`site=${siteDeploy(ref, defaultBranch)}`);
+    return 0;
+  }
   const [event, ref = '', run = '0', sha = '', releasesFile, requested, previous] = args;
   if (event !== 'push' && event !== 'tag' && event !== 'dispatch') {
     console.error('usage: release.ts push|tag|dispatch REF RUN SHA [RELEASES.json [REQUESTED]]');
