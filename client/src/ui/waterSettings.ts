@@ -1,8 +1,10 @@
 // The water quality setting (docs/WATER_RENDERING.md §4, Phase 26), in the settings menu and kept
 // in this browser under `dwell.water` as a record. The store is append-only (docs/RELEASES.md):
 // later builds add optional fields, and a build rewriting the record keeps the fields it doesn't
-// know (`waterRecord`). W1b: Low draws one layer of ripples, Medium and High three (they part with
-// refraction, W3, and reflections, W5). Phones default to Low (owner, tentatively), desktops High.
+// know (`waterRecord`). Low: one layer of ripples, no scene reads (phones); Medium: the whole
+// look, refraction, depth colour, foam and caustics (the desktop default); High: extras over Medium
+// (finer caustics farther out; reflections to come). A CPU adapter draws Low whatever is chosen
+// (render/mod.rs `water_for`). Measured in docs/WATER_RENDERING.md §8 ("Cost").
 
 export const WATER_QUALITIES = ['low', 'medium', 'high'] as const;
 export type WaterQuality = (typeof WATER_QUALITIES)[number];
@@ -18,7 +20,7 @@ export const WATER_QUALITY_LABELS: Record<WaterQuality, string> = {
 };
 
 export function defaultWater(mobile: boolean): WaterSettings {
-  return { quality: mobile ? 'low' : 'high' };
+  return { quality: mobile ? 'low' : 'medium' };
 }
 
 function isQuality(v: unknown): v is WaterQuality {

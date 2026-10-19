@@ -390,11 +390,11 @@
         { "do": "settle", "maxS": 120 },
         {
           "do": "camera",
-          "position": [-80, 1.2, 0],
+          "position": [18326, 1.5, -7621],
           "yaw": 292.5,
-          "pitch": -10,
-          "aroundPlayer": true
+          "pitch": -10
         },
+        { "do": "settle", "maxS": 60 },
         { "do": "wait", "s": 2 },
         { "do": "shot", "name": "beach-edge" },
         {

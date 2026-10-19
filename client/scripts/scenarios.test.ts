@@ -123,6 +123,24 @@ describe('scenarios', () => {
     ).toThrow(/"near" or "far"/);
   });
 
+  it('sets the water quality and its cost switches mid-run', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'a',
+          steps: [{ do: 'water', quality: 'medium', debug: 'caustics' }, { do: 'water' }],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'water', quality: 'medium', debug: 'caustics' },
+      { do: 'water' },
+    ]);
+    expect(() =>
+      parseScenarios(file([{ name: 'a', steps: [{ do: 'water', quality: 'ultra' }] }])),
+    ).toThrow(/quality/);
+  });
+
   it('rejects bad entries with a message', () => {
     expect(() => parseScenarios(file([{ name: 'a', steps: [{ do: 'jump' }] }]))).toThrow(
       /"do" must be one of/,

@@ -9,9 +9,9 @@ import {
 import { defaultSettings, loadSettings, saveSettings, settingsJson } from './settingsMenu';
 
 describe('water settings', () => {
-  it('default to Low on phones and High on desktops', () => {
+  it('default to Low on phones and Medium on desktops', () => {
     expect(defaultWater(true)).toEqual({ quality: 'low' });
-    expect(defaultWater(false)).toEqual({ quality: 'high' });
+    expect(defaultWater(false)).toEqual({ quality: 'medium' });
   });
 
   it('take the default for anything missing or unknown', () => {

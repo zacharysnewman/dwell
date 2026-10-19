@@ -541,6 +541,7 @@ impl Client {
                     set(&r, "p50", st.p50);
                     set(&r, "p95", st.p95);
                     set(&r, "p99", st.p99);
+                    set(&r, "min", st.min);
                     set(&r, "max", st.max);
                     set(&r, "sum", st.sum);
                     set(&o, name, r);
@@ -1842,6 +1843,16 @@ impl Inner {
     }
 
     fn draw(&mut self) {
+        // Not while the GPU is still behind on earlier frames (render/pacing.rs): recording now
+        // would block this thread until it caught up.
+        if !self
+            .renderer
+            .borrow_mut()
+            .ready_to_draw(telemetry::now_ms())
+        {
+            telemetry::count("draw.skipped", 1.0);
+            return;
+        }
         let acquire = telemetry::now_ms();
         let current = self.surface.get_current_texture();
         telemetry::add("draw.acquire", telemetry::now_ms() - acquire);

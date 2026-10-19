@@ -49,6 +49,8 @@ pub struct TickSample {
 pub struct Stats {
     pub n: usize,
     pub mean: f64,
+    /// The least value: for GPU pass times on a shared GPU, the closest to the pass's own cost.
+    pub min: f64,
     pub p50: f64,
     pub p95: f64,
     pub p99: f64,
@@ -68,6 +70,7 @@ impl Stats {
         Stats {
             n: v.len(),
             mean: sum / v.len() as f64,
+            min: v[0],
             p50: at(0.5),
             p95: at(0.95),
             p99: at(0.99),
@@ -291,6 +294,7 @@ mod tests {
         let v: Vec<f64> = (1..=100).map(f64::from).collect();
         let s = Stats::of(&v);
         assert_eq!((s.p50, s.p95, s.p99, s.max), (51.0, 95.0, 99.0, 100.0));
+        assert_eq!(s.min, 1.0);
         assert_eq!(Stats::of(&[]).n, 0);
     }
 }

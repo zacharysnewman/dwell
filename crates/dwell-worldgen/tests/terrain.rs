@@ -291,10 +291,9 @@ fn the_sandbox_is_the_flat_world_in_its_indestructible_floor_block() {
     let mut world = VoxelWorld::new(sandbox, None);
     assert_eq!(world.get_voxel(3, -1, 3), floor);
     assert_eq!(world.get_voxel(3, 0, 3), M.air);
-    assert_eq!(
-        spawn_point_for(GENERATOR_SANDBOX, 7),
-        spawn_point_for(GENERATOR_FLAT, 7)
-    );
+    // The floor is a full cube (not an adaptive natural block like the flat world's grass, which
+    // rests at half height): the spawn stands on top of it, not half a metre inside it.
+    assert_eq!(spawn_point_for(GENERATOR_SANDBOX, 7), [0.5, 0.0, 0.5]);
 }
 
 #[test]
