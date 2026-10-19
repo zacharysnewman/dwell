@@ -303,7 +303,7 @@ vectors = {
     "lod_index_empty": lod_index(1, []),
     "lod_index_part": lod_index(0, [(-5, 1022, 3, 1)]),
     "lod_index_update": lod_update([(5, 1024, 6, 9)]),
-    "lod_request": lod_request([(3, (-4, 17, 8), 0), (19, (0, 0, 0), 12)]),
+    "lod_request": lod_request([(3, (-4, 17, 8), 0), (12, (0, 0, 0), 12)]),
     "lod_data_generated": lod_head(LF["Generated"], 5, (100, 3, -2), 0),
     "lod_data_unchanged": lod_head(LF["Unchanged"], 12, (1, 0, 2), 77),
     "lod_data_explicit": LOD_EXPLICIT,

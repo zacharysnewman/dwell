@@ -22,9 +22,14 @@ fn zero() -> f64 {
 }
 
 fn flat_bounds() -> LodBounds {
+    flat_bounds_at(0.0)
+}
+
+/// The flat test world with its surface at `top` instead of 0.
+fn flat_bounds_at(top: f64) -> LodBounds {
     LodBounds {
-        lo: 0.0,
-        hi: -1.0,
+        lo: top,
+        hi: top - 1.0,
         lo_b: f64::NEG_INFINITY,
         hi_b: f64::NEG_INFINITY,
         any_inside: true,
@@ -92,13 +97,17 @@ fn bifacial_section(c: LodCoord) -> GeneratedSection {
 
 /// The flat world at LOD: stone where a cell's bottom is below 0.
 fn flat_section(c: LodCoord) -> GeneratedSection {
+    flat_section_at(c, 0)
+}
+
+fn flat_section_at(c: LodCoord, top: i64) -> GeneratedSection {
     let mut cells = vec![0u16; VOLUME];
-    let kind = kind_from_bounds(c, &flat_bounds());
+    let kind = kind_from_bounds(c, &flat_bounds_at(top as f64));
     let y0 = section_origin(c).y;
     let size = cell_size(c.level);
     if kind != LodKind::Empty {
         for y in -1..=32 {
-            if y0 + i64::from(y) * size >= 0 {
+            if y0 + i64::from(y) * size >= top {
                 continue;
             }
             for z in -1..=32 {
@@ -141,6 +150,8 @@ struct Host {
     stuck_below: i32,
     /// Serve the bifacial test world instead of the flat one.
     bifacial: bool,
+    /// The flat test world's surface (m; 0 unless a test needs ground deeper than the midplane).
+    flat_top: i64,
     /// Every generated section's surface is a river: floor 118 m, water 121 m.
     river: bool,
     /// Every section asked of the generator.
@@ -260,7 +271,7 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
                 let b = if h.bifacial {
                     bifacial_bounds()
                 } else {
-                    flat_bounds()
+                    flat_bounds_at(h.flat_top as f64)
                 };
                 lod.on_lod_bounds(level, i, k, Some(b));
             }
@@ -268,7 +279,7 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
                 let mut s = if h.bifacial {
                     bifacial_section(c)
                 } else {
-                    flat_section(c)
+                    flat_section_at(c, h.flat_top)
                 };
                 if h.river {
                     let mut surface = vec![0.0f32; SURFACE_LEN];
@@ -383,7 +394,7 @@ fn covers_the_view_with_no_holes_or_overlaps_every_frame_while_moving_and_swappi
     // Chunks within 3 of the body are streamed (and drawable after a while).
     let mut host = Host::with_chunks(|c| chebyshev(c, cc(0, 0, 0)) <= 3);
     let mut lod = system(4.0, 64, 16, 8);
-    // Walk, look around, then rise with the dev camera to 2,000 km.
+    // Walk, look around, then rise with the dev camera to 200 km (four of the world's radii).
     let mut path = Vec::new();
     for i in 0..60 {
         let i = f64::from(i);
@@ -391,7 +402,7 @@ fn covers_the_view_with_no_holes_or_overlaps_every_frame_while_moving_and_swappi
     }
     for i in 0..90 {
         let i = f64::from(i);
-        let alt = 1.6 * (2e6f64 / 1.6).powf(i / 89.0);
+        let alt = 1.6 * (2e5f64 / 1.6).powf(i / 89.0);
         path.push(camera(
             [180.0, alt, 0.5 + i * alt * 0.01],
             30.0,
@@ -418,7 +429,7 @@ fn covers_the_view_with_no_holes_or_overlaps_every_frame_while_moving_and_swappi
             assert_eq!(shown.len(), s.drawn.len());
             let l = leaves(&s, false);
             for _ in 0..100 {
-                let Some(p) = point_in_view(cam, &mut random, 3e6) else {
+                let Some(p) = point_in_view(cam, &mut random, 3e5) else {
                     continue;
                 };
                 let n = covering(&l, p);
@@ -735,9 +746,9 @@ fn refines_by_screen_space_error_coarser_with_distance_and_altitude() {
 #[test]
 fn keeps_each_columns_bounds_apart() {
     // The TS keyed a column's bounds by lodId(level, i, 0, k), which is −1 (row 0 is below the
-    // world's first row) at every level up to 17 since the octree counts y from −2²³: all columns
-    // of those levels shared the first bounds fetched. Each column's key is its own here.
-    for level in [1, 5, 8, 17, 18, 19] {
+    // world's first row) at most levels since the octree counts y from its root's corner: all
+    // columns of those levels shared the first bounds fetched. Each column's key is its own here.
+    for level in [1, 5, 8, 10, 11, MAX_LEVEL] {
         let c = section_at(level, [0.0, 0.0, 0.0]);
         let key = bounds_key(level, c.i, c.k);
         assert!(key >= 0, "level {level}");
@@ -966,7 +977,7 @@ impl Server {
     fn new(site: Vec3) -> Self {
         Self {
             site,
-            path: (1..=19)
+            path: (1..=MAX_LEVEL)
                 .map(|level| id_of(section_at(level, site)))
                 .collect(),
             revision: 5,
@@ -1040,14 +1051,14 @@ fn asks_for_sections_under_an_index_entry_top_down_and_trusts_generated_for_subt
     assert!(r.lod.active);
     // Every section on the modified path was asked about (down to the finest level in view)...
     let asked: HashSet<LodId> = s.asked.iter().map(request_id).collect();
-    for level in 8..=19 {
+    for level in 8..=MAX_LEVEL {
         assert!(asked.contains(&id_of(section_at(level, site))), "{level}");
     }
     // ...and nothing else but their children: a Generated answer covered the rest of a subtree.
     for q in &s.asked {
         let on_path = s.on_path(q);
         let parent = ancestor(request_coord(q), i32::from(q.level) + 1);
-        assert!(on_path || q.level == 19 || s.path.contains(&id_of(parent)));
+        assert!(on_path || i32::from(q.level) == MAX_LEVEL || s.path.contains(&id_of(parent)));
         if q.level > 8 {
             assert!(on_path); // above the index level: from the index alone
         }
@@ -1068,7 +1079,7 @@ fn asks_again_with_the_revision_it_holds_when_an_index_entry_changes_unchanged_s
     s.exchange(&mut r, 60);
     // The entry and its ancestors, with the revision held; then the path below, top down.
     let above: Vec<&LodSectionRequest> = s.asked.iter().filter(|q| q.level >= 8).collect();
-    assert_eq!(above.len(), 20 - 8);
+    assert_eq!(above.len(), (MAX_LEVEL + 1 - 8) as usize);
     for q in above {
         assert_eq!(q.known_revision, 5);
     }
@@ -1239,18 +1250,22 @@ fn asks_for_the_chunks_beyond_the_view_nearest_first_within_the_render_radius_on
 fn never_asks_for_buried_chunks_underground_only_the_streamed_view_is_drawn() {
     // Regression (playtest: RTT and frame time climbing while standing still): drawing caves in
     // buried sections also asked the server for every solid-rock chunk within the full-detail
-    // distance. In the flat world everything below y = 0 is buried; at the surface, only chunks
-    // near it are asked.
-    let surface = [0.5, 1.6, 0.5];
+    // distance. In the flat world everything below its surface is buried; at the surface, only
+    // chunks near it are asked. The surface is 1 km up, so the rock below it is face A's (Phase 16:
+    // the midplane is at 0).
+    let ground = 1024.0;
+    let surface = [0.5, ground + 1.6, 0.5];
     let mut top = ChunkSetup::new(surface, 4.0);
+    top.host.flat_top = ground as i64;
     top.run(&camera(surface, 0.0, -10.0), 300);
     assert!(top.requested().len() > 20);
     for c in top.requested() {
-        assert!(c.y >= -2, "{c:?}");
+        assert!(c.y >= 32 - 2, "{c:?}");
     }
 
-    let deep = [16.5, -12.0 * 32.0 + 16.0, 16.5];
+    let deep = [16.5, ground - 12.0 * 32.0 + 16.0, 16.5];
     let mut below = ChunkSetup::new(deep, 4.0);
+    below.host.flat_top = ground as i64;
     below.run(&camera(deep, 30.0, 0.0), 300);
     assert!(below.requested().is_empty());
     // The streamed chunks around the camera are still drawn (caves stay visible).

@@ -141,15 +141,16 @@ mod tests {
         assert_eq!(fly_speed_factor(1.0), SQRT_2);
         assert_eq!(fly_speed_factor(2.0), 2.0);
         assert_eq!(fly_speed_factor(20.0), 1024.0);
-        assert_eq!(fly_speed_factor(MAX), SQRT_2 * 2f64.powi(19));
+        assert_eq!(fly_speed_factor(MAX), 1024.0);
     }
 
     #[test]
-    fn reach_about_the_speed_near_the_flight_ceiling_at_the_top() {
-        // The height-based factor at 24,000 km is 1 + 24e6 / 32 ≈ 750,000.
-        assert!(fly_speed_factor(MAX) <= 1.0 + 24e6 / 32.0);
-        assert!(fly_speed_factor(MAX) > 0.95 * (1.0 + 24e6 / 32.0));
-        assert_close(fly_speed_floor(MAX), fly_base_speed() * 741455.2, -2);
+    fn cross_the_50_km_world_in_seconds_at_the_top() {
+        // Phase 16: level 20, 11 m/s × 2^10 = 11.3 km/s, crosses the 100 km disc in ~9 s.
+        assert_eq!(MAX, 20.0);
+        assert_close(fly_speed_floor(MAX), fly_base_speed() * 1024.0, -2);
+        let across = 2.0 * dwell_protocol::world::WORLD_RADIUS as f64;
+        assert!(across / fly_speed_floor(MAX) < 10.0);
     }
 
     #[test]

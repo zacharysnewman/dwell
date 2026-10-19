@@ -15,7 +15,8 @@ use dwell_protocol::*;
 use dwell_sim::server::ServerConfig;
 use dwell_sim::worldgen_pool::WorldgenPool;
 use dwell_world::{
-    CHUNK_SIZE, Chunk, ChunkCoord, GENERATOR_FLAT, GENERATOR_TERRAIN, M, MAX_CHUNK_Y, MIDPLANE_Y,
+    CHUNK_SIZE, Chunk, ChunkCoord, FLAT_TOP_Y, GENERATOR_FLAT, GENERATOR_TERRAIN, M, MAX_CHUNK_Y,
+    MIDPLANE_Y,
     MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash, chunk_of,
 };
 use dwell_worldgen::{TerrainGenerator, air_test_for, generator_for};
@@ -141,7 +142,7 @@ fn a_mismatched_hash_or_0_gets_every_chunk_explicitly_as_generated() {
 
 #[test]
 fn open_sky_costs_nothing_the_view_is_a_sphere_across_the_worlds_rows() {
-    // A player high in the sky (the world is 256 chunk rows tall): the view is all Air chunks, and
+    // A player high in the sky (the build volume is 3,126 chunk rows tall): the view is all Air chunks, and
     // the server neither generates nor stores them.
     let mut f = Fixture::new(ServerConfig {
         world_seed: 99,
@@ -218,7 +219,7 @@ fn moving_away_unloads_far_chunks_and_memory_stays_bounded() {
     // Walk (teleporting 1 m per tick) 20 chunks east.
     let (mut max_world, mut max_collision, mut max_streamed) = (0usize, 0usize, 0usize);
     for i in 0..20 * CHUNK_SIZE {
-        f.move_to(1, 0.5 + f64::from(i), 0.0, 0.5);
+        f.move_to(1, 0.5 + f64::from(i), f64::from(FLAT_TOP_Y), 0.5);
         f.chunks(1, 1, Some(&mut unloads));
         max_world = max_world.max(f.server.world().loaded_chunks());
         let collision = f
@@ -262,14 +263,14 @@ fn chunks_are_generated_ahead_of_a_moving_player_never_on_the_tick() {
     // collision never has to generate synchronously (walking streams without hitches).
     let mut f = Fixture::new(ServerConfig {
         generator_version: GENERATOR_FLAT,
-        spawn: Some([0.5, 0.0, 0.5]),
+        spawn: Some([0.5, f64::from(FLAT_TOP_Y), 0.5]),
         worldgen_budget: Duration::from_secs(1),
         ..ServerConfig::default()
     });
     f.join(1, &Client::new(1));
     let before = f.server.world().generated_on_access();
     for i in 0..12 * CHUNK_SIZE {
-        f.move_to(1, 0.5 + f64::from(i), 0.0, 0.5 + f64::from(i) * 0.4);
+        f.move_to(1, 0.5 + f64::from(i), f64::from(FLAT_TOP_Y), 0.5 + f64::from(i) * 0.4);
         f.server.step();
         f.server.take_outbox();
     }
@@ -318,12 +319,13 @@ fn a_server_with_worldgen_threads_streams_to_a_full_mode_client() {
 /// World rim: walking off the edge of the disc falls toward the midplane, not into a void.
 #[test]
 fn world_rim_walking_off_the_edge_of_the_disc_falls_toward_the_midplane_not_into_a_void() {
-    // The flat world near the rim: the last solid column is x = 8 191 999. There is no void: the
-    // body falls the 2 km to the midplane and the flip band carries it across (BIFACIAL_WORLD.md §3).
+    // The flat world near the rim: the last solid column is x = 49 999 (Phase 16: the 50 km disc).
+    // There is no void: the body falls the 32 m of the flat ground's edge to the midplane and the
+    // flip band carries it across to face B (BIFACIAL_WORLD.md §3).
     let spawn_x = f64::from(WORLD_RADIUS) - 9.5;
     let mut f = Fixture::new(ServerConfig {
         generator_version: GENERATOR_FLAT,
-        spawn: Some([spawn_x, 0.0, 0.5]),
+        spawn: Some([spawn_x, f64::from(FLAT_TOP_Y), 0.5]),
         worldgen_budget: Duration::from_secs(1),
         ..ServerConfig::default()
     });

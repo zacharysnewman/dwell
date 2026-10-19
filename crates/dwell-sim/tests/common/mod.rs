@@ -141,11 +141,11 @@ impl Fixture {
     }
 }
 
-/// The flat world with the spawn at (0.5, 0, 0.5).
+/// The flat world with the spawn on its ground at (0.5, `FLAT_TOP_Y`, 0.5).
 pub fn flat() -> ServerConfig {
     ServerConfig {
         generator_version: GENERATOR_FLAT,
-        spawn: Some([0.5, 0.0, 0.5]),
+        spawn: Some([0.5, f64::from(dwell_world::FLAT_TOP_Y), 0.5]),
         ..ServerConfig::default()
     }
 }

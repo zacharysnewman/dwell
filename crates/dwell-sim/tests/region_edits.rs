@@ -10,7 +10,10 @@ use dwell_blocks::STATES;
 use dwell_protocol::*;
 use dwell_sim::server::{EditPolicy, ServerConfig, SessionId};
 use dwell_world::region::{RegionCheck, read_box};
-use dwell_world::{Chunk, ChunkCoord, M, chunk_hash, generate_flat_chunk};
+use dwell_world::{Chunk, ChunkCoord, FLAT_TOP_Y, M, chunk_hash, generate_flat_chunk};
+
+/// The flat world's surface: its top voxel is G − 1.
+const G: i32 = FLAT_TOP_Y;
 
 fn join_streaming(f: &mut Fixture, id: SessionId) -> Welcome {
     let w = f.join(id, &Client::new(id as u8));
@@ -59,11 +62,11 @@ fn a_fill_reaches_every_client_as_one_modification_and_marks_its_chunks_dirty() 
     join_streaming(&mut f, 2);
     f.server.step();
     f.take_all();
-    // A 4 × 2 × 3 slab ahead of player 1 (at about (−1, 0, −0.25)), across chunks x −1 and 0.
-    f.send(1, fill([-2, 0, 2], [4, 2, 3], M.stone));
+    // A 4 × 2 × 3 slab ahead of player 1 (at about (−1, G, −0.25)), across chunks x −1 and 0.
+    f.send(1, fill([-2, G, 2], [4, 2, 3], M.stone));
     f.server.step();
     for x in -2..2 {
-        for y in 0..2 {
+        for y in G..G + 2 {
             for z in 2..5 {
                 assert_eq!(f.server.world().get_voxel(x, y, z), M.stone, "{x} {y} {z}");
             }
@@ -91,7 +94,7 @@ fn an_undo_pastes_the_box_back_as_it_was() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    let (min, size) = ([-3, -2, 1], [5u8, 4, 4]);
+    let (min, size) = ([-3, G - 2, 1], [5u8, 4, 4]);
     let dims = size.map(i32::from);
     let before = read_box(f.server.world(), min, dims).expect("a generated world reads");
     // Hollow out a box that reaches into the ground, then paste the earlier states back.
@@ -121,14 +124,14 @@ fn an_oversized_box_is_a_malformed_message() {
     f.server.step();
     f.take_all();
     let side = region_edit::MAX_SIDE as u8 + 1;
-    f.send(1, fill([0, 0, 2], [side, 1, 1], M.stone));
+    f.send(1, fill([0, G, 2], [side, 1, 1], M.stone));
     let out = f.take_all().remove(&1).unwrap_or_default();
     assert!(
         out.iter()
             .any(|m| matches!(m, Message::Reject(r) if r.reason == RejectReason::Malformed)),
         "{out:?}"
     );
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.air);
 }
 
 #[test]
@@ -171,7 +174,7 @@ fn more_than_max_queued_in_a_tick_are_dropped() {
     join_streaming(&mut f, 1);
     f.server.step();
     for x in 0..region_edit::MAX_QUEUED as i32 + 2 {
-        f.send(1, fill([x, 0, 2], [1, 1, 1], M.dirt));
+        f.send(1, fill([x, G, 2], [1, 1, 1], M.dirt));
     }
     f.server.step();
     let s = f.server.stats_of(1).unwrap();
@@ -184,12 +187,12 @@ fn out_of_reach_or_not_permitted_changes_nothing() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    f.send(1, fill([200, 0, 0], [2, 2, 2], M.stone));
+    f.send(1, fill([200, G, 0], [2, 2, 2], M.stone));
     f.server.step();
     let s = f.server.stats_of(1).unwrap();
     assert_eq!(s.last_region_check, RegionCheck::OutOfReach);
     assert_eq!(s.region_edits_rejected, 1);
-    assert_eq!(f.server.world().get_voxel(200, 0, 0), M.air);
+    assert_eq!(f.server.world().get_voxel(200, G, 0), M.air);
 
     let mut f = Fixture::new(ServerConfig {
         edits: EditPolicy::Nobody,
@@ -197,10 +200,10 @@ fn out_of_reach_or_not_permitted_changes_nothing() {
     });
     join_streaming(&mut f, 1);
     f.server.step();
-    f.send(1, fill([0, 0, 2], [2, 2, 2], M.stone));
+    f.send(1, fill([0, G, 2], [2, 2, 2], M.stone));
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().region_edits_applied, 0);
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.air);
 }
 
 /// The registry's unbreakable (`indestructible`) blocks survive a fill and a paste. Covered with a
@@ -215,9 +218,9 @@ fn unbreakable_blocks_are_left_as_they_are() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    f.server.world().set_voxel(0, 0, 2, locked);
-    f.send(1, fill([-1, 0, 2], [3, 1, 1], M.stone));
+    f.server.world().set_voxel(0, G, 2, locked);
+    f.send(1, fill([-1, G, 2], [3, 1, 1], M.stone));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), locked);
-    assert_eq!(f.server.world().get_voxel(1, 0, 2), M.stone);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), locked);
+    assert_eq!(f.server.world().get_voxel(1, G, 2), M.stone);
 }

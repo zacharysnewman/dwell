@@ -153,7 +153,9 @@ impl Runner {
                 for j in 0..n {
                     for k in 0..n {
                         let c = local.column_at(x0 + k * step, z0 + j * step);
-                        let h = c.height.clamp(-32768.0, 32767.0) as i16;
+                        // Above sea level (the map's colours): heights count from the midplane.
+                        let h = (c.height - dwell_world::SEA_LEVEL as f32).clamp(-32768.0, 32767.0)
+                            as i16;
                         out.extend_from_slice(&h.to_le_bytes());
                         out.push(u8::from(c.outside));
                     }

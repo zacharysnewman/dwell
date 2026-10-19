@@ -2,6 +2,7 @@
 // in for level 0 around the player, who then flies (creative flight) high enough to see the whole
 // disc drawn.
 import { expect, test, type Page } from '@playwright/test';
+import { World } from '../src/protocol/constants.gen';
 
 interface LodStats {
   drawn: number[];
@@ -40,8 +41,8 @@ test('local mode: LOD around the player, and the whole disc after flying up', as
     })
     .toBeGreaterThan(0);
 
-  // Fly up (running doubles the climb) to the ceiling, 24,000 km, looking straight down: the disc
-  // (radius 8,192 km) fills ~2/3 of the view.
+  // Fly up (running doubles the climb) to 150 km, looking straight down: the disc (radius 50 km)
+  // fills ~2/3 of the view. There is no ceiling (Phase 16, ADR 0025 D3).
   await call(page, 'fly(true)');
   await call(page, 'look(0, -89)');
   await call(page, "press('Space', true)");
@@ -54,18 +55,18 @@ test('local mode: LOD around the player, and the whole disc after flying up', as
     .poll(async () => ((await call(page, 'state()?.feet[1]')) as number | undefined) ?? 0, {
       timeout: 150_000,
     })
-    .toBeGreaterThan(23_900_000);
-  console.log(`flew to the ceiling in ${((Date.now() - climb) / 1000).toFixed(1)} s`);
+    .toBeGreaterThan(150_000);
+  console.log(`flew to 150 km in ${((Date.now() - climb) / 1000).toFixed(1)} s`);
   const start = Date.now();
   await expect
     .poll(
       async () => {
         const s = await lod(page);
         if (!s) return false;
-        // Only coarse levels, and together they cover at least the disc's area (π · 8,192 km²).
-        const fine = s.drawn.slice(0, 12).reduce((a, b) => a + b, 0);
+        // Only coarse levels, and together they cover at least the disc's area (π · 50 km²).
+        const fine = s.drawn.slice(0, 8).reduce((a, b) => a + b, 0);
         const area = s.drawn.reduce((sum, n, level) => sum + n * (32 * 2 ** level) ** 2, 0);
-        const disc = Math.PI * 8_192_000 ** 2;
+        const disc = Math.PI * World.worldRadius ** 2;
         return fine === 0 && area >= disc && s.generating === 0 && s.meshing === 0;
       },
       { timeout: 30_000 },

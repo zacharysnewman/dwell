@@ -92,7 +92,8 @@ mod tests {
             distance_m: 250_000.0,
             ..FOG
         };
-        assert!((haze_amount(&fog, 0.0, 0.0, 250_000.0) - fog.density / 2.0).abs() < 1e-6);
+        let sea = world::SEA_LEVEL as f64;
+        assert!((haze_amount(&fog, sea, sea, 250_000.0) - fog.density / 2.0).abs() < 1e-6);
     }
 
     #[test]

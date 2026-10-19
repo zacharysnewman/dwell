@@ -8,7 +8,12 @@ use dwell_protocol::players::BLOCK_EDIT_INTERVAL_MS;
 use dwell_protocol::*;
 use dwell_sim::server::{EditPolicy, ServerConfig, SessionId};
 use dwell_world::edit::EditCheck;
-use dwell_world::{Chunk, ChunkCoord, M, chunk_hash, chunk_of, generate_flat_chunk, local_index};
+use dwell_world::{
+    Chunk, ChunkCoord, FLAT_TOP_Y, M, chunk_hash, chunk_of, generate_flat_chunk, local_index,
+};
+
+/// The flat world's surface: its top voxel is G − 1.
+const G: i32 = FLAT_TOP_Y;
 
 fn brk(cell: [i32; 3], face: u8) -> Message {
     Message::BlockEditRequest(BlockEditRequest {
@@ -54,15 +59,15 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
     f.take_all();
 
     // Player 1 stands at (−1, 0, −0.25): two blocks on the ground ahead, in one tick.
-    f.send(1, place([-1, -1, 2], 2, M.stone));
-    f.send(1, place([0, -1, 2], 2, M.sand));
+    f.send(1, place([-1, G - 1, 2], 2, M.stone));
+    f.send(1, place([0, G - 1, 2], 2, M.sand));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(-1, 0, 2), M.stone);
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), M.sand);
+    assert_eq!(f.server.world().get_voxel(-1, G, 2), M.stone);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.sand);
     assert_eq!(
         f.server
             .world()
-            .find(ChunkCoord::new(0, 0, 0))
+            .find(ChunkCoord::new(0, 1, 0))
             .unwrap()
             .revision(),
         1
@@ -70,7 +75,7 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
     assert_eq!(
         f.server
             .world()
-            .find(ChunkCoord::new(-1, 0, 0))
+            .find(ChunkCoord::new(-1, 1, 0))
             .unwrap()
             .revision(),
         1
@@ -82,7 +87,7 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
         assert_eq!(mods[0].reason, VoxelModificationReason::Edit);
         // x = −1 lies in chunk −1, x = 0 in chunk 0: one entry per chunk, each at revision 1.
         assert_eq!(mods[0].chunks.len(), 2);
-        assert_eq!(mods[0].chunks[0].coord, [-1, 0, 0]);
+        assert_eq!(mods[0].chunks[0].coord, [-1, 1, 0]);
         assert_eq!(mods[0].chunks[0].revision, 1);
         assert_eq!(
             mods[0].chunks[0].changes,
@@ -91,7 +96,7 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
                 material: M.stone
             }]
         );
-        assert_eq!(mods[0].chunks[1].coord, [0, 0, 0]);
+        assert_eq!(mods[0].chunks[1].coord, [0, 1, 0]);
         assert_eq!(mods[0].chunks[1].revision, 1);
         assert_eq!(
             mods[0].chunks[1].changes,
@@ -107,9 +112,9 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
         f.server.step();
     }
     f.take_all();
-    f.send(2, brk([0, 0, 2], 2));
+    f.send(2, brk([0, G, 2], 2));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.air);
     let out = f.take_all();
     let mods = modifications(&out[&1]);
     assert_eq!(mods.len(), 1);
@@ -123,7 +128,7 @@ fn rate_limited_a_burst_of_three_then_one_per_block_edit_interval() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     for x in -3..=1 {
-        f.send(1, place([x, -1, 2], 2, M.dirt));
+        f.send(1, place([x, G - 1, 2], 2, M.dirt));
     }
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().edits_applied, 3);
@@ -132,8 +137,8 @@ fn rate_limited_a_burst_of_three_then_one_per_block_edit_interval() {
     for _ in 0..interval {
         f.server.step();
     }
-    f.send(1, place([0, -1, 2], 2, M.dirt));
-    f.send(1, place([1, -1, 2], 2, M.dirt));
+    f.send(1, place([0, G - 1, 2], 2, M.dirt));
+    f.send(1, place([1, G - 1, 2], 2, M.dirt));
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().edits_applied, 4);
 }
@@ -145,10 +150,10 @@ fn refused_by_the_edit_policy_nobody_may_edit() {
         ..flat()
     });
     join_streaming(&mut f, 1);
-    f.send(1, place([-1, -1, 2], 2, M.dirt));
+    f.send(1, place([-1, G - 1, 2], 2, M.dirt));
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().edits_applied, 0);
-    assert_eq!(f.server.world().get_voxel(-1, 0, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(-1, G, 2), M.air);
 }
 
 #[test]
@@ -160,11 +165,11 @@ fn refused_by_the_edit_policy_only_ops_may_edit() {
     });
     join_streaming(&mut f, 1);
     join_streaming(&mut f, 2);
-    f.send(1, place([-1, -1, 2], 2, M.dirt));
-    f.send(2, place([0, -1, 2], 2, M.dirt));
+    f.send(1, place([-1, G - 1, 2], 2, M.dirt));
+    f.send(2, place([0, G - 1, 2], 2, M.dirt));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(-1, 0, 2), M.air);
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), M.dirt);
+    assert_eq!(f.server.world().get_voxel(-1, G, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.dirt);
 }
 
 #[test]
@@ -172,12 +177,12 @@ fn resync_re_sends_chunks_the_client_has_with_their_current_revision() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    f.send(1, place([0, -1, 2], 2, M.sand));
+    f.send(1, place([0, G - 1, 2], 2, M.sand));
     f.server.step();
     f.take_all();
     f.send(
         1,
-        Message::ChunkResync(vec![[0, 0, 0], [0, -1, 0], [50, 0, 0]]),
+        Message::ChunkResync(vec![[0, 1, 0], [0, 0, 0], [50, 1, 0]]),
     ); // the last one was never streamed
     let out = f.take_all().remove(&1).unwrap_or_default();
     assert_eq!(out.len(), 2, "{out:?}");

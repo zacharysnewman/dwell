@@ -505,11 +505,12 @@ mod tests {
     #[test]
     fn the_deck_is_over_each_faces_own_sea_level() {
         let alt = CLOUDS.deck.altitude_m;
-        assert_eq!(deck_height(&CLOUDS, 0.0, 1.0), alt);
-        assert_eq!(deck_height(&CLOUDS, 300.0, 1.0), alt - 300.0);
+        let sea = dwell_protocol::world::SEA_LEVEL as f64;
+        assert_eq!(deck_height(&CLOUDS, sea, 1.0), alt);
+        assert_eq!(deck_height(&CLOUDS, sea + 300.0, 1.0), alt - 300.0);
         // Face B: the eye 300 m below its sea level's mirror is 300 m up on its own face.
         let mirror = 2.0 * crate::MIDPLANE_Y;
-        assert_eq!(deck_height(&CLOUDS, mirror - 300.0, -1.0), alt - 300.0);
+        assert_eq!(deck_height(&CLOUDS, mirror - sea - 300.0, -1.0), alt - 300.0);
     }
 
     #[test]
