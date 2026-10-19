@@ -161,6 +161,26 @@ shape now.
   lab does) makes them smaller. A fixed set with 1 m blocks needs mixed pieces, or a generator that
   places 1 m blocks only where every lower neighbour is a full 1 m lower.
 
+### Grass on flat ground only (2026-10-19)
+
+The owner asked that grass grow only on flat surfaces. The lab now plants only on a flat top: a
+full block on the ½ m grid, or a level resting top on the 1 m grid. A plant whose ground stops being
+flat goes, as one whose ground is dug away does. On flat ground the ½ m grid's plants then stand
+exactly on the ground (none floating, at the cell floor), and the 1 m grid's still float ½ m (§1).
+
+On slopes, it leaves little grass. The plants each scene puts on its grass, and how many have flat
+ground:
+
+| Scene (155 / 200 plants) | 1 m, adaptive | ½ m, adaptive | ½ m, cardinal ramps + corners | ½ m, cardinal ramps only | ½ m, no slopes |
+|---|---|---|---|---|---|
+| Hill | 5 | 19 | 21 | 106 | 155 |
+| Terrain | 13 | 39 | 47 | 125 | 200 |
+
+With adaptive shapes almost every block on a hillside is a slope or a corner, so hillsides go bare.
+Cardinal ramps only keep more, because their corners are flat blocks. If hillsides should be
+grassy, grass needs to grow on the gentle (27°) pieces too, sunk to the surface under it (the lab's
+**Sink to surface**), or the grass block's own top should carry the grass look on slopes.
+
 ## 4. Implications by area
 
 The code assumes one cell is one metre on every axis. There is no voxel-size constant; there are

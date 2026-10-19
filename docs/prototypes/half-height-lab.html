@@ -156,7 +156,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
         <button type="button" id="tool-plant" data-v="plant">Plant</button>
         <button type="button" id="tool-grow" data-v="grow">Grow</button>
       </div>
-      <p class="hint-text">Place and Remove change the view you click. Plant and Grow change the same column in both views. Plant puts grass on grass or dirt. Grow adds ½ m to a plant, up to 2 m.</p>
+      <p class="hint-text">Place and Remove change the view you click. Plant and Grow change the same column in both views. Plant puts grass on flat grass or dirt; grass doesn't grow on slopes, and goes when its ground stops being flat. Grow adds ½ m to a plant, up to 2 m.</p>
     </section>
 
     <section>
@@ -682,6 +682,9 @@ for (const [a, b] of [['m1', 'half'], ['half', 'm1']]) {
 function rebuildGround(v) {
   const { g, info } = buildGround(v.world);
   v.ground.geometry.dispose(); v.ground.geometry = g; v.world.triInfo = info;
+  // Grass needs flat ground under it: a plant whose ground is no longer flat goes, like one whose
+  // ground is dug away.
+  for (const c of [...v.world.plants.keys()]) if (!canPlant(v.world, c)) v.world.plants.delete(c);
 }
 function rebuildPlants(v) {
   const { g, floating } = buildPlants(v.world);
@@ -841,14 +844,25 @@ seg('tool', (v) => setTool(v));
 seg('brush', (v) => { state.brush = Number(v); });
 seg('footing', (v) => { state.footing = v; refresh(false); });
 seg('steep', (v) => { state.steep = v; realise(); refresh(); });
-seg('set', (v) => { state.set = v; storeAll(worlds.half); refresh(); });
-seg('mode', (v) => { state.mode = v; storeAll(worlds.half); refresh(); });
+seg('set', (v) => { state.set = v; storeAll(worlds.half); refresh(); replant(); });
+seg('mode', (v) => { state.mode = v; storeAll(worlds.half); refresh(); replant(); });
 $('opt-float').addEventListener('change', (e) => { state.markFloat = e.target.checked; refresh(false); });
 $('opt-cells').addEventListener('change', (e) => { state.cells = e.target.checked; refresh(false); });
 $('opt-auto').addEventListener('change', (e) => { state.auto = e.target.checked; });
 
 // Growth and planting act on a column in both worlds.
-function canPlant(w, c) { const t = topMat(w, c); return t === 'grass' || t === 'dirt'; }
+// Grass grows on grass or dirt with a flat top: a full block on the ½ m grid, a level resting top
+// (or a full cube) on the 1 m grid. Slopes, corners and ridges get none.
+function flatTop(w, c) { const g = w.surf[c]?.g; return !!g && g.every((row) => row.every((h) => Math.abs(h - g[0][0]) < 1e-6)); }
+function canPlant(w, c) { const t = topMat(w, c); return (t === 'grass' || t === 'dirt') && flatTop(w, c); }
+// After the shapes change everywhere (shape set, cubes), plant the scene's grass again on what is flat now.
+function replant() {
+  for (const w of Object.values(worlds)) {
+    w.plants.clear();
+    for (let c = 0; c < W * D; c++) if (design[c].plant && canPlant(w, c)) w.plants.set(c, { n: design[c].plant, shown: design[c].plant });
+  }
+  refresh(false);
+}
 function grow(c, by = 1) {
   for (const w of Object.values(worlds)) {
     const p = w.plants.get(c);

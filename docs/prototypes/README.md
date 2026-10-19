@@ -80,6 +80,9 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   of its 8 neighbours; **½ m blocks only** compares without them.
 - Tools: Place (a ½ m block or a 1 m double block in the half grid) and Remove (the top block),
   Plant and Grow (both views). Grow all, Mow, Scatter, and grow over time.
+- Grass grows only on flat tops (a full block on the ½ m grid, a level resting top on the 1 m
+  grid); a plant whose ground stops being flat goes. Changing the shape set re-plants the scene's
+  grass on what is flat.
 - Plant footing: at the cell floor (as the game draws plants) or sunk to the shaped surface.
   Floating plants are tinted red and counted per view.
 - **Slope shapes (½ m view)**, its own section at the top: **Adaptive (all shapes)** (reshaped from
