@@ -349,8 +349,8 @@ pub fn inverse_aces(display: [f32; 3], exposure: f32) -> [f32; 3] {
 
 /// The water's cost-isolation switches (a dev tool, `?waterdbg=`; docs/WATER_RENDERING.md §8): each
 /// name turns one piece of the water's shading off, so its GPU time (`gpu.*.water`) can be told
-/// apart. Carried to the shader as a bit mask in the frame uniform (`fog.w`); 0 draws everything.
-pub const DEBUG_SWITCHES: [(&str, u32); 12] = [
+/// apart. Carried to the shader as a bit mask in the frame uniform (`wrap.z`); 0 draws everything.
+pub const DEBUG_SWITCHES: [(&str, u32); 14] = [
     ("ripple0", 1),
     ("ripple1", 2),
     ("ripple2", 4),
@@ -363,6 +363,8 @@ pub const DEBUG_SWITCHES: [(&str, u32); 12] = [
     ("sparkle", 512),
     ("under", 1024),
     ("flat", 2048),
+    ("ssr", 4096),
+    ("clouds", 8192),
 ];
 
 /// The mask for a `?waterdbg=` value: names (`DEBUG_SWITCHES`) separated by commas; `all` sets
@@ -735,7 +737,11 @@ mod tests {
         assert_eq!(WaterQuality::from_level(9), WaterQuality::High);
         assert_eq!(WaterQuality::Low.layers(), 1);
         assert_eq!(WaterQuality::High.layers(), 3);
-        assert_eq!(WaterQuality::default(), WaterQuality::Medium, "the desktop default");
+        assert_eq!(
+            WaterQuality::default(),
+            WaterQuality::Medium,
+            "the desktop default"
+        );
         // W3: Medium and High read the scene behind; Low keeps W1b's look, with no copies.
         assert!(!WaterQuality::Low.reads_scene());
         assert!(WaterQuality::Medium.reads_scene() && WaterQuality::High.reads_scene());

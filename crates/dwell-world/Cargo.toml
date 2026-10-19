@@ -11,5 +11,9 @@ license-file.workspace = true
 dwell-blocks = { path = "../dwell-blocks" }
 dwell-protocol = { path = "../dwell-protocol" }
 
+[dev-dependencies]
+# Tests show data-only entries (shared/blocks/fixtures) working, e.g. a water plant.
+dwell-blocks = { path = "../dwell-blocks", features = ["fixture"] }
+
 [lints]
 workspace = true

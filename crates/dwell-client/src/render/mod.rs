@@ -15,6 +15,7 @@ pub mod frame;
 pub mod geometry;
 pub mod march;
 pub mod pacing;
+pub mod reflection;
 pub mod seam;
 pub mod shaders;
 pub mod timing;
@@ -23,10 +24,12 @@ pub mod water_tiles;
 
 use dwell_world::hash::HashMap;
 
+use dwell_game::brush_tool::BrushOutline;
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
+use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
@@ -621,7 +624,14 @@ enum DrawMesh {
     Outline,
     Debug,
     Region(usize),
+    Brush,
 }
+
+/// The brush outline's colour (BRUSHES.md): warm, apart from the region tools' white and blue.
+const BRUSH_COLOR: u32 = 0xffb347;
+/// How far a brush outline reaches from its centre at most (m): a line's length aside, the
+/// largest brush stretched, for the passes it is drawn in.
+const MAX_BRUSH_EXTENT: f32 = 80.0;
 
 pub struct Renderer {
     device: wgpu::Device,
@@ -675,6 +685,8 @@ pub struct Renderer {
     debug: Option<GpuMesh>,
     /// The region tools' boxes, each with its edges (rebuilt only when the boxes change).
     region_boxes: Vec<(RegionBox, GpuMesh)>,
+    /// The brush tool's wireframe (rebuilt only when it changes).
+    brush: Option<(BrushOutline, GpuMesh)>,
     /// The GPU pages every mesh lives in (arena.rs).
     arena: ArenaRef,
     /// The plants' wind scale (block data `wind`; 1 by default, 0 keeps them still).
@@ -1079,23 +1091,7 @@ impl Renderer {
         let difference = difference::Difference::new(&device);
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
-        let tile_grids: Vec<f32> = dwell_mesh::tile_grids().into_iter().flatten().collect();
-        let tile_grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("tile grids"),
-            size: tile_grids.len() as u64 * 4,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&tile_grid_buffer, 0, floats(&tile_grids));
-        // The fluid looks, generated from the registry (water.rs `pack_fluids`): fixed per build.
-        let fluid_data = water::pack_fluids(&dwell_blocks::FLUIDS);
-        let fluid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("fluids"),
-            size: (fluid_data.len() * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&fluid_buffer, 0, floats(&fluid_data));
+        let (tile_grid_buffer, fluid_buffer) = frame_extras(&device, &queue);
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -1149,6 +1145,7 @@ impl Renderer {
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
         let outline_mesh = Self::outline_lines(&arena, outline_box);
+        let march = MarchRenderer::new(device.clone(), queue.clone(), format);
         Self {
             device,
             queue,
@@ -1170,7 +1167,7 @@ impl Renderer {
             difference_group: None,
             terrain: Routed::new(
                 RasterTerrain::new(arena.clone()),
-                MarchRenderer::new(),
+                march,
                 Selection::default(),
             ),
             compare: Compare::default(),
@@ -1192,6 +1189,7 @@ impl Renderer {
             outline_mesh,
             debug: None,
             region_boxes: Vec::new(),
+            brush: None,
             arena,
             plant_wind: 1.0,
             cutout_shown: true,
@@ -1220,7 +1218,10 @@ impl Renderer {
 
     /// Block textures: the tiled-noise atlas, mipmapped (averaged in linear light), sampled crisp
     /// up close and filtered far away.
-    fn atlas(device: &wgpu::Device, queue: &wgpu::Queue) -> (wgpu::TextureView, wgpu::Sampler) {
+    pub(crate) fn atlas(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> (wgpu::TextureView, wgpu::Sampler) {
         let size = dwell_mesh::ATLAS_SIZE as u32;
         let levels = atlas_levels().len() as u32;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1459,6 +1460,21 @@ impl Renderer {
             })
             .collect();
     }
+    /// The brush tool's wireframe (BRUSHES.md), outlined over the terrain, or none.
+    pub fn set_brush_outline(&mut self, outline: Option<&BrushOutline>) {
+        if self.brush.as_ref().map(|(o, _)| o) == outline {
+            return;
+        }
+        self.brush = outline.filter(|o| !o.segments.is_empty()).map(|o| {
+            let c = hex(BRUSH_COLOR).map(|v| v as f32);
+            let pts: Vec<([f32; 3], [f32; 3])> = o
+                .segments
+                .iter()
+                .flat_map(|&(a, b)| [(a, c), (b, c)])
+                .collect();
+            (o.clone(), GpuMesh::lines(&self.arena, &pts))
+        });
+    }
     pub fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
             Some(v) => {
@@ -1536,6 +1552,30 @@ impl Renderer {
         }
     }
 
+    /// The marcher's resolution against the output's and its upscaler (`?scale=` with
+    /// `?upscaler=fsr1|bilateral`; docs/RAY_MARCHED_RENDERER.md §4.2 step 3).
+    pub fn set_march_resolution(&mut self, scale: f32, upscaler: march::upscale::Upscaler) {
+        self.terrain.march.scale = scale;
+        self.terrain.march.upscaler = upscaler;
+    }
+
+    /// The camera and frame uniforms as the marcher reads them (`march::Marcher::draw`): the same
+    /// lights, fog, sky and view as this renderer's frame.
+    pub fn march_frame(&self) -> march::MarchFrame {
+        let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
+        let tan_y = (vertical_fov(aspect).to_radians() / 2.0).tan();
+        let f3 = |v: V3| v.map(|x| x as f32);
+        march::MarchFrame {
+            uniforms: self.frame_uniforms(&basis, NEAR_PLANE, FAR_PLANE).to_vec(),
+            eye: self.eye,
+            forward: f3(basis.forward()),
+            right: f3(basis.right),
+            up: f3(basis.up),
+            tan: [(tan_y * aspect) as f32, tan_y as f32],
+        }
+    }
+
     fn rel(&self, p: V3) -> [f32; 3] {
         [
             (p[0] - self.eye[0]) as f32,
@@ -1594,13 +1634,24 @@ impl Renderer {
         );
         put(&clouds[0]);
         put(&clouds[1]);
+        put(&clouds[2]);
         put(&water_uniform(self.eye_fluid, self.water()));
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
         }
         // The eye's x and z wrapped for the water's detail (the composite's caustics under it).
         let [wx, wz] = water::wrapped_origin(self.eye);
+        // z: the water's cost-isolation switches (`water::debug_mask`; 0 in play).
         put(&[wx, wz, self.water_debug as f32, 0.0]);
+        // The water's reflections for its quality, under the Clouds setting (WATER_RENDERING.md §8).
+        for v in reflection_uniforms(
+            &REFLECTIONS,
+            self.water().level() as usize,
+            self.clouds.octaves(&CLOUDS),
+            self.clouds.self_shadow(),
+        ) {
+            put(&v);
+        }
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day = self.day.pack(weight_a, self.day_seconds, pixel_angle);
         if !stars_for(self.adapter) {
@@ -1691,6 +1742,10 @@ impl Renderer {
             DrawMesh::Outline => (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()]),
             DrawMesh::Region(i) => {
                 let m = &self.region_boxes[*i].1;
+                (m, vec![m.parts[0].clone()])
+            }
+            DrawMesh::Brush => {
+                let m = &self.brush.as_ref().expect("collected").1;
                 (m, vec![m.parts[0].clone()])
             }
             DrawMesh::Debug => {
@@ -1912,6 +1967,28 @@ impl Renderer {
                 key: 0,
                 mesh: DrawMesh::Region(i),
             });
+        }
+        // The brush wireframe (BRUSHES.md): over everything, like the region boxes.
+        if let Some((o, _)) = &self.brush {
+            let side = 2.0 * f64::from(MAX_BRUSH_EXTENT);
+            let corner = o.origin.map(|v| v - f64::from(MAX_BRUSH_EXTENT));
+            let passes = reaches(corner, side);
+            if passes != 0 {
+                let r = self.rel(o.origin);
+                out.push(DrawItem {
+                    kind: Kind::Line,
+                    water: false,
+                    no_depth: true,
+                    offset: [r[0], r[1], r[2], 1.0],
+                    clip: None,
+                    tint: [1.0, 1.0, 1.0, 0.95],
+                    rotation: NO_ROTATION,
+                    page: 0,
+                    passes,
+                    key: 0,
+                    mesh: DrawMesh::Brush,
+                });
+            }
         }
         // Debug lines: in the pass that draws from the near plane.
         let passes = u8::from(passes[0].0 < NEAR_PLANE * 2.0)
@@ -2182,9 +2259,11 @@ impl Renderer {
                 }
                 TerrainKind::March => {
                     let query = self.timer.as_mut().and_then(|t| t.pass(timing::MARCH));
+                    let frame = self.march_frame();
                     self.terrain.march.draw(
                         &mut encoder,
                         &self.targets[side],
+                        &frame,
                         self.timer.as_ref().and_then(|t| t.writes(query)),
                     );
                     cpu[side] = crate::telemetry::now_ms() - t0;
@@ -2262,6 +2341,9 @@ impl Renderer {
         self.queue.on_submitted_work_done(self.pacer.submitted());
         if let Some(timer) = &mut self.timer {
             timer.submitted();
+        }
+        if kinds.contains(&TerrainKind::March) {
+            self.terrain.march.submitted();
         }
         if differ {
             self.difference.submitted();
@@ -2529,13 +2611,69 @@ impl PassView {
     }
 }
 
+/// The frame group's fixed entries after the uniforms, atlas and sampler (shaders.rs `FRAME`):
+/// binding 3 each atlas tile's grid lines (`dwell_mesh::tile_grids`), binding 4 the fluid looks
+/// (water.rs), seen by `visibility`. The marcher's frame group has them too.
+pub(crate) fn frame_extra_entries(
+    visibility: wgpu::ShaderStages,
+) -> [wgpu::BindGroupLayoutEntry; 2] {
+    [
+        wgpu::BindGroupLayoutEntry {
+            binding: 3,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 4,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(water::FLUID_STRIDE),
+            },
+            count: None,
+        },
+    ]
+}
+
+/// The buffers for [`frame_extra_entries`], written once: the tile grids and the fluid looks
+/// (generated from the registry, `water::pack_fluids`: fixed per build).
+pub(crate) fn frame_extras(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::Buffer, wgpu::Buffer) {
+    let tile_grids: Vec<f32> = dwell_mesh::tile_grids().into_iter().flatten().collect();
+    let tile_grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("tile grids"),
+        size: tile_grids.len() as u64 * 4,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&tile_grid_buffer, 0, floats(&tile_grids));
+    let fluid_data = water::pack_fluids(&dwell_blocks::FLUIDS);
+    let fluid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("fluids"),
+        size: (fluid_data.len() * 4) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&fluid_buffer, 0, floats(&fluid_data));
+    (tile_grid_buffer, fluid_buffer)
+}
+
 /// The plants' gust field repeats every this many metres (`WIND_PERIOD` in the shader): the eye's
 /// position is passed modulo it.
 const WIND_PERIOD: f64 = 1024.0;
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 16 vec4s (after `tan` the
-/// clouds' two, then the water's, the wind's six and the wrap) and the day/night cycle's block.
-const FRAME_FLOATS: usize = 16 + 16 * 4 + DAY_SKY_FLOATS;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 19 vec4s (after `tan` the
+/// clouds' three, then the water's, the wind's six, the wrap and the reflections' two) and the
+/// day/night cycle's block.
+pub(crate) const FRAME_FLOATS: usize = 16 + 19 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2696,12 +2834,14 @@ impl crate::game::Scene for Renderer {
     fn set_day(&mut self, day: &DayState, seconds: f64) {
         Renderer::set_day(self, day, seconds);
     }
-    fn set_block_outline(&mut self, cell: Option<V3>, height: f64) {
-        // The targeted block's height (a slab's top): the outline's box in the cell.
-        Renderer::set_block_outline(self, cell, ([0.0; 3], [1.0, height as f32, 1.0]));
+    fn set_block_outline(&mut self, cell: Option<V3>, bounds: ([f32; 3], [f32; 3])) {
+        Renderer::set_block_outline(self, cell, bounds);
     }
     fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
         Renderer::set_region_boxes(self, boxes);
+    }
+    fn set_brush_outline(&mut self, outline: Option<&BrushOutline>) {
+        Renderer::set_brush_outline(self, outline);
     }
     fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
         Renderer::set_debug_lines(self, lines);
@@ -2824,7 +2964,8 @@ mod tests {
         r.set_clouds(CloudQuality::High);
         let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
         // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
-        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 6 * 4 - 4 - 4;
+        // (Then the clouds' third, the water's, the wind's six, the wrap and the reflections' two.)
+        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 4 - 4;
         assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
         let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
@@ -2845,9 +2986,9 @@ mod tests {
         });
         let basis = aim(0.0, 0.0, 1.0, 0.0);
         // After the water's vec4 (w: the quality) come the wind's six (the last's x: the blur),
-        // the wrapped eye and the day sky.
-        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 6 * 4 - 1;
-        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 4 - 4;
+        // the wrapped eye, the reflections' two and the day sky.
+        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 1;
+        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 4;
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         assert_eq!(u[water_w], 2.0, "the setting's water on a GPU");
         assert!(u[blur] > 0.0, "the edge blur on a GPU");
@@ -2930,10 +3071,13 @@ mod tests {
                     assert!(got > 0.0, "{name} vanishes at mip {level}");
                 }
             }
-            // Plain averaging would have lost it: the unscaled level 2 covers much less.
+            // Plain averaging would have lost a sparse tile (the ladder): the unscaled level 2
+            // covers much less. A mostly solid tile with scattered holes (the leaves) fills in.
             let plain = downsample(&downsample(&levels[0].0, levels[0].1), levels[0].1 / 2);
             let lost = tile_coverage(&plain, levels[0].1 / 4, tile, 1.0);
-            assert!(lost < want, "{name}: plain mips keep {lost} of {want}");
+            if want < 0.5 {
+                assert!(lost < want, "{name}: plain mips keep {lost} of {want}");
+            }
         }
         assert!(checked >= 1, "the ladder tile has transparent texels");
     }
@@ -3387,9 +3531,9 @@ mod tests {
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
-        // `tan` is the vec4 before the clouds' two, the water's, the wind's six and the wrap (then
-        // the day's block).
-        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 10 * 4 - 3]);
+        // `tan` is the vec4 before the clouds' three, the water's, the wind's six, the wrap and the
+        // reflections' two (then the day's block).
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 13 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
@@ -3405,7 +3549,7 @@ mod tests {
         let basis = aim(0.0, 0.0, 1.0, 0.0);
         let wind = |r: &Renderer| {
             r.frame_uniforms(&basis, 1.0, 100.0)
-                [FRAME_FLOATS - DAY_SKY_FLOATS - 28..FRAME_FLOATS - DAY_SKY_FLOATS - 4]
+                [FRAME_FLOATS - DAY_SKY_FLOATS - 36..FRAME_FLOATS - DAY_SKY_FLOATS - 12]
                 .to_vec()
         };
         assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
@@ -3420,6 +3564,29 @@ mod tests {
         assert!(w[1] < -0.3 && w[0].abs() < 1e-6 && w[2] == 0.5 && w[7] == 1.0);
         // Widths are in CSS pixels: doubled on a 2× screen.
         assert!((f64::from(w[15]) - 2.0 * MOTION.wind.width_px).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_reflections_follow_the_water_quality_and_the_clouds_setting() {
+        let mut r = noop_renderer();
+        r.resize(1280, 720, 1.0);
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let refl = |r: &Renderer| {
+            r.frame_uniforms(&basis, 1.0, 100.0)
+                [FRAME_FLOATS - DAY_SKY_FLOATS - 8..FRAME_FLOATS - DAY_SKY_FLOATS]
+                .to_vec()
+        };
+        r.set_water_quality(WaterQuality::Low);
+        let low = refl(&r);
+        assert_eq!((low[0], low[4]), (0.0, 0.0), "Low: the sky alone");
+        r.set_water_quality(WaterQuality::Medium);
+        let m = refl(&r);
+        assert_eq!(m[0], REFLECTIONS.tier(1).ssr_steps as f32);
+        assert!(m[4] > 0.0, "Medium reflects clouds");
+        r.set_water_quality(WaterQuality::High);
+        assert_eq!(refl(&r)[0], REFLECTIONS.tier(2).ssr_steps as f32);
+        r.set_clouds(CloudQuality::Off);
+        assert_eq!(refl(&r)[4], 0.0, "no clouds in the sky, none reflected");
     }
 
     #[test]

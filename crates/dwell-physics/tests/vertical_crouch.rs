@@ -73,7 +73,7 @@ fn a_press_too_early_is_forgotten() {
 /// A ledge ending at z = 2 above a deep floor; the player walks off it at 5 m/s.
 fn ledge(jump_tick: i32) -> (PlayerTestWorld, u32) {
     let mut w = PlayerTestWorld::new();
-    w.fill(-4, -1, -12, 3, -1, 1, stone());
+    w.fill(-4, -1, -12, 3, -1, 1, cube_block());
     w.floor_at(-20, 16);
     let e = w.spawn(v(0.5, 0.0, -2.0));
     w.set_input(move |t, _| {
@@ -154,7 +154,7 @@ fn a_second_press_right_after_a_jump_is_not_a_double_jump() {
 fn a_voxel_ceiling_stops_the_jump() {
     let mut w = PlayerTestWorld::new();
     w.floor();
-    w.fill(-3, 2, -3, 3, 2, 3, stone());
+    w.fill(-3, 2, -3, 3, 2, 3, cube_block());
     let e = w.spawn(v(0.5, 0.0, 0.5));
     w.set_input(|t, _| jump_at(t, 5, 8));
     let apex = w.max_feet(e, ticks(1.0));
@@ -262,7 +262,7 @@ fn crouch_walking_is_slower() {
 /// A 1-tall crawlspace: roof blocks at y = 1 over z = 2..4.
 fn crawlspace(w: &mut PlayerTestWorld) {
     w.floor();
-    w.fill(-3, 1, 2, 3, 1, 4, stone());
+    w.fill(-3, 1, 2, 3, 1, 4, cube_block());
 }
 
 #[test]

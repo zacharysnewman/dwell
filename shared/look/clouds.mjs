@@ -19,7 +19,8 @@ const SCHEMA = {
   deck: {
     altitudeM: [10, 1e6],
     curvatureM: [1000, 1e8],
-    ceilingFadeM: [1, 1e5],
+    crossFadeM: [1, 1e5],
+    insideFog: [0, 1],
     horizonFade: [0.001, 1],
     fadeStartM: [0, 1e7],
     fadeEndM: [1, 1e7],
@@ -52,6 +53,7 @@ const SCHEMA = {
     silverLining: [0, 4],
     silverPower: [1, 512],
     sunWarmth: [0, 1],
+    topLight: [0, 1],
   },
 };
 

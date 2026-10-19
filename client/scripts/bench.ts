@@ -349,6 +349,9 @@ async function step(run: Run, s: Step): Promise<void> {
         `d.setTime(${String(s.t)}${s.moon === undefined ? '' : `, ${String(s.moon)}`})`,
       );
       return;
+    case 'waterDebug':
+      await call(page, `d.waterDebug(${JSON.stringify(s.names)})`);
+      return;
     case 'timelapse': {
       const times = timelapseTimes(s);
       const width = String(times.length - 1).length;

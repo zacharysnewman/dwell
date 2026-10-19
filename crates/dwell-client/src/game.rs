@@ -9,7 +9,9 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use dwell_game::block_interaction::{BlockInteraction, BlockTarget};
+use dwell_blocks::StateId;
+use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
+use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{ChunkMessage, ChunkStreamer, Coord, StreamStats, TerrainView};
 use dwell_game::eye::{EyeCamera, EyeState};
 use dwell_game::face_flip::FaceFlip;
@@ -59,6 +61,9 @@ const PLAYER_COLORS: [u32; 7] = [
     0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
 ];
 
+/// The whole cell, as an outline box.
+pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
+
 /// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
 /// the renderer seam's ([`TerrainRenderer`], RAY_MARCHED_RENDERER.md §3): each chunk's and
 /// section's payloads, routed to the terrain renderers the [`Selection`] draws; the rest (camera,
@@ -72,13 +77,17 @@ pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain>
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
-    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, height: f64);
+    /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
+    /// corner; `dwell_world::edit::target_box`), or none.
+    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, bounds: ([f32; 3], [f32; 3]));
     /// The frame's vertical FOV (degrees; the speed boost, docs/MOTION_EFFECTS.md): the same value
     /// the LOD selection uses. `None`: the screen's own.
     fn set_fov(&mut self, fov_y_deg: Option<f64>);
     /// The wind streaks to draw this frame.
     fn set_wind(&mut self, wind: WindView);
     fn set_region_boxes(&mut self, boxes: &[RegionBox]);
+    /// The brush tool's wireframe at its target (BRUSHES.md), or none.
+    fn set_brush_outline(&mut self, _outline: Option<&BrushOutline>) {}
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     fn stats(&self) -> RenderStats;
     /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
@@ -400,6 +409,8 @@ pub struct Game<S: Scene> {
     pub interaction: BlockInteraction,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
+    /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
+    pub brush: BrushTool,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
@@ -510,6 +521,7 @@ impl<S: Scene> Game<S> {
             eye,
             interaction: BlockInteraction::new(),
             region: RegionTools::new(),
+            brush: BrushTool::new(),
             target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
@@ -880,6 +892,10 @@ impl<S: Scene> Game<S> {
         if self.dead || !self.terrain_ready() {
             return false;
         }
+        // The brush tool: left click its arrow, right click its gunpowder (BRUSHES.md).
+        if self.brush.active() {
+            return self.brush_apply(action == EditAction::Place, now_ms);
+        }
         // In paste mode the buttons paste (right) or leave paste mode (left).
         if self.region.pasting() {
             let tool = match action {
@@ -913,6 +929,100 @@ impl<S: Scene> Game<S> {
             }
             None => false,
         }
+    }
+
+    /// What the server announced it takes (Welcome flags) in a world of this generator: region
+    /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
+    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {
+        let policy = dwell_world::brush::brush_policy(generator_version).filter(|_| brushes);
+        self.region.enabled = region_edits;
+        self.region.keep = brushes;
+        self.region.reach = policy.map_or(dwell_protocol::region_edit::REACH, |p| {
+            p.reach.max(dwell_protocol::region_edit::REACH)
+        });
+        self.brush.available = region_edits && policy.is_some();
+        self.brush.reach = self.region.reach;
+    }
+
+    /// A brush tool key (BRUSHES.md).
+    pub fn brush_key(&mut self, action: BrushAction) {
+        // The region tools' click, as for their keys (AUDIO.md).
+        self.sounds.push(sound_event(SoundKind::Tool));
+        self.brush.key(action);
+        if !self.brush.active() {
+            self.scene.borrow_mut().set_brush_outline(None);
+        }
+    }
+
+    /// The wheel with Alt held while the brush tool is on: its size. True if it took the step.
+    pub fn brush_wheel(&mut self, step: i32) -> bool {
+        if !self.brush.active() {
+            return false;
+        }
+        self.brush.resize(-step);
+        self.sounds.push(sound_event(SoundKind::Tool));
+        true
+    }
+
+    /// Middle or Alt click with the brush tool on: the aimed-at block becomes the replace target.
+    pub fn brush_pick(&mut self) -> bool {
+        if !self.brush.active() {
+            return false;
+        }
+        let state = self.brush.target().map(|t| {
+            self.streamer
+                .store_mut()
+                .get_voxel(t.cell[0], t.cell[1], t.cell[2])
+        });
+        self.brush.pick(state);
+        self.sounds.push(sound_event(SoundKind::Tool));
+        true
+    }
+
+    /// Applies the brush at its target with the hotbar's block: arrow (the aimed-at block) or
+    /// gunpowder (the cell in front of it). True if it queued a stroke.
+    pub fn brush_apply(&mut self, gunpowder: bool, now_ms: f64) -> bool {
+        if self.dead || !self.terrain_ready() {
+            return false;
+        }
+        let target = self.brush.target().map(|t| t.cell);
+        let ctx = ToolContext {
+            target,
+            target_state: target
+                .map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2])),
+            placement: self.brush.center(true),
+            material: self.selected_material(),
+            eye: self.target_eye,
+            now_ms,
+        };
+        let sent = self
+            .brush
+            .apply(gunpowder, &ctx, &mut self.region, &mut self.streamer);
+        // The region tools' click as a stroke goes out; its blocks sound as they arrive.
+        if sent {
+            self.sounds.push(sound_event(SoundKind::Tool));
+        }
+        // The first edits go out now; the rest as the rate allows (each frame).
+        for m in self.region.pump(now_ms) {
+            self.outbox.borrow_mut().push(Send::Control(m));
+        }
+        sent
+    }
+
+    fn selected_material(&self) -> StateId {
+        self.interaction
+            .palette()
+            .get(self.interaction.selected())
+            .map_or(0, |s| s.material)
+    }
+
+    /// The brush tool's HUD panel (none while it is off); its note shows a stroke's progress.
+    pub fn brush_panel(&self) -> Option<BrushPanel> {
+        let mut p = self.brush.panel(self.selected_material())?;
+        if let Some((sent, all)) = self.region.progress() {
+            p.note = format!("Sending {sent} of {all} edits");
+        }
+        Some(p)
     }
 
     /// A sound of the shell's or a debug tool's own (e.g. compare mode's keys), heard with the
@@ -966,6 +1076,7 @@ impl<S: Scene> Game<S> {
         crouched: bool,
         face: f64,
         submerged: Option<f64>,
+        dt: f64,
     ) -> MoverSample {
         let at = |dy: f64| {
             [
@@ -989,6 +1100,7 @@ impl<S: Scene> Game<S> {
             submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
             ground,
             body,
+            dt,
         }
     }
 
@@ -1059,6 +1171,12 @@ impl<S: Scene> Game<S> {
         touch: Option<&TouchState>,
         now: &mut dyn FnMut() -> f64,
     ) {
+        input.brushes = self.brush.available;
+        input.brush_active = self.brush.active();
+        // Queued region edits (a brush stroke) as the server's cell rate allows.
+        for m in self.region.pump(now_ms) {
+            self.outbox.borrow_mut().push(Send::Control(m));
+        }
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));
@@ -1110,6 +1228,7 @@ impl<S: Scene> Game<S> {
             c.controller_flags & controller_flags::CROUCHING != 0,
             face,
             Some(c.submerged),
+            1.0 / SIM_HZ as f64,
         );
         self.mover_sounds.update(&sample, None, &mut self.sounds);
         // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
@@ -1167,12 +1286,12 @@ impl<S: Scene> Game<S> {
                     v.is_crouched(),
                     face,
                     None,
+                    dt,
                 );
-                self.remote_sounds.entry(v.player_id).or_default().update(
-                    &sample,
-                    Some(v.feet),
-                    &mut self.sounds,
-                );
+                self.remote_sounds
+                    .entry(v.player_id)
+                    .or_insert_with(|| MoverSounds::with_voice(v.player_id))
+                    .update(&sample, Some(v.feet), &mut self.sounds);
             }
             let view = self.player_view(
                 v.player_id,
@@ -1191,7 +1310,15 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
-        self.remote_sounds.retain(|id, _| drawn.contains(id));
+        // A player gone from view (or dead) stops sounding: its slide's voice ends.
+        let sounds = &mut self.sounds;
+        self.remote_sounds.retain(|id, m| {
+            let keep = drawn.contains(id);
+            if !keep {
+                m.finish(None, sounds);
+            }
+            keep
+        });
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
         let camera_eye;
@@ -1240,7 +1367,7 @@ impl<S: Scene> Game<S> {
                 self.scene
                     .borrow_mut()
                     .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
-                self.scene.borrow_mut().set_block_outline(None, 1.0);
+                self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
                 v.eye
             }
             None => camera_eye,
@@ -1411,24 +1538,28 @@ impl<S: Scene> Game<S> {
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
-        let Some(t) = t else {
-            self.scene.borrow_mut().set_block_outline(None, 1.0);
-            return;
-        };
-        // The outline hugs the shape's top: slabs and low slopes are not a full cell tall.
-        let shape = dwell_blocks::shape::shape_of(
-            self.streamer
-                .store_mut()
-                .get_voxel(t.cell[0], t.cell[1], t.cell[2]),
-        );
-        let height = if shape.inverted {
-            1.0
+        // The brush aims much further along the same ray (its world's brush reach).
+        let t = if self.brush.active() {
+            let dir = view_direction(input.look.yaw, input.look.pitch, face).map(|v| v as f32);
+            let far = eye.and_then(|e| self.streamer.store_mut().target(e, dir, self.brush.reach));
+            self.brush.aim(far);
+            far
         } else {
-            f64::from(shape.max_y)
+            t
         };
         self.scene
             .borrow_mut()
-            .set_block_outline(Some(t.cell.map(f64::from)), height);
+            .set_brush_outline(self.brush.outline().as_ref());
+        let Some(t) = t else {
+            self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
+            return;
+        };
+        // The outline is the box the block is aimed at: a plant's selection box, else its shape's
+        // extent (an adaptive block's derived shape is often not a full cell tall).
+        let bounds = dwell_world::edit::target_box(self.streamer.store_mut(), t.cell);
+        self.scene
+            .borrow_mut()
+            .set_block_outline(Some(t.cell.map(f64::from)), bounds);
     }
 
     fn player_view(
@@ -1514,13 +1645,7 @@ impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
 }
 
 fn sound_event(kind: SoundKind) -> SoundEvent {
-    SoundEvent {
-        kind,
-        block: 0,
-        intensity: 1.0,
-        at: None,
-        gait: None,
-    }
+    SoundEvent::new(kind, 0, 1.0, None)
 }
 
 /// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.

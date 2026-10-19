@@ -3,10 +3,15 @@
 //! `BlockEditRequest` (§11). Pure functions of the voxel world and the players' capsules.
 
 use dwell_blocks::shape::{faces_of, ray_enter_shape, shape_of, vertical_segment_distance_sq};
-use dwell_blocks::{ShapeInfo, StateId, VoxelShape, info, state_property, with_property};
+use dwell_blocks::{
+    Medium, ShapeFace, ShapeInfo, StateId, StateInfo, Support, VoxelShape, block_of, info,
+    state_property, with_property,
+};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
-use crate::{ChunkCoord, M, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, inside_world_disc};
+use crate::{
+    ChunkCoord, M, MIDPLANE_Y, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, inside_world_disc,
+};
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
 pub const FACE_DIRS: [[i32; 3]; 6] = [
@@ -28,10 +33,12 @@ pub fn placeable(m: StateId) -> bool {
     usize::from(m) < dwell_blocks::STATES.len() && info(m).placeable
 }
 
-/// The cell face a surface normal points through: its dominant axis, ties to the vertical.
+/// The cell face a surface normal points through: its dominant axis, ties to the vertical. A 45°
+/// slope (an adaptive ramp or ridge) is a tie whatever the rounding of its normal: within 1e-5.
 fn face_of_normal(n: [f32; 3]) -> u8 {
     let (ax, ay, az) = (n[0].abs(), n[1].abs(), n[2].abs());
-    if ay >= ax && ay >= az {
+    const TIE: f32 = 1e-5;
+    if ay + TIE >= ax && ay + TIE >= az {
         return if n[1] > 0.0 { 2 } else { 3 };
     }
     if ax >= az {
@@ -40,13 +47,156 @@ fn face_of_normal(n: [f32; 3]) -> u8 {
     if n[2] > 0.0 { 4 } else { 5 }
 }
 
-/// The shape a block is aimed at and seen by: its solid, or the whole cell (a ladder).
-fn target_shape(m: StateId) -> &'static ShapeInfo {
+/// The shape a block is aimed at and seen by: its solid — an adaptive block's derived shape — or
+/// the whole cell (a ladder).
+fn target_shape(world: &mut VoxelWorld, cell: [i32; 3]) -> &'static ShapeInfo {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
     if info(m).shape == VoxelShape::Empty {
         shape_of(M.stone)
     } else {
-        shape_of(m)
+        world.shape_at(cell[0], cell[1], cell[2])
     }
+}
+
+/// The box (min, max corner in the cell) a block is aimed at, seen by and outlined with: its data's
+/// `selectionBox`, else its shape's extent, else the whole cell.
+pub fn target_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3]) {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
+    if let Some(b) = info(m).selection {
+        return ([b[0], b[1], b[2]], [b[3], b[4], b[5]]);
+    }
+    let shape = target_shape(world, cell);
+    let top = if shape.inverted { 1.0 } else { shape.max_y };
+    ([0.0; 3], [1.0, top, 1.0])
+}
+
+/// The polygons of a box in its cell, outward-wound, tagged with the face each lies on.
+fn box_faces(lo: [f32; 3], hi: [f32; 3]) -> [ShapeFace; 6] {
+    let [x0, y0, z0] = lo;
+    let [x1, y1, z1] = hi;
+    let face = |tag: u8, v: [[f32; 3]; 4]| ShapeFace { tag, count: 4, v };
+    [
+        face(0, [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]]),
+        face(1, [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]]),
+        face(2, [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]]),
+        face(3, [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]]),
+        face(4, [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]),
+        face(5, [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]]),
+    ]
+}
+
+/// The surfaces a block is seen by (line of sight): its selection box's, or its shape's.
+fn target_faces(world: &mut VoxelWorld, cell: [i32; 3]) -> Vec<ShapeFace> {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
+    match info(m).selection {
+        Some(_) => {
+            let (lo, hi) = target_box(world, cell);
+            box_faces(lo, hi).to_vec()
+        }
+        None => faces_of(target_shape(world, cell)).to_vec(),
+    }
+}
+
+/// Where the ray `o + t·dir` (cell-relative, the cell's minimum corner at `corner`) enters the box
+/// [lo, hi] of the cell, at t in [0, max_t]: (t, outward normal of the face entered).
+fn ray_enter_box(
+    (lo, hi): ([f32; 3], [f32; 3]),
+    corner: [f32; 3],
+    o: [f32; 3],
+    dir: [f32; 3],
+    max_t: f32,
+) -> Option<(f32, [f32; 3])> {
+    let (mut t_in, mut t_out) = (f32::NEG_INFINITY, f32::INFINITY);
+    let mut normal = [0.0; 3];
+    for i in 0..3 {
+        let (a, b) = (corner[i] + lo[i], corner[i] + hi[i]);
+        if dir[i] == 0.0 {
+            if o[i] < a || o[i] > b {
+                return None;
+            }
+            continue;
+        }
+        let (t0, t1) = ((a - o[i]) / dir[i], (b - o[i]) / dir[i]);
+        let (near, far) = (t0.min(t1), t0.max(t1));
+        if near > t_in {
+            t_in = near;
+            normal = [0.0; 3];
+            normal[i] = if dir[i] > 0.0 { -1.0 } else { 1.0 };
+        }
+        t_out = t_out.min(far);
+    }
+    (t_in <= t_out && t_in >= 0.0 && t_in <= max_t).then_some((t_in, normal))
+}
+
+/// Whether state `m` may be put into a cell holding `existing` (block data `medium`): an air plant
+/// not into a liquid, a water plant only into one.
+pub fn medium_allows(m: &StateInfo, existing: &StateInfo) -> bool {
+    match m.medium {
+        Medium::Any => true,
+        Medium::Air => !existing.liquid,
+        Medium::Water => existing.liquid,
+    }
+}
+
+/// The state that stays where `m` is put: an air plant that ends up flooded (a `flooded`
+/// variant) gives way to water.
+pub fn medium_kept(m: StateId) -> StateId {
+    let s = info(m);
+    if s.medium == Medium::Air && s.flooded {
+        M.water
+    } else {
+        m
+    }
+}
+
+/// The cell a block stands on: below it toward its face's ground (−y on face A, +y on face B).
+pub fn below(cell: [i32; 3]) -> [i32; 3] {
+    let down = if cell[1] >= MIDPLANE_Y { -1 } else { 1 };
+    [cell[0], cell[1] + down, cell[2]]
+}
+
+/// Whether state `m` may stand on `under` (block data `placeOn`, `needsSupport`): on one of its
+/// `placeOn` blocks if it lists any, else, if it needs support, on a solid block; anything else
+/// stands anywhere.
+pub fn supported_on(m: StateId, under: StateId) -> bool {
+    let s = info(m);
+    if !s.place_on.is_empty() {
+        let name = if usize::from(under) < dwell_blocks::STATES.len() {
+            block_of(under).name
+        } else {
+            ""
+        };
+        return s.place_on.contains(&name);
+    }
+    s.needs_support == Support::None || info(under).solid
+}
+
+/// What the world loses after `cell` becomes `material` (block data `needsSupport`): the blocks
+/// above it that no longer stand on what is under them, each with what it leaves (air, or water if
+/// it was flooded), in order upward — the server sends them in the same `VoxelModification`.
+pub fn unsupported_after(
+    world: &mut VoxelWorld,
+    cell: [i32; 3],
+    material: StateId,
+) -> Vec<([i32; 3], StateId)> {
+    let mut out = Vec::new();
+    let (mut at, mut under) = (cell, material);
+    loop {
+        // The cell standing on `at`: the one whose `below` is `at`.
+        let up = if at[1] >= MIDPLANE_Y { 1 } else { -1 };
+        let next = [at[0], at[1] + up, at[2]];
+        if below(next) != at || next[1] < WORLD_BOTTOM_Y || next[1] >= WORLD_MAX_Y {
+            break;
+        }
+        let m = world.get_voxel(next[0], next[1], next[2]);
+        if m == M.air || info(m).needs_support == Support::None || supported_on(m, under) {
+            break;
+        }
+        let left = if info(m).flooded { M.water } else { M.air };
+        out.push((next, left));
+        (at, under) = (next, left);
+    }
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -90,17 +240,31 @@ pub fn raycast_block(
     }
     let mut t_cell = 0.0f32;
     while t_cell <= max_distance {
-        let m = world.get_voxel(base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]);
+        let at: [i32; 3] = std::array::from_fn(|i| base[i] + cell[i]);
+        let m = world.get_voxel(at[0], at[1], at[2]);
         if targetable(m) {
             let corner = cell.map(|c| c as f32);
-            if let Some(hit) =
-                ray_enter_shape(target_shape(m), corner, o, dir, max_distance, None, 0.0)
-                && hit.t <= max_distance
+            let hit = if info(m).selection.is_some() {
+                ray_enter_box(target_box(world, at), corner, o, dir, max_distance)
+            } else {
+                ray_enter_shape(
+                    target_shape(world, at),
+                    corner,
+                    o,
+                    dir,
+                    max_distance,
+                    None,
+                    0.0,
+                )
+                .map(|h| (h.t, h.normal))
+            };
+            if let Some((t, normal)) = hit
+                && t <= max_distance
             {
                 return Some(BlockHit {
                     cell: std::array::from_fn(|i| base[i] + cell[i]),
-                    face: face_of_normal(hit.normal),
-                    distance: hit.t,
+                    face: face_of_normal(normal),
+                    distance: t,
                 });
             }
         }
@@ -144,6 +308,12 @@ pub enum EditCheck {
     IntoPlayer,
     /// Place: outside the world's rows or disc.
     OutOfWorld,
+    /// Place: the block below isn't one the placed block may stand on (block data `placeOn`, or
+    /// `needsSupport` without a solid block below).
+    NoSupport,
+    /// Place: the cell's medium isn't the block's (block data `medium`: an air plant into water, a
+    /// water plant into air).
+    WrongMedium,
 }
 
 /// Extra reach the server allows over `REACH_DISTANCE`: its view of the player lags the client's.
@@ -203,7 +373,7 @@ pub fn check_block_edit(
     // the requested face, and a ray from it reaches the target first at the polygon's centre or
     // near one of its corners.
     let mut visible = false;
-    for polygon in faces_of(target_shape(target)) {
+    for polygon in &target_faces(world, c) {
         if visible {
             break;
         }
@@ -292,8 +462,13 @@ pub fn check_block_edit(
     if !placeable(request.material) {
         return EditOutcome::fail(EditCheck::NotPlaceable);
     }
+    // A replaceable target (tall grass) is placed into; anything else is placed against.
     let n = FACE_DIRS[usize::from(request.face)];
-    let cell = [c[0] + n[0], c[1] + n[1], c[2] + n[2]];
+    let cell = if info(target).replaceable && !info(target).indestructible {
+        c
+    } else {
+        [c[0] + n[0], c[1] + n[1], c[2] + n[2]]
+    };
     if cell[1] < WORLD_BOTTOM_Y
         || cell[1] >= WORLD_MAX_Y
         || !inside_world_disc(i64::from(cell[0]), i64::from(cell[2]))
@@ -301,14 +476,21 @@ pub fn check_block_edit(
         return EditOutcome::fail(EditCheck::OutOfWorld);
     }
     let existing = world.get_voxel(cell[0], cell[1], cell[2]);
-    if targetable(existing) {
+    if targetable(existing) && !info(existing).replaceable {
         return EditOutcome::fail(EditCheck::Occupied);
     }
     // Placing into a liquid replaces it: not one the data marks indestructible.
     if unbreakable(existing) {
         return EditOutcome::fail(EditCheck::Unbreakable);
     }
+    if !medium_allows(info(request.material), info(existing)) {
+        return EditOutcome::fail(EditCheck::WrongMedium);
+    }
     let material = flooded_for(request.material, existing);
+    let under = below(cell);
+    if !supported_on(material, world.get_voxel(under[0], under[1], under[2])) {
+        return EditOutcome::fail(EditCheck::NoSupport);
+    }
     if overlaps_player(material, cell, players) {
         return EditOutcome::fail(EditCheck::IntoPlayer);
     }

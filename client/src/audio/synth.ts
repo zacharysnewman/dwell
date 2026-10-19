@@ -1,6 +1,7 @@
 // The synthesis vocabulary (docs/AUDIO.md §3) in plain Web Audio: a sound's layers — noise,
 // oscillator or modal partials, through biquad filters, under an envelope, repeated as grains —
-// built as short-lived nodes for one play. Works on any BaseAudioContext, so the offline renders
+// built as short-lived nodes for one play; and loop voices (a slide's scrape) that sound until
+// stopped, moved by intensity. Works on any BaseAudioContext, so the offline renders
 // (OfflineAudioContext) use the same code as the game. A library could replace this file behind the
 // same data.
 import { hashSeed, intensityFactor, layerAt, mulberry32, type PlayParams } from './variation';
@@ -223,4 +224,118 @@ export function playSound(
     }
   });
   return end;
+}
+
+/** Time constant (s) of a loop voice's glides: intensity changes, fade in and out. */
+export const LOOP_GLIDE = 0.06;
+/** Below this intensity a loop voice fades to silence (a paused slide). */
+const LOOP_FLOOR = 0.05;
+
+/** A continuous sound (a slide's scrape), moved by intensity until stopped. */
+export interface LoopVoice {
+  /** Glides to `intensity` (0–1; 0 is silent) from `when`. */
+  set(intensity: number, when: number): void;
+  /** Fades out from `when` and stops; returns when it is silent. */
+  stop(when: number): number;
+}
+
+/**
+ * Starts a loop sound (`loop: true`: noise and oscillator layers, sustained, through filters,
+ * with optional tremolo) at `intensity`, fading in. Intensity sets the level (`intensity.gain`,
+ * fading to silence below 0.05), every filter's frequency (`cutoff`) and every source's rate and
+ * tremolo (`pitch`), each gliding with LOOP_GLIDE. The play's variation (pitch, gain, cutoff, the
+ * layers' alternatives) is drawn once for the whole voice.
+ */
+export function startLoop(
+  ctx: BaseAudioContext,
+  noise: NoiseBank,
+  out: AudioNode,
+  sound: SoundDef,
+  p: PlayParams,
+  when: number,
+  intensity: number,
+  options: PlayOptions = {},
+): LoopVoice {
+  const level = sound.gain * Math.pow(10, p.gainDb / 20) * (options.gain ?? 1);
+  const pitch = semis(p.pitch);
+  const master = ctx.createGain();
+  master.gain.value = 0;
+  master.gain.setValueAtTime(0, when);
+  if (options.pan) {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-1, Math.min(1, options.pan));
+    master.connect(pan);
+    pan.connect(out);
+  } else master.connect(out);
+  // Params that follow intensity: [param, its value at factor 1, which factor].
+  const moved: [AudioParam, number, 'cutoff' | 'pitch'][] = [];
+  const sources: AudioScheduledSourceNode[] = [];
+  sound.layers.forEach((base, i) => {
+    const lp = p.layers[i];
+    if (!lp?.play) return;
+    const layer = layerAt(base, lp.alt);
+    const amp = ctx.createGain();
+    const trem = layer.tremolo;
+    amp.gain.value = layer.gain * (1 - (trem?.depth ?? 0) / 2);
+    if (trem) {
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = trem.rate * pitch;
+      const depth = ctx.createGain();
+      depth.gain.value = (layer.gain * trem.depth) / 2;
+      lfo.connect(depth);
+      depth.connect(amp.gain);
+      lfo.start(when);
+      sources.push(lfo);
+      moved.push([lfo.frequency, trem.rate * pitch, 'pitch']);
+    }
+    const fx = filters(ctx, layer.filters, when, when, p.cutoff * pitch);
+    (layer.filters ?? []).forEach((f, k) => {
+      const node = fx[k] as BiquadFilterNode;
+      moved.push([node.frequency, f.freq * p.cutoff * pitch, 'cutoff']);
+    });
+    chain([...fx, amp]);
+    amp.connect(master);
+    const head: AudioNode = fx[0] ?? amp;
+    if (layer.source === 'noise') {
+      const src = ctx.createBufferSource();
+      src.buffer = noise[layer.color ?? 'white'];
+      src.loop = true;
+      src.playbackRate.value = pitch;
+      src.connect(head);
+      src.start(when, lp.noiseOffset * NOISE_SECONDS * 0.9);
+      sources.push(src);
+      moved.push([src.playbackRate, pitch, 'pitch']);
+    } else {
+      const osc = ctx.createOscillator();
+      osc.type = layer.wave ?? 'sine';
+      osc.frequency.value = clampFreq(ctx, (layer.freq ?? 440) * pitch);
+      osc.connect(head);
+      osc.start(when);
+      sources.push(osc);
+      moved.push([osc.frequency, (layer.freq ?? 440) * pitch, 'pitch']);
+    }
+  });
+  let stopped = false;
+  const voice: LoopVoice = {
+    set(i, t) {
+      if (stopped) return;
+      const fade = Math.min(1, Math.max(0, i) / LOOP_FLOOR);
+      master.gain.setTargetAtTime(level * intensityFactor(sound, 'gain', i) * fade, t, LOOP_GLIDE);
+      for (const [param, value, key] of moved) {
+        const v = value * intensityFactor(sound, key, i);
+        param.setTargetAtTime(key === 'cutoff' ? clampFreq(ctx, v) : v, t, LOOP_GLIDE);
+      }
+    },
+    stop(t) {
+      if (stopped) return t;
+      stopped = true;
+      master.gain.cancelScheduledValues(t);
+      master.gain.setTargetAtTime(0, t, LOOP_GLIDE * 1.5);
+      const end = t + LOOP_GLIDE * 1.5 * 7;
+      for (const s of sources) s.stop(end);
+      return end;
+    },
+  };
+  voice.set(intensity, when);
+  return voice;
 }

@@ -1,12 +1,13 @@
 //! How block states are drawn (`client/src/world/materials.ts`): each state's look, colour,
-//! opacity, render mode, textures, ladder face, shape, flooding and fluid, read from the generated registry
+//! opacity, render mode, textures, ladder face, shape, flooding, fluid and the cross look, read
+//! from the generated registry
 //! (`dwell-blocks`), with the TS fallback for ids the registry does not know (a magenta cube).
 
 use std::sync::OnceLock;
 
 use dwell_blocks::{
-    FLUIDS, Facing, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo, StateId, StateInfo,
-    Textures,
+    Cross, FLUIDS, Facing, Fade, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo,
+    StateId, StateInfo, Textures, Wind,
 };
 
 /// The look a state is drawn with (the registry's `look` name).
@@ -17,6 +18,8 @@ pub(crate) enum Look {
     Ladder,
     /// A fluid's look (`"look": "fluid"`): its parameters are the state's `fluid`.
     Fluid,
+    /// Crossed vertical quads through the cell (plants).
+    Cross,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -32,6 +35,10 @@ pub(crate) struct MaterialStyle {
     /// Index into `SHAPES`.
     pub shape: usize,
     pub flooded: bool,
+    /// The cross look's geometry, wind and distance fade.
+    pub cross: Option<Cross>,
+    pub wind: Option<Wind>,
+    pub fade: Option<Fade>,
     /// Fluids: how far below the cell's top its surface is drawn, in cells (0 otherwise).
     pub surface_drop: f64,
     /// The fluid whose look it is drawn with (an index into the registry's fluid table).
@@ -62,6 +69,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     let look = match s.look {
         "shaped" => Look::Shaped,
         "ladder" => Look::Ladder,
+        "cross" => Look::Cross,
         "fluid" => Look::Fluid,
         // 'cube', and any look the meshers do not know: a full cube.
         _ => Look::Cube,
@@ -86,6 +94,9 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         },
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
+        cross: s.cross,
+        wind: s.wind,
+        fade: s.fade,
         surface_drop: s
             .fluid
             .and_then(|f| fluids.get(usize::from(f)))
@@ -111,6 +122,9 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
             ladder_face: None,
             shape: cube_index(),
             flooded: false,
+            cross: None,
+            wind: None,
+            fade: None,
             surface_drop: 0.0,
             fluid: None,
         })

@@ -80,6 +80,11 @@ describe('scenarios', () => {
         parseScenarios(file([{ name: 'a', steps: [step] }]));
     expect(bad({ do: 'time', t: 1.5 })).toThrow(/outside 0–1/);
     expect(bad({ do: 'time' })).toThrow(/expected a number/);
+    expect(
+      parseScenarios(file([{ name: 'a', steps: [{ do: 'waterDebug', names: 'ssr,clouds' }] }]))[0]
+        .steps[0],
+    ).toEqual({ do: 'waterDebug', names: 'ssr,clouds' });
+    expect(bad({ do: 'waterDebug', names: 'ssr; drop' })).toThrow(/switch names/);
     expect(bad({ do: 'timelapse', name: 'x', frames: 1 })).toThrow(/outside 2–1000/);
   });
 

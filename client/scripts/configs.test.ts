@@ -25,10 +25,21 @@ describe('bench --compare configurations', () => {
     expect(skipped.map((s) => s.name)).toEqual([
       'march',
       'march-half-fsr',
+      'march-075-fsr',
+      'march-half-bilateral',
       'march-half-taa',
       'march-075-taa',
     ]);
     expect(skipped[0].reason).toMatch(/no "march" renderer/);
+    // A build with the marcher and its upscalers runs all but TAA-U.
+    const marcher = supportOf({
+      renderers: ['raster', 'march'],
+      upscalers: ['none', 'bilinear', 'fsr1', 'bilateral'],
+    });
+    expect(partition(file.configs, marcher).skipped.map((s) => s.name)).toEqual([
+      'march-half-taa',
+      'march-075-taa',
+    ]);
   });
 
   it('a new configuration works by data alone', () => {

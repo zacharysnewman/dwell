@@ -4,7 +4,7 @@
 <title>Dwell WebGPU probe</title>
 <canvas id="c" width="64" height="64"></canvas>
 <script type="module">
-  import init, { probeOffscreen, probeCanvas, probeScene } from './pkg/dwell_client.js';
+  import init, { probeOffscreen, probeCanvas, probeScene, probeMarch } from './pkg/dwell_client.js';
   const result = {};
   try {
     await init();
@@ -12,6 +12,12 @@
     // The scene before the canvas: after a canvas surface is dropped, headless Chromium's
     // software adapter (SwiftShader) hands out no more adapters on the page.
     result.scene = Array.from(await probeScene());
+    // The GPU marcher against the CPU reference (render/march/check.rs), also before the canvas.
+    try {
+      result.march = JSON.parse(await probeMarch());
+    } catch (e) {
+      result.march = { error: String(e?.message ?? e) };
+    }
     result.adapter = await probeCanvas(document.getElementById('c'));
   } catch (e) {
     result.error = String(e?.message ?? e);

@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use dwell_blocks::shape::{ray_enter_shape, shape_of, vertical_segment_distance_sq};
+use dwell_blocks::shape::{ray_enter_shape, vertical_segment_distance_sq};
 use dwell_blocks::{ShapeInfo, StateId, info};
 use dwell_world::{CHUNK_SIZE, VoxelWorld, chunk_of};
 use rapier3d_f64::parry::query::Ray;
@@ -62,6 +62,9 @@ pub struct Capsule {
 pub struct VoxelQuery<'a> {
     world: RefCell<&'a mut VoxelWorld>,
     physics: &'a Physics,
+    /// Shapes derived during this query (the world does not change while it lives): a ring of
+    /// probes reads the same few cells, and an adaptive block's shape reads 18 voxels.
+    shapes: RefCell<dwell_world::hash::HashMap<[i32; 3], &'static ShapeInfo>>,
 }
 
 const STEP: [[i32; 3]; 6] = [
@@ -78,6 +81,7 @@ impl<'a> VoxelQuery<'a> {
         Self {
             world: RefCell::new(world),
             physics,
+            shapes: RefCell::new(dwell_world::hash::HashMap::default()),
         }
     }
 
@@ -90,6 +94,16 @@ impl<'a> VoxelQuery<'a> {
             y - c.y * CHUNK_SIZE,
             z - c.z * CHUNK_SIZE,
         )
+    }
+
+    /// The shape of a voxel as it collides: an adaptive top block's derived shape, or its own.
+    pub fn shape(&self, x: i32, y: i32, z: i32) -> &'static ShapeInfo {
+        if let Some(&s) = self.shapes.borrow().get(&[x, y, z]) {
+            return s;
+        }
+        let s = self.world.borrow_mut().shape_at(x, y, z);
+        self.shapes.borrow_mut().insert([x, y, z], s);
+        s
     }
 
     fn pipeline<'q>(&'q self, filter: QueryFilter<'q>) -> QueryPipeline<'q> {
@@ -173,12 +187,11 @@ impl<'a> VoxelQuery<'a> {
         while t_cell <= max {
             let t_next = t_max[0].min(t_max[1]).min(t_max[2]);
             let (cx, cy, cz) = (base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]);
-            let shape = shape_of(self.material(cx, cy, cz));
+            let shape = self.shape(cx, cy, cz);
             if shape.face_count > 0 {
                 // Faces against a solid neighbour are internal: a ray crossing them is inside.
-                let nb: [&ShapeInfo; 6] = std::array::from_fn(|f| {
-                    shape_of(self.material(cx + STEP[f][0], cy + STEP[f][1], cz + STEP[f][2]))
-                });
+                let mut nb =
+                    |f: usize| self.shape(cx + STEP[f][0], cy + STEP[f][1], cz + STEP[f][2]);
                 let corner = cell.map(|c| c as f32);
                 if let Some(e) = ray_enter_shape(
                     shape,
@@ -186,7 +199,7 @@ impl<'a> VoxelQuery<'a> {
                     o,
                     d,
                     t_next,
-                    Some(&nb),
+                    Some(&mut nb),
                     if first { 1e-6 } else { 0.0 },
                 ) {
                     if e.t > max {
@@ -292,9 +305,12 @@ impl<'a> VoxelQuery<'a> {
 
     pub fn overlaps_voxels(&self, c: &Capsule) -> bool {
         let mut overlaps = false;
-        self.for_each_overlapping_cell(c, |x, y, z, m| {
-            let shape = shape_of(m);
-            if overlaps || shape.face_count == 0 {
+        self.for_each_overlapping_cell(c, |x, y, z, _| {
+            if overlaps {
+                return;
+            }
+            let shape = self.shape(x, y, z);
+            if shape.face_count == 0 {
                 return;
             }
             let rel = (c.center - DVec3::new(f64::from(x), f64::from(y), f64::from(z))).as_vec3();
@@ -331,7 +347,7 @@ impl<'a> VoxelQuery<'a> {
         let mut wet = 0.0f32;
         for y in feet.floor() as i32..=head.floor() as i32 {
             let cell = info(self.material(x, y, z));
-            if !cell.liquid && !cell.flooded {
+            if !cell.liquid && !self.world.borrow_mut().flooded_at(x, y, z) {
                 continue;
             }
             let lo = feet.max(y as f32);

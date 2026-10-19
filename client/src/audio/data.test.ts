@@ -147,6 +147,41 @@ describe('sound data', () => {
       },
       /gait walk\.stride: 0 is outside/,
     ],
+    [
+      'an envelope in a loop sound',
+      (f) => {
+        f.sounds.hum = { ...tick, loop: true };
+      },
+      /sound dwell:hum\.layers\[0\]: env is not for loop sounds/,
+    ],
+    [
+      'tremolo on a one-shot',
+      (f) => {
+        f.sounds.tick = { ...tick, layers: [{ ...layer, tremolo: { rate: 5, depth: 0.5 } }] };
+      },
+      /sound dwell:tick\.layers\[0\]: tremolo is for loop sounds/,
+    ],
+    [
+      "a one-shot as a set's slide (the event starts a loop)",
+      (f) => {
+        (sets(f).sand as Record<string, string>).slide = 'sand_step';
+      },
+      /set dwell:sand\.slide: dwell:sand_step must be a loop sound/,
+    ],
+    [
+      'a loop update that plays a sound',
+      (f) => {
+        rec(f, 'events').slide_speed = { loop: 'update', sound: 'jump' };
+      },
+      /event slide_speed: a loop update plays nothing of its own/,
+    ],
+    [
+      'a fallback set without a slide',
+      (f) => {
+        delete (sets(f).stone as Record<string, string>).slide;
+      },
+      /event slide: the fallback set dwell:stone has no "slide" sound/,
+    ],
   ];
   for (const [what, change, message] of rejects) {
     it(`rejects ${what}, naming the entry`, () => {
@@ -237,6 +272,7 @@ describe('sound data', () => {
       intensity: 1,
       at: null,
       gait: null,
+      voice: null,
     });
     expect(soundsFor(event('break'), data, registry)).toEqual([
       { sound: 'dwell:metal_clang', gain: 1 },
